@@ -1571,8 +1571,8 @@ The transition from tool to partner to autonomous operator.
 ---
 
 **Related Documents:**
-- [Technical Specification](./META_AUTONOMOUS_FRAMEWORK_TECHNICAL_SPEC.md) - Implementation details, schemas, and architecture
-- [Roadmap](./META_AUTONOMOUS_FRAMEWORK_ROADMAP.md) - Phased implementation plan (if needed)
+- [API Reference](./API_REFERENCE.md) - Implementation details, schemas, and architecture
+- [Roadmap](./ROADMAP.md) - Phased implementation plan
 
 ---
 

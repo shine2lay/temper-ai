@@ -108,7 +108,7 @@ class TestSecureCredential:
     """Tests for SecureCredential class."""
 
     def test_create_and_retrieve(self):
-        """Test creating and retrieving encrypted credential."""
+        """Test creating and retrieving obfuscated credential."""
         cred = SecureCredential("sk-secret-123")
         assert cred.get() == "sk-secret-123"
 
@@ -127,6 +127,39 @@ class TestSecureCredential:
         """Test that credential is truthy."""
         cred = SecureCredential("sk-secret-123")
         assert bool(cred) is True
+
+    def test_security_limitation_documented(self):
+        """Test documenting the security limitation.
+
+        SECURITY NOTE: This test demonstrates that SecureCredential provides
+        OBFUSCATION, not encryption. An attacker with access to the object
+        can extract both the key and ciphertext from memory.
+
+        This is by design - SecureCredential prevents accidental logging,
+        NOT attacks by malicious code in the same process.
+        """
+        secret_value = "sk-actual-secret-key-123"
+        cred = SecureCredential(secret_value)
+
+        # SECURITY LIMITATION: Key is accessible in same memory
+        # An attacker with access to the object can extract the key
+        assert hasattr(cred, '_key')
+        assert hasattr(cred, '_cipher')
+        assert hasattr(cred, '_encrypted')
+
+        # With both key and ciphertext, attacker can decrypt
+        extracted_key = cred._key
+        extracted_ciphertext = cred._encrypted
+        from cryptography.fernet import Fernet
+        attacker_cipher = Fernet(extracted_key)
+        decrypted = attacker_cipher.decrypt(extracted_ciphertext).decode('utf-8')
+
+        # Attacker successfully extracted the secret
+        assert decrypted == secret_value
+
+        # Conclusion: This is OBFUSCATION (prevents accidental logging),
+        # NOT security against determined attackers or memory dumps.
+        # For real encryption, use OS keyring or external secrets manager.
 
 
 class TestResolveSecret:

@@ -1,11 +1,16 @@
 """
-Secrets management utilities for secure handling of API keys and credentials.
+Secrets management utilities for handling API keys and credentials.
+
+**SECURITY NOTICE:**
+The SecureCredential class provides OBFUSCATION, not cryptographic security.
+It prevents accidental logging but does NOT protect against memory attacks.
+For production security, use OS keyring or external secrets managers.
 
 Supports:
 - Environment variable references (${env:VAR_NAME})
 - AWS Secrets Manager (${aws:secret-id}) - future
 - HashiCorp Vault (${vault:path}) - future
-- In-memory encryption of credentials
+- In-memory obfuscation of credentials (prevents accidental logging)
 """
 import os
 import re
@@ -171,10 +176,31 @@ class SecretReference:
 
 class SecureCredential:
     """
-    Encrypted credential storage in memory.
+    Obfuscated credential storage in memory.
 
-    Stores credentials encrypted in memory and only decrypts when accessed.
-    Prevents accidental logging or serialization of secrets.
+    **SECURITY WARNING: This provides OBFUSCATION, not encryption!**
+
+    This class prevents accidental logging or serialization of secrets by
+    storing them in an obfuscated form and redacting them in string representations.
+    However, it does NOT provide security against memory attacks or determined
+    adversaries because:
+
+    1. The encryption key is stored in the same process memory
+    2. An attacker with memory access can extract both key and ciphertext
+    3. This is security through obscurity, not cryptographic protection
+
+    **Use Cases:**
+    - ✅ Preventing accidental logging of secrets
+    - ✅ Redacting secrets in error messages
+    - ✅ Avoiding secrets in stack traces
+    - ❌ Protecting secrets from malicious code in the same process
+    - ❌ Protecting secrets from memory dumps
+    - ❌ Compliance with encryption requirements
+
+    **For True Encryption:**
+    Use OS keyring integration (e.g., keyring package) or external secrets
+    managers (AWS Secrets Manager, HashiCorp Vault) where keys are stored
+    outside the process memory.
 
     Example:
         >>> cred = SecureCredential("sk-secret-api-key-123")
@@ -186,7 +212,11 @@ class SecureCredential:
 
     def __init__(self, value: str):
         """
-        Initialize with plaintext value (encrypted immediately).
+        Initialize with plaintext value (obfuscated immediately).
+
+        **SECURITY WARNING:** This is OBFUSCATION, not secure encryption!
+        The encryption key is stored in the same memory as the encrypted data,
+        providing no protection against memory attacks or malicious code.
 
         Args:
             value: Plaintext credential value
@@ -194,6 +224,10 @@ class SecureCredential:
         if not value:
             raise ValueError("Cannot create SecureCredential with empty value")
 
+        # SECURITY WARNING: Key stored in same process memory as encrypted data!
+        # This provides OBFUSCATION (prevents accidental logging) NOT security.
+        # For real encryption, use OS keyring or external secrets manager.
+        #
         # Generate encryption key (unique per instance)
         self._key = Fernet.generate_key()
         self._cipher = Fernet(self._key)
@@ -206,10 +240,10 @@ class SecureCredential:
 
     def get(self) -> str:
         """
-        Decrypt and return credential.
+        De-obfuscate and return credential.
 
         Returns:
-            Decrypted credential value
+            Plaintext credential value
         """
         self._access_count += 1
         return self._cipher.decrypt(self._encrypted).decode('utf-8')

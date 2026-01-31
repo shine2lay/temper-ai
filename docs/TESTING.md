@@ -65,7 +65,7 @@ pytest tests/test_llm_cache.py::TestLLMCache::test_cache_hit -v
 ```
 tests/
 ├── __init__.py                    # Test package initialization
-├── conftest.py                    # Global fixtures
+# Note: No global conftest.py - fixtures are module-specific
 │
 ├── test_agents/                   # Agent tests
 │   ├── conftest.py                # Agent-specific fixtures
@@ -91,15 +91,64 @@ tests/
 ├── test_security/                 # Security tests
 │   ├── test_prompt_injection.py   # Prompt injection prevention
 │   ├── test_llm_security.py       # LLM security controls
-│   └── test_ssrf.py               # SSRF prevention tests
+│   ├── test_ssrf_dns_security.py  # SSRF and DNS rebinding prevention
+│   └── test_security_bypasses.py  # Security control bypass tests
+│
+├── safety/                        # Safety module unit tests
+│   ├── test_action_policy_engine.py  # Action policy engine tests
+│   ├── test_secret_detection.py   # Secret detection tests
+│   ├── test_blast_radius.py       # Blast radius containment tests
+│   ├── test_composer.py           # Policy composition tests
+│   └── policies/                  # Policy-specific tests
+│       ├── test_rate_limit_policy.py     # Rate limiting policy tests
+│       └── test_resource_limit_policy.py # Resource limit tests
+│
+├── test_safety/                   # Safety integration tests
+│   ├── test_approval_workflow.py  # Human approval workflow tests
+│   ├── test_circuit_breaker.py    # Circuit breaker tests
+│   └── test_rollback.py           # Rollback mechanism tests
+│
+├── test_observability/            # Observability system tests
+│   ├── test_backend.py            # Backend storage tests
+│   └── test_tracker.py            # Event tracking tests
+│
+├── test_async/                    # Async and concurrency tests
+│   └── test_concurrency.py        # Concurrent execution tests
+│
+├── test_error_handling/           # Error handling tests
+│   ├── test_error_propagation.py  # Error propagation tests
+│   └── test_timeout_scenarios.py  # Timeout handling tests
+│
+├── test_experimentation/          # Experimentation framework tests
+│   └── test_analyzer.py           # Experiment analysis tests
+│
+├── test_load/                     # Load and stress tests
+│   └── test_stress.py             # Stress testing
+│
+├── test_utils/                    # Utility function tests
+│   ├── test_config_helpers.py     # Configuration utility tests
+│   └── test_path_safety.py        # Path safety tests
+│
+├── test_validation/               # Input validation tests
+│   └── test_boundary_values.py    # Boundary value tests
 │
 ├── integration/                   # Integration tests
 │   ├── test_milestone1_e2e.py     # M1 end-to-end tests
-│   ├── test_milestone2_e2e.py     # M2 end-to-end tests
+│   ├── test_m2_e2e.py             # M2 end-to-end tests
 │   └── test_m3_multi_agent.py     # M3 multi-agent tests
 │
 ├── test_benchmarks/               # Performance benchmarks
 │   └── test_performance.py        # Performance tests
+│
+├── property/                      # Property-based tests
+│   └── test_consensus_properties.py  # Hypothesis tests for consensus
+│
+├── regression/                    # Regression tests
+│   ├── conftest.py                # Regression test fixtures
+│   └── test_config_loading_regression.py  # Config backward compatibility
+│
+├── fixtures/                      # Shared test fixtures
+│   └── boundary_values.py         # Boundary value test data
 │
 ├── test_llm_cache.py              # LLM caching tests
 ├── test_logging.py                # Logging tests

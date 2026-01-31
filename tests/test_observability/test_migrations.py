@@ -16,6 +16,7 @@ from src.observability.migrations import (
     check_schema_version,
     _validate_migration_sql,
     apply_migration,
+    MigrationSecurityError,
 )
 from src.observability.database import DatabaseManager
 
@@ -218,52 +219,52 @@ class TestValidateMigrationSQL:
         """Test that DROP DATABASE is blocked."""
         malicious_sql = "DROP DATABASE production;"
 
-        with pytest.raises(ValueError, match="dangerous pattern"):
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
             _validate_migration_sql(malicious_sql)
 
     def test_validate_rejects_create_user(self):
         """Test that CREATE USER is blocked."""
         malicious_sql = "CREATE USER hacker IDENTIFIED BY 'password';"
 
-        with pytest.raises(ValueError, match="dangerous pattern"):
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
             _validate_migration_sql(malicious_sql)
 
     def test_validate_rejects_grant_all(self):
         """Test that GRANT ALL is blocked."""
         malicious_sql = "GRANT ALL PRIVILEGES ON *.* TO 'user'@'%';"
 
-        with pytest.raises(ValueError, match="dangerous pattern"):
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
             _validate_migration_sql(malicious_sql)
 
     def test_validate_rejects_revoke_all(self):
         """Test that REVOKE ALL is blocked."""
         malicious_sql = "REVOKE ALL PRIVILEGES ON *.* FROM 'user'@'%';"
 
-        with pytest.raises(ValueError, match="dangerous pattern"):
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
             _validate_migration_sql(malicious_sql)
 
     def test_validate_rejects_extended_procedures(self):
         """Test that SQL Server extended procedures are blocked."""
         malicious_sql = "EXEC xp_cmdshell 'dir';"
 
-        with pytest.raises(ValueError, match="dangerous pattern"):
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
             _validate_migration_sql(malicious_sql)
 
     def test_validate_rejects_stored_procedures(self):
         """Test that stored procedure calls are blocked."""
         malicious_sql = "EXEC sp_executesql N'DROP TABLE users';"
 
-        with pytest.raises(ValueError, match="dangerous pattern"):
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
             _validate_migration_sql(malicious_sql)
 
     def test_validate_case_insensitive(self):
         """Test that validation is case-insensitive."""
         # Lowercase
-        with pytest.raises(ValueError, match="dangerous pattern"):
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
             _validate_migration_sql("drop database test;")
 
         # Mixed case
-        with pytest.raises(ValueError, match="dangerous pattern"):
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
             _validate_migration_sql("DrOp DaTaBaSe test;")
 
 
@@ -313,7 +314,7 @@ class TestApplyMigration:
         """Test that apply_migration validates SQL before execution."""
         malicious_sql = "DROP DATABASE production;"
 
-        with pytest.raises(ValueError, match="dangerous pattern"):
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
             apply_migration(test_db, malicious_sql, "1.0.0")
 
     def test_apply_migration_with_multiple_statements(self, test_db):
@@ -403,6 +404,191 @@ class TestDataPreservation:
 
         # In real usage, this would destroy the data
         # This test documents the expected behavior
+
+
+class TestSecurityVulnerabilityFixes:
+    """Test fixes for security vulnerabilities (code-crit-01)."""
+
+    def test_mixed_case_sql_injection_blocked(self):
+        """Test that mixed-case SQL injection attacks are blocked.
+
+        This is the primary vulnerability from code-crit-01:
+        Pattern matching only checked uppercase, allowing bypass via mixed case.
+        """
+        # All variations should be blocked
+        test_cases = [
+            "DROP DATABASE test;",  # Uppercase
+            "drop database test;",  # Lowercase
+            "DrOp DaTaBaSe test;",  # Mixed case
+            "dRoP dAtAbAsE test;",  # Random mixed case
+        ]
+
+        for malicious_sql in test_cases:
+            with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+                _validate_migration_sql(malicious_sql)
+
+    def test_comment_obfuscation_blocked(self):
+        """Test that SQL comments cannot be used to bypass validation."""
+        test_cases = [
+            "-- Valid comment\nDROP DATABASE test;",
+            "/* Block comment */ DROP DATABASE test;",
+            "ALTER TABLE users ADD COLUMN email TEXT; -- innocent\nDROP DATABASE test;",
+        ]
+
+        for malicious_sql in test_cases:
+            with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+                _validate_migration_sql(malicious_sql)
+
+    def test_whitespace_obfuscation_blocked(self):
+        """Test that extra whitespace cannot bypass validation."""
+        test_cases = [
+            "DROP     DATABASE    test;",
+            "DROP\nDATABASE\ntest;",
+            "DROP\t\tDATABASE\t\ttest;",
+        ]
+
+        for malicious_sql in test_cases:
+            with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+                _validate_migration_sql(malicious_sql)
+
+    def test_truncate_table_blocked(self):
+        """Test that TRUNCATE TABLE is blocked (missing from original)."""
+        malicious_sql = "TRUNCATE TABLE users;"
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
+
+    def test_delete_without_where_blocked(self):
+        """Test that DELETE without WHERE is blocked."""
+        # DELETE with WHERE should pass (not tested here - depends on use case)
+        # DELETE without WHERE should fail
+        malicious_sql = "DELETE FROM users;"
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
+
+    def test_delete_where_1_equals_1_blocked(self):
+        """Test that DELETE WHERE 1=1 is blocked."""
+        malicious_sql = "DELETE FROM users WHERE 1=1;"
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
+
+    def test_copy_program_blocked(self):
+        """Test that PostgreSQL COPY PROGRAM is blocked (shell execution)."""
+        malicious_sql = "COPY users FROM PROGRAM 'cat /etc/passwd';"
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
+
+    def test_load_data_infile_blocked(self):
+        """Test that MySQL LOAD DATA INFILE is blocked (file read)."""
+        malicious_sql = "LOAD DATA INFILE '/etc/passwd' INTO TABLE users;"
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
+
+    def test_execute_immediate_blocked(self):
+        """Test that EXECUTE IMMEDIATE is blocked (dynamic SQL)."""
+        malicious_sql = "EXECUTE IMMEDIATE 'DROP TABLE users';"
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
+
+    def test_safe_alter_table_allowed(self):
+        """Test that safe ALTER TABLE operations are allowed."""
+        safe_migrations = [
+            "ALTER TABLE users ADD COLUMN email TEXT;",
+            "ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;",
+            "CREATE TABLE products (id INTEGER PRIMARY KEY, name TEXT);",
+            "CREATE INDEX idx_users_email ON users(email);",
+        ]
+
+        for safe_sql in safe_migrations:
+            # Should not raise exception
+            _validate_migration_sql(safe_sql)
+
+    def test_legitimate_operations_no_false_positives(self):
+        """Ensure we don't have false positives on legitimate SQL with dangerous substrings."""
+        legitimate_cases = [
+            "ALTER TABLE users ADD COLUMN deleted_at TIMESTAMP",  # 'DELETE' substring
+            "CREATE TABLE program_settings (id INTEGER)",  # 'PROGRAM' substring
+            "SELECT * FROM executables WHERE name = 'app'",  # 'EXEC' substring
+            "UPDATE calls SET status = 'complete'",  # 'CALL' substring
+            "CREATE TABLE prepared_statements (id INTEGER)",  # 'PREPARE' substring
+            "ALTER TABLE grants ADD COLUMN amount DECIMAL",  # 'GRANT' substring
+        ]
+
+        for sql in legitimate_cases:
+            try:
+                _validate_migration_sql(sql)
+            except MigrationSecurityError as e:
+                pytest.fail(f"False positive on legitimate SQL: {sql}\nError: {e}")
+
+    def test_maximum_sql_size_enforced(self):
+        """Test that extremely long SQL is rejected to prevent ReDoS."""
+        # Create SQL exceeding 1MB limit
+        huge_sql = "ALTER TABLE users ADD COLUMN " + ("x" * 2_000_000)
+
+        with pytest.raises(ValueError, match="exceeds maximum allowed size"):
+            _validate_migration_sql(huge_sql)
+
+    def test_maximum_statement_count_enforced(self):
+        """Test that migrations with too many statements are blocked."""
+        # Create 51 statements (exceeds MAX_STATEMENTS=50)
+        many_statements = ";\n".join([
+            f"CREATE TABLE table_{i} (id INTEGER)" for i in range(51)
+        ])
+
+        with pytest.raises(MigrationSecurityError, match="max: 50"):
+            _validate_migration_sql(many_statements)
+
+    def test_combined_attack_vectors_blocked(self):
+        """Test combined obfuscation techniques are blocked."""
+        test_cases = [
+            "/* Comment */\nDrOp\t\tDaTaBaSe /* inline */ test;",
+            "-- Comment\ndrop    database\t\ntest;",
+            "/**/DROP/**/DATABASE/**/test;",
+        ]
+
+        for malicious_sql in test_cases:
+            with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+                _validate_migration_sql(malicious_sql)
+
+    def test_pragma_blocked_sqlite(self):
+        """Test that SQLite PRAGMA commands are blocked."""
+        malicious_sql = "PRAGMA journal_mode = OFF;"
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
+
+    def test_attach_database_blocked_sqlite(self):
+        """Test that SQLite ATTACH DATABASE is blocked."""
+        malicious_sql = "ATTACH DATABASE '/path/to/db' AS other;"
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
+
+    def test_create_trigger_blocked(self):
+        """Test that CREATE TRIGGER is blocked (can execute arbitrary code)."""
+        malicious_sql = """
+        CREATE TRIGGER audit_trigger
+        AFTER INSERT ON users
+        FOR EACH ROW
+        BEGIN
+            INSERT INTO audit_log VALUES (NEW.id);
+        END;
+        """
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
+
+    def test_create_function_blocked(self):
+        """Test that CREATE FUNCTION is blocked (user-defined functions)."""
+        malicious_sql = "CREATE FUNCTION evil_func() RETURNS TEXT AS 'SELECT secret FROM secrets';"
+
+        with pytest.raises(MigrationSecurityError, match="dangerous pattern"):
+            _validate_migration_sql(malicious_sql)
 
 
 class TestConcurrentMigrations:

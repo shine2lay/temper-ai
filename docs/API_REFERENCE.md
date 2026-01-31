@@ -277,10 +277,14 @@ from src.tools import ToolRegistry
 registry = ToolRegistry(auto_discover=True)
 
 # Register custom tool
-registry.register_tool(CustomTool())
+registry.register(CustomTool())
 
 # Get tool
-tool = registry.get_tool("custom_tool")
+tool = registry.get("custom_tool")
+
+# Check if tool exists
+if registry.has("custom_tool"):
+    print("Tool found")
 
 # Get all tools
 tools = registry.get_all_tools()
@@ -288,10 +292,10 @@ tools = registry.get_all_tools()
 
 **Methods:**
 
-- `register_tool(tool)`: Register a tool instance
-- `get_tool(name)`: Get tool by name
+- `register(tool, allow_override=False)`: Register a tool instance
+- `get(name, version=None)`: Get tool by name (optionally specify version)
 - `get_all_tools()`: Get all registered tools
-- `has_tool(name)`: Check if tool exists
+- `has(name, version=None)`: Check if tool exists
 - `list_available_tools()`: Get detailed information about all registered tools (class, description, version, category, etc.)
 - `get_registration_report()`: Get formatted report with registration details for debugging
 

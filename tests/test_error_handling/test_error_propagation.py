@@ -550,3 +550,354 @@ class TestErrorMessageQuality:
         # Types should be distinct
         assert ToolNotFoundError != AgentError
         assert issubclass(ToolNotFoundError, AgentError)
+
+
+class TestErrorSanitizationIntegration:
+    """Test that error sanitization is integrated into all error classes.
+
+    SECURITY CRITICAL: These tests verify that sensitive data (API keys, passwords,
+    tokens) are automatically redacted from all error messages, preventing secret
+    leakage in logs, monitoring systems, and error tracking services.
+    """
+
+    def test_api_key_redacted_in_agent_error(self):
+        """Test API keys are redacted in AgentError messages."""
+        from src.utils.exceptions import AgentError, ErrorCode, ExecutionContext
+
+        api_key = "sk-test-1234567890abcdef"
+
+        # Create error with API key in message
+        error = AgentError(
+            message=f"API key {api_key} failed authentication",
+            error_code=ErrorCode.AGENT_EXECUTION_ERROR,
+            context=ExecutionContext(agent_id="test-agent")
+        )
+
+        error_str = str(error)
+
+        # API key should be redacted
+        assert api_key not in error_str, "API key leaked in error message!"
+        assert "[REDACTED-API-KEY]" in error_str
+
+    def test_aws_key_redacted_in_llm_error(self):
+        """Test AWS keys are redacted in LLMError messages."""
+        from src.utils.exceptions import LLMError, ErrorCode
+
+        aws_key = "AKIAIOSFODNN7EXAMPLE"
+
+        error = LLMError(
+            message=f"AWS access key {aws_key} unauthorized",
+            error_code=ErrorCode.LLM_AUTHENTICATION_ERROR,
+            provider="openai"
+        )
+
+        error_str = str(error)
+
+        # AWS key should be redacted
+        assert aws_key not in error_str
+        assert "[REDACTED-AWS-KEY]" in error_str
+
+    def test_password_redacted_in_config_error(self):
+        """Test passwords are redacted in ConfigurationError messages."""
+        from src.utils.exceptions import ConfigurationError, ErrorCode
+
+        password = "SuperSecret123!"
+
+        error = ConfigurationError(
+            message=f"Database connection failed: password={password}",
+            error_code=ErrorCode.CONFIG_INVALID
+        )
+
+        error_str = str(error)
+
+        # Password should be redacted
+        assert password not in error_str
+        assert "[REDACTED-PASSWORD]" in error_str
+
+    def test_bearer_token_redacted_in_tool_error(self):
+        """Test Bearer tokens are redacted in ToolError messages."""
+        from src.utils.exceptions import ToolError, ErrorCode
+
+        token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature"
+
+        error = ToolError(
+            message=f"API request failed: Authorization: Bearer {token}",
+            error_code=ErrorCode.TOOL_EXECUTION_ERROR,
+            tool_name="api_caller"
+        )
+
+        error_str = str(error)
+
+        # Token should be redacted
+        assert token not in error_str
+        assert "[REDACTED-TOKEN]" in error_str or "[REDACTED-JWT-TOKEN]" in error_str
+
+    def test_jwt_token_redacted_in_workflow_error(self):
+        """Test JWT tokens are redacted in WorkflowError messages."""
+        from src.utils.exceptions import WorkflowError, ErrorCode
+
+        jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
+
+        error = WorkflowError(
+            message=f"Auth failed with token {jwt}",
+            error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR
+        )
+
+        error_str = str(error)
+
+        # JWT should be redacted
+        assert jwt not in error_str
+        assert "[REDACTED-JWT-TOKEN]" in error_str
+
+    def test_connection_string_redacted_in_safety_error(self):
+        """Test database connection strings are redacted in SafetyError."""
+        from src.utils.exceptions import SafetyError, ErrorCode
+
+        conn_str = "postgresql://admin:secret123@localhost:5432/mydb"
+
+        error = SafetyError(
+            message=f"Invalid connection: {conn_str}",
+            error_code=ErrorCode.SAFETY_VIOLATION
+        )
+
+        error_str = str(error)
+
+        # Password in connection string should be redacted
+        assert "secret123" not in error_str
+        assert "[REDACTED-CREDENTIALS]" in error_str
+
+    def test_multiple_secrets_redacted_in_validation_error(self):
+        """Test multiple secrets in same error are all redacted."""
+        from src.utils.exceptions import ValidationError, ErrorCode
+
+        api_key = "sk-prod-key-xyz"
+        password = "MyP@ssw0rd!"
+        token = "eyJhbGciOiJIUzI1NiJ9.test"
+
+        error = ValidationError(
+            message=f"Auth failed: api_key={api_key}, password={password}, token={token}",
+            error_code=ErrorCode.VALIDATION_ERROR
+        )
+
+        error_str = str(error)
+
+        # All secrets should be redacted
+        assert api_key not in error_str
+        assert password not in error_str
+        assert token not in error_str
+        assert error_str.count("[REDACTED") >= 3
+
+    def test_secrets_redacted_in_repr(self):
+        """Test secrets are redacted in error repr()."""
+        from src.utils.exceptions import LLMError, ErrorCode
+
+        api_key = "sk-test-secret-key"
+
+        error = LLMError(
+            message=f"API call with key {api_key} failed",
+            error_code=ErrorCode.LLM_AUTHENTICATION_ERROR
+        )
+
+        repr_str = repr(error)
+
+        # API key should be redacted in repr
+        assert api_key not in repr_str
+        assert "[REDACTED-API-KEY]" in repr_str
+
+    def test_secrets_redacted_in_to_dict(self):
+        """Test secrets are redacted in error.to_dict()."""
+        from src.utils.exceptions import AgentError, ErrorCode
+
+        password = "admin123"
+
+        error = AgentError(
+            message=f"Login failed with password: {password}",
+            error_code=ErrorCode.AGENT_EXECUTION_ERROR
+        )
+
+        error_dict = error.to_dict()
+
+        # Password should be redacted in dict representation
+        assert password not in error_dict["message"]
+        assert "[REDACTED-PASSWORD]" in error_dict["message"]
+
+    def test_secrets_redacted_in_cause(self):
+        """Test secrets are redacted when error wraps another exception."""
+        from src.utils.exceptions import ToolError, ErrorCode
+
+        api_key = "api-key-1234567890"
+
+        # Create a cause exception with secret
+        try:
+            raise ValueError(f"Invalid API key: {api_key}")
+        except ValueError as e:
+            error = ToolError(
+                message="Tool execution failed",
+                error_code=ErrorCode.TOOL_EXECUTION_ERROR,
+                cause=e
+            )
+
+        error_str = str(error)
+
+        # API key should be redacted in cause message
+        assert api_key not in error_str
+        assert "[REDACTED-API-KEY]" in error_str
+
+    def test_secrets_redacted_in_traceback(self):
+        """Test secrets are redacted in error traceback."""
+        from src.utils.exceptions import WorkflowError, ErrorCode
+        import traceback as tb_module
+
+        password = "p@ssw0rd!"
+
+        # Create error with cause to trigger traceback
+        # Use password=value format so it matches the regex pattern
+        try:
+            try:
+                raise RuntimeError(f"Database connection failed: password={password}")
+            except RuntimeError as e:
+                # Create error while exception is active (so traceback.format_exc() works)
+                error = WorkflowError(
+                    message="Workflow failed",
+                    error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
+                    cause=e
+                )
+                error_dict = error.to_dict()
+        except Exception:
+            pass
+
+        # Password should be redacted in traceback
+        if error_dict.get("traceback"):
+            assert password not in error_dict["traceback"], \
+                f"Password leaked in traceback: {error_dict['traceback']}"
+            assert "[REDACTED-PASSWORD]" in error_dict["traceback"]
+
+    def test_api_key_formats_all_redacted(self):
+        """Test various API key formats are all redacted."""
+        from src.utils.exceptions import LLMError, ErrorCode
+
+        test_keys = [
+            ("sk-test-key", "sk- prefix"),
+            ("api-prod-key-xyz", "api- prefix"),
+            ("key-admin-12345", "key- prefix"),
+            ("api_key=sk-secret-123", "assignment format"),
+            ("apiKey: api-key-456", "camelCase format"),
+        ]
+
+        for key, description in test_keys:
+            error = LLMError(
+                message=f"Auth failed: {key}",
+                error_code=ErrorCode.LLM_AUTHENTICATION_ERROR
+            )
+
+            error_str = str(error)
+
+            # Extract the actual secret from the key string
+            if "=" in key or ":" in key:
+                # For assignment formats, check that value is redacted
+                assert "[REDACTED" in error_str, f"Failed to redact {description}: {key}"
+            else:
+                # For plain keys, check that key is redacted
+                assert key not in error_str, f"Failed to redact {description}: {key}"
+                assert "[REDACTED-API-KEY]" in error_str
+
+    def test_password_formats_all_redacted(self):
+        """Test various password formats are all redacted."""
+        from src.utils.exceptions import ConfigurationError, ErrorCode
+
+        test_passwords = [
+            ("password=secret", "equals format"),
+            ("password: secret", "colon format"),
+            ("pwd=admin123", "abbreviated format"),
+            ("Password='p@ss'", "quoted format"),
+        ]
+
+        for pwd_str, description in test_passwords:
+            error = ConfigurationError(
+                message=f"Config error: {pwd_str}",
+                error_code=ErrorCode.CONFIG_INVALID
+            )
+
+            error_str = str(error)
+
+            # Password value should be redacted
+            assert "[REDACTED" in error_str, f"Failed to redact {description}: {pwd_str}"
+
+    def test_sanitization_performance(self):
+        """Test that error sanitization has minimal performance overhead."""
+        import time
+        from src.utils.exceptions import AgentError, ErrorCode
+
+        # Test with message containing secrets
+        message_with_secrets = (
+            "Error: api_key=sk-test-123, password=secret, "
+            "token=eyJhbGciOiJIUzI1NiJ9.test, aws_key=AKIAIOSFODNN7EXAMPLE"
+        )
+
+        # Measure time for 1000 error creations
+        start = time.time()
+        for i in range(1000):
+            error = AgentError(
+                message=message_with_secrets,
+                error_code=ErrorCode.AGENT_EXECUTION_ERROR
+            )
+            _ = str(error)
+        elapsed = time.time() - start
+
+        # Average time per error should be < 1ms
+        avg_time_ms = (elapsed / 1000) * 1000
+        assert avg_time_ms < 1.0, f"Sanitization too slow: {avg_time_ms:.2f}ms per error"
+
+    def test_no_false_positives(self):
+        """Test that sanitization doesn't redact non-secret data."""
+        from src.utils.exceptions import ToolError, ErrorCode
+
+        # Message with words that contain trigger patterns but aren't secrets
+        message = (
+            "Tool execution at stage skipped due to apiVersion mismatch. "
+            "Password field was empty. Key parameter missing."
+        )
+
+        error = ToolError(
+            message=message,
+            error_code=ErrorCode.TOOL_EXECUTION_ERROR
+        )
+
+        error_str = str(error)
+
+        # These normal words should NOT be redacted
+        assert "skipped" in error_str
+        assert "apiVersion" in error_str
+        assert "Password field" in error_str  # "Password" as word, not assignment
+        assert "Key parameter" in error_str  # "Key" as word, not key-value
+
+    def test_edge_case_empty_message(self):
+        """Test sanitization handles empty messages gracefully."""
+        from src.utils.exceptions import BaseError, ErrorCode
+
+        error = BaseError(
+            message="",
+            error_code=ErrorCode.UNKNOWN_ERROR
+        )
+
+        error_str = str(error)
+
+        # Should not crash, should produce valid string
+        assert isinstance(error_str, str)
+        assert "[UNKNOWN_ERROR]" in error_str
+
+    def test_edge_case_none_message(self):
+        """Test sanitization handles None in cause gracefully."""
+        from src.utils.exceptions import AgentError, ErrorCode
+
+        error = AgentError(
+            message="Test error",
+            error_code=ErrorCode.AGENT_EXECUTION_ERROR,
+            cause=None
+        )
+
+        error_str = str(error)
+
+        # Should not crash
+        assert isinstance(error_str, str)
+        assert "Test error" in error_str

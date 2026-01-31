@@ -5,11 +5,113 @@ Provides base exception classes that include:
 - Error codes for programmatic handling
 - Stack traces and debugging info
 - Structured error messages
+- Automatic sanitization of sensitive data (API keys, passwords, tokens)
 """
 from typing import Optional, Dict, Any
 from enum import Enum
 import traceback
 from datetime import datetime, timezone
+import re
+
+
+def sanitize_error_message(message: str) -> str:
+    """Sanitize sensitive data from error messages.
+
+    Redacts the following sensitive patterns:
+    - API keys (sk-*, api-*, api_key=*, apiKey:*, etc.)
+    - AWS keys (AKIA*, ASIA*)
+    - JWT tokens (Bearer, eyJ*)
+    - Passwords (password=*, password:*, pwd=*, etc.)
+    - Generic tokens (token=*, auth=*, authorization=*, etc.)
+    - Connection strings (mysql://, postgres://, mongodb://, redis://, etc.)
+
+    Args:
+        message: Error message that may contain sensitive data
+
+    Returns:
+        Sanitized message with sensitive data redacted
+
+    Example:
+        >>> sanitize_error_message("API key sk-test-123 failed")
+        "API key [REDACTED-API-KEY] failed"
+
+        >>> sanitize_error_message("Password='secret123' invalid")
+        "Password=[REDACTED-PASSWORD] invalid"
+    """
+    if not message:
+        return message
+
+    # AWS API keys (AKIA* for access keys, ASIA* for temporary credentials)
+    message = re.sub(
+        r'\b(AKIA|ASIA)[A-Z0-9]{16}\b',
+        '[REDACTED-AWS-KEY]',
+        message
+    )
+
+    # API keys (sk-*, api-*, key-*, etc.)
+    # Matches patterns like: sk-test-key, api-prod-123, key_admin_xyz
+    message = re.sub(
+        r'\b(sk|api|key|secret)[-_][a-zA-Z0-9\-_]{3,}\b',
+        '[REDACTED-API-KEY]',
+        message,
+        flags=re.IGNORECASE
+    )
+
+    # API key in assignment format (api_key=*, apiKey=*, API_KEY=*, etc.)
+    message = re.sub(
+        r'(api[_-]?key|apikey)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
+        r'\1=[REDACTED-API-KEY]',
+        message,
+        flags=re.IGNORECASE
+    )
+
+    # JWT tokens (Bearer or bare JWT starting with eyJ)
+    message = re.sub(
+        r'Bearer\s+[a-zA-Z0-9._-]+',
+        'Bearer [REDACTED-TOKEN]',
+        message
+    )
+    message = re.sub(
+        r'\beyJ[a-zA-Z0-9._-]{20,}',
+        '[REDACTED-JWT-TOKEN]',
+        message
+    )
+
+    # Passwords (password=*, pwd=*, pass=*, etc.)
+    message = re.sub(
+        r'(password|passwd|pwd|pass)\s*[:=]\s*["\']?[^\s"\']{3,}["\']?',
+        r'\1=[REDACTED-PASSWORD]',
+        message,
+        flags=re.IGNORECASE
+    )
+
+    # Generic tokens and auth headers
+    message = re.sub(
+        r'(token|auth|authorization|x-api-key)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
+        r'\1=[REDACTED-TOKEN]',
+        message,
+        flags=re.IGNORECASE
+    )
+
+    # Database connection strings
+    # mysql://user:password@host/db
+    message = re.sub(
+        r'(mysql|postgres|postgresql|mongodb|redis)://[^:]+:[^@]+@',
+        r'\1://[REDACTED-CREDENTIALS]@',
+        message,
+        flags=re.IGNORECASE
+    )
+
+    # Connection strings with passwords in query params
+    # ?password=secret or &password=secret
+    message = re.sub(
+        r'[?&](password|pwd|pass|token|key|secret)=[^&\s]+',
+        r'?\1=[REDACTED]',
+        message,
+        flags=re.IGNORECASE
+    )
+
+    return message
 
 
 class ErrorCode(str, Enum):
@@ -172,7 +274,12 @@ class BaseError(Exception):
         super().__init__(self._build_message())
 
     def _build_message(self) -> str:
-        """Build detailed error message with context."""
+        """Build detailed error message with context.
+
+        SECURITY: All messages are sanitized to remove sensitive data
+        (API keys, passwords, tokens) before being returned.
+        """
+        # Start with error code and base message
         parts = [f"[{self.error_code.value}] {self.message}"]
 
         # Add context information
@@ -191,25 +298,47 @@ class BaseError(Exception):
 
         # Add cause if present
         if self.cause:
-            parts.append(f"Caused by: {type(self.cause).__name__}: {str(self.cause)}")
+            # Sanitize cause message as well
+            cause_str = sanitize_error_message(str(self.cause))
+            parts.append(f"Caused by: {type(self.cause).__name__}: {cause_str}")
 
-        return " | ".join(parts)
+        # Build full message and sanitize it
+        full_message = " | ".join(parts)
+        return sanitize_error_message(full_message)
+
+    def __str__(self) -> str:
+        """Return sanitized error message.
+
+        SECURITY: Ensures sensitive data is redacted even when
+        error is converted to string directly.
+        """
+        # The message was already sanitized in _build_message(),
+        # but sanitize again for safety in case message was modified
+        return sanitize_error_message(super().__str__())
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert error to dictionary for serialization."""
+        """Convert error to dictionary for serialization.
+
+        SECURITY: All string fields are sanitized to remove sensitive data.
+        """
         return {
             "error_type": self.__class__.__name__,
-            "message": self.message,
+            "message": sanitize_error_message(self.message),
             "error_code": self.error_code.value,
             "context": self.context.to_dict(),
             "timestamp": self.timestamp.isoformat(),
-            "cause": str(self.cause) if self.cause else None,
+            "cause": sanitize_error_message(str(self.cause)) if self.cause else None,
             "extra_data": self.extra_data,
-            "traceback": traceback.format_exc() if self.cause else None
+            "traceback": sanitize_error_message(traceback.format_exc()) if self.cause else None
         }
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(code={self.error_code.value}, message='{self.message}', context={self.context})"
+        """Return sanitized repr.
+
+        SECURITY: Sanitizes message to prevent secrets in debug output.
+        """
+        sanitized_message = sanitize_error_message(self.message)
+        return f"{self.__class__.__name__}(code={self.error_code.value}, message='{sanitized_message}', context={self.context})"
 
 
 # Configuration Exceptions

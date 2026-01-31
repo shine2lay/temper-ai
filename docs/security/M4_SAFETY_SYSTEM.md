@@ -588,9 +588,131 @@ Engine metrics available via `engine.get_metrics()`:
 
 ### Exception Handling
 
+#### Exception Hierarchy
+
+**Module:** `src.safety.exceptions`
+
+All safety violations can be raised as exceptions for flow control:
+
+```
+SafetyViolationException (base)
+├── BlastRadiusViolation          (HIGH severity)
+├── ActionPolicyViolation         (CRITICAL severity)
+├── RateLimitViolation            (MEDIUM severity)
+├── ResourceLimitViolation        (HIGH severity)
+├── ForbiddenOperationViolation   (CRITICAL severity)
+└── AccessDeniedViolation         (CRITICAL severity)
+```
+
+#### Exception Types
+
+**SafetyViolationException** - Base exception for all safety violations
+
+```python
+from src.safety.exceptions import SafetyViolationException
+
+try:
+    # Execute action
+    result = agent.execute(action)
+except SafetyViolationException as e:
+    print(f"Severity: {e.severity.name}")
+    print(f"Policy: {e.policy_name}")
+    print(f"Message: {e.message}")
+    print(f"Remediation: {e.remediation_hint}")
+    # Log violation for audit
+    logger.error("Safety violation", extra=e.to_dict())
+```
+
+**BlastRadiusViolation** - Too many files/changes affected
+
+```python
+from src.safety.exceptions import BlastRadiusViolation
+
+try:
+    modify_files(large_file_list)
+except BlastRadiusViolation as e:
+    # Split into smaller batches
+    metadata = e.metadata
+    print(f"Limit: {metadata['limit']}, Attempted: {metadata['files_affected']}")
+    # Remediation: e.remediation_hint suggests splitting changes
+```
+
+**ActionPolicyViolation** - Forbidden action/tool
+
+```python
+from src.safety.exceptions import ActionPolicyViolation
+
+try:
+    execute_tool("forbidden_shell_command")
+except ActionPolicyViolation as e:
+    # Use approved alternative
+    print(f"Forbidden: {e.metadata.get('forbidden_tool')}")
+    print(f"Reason: {e.metadata.get('reason')}")
+```
+
+**RateLimitViolation** - Rate limit exceeded
+
+```python
+from src.safety.exceptions import RateLimitViolation
+
+try:
+    make_api_call()
+except RateLimitViolation as e:
+    # Wait and retry
+    retry_after = e.metadata.get('retry_after', 60)
+    time.sleep(retry_after)
+```
+
+**ResourceLimitViolation** - Resource quota exceeded
+
+```python
+from src.safety.exceptions import ResourceLimitViolation
+
+try:
+    load_large_dataset()
+except ResourceLimitViolation as e:
+    # Process in chunks
+    resource = e.metadata.get('resource')  # e.g., "memory"
+    limit = e.metadata.get('limit')
+    # Remediation: reduce resource consumption
+```
+
+**ForbiddenOperationViolation** - Dangerous operation blocked
+
+```python
+from src.safety.exceptions import ForbiddenOperationViolation
+
+try:
+    access_secrets()
+except ForbiddenOperationViolation as e:
+    # Use secure alternative
+    operation = e.metadata.get('operation')  # e.g., "secret_access"
+    # Remediation: use secrets management API
+```
+
+**AccessDeniedViolation** - Path/resource access denied
+
+```python
+from src.safety.exceptions import AccessDeniedViolation
+
+try:
+    read_file("/etc/passwd")
+except AccessDeniedViolation as e:
+    # Restrict to allowed paths
+    allowed_paths = e.metadata.get('allowed_paths', [])
+    denied_path = e.metadata.get('path')
+```
+
+#### Generic Exception Handling
+
+For policy execution errors (not violations):
+
 ```python
 try:
     result = await policy.validate_async(action, context)
+except SafetyViolationException:
+    # Safety violation - expected, handle appropriately
+    raise
 except Exception as e:
     # Policy execution error - treat as CRITICAL violation
     violation = SafetyViolation(

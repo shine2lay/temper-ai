@@ -180,8 +180,10 @@ git commit -m "docs: Add ADR-NNNN [short title]"
 | [0003](./0003-multi-agent-collaboration-strategies.md) | Multi-Agent Collaboration Strategies | Accepted | 2026-01-26 | collaboration, agents, synthesis, M3 |
 | [0004](./0004-observability-database-schema.md) | Observability Database Schema | Accepted | 2026-01-25 | observability, database, tracing, M1 |
 | [0005](./0005-yaml-based-configuration.md) | YAML-Based Configuration | Accepted | 2026-01-25 | configuration, yaml, workflows, M1 |
+| [0006](./0006-m3-parallel-execution-architecture.md) | M3 Parallel Execution Architecture | Accepted | 2026-01-30 | parallel, execution, M3, performance, langgraph |
+| [0007](./0007-m4-safety-system-design.md) | M4 Safety System Design | Accepted | 2026-01-30 | safety, governance, M4, policies, security |
 
-*Note: ADRs 0001-0005 document historical decisions from milestones M1-M3*
+*Note: ADRs 0001-0007 document historical decisions from milestones M1-M4*
 
 ---
 

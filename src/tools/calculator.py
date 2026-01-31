@@ -43,6 +43,10 @@ SAFE_FUNCTIONS = {
     'e': math.e,
 }
 
+# Maximum nesting depth for lists/tuples to prevent DoS attacks
+# Example attack: [[[[[[[[[[1]]]]]]]]]] causes stack overflow
+MAX_NESTING_DEPTH = 10
+
 
 class Calculator(BaseTool):
     """
@@ -109,8 +113,8 @@ class Calculator(BaseTool):
             # Parse expression into AST
             tree = ast.parse(expression, mode='eval')
 
-            # Evaluate safely
-            result = self._safe_eval(tree.body)
+            # Evaluate safely with depth tracking (prevents DoS via deep nesting)
+            result = self._safe_eval(tree.body, depth=0)
 
             return ToolResult(
                 success=True,
@@ -145,19 +149,28 @@ class Calculator(BaseTool):
                 error=f"Evaluation error: {str(e)}"
             )
 
-    def _safe_eval(self, node: Any) -> Any:
+    def _safe_eval(self, node: Any, depth: int = 0) -> Any:
         """
-        Safely evaluate AST node using whitelist approach.
+        Safely evaluate AST node using whitelist approach with depth limiting.
 
         Args:
             node: AST node to evaluate
+            depth: Current nesting depth (for DoS prevention)
 
         Returns:
             Evaluated result (int, float, list, tuple)
 
         Raises:
-            ValueError: If node contains unsafe operations
+            ValueError: If node contains unsafe operations or exceeds max depth
         """
+        # Check nesting depth to prevent DoS attacks via deep recursion
+        # Example attack: [[[[[[[[[[1]]]]]]]]]] (deeply nested lists)
+        if depth > MAX_NESTING_DEPTH:
+            raise ValueError(
+                f"Expression nesting depth exceeds maximum of {MAX_NESTING_DEPTH}. "
+                f"This prevents denial-of-service attacks via deeply nested structures."
+            )
+
         if isinstance(node, ast.Constant):  # Number/string literal (Python >= 3.8)
             if isinstance(node.value, (int, float)):
                 return node.value
@@ -169,8 +182,8 @@ class Calculator(BaseTool):
             if op_type not in SAFE_OPERATORS:
                 raise ValueError(f"Unsupported operator: {op_type.__name__}")
 
-            left = self._safe_eval(node.left)
-            right = self._safe_eval(node.right)
+            left = self._safe_eval(node.left, depth + 1)
+            right = self._safe_eval(node.right, depth + 1)
             op_func = SAFE_OPERATORS[op_type]
 
             return op_func(left, right)  # type: ignore[operator]
@@ -180,7 +193,7 @@ class Calculator(BaseTool):
             if op_type not in SAFE_OPERATORS:
                 raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
 
-            operand = self._safe_eval(node.operand)
+            operand = self._safe_eval(node.operand, depth + 1)
             op_func = SAFE_OPERATORS[op_type]
 
             return op_func(operand)  # type: ignore[operator]
@@ -193,8 +206,8 @@ class Calculator(BaseTool):
             if func_name not in SAFE_FUNCTIONS:
                 raise ValueError(f"Unsupported function: {func_name}")
 
-            # Evaluate arguments
-            args = [self._safe_eval(arg) for arg in node.args]
+            # Evaluate arguments with depth tracking
+            args = [self._safe_eval(arg, depth + 1) for arg in node.args]
 
             # Check for keyword arguments (not supported)
             if node.keywords:
@@ -226,10 +239,12 @@ class Calculator(BaseTool):
             raise ValueError(f"{name} is a function and must be called with ()")
 
         elif isinstance(node, ast.List):  # List literal [1, 2, 3]
-            return [self._safe_eval(item) for item in node.elts]
+            # Increment depth for nested lists (prevents DoS via [[[[...]]]]])
+            return [self._safe_eval(item, depth + 1) for item in node.elts]
 
         elif isinstance(node, ast.Tuple):  # Tuple literal (1, 2, 3)
-            return tuple(self._safe_eval(item) for item in node.elts)
+            # Increment depth for nested tuples (prevents DoS via ((((...)))) )
+            return tuple(self._safe_eval(item, depth + 1) for item in node.elts)
 
         else:
             raise ValueError(f"Unsupported AST node type: {type(node).__name__}")

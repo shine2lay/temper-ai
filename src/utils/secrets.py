@@ -405,7 +405,7 @@ def detect_secret_patterns(text: str) -> Tuple[bool, Optional[str]]:
     medium_confidence_patterns = [
         r'[a-f0-9]{32}',  # MD5-like hashes
         r'[a-f0-9]{40}',  # SHA1-like hashes
-        r'[A-Za-z0-9+/]{40,}={0,2}',  # Base64-encoded strings
+        r'[A-Za-z0-9+/]{40,500}={0,2}',  # Base64-encoded strings (bounded to prevent ReDoS)
     ]
 
     for pattern in high_confidence_patterns:

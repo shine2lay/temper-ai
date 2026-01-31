@@ -35,8 +35,9 @@ class TestFileWriteDetection:
             f"Expected 2 violations (cat > + redirect), got {len(result.violations)}: {[v.message for v in result.violations]}"
         assert result.violations[0].severity == ViolationSeverity.CRITICAL
         assert "Write()" in result.violations[0].message
-        assert result.violations[1].severity >= ViolationSeverity.HIGH
+        assert result.violations[1].severity == ViolationSeverity.HIGH
         assert result.violations[1].metadata["pattern_name"] == "file_write_redirect_output"
+        assert result.violations[1].metadata["category"] == "file_write"
 
     def test_cat_append(self):
         """Test detection of 'cat >>' file append."""
@@ -48,14 +49,15 @@ class TestFileWriteDetection:
         )
 
         assert result.valid is False
-        # Should detect both 'cat >>' and '>>' patterns
-        assert len(result.violations) >= 1, \
-            f"Expected at least 1 violation, got {len(result.violations)}"
-        # Find the Edit() suggestion violation
+        # Should detect 'cat >', 'cat >>', and '>>' patterns (3 total)
+        assert len(result.violations) == 3, \
+            f"Expected 3 violations (cat > + cat >> + >>), got {len(result.violations)}: {[v.message for v in result.violations]}"
+        # Find the Edit() suggestion violation (for cat >>)
         edit_violations = [v for v in result.violations if "Edit()" in v.message]
-        assert len(edit_violations) >= 1, "Should suggest Edit() for append operation"
-        assert edit_violations[0].severity >= ViolationSeverity.HIGH
+        assert len(edit_violations) == 1, "Should suggest Edit() for append operation"
+        assert edit_violations[0].severity == ViolationSeverity.CRITICAL
         assert edit_violations[0].metadata["category"] == "file_write"
+        assert edit_violations[0].metadata["pattern_name"] == "file_write_cat_append"
 
     def test_cat_heredoc(self):
         """Test detection of 'cat <<EOF' heredoc."""
@@ -72,11 +74,13 @@ EOF"""
 
         assert result.valid is False
         # Should detect heredoc and redirect patterns
-        assert len(result.violations) >= 2, \
-            f"Expected at least 2 violations (heredoc + redirect), got {len(result.violations)}"
+        assert len(result.violations) == 2, \
+            f"Expected 2 violations (cat heredoc + redirect), got {len(result.violations)}: {[v.message for v in result.violations]}"
         critical_violations = [v for v in result.violations if v.severity == ViolationSeverity.CRITICAL]
-        assert len(critical_violations) >= 1, "Should have at least one CRITICAL violation"
-        assert any("cat" in v.message.lower() for v in critical_violations)
+        assert len(critical_violations) == 1, "Should have exactly one CRITICAL violation"
+        assert "cat" in critical_violations[0].message.lower()
+        assert critical_violations[0].metadata["category"] == "file_write"
+        assert critical_violations[0].metadata["pattern_name"] == "file_write_cat_heredoc"
 
     def test_echo_redirect(self):
         """Test detection of 'echo >' file write."""
@@ -89,9 +93,13 @@ EOF"""
 
         assert result.valid is False
         write_violations = [v for v in result.violations if "Write()" in v.message]
-        assert len(write_violations) >= 1, "Should detect echo redirect and suggest Write()"
-        assert write_violations[0].severity >= ViolationSeverity.HIGH
-        assert write_violations[0].metadata["category"] == "file_write"
+        assert len(write_violations) == 2, "Should detect echo + redirect patterns"
+        assert all(v.severity >= ViolationSeverity.HIGH for v in write_violations)
+        assert all(v.metadata["category"] == "file_write" for v in write_violations)
+        # Check for echo-specific pattern
+        echo_violations = [v for v in write_violations if "echo" in v.metadata["pattern_name"]]
+        assert len(echo_violations) == 1
+        assert echo_violations[0].metadata["pattern_name"] == "file_write_echo_redirect"
 
     def test_echo_append(self):
         """Test detection of 'echo >>' file append."""
@@ -103,10 +111,14 @@ EOF"""
         )
 
         assert result.valid is False
-        edit_violations = [v for v in result.violations if "Edit()" in v.message]
-        assert len(edit_violations) >= 1, "Should detect echo append and suggest Edit()"
-        assert edit_violations[0].severity >= ViolationSeverity.HIGH
+        # Echo append triggers multiple patterns (echo >, echo >>, >> append)
+        all_violations = result.violations
+        assert len(all_violations) == 3, f"Expected 3 violations (echo > + echo >> + >>), got {len(all_violations)}: {[v.message for v in all_violations]}"
+        edit_violations = [v for v in all_violations if "Edit()" in v.message]
+        assert len(edit_violations) == 1, "Should suggest Edit() for append operation"
+        assert edit_violations[0].severity == ViolationSeverity.CRITICAL
         assert edit_violations[0].metadata["category"] == "file_write"
+        assert edit_violations[0].metadata["pattern_name"] == "file_write_echo_append"
 
     def test_printf_redirect(self):
         """Test detection of 'printf >' file write."""
@@ -119,9 +131,9 @@ EOF"""
 
         assert result.valid is False
         write_violations = [v for v in result.violations if "Write()" in v.message]
-        assert len(write_violations) >= 1, "Should detect printf redirect and suggest Write()"
-        assert write_violations[0].severity >= ViolationSeverity.HIGH
-        assert write_violations[0].metadata["category"] == "file_write"
+        assert len(write_violations) == 2, "Should detect printf + redirect patterns"
+        assert all(v.severity >= ViolationSeverity.HIGH for v in write_violations)
+        assert all(v.metadata["category"] == "file_write" for v in write_violations)
 
     def test_tee_write(self):
         """Test detection of 'tee' file write."""
@@ -134,9 +146,10 @@ EOF"""
 
         assert result.valid is False
         write_violations = [v for v in result.violations if "Write()" in v.message]
-        assert len(write_violations) >= 1, "Should detect tee command and suggest Write()"
-        assert write_violations[0].severity >= ViolationSeverity.HIGH
+        assert len(write_violations) == 1, "Should detect tee command and suggest Write()"
+        assert write_violations[0].severity == ViolationSeverity.CRITICAL
         assert write_violations[0].metadata["category"] == "file_write"
+        assert write_violations[0].metadata["pattern_name"] == "file_write_tee_write"
 
     def test_sed_inplace(self):
         """Test detection of 'sed -i' in-place edit."""
@@ -149,9 +162,10 @@ EOF"""
 
         assert result.valid is False
         edit_violations = [v for v in result.violations if "Edit()" in v.message]
-        assert len(edit_violations) >= 1, "Should detect sed -i and suggest Edit()"
-        assert edit_violations[0].severity >= ViolationSeverity.HIGH
+        assert len(edit_violations) == 1, "Should detect sed -i and suggest Edit()"
+        assert edit_violations[0].severity == ViolationSeverity.CRITICAL
         assert edit_violations[0].metadata["category"] == "file_write"
+        assert edit_violations[0].metadata["pattern_name"] == "file_write_sed_inplace"
 
     def test_awk_redirect(self):
         """Test detection of 'awk > file' redirect."""
@@ -164,9 +178,9 @@ EOF"""
 
         assert result.valid is False
         write_violations = [v for v in result.violations if "Write()" in v.message]
-        assert len(write_violations) >= 1, "Should detect awk redirect and suggest Write()"
-        assert write_violations[0].severity >= ViolationSeverity.HIGH
-        assert write_violations[0].metadata["category"] == "file_write"
+        assert len(write_violations) == 2, "Should detect awk + redirect patterns"
+        assert all(v.severity >= ViolationSeverity.HIGH for v in write_violations)
+        assert all(v.metadata["category"] == "file_write" for v in write_violations)
 
     def test_allowed_cat_read(self):
         """Test that 'cat' for reading (no redirect) is allowed."""

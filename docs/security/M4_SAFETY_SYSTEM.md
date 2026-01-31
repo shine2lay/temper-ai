@@ -262,7 +262,7 @@ Rate limiting for various operations.
 - LLM calls: 1000/hour
 
 #### ResourceLimitPolicy
-**Location:** `src/safety/resource_limits.py`
+**Location:** `src/safety/policies/resource_limit_policy.py`
 
 Resource consumption limits.
 
@@ -283,7 +283,7 @@ Limits commit size to reduce blast radius.
 - Max 2000 total lines per commit
 
 #### ApprovalWorkflowPolicy
-**Location:** `src/safety/approval_workflow.py`
+**Location:** `src/safety/approval.py`
 
 Requires approval for sensitive operations.
 

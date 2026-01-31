@@ -33,6 +33,9 @@ from src.utils.exceptions import (
     ExecutionContext
 )
 
+# Import context-aware environment variable validator
+from src.compiler.env_var_validator import EnvVarValidator
+
 # Maximum config file size (10MB) to prevent memory exhaustion from malicious configs
 MAX_CONFIG_SIZE = 10 * 1024 * 1024
 
@@ -514,88 +517,44 @@ class ConfigLoader:
 
     def _validate_env_var_value(self, var_name: str, value: str) -> None:
         """
-        Validate environment variable value for security issues.
+        Validate environment variable value for security issues using context-aware validation.
 
-        Checks for:
-        - Excessively long values (>10KB)
-        - Path traversal attempts (../)
-        - Shell metacharacters in command contexts
-        - SQL injection patterns in database contexts
-        - Credentials in URL contexts
-        - Null bytes
+        This method uses the EnvVarValidator which provides defense-in-depth through:
+        - Context detection from variable name patterns
+        - Whitelist-based validation (defines what IS allowed)
+        - Multiple validation layers (pattern + context-specific checks)
+        - Protection against: command injection, SQL injection, path traversal, etc.
+
+        Key Security Improvements (vs previous implementation):
+        - Validates ALL variables based on context, not just those matching specific name patterns
+        - Prevents command injection bypass via non-obvious variable names
+        - Uses whitelist approach instead of blacklist for better security
+        - Context-aware rules: executable, path, structured, identifier, data, unrestricted
 
         Args:
             var_name: Name of environment variable
             value: Value to validate
 
         Raises:
-            ConfigValidationError: If value contains suspicious patterns
+            ConfigValidationError: If value fails validation for its detected context
+
+        Example:
+            # OLD (VULNERABLE): Only checked if name contained 'cmd', 'command', etc.
+            # API_ENDPOINT = "http://api.com; rm -rf /" would PASS (bypassed validation)
+
+            # NEW (SECURE): Checks ALL variables based on detected context
+            # API_ENDPOINT = "http://api.com; rm -rf /" will FAIL (semicolon not allowed in STRUCTURED context)
         """
-        # Check length to prevent DoS
-        if len(value) > MAX_ENV_VAR_SIZE:
-            raise ConfigValidationError(
-                f"Environment variable '{var_name}' value too long: {len(value)} bytes (max: {MAX_ENV_VAR_SIZE} bytes)"
-            )
+        # Use context-aware validator
+        validator = EnvVarValidator()
+        is_valid, error_message = validator.validate(
+            var_name=var_name,
+            value=value,
+            max_length=MAX_ENV_VAR_SIZE
+        )
 
-        # Check for null bytes (common in injection attacks)
-        if '\x00' in value:
-            raise ConfigValidationError(
-                f"Environment variable '{var_name}' contains null bytes"
-            )
-
-        # Check for path traversal in path-like variables
-        path_var_names = ['path', 'dir', 'directory', 'file', 'config_root', 'template']
-        if any(name in var_name.lower() for name in path_var_names):
-            if '../' in value or '..\\' in value:
-                raise ConfigValidationError(
-                    f"Environment variable '{var_name}' contains path traversal pattern (../)"
-                )
-
-        # Check for shell metacharacters in command-like variables
-        # These are variables that might be used in shell commands
-        command_var_patterns = ['cmd', 'command', 'exec', 'script', 'shell', 'run']
-        if any(pattern in var_name.lower() for pattern in command_var_patterns):
-            # Dangerous shell metacharacters that enable command injection
-            shell_metacharacters = [';', '|', '&', '$', '`', '\n', '>', '<', '(', ')']
-            dangerous_chars = [char for char in shell_metacharacters if char in value]
-            if dangerous_chars:
-                raise ConfigValidationError(
-                    f"Environment variable '{var_name}' contains shell metacharacters: {dangerous_chars}. "
-                    f"This could enable command injection attacks."
-                )
-
-        # Check for SQL injection patterns in database-like variables
-        db_var_patterns = ['db', 'database', 'sql', 'query', 'table', 'schema']
-        if any(pattern in var_name.lower() for pattern in db_var_patterns):
-            # Common SQL injection patterns
-            sql_patterns = [
-                ("'--", "SQL comment injection"),
-                ("';", "SQL statement termination"),
-                ("' OR '", "SQL boolean injection"),
-                ("' UNION ", "SQL UNION injection"),
-                ("DROP TABLE", "SQL DROP command"),
-                ("DELETE FROM", "SQL DELETE command"),
-                ("INSERT INTO", "SQL INSERT command"),
-                ("UPDATE ", "SQL UPDATE command"),
-                ("EXEC ", "SQL EXEC command"),
-                ("xp_", "SQL Server extended procedure"),
-            ]
-            for pattern, description in sql_patterns:
-                if pattern in value.upper():
-                    raise ConfigValidationError(
-                        f"Environment variable '{var_name}' contains SQL injection pattern: {description}. "
-                        f"Use parameterized queries instead."
-                    )
-
-        # Check for credentials in URL-like variables
-        url_var_patterns = ['url', 'uri', 'endpoint', 'host', 'api']
-        if any(pattern in var_name.lower() for pattern in url_var_patterns):
-            # Check for credentials in URL (username:password@host pattern)
-            if re.search(r'://[^/]*:[^/]*@', value):
-                raise ConfigValidationError(
-                    f"Environment variable '{var_name}' contains credentials in URL. "
-                    f"Use separate API_KEY or TOKEN variables instead of embedding credentials in URLs."
-                )
+        if not is_valid:
+            raise ConfigValidationError(error_message)
 
     def _resolve_secrets(self, config: Any) -> Any:
         """

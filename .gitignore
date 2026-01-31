@@ -64,12 +64,18 @@ htmlcov/
 .dmypy.json
 dmypy.json
 
-# Coordination system (keep structure but ignore state)
-.claude-coord/state.json
+# Coordination system (track main state, ignore backups/temp)
+# .claude-coord/state.json - NOW TRACKED for version control
 .claude-coord/state.json.backup-*
 .claude-coord/state.json.tmp
+.claude-coord/state.json.before-*
+.claude-coord/state.json.CURRENT-*
 .claude-coord/.state.lock
 .claude-coord/*.tar.gz
+.claude-coord/backups/
+.claude-coord/.state-shadow/
+.claude-coord/watcher.log
+.claude-coord/snapshot.log
 
 # Temporary files
 *.tmp

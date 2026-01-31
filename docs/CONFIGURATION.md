@@ -1,5 +1,9 @@
 # Configuration Guide
 
+**Scope:** General Framework Configuration (Agents, Workflows, LLM Providers, Tools, Multi-Agent, Observability)
+
+**For M4 Safety System Configuration:** See [M4_CONFIGURATION_GUIDE.md](M4_CONFIGURATION_GUIDE.md) for detailed safety policy, approval workflows, rollback, circuit breakers, and safety gate configuration.
+
 Complete guide to configuring the Meta-Autonomous Agent Framework.
 
 ---
@@ -504,6 +508,8 @@ tools:
 ---
 
 ## Safety Configuration
+
+**Note:** This section covers basic safety constraints (timeouts, rate limits, allowed operations). For advanced safety features (policies, approval workflows, rollback, circuit breakers), see [M4_CONFIGURATION_GUIDE.md](M4_CONFIGURATION_GUIDE.md).
 
 ### Agent-Level Safety
 

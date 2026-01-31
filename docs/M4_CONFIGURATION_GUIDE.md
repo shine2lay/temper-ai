@@ -1,5 +1,9 @@
 # M4 Safety System - Configuration Guide
 
+**Scope:** M4 Safety System Only (Policies, Approvals, Rollback, Circuit Breakers, Gates)
+
+**For General Framework Configuration:** See [CONFIGURATION.md](CONFIGURATION.md) for agents, workflows, LLM providers, tools, multi-agent coordination, and observability.
+
 **Version:** 1.0
 **Last Updated:** 2026-01-27
 **Status:** Production Ready

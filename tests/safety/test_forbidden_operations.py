@@ -30,9 +30,13 @@ class TestFileWriteDetection:
         )
 
         assert result.valid is False
-        assert len(result.violations) >= 1
-        assert any(v.severity == ViolationSeverity.CRITICAL for v in result.violations)
-        assert any("Write()" in v.message for v in result.violations)
+        # Detects both 'cat >' and '> file.txt' patterns
+        assert len(result.violations) == 2, \
+            f"Expected 2 violations (cat > + redirect), got {len(result.violations)}: {[v.message for v in result.violations]}"
+        assert result.violations[0].severity == ViolationSeverity.CRITICAL
+        assert "Write()" in result.violations[0].message
+        assert result.violations[1].severity >= ViolationSeverity.HIGH
+        assert result.violations[1].metadata["pattern_name"] == "file_write_redirect_output"
 
     def test_cat_append(self):
         """Test detection of 'cat >>' file append."""
@@ -288,7 +292,9 @@ class TestCommandInjectionDetection:
 
         assert result.valid is False
         # Should detect both the injection and the dangerous rm -rf
-        assert len(result.violations) >= 1
+        assert len(result.violations) >= 1, \
+            f"Expected at least 1 violation, got {len(result.violations)}: {[v.message for v in result.violations]}"
+        assert all(v.severity >= ViolationSeverity.HIGH for v in result.violations)
 
     def test_pipe_injection(self):
         """Test detection of pipe-based injection."""
@@ -651,8 +657,15 @@ class TestIntegrationScenarios:
         )
 
         assert result.valid is False
-        # Should detect both file write and dangerous rm -rf
-        assert len(result.violations) >= 2
+        # Should detect cat >, redirect, and dangerous rm -rf
+        assert len(result.violations) == 3, \
+            f"Expected 3 violations (cat > + redirect + rm -rf), got {len(result.violations)}: {[v.message for v in result.violations]}"
+        assert all(v.severity >= ViolationSeverity.HIGH for v in result.violations)
+
+        # Verify we have file write and dangerous command violations
+        violation_types = {v.metadata.get("category") for v in result.violations}
+        assert "file_write" in violation_types
+        assert "dangerous" in violation_types
 
     def test_complex_bash_script(self):
         """Test scanning a complex bash script."""
@@ -674,8 +687,10 @@ class TestIntegrationScenarios:
         )
 
         assert result.valid is False
-        # Should detect multiple violations
-        assert len(result.violations) >= 3
+        # Should detect multiple violations (cat >, rm -rf, curl | bash)
+        assert len(result.violations) >= 3, \
+            f"Expected at least 3 violations (heredoc, rm -rf, pipe to bash), got {len(result.violations)}: {[v.message for v in result.violations]}"
+        assert all(v.severity >= ViolationSeverity.HIGH for v in result.violations)
 
     def test_safe_commands_allowed(self):
         """Test that safe commands are allowed."""

@@ -48,7 +48,14 @@ class TestFileWriteDetection:
         )
 
         assert result.valid is False
-        assert any("Edit()" in v.message for v in result.violations)
+        # Should detect both 'cat >>' and '>>' patterns
+        assert len(result.violations) >= 1, \
+            f"Expected at least 1 violation, got {len(result.violations)}"
+        # Find the Edit() suggestion violation
+        edit_violations = [v for v in result.violations if "Edit()" in v.message]
+        assert len(edit_violations) >= 1, "Should suggest Edit() for append operation"
+        assert edit_violations[0].severity >= ViolationSeverity.HIGH
+        assert edit_violations[0].metadata["category"] == "file_write"
 
     def test_cat_heredoc(self):
         """Test detection of 'cat <<EOF' heredoc."""
@@ -64,7 +71,12 @@ EOF"""
         )
 
         assert result.valid is False
-        assert any(v.severity == ViolationSeverity.CRITICAL for v in result.violations)
+        # Should detect heredoc and redirect patterns
+        assert len(result.violations) >= 2, \
+            f"Expected at least 2 violations (heredoc + redirect), got {len(result.violations)}"
+        critical_violations = [v for v in result.violations if v.severity == ViolationSeverity.CRITICAL]
+        assert len(critical_violations) >= 1, "Should have at least one CRITICAL violation"
+        assert any("cat" in v.message.lower() for v in critical_violations)
 
     def test_echo_redirect(self):
         """Test detection of 'echo >' file write."""
@@ -76,7 +88,10 @@ EOF"""
         )
 
         assert result.valid is False
-        assert any("Write()" in v.message for v in result.violations)
+        write_violations = [v for v in result.violations if "Write()" in v.message]
+        assert len(write_violations) >= 1, "Should detect echo redirect and suggest Write()"
+        assert write_violations[0].severity >= ViolationSeverity.HIGH
+        assert write_violations[0].metadata["category"] == "file_write"
 
     def test_echo_append(self):
         """Test detection of 'echo >>' file append."""
@@ -88,7 +103,10 @@ EOF"""
         )
 
         assert result.valid is False
-        assert any("Edit()" in v.message for v in result.violations)
+        edit_violations = [v for v in result.violations if "Edit()" in v.message]
+        assert len(edit_violations) >= 1, "Should detect echo append and suggest Edit()"
+        assert edit_violations[0].severity >= ViolationSeverity.HIGH
+        assert edit_violations[0].metadata["category"] == "file_write"
 
     def test_printf_redirect(self):
         """Test detection of 'printf >' file write."""
@@ -100,7 +118,10 @@ EOF"""
         )
 
         assert result.valid is False
-        assert any("Write()" in v.message for v in result.violations)
+        write_violations = [v for v in result.violations if "Write()" in v.message]
+        assert len(write_violations) >= 1, "Should detect printf redirect and suggest Write()"
+        assert write_violations[0].severity >= ViolationSeverity.HIGH
+        assert write_violations[0].metadata["category"] == "file_write"
 
     def test_tee_write(self):
         """Test detection of 'tee' file write."""
@@ -112,7 +133,10 @@ EOF"""
         )
 
         assert result.valid is False
-        assert any("Write()" in v.message for v in result.violations)
+        write_violations = [v for v in result.violations if "Write()" in v.message]
+        assert len(write_violations) >= 1, "Should detect tee command and suggest Write()"
+        assert write_violations[0].severity >= ViolationSeverity.HIGH
+        assert write_violations[0].metadata["category"] == "file_write"
 
     def test_sed_inplace(self):
         """Test detection of 'sed -i' in-place edit."""
@@ -124,7 +148,10 @@ EOF"""
         )
 
         assert result.valid is False
-        assert any("Edit()" in v.message for v in result.violations)
+        edit_violations = [v for v in result.violations if "Edit()" in v.message]
+        assert len(edit_violations) >= 1, "Should detect sed -i and suggest Edit()"
+        assert edit_violations[0].severity >= ViolationSeverity.HIGH
+        assert edit_violations[0].metadata["category"] == "file_write"
 
     def test_awk_redirect(self):
         """Test detection of 'awk > file' redirect."""
@@ -136,7 +163,10 @@ EOF"""
         )
 
         assert result.valid is False
-        assert any("Write()" in v.message for v in result.violations)
+        write_violations = [v for v in result.violations if "Write()" in v.message]
+        assert len(write_violations) >= 1, "Should detect awk redirect and suggest Write()"
+        assert write_violations[0].severity >= ViolationSeverity.HIGH
+        assert write_violations[0].metadata["category"] == "file_write"
 
     def test_allowed_cat_read(self):
         """Test that 'cat' for reading (no redirect) is allowed."""
@@ -172,8 +202,11 @@ class TestDangerousCommandDetection:
         )
 
         assert result.valid is False
-        assert any(v.severity == ViolationSeverity.CRITICAL for v in result.violations)
-        assert any("deletion" in v.message.lower() for v in result.violations)
+        assert len(result.violations) == 1, \
+            f"Expected exactly 1 violation for rm -rf, got {len(result.violations)}"
+        assert result.violations[0].severity == ViolationSeverity.CRITICAL
+        assert "deletion" in result.violations[0].message.lower()
+        assert result.violations[0].metadata["category"] == "dangerous"
 
     def test_rm_system_directory(self):
         """Test detection of attempts to delete system directories."""
@@ -185,7 +218,10 @@ class TestDangerousCommandDetection:
         )
 
         assert result.valid is False
-        assert any(v.severity == ViolationSeverity.CRITICAL for v in result.violations)
+        assert len(result.violations) >= 1
+        critical_violations = [v for v in result.violations if v.severity == ViolationSeverity.CRITICAL]
+        assert len(critical_violations) >= 1, "Should have CRITICAL violation for system file deletion"
+        assert any("deletion" in v.message.lower() or "rm" in v.message.lower() for v in critical_violations)
 
     def test_dd_command(self):
         """Test detection of 'dd' command."""
@@ -197,8 +233,11 @@ class TestDangerousCommandDetection:
         )
 
         assert result.valid is False
-        assert any(v.severity == ViolationSeverity.CRITICAL for v in result.violations)
-        assert any("dd" in v.message.lower() or "disk" in v.message.lower() for v in result.violations)
+        assert len(result.violations) >= 1
+        critical_violations = [v for v in result.violations if v.severity == ViolationSeverity.CRITICAL]
+        assert len(critical_violations) >= 1, "Should have CRITICAL violation for dd command"
+        assert any("dd" in v.message.lower() or "disk" in v.message.lower() for v in critical_violations)
+        assert critical_violations[0].metadata["category"] == "dangerous"
 
     def test_mkfs_command(self):
         """Test detection of filesystem creation commands."""
@@ -210,7 +249,10 @@ class TestDangerousCommandDetection:
         )
 
         assert result.valid is False
-        assert any(v.severity == ViolationSeverity.CRITICAL for v in result.violations)
+        assert len(result.violations) >= 1
+        critical_violations = [v for v in result.violations if v.severity == ViolationSeverity.CRITICAL]
+        assert len(critical_violations) >= 1, "Should have CRITICAL violation for mkfs command"
+        assert critical_violations[0].metadata["category"] == "dangerous"
 
     def test_chmod_recursive_root(self):
         """Test detection of recursive chmod on root."""
@@ -222,7 +264,10 @@ class TestDangerousCommandDetection:
         )
 
         assert result.valid is False
-        assert any(v.severity >= ViolationSeverity.HIGH for v in result.violations)
+        assert len(result.violations) >= 1
+        high_severity_violations = [v for v in result.violations if v.severity >= ViolationSeverity.HIGH]
+        assert len(high_severity_violations) >= 1, "Should have HIGH+ severity violation for chmod -R on root"
+        assert high_severity_violations[0].metadata["category"] == "dangerous"
 
     def test_curl_pipe_bash(self):
         """Test detection of 'curl | bash' pattern."""
@@ -234,8 +279,11 @@ class TestDangerousCommandDetection:
         )
 
         assert result.valid is False
-        assert any(v.severity == ViolationSeverity.CRITICAL for v in result.violations)
-        assert any("dangerous" in v.message.lower() or "pipe" in v.message.lower() for v in result.violations)
+        assert len(result.violations) >= 1
+        critical_violations = [v for v in result.violations if v.severity == ViolationSeverity.CRITICAL]
+        assert len(critical_violations) >= 1, "Should have CRITICAL violation for curl | bash"
+        assert any("dangerous" in v.message.lower() or "pipe" in v.message.lower() for v in critical_violations)
+        assert critical_violations[0].metadata["category"] == "dangerous"
 
     def test_wget_pipe_sh(self):
         """Test detection of 'wget | sh' pattern."""
@@ -247,7 +295,10 @@ class TestDangerousCommandDetection:
         )
 
         assert result.valid is False
-        assert any(v.severity == ViolationSeverity.CRITICAL for v in result.violations)
+        assert len(result.violations) >= 1
+        critical_violations = [v for v in result.violations if v.severity == ViolationSeverity.CRITICAL]
+        assert len(critical_violations) >= 1, "Should have CRITICAL violation for wget | sh"
+        assert critical_violations[0].metadata["category"] == "dangerous"
 
     def test_eval_command(self):
         """Test detection of 'eval' command."""
@@ -259,7 +310,11 @@ class TestDangerousCommandDetection:
         )
 
         assert result.valid is False
-        assert any("eval" in v.message.lower() for v in result.violations)
+        assert len(result.violations) >= 1
+        eval_violations = [v for v in result.violations if "eval" in v.message.lower()]
+        assert len(eval_violations) >= 1, "Should detect eval command"
+        assert eval_violations[0].severity >= ViolationSeverity.HIGH
+        assert eval_violations[0].metadata["category"] in ["dangerous", "injection"]
 
     def test_fork_bomb(self):
         """Test detection of fork bomb pattern."""
@@ -271,7 +326,10 @@ class TestDangerousCommandDetection:
         )
 
         assert result.valid is False
-        assert any(v.severity == ViolationSeverity.CRITICAL for v in result.violations)
+        assert len(result.violations) >= 1
+        critical_violations = [v for v in result.violations if v.severity == ViolationSeverity.CRITICAL]
+        assert len(critical_violations) >= 1, "Should have CRITICAL violation for fork bomb"
+        assert critical_violations[0].metadata["category"] == "dangerous"
 
 
 # ============================================================================
@@ -291,10 +349,20 @@ class TestCommandInjectionDetection:
         )
 
         assert result.valid is False
-        # Should detect both the injection and the dangerous rm -rf
-        assert len(result.violations) >= 1, \
-            f"Expected at least 1 violation, got {len(result.violations)}: {[v.message for v in result.violations]}"
-        assert all(v.severity >= ViolationSeverity.HIGH for v in result.violations)
+        # Should detect both the injection pattern and the dangerous rm -rf
+        assert len(result.violations) == 2, \
+            f"Expected 2 violations (rm -rf + semicolon injection), got {len(result.violations)}: {[v.message for v in result.violations]}"
+
+        # Verify we have both violation types
+        violation_categories = {v.metadata["category"] for v in result.violations}
+        assert "dangerous" in violation_categories, "Should detect dangerous rm -rf command"
+        assert "injection" in violation_categories, "Should detect semicolon injection"
+
+        # Verify severities
+        severities = [v.severity for v in result.violations]
+        assert ViolationSeverity.CRITICAL in severities, "rm -rf should be CRITICAL"
+        assert all(v.severity >= ViolationSeverity.HIGH for v in result.violations), \
+            "All violations should be HIGH or CRITICAL"
 
     def test_pipe_injection(self):
         """Test detection of pipe-based injection."""
@@ -348,8 +416,11 @@ class TestSecuritySensitiveOperations:
         )
 
         assert result.valid is False
-        assert any("password" in v.message.lower() for v in result.violations)
-        assert any(v.severity >= ViolationSeverity.HIGH for v in result.violations)
+        assert len(result.violations) >= 1
+        password_violations = [v for v in result.violations if "password" in v.message.lower()]
+        assert len(password_violations) >= 1, "Should detect password in command"
+        assert password_violations[0].severity >= ViolationSeverity.HIGH
+        assert password_violations[0].metadata["category"] == "security"
 
     def test_ssh_no_host_check(self):
         """Test detection of disabled SSH host key checking."""
@@ -361,7 +432,11 @@ class TestSecuritySensitiveOperations:
         )
 
         assert result.valid is False
-        assert any("ssh" in v.message.lower() for v in result.violations)
+        assert len(result.violations) >= 1
+        ssh_violations = [v for v in result.violations if "ssh" in v.message.lower()]
+        assert len(ssh_violations) >= 1, "Should detect insecure SSH configuration"
+        assert ssh_violations[0].severity >= ViolationSeverity.HIGH
+        assert ssh_violations[0].metadata["category"] == "security"
 
 
 # ============================================================================
@@ -428,7 +503,13 @@ class TestConfigurationOptions:
         )
 
         assert result.valid is False
-        assert any("custom forbidden keyword" in v.message.lower() for v in result.violations)
+        assert len(result.violations) >= 1
+        custom_violations = [v for v in result.violations if "custom forbidden keyword" in v.message.lower()]
+        assert len(custom_violations) == 1, "Should detect custom forbidden keyword exactly once"
+        assert custom_violations[0].severity == ViolationSeverity.HIGH
+        # Pattern name includes 'custom_' prefix
+        assert custom_violations[0].metadata["pattern_name"] == "custom_custom_test"
+        assert custom_violations[0].metadata["category"] == "custom"
 
 
 # ============================================================================

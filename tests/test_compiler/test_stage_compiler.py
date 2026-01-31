@@ -46,10 +46,17 @@ class TestCompileStages:
 
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
-        # Verify graph is compiled
-        assert graph is not None
-        # Verify it's a compiled graph (has invoke method)
-        assert hasattr(graph, 'invoke')
+        # Verify graph is compiled and executable
+        assert graph is not None, "Compiled graph should not be None"
+        assert hasattr(graph, 'invoke'), "Compiled graph must have invoke method"
+        assert hasattr(graph, 'get_graph'), "Compiled graph must have get_graph method"
+        assert callable(graph.invoke), "invoke must be callable"
+
+        # Verify graph structure
+        graph_structure = graph.get_graph()
+        assert graph_structure is not None, "Graph structure should be retrievable"
+        assert len(graph_structure.nodes) >= 3, \
+            f"Graph should have at least 3 nodes (init + 2 stages), got {len(graph_structure.nodes)}"
 
     def test_compile_stages_adds_init_node(self):
         """Test that compile_stages adds initialization node."""
@@ -61,10 +68,15 @@ class TestCompileStages:
         stage_names = ["research"]
         workflow_config = {}
 
-        self.compiler.compile_stages(stage_names, workflow_config)
+        graph = self.compiler.compile_stages(stage_names, workflow_config)
 
-        # Verify create_init_node was called
-        self.state_manager.create_init_node.assert_called_once()
+        # Verify create_init_node was called exactly once with no arguments
+        self.state_manager.create_init_node.assert_called_once_with()
+
+        # Verify init node is in the graph
+        graph_structure = graph.get_graph()
+        node_names = {node.id for node in graph_structure.nodes.values()}
+        assert "__start__" in node_names, "Graph should have __start__ node"
 
     def test_compile_stages_creates_stage_nodes(self):
         """Test that compile_stages creates nodes for each stage."""
@@ -74,16 +86,28 @@ class TestCompileStages:
         stage_names = ["research", "analysis", "synthesis"]
         workflow_config = {"workflow": {}}
 
-        self.compiler.compile_stages(stage_names, workflow_config)
+        graph = self.compiler.compile_stages(stage_names, workflow_config)
 
-        # Verify create_stage_node called for each stage
-        assert self.node_builder.create_stage_node.call_count == 3
+        # Verify create_stage_node called for each stage exactly once
+        assert self.node_builder.create_stage_node.call_count == 3, \
+            f"Expected 3 stage node creations, got {self.node_builder.create_stage_node.call_count}"
 
-        # Verify called with correct stage names
+        # Verify called with correct stage names in order
         calls = self.node_builder.create_stage_node.call_args_list
-        assert calls[0][0][0] == "research"
-        assert calls[1][0][0] == "analysis"
-        assert calls[2][0][0] == "synthesis"
+        assert calls[0][0][0] == "research", "First stage should be research"
+        assert calls[1][0][0] == "analysis", "Second stage should be analysis"
+        assert calls[2][0][0] == "synthesis", "Third stage should be synthesis"
+
+        # Verify all stages passed the same workflow_config
+        for call in calls:
+            assert call[0][1] == workflow_config, "Each stage should receive workflow_config"
+
+        # Verify all stage nodes are in the compiled graph
+        graph_structure = graph.get_graph()
+        node_names = {node.id for node in graph_structure.nodes.values()}
+        assert "research" in node_names, "research node should be in graph"
+        assert "analysis" in node_names, "analysis node should be in graph"
+        assert "synthesis" in node_names, "synthesis node should be in graph"
 
     def test_compile_stages_passes_workflow_config(self):
         """Test that compile_stages passes workflow config to node builder."""
@@ -156,8 +180,25 @@ class TestSequentialEdges:
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
         # Graph should be executable (edges properly connected)
-        assert graph is not None
-        assert hasattr(graph, 'invoke')
+        assert graph is not None, "Graph should be created"
+        assert hasattr(graph, 'invoke'), "Graph should be executable"
+
+        # Verify edge structure
+        graph_structure = graph.get_graph()
+        edges = graph_structure.edges
+
+        # Should have edges: __start__ -> init -> research -> analysis -> __end__ (4 edges)
+        assert len(edges) >= 4, \
+            f"Should have at least 4 edges (start->init, init->research, research->analysis, analysis->end), got {len(edges)}"
+
+        # Verify sequential flow exists
+        edge_pairs = [(e.source, e.target) for e in edges]
+        assert any(e[0] == "__start__" for e in edge_pairs), "Should have edge from __start__"
+        assert any(e[1] == "__end__" for e in edge_pairs), "Should have edge to __end__"
+        assert any(e[0] == "research" and e[1] == "analysis" for e in edge_pairs), \
+            "Should have edge from research to analysis"
+        assert any(e[1] == "research" for e in edge_pairs), \
+            "Should have edge leading to research (from init)"
 
     def test_edges_connect_all_stages(self):
         """Test that edges connect all stages sequentially."""
@@ -171,7 +212,31 @@ class TestSequentialEdges:
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
         # Graph should be complete and executable
-        assert graph is not None
+        assert graph is not None, "Graph should be created"
+
+        # Verify all nodes and edges exist
+        graph_structure = graph.get_graph()
+        node_ids = {node.id for node in graph_structure.nodes.values()}
+        edge_pairs = [(e.source, e.target) for e in graph_structure.edges]
+
+        # Verify all stages are nodes
+        for stage in stage_names:
+            assert stage in node_ids, f"Stage {stage} should be in graph nodes"
+
+        # Verify init node exists
+        assert "init" in node_ids, "Init node should be in graph"
+
+        # Verify sequential connections (__start__ -> init -> stage1 -> stage2 -> stage3 -> stage4 -> __end__)
+        assert ("__start__", "init") in edge_pairs, "Should connect start to init"
+        assert ("init", "stage1") in edge_pairs, "Should connect init to stage1"
+        assert ("stage1", "stage2") in edge_pairs, "Should connect stage1 to stage2"
+        assert ("stage2", "stage3") in edge_pairs, "Should connect stage2 to stage3"
+        assert ("stage3", "stage4") in edge_pairs, "Should connect stage3 to stage4"
+        assert ("stage4", "__end__") in edge_pairs, "Should connect stage4 to end"
+
+        # Verify edge count (6 edges: start->init + init->s1 + s1->s2 + s2->s3 + s3->s4 + s4->end)
+        assert len(edge_pairs) == 6, \
+            f"Should have exactly 6 edges (start->init + 4 stages + end), got {len(edge_pairs)}"
 
 
 class TestCompileParallelStages:
@@ -254,13 +319,21 @@ class TestIntegrationWithRealGraph:
 
             graph = compiler.compile_stages(stage_names, workflow_config)
 
-            # Execute the graph
-            initial_state = WorkflowState(workflow_id="test-123")
+            # Execute the graph with dict input (LangGraph requires dict)
+            initial_state = {
+                "workflow_id": "test-123",
+                "current_stage": "",
+                "num_stages": 0,
+                "version": "1.0"
+            }
             result = graph.invoke(initial_state)
 
-            # Verify execution (WorkflowState may prefix workflow_id)
-            assert "workflow_id" in result
-            assert "stage_outputs" in result
+            # Verify execution
+            assert result is not None, "Graph should return a result"
+            assert "workflow_id" in result, "Result should contain workflow_id"
+            assert "stage_outputs" in result, "Result should contain stage_outputs"
+            assert result["stage_outputs"]["test_stage"] == "output", \
+                "Stage should produce expected output"
 
     def test_compile_sequential_flow_execution(self):
         """Test that sequential flow executes stages in order."""
@@ -296,17 +369,28 @@ class TestIntegrationWithRealGraph:
 
             graph = compiler.compile_stages(stage_names, workflow_config)
 
-            # Execute
-            initial_state = WorkflowState(workflow_id="test-456")
+            # Execute with dict input (LangGraph requires dict)
+            initial_state = {
+                "workflow_id": "test-456",
+                "current_stage": "",
+                "num_stages": 0,
+                "version": "1.0"
+            }
             result = graph.invoke(initial_state)
 
             # Verify sequential execution order
-            assert execution_order == ["research", "analysis", "synthesis"]
+            assert execution_order == ["research", "analysis", "synthesis"], \
+                f"Expected sequential execution, got {execution_order}"
 
             # Verify all stages executed
-            assert "research" in result["stage_outputs"]
-            assert "analysis" in result["stage_outputs"]
-            assert "synthesis" in result["stage_outputs"]
+            assert "research" in result["stage_outputs"], "research stage should execute"
+            assert "analysis" in result["stage_outputs"], "analysis stage should execute"
+            assert "synthesis" in result["stage_outputs"], "synthesis stage should execute"
+
+            # Verify outputs are correct
+            assert result["stage_outputs"]["research"] == "output_research"
+            assert result["stage_outputs"]["analysis"] == "output_analysis"
+            assert result["stage_outputs"]["synthesis"] == "output_synthesis"
 
 
 if __name__ == "__main__":

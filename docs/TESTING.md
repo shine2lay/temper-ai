@@ -546,12 +546,14 @@ mock_obj.description = "Test description"
 
 **Good:**
 ```python
-def test_cache_returns_none_for_nonexistent_key():
-    """Test that cache returns None for keys that don't exist."""
+def test_memory_backend_cache_miss():
+    """Test that cache miss returns None and updates statistics."""
+    # From: tests/test_llm_cache.py
     pass
 
-def test_agent_handles_llm_timeout_gracefully():
-    """Test agent handles LLM timeout without crashing."""
+def test_agent_execution_timeout():
+    """Test that agent execution times out after configured limit."""
+    # From: tests/test_error_handling/test_timeout_scenarios.py
     pass
 ```
 

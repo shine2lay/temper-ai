@@ -169,32 +169,29 @@ print(f"Registered policies: {', '.join(policies)}")
 
 ---
 
-##### `clear() -> None`
+##### `clear_policies() -> None`
 
 Remove all policies.
 
 **Example:**
 ```python
-composer.clear()
+composer.clear_policies()
 assert len(composer.list_policies()) == 0
 ```
 
 ---
 
-##### `set_fail_fast(enabled: bool) -> None`
+**Note:** The `fail_fast` behavior is configured in the constructor. To change fail-fast mode after creation, set the `fail_fast` attribute directly:
 
-Enable or disable fail-fast mode.
-
-**Parameters:**
-- `enabled` (bool): True to enable fail-fast, False to disable
-
-**Example:**
 ```python
-# Validate all policies even after violations
-composer.set_fail_fast(False)
+# Initialize with fail-fast disabled
+composer = PolicyComposer(fail_fast=False)
 
-# Stop after first blocking violation (faster)
-composer.set_fail_fast(True)
+# Enable fail-fast later if needed
+composer.fail_fast = True
+
+# Disable fail-fast
+composer.fail_fast = False
 ```
 
 ---

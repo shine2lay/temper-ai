@@ -21,6 +21,7 @@ This document provides practical examples of using the M4 safety system in real-
 ### Example 1: Basic Action Validation
 
 ```python
+from typing import Dict, Any
 from src.safety.policy_registry import PolicyRegistry
 from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 from src.safety.forbidden_operations import ForbiddenOperationsPolicy
@@ -51,7 +52,7 @@ context = PolicyExecutionContext(
     action_data={"path": "/tmp/output.txt", "content": "data"}
 )
 
-action = {
+action: Dict[str, Any] = {
     "type": "file_write",
     "command": "cat > /tmp/output.txt",
     "path": "/tmp/output.txt"
@@ -86,6 +87,8 @@ registry.register_policy(RateLimitPolicy())
 ### Example 3: Custom Policy Registration
 
 ```python
+from typing import Dict, Any, List
+from datetime import datetime
 from src.safety.base import BaseSafetyPolicy, ViolationSeverity, SafetyViolation
 
 class BusinessHoursPolicy(BaseSafetyPolicy):
@@ -99,10 +102,12 @@ class BusinessHoursPolicy(BaseSafetyPolicy):
     def priority(self) -> int:
         return 100  # P1
 
-    async def validate_async(self, action, context):
-        from datetime import datetime
-
-        current_hour = datetime.now().hour
+    async def validate_async(
+        self,
+        action: Dict[str, Any],
+        context: Dict[str, Any]
+    ) -> List[SafetyViolation]:
+        current_hour: int = datetime.now().hour
         if not (9 <= current_hour < 17):
             return [SafetyViolation(
                 policy_name=self.name,
@@ -128,8 +133,10 @@ registry.register_policy(
 #### Problem: Agent wants to write a file
 
 ```python
+from typing import Dict, Any
+
 # Agent action
-action = {
+action: Dict[str, Any] = {
     "type": "file_write",
     "command": "cat > /app/config/settings.json",
     "path": "/app/config/settings.json",
@@ -165,12 +172,15 @@ result = await engine.validate_action(action, context)
 #### Solution: Fix violations
 
 ```python
+from typing import Dict, Any
+from src.safety.approval_workflow import request_approval
+
 # 1. Use Write() tool instead of cat
 # 2. Remove hardcoded secret
 # 3. Request approval for config file write
 
 # Fixed action
-action = {
+action: Dict[str, Any] = {
     "type": "file_write",
     "tool": "Write",
     "path": "/app/config/settings.json",
@@ -178,7 +188,6 @@ action = {
 }
 
 # Request approval (if needed)
-from src.safety.approval_workflow import request_approval
 approval = await request_approval(
     action=action,
     context=context,
@@ -195,7 +204,9 @@ if approval.granted:
 #### Problem: Agent wants to deploy to production
 
 ```python
-action = {
+from typing import Dict, Any
+
+action: Dict[str, Any] = {
     "type": "deploy",
     "environment": "production",
     "command": "kubectl apply -f deployment.yaml"
@@ -226,6 +237,8 @@ result = await engine.validate_action(action, context)
 #### Solution: Follow approval workflow
 
 ```python
+import asyncio
+from typing import Dict, Any
 from src.safety.approval_workflow import ApprovalRequest
 
 # Step 1: Submit approval request
@@ -248,7 +261,7 @@ result = await engine.validate_action(action, context)
 
 if not result.allowed:
     # Still blocked by rate limit
-    wait_time = get_rate_limit_reset_time(context.agent_id, "deploy")
+    wait_time: int = get_rate_limit_reset_time(context.agent_id, "deploy")
     print(f"Wait {wait_time} seconds for rate limit reset")
     await asyncio.sleep(wait_time)
 
@@ -265,7 +278,9 @@ if result.allowed:
 #### Problem: Agent wants to commit changes
 
 ```python
-action = {
+from typing import Dict, Any, List
+
+action: Dict[str, Any] = {
     "type": "git_commit",
     "command": "git add . && git commit -m 'Update config'",
     "files": [
@@ -305,12 +320,14 @@ result = await engine.validate_action(action, context)
 #### Solution: Fix violations
 
 ```python
+from typing import Dict, Any
+
 # 1. Remove .env from staging
 # 2. Split into smaller commits
 # 3. Add .gitignore entry
 
 # Fixed action - first commit
-action_1 = {
+action_1: Dict[str, Any] = {
     "type": "git_commit",
     "command": "git add src/app.py requirements.txt && git commit -m 'Update app dependencies'",
     "files": ["src/app.py", "requirements.txt"]
@@ -320,7 +337,7 @@ result_1 = await engine.validate_action(action_1, context)
 # ✅ Passes
 
 # Second commit
-action_2 = {
+action_2: Dict[str, Any] = {
     "type": "git_commit",
     "command": "git add config/database.yaml && git commit -m 'Update database config'",
     "files": ["config/database.yaml"]
@@ -330,7 +347,7 @@ result_2 = await engine.validate_action(action_2, context)
 # ✅ Passes
 
 # Add .gitignore entry (separate action)
-action_3 = {
+action_3: Dict[str, Any] = {
     "type": "file_write",
     "tool": "Edit",
     "path": ".gitignore",
@@ -344,7 +361,9 @@ action_3 = {
 #### Problem: Agent wants to delete database records
 
 ```python
-action = {
+from typing import Dict, Any
+
+action: Dict[str, Any] = {
     "type": "db_delete",
     "command": "DELETE FROM users WHERE last_login < '2024-01-01'",
     "table": "users",
@@ -376,14 +395,17 @@ result = await engine.validate_action(action, context)
 #### Solution: Backup and approval workflow
 
 ```python
+from typing import Dict, Any
+
 # Step 1: Create backup
-backup_action = {
+backup_action: Dict[str, Any] = {
     "type": "db_backup",
     "command": "pg_dump users > /backups/users_$(date +%Y%m%d).sql",
     "table": "users"
 }
 
 backup_result = await engine.validate_action(backup_action, context)
+backup_id: str
 if backup_result.allowed:
     backup_id = await execute_backup(backup_action)
 
@@ -567,13 +589,16 @@ global_policies:
 ### Pattern 1: Agent Executor Integration
 
 ```python
+from typing import Dict, Any
+from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+
 class AgentExecutor:
     """Agent executor with integrated safety validation."""
 
-    def __init__(self, policy_engine: ActionPolicyEngine):
+    def __init__(self, policy_engine: ActionPolicyEngine) -> None:
         self.policy_engine = policy_engine
 
-    async def execute_action(self, action: Dict[str, Any], context: PolicyExecutionContext):
+    async def execute_action(self, action: Dict[str, Any], context: PolicyExecutionContext) -> Any:
         """Execute action with pre-execution safety validation."""
 
         # PRE-EXECUTION: Validate with policy engine
@@ -625,7 +650,7 @@ class AgentExecutor:
             )
             raise
 
-    async def _execute_action_impl(self, action: Dict[str, Any]):
+    async def _execute_action_impl(self, action: Dict[str, Any]) -> Any:
         """Actual action execution logic."""
         # Implementation here
         pass
@@ -634,15 +659,17 @@ class AgentExecutor:
 ### Pattern 2: Workflow Integration
 
 ```python
+from typing import Callable, Any
 from langgraph.graph import StateGraph
+from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 
 class SafeWorkflowBuilder:
     """Build LangGraph workflows with safety validation."""
 
-    def __init__(self, policy_engine: ActionPolicyEngine):
+    def __init__(self, policy_engine: ActionPolicyEngine) -> None:
         self.policy_engine = policy_engine
 
-    def build_workflow(self):
+    def build_workflow(self) -> Any:
         workflow = StateGraph(WorkflowState)
 
         # Add safety validation node before each action stage
@@ -664,10 +691,10 @@ class SafeWorkflowBuilder:
 
         return workflow.compile()
 
-    def _create_validation_node(self, stage_name: str):
+    def _create_validation_node(self, stage_name: str) -> Callable:
         """Create safety validation node for a stage."""
 
-        async def validate_node(state: WorkflowState):
+        async def validate_node(state: WorkflowState) -> WorkflowState:
             # Get planned action for this stage
             action = state.stage_outputs.get(f"{stage_name}_planned_action")
 
@@ -697,17 +724,22 @@ class SafeWorkflowBuilder:
 ### Pattern 3: Observability Integration
 
 ```python
+from typing import Any, Dict, List
+from datetime import datetime, timezone
+from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from src.safety.interfaces import SafetyViolation, ViolationSeverity
+
 class ObservabilityIntegration:
     """Integrate policy violations with observability system."""
 
-    def __init__(self, policy_engine: ActionPolicyEngine, observability_db):
+    def __init__(self, policy_engine: ActionPolicyEngine, observability_db: Any) -> None:
         self.policy_engine = policy_engine
         self.db = observability_db
 
         # Hook into policy engine
         self.policy_engine.add_violation_callback(self._log_violation)
 
-    async def _log_violation(self, violation: SafetyViolation, context: PolicyExecutionContext):
+    async def _log_violation(self, violation: SafetyViolation, context: PolicyExecutionContext) -> None:
         """Log violation to observability database."""
 
         await self.db.insert("safety_violations", {
@@ -727,12 +759,12 @@ class ObservabilityIntegration:
         if violation.severity == ViolationSeverity.CRITICAL:
             await self._send_alert(violation, context)
 
-    async def _send_alert(self, violation: SafetyViolation, context: PolicyExecutionContext):
+    async def _send_alert(self, violation: SafetyViolation, context: PolicyExecutionContext) -> None:
         """Send alert for critical violation."""
         # Implementation: Slack, PagerDuty, etc.
         pass
 
-    async def get_violation_trends(self, hours: int = 24):
+    async def get_violation_trends(self, hours: int = 24) -> List[Dict[str, Any]]:
         """Get violation trends over time."""
 
         query = """
@@ -757,7 +789,9 @@ class ObservabilityIntegration:
 ### Example 1: Graceful Degradation
 
 ```python
-async def execute_with_fallback(action, context):
+from typing import Dict, Any, Optional
+
+async def execute_with_fallback(action: Dict[str, Any], context: PolicyExecutionContext) -> Any:
     """Execute action with fallback on policy failure."""
 
     try:
@@ -768,7 +802,7 @@ async def execute_with_fallback(action, context):
             return await execute_action(action)
         else:
             # Try alternative action
-            alternative = create_alternative_action(action, result.violations)
+            alternative: Optional[Dict[str, Any]] = create_alternative_action(action, result.violations)
             if alternative:
                 alt_result = await engine.validate_action(alternative, context)
                 if alt_result.allowed:
@@ -793,7 +827,15 @@ async def execute_with_fallback(action, context):
 ### Example 2: Retry with Backoff
 
 ```python
-async def validate_with_retry(action, context, max_retries=3):
+import asyncio
+from typing import Dict, Any
+from src.safety.action_policy_engine import PolicyExecutionContext, EnforcementResult
+
+async def validate_with_retry(
+    action: Dict[str, Any],
+    context: PolicyExecutionContext,
+    max_retries: int = 3
+) -> EnforcementResult:
     """Validate action with exponential backoff on transient errors."""
 
     for attempt in range(max_retries):
@@ -806,7 +848,7 @@ async def validate_with_retry(action, context, max_retries=3):
                 raise
 
             # Exponential backoff
-            wait_time = 2 ** attempt
+            wait_time: int = 2 ** attempt
             logger.warning(f"Validation failed, retrying in {wait_time}s: {e}")
             await asyncio.sleep(wait_time)
 
@@ -817,14 +859,20 @@ async def validate_with_retry(action, context, max_retries=3):
 ### Example 3: Partial Validation
 
 ```python
-async def validate_batch_actions(actions, context):
+from typing import Dict, Any, List
+from src.safety.action_policy_engine import PolicyExecutionContext, EnforcementResult
+
+async def validate_batch_actions(
+    actions: List[Dict[str, Any]],
+    context: PolicyExecutionContext
+) -> List[Dict[str, Any]]:
     """Validate batch of actions, continue on individual failures."""
 
-    results = []
+    results: List[Dict[str, Any]] = []
 
     for i, action in enumerate(actions):
         try:
-            result = await engine.validate_action(action, context)
+            result: EnforcementResult = await engine.validate_action(action, context)
             results.append({"index": i, "action": action, "result": result})
 
         except Exception as e:
@@ -847,12 +895,15 @@ async def validate_batch_actions(actions, context):
 ### Example 1: Unit Test for Policy Validation
 
 ```python
+from typing import Dict, Any
 import pytest
 from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 from src.safety.policy_registry import PolicyRegistry
+from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+from src.safety.interfaces import ViolationSeverity
 
 @pytest.fixture
-def engine():
+def engine() -> ActionPolicyEngine:
     """Create policy engine with test policies."""
     registry = PolicyRegistry()
 
@@ -865,10 +916,10 @@ def engine():
     return ActionPolicyEngine(registry)
 
 @pytest.mark.asyncio
-async def test_forbidden_command_blocked(engine):
+async def test_forbidden_command_blocked(engine: ActionPolicyEngine) -> None:
     """Test that forbidden commands are blocked."""
 
-    action = {
+    action: Dict[str, Any] = {
         "type": "bash_command",
         "command": "rm -rf /"
     }
@@ -886,10 +937,10 @@ async def test_forbidden_command_blocked(engine):
     assert "rm -rf" in result.violations[0].message
 
 @pytest.mark.asyncio
-async def test_safe_command_allowed(engine):
+async def test_safe_command_allowed(engine: ActionPolicyEngine) -> None:
     """Test that safe commands are allowed."""
 
-    action = {
+    action: Dict[str, Any] = {
         "type": "bash_command",
         "command": "ls -la"
     }
@@ -908,13 +959,18 @@ async def test_safe_command_allowed(engine):
 ### Example 2: Integration Test with Agent Executor
 
 ```python
+from typing import Dict, Any
+import pytest
+from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from src.safety.interfaces import ViolationSeverity
+
 @pytest.mark.asyncio
-async def test_agent_executor_blocks_unsafe_action(policy_engine):
+async def test_agent_executor_blocks_unsafe_action(policy_engine: ActionPolicyEngine) -> None:
     """Test that agent executor blocks unsafe actions."""
 
     executor = AgentExecutor(policy_engine)
 
-    unsafe_action = {
+    unsafe_action: Dict[str, Any] = {
         "type": "file_write",
         "command": "cat > /etc/passwd",
         "path": "/etc/passwd"
@@ -936,13 +992,16 @@ async def test_agent_executor_blocks_unsafe_action(policy_engine):
 ### Example 3: Performance Test
 
 ```python
+from typing import Dict, Any
+import time
+import pytest
+from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+
 @pytest.mark.asyncio
-async def test_policy_engine_performance(engine):
+async def test_policy_engine_performance(engine: ActionPolicyEngine) -> None:
     """Test that policy validation is fast (<10ms per action)."""
 
-    import time
-
-    action = {
+    action: Dict[str, Any] = {
         "type": "file_read",
         "path": "/tmp/test.txt"
     }
@@ -956,12 +1015,12 @@ async def test_policy_engine_performance(engine):
     await engine.validate_action(action, context)
 
     # Measure 100 validations
-    start = time.time()
+    start: float = time.time()
     for _ in range(100):
         result = await engine.validate_action(action, context)
-    end = time.time()
+    end: float = time.time()
 
-    avg_time_ms = (end - start) * 1000 / 100
+    avg_time_ms: float = (end - start) * 1000 / 100
 
     assert avg_time_ms < 10, f"Average validation time {avg_time_ms}ms exceeds 10ms target"
 ```

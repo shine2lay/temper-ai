@@ -101,7 +101,9 @@ Central enforcement layer that orchestrates policy validation.
 
 **Configuration:**
 ```python
-config = {
+from typing import Dict, Any
+
+config: Dict[str, Any] = {
     "cache_ttl": 60,                    # Cache results for 60 seconds
     "max_cache_size": 1000,             # Max cached results
     "enable_caching": True,             # Enable caching
@@ -130,7 +132,11 @@ Manages policy registration and lookup by action type.
 
 **Example:**
 ```python
+from typing import List
 from src.safety.policy_registry import PolicyRegistry
+from src.safety.file_access import FileAccessPolicy
+from src.safety.circuit_breaker import CircuitBreakerPolicy
+from src.safety.interfaces import SafetyPolicy
 
 registry = PolicyRegistry()
 
@@ -144,7 +150,7 @@ registry.register_policy(
 registry.register_policy(CircuitBreakerPolicy())
 
 # Get policies for action
-policies = registry.get_policies_for_action("file_write")
+policies: List[SafetyPolicy] = registry.get_policies_for_action("file_write")
 # Returns: [P0 policies, P1 policies, P2 policies] in priority order
 ```
 
@@ -163,7 +169,10 @@ Composes multiple policies for unified validation.
 
 **Example:**
 ```python
+from typing import Dict, Any
 from src.safety.composition import PolicyComposer
+from src.safety.file_access import FileAccessPolicy
+from src.safety.forbidden_operations import ForbiddenOperationsPolicy
 
 composer = PolicyComposer(fail_fast=True, enable_reporting=True)
 composer.add_policy(FileAccessPolicy())
@@ -200,6 +209,7 @@ Blocks dangerous bash operations and forbidden patterns.
 
 **Example:**
 ```python
+from typing import Dict, Any
 from src.safety.forbidden_operations import ForbiddenOperationsPolicy
 
 policy = ForbiddenOperationsPolicy()
@@ -214,7 +224,9 @@ result = policy.validate(
 
 **Configuration:**
 ```python
-config = {
+from typing import Dict, Any, List
+
+config: Dict[str, Any] = {
     "check_file_writes": True,          # Detect bash file operations
     "check_dangerous_commands": True,   # Detect dangerous commands
     "check_injection_patterns": True,   # Detect command injection
@@ -447,10 +459,11 @@ See [POLICY_CONFIGURATION_GUIDE.md](./POLICY_CONFIGURATION_GUIDE.md) for complet
 ### Pre-Execution Validation (Agent Executor)
 
 ```python
+from typing import Dict, Any
 from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 
 class AgentExecutor:
-    def __init__(self, policy_engine: ActionPolicyEngine, ...):
+    def __init__(self, policy_engine: ActionPolicyEngine, ...) -> None:
         self.policy_engine = policy_engine
 
     async def execute_action(self, action: Dict[str, Any]) -> Any:
@@ -481,6 +494,7 @@ class AgentExecutor:
 ### Service Initialization
 
 ```python
+from typing import Dict, Any
 from src.safety.action_policy_engine import ActionPolicyEngine
 from src.safety.policy_registry import PolicyRegistry
 
@@ -488,6 +502,7 @@ from src.safety.policy_registry import PolicyRegistry
 registry = PolicyRegistry()
 
 # Create policy engine
+engine_config: Dict[str, Any] = {}  # Your configuration here
 engine = ActionPolicyEngine(registry, config=engine_config)
 
 # Use the engine and registry in your application
@@ -503,8 +518,10 @@ engine = ActionPolicyEngine(registry, config=engine_config)
 All violations are logged to the observability system:
 
 ```python
+from typing import Dict, Any
+
 # Logged for each violation
-{
+violation_log: Dict[str, Any] = {
     "agent_id": "agent-123",
     "workflow_id": "wf-456",
     "stage_id": "research",
@@ -522,7 +539,9 @@ All violations are logged to the observability system:
 Engine metrics available via `engine.get_metrics()`:
 
 ```python
-{
+from typing import Dict, Any
+
+metrics: Dict[str, Any] = {
     "validations_performed": 1500,
     "violations_logged": 45,
     "cache_size": 234,
@@ -609,11 +628,12 @@ SafetyViolationException (base)
 **SafetyViolationException** - Base exception for all safety violations
 
 ```python
+from typing import Any
 from src.safety.exceptions import SafetyViolationException
 
 try:
     # Execute action
-    result = agent.execute(action)
+    result: Any = agent.execute(action)
 except SafetyViolationException as e:
     print(f"Severity: {e.severity.name}")
     print(f"Policy: {e.policy_name}")
@@ -626,13 +646,14 @@ except SafetyViolationException as e:
 **BlastRadiusViolation** - Too many files/changes affected
 
 ```python
+from typing import Dict, Any, List
 from src.safety.exceptions import BlastRadiusViolation
 
 try:
     modify_files(large_file_list)
 except BlastRadiusViolation as e:
     # Split into smaller batches
-    metadata = e.metadata
+    metadata: Dict[str, Any] = e.metadata
     print(f"Limit: {metadata['limit']}, Attempted: {metadata['files_affected']}")
     # Remediation: e.remediation_hint suggests splitting changes
 ```
@@ -640,67 +661,78 @@ except BlastRadiusViolation as e:
 **ActionPolicyViolation** - Forbidden action/tool
 
 ```python
+from typing import Dict, Any
 from src.safety.exceptions import ActionPolicyViolation
 
 try:
     execute_tool("forbidden_shell_command")
 except ActionPolicyViolation as e:
     # Use approved alternative
-    print(f"Forbidden: {e.metadata.get('forbidden_tool')}")
-    print(f"Reason: {e.metadata.get('reason')}")
+    metadata: Dict[str, Any] = e.metadata
+    print(f"Forbidden: {metadata.get('forbidden_tool')}")
+    print(f"Reason: {metadata.get('reason')}")
 ```
 
 **RateLimitViolation** - Rate limit exceeded
 
 ```python
+import time
+from typing import Dict, Any
 from src.safety.exceptions import RateLimitViolation
 
 try:
     make_api_call()
 except RateLimitViolation as e:
     # Wait and retry
-    retry_after = e.metadata.get('retry_after', 60)
+    metadata: Dict[str, Any] = e.metadata
+    retry_after: int = metadata.get('retry_after', 60)
     time.sleep(retry_after)
 ```
 
 **ResourceLimitViolation** - Resource quota exceeded
 
 ```python
+from typing import Dict, Any, Optional
 from src.safety.exceptions import ResourceLimitViolation
 
 try:
     load_large_dataset()
 except ResourceLimitViolation as e:
     # Process in chunks
-    resource = e.metadata.get('resource')  # e.g., "memory"
-    limit = e.metadata.get('limit')
+    metadata: Dict[str, Any] = e.metadata
+    resource: Optional[str] = metadata.get('resource')  # e.g., "memory"
+    limit: Optional[int] = metadata.get('limit')
     # Remediation: reduce resource consumption
 ```
 
 **ForbiddenOperationViolation** - Dangerous operation blocked
 
 ```python
+from typing import Dict, Any, Optional
 from src.safety.exceptions import ForbiddenOperationViolation
 
 try:
     access_secrets()
 except ForbiddenOperationViolation as e:
     # Use secure alternative
-    operation = e.metadata.get('operation')  # e.g., "secret_access"
+    metadata: Dict[str, Any] = e.metadata
+    operation: Optional[str] = metadata.get('operation')  # e.g., "secret_access"
     # Remediation: use secrets management API
 ```
 
 **AccessDeniedViolation** - Path/resource access denied
 
 ```python
+from typing import Dict, Any, List, Optional
 from src.safety.exceptions import AccessDeniedViolation
 
 try:
     read_file("/etc/passwd")
 except AccessDeniedViolation as e:
     # Restrict to allowed paths
-    allowed_paths = e.metadata.get('allowed_paths', [])
-    denied_path = e.metadata.get('path')
+    metadata: Dict[str, Any] = e.metadata
+    allowed_paths: List[str] = metadata.get('allowed_paths', [])
+    denied_path: Optional[str] = metadata.get('path')
 ```
 
 #### Generic Exception Handling
@@ -708,6 +740,10 @@ except AccessDeniedViolation as e:
 For policy execution errors (not violations):
 
 ```python
+from typing import Dict, Any
+from src.safety.interfaces import SafetyViolation, ViolationSeverity
+from src.safety.exceptions import SafetyViolationException
+
 try:
     result = await policy.validate_async(action, context)
 except SafetyViolationException:
@@ -786,7 +822,10 @@ See [CUSTOM_POLICY_DEVELOPMENT.md](./CUSTOM_POLICY_DEVELOPMENT.md) for developme
 Test individual policies:
 
 ```python
-def test_forbidden_operations_blocks_cat_redirect():
+from typing import Dict, Any
+from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+
+def test_forbidden_operations_blocks_cat_redirect() -> None:
     policy = ForbiddenOperationsPolicy()
 
     result = policy.validate(
@@ -803,8 +842,14 @@ def test_forbidden_operations_blocks_cat_redirect():
 Test policy engine with multiple policies:
 
 ```python
+from typing import Dict, Any
+import pytest
+from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from src.safety.policy_registry import PolicyRegistry
+from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+
 @pytest.mark.asyncio
-async def test_engine_blocks_on_critical_violation():
+async def test_engine_blocks_on_critical_violation() -> None:
     registry = PolicyRegistry()
     registry.register_policy(
         ForbiddenOperationsPolicy(),
@@ -827,15 +872,20 @@ async def test_engine_blocks_on_critical_violation():
 Test full agent executor integration:
 
 ```python
+from typing import Dict, Any
+import pytest
+
 @pytest.mark.asyncio
-async def test_agent_executor_blocks_unsafe_action():
+async def test_agent_executor_blocks_unsafe_action() -> None:
     executor = AgentExecutor(...)
 
+    unsafe_action: Dict[str, Any] = {
+        "type": "bash_command",
+        "command": "cat > file.txt"
+    }
+
     with pytest.raises(SafetyViolationError):
-        await executor.execute_action({
-            "type": "bash_command",
-            "command": "cat > file.txt"
-        })
+        await executor.execute_action(unsafe_action)
 ```
 
 ---

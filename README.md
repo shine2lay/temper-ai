@@ -164,6 +164,7 @@ python examples/run_multi_agent_workflow.py debate-decision
 
 1. **Clone the repository:**
 ```bash
+# Replace 'yourusername' with your GitHub username or organization
 git clone https://github.com/yourusername/meta-autonomous-framework.git
 cd meta-autonomous-framework
 ```

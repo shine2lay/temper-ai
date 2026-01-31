@@ -1677,19 +1677,67 @@ class CustomCache(CacheBackend):
 
 ### Agent Response
 
+Response object returned from agent execution.
+
+**Fields:**
+- `output: str` - Final text output from the agent (required)
+- `reasoning: Optional[str]` - Extracted reasoning/thought process
+- `tool_calls: List[Dict[str, Any]]` - List of tool calls made during execution
+- `metadata: Dict[str, Any]` - Additional execution metadata
+- `tokens: int` - Total tokens used (prompt + completion)
+- `estimated_cost_usd: float` - Estimated cost in USD
+- `latency_seconds: float` - Execution time in seconds
+- `error: Optional[str]` - Error message if execution failed
+- `confidence: Optional[float]` - Confidence score (0.0 to 1.0), auto-calculated if not provided
+
 ```python
 from src.agents import AgentResponse
 
+# Create response with all fields
 response = AgentResponse(
     output="Agent response text",
+    reasoning="I analyzed the data and found...",
+    tool_calls=[
+        {"tool": "calculator", "input": "2+2", "output": "4"}
+    ],
     metadata={
         "model": "llama3.2:3b",
-        "tokens": 150,
-        "duration_ms": 1200
+        "provider": "ollama"
     },
-    tool_calls=[],
-    error=None
+    tokens=150,
+    estimated_cost_usd=0.0001,
+    latency_seconds=1.2,
+    error=None,
+    confidence=0.95
 )
+
+# Access fields
+print(response.output)  # "Agent response text"
+print(response.reasoning)  # "I analyzed the data and found..."
+print(response.tokens)  # 150
+print(response.confidence)  # 0.95
+
+# Confidence is auto-calculated if not provided
+response_auto = AgentResponse(
+    output="Result",
+    tokens=100,
+    latency_seconds=0.8
+)
+print(response_auto.confidence)  # Auto-calculated based on execution metrics
+```
+
+**Confidence Auto-Calculation:**
+
+When `confidence` is not explicitly provided, it's automatically calculated based on:
+- Error presence (0.0 if error exists)
+- Token usage patterns
+- Latency indicators
+- Tool call success rates
+
+```python
+# Confidence auto-calculated
+response = AgentResponse(output="Analysis complete", tokens=200)
+# confidence field will be automatically set based on execution metrics
 ```
 
 ### Tool Result

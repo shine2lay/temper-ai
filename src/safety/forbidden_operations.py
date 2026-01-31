@@ -33,6 +33,18 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
         custom_forbidden_patterns: Additional regex patterns to block
         whitelist_commands: Specific commands to allow despite matching patterns
 
+    Security Considerations:
+        This policy uses bounded quantifiers (e.g., {0,200}) in regex patterns to prevent
+        ReDoS (Regular Expression Denial of Service) attacks. As a result:
+
+        - Commands with >200 characters between the command and redirect may evade detection
+        - This is an acceptable security tradeoff: ReDoS prevention > pattern completeness
+        - Attackers would need to intentionally craft unusually long commands to bypass
+        - Most legitimate commands are well under 200 characters
+
+        For extremely long commands, consider using the whitelist feature or refactoring
+        to use dedicated file operation tools (Write/Edit/Read).
+
     Example:
         >>> config = {
         ...     "check_file_writes": True,
@@ -63,17 +75,23 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
             "severity": ViolationSeverity.CRITICAL
         },
         "echo_redirect": {
-            "pattern": r"\becho\s+[^|]*\s*>(?!>)",
+            # SECURITY FIX: Simplified pattern to prevent ReDoS - requires filename with extension
+            # Use bounded repetition {0,200} instead of .* to prevent scanning huge strings
+            "pattern": r"\becho\s+.{0,200}>\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
             "message": "Use Write() tool instead of 'echo >' for file operations",
             "severity": ViolationSeverity.CRITICAL
         },
         "echo_append": {
-            "pattern": r"\becho\s+[^|]*\s*>>",
+            # SECURITY FIX: Simplified pattern to prevent ReDoS - requires filename with extension
+            # Use bounded repetition {0,200} instead of .* to prevent scanning huge strings
+            "pattern": r"\becho\s+.{0,200}>>\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
             "message": "Use Edit() tool instead of 'echo >>' for file operations",
             "severity": ViolationSeverity.CRITICAL
         },
         "printf_redirect": {
-            "pattern": r"\bprintf\s+[^|]*\s*>>?",
+            # SECURITY FIX: Simplified pattern to prevent ReDoS - requires filename with extension
+            # Use bounded repetition {0,200} instead of .* to prevent scanning huge strings
+            "pattern": r"\bprintf\s+.{0,200}>>?\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
             "message": "Use Write() tool instead of 'printf >' for file operations",
             "severity": ViolationSeverity.CRITICAL
         },
@@ -93,9 +111,16 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
             "severity": ViolationSeverity.CRITICAL
         },
         "redirect_output": {
-            "pattern": r"(?<!#)(?<!test\s)(?<!if\s)(?<!while\s)[^|]*\s*>\s*[^&>\s|]+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)",
+            # SECURITY FIX: Simplified pattern to prevent ReDoS vulnerability
+            # Original pattern had nested quantifiers [^|]* and [^&>\s|]+ causing
+            # catastrophic backtracking on inputs like "echo " + "a"*10000 + " >"
+            #
+            # New approach: Simple pattern + context validation in Python code
+            # Pattern just detects "> filename.ext", context check handles exclusions
+            "pattern": r">\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
             "message": "Use Write() tool instead of shell redirection for file operations",
-            "severity": ViolationSeverity.HIGH
+            "severity": ViolationSeverity.HIGH,
+            "requires_context_check": True  # Validate context separately
         }
     }
 
@@ -107,7 +132,8 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
             "severity": ViolationSeverity.CRITICAL
         },
         "rm_root_dirs": {
-            "pattern": r"\brm\s+[^-]*(/|/\*|/home|/usr|/etc|/var|/bin|/sbin|/lib)",
+            # SECURITY FIX: Bounded quantifier to prevent ReDoS
+            "pattern": r"\brm\s+[^-]{0,200}(/|/\*|/home|/usr|/etc|/var|/bin|/sbin|/lib)",
             "message": "Attempting to delete system directories",
             "severity": ViolationSeverity.CRITICAL
         },
@@ -161,7 +187,8 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
     # Command injection patterns
     INJECTION_PATTERNS = {
         "semicolon_injection": {
-            "pattern": r";.*(\brm\b|\bmv\b|\bchmod\b|\bwget\b|\bcurl\b)",
+            # SECURITY FIX: Bounded quantifier to prevent ReDoS
+            "pattern": r";.{0,500}(\brm\b|\bmv\b|\bchmod\b|\bwget\b|\bcurl\b)",
             "message": "Potential command injection via semicolon",
             "severity": ViolationSeverity.HIGH
         },
@@ -190,12 +217,14 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
             "severity": ViolationSeverity.HIGH
         },
         "ssh_no_check": {
-            "pattern": r"ssh\s+.*-o\s+StrictHostKeyChecking=no",
+            # SECURITY FIX: Bounded quantifier to prevent ReDoS
+            "pattern": r"ssh\s+.{0,200}-o\s+StrictHostKeyChecking=no",
             "message": "Disabling SSH host key checking is insecure",
             "severity": ViolationSeverity.HIGH
         },
         "sudo_no_password": {
-            "pattern": r"sudo\s+.*NOPASSWD",
+            # SECURITY FIX: Bounded quantifier to prevent ReDoS
+            "pattern": r"sudo\s+.{0,200}NOPASSWD",
             "message": "Passwordless sudo configuration detected",
             "severity": ViolationSeverity.MEDIUM
         }
@@ -231,7 +260,8 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
                     "regex": re.compile(info["pattern"], re.IGNORECASE),
                     "message": info["message"],
                     "severity": info["severity"],
-                    "category": "file_write"
+                    "category": "file_write",
+                    "requires_context_check": info.get("requires_context_check", False)
                 }
                 for name, info in self.FILE_WRITE_PATTERNS.items()
             })
@@ -333,6 +363,45 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
         command_lower = command.lower().strip()
         return any(wl in command_lower for wl in self.whitelist_commands)
 
+    def _validate_redirect_context(self, command: str, match: re.Match) -> bool:
+        """Validate that a redirect match is not in an excluded context.
+
+        This method provides additional validation for the redirect_output pattern
+        to handle exclusions that are difficult to express in regex without
+        causing ReDoS vulnerabilities.
+
+        Args:
+            command: Full command string
+            match: Regex match object for the redirect pattern
+
+        Returns:
+            True if this is a forbidden redirect (violation)
+            False if this redirect should be excluded (comment, test, control flow, etc.)
+        """
+        # Get the line containing the match
+        line_start = command.rfind('\n', 0, match.start()) + 1
+        line = command[line_start:match.end()]
+
+        # Exclude comments (line starts with #)
+        if line.lstrip().startswith('#'):
+            return False
+
+        # Exclude test commands
+        if re.match(r'\s*test\s+', line, re.IGNORECASE):
+            return False
+
+        # Exclude control flow (if/while)
+        if re.match(r'\s*(if|while)\s+', line, re.IGNORECASE):
+            return False
+
+        # Exclude piped commands (has | before > on the same line)
+        before_redirect = command[line_start:match.start()]
+        if '|' in before_redirect:
+            return False
+
+        # This is a forbidden redirect
+        return True
+
     def validate(
         self,
         action: Dict[str, Any],
@@ -372,6 +441,14 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
         for pattern_name, pattern_info in self.compiled_patterns.items():
             match = pattern_info["regex"].search(command)
             if match:
+                # Check if pattern requires additional context validation
+                if pattern_info.get("requires_context_check"):
+                    # For redirect_output, validate the context
+                    if pattern_name == "file_write_redirect_output":
+                        if not self._validate_redirect_context(command, match):
+                            # Excluded context (comment, test, if, while, pipe)
+                            continue
+
                 violation = SafetyViolation(
                     policy_name=self.name,
                     severity=pattern_info["severity"],

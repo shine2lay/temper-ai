@@ -32,7 +32,7 @@ from src.compiler.config_loader import ConfigLoader
 from src.compiler.langgraph_compiler import LangGraphCompiler
 from src.observability.tracker import ExecutionTracker
 from src.observability.database import init_database
-from src.observability.visualize_trace import create_gantt_chart, print_console_gantt
+from src.observability.visualize_trace import create_hierarchical_gantt as create_gantt_chart, print_console_gantt
 
 console = Console()
 
@@ -134,7 +134,7 @@ def run_parallel_research():
 
                 # Generate HTML Gantt chart
                 html_path = f"m3_parallel_research_{tracker.execution_id}.html"
-                create_gantt_chart(trace, html_path)
+                create_gantt_chart(trace, output_file=html_path)
                 console.print(f"\n[green]✓ Gantt chart saved to:[/green] {html_path}")
 
     except Exception as e:
@@ -204,7 +204,7 @@ def run_debate_decision():
 
                 # Generate HTML Gantt chart
                 html_path = f"m3_debate_decision_{tracker.execution_id}.html"
-                create_gantt_chart(trace, html_path)
+                create_gantt_chart(trace, output_file=html_path)
                 console.print(f"\n[green]✓ Gantt chart saved to:[/green] {html_path}")
 
     except Exception as e:

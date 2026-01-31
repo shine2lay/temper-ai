@@ -234,10 +234,19 @@ xdg-open htmlcov/index.html  # Linux
 
 ### Parallel Execution
 
-```bash
-# Install pytest-xdist
-pip install pytest-xdist
+**Note:** `pytest-xdist` is included in dev dependencies. If not already installed:
 
+```bash
+# Install dev dependencies (includes pytest-xdist)
+pip install -e '.[dev]'
+
+# Or install pytest-xdist separately
+pip install pytest-xdist
+```
+
+**Run tests in parallel:**
+
+```bash
 # Run tests in parallel (4 workers)
 pytest -n 4
 

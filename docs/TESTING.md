@@ -856,6 +856,24 @@ pytest -m integration
 
 ## Coverage Goals
 
+### Current Coverage
+
+**Last measured:** January 2026
+
+- **Overall coverage:** 66.4% *(Goal: 80%, Gap: 13.6%)*
+- **Critical paths:** ~75% *(Goal: 90%, Gap: 15%)*
+- **Recent improvements:** +8% from security test additions
+
+**Update metrics:**
+```bash
+# Run full coverage report
+pytest --cov=src --cov-report=term-missing tests/
+
+# Generate HTML report for detailed analysis
+pytest --cov=src --cov-report=html tests/
+# View: open htmlcov/index.html
+```
+
 ### Targets
 
 - **Overall coverage:** > 80%

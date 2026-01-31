@@ -708,41 +708,6 @@ for snap in snapshots:
 
 ---
 
-##### `delete_snapshot(snapshot_id: str) -> bool`
-
-Delete a snapshot.
-
-**Parameters:**
-- `snapshot_id` (str): Snapshot ID
-
-**Returns:**
-- `bool`: True if deleted, False if not found
-
-**Example:**
-```python
-deleted = manager.delete_snapshot(snapshot_id)
-```
-
----
-
-##### `cleanup_old_snapshots(max_age_hours: int = 24) -> int`
-
-Delete snapshots older than max_age_hours.
-
-**Parameters:**
-- `max_age_hours` (int, default=24): Maximum age in hours
-
-**Returns:**
-- `int`: Number of snapshots deleted
-
-**Example:**
-```python
-deleted = manager.cleanup_old_snapshots(max_age_hours=12)
-print(f"Cleaned up {deleted} old snapshots")
-```
-
----
-
 ##### `get_history() -> List[RollbackResult]`
 
 Get rollback execution history.

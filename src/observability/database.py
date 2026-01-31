@@ -1,6 +1,7 @@
 """Database connection and session management."""
 from contextlib import contextmanager
 from typing import Generator, Optional
+from enum import Enum
 import logging
 import threading
 from sqlmodel import SQLModel, create_engine, Session
@@ -10,6 +11,23 @@ from sqlalchemy import text
 import os
 
 logger = logging.getLogger(__name__)
+
+
+class IsolationLevel(str, Enum):
+    """Database transaction isolation levels.
+
+    Isolation levels control how transactions handle concurrent access:
+    - READ_UNCOMMITTED: Lowest isolation, allows dirty reads
+    - READ_COMMITTED: Prevents dirty reads (default for most databases)
+    - REPEATABLE_READ: Prevents non-repeatable reads
+    - SERIALIZABLE: Highest isolation, prevents all anomalies
+
+    Reference: https://www.postgresql.org/docs/current/transaction-iso.html
+    """
+    READ_UNCOMMITTED = "READ UNCOMMITTED"
+    READ_COMMITTED = "READ COMMITTED"
+    REPEATABLE_READ = "REPEATABLE READ"
+    SERIALIZABLE = "SERIALIZABLE"
 
 
 class DatabaseManager:
@@ -62,16 +80,55 @@ class DatabaseManager:
         SQLModel.metadata.drop_all(self.engine)
 
     @contextmanager
-    def session(self) -> Generator[Session, None, None]:
-        """Context manager for database sessions.
+    def session(
+        self,
+        isolation_level: Optional[IsolationLevel] = None
+    ) -> Generator[Session, None, None]:
+        """Context manager for database sessions with configurable isolation.
+
+        Args:
+            isolation_level: Transaction isolation level. If None, uses database default
+                           (typically READ COMMITTED). Use SERIALIZABLE for operations
+                           requiring strict consistency under concurrent access.
 
         Usage:
+            # Default isolation (READ COMMITTED)
             with db_manager.session() as session:
                 workflow = WorkflowExecution(...)
                 session.add(workflow)
                 session.commit()
+
+            # SERIALIZABLE for critical operations
+            with db_manager.session(isolation_level=IsolationLevel.SERIALIZABLE) as session:
+                # Concurrent-safe operations
+                result = session.execute(...)
+                session.commit()
+
+        Note:
+            SERIALIZABLE isolation may result in serialization failures under high
+            contention. Application code should implement retry logic for such failures.
         """
         session = Session(self.engine)
+
+        # Set isolation level if specified
+        if isolation_level:
+            try:
+                if self.database_url.startswith("sqlite"):
+                    # SQLite supports SERIALIZABLE via IMMEDIATE transactions
+                    if isolation_level == IsolationLevel.SERIALIZABLE:
+                        session.execute(text("BEGIN IMMEDIATE"))
+                    # Other isolation levels not fully supported in SQLite
+                else:
+                    # PostgreSQL/other databases support all isolation levels
+                    session.execute(
+                        text(f"SET TRANSACTION ISOLATION LEVEL {isolation_level.value}")
+                    )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to set isolation level {isolation_level.value}: {e}",
+                    extra={"database_url": self.database_url}
+                )
+
         try:
             yield session
             session.commit()
@@ -80,7 +137,10 @@ class DatabaseManager:
             logger.error(
                 f"Database session error: {e.__class__.__name__}: {str(e)}",
                 exc_info=True,
-                extra={"database_url": self.database_url}
+                extra={
+                    "database_url": self.database_url,
+                    "isolation_level": isolation_level.value if isolation_level else "default"
+                }
             )
             raise
         finally:

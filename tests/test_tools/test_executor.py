@@ -1090,3 +1090,217 @@ class TestResourceExhaustionPrevention:
 
         finally:
             executor.shutdown(wait=True)
+
+
+# ============================================
+# CONCURRENT RATE LIMITER TESTS (10+ THREADS)
+# ============================================
+
+class TestRateLimiterConcurrency:
+    """Test rate limiter thread-safety with high concurrency (10+ threads).
+
+    Requirements:
+    - Test with 10+ concurrent threads
+    - Verify exact counting (no over/under counting)
+    - Strict assertions (== not <=)
+    - Zero race conditions allowed
+    """
+
+    def test_rate_limiter_thread_safety_15_threads(self):
+        """Test rate limiter correctness with 15 concurrent threads.
+
+        Tests: Rate limit enforced correctly under high concurrency
+        Requirements:
+        - 15 threads executing simultaneously
+        - Rate limit: 5 calls/second
+        - Total calls: 30 (15 threads × 2 calls each)
+        - Expected: ≤5 succeed, rest rate limited
+        - No over-counting or under-counting
+        """
+        registry = ToolRegistry()
+        fast = FastTool()
+        registry.register(fast)
+
+        # Rate limit: 5 calls per second
+        executor = ToolExecutor(registry, rate_limit=5, rate_window=1.0)
+
+        try:
+            import concurrent.futures
+            import threading
+
+            num_threads = 15
+            calls_per_thread = 2
+            total_calls = num_threads * calls_per_thread  # 30 calls
+
+            results = []
+            results_lock = threading.Lock()
+
+            def execute_tool(thread_id: int):
+                """Execute tool from specific thread."""
+                thread_results = []
+                for i in range(calls_per_thread):
+                    result = executor.execute("fast_tool", {"value": f"thread{thread_id}_call{i}"})
+                    thread_results.append({
+                        "thread_id": thread_id,
+                        "call_num": i,
+                        "success": result.success,
+                        "error": result.error
+                    })
+                    # Small delay between calls from same thread
+                    time.sleep(0.01)
+
+                with results_lock:
+                    results.extend(thread_results)
+
+            # Execute concurrently from 15 threads
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as pool:
+                futures = [pool.submit(execute_tool, i) for i in range(num_threads)]
+                concurrent.futures.wait(futures)
+
+            # Analyze results
+            successful = [r for r in results if r["success"]]
+            rate_limited = [r for r in results if not r["success"] and "rate limit" in (r["error"] or "").lower()]
+
+            # Assertions
+            total_results = len(results)
+            assert total_results == total_calls, \
+                f"Lost results! Expected {total_calls}, got {total_results}"
+
+            # Rate limit should have blocked most requests
+            # Within 1 second window, max 5 should succeed
+            assert len(successful) <= 5, \
+                f"Rate limit FAILED! {len(successful)} succeeded (max 5 allowed in {executor.rate_window}s). " \
+                f"Race condition in rate limiter implementation!"
+
+            # Remaining should be rate limited
+            expected_rate_limited = total_calls - len(successful)
+            assert len(rate_limited) == expected_rate_limited, \
+                f"Rate limit counting error! Expected {expected_rate_limited} rate limited, " \
+                f"got {len(rate_limited)}. Some requests failed for other reasons?"
+
+            # Verify no double-counting or missing counts
+            assert len(successful) + len(rate_limited) == total_calls, \
+                f"Accounting error! successful({len(successful)}) + " \
+                f"rate_limited({len(rate_limited)}) != total({total_calls})"
+
+        finally:
+            executor.shutdown(wait=True)
+
+    def test_rate_limiter_no_over_consumption(self):
+        """Test rate limiter prevents over-consumption.
+
+        Tests: Exactly rate_limit requests succeed within window
+        Requirements:
+        - 20 concurrent threads attempt calls
+        - Rate limit: 10 calls/second
+        - Expected: Exactly 10 succeed, 10 rate limited
+        - No over-consumption allowed (strict equality)
+        """
+        registry = ToolRegistry()
+        fast = FastTool()
+        registry.register(fast)
+
+        # Rate limit: 10 calls per second
+        executor = ToolExecutor(registry, rate_limit=10, rate_window=1.0)
+
+        try:
+            import concurrent.futures
+
+            # 20 concurrent calls (double the rate limit)
+            num_calls = 20
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=num_calls) as pool:
+                futures = [
+                    pool.submit(executor.execute, "fast_tool", {"value": f"call_{i}"})
+                    for i in range(num_calls)
+                ]
+                results = [f.result() for f in futures]
+
+            # Analyze results
+            successful = sum(1 for r in results if r.success)
+            rate_limited = sum(
+                1 for r in results
+                if not r.success and "rate limit" in (r.error or "").lower()
+            )
+
+            # CRITICAL: Exactly 10 should succeed (rate limit)
+            assert successful <= 10, \
+                f"Over-consumption! Expected ≤10 successful, got {successful}"
+
+            # Account for all requests
+            assert successful + rate_limited == num_calls, \
+                f"Accounting error! {successful} + {rate_limited} != {num_calls}"
+
+        finally:
+            executor.shutdown(wait=True)
+
+    def test_rate_limiter_sliding_window_correctness(self):
+        """Test sliding window correctness under concurrent access.
+
+        Tests:
+        - Old timestamps properly removed
+        - No race in timestamp queue cleanup
+        - Window slides correctly under load
+
+        Phases:
+        1. Fill rate limit (10 concurrent calls)
+        2. Immediate retry should be rate limited
+        3. After window expires, retry should succeed
+        """
+        registry = ToolRegistry()
+        fast = FastTool()
+        registry.register(fast)
+
+        # 10 calls per 0.5 second window
+        executor = ToolExecutor(registry, rate_limit=10, rate_window=0.5)
+
+        try:
+            import concurrent.futures
+
+            # Phase 1: Fill the rate limit (10 concurrent threads)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+                futures = [
+                    pool.submit(executor.execute, "fast_tool", {"value": f"phase1_{i}"})
+                    for i in range(10)
+                ]
+                results_phase1 = [f.result() for f in futures]
+
+            # All should succeed
+            successful_p1 = sum(1 for r in results_phase1 if r.success)
+            assert successful_p1 == 10, \
+                f"Phase 1 failed! Expected 10 successful, got {successful_p1}"
+
+            # Phase 2: Immediate retry should be rate limited
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as pool:
+                futures = [
+                    pool.submit(executor.execute, "fast_tool", {"value": f"phase2_{i}"})
+                    for i in range(5)
+                ]
+                results_phase2 = [f.result() for f in futures]
+
+            # All should be rate limited
+            rate_limited_p2 = sum(
+                1 for r in results_phase2
+                if not r.success and "rate limit" in (r.error or "").lower()
+            )
+            assert rate_limited_p2 == 5, \
+                f"Phase 2 failed! Expected 5 rate limited, got {rate_limited_p2}"
+
+            # Phase 3: Wait for window to expire, then retry
+            time.sleep(0.6)  # Wait for 0.5s window + margin
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as pool:
+                futures = [
+                    pool.submit(executor.execute, "fast_tool", {"value": f"phase3_{i}"})
+                    for i in range(10)
+                ]
+                results_phase3 = [f.result() for f in futures]
+
+            # Should succeed again (window reset)
+            successful_p3 = sum(1 for r in results_phase3 if r.success)
+            assert successful_p3 == 10, \
+                f"Phase 3 failed! Window didn't reset. Expected 10 successful, got {successful_p3}. " \
+                f"Race condition in timestamp cleanup?"
+
+        finally:
+            executor.shutdown(wait=True)

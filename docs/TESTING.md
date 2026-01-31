@@ -129,6 +129,20 @@ class TestLLMCache:            # Test class for LLMCache
 
 ## Running Tests
 
+### Prerequisites
+
+Before running tests, ensure your environment is set up:
+
+```bash
+# Activate virtual environment
+source venv/bin/activate  # Linux/macOS
+# or
+venv\Scripts\activate  # Windows
+
+# Install dev dependencies (if not already installed)
+pip install -e '.[dev]'
+```
+
 ### Basic Commands
 
 ```bash

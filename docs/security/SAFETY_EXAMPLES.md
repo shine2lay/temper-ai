@@ -86,7 +86,7 @@ registry.register_policy(RateLimitPolicy())
 ### Example 3: Custom Policy Registration
 
 ```python
-from src.safety.base import BaseSafetyPolicy, ViolationSeverity, PolicyViolation
+from src.safety.base import BaseSafetyPolicy, ViolationSeverity, SafetyViolation
 
 class BusinessHoursPolicy(BaseSafetyPolicy):
     """Only allow deployments during business hours."""
@@ -104,7 +104,7 @@ class BusinessHoursPolicy(BaseSafetyPolicy):
 
         current_hour = datetime.now().hour
         if not (9 <= current_hour < 17):
-            return [PolicyViolation(
+            return [SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.CRITICAL,
                 message="Deployments only allowed during business hours (9am-5pm)",
@@ -707,7 +707,7 @@ class ObservabilityIntegration:
         # Hook into policy engine
         self.policy_engine.add_violation_callback(self._log_violation)
 
-    async def _log_violation(self, violation: PolicyViolation, context: PolicyExecutionContext):
+    async def _log_violation(self, violation: SafetyViolation, context: PolicyExecutionContext):
         """Log violation to observability database."""
 
         await self.db.insert("safety_violations", {
@@ -727,7 +727,7 @@ class ObservabilityIntegration:
         if violation.severity == ViolationSeverity.CRITICAL:
             await self._send_alert(violation, context)
 
-    async def _send_alert(self, violation: PolicyViolation, context: PolicyExecutionContext):
+    async def _send_alert(self, violation: SafetyViolation, context: PolicyExecutionContext):
         """Send alert for critical violation."""
         # Implementation: Slack, PagerDuty, etc.
         pass

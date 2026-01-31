@@ -453,58 +453,65 @@ def test_cache_performance(benchmark):
 
 ### Global Fixtures
 
-**Location:** `tests/conftest.py`
-
-```python
-import pytest
-
-@pytest.fixture(scope="session")
-def test_database():
-    """Provide test database for all tests."""
-    # Setup
-    db = create_test_database()
-    yield db
-    # Teardown
-    db.close()
-
-
-@pytest.fixture
-def clean_registry():
-    """Provide clean tool registry."""
-    from src.tools.registry import ToolRegistry
-    registry = ToolRegistry(auto_discover=False)
-    yield registry
-    # Registry is garbage collected
-```
+**Location:** Currently, there is no global `tests/conftest.py`. Global fixtures are defined in module-specific conftest files.
 
 ### Module-Specific Fixtures
 
+#### Agent Test Fixtures
+
 **Location:** `tests/test_agents/conftest.py`
 
+Available fixtures for agent testing:
+
+**`minimal_agent_config`** - Minimal agent configuration with standard defaults
 ```python
-import pytest
-
-@pytest.fixture
-def minimal_agent_config():
-    """Minimal agent configuration for tests."""
-    from src.compiler.schemas import (
-        AgentConfig,
-        AgentConfigInner,
-        InferenceConfig,
-        PromptConfig
-    )
-
-    return AgentConfig(
-        agent=AgentConfigInner(
-            name="test_agent",
-            prompt=PromptConfig(inline="Test prompt"),
-            inference=InferenceConfig(
-                provider="ollama",
-                model="test-model"
-            )
-        )
-    )
+# Usage in tests
+def test_agent_execution(minimal_agent_config):
+    agent = StandardAgent(minimal_agent_config)
+    # Test agent behavior
 ```
+
+**Scope:** Function (creates new config for each test)
+**Returns:** `AgentConfig` with basic ollama setup, no tools
+**Use when:** Testing basic agent functionality without tools
+
+**`agent_config_with_tools`** - Agent configuration including tools
+```python
+# Usage in tests
+def test_tool_usage(agent_config_with_tools):
+    agent = StandardAgent(agent_config_with_tools)
+    # Test agent with calculator and web_scraper tools
+```
+
+**Scope:** Function
+**Returns:** `AgentConfig` with ollama setup and tools: `["calculator", "web_scraper"]`
+**Use when:** Testing agent tool integration
+
+#### Security Test Fixtures
+
+**Location:** `tests/test_security/conftest.py`
+
+The security tests reuse agent fixtures:
+```python
+from tests.test_agents.conftest import minimal_agent_config, agent_config_with_tools
+```
+
+**Available:** `minimal_agent_config`, `agent_config_with_tools`
+
+#### Regression Test Fixtures
+
+**Location:** `tests/regression/conftest.py`
+
+**`minimal_agent_config`** - Minimal agent config for regression tests
+```python
+# Usage in regression tests
+def test_backward_compatibility(minimal_agent_config):
+    # Verify old configs still work
+```
+
+**Scope:** Function
+**Returns:** `AgentConfig` with minimal valid configuration
+**Use when:** Testing backward compatibility and regression scenarios
 
 ### Mocking Best Practices
 

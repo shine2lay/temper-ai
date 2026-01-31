@@ -637,14 +637,14 @@ result = strategy.synthesize(outputs, context={})
 # result.confidence = 0.67
 ```
 
-#### DebateStrategy
+#### DebateAndSynthesize
 
 Multi-round argumentation strategy.
 
 ```python
-from src.strategies.debate import DebateStrategy
+from src.strategies.debate import DebateAndSynthesize
 
-strategy = DebateStrategy(
+strategy = DebateAndSynthesize(
     max_rounds=3,
     convergence_threshold=0.8
 )
@@ -652,38 +652,6 @@ strategy = DebateStrategy(
 result = strategy.synthesize(outputs, context={})
 ```
 
-#### MeritWeightedStrategy
-
-Weight votes by agent merit scores.
-
-```python
-from src.strategies.merit_weighted import MeritWeightedStrategy
-
-strategy = MeritWeightedStrategy()
-
-outputs = [
-    AgentOutput("agent1", "Option A", "reasoning", 0.9, {"merit_score": 0.95}),
-    AgentOutput("agent2", "Option B", "reasoning", 0.8, {"merit_score": 0.60}),
-]
-
-result = strategy.synthesize(outputs, context={})
-# Higher merit agent's vote weighted more heavily
-```
-
-#### HierarchicalStrategy
-
-Lead agent with advisor review.
-
-```python
-from src.strategies.hierarchical import HierarchicalStrategy
-
-strategy = HierarchicalStrategy(
-    lead_agent_id="senior_agent",
-    require_unanimous_approval=False
-)
-
-result = strategy.synthesize(outputs, context={})
-```
 
 ### Conflict Resolution
 

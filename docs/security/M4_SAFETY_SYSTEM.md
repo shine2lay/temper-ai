@@ -326,6 +326,7 @@ Policies use numeric priorities where **higher values execute first**:
 - ForbiddenOperationsPolicy (priority: 200)
 - FileAccessPolicy (priority: 95)
 - SecretDetectionPolicy (priority: 95)
+- BlastRadiusPolicy (priority: 90)
 
 **Enforcement:**
 - Always enabled
@@ -337,13 +338,13 @@ Policies use numeric priorities where **higher values execute first**:
 - Block bash file writes (use Write/Edit tools)
 - Block secrets in code/commands
 - Block access to forbidden paths
+- Prevent widespread file modifications
 
 ### P1 - IMPORTANT (Priority 80-89) - Balance Safety & Productivity
 
-**Purpose:** Prevent resource exhaustion, enforce best practices, limit blast radius.
+**Purpose:** Prevent resource exhaustion, enforce best practices.
 
 **Policies:**
-- BlastRadiusPolicy (priority: 90)
 - RateLimitPolicy (priority: 85)
 - ResourceLimitPolicy (priority: 80)
 - ApprovalWorkflowPolicy (priority: 80)

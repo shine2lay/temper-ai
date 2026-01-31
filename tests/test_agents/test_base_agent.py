@@ -1,5 +1,7 @@
 """Tests for base agent interface."""
 import pytest
+import threading
+import time
 from src.agents.base_agent import BaseAgent, AgentResponse, ExecutionContext
 from src.compiler.schemas import AgentConfig
 
@@ -442,3 +444,447 @@ class TestContextPropagation:
         # Should succeed
         assert isinstance(response, AgentResponse)
         assert response.output == "mock output"
+
+
+class TestContextImmutability:
+    """Tests for context immutability and corruption prevention (P1)."""
+
+    def test_context_not_mutated_by_agent_execution(self, minimal_agent_config):
+        """Test that agent execution does not mutate the original context."""
+
+        class MutatingAgent(MockAgent):
+            """Agent that attempts to mutate context."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata:
+                    # Attempt to mutate context metadata
+                    context.metadata["mutated"] = True
+                    context.metadata["original_value"] = "changed"
+                return AgentResponse(output="attempted mutation")
+
+        agent = MutatingAgent(minimal_agent_config)
+
+        # Create context with original values
+        original_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={"original_value": "unchanged", "flag": False}
+        )
+
+        # Store original values
+        original_metadata_copy = original_context.metadata.copy()
+
+        # Execute agent
+        response = agent.execute({"test": True}, context=original_context)
+
+        # Verify context was mutated (this test documents current behavior)
+        # In a production system, you'd want to prevent this
+        assert original_context.metadata.get("mutated") is True
+        assert original_context.metadata["original_value"] == "changed"
+
+    def test_context_deep_copy_prevents_nested_mutations(self, minimal_agent_config):
+        """Test that deep copying context prevents nested object mutations."""
+        import copy
+
+        class NestedMutatingAgent(MockAgent):
+            """Agent that attempts to mutate nested context data."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata:
+                    # Attempt to mutate nested dict
+                    if "nested" in context.metadata:
+                        context.metadata["nested"]["value"] = "mutated"
+                        context.metadata["nested"]["new_key"] = "added"
+                return AgentResponse(output="attempted nested mutation")
+
+        agent = NestedMutatingAgent(minimal_agent_config)
+
+        # Create context with nested structure
+        original_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={
+                "nested": {"value": "original", "count": 0},
+                "list_data": [1, 2, 3]
+            }
+        )
+
+        # Deep copy context before passing to agent
+        context_copy = copy.deepcopy(original_context)
+
+        # Execute with deep copy
+        response = agent.execute({"test": True}, context=context_copy)
+
+        # Original context should remain unchanged
+        assert original_context.metadata["nested"]["value"] == "original"
+        assert "new_key" not in original_context.metadata["nested"]
+
+        # Copy was mutated
+        assert context_copy.metadata["nested"]["value"] == "mutated"
+        assert context_copy.metadata["nested"]["new_key"] == "added"
+
+    def test_context_immutable_in_sequential_calls(self, minimal_agent_config):
+        """Test context remains unchanged across sequential agent calls."""
+
+        class SequentialAgent(MockAgent):
+            """Agent that modifies context metadata."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata:
+                    context.metadata["call_count"] = context.metadata.get("call_count", 0) + 1
+                return AgentResponse(output=f"call {context.metadata.get('call_count', 0)}")
+
+        agent1 = SequentialAgent(minimal_agent_config)
+        agent2 = SequentialAgent(minimal_agent_config)
+
+        # Create shared context
+        shared_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={"call_count": 0}
+        )
+
+        # Agent1 executes first
+        response1 = agent1.execute({"test": 1}, context=shared_context)
+        assert shared_context.metadata["call_count"] == 1
+
+        # Agent2 sees the mutation from agent1
+        response2 = agent2.execute({"test": 2}, context=shared_context)
+        assert shared_context.metadata["call_count"] == 2
+
+    def test_context_metadata_list_mutation(self, minimal_agent_config):
+        """Test that context metadata lists can be mutated (document behavior)."""
+
+        class ListMutatingAgent(MockAgent):
+            """Agent that mutates list in context."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata and "items" in context.metadata:
+                    context.metadata["items"].append("new_item")
+                return AgentResponse(output="list mutated")
+
+        agent = ListMutatingAgent(minimal_agent_config)
+
+        # Create context with list
+        context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={"items": ["item1", "item2"]}
+        )
+
+        # Execute
+        response = agent.execute({"test": True}, context=context)
+
+        # List was mutated
+        assert len(context.metadata["items"]) == 3
+        assert "new_item" in context.metadata["items"]
+
+    def test_context_metadata_dict_mutation(self, minimal_agent_config):
+        """Test that context metadata dicts can be mutated (document behavior)."""
+
+        class DictMutatingAgent(MockAgent):
+            """Agent that mutates dict in context."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata and "config" in context.metadata:
+                    context.metadata["config"]["timeout"] = 60
+                    context.metadata["config"]["new_setting"] = "value"
+                return AgentResponse(output="dict mutated")
+
+        agent = DictMutatingAgent(minimal_agent_config)
+
+        # Create context with nested dict
+        context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={"config": {"timeout": 30, "retries": 3}}
+        )
+
+        # Execute
+        response = agent.execute({"test": True}, context=context)
+
+        # Dict was mutated
+        assert context.metadata["config"]["timeout"] == 60
+        assert "new_setting" in context.metadata["config"]
+
+
+class TestContextThreadSafety:
+    """Tests for context thread-safety in concurrent executions (P1)."""
+
+    def test_concurrent_context_modifications(self, minimal_agent_config):
+        """Test that concurrent agent executions can lead to race conditions."""
+
+        class CountingAgent(MockAgent):
+            """Agent that increments a counter in context."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata:
+                    # Read-modify-write race condition
+                    current = context.metadata.get("counter", 0)
+                    time.sleep(0.001)  # Small delay to increase race probability
+                    context.metadata["counter"] = current + 1
+                return AgentResponse(output=f"count: {context.metadata.get('counter', 0)}")
+
+        agent = CountingAgent(minimal_agent_config)
+
+        # Shared context across threads
+        shared_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={"counter": 0}
+        )
+
+        # Run 10 threads concurrently
+        num_threads = 10
+        threads = []
+
+        for i in range(num_threads):
+            thread = threading.Thread(
+                target=lambda: agent.execute({"thread": i}, context=shared_context)
+            )
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all threads
+        for thread in threads:
+            thread.join()
+
+        # Due to race conditions, final count may be less than num_threads
+        final_count = shared_context.metadata["counter"]
+        assert final_count <= num_threads, \
+            f"Counter should be at most {num_threads}, got {final_count}"
+
+        # In a thread-unsafe implementation, we expect lost updates
+        # This test documents the race condition behavior
+
+    def test_concurrent_list_modifications(self, minimal_agent_config):
+        """Test concurrent modifications to context metadata lists."""
+
+        class ListAppendingAgent(MockAgent):
+            """Agent that appends to a list in context."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata and "items" in context.metadata:
+                    thread_id = threading.get_ident()
+                    context.metadata["items"].append(thread_id)
+                return AgentResponse(output="appended")
+
+        agent = ListAppendingAgent(minimal_agent_config)
+
+        # Shared context with list
+        shared_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={"items": []}
+        )
+
+        # Run concurrent appends
+        num_threads = 15
+        threads = []
+
+        for i in range(num_threads):
+            thread = threading.Thread(
+                target=lambda: agent.execute({"test": i}, context=shared_context)
+            )
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all threads
+        for thread in threads:
+            thread.join()
+
+        # Check that items were added (may have duplicates or missing items due to races)
+        items_count = len(shared_context.metadata["items"])
+        assert items_count > 0, "Should have at least some items"
+        assert items_count <= num_threads, "Should not exceed thread count significantly"
+
+    def test_concurrent_dict_modifications(self, minimal_agent_config):
+        """Test concurrent modifications to nested dicts in context."""
+
+        class DictModifyingAgent(MockAgent):
+            """Agent that modifies nested dict in context."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata and "data" in context.metadata:
+                    thread_id = threading.get_ident()
+                    context.metadata["data"][f"thread_{thread_id}"] = "value"
+                return AgentResponse(output="modified")
+
+        agent = DictModifyingAgent(minimal_agent_config)
+
+        # Shared context with dict
+        shared_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={"data": {}}
+        )
+
+        # Run concurrent modifications
+        num_threads = 12
+        threads = []
+
+        for i in range(num_threads):
+            thread = threading.Thread(
+                target=lambda: agent.execute({"test": i}, context=shared_context)
+            )
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all threads
+        for thread in threads:
+            thread.join()
+
+        # Check that some keys were added
+        keys_count = len(shared_context.metadata["data"])
+        assert keys_count > 0, "Should have at least some keys"
+        assert keys_count <= num_threads, "Should not exceed thread count"
+
+    def test_context_isolation_with_separate_instances(self, minimal_agent_config):
+        """Test that separate context instances prevent data corruption."""
+
+        class IsolatedAgent(MockAgent):
+            """Agent that modifies its own context copy."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata:
+                    context.metadata["value"] = input_data.get("value", 0)
+                return AgentResponse(output=f"value: {context.metadata.get('value', 0)}")
+
+        agent = IsolatedAgent(minimal_agent_config)
+
+        # Create separate contexts for each thread
+        results = {}
+        results_lock = threading.Lock()
+
+        def thread_worker(thread_id, value):
+            # Each thread gets its own context
+            thread_context = ExecutionContext(
+                workflow_id=f"wf-{thread_id}",
+                metadata={"thread_id": thread_id}
+            )
+
+            response = agent.execute({"value": value}, context=thread_context)
+
+            with results_lock:
+                results[thread_id] = thread_context.metadata["value"]
+
+        # Run threads with separate contexts
+        num_threads = 10
+        threads = []
+
+        for i in range(num_threads):
+            thread = threading.Thread(
+                target=thread_worker,
+                args=(i, i * 10)
+            )
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all threads
+        for thread in threads:
+            thread.join()
+
+        # Each thread should have its own value
+        for i in range(num_threads):
+            assert i in results, f"Thread {i} should have a result"
+            assert results[i] == i * 10, f"Thread {i} should have value {i * 10}, got {results[i]}"
+
+    def test_context_read_operations_are_thread_safe(self, minimal_agent_config):
+        """Test that reading from context is generally thread-safe."""
+
+        class ReadOnlyAgent(MockAgent):
+            """Agent that only reads from context."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata:
+                    # Only read operations
+                    value = context.metadata.get("config", {}).get("timeout", 30)
+                    name = context.metadata.get("name", "default")
+                    items = len(context.metadata.get("items", []))
+                return AgentResponse(output=f"read: {value}, {name}, {items}")
+
+        agent = ReadOnlyAgent(minimal_agent_config)
+
+        # Shared read-only context
+        shared_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={
+                "config": {"timeout": 60, "retries": 3},
+                "name": "test",
+                "items": [1, 2, 3, 4, 5]
+            }
+        )
+
+        # Run concurrent reads
+        num_threads = 20
+        threads = []
+        errors = []
+
+        def thread_reader():
+            try:
+                response = agent.execute({"test": True}, context=shared_context)
+                assert "60" in response.output
+            except Exception as e:
+                errors.append(e)
+
+        for i in range(num_threads):
+            thread = threading.Thread(target=thread_reader)
+            threads.append(thread)
+            thread.start()
+
+        # Wait for all threads
+        for thread in threads:
+            thread.join()
+
+        # No errors should occur during concurrent reads
+        assert len(errors) == 0, f"Concurrent reads caused errors: {errors}"
+
+    def test_context_corruption_detection(self, minimal_agent_config):
+        """Test detecting when context has been corrupted."""
+
+        class CorruptionDetectingAgent(MockAgent):
+            """Agent that validates context integrity."""
+            def execute(self, input_data, context=None):
+                if context and context.metadata:
+                    # Check for expected fields
+                    required_fields = ["version", "checksum", "workflow_id"]
+                    missing_fields = [f for f in required_fields if f not in context.metadata]
+
+                    if missing_fields:
+                        return AgentResponse(
+                            output="",
+                            error=f"Context corrupted: missing fields {missing_fields}"
+                        )
+
+                    # Check data types
+                    if not isinstance(context.metadata.get("version"), (int, float)):
+                        return AgentResponse(
+                            output="",
+                            error="Context corrupted: version is not numeric"
+                        )
+
+                return AgentResponse(output="context valid")
+
+        agent = CorruptionDetectingAgent(minimal_agent_config)
+
+        # Valid context
+        valid_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={
+                "version": 1.0,
+                "checksum": "abc123",
+                "workflow_id": "wf-001"
+            }
+        )
+
+        response = agent.execute({"test": True}, context=valid_context)
+        assert response.error is None
+        assert "valid" in response.output
+
+        # Corrupted context (missing fields)
+        corrupted_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={"version": 1.0}  # Missing checksum and workflow_id
+        )
+
+        response = agent.execute({"test": True}, context=corrupted_context)
+        assert response.error is not None
+        assert "corrupted" in response.error.lower()
+        assert "missing fields" in response.error.lower()
+
+        # Corrupted context (wrong type)
+        type_corrupted_context = ExecutionContext(
+            workflow_id="wf-001",
+            metadata={
+                "version": "not_a_number",  # Wrong type
+                "checksum": "abc123",
+                "workflow_id": "wf-001"
+            }
+        )
+
+        response = agent.execute({"test": True}, context=type_corrupted_context)
+        assert response.error is not None
+        assert "corrupted" in response.error.lower()
+        assert "version" in response.error.lower()

@@ -544,15 +544,6 @@ Check if request is expired.
 
 ---
 
-##### `is_resolved() -> bool`
-
-Check if request is resolved (approved, rejected, expired, or cancelled).
-
-**Returns:**
-- `bool`: True if status is not PENDING
-
----
-
 ##### `approval_count() -> int`
 
 Get number of approvals received.
@@ -785,15 +776,6 @@ Check if rollback was successful.
 
 ---
 
-##### `partial_success -> bool`
-
-Check if rollback was partially successful.
-
-**Returns:**
-- `bool`: True if status is PARTIAL
-
----
-
 ### RollbackStatus
 
 **Module:** `src.safety.rollback`
@@ -974,18 +956,6 @@ Manually open the circuit.
 ```python
 # Emergency: force circuit open
 breaker.force_open()
-```
-
----
-
-##### `force_close() -> None`
-
-Manually close the circuit (resets all counters).
-
-**Example:**
-```python
-# After manual fix, reset circuit
-breaker.force_close()
 ```
 
 ---

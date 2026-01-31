@@ -15,7 +15,8 @@ from unittest.mock import patch, MagicMock
 
 from src.utils.secrets import (
     SecretReference,
-    SecureCredential,
+    ObfuscatedCredential,
+    SecureCredential,  # Deprecated alias
     resolve_secret,
     detect_secret_patterns
 )
@@ -104,42 +105,42 @@ class TestSecretReference:
         assert result == 'plain-api-key'
 
 
-class TestSecureCredential:
-    """Tests for SecureCredential class."""
+class TestObfuscatedCredential:
+    """Tests for ObfuscatedCredential class."""
 
     def test_create_and_retrieve(self):
         """Test creating and retrieving obfuscated credential."""
-        cred = SecureCredential("sk-secret-123")
+        cred = ObfuscatedCredential("sk-secret-123")
         assert cred.get() == "sk-secret-123"
 
     def test_redacted_string_representation(self):
         """Test that credentials are redacted in string form."""
-        cred = SecureCredential("sk-secret-123")
+        cred = ObfuscatedCredential("sk-secret-123")
         assert str(cred) == "***REDACTED***"
-        assert repr(cred) == "SecureCredential(***REDACTED***)"
+        assert repr(cred) == "ObfuscatedCredential(***REDACTED***)"
 
     def test_empty_value_rejected(self):
         """Test that empty values are rejected."""
         with pytest.raises(ValueError, match="empty"):
-            SecureCredential("")
+            ObfuscatedCredential("")
 
     def test_truthy(self):
         """Test that credential is truthy."""
-        cred = SecureCredential("sk-secret-123")
+        cred = ObfuscatedCredential("sk-secret-123")
         assert bool(cred) is True
 
     def test_security_limitation_documented(self):
         """Test documenting the security limitation.
 
-        SECURITY NOTE: This test demonstrates that SecureCredential provides
+        SECURITY NOTE: This test demonstrates that ObfuscatedCredential provides
         OBFUSCATION, not encryption. An attacker with access to the object
         can extract both the key and ciphertext from memory.
 
-        This is by design - SecureCredential prevents accidental logging,
+        This is by design - ObfuscatedCredential prevents accidental logging,
         NOT attacks by malicious code in the same process.
         """
         secret_value = "sk-actual-secret-key-123"
-        cred = SecureCredential(secret_value)
+        cred = ObfuscatedCredential(secret_value)
 
         # SECURITY LIMITATION: Key is accessible in same memory
         # An attacker with access to the object can extract the key
@@ -160,6 +161,68 @@ class TestSecureCredential:
         # Conclusion: This is OBFUSCATION (prevents accidental logging),
         # NOT security against determined attackers or memory dumps.
         # For real encryption, use OS keyring or external secrets manager.
+
+
+class TestSecureCredentialDeprecation:
+    """Tests for SecureCredential deprecation (DEPRECATED - use ObfuscatedCredential)."""
+
+    def test_deprecated_alias_emits_warning(self):
+        """Test that SecureCredential emits deprecation warning."""
+        # Reset warning flag to ensure we catch it
+        SecureCredential._warning_shown = False
+
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+
+            cred = SecureCredential("sk-secret-123")
+
+            # Check deprecation warning was emitted
+            deprecation_warnings = [x for x in w if issubclass(x.category, DeprecationWarning)]
+            assert len(deprecation_warnings) >= 1
+
+            # Check our warning message is present
+            our_warnings = [x for x in deprecation_warnings if "ObfuscatedCredential" in str(x.message)]
+            assert len(our_warnings) >= 1
+            assert "OBFUSCATION" in str(our_warnings[0].message)
+
+            # Verify it still works (backward compatibility)
+            assert cred.get() == "sk-secret-123"
+
+    def test_deprecated_alias_only_warns_once(self):
+        """Test that deprecation warning is only shown once per process."""
+        # Reset and trigger first warning
+        SecureCredential._warning_shown = False
+
+        with warnings.catch_warnings(record=True) as w1:
+            warnings.simplefilter("always")
+            SecureCredential("secret1")
+            first_count = len([x for x in w1 if issubclass(x.category, DeprecationWarning)])
+
+        # Second instantiation should not warn again
+        with warnings.catch_warnings(record=True) as w2:
+            warnings.simplefilter("always")
+            SecureCredential("secret2")
+            second_count = len([x for x in w2 if issubclass(x.category, DeprecationWarning)])
+
+        # First should have warning, second should not (already shown)
+        assert first_count >= 1
+        assert second_count == 0
+
+    def test_backward_compatibility_same_behavior(self):
+        """Test that SecureCredential has same behavior as ObfuscatedCredential."""
+        # Reset warning flag
+        SecureCredential._warning_shown = False
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")  # Suppress deprecation warning for this test
+
+            secure_cred = SecureCredential("sk-test-key")
+            obfuscated_cred = ObfuscatedCredential("sk-test-key")
+
+            # Both should work the same way
+            assert secure_cred.get() == obfuscated_cred.get()
+            assert str(secure_cred) == str(obfuscated_cred)
+            assert bool(secure_cred) == bool(obfuscated_cred)
 
 
 class TestResolveSecret:
@@ -469,8 +532,8 @@ class TestSecretNeverInLogs:
     """Integration tests to ensure secrets never appear in logs/DB."""
 
     def test_secret_not_in_string_representation(self):
-        """Test that SecureCredential never exposes secret in string form."""
-        cred = SecureCredential("sk-very-secret-key")
+        """Test that ObfuscatedCredential never exposes secret in string form."""
+        cred = ObfuscatedCredential("sk-very-secret-key")
 
         # str() should not expose secret
         assert "sk-very-secret-key" not in str(cred)

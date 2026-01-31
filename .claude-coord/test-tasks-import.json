@@ -1,0 +1,501 @@
+{
+  "tasks": [
+    {
+      "id": "test-agent-01",
+      "enabled": true,
+      "title": "Add Agent Factory Thread Safety Tests",
+      "priority": "HIGH",
+      "description": "Test that AgentFactory can safely create agents concurrently without race conditions."
+    },
+    {
+      "id": "test-agent-02",
+      "enabled": true,
+      "title": "Add Context Propagation Tests",
+      "priority": "HIGH",
+      "description": "Test that ExecutionContext properly propagates through nested agent calls and tool executions."
+    },
+    {
+      "id": "test-boundary-values",
+      "enabled": true,
+      "title": "Boundary Value & Edge Case Tests",
+      "priority": "HIGH",
+      "description": "Add parameterized boundary value tests for configuration limits, token counts, confidence scores, and agent counts."
+    },
+    {
+      "id": "test-collaboration-strategies",
+      "enabled": true,
+      "title": "Strategy Edge Case Tests",
+      "priority": "NORMAL",
+      "description": "Add edge case tests for collaboration strategies: ties, all-zero merit, empty agents, convergence scenarios."
+    },
+    {
+      "id": "test-crit-agents-recovery-01",
+      "enabled": true,
+      "title": "Add Agent Error Recovery Tests",
+      "priority": "CRITICAL",
+      "description": "Add comprehensive agent error recovery tests including retry, fallback, circuit breaker, and tool chaining security."
+    },
+    {
+      "id": "test-crit-checkpoint-01",
+      "enabled": true,
+      "title": "Add Checkpoint Rollback Failure Scenarios",
+      "priority": "CRITICAL",
+      "description": "Add comprehensive test coverage for checkpoint rollback failure scenarios in the compiler's checkpoint manager."
+    },
+    {
+      "id": "test-crit-database-01",
+      "enabled": true,
+      "title": "Add Database Transaction Constraint Violation Tests",
+      "priority": "CRITICAL",
+      "description": "Add comprehensive tests for database transaction rollback on constraint violations."
+    },
+    {
+      "id": "test-crit-integration-m3m4-01",
+      "enabled": true,
+      "title": "Add M3+M4 Integration E2E Test",
+      "priority": "CRITICAL",
+      "description": "Add end-to-end integration test for M3 (multi-agent consensus) + M4 (rollback) to verify rollback correctly handles multi-agent stage failures."
+    },
+    {
+      "id": "test-crit-integration-misc-01",
+      "enabled": true,
+      "title": "Add Missing Critical Integration Tests",
+      "priority": "CRITICAL",
+      "description": "Add missing critical integration tests for M2+M3, async race conditions, tool rollback cascading, and network timeouts."
+    },
+    {
+      "id": "test-crit-parallel-01",
+      "enabled": true,
+      "title": "Add Parallel Execution Race Condition Tests",
+      "priority": "CRITICAL",
+      "description": "Add comprehensive race condition tests for parallel agent execution to prevent state corruption under concurrent access."
+    },
+    {
+      "id": "test-crit-security-circuit-01",
+      "enabled": true,
+      "title": "Add Circuit Breaker Full Recovery Cycle Tests",
+      "priority": "CRITICAL",
+      "description": "Add comprehensive tests for circuit breaker full recovery cycles including OPEN\u2192HALF_OPEN\u2192CLOSED transitions."
+    },
+    {
+      "id": "test-crit-security-injection-01",
+      "enabled": true,
+      "title": "Expand SQL Injection Pattern Coverage",
+      "priority": "CRITICAL",
+      "description": "Expand SQL injection test coverage to include 20+ comprehensive attack patterns from OWASP."
+    },
+    {
+      "id": "test-crit-security-misc-01",
+      "enabled": true,
+      "title": "Add Missing Security Concurrency Tests",
+      "priority": "CRITICAL",
+      "description": "Add missing concurrent security tests for approval workflow, policy composition, TOCTOU, and safety mode transitions."
+    },
+    {
+      "id": "test-crit-security-owasp-01",
+      "enabled": true,
+      "title": "Add OWASP LLM Top 10 LLM02 Coverage (Insecure Output Handling)",
+      "priority": "CRITICAL",
+      "description": "Add comprehensive tests for OWASP LLM02 (Insecure Output Handling) including XSS, HTML injection, and output encoding validation."
+    },
+    {
+      "id": "test-crit-security-owasp-02",
+      "enabled": true,
+      "title": "Add OWASP LLM Top 10 LLM04 Coverage (Model DoS)",
+      "priority": "CRITICAL",
+      "description": "Add comprehensive tests for OWASP LLM04 (Model Denial of Service) including token-based DoS, regex DoS, and recursive prompt attacks."
+    },
+    {
+      "id": "test-crit-security-owasp-03",
+      "enabled": true,
+      "title": "Add OWASP LLM Top 10 LLM08/09 Coverage",
+      "priority": "CRITICAL",
+      "description": "Add tests for OWASP LLM08 (Excessive Agency) and LLM09 (Overreliance) including tool permission boundaries and autonomous action escalation prevention."
+    },
+    {
+      "id": "test-crit-security-rollback-01",
+      "enabled": true,
+      "title": "Add Rollback Idempotency and Concurrency Tests",
+      "priority": "CRITICAL",
+      "description": "Add tests for rollback idempotency (safe to call twice) and concurrent rollback serialization."
+    },
+    {
+      "id": "test-crit-tools-concurrent-01",
+      "enabled": true,
+      "title": "Add Concurrent Tool Execution Tests",
+      "priority": "CRITICAL",
+      "description": "Add tests for concurrent tool execution to prevent shared state corruption."
+    },
+    {
+      "id": "test-crit-tools-timeout-01",
+      "enabled": true,
+      "title": "Add Tool Executor Timeout Cleanup Tests",
+      "priority": "CRITICAL",
+      "description": "Add tests for tool executor timeout cleanup to prevent resource leaks and hanging threads."
+    },
+    {
+      "id": "test-database-failures",
+      "enabled": true,
+      "title": "Database Failure Scenario Tests",
+      "priority": "HIGH",
+      "description": "Add tests for database connection loss, concurrent writes, transaction rollbacks, and connection pool exhaustion."
+    },
+    {
+      "id": "test-error-handling-propagation",
+      "enabled": true,
+      "title": "Error Propagation Tests",
+      "priority": "HIGH",
+      "description": "Add tests for error propagation across agent \u2192 stage \u2192 workflow chain with proper context preservation."
+    },
+    {
+      "id": "test-error-handling-timeouts",
+      "enabled": true,
+      "title": "Timeout Scenario Tests",
+      "priority": "HIGH",
+      "description": "Add timeout tests for LLM calls, tool execution, workflow execution, and agent execution."
+    },
+    {
+      "id": "test-fix-failures-01",
+      "enabled": true,
+      "title": "Fix Config Loading Test Failures",
+      "priority": "CRITICAL",
+      "description": "Fix 22 failing tests in test_config_loader.py related to environment variable substitution, file extension support, and config caching."
+    },
+    {
+      "id": "test-fix-failures-02",
+      "enabled": true,
+      "title": "Fix Tool Execution Test Failures",
+      "priority": "CRITICAL",
+      "description": "Fix 4 failing tests related to agent tool call parsing and tool not found error handling."
+    },
+    {
+      "id": "test-fix-failures-03",
+      "enabled": true,
+      "title": "Fix Integration Test Failures",
+      "priority": "CRITICAL",
+      "description": "Fix 9 failing integration tests related to workflow execution, database tracking, and error propagation across stages."
+    },
+    {
+      "id": "test-fix-failures-04",
+      "enabled": true,
+      "title": "Fix File Operation Test Failures",
+      "priority": "HIGH",
+      "description": "Fix 4 failing tests related to file operations and path safety validation."
+    },
+    {
+      "id": "test-high-compiler-01",
+      "enabled": true,
+      "title": "Add Execution Engine Error Propagation Tests",
+      "priority": "HIGH",
+      "description": "Add tests for error propagation from nested stages and async cancellation handling."
+    },
+    {
+      "id": "test-high-integration-refactor-01",
+      "enabled": true,
+      "title": "Refactor and Fix Integration Test Quality Issues",
+      "priority": "HIGH",
+      "description": "Split overly comprehensive M1 E2E test, un-skip M3 tests, standardize performance baselines, and add regression tests."
+    },
+    {
+      "id": "test-high-observability-01",
+      "enabled": true,
+      "title": "Add Observability Buffer and Performance Tests",
+      "priority": "HIGH",
+      "description": "Add tests for buffer overflow handling and performance tracker accuracy under load."
+    },
+    {
+      "id": "test-high-observability-02",
+      "enabled": true,
+      "title": "Fix Incomplete Migration and N+1 Query Tests",
+      "priority": "HIGH",
+      "description": "Complete migration rollback verification tests and add actual query count verification for N+1 query detection tests."
+    },
+    {
+      "id": "test-high-security-config-01",
+      "enabled": true,
+      "title": "Add Config Security SSTI and Deserialization Tests",
+      "priority": "HIGH",
+      "description": "Add tests for Server-Side Template Injection (SSTI) in Jinja templates and YAML deserialization gadgets."
+    },
+    {
+      "id": "test-high-security-flaky-01",
+      "enabled": true,
+      "title": "Fix Flaky Time-Dependent Circuit Breaker Tests",
+      "priority": "HIGH",
+      "description": "Fix flaky time-dependent tests by replacing fixed sleep times with polling/retry and adding timeout multipliers for slow CI systems."
+    },
+    {
+      "id": "test-high-security-injection-01",
+      "enabled": true,
+      "title": "Strengthen Prompt and Path Injection Tests",
+      "priority": "HIGH",
+      "description": "Strengthen prompt and path injection tests by replacing weak assertions with explicit blocking verification."
+    },
+    {
+      "id": "test-high-strategies-01",
+      "enabled": true,
+      "title": "Improve Strategy Consensus Tests with Realistic Data",
+      "priority": "HIGH",
+      "description": "Replace hardcoded data with property-based testing using Hypothesis to generate realistic varied test data."
+    },
+    {
+      "id": "test-high-tools-01",
+      "enabled": true,
+      "title": "Add Tool Parameter Sanitization and Registry Tests",
+      "priority": "HIGH",
+      "description": "Add tests for URL-decoded path traversal detection and tool registry error handling (import failures, circular imports)."
+    },
+    {
+      "id": "test-high-tools-02",
+      "enabled": true,
+      "title": "Strengthen Tool Execution Test Assertions",
+      "priority": "HIGH",
+      "description": "Strengthen tool execution test assertions to verify timing accuracy, not just existence of execution_time field."
+    },
+    {
+      "id": "test-integration-agent-tool",
+      "enabled": true,
+      "title": "Agent + Tool Integration Tests",
+      "priority": "HIGH",
+      "description": "Add comprehensive integration tests for agent + tool + safety interactions with real tool execution."
+    },
+    {
+      "id": "test-integration-compiler-engine",
+      "enabled": true,
+      "title": "Compiler + Engine + Observability Integration",
+      "priority": "HIGH",
+      "description": "Add integration tests for compiler + execution engine + observability database with real workflow execution."
+    },
+    {
+      "id": "test-llm-01",
+      "enabled": true,
+      "title": "Add Circuit Breaker Pattern Tests",
+      "priority": "CRITICAL",
+      "description": "Implement circuit breaker pattern for LLM providers to prevent cascading failures when providers are down or rate-limited."
+    },
+    {
+      "id": "test-llm-02",
+      "enabled": true,
+      "title": "Add Token Limit Enforcement Tests",
+      "priority": "HIGH",
+      "description": "Add tests to ensure LLM providers enforce token limits and reject requests exceeding max_tokens configuration."
+    },
+    {
+      "id": "test-llm-03",
+      "enabled": true,
+      "title": "Add Provider Failover Tests",
+      "priority": "HIGH",
+      "description": "Implement and test provider failover mechanism to automatically switch to backup provider when primary fails."
+    },
+    {
+      "id": "test-low-misc-01",
+      "enabled": true,
+      "title": "Address Low Priority Test Quality Issues (Part 1)",
+      "priority": "LOW",
+      "description": "Address low priority test quality improvements including documentation, naming consistency, edge case coverage, and test readability."
+    },
+    {
+      "id": "test-low-misc-02",
+      "enabled": true,
+      "title": "Address Low Priority Test Quality Issues (Part 2)",
+      "priority": "LOW",
+      "description": "Address remaining low priority improvements including test fixtures, helper functions, and refactoring for maintainability."
+    },
+    {
+      "id": "test-med-compiler-01",
+      "enabled": true,
+      "title": "Add Compiler & Observability Medium Priority Tests",
+      "priority": "NORMAL",
+      "description": "Add medium priority test coverage for compiler and observability edge cases including console streaming buffers, state manager assertions, error scenarios, and workflow state transitions."
+    },
+    {
+      "id": "test-med-integration-01",
+      "enabled": true,
+      "title": "Improve Integration Test Organization and Performance",
+      "priority": "NORMAL",
+      "description": "Improve integration test organization by grouping by milestone, consolidating fixtures, adding documentation, optimizing performance, and adding baselines."
+    },
+    {
+      "id": "test-med-security-01",
+      "enabled": true,
+      "title": "Improve Security Test Quality and Documentation",
+      "priority": "NORMAL",
+      "description": "Improve security test quality by adding performance baselines, standardizing naming, adding documentation, timeouts for slow tests, and increasing test data variety."
+    },
+    {
+      "id": "test-med-tools-01",
+      "enabled": true,
+      "title": "Add Tools & Strategies Medium Priority Tests",
+      "priority": "NORMAL",
+      "description": "Add medium priority tests for tools and strategies including sequential testing, config validation, reducing mocks, multi-agent coordination, and property-based tests."
+    },
+    {
+      "id": "test-observability-edge-cases",
+      "enabled": true,
+      "title": "Observability Edge Cases",
+      "priority": "NORMAL",
+      "description": "Add edge case tests for observability: hook failures, circular hooks, telemetry sampling, large outputs."
+    },
+    {
+      "id": "test-perf-01",
+      "enabled": true,
+      "title": "Add Template Compilation Caching Tests",
+      "priority": "HIGH",
+      "description": "Test that PromptEngine caches compiled templates for performance."
+    },
+    {
+      "id": "test-perf-02",
+      "enabled": true,
+      "title": "Add Large Template Performance Tests",
+      "priority": "NORMAL",
+      "description": "Test PromptEngine performance with large templates (10KB+)."
+    },
+    {
+      "id": "test-perf-03",
+      "enabled": true,
+      "title": "Add High-Volume Tracking Performance Tests",
+      "priority": "NORMAL",
+      "description": "Test ExecutionTracker performance under high volume (1000+ events/sec)."
+    },
+    {
+      "id": "test-perf-04",
+      "enabled": true,
+      "title": "Add Memory Leak Detection Tests",
+      "priority": "NORMAL",
+      "description": "Add tests to detect memory leaks in long-running agent/workflow execution."
+    },
+    {
+      "id": "test-property-based",
+      "enabled": true,
+      "title": "Property-Based Testing with Hypothesis",
+      "priority": "NORMAL",
+      "description": "Add property-based testing using Hypothesis library to test invariants and discover edge cases automatically."
+    },
+    {
+      "id": "test-regression-suite",
+      "enabled": true,
+      "title": "Regression Test Framework",
+      "priority": "NORMAL",
+      "description": "Create regression test suite to prevent known bugs from reappearing."
+    },
+    {
+      "id": "test-security-01",
+      "enabled": true,
+      "title": "Implement test_llm_security.py Test Suite",
+      "priority": "CRITICAL",
+      "description": "Implement all placeholder tests in test_llm_security.py. Currently all tests are stubs with no implementation, creating critical security validation gaps."
+    },
+    {
+      "id": "test-security-02",
+      "enabled": true,
+      "title": "Add Comprehensive Prompt Injection Tests",
+      "priority": "CRITICAL",
+      "description": "Enhance test_prompt_injection.py with comprehensive detection tests, false positive minimization, and bypass detection tests."
+    },
+    {
+      "id": "test-security-03",
+      "enabled": true,
+      "title": "Add Output Sanitization Tests",
+      "priority": "CRITICAL",
+      "description": "Add comprehensive tests for output sanitization to ensure secrets, PII, and sensitive data are properly redacted from LLM outputs."
+    },
+    {
+      "id": "test-security-04",
+      "enabled": true,
+      "title": "Add Template Injection Prevention Tests",
+      "priority": "CRITICAL",
+      "description": "Add tests to ensure Jinja2 template engine prevents template injection attacks where user input could execute arbitrary code."
+    },
+    {
+      "id": "test-security-05",
+      "enabled": true,
+      "title": "Add YAML Bomb Prevention Tests",
+      "priority": "CRITICAL",
+      "description": "Add tests to prevent YAML bomb attacks (exponential expansion) and symlink traversal attacks in configuration loading."
+    },
+    {
+      "id": "test-security-concurrency",
+      "enabled": true,
+      "title": "Race Condition & Concurrency Security Tests",
+      "priority": "CRITICAL",
+      "description": "Add tests for race conditions in shared state, concurrent workflow execution, and multi-agent data integrity."
+    },
+    {
+      "id": "test-security-config-bombs",
+      "enabled": true,
+      "title": "YAML Bomb & Config Injection Tests",
+      "priority": "CRITICAL",
+      "description": "Add tests to prevent YAML bombs (billion laughs attack), environment variable injection, and config size limits."
+    },
+    {
+      "id": "test-security-path-injection",
+      "enabled": true,
+      "title": "Path Safety Edge Cases & Injection Tests",
+      "priority": "CRITICAL",
+      "description": "Add comprehensive path injection and edge case tests to prevent path traversal, symlink attacks, and encoding bypass."
+    },
+    {
+      "id": "test-state-transitions",
+      "enabled": true,
+      "title": "State Machine Transition Tests",
+      "priority": "HIGH",
+      "description": "Add comprehensive state transition tests for workflow lifecycle, safety modes, and agent execution state machines."
+    },
+    {
+      "id": "test-tool-01",
+      "enabled": true,
+      "title": "Add Tool Execution Timeout Tests",
+      "priority": "CRITICAL",
+      "description": "Add timeout handling for tool execution to prevent agents from hanging on slow or stuck tools."
+    },
+    {
+      "id": "test-tool-02",
+      "enabled": true,
+      "title": "Add Malicious Tool Parameter Sanitization Tests",
+      "priority": "CRITICAL",
+      "description": "Add tests to ensure tool parameters are sanitized to prevent path traversal, command injection, and other attacks."
+    },
+    {
+      "id": "test-tool-03",
+      "enabled": true,
+      "title": "Add Resource Exhaustion Prevention Tests",
+      "priority": "HIGH",
+      "description": "Add tests to prevent resource exhaustion from tools consuming excessive CPU, memory, or file handles."
+    },
+    {
+      "id": "test-tool-execution-edge-cases",
+      "enabled": true,
+      "title": "Tool Execution Edge Cases",
+      "priority": "NORMAL",
+      "description": "Add edge case tests for tool execution: parameter validation, circular references, large outputs, permission errors."
+    },
+    {
+      "id": "test-tool-infra-01",
+      "enabled": true,
+      "title": "Add Tool Version Conflict Tests",
+      "priority": "NORMAL",
+      "description": "Test that tool registry handles version conflicts gracefully."
+    },
+    {
+      "id": "test-workflow-01",
+      "enabled": true,
+      "title": "Add Workflow Cancellation Tests",
+      "priority": "CRITICAL",
+      "description": "Add tests for workflow cancellation capability to stop long-running workflows gracefully."
+    },
+    {
+      "id": "test-workflow-02",
+      "enabled": true,
+      "title": "Add Concurrent Workflow Execution Tests",
+      "priority": "CRITICAL",
+      "description": "Test that multiple workflows can execute concurrently without conflicts or data corruption."
+    },
+    {
+      "id": "test-workflow-03",
+      "enabled": true,
+      "title": "Add Failure Recovery Integration Tests",
+      "priority": "HIGH",
+      "description": "Test workflow handles failures gracefully and recovers when possible."
+    }
+  ]
+}

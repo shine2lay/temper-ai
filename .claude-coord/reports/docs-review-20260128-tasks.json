@@ -1,0 +1,1925 @@
+{
+  "metadata": {
+    "review_type": "documentation-review",
+    "generated": "2026-01-28T21:30:00Z",
+    "total_proposed": 64,
+    "status": "APPROVED",
+    "reviewers": [
+      "API Documentation Reviewer",
+      "Architecture Documentation Reviewer",
+      "Project/User Documentation Reviewer",
+      "Code Cross-Reference Reviewer"
+    ],
+    "summary": "Comprehensive documentation review found 89 issues: 15 critical (doc-code mismatches), 21 high (broken examples/links), 23 medium (inconsistencies), 30 low (minor issues)"
+  },
+  "tasks": [
+    {
+      "id": "doc-crit-01",
+      "enabled": true,
+      "title": "[Docs] Fix AgentResponse documentation - output type mismatch",
+      "priority": "CRITICAL",
+      "effort_hours": 2,
+      "module": "docs/interfaces",
+      "description": "Documentation shows AgentResponse.output as Dict[str, Any] but code has it as str. Also missing fields.",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/core/agent_interface.md",
+          "description": "Update AgentResponse structure (lines 34-40)"
+        },
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Update AgentResponse example (lines 933-947)"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Change output: Dict[str, Any] to output: str",
+          "Add tokens, estimated_cost_usd, latency_seconds, error, confidence fields",
+          "Update all code examples using AgentResponse"
+        ],
+        "documentation": [
+          "Update field descriptions to match implementation"
+        ]
+      },
+      "implementation_guidance": "Cross-reference with src/agents/base_agent.py:15-37",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "agent_interface.md",
+          "API_REFERENCE.md"
+        ]
+      },
+      "notes": "CRITICAL: Code using documented signature will fail"
+    },
+    {
+      "id": "doc-crit-02",
+      "enabled": true,
+      "title": "[Docs] Fix ExecutionContext field names and types",
+      "priority": "CRITICAL",
+      "effort_hours": 2,
+      "module": "docs/interfaces",
+      "description": "ExecutionContext documentation shows wrong field names and types.",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/core/agent_interface.md",
+          "description": "Update ExecutionContext structure"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Change agent_execution_id to agent_id",
+          "Make all fields Optional",
+          "Add session_id, user_id, metadata fields"
+        ]
+      },
+      "implementation_guidance": "Cross-reference with src/agents/base_agent.py:89-107",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "agent_interface.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-crit-03",
+      "enabled": true,
+      "title": "[Docs] Document multiple ExecutionContext classes",
+      "priority": "CRITICAL",
+      "effort_hours": 3,
+      "module": "docs/interfaces",
+      "description": "Four different ExecutionContext classes exist causing namespace collision",
+      "files_to_create": [
+        {
+          "path": "docs/architecture/EXECUTION_CONTEXT_CLASSES.md",
+          "description": "Document all variations"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Document all four ExecutionContext classes",
+          "Explain differences and use cases",
+          "Add import disambiguation guide"
+        ]
+      },
+      "implementation_guidance": "Review all four classes",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "agent_interface.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-crit-04",
+      "enabled": true,
+      "title": "[Docs] Remove init_config_loader - doesn't exist",
+      "priority": "CRITICAL",
+      "effort_hours": 1,
+      "module": "docs/interfaces",
+      "description": "Function doesn't exist, use ConfigLoader() directly",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/core/agent_interface.md",
+          "description": "Remove init_config_loader"
+        },
+        {
+          "path": "README.md",
+          "description": "Update examples"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Replace init_config_loader with ConfigLoader()",
+          "Update all import statements",
+          "Verify examples work"
+        ]
+      },
+      "implementation_guidance": "Use ConfigLoader() pattern",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "agent_interface.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-crit-05",
+      "enabled": true,
+      "title": "[Docs] Fix AgentFactory method names",
+      "priority": "CRITICAL",
+      "effort_hours": 2,
+      "module": "docs/interfaces",
+      "description": "Wrong method names: create_agent() should be create(), register_agent_type() should be register_type()",
+      "files_to_modify": [
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Update methods"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Change create_agent() to create()",
+          "Change register_agent_type() to register_type()",
+          "Update parameter types"
+        ]
+      },
+      "implementation_guidance": "Cross-reference src/agents/agent_factory.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-crit-06",
+      "enabled": true,
+      "title": "[Docs] Add ExecutionEngine.execute() mode parameter",
+      "priority": "CRITICAL",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Documentation missing optional mode parameter",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Update execute() example"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Document mode: ExecutionMode parameter",
+          "Show SYNC, ASYNC, STREAM examples"
+        ]
+      },
+      "implementation_guidance": "Check src/compiler/execution_engine.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-crit-07",
+      "enabled": true,
+      "title": "[Docs] Clarify execute() return structure",
+      "priority": "CRITICAL",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "README claims result['stage_outputs'] exists but structure is engine-specific",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Fix result access"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Remove assumption about stage_outputs key",
+          "Show safe access pattern"
+        ]
+      },
+      "implementation_guidance": "Engine-specific return structure",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-crit-08",
+      "enabled": true,
+      "title": "[Docs] Fix LLM provider method name",
+      "priority": "CRITICAL",
+      "effort_hours": 2,
+      "module": "docs/interfaces",
+      "description": "Documentation shows generate() but code uses complete()",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/core/llm_provider_interface.md",
+          "description": "Change to complete()"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Replace all generate() with complete()",
+          "Update all examples"
+        ]
+      },
+      "implementation_guidance": "Check src/agents/llm_providers.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "llm_provider_interface.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-01",
+      "enabled": true,
+      "title": "[Docs] Fix broken file paths in README",
+      "priority": "HIGH",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Wrong paths and case sensitivity issues",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Fix file paths"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix all file path references",
+          "Test all links work"
+        ]
+      },
+      "implementation_guidance": "Check actual file paths",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-02",
+      "enabled": true,
+      "title": "[Docs] Fix example command syntax",
+      "priority": "HIGH",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Commands use workflow name but script expects full path",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Fix commands"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Update to use full YAML paths",
+          "Test commands work"
+        ]
+      },
+      "implementation_guidance": "Check examples/run_workflow.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-03",
+      "enabled": true,
+      "title": "[Docs] Fix AgentResponse metadata access",
+      "priority": "HIGH",
+      "effort_hours": 1,
+      "module": "docs/interfaces",
+      "description": "Example accesses metadata['cost'] but should use direct attribute",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/core/agent_interface.md",
+          "description": "Fix example"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Use estimated_cost_usd direct attribute"
+        ]
+      },
+      "implementation_guidance": "Use direct fields",
+      "dependencies": {
+        "blocked_by": [
+          "doc-crit-01"
+        ],
+        "blocks": [],
+        "integrates_with": [
+          "agent_interface.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-04",
+      "enabled": true,
+      "title": "[Docs] Add BaseTool get_metadata() method",
+      "priority": "HIGH",
+      "effort_hours": 2,
+      "module": "docs/interfaces",
+      "description": "Missing required abstract method in docs",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/core/tool_interface.md",
+          "description": "Add get_metadata()"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Document get_metadata() as abstract",
+          "Add example implementation"
+        ]
+      },
+      "implementation_guidance": "Check src/tools/base.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "tool_interface.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-05",
+      "enabled": true,
+      "title": "[Docs] Update ToolRegistry method names",
+      "priority": "HIGH",
+      "effort_hours": 2,
+      "module": "docs/interfaces",
+      "description": "Wrong method names and missing version support",
+      "files_to_modify": [
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Update ToolRegistry"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix method names",
+          "Document version support"
+        ]
+      },
+      "implementation_guidance": "Check src/tools/registry.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-06",
+      "enabled": true,
+      "title": "[Docs] Fix LLMResponse field names",
+      "priority": "HIGH",
+      "effort_hours": 2,
+      "module": "docs/interfaces",
+      "description": "text should be content, add token breakdown fields",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/core/llm_provider_interface.md",
+          "description": "Update LLMResponse"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Change text to content",
+          "Add token breakdown fields"
+        ]
+      },
+      "implementation_guidance": "Check src/agents/llm_providers.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "llm_provider_interface.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-07",
+      "enabled": true,
+      "title": "[Docs] Create M4_SAFETY_ARCHITECTURE.md or redirect",
+      "priority": "HIGH",
+      "effort_hours": 3,
+      "module": "docs/security",
+      "description": "File referenced but doesn't exist",
+      "files_to_create": [
+        {
+          "path": "docs/security/M4_SAFETY_ARCHITECTURE.md",
+          "description": "Safety architecture doc"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Create doc or redirect to M4_SAFETY_SYSTEM.md"
+        ]
+      },
+      "implementation_guidance": "Either create or consolidate",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "SYSTEM_OVERVIEW.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-08",
+      "enabled": true,
+      "title": "[Docs] Fix broken links in QUICK_START.md",
+      "priority": "HIGH",
+      "effort_hours": 2,
+      "module": "docs",
+      "description": "10+ broken internal links",
+      "files_to_modify": [
+        {
+          "path": "docs/QUICK_START.md",
+          "description": "Fix all broken links"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix all 10+ broken links",
+          "Verify targets exist"
+        ]
+      },
+      "implementation_guidance": "Check docs/ file structure",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "QUICK_START.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-09",
+      "enabled": true,
+      "title": "[Docs] Create docs/interfaces/ directory",
+      "priority": "HIGH",
+      "effort_hours": 4,
+      "module": "docs/interfaces",
+      "description": "Referenced directory doesn't exist",
+      "files_to_create": [
+        {
+          "path": "docs/interfaces/core/agent_interface.md",
+          "description": "Agent interface"
+        },
+        {
+          "path": "docs/interfaces/core/llm_provider_interface.md",
+          "description": "LLM provider interface"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Create all interface docs",
+          "Add examples"
+        ]
+      },
+      "implementation_guidance": "Extract from API_REFERENCE.md",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "SYSTEM_OVERVIEW.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-10",
+      "enabled": true,
+      "title": "[Docs] Update M3 status to Complete",
+      "priority": "HIGH",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "README shows 69% but M3 is complete",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Update M3 status"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Change to Complete",
+          "Remove pending items"
+        ]
+      },
+      "implementation_guidance": "Sync with ROADMAP.md",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-11",
+      "enabled": true,
+      "title": "[Docs] Replace placeholder GitHub URLs",
+      "priority": "HIGH",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "yourusername prevents cloning",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Fix URLs"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Replace with actual URLs",
+          "Test clone works"
+        ]
+      },
+      "implementation_guidance": "Get actual repo URL",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-12",
+      "enabled": true,
+      "title": "[Docs] Expand TROUBLESHOOTING.md",
+      "priority": "HIGH",
+      "effort_hours": 4,
+      "module": "docs",
+      "description": "Too brief at 149 lines, needs 500+",
+      "files_to_modify": [
+        {
+          "path": "docs/TROUBLESHOOTING.md",
+          "description": "Expand significantly"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add detailed solutions",
+          "Add debugging examples",
+          "Reach 500+ lines"
+        ]
+      },
+      "implementation_guidance": "Match depth of other guides",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "TROUBLESHOOTING.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-01",
+      "enabled": true,
+      "title": "[Docs] Document api_key deprecation",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Document api_key \u2192 api_key_ref migration",
+      "files_to_modify": [
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Add deprecation note"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Document migration path"
+        ]
+      },
+      "implementation_guidance": "Check schemas.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-02",
+      "enabled": true,
+      "title": "[Docs] Standardize strategy naming",
+      "priority": "MEDIUM",
+      "effort_hours": 2,
+      "module": "docs",
+      "description": "Inconsistent naming across docs",
+      "files_to_modify": [
+        {
+          "path": "docs/TECHNICAL_SPECIFICATION.md",
+          "description": "Standardize"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Pick standard convention",
+          "Update all references"
+        ]
+      },
+      "implementation_guidance": "Check src/strategies/",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "TECHNICAL_SPECIFICATION.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-03",
+      "enabled": true,
+      "title": "[Docs] Add M3\u2192M4 migration guide",
+      "priority": "MEDIUM",
+      "effort_hours": 3,
+      "module": "docs",
+      "description": "Missing recent migration docs",
+      "files_to_modify": [
+        {
+          "path": "docs/MIGRATION.md",
+          "description": "Add M3\u2192M4 section"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Document breaking changes",
+          "Add migration examples"
+        ]
+      },
+      "implementation_guidance": "Review changes/ directory",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "MIGRATION.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-01",
+      "enabled": true,
+      "title": "[Docs] Standardize emoji usage",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Inconsistent checkmarks",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Standardize"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Use \u2705 consistently"
+        ]
+      },
+      "implementation_guidance": "Search and replace",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-02",
+      "enabled": true,
+      "title": "[Docs] Create terminology glossary",
+      "priority": "LOW",
+      "effort_hours": 3,
+      "module": "docs",
+      "description": "Inconsistent terminology",
+      "files_to_create": [
+        {
+          "path": "docs/GLOSSARY.md",
+          "description": "Terminology glossary"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Define all key terms",
+          "Standardize usage"
+        ]
+      },
+      "implementation_guidance": "Review all docs",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "Multiple docs"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-04",
+      "enabled": true,
+      "title": "[Docs] Remove non-existent SafetyConfig fields",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Documentation shows fields that don't exist: allowed_paths, forbidden_paths, max_cost_usd",
+      "files_to_modify": [
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Remove non-existent fields"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Remove all non-existent fields",
+          "Verify against actual schema"
+        ]
+      },
+      "implementation_guidance": "Check src/compiler/schemas.py:59-65",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-05",
+      "enabled": true,
+      "title": "[Docs] Fix database model field name - extra_metadata",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs/interfaces",
+      "description": "Documentation shows metadata but code uses extra_metadata",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/models/observability_models.md",
+          "description": "Change to extra_metadata"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Rename metadata to extra_metadata",
+          "Update query examples"
+        ]
+      },
+      "implementation_guidance": "Check src/observability/models.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "observability_models.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-06",
+      "enabled": true,
+      "title": "[Docs] Update PromptConfig validator decorator",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs/interfaces",
+      "description": "Shows @field_validator but code uses @model_validator",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/models/config_schema.md",
+          "description": "Update validator"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Change to @model_validator",
+          "Update signature"
+        ]
+      },
+      "implementation_guidance": "Check src/compiler/schemas.py:125-137",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "config_schema.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-03",
+      "enabled": true,
+      "title": "[Docs] Add import path setup instructions",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Examples may not work without PYTHONPATH setup",
+      "files_to_modify": [
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Add import setup"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add PYTHONPATH instructions",
+          "Show import troubleshooting"
+        ]
+      },
+      "implementation_guidance": "Document standard Python setup",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-04",
+      "enabled": true,
+      "title": "[Docs] Add default parameter values to examples",
+      "priority": "LOW",
+      "effort_hours": 2,
+      "module": "docs",
+      "description": "Examples don't show defaults, unclear what's optional",
+      "files_to_modify": [
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Add defaults"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add comments with defaults",
+          "Show optional parameters"
+        ]
+      },
+      "implementation_guidance": "Extract from source type hints",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-05",
+      "enabled": true,
+      "title": "[Docs] Add LLMProvider enum documentation",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs/interfaces",
+      "description": "Missing LLMProvider enum documentation",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/core/llm_provider_interface.md",
+          "description": "Add enum docs"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Document enum values",
+          "Show usage"
+        ]
+      },
+      "implementation_guidance": "Check src/agents/llm_providers.py:62-67",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "llm_provider_interface.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-06",
+      "enabled": true,
+      "title": "[Docs] Document BaseTool config parameter",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs/interfaces",
+      "description": "BaseTool.__init__ config parameter not documented",
+      "files_to_modify": [
+        {
+          "path": "docs/interfaces/core/tool_interface.md",
+          "description": "Add config docs"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Document config parameter",
+          "Show usage example"
+        ]
+      },
+      "implementation_guidance": "Check src/tools/base.py:60-68",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "tool_interface.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-07",
+      "enabled": true,
+      "title": "[Docs] Add M4 CircuitBreaker import examples",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "M4 docs show imports but don't specify full paths",
+      "files_to_modify": [
+        {
+          "path": "docs/M4_API_REFERENCE.md",
+          "description": "Add import examples"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add full import examples",
+          "Verify imports work"
+        ]
+      },
+      "implementation_guidance": "Test src/safety/ imports",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "M4_API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-13",
+      "enabled": true,
+      "title": "[Docs] Fix LangGraphCompiler import paths",
+      "priority": "HIGH",
+      "effort_hours": 2,
+      "module": "docs",
+      "description": "Documentation shows wrong module structure for LangGraphCompiler",
+      "files_to_modify": [
+        {
+          "path": "docs/TECHNICAL_SPECIFICATION.md",
+          "description": "Fix import paths"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Update to correct module path",
+          "Use engine_registry pattern"
+        ]
+      },
+      "implementation_guidance": "Check src/compiler/langgraph_engine.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "TECHNICAL_SPECIFICATION.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-14",
+      "enabled": true,
+      "title": "[Docs] Fix or create interface documentation files",
+      "priority": "HIGH",
+      "effort_hours": 3,
+      "module": "docs/interfaces",
+      "description": "SYSTEM_OVERVIEW references non-existent interface docs",
+      "files_to_modify": [
+        {
+          "path": "docs/architecture/SYSTEM_OVERVIEW.md",
+          "description": "Fix references"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Create interface docs or remove references",
+          "Verify all links work"
+        ]
+      },
+      "implementation_guidance": "Either create files or update links",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "SYSTEM_OVERVIEW.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-07",
+      "enabled": true,
+      "title": "[Docs] Update M3 completion percentage consistency",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "TECHNICAL_SPECIFICATION shows 69% but actual is 91%",
+      "files_to_modify": [
+        {
+          "path": "docs/TECHNICAL_SPECIFICATION.md",
+          "description": "Update percentage"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Sync with actual test results",
+          "Update all M3 references"
+        ]
+      },
+      "implementation_guidance": "Check milestone3_completion.md",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "TECHNICAL_SPECIFICATION.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-08",
+      "enabled": true,
+      "title": "[Docs] Remove specific line number references",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs/features",
+      "description": "execution_engine_architecture.md has stale line numbers",
+      "files_to_modify": [
+        {
+          "path": "docs/features/execution/execution_engine_architecture.md",
+          "description": "Remove line numbers"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Remove or update line references",
+          "Use section references instead"
+        ]
+      },
+      "implementation_guidance": "Line numbers become stale quickly",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "execution_engine_architecture.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-08",
+      "enabled": true,
+      "title": "[Docs] Mark unimplemented safety policies as Planned",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs/security",
+      "description": "M4_SAFETY_SYSTEM documents policies that don't exist yet",
+      "files_to_modify": [
+        {
+          "path": "docs/security/M4_SAFETY_SYSTEM.md",
+          "description": "Mark as planned"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Mark ResourceLimitPolicy as Planned",
+          "Mark ApprovalWorkflowPolicy as Planned",
+          "Verify only implemented policies shown as available"
+        ]
+      },
+      "implementation_guidance": "Check src/safety/ for actual implementations",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "M4_SAFETY_SYSTEM.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-09",
+      "enabled": true,
+      "title": "[Docs] Backfill missing ADRs for M3-M4",
+      "priority": "MEDIUM",
+      "effort_hours": 6,
+      "module": "docs/adr",
+      "description": "ADRs jump from 0005 to nothing, missing M3-M4 decisions",
+      "files_to_create": [
+        {
+          "path": "docs/adr/0006-parallel-execution-strategy.md",
+          "description": "M3 parallel execution ADR"
+        },
+        {
+          "path": "docs/adr/0007-safety-policy-composition.md",
+          "description": "M4 safety composition ADR"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Create ADR-0006",
+          "Create ADR-0007",
+          "Update ADR index"
+        ]
+      },
+      "implementation_guidance": "Review changes/ for decisions",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "adr/README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-10",
+      "enabled": true,
+      "title": "[Docs] Complete feature support matrix",
+      "priority": "MEDIUM",
+      "effort_hours": 2,
+      "module": "docs/features",
+      "description": "Matrix shows future engines but incomplete current capabilities",
+      "files_to_modify": [
+        {
+          "path": "docs/features/execution/execution_engine_architecture.md",
+          "description": "Complete matrix"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add LangGraph capabilities",
+          "Document current features",
+          "Remove or mark future engines"
+        ]
+      },
+      "implementation_guidance": "Test actual engine capabilities",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "execution_engine_architecture.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-11",
+      "enabled": true,
+      "title": "[Docs] Add comprehensive workflow examples",
+      "priority": "MEDIUM",
+      "effort_hours": 3,
+      "module": "docs",
+      "description": "TECHNICAL_SPECIFICATION has schema but limited examples",
+      "files_to_modify": [
+        {
+          "path": "docs/TECHNICAL_SPECIFICATION.md",
+          "description": "Add examples"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add M3 features example",
+          "Add error handling examples",
+          "Add multi-stage dependencies"
+        ]
+      },
+      "implementation_guidance": "Create realistic workflow examples",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "TECHNICAL_SPECIFICATION.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-12",
+      "enabled": true,
+      "title": "[Docs] Document database indexes",
+      "priority": "MEDIUM",
+      "effort_hours": 2,
+      "module": "docs",
+      "description": "Schema shows tables but incomplete index documentation",
+      "files_to_modify": [
+        {
+          "path": "docs/TECHNICAL_SPECIFICATION.md",
+          "description": "Add indexes"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Document all indexes",
+          "Add query patterns",
+          "Add optimization guide"
+        ]
+      },
+      "implementation_guidance": "Check src/observability/models.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "TECHNICAL_SPECIFICATION.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-13",
+      "enabled": true,
+      "title": "[Docs] Fix safety policy priority values",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs/security",
+      "description": "Documentation shows P0=200 but code may differ",
+      "files_to_modify": [
+        {
+          "path": "docs/security/M4_SAFETY_SYSTEM.md",
+          "description": "Verify priorities"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Verify against actual code",
+          "Update if mismatch",
+          "Document priority scale"
+        ]
+      },
+      "implementation_guidance": "Check src/safety/ policy implementations",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "M4_SAFETY_SYSTEM.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-09",
+      "enabled": true,
+      "title": "[Docs] Update architecture diagram class names",
+      "priority": "LOW",
+      "effort_hours": 2,
+      "module": "docs/architecture",
+      "description": "Diagram shows StandardAgent but missing LLMFailover",
+      "files_to_modify": [
+        {
+          "path": "docs/architecture/SYSTEM_OVERVIEW.md",
+          "description": "Update diagram"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add BaseAgent hierarchy",
+          "Add LLMFailover",
+          "Match actual structure"
+        ]
+      },
+      "implementation_guidance": "Check src/agents/",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "SYSTEM_OVERVIEW.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-10",
+      "enabled": true,
+      "title": "[Docs] Update M2.5 migration guide status",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs/features",
+      "description": "Shows OLD vs NEW but M2.5 complete",
+      "files_to_modify": [
+        {
+          "path": "docs/features/execution/execution_engine_architecture.md",
+          "description": "Update migration"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Mark M2.5 as current",
+          "Remove OLD/NEW labels"
+        ]
+      },
+      "implementation_guidance": "M2.5 is now standard",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "execution_engine_architecture.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-11",
+      "enabled": true,
+      "title": "[Docs] Add performance metric timestamps",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Metrics shown without timestamps or conditions",
+      "files_to_modify": [
+        {
+          "path": "docs/TECHNICAL_SPECIFICATION.md",
+          "description": "Add timestamps"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add timestamps to metrics",
+          "Add benchmark conditions"
+        ]
+      },
+      "implementation_guidance": "Add metadata to performance claims",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "TECHNICAL_SPECIFICATION.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-12",
+      "enabled": true,
+      "title": "[Docs] Create docs/security/README.md navigation",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs/security",
+      "description": "5 M4 docs but no navigation guide",
+      "files_to_create": [
+        {
+          "path": "docs/security/README.md",
+          "description": "Security docs index"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "List all security docs",
+          "Add reading order",
+          "Cross-link docs"
+        ]
+      },
+      "implementation_guidance": "Similar to docs/INDEX.md",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "docs/security/"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-13",
+      "enabled": true,
+      "title": "[Docs] Fix ADR numbering and index",
+      "priority": "LOW",
+      "effort_hours": 2,
+      "module": "docs/adr",
+      "description": "ADR numbering gaps and incomplete index",
+      "files_to_modify": [
+        {
+          "path": "docs/adr/README.md",
+          "description": "Update index"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Update ADR index",
+          "Add milestone mapping"
+        ]
+      },
+      "implementation_guidance": "Document which ADRs apply to which milestones",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "adr/README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-14",
+      "enabled": true,
+      "title": "[Docs] Verify .env.example matches documentation",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "README references .env.example but need to verify content",
+      "files_to_modify": [
+        {
+          "path": ".env.example",
+          "description": "Verify or create"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Verify .env.example exists",
+          "Match documented variables",
+          "Add all required vars"
+        ]
+      },
+      "implementation_guidance": "Check README.md:168 references",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-15",
+      "enabled": true,
+      "title": "[Docs] Validate all YAML configuration examples",
+      "priority": "MEDIUM",
+      "effort_hours": 4,
+      "module": "docs",
+      "description": "Many YAML examples not validated against schemas",
+      "files_to_modify": [
+        {
+          "path": "docs/CONFIGURATION.md",
+          "description": "Validate all examples"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Test every YAML example",
+          "Fix schema violations",
+          "Add validation script"
+        ]
+      },
+      "implementation_guidance": "Use ConfigLoader to validate",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "CONFIGURATION.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-16",
+      "enabled": true,
+      "title": "[Docs] Update ROADMAP.md timeline",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Shows Q1 2026: M4 but M4 complete",
+      "files_to_modify": [
+        {
+          "path": "docs/ROADMAP.md",
+          "description": "Update timeline"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Mark M4 complete",
+          "Add M5 breakdown",
+          "Update Q1/Q2 timeline"
+        ]
+      },
+      "implementation_guidance": "Check milestone reports for dates",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "ROADMAP.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-17",
+      "enabled": true,
+      "title": "[Docs] Update CONTRIBUTING.md milestone references",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "References M1 as current, should be M4/M5",
+      "files_to_modify": [
+        {
+          "path": "docs/CONTRIBUTING.md",
+          "description": "Update milestones"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Update to M4",
+          "Update completed list",
+          "Verify code style commands"
+        ]
+      },
+      "implementation_guidance": "Sync with ROADMAP.md",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "CONTRIBUTING.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-14",
+      "enabled": true,
+      "title": "[Docs] Update INDEX.md TODO markers",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "TODO markers for files that exist",
+      "files_to_modify": [
+        {
+          "path": "docs/INDEX.md",
+          "description": "Remove TODOs"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Remove TODO for TESTING.md",
+          "Remove TODO for CONTRIBUTING.md",
+          "Update status indicators"
+        ]
+      },
+      "implementation_guidance": "Verify file existence",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "INDEX.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-15",
+      "enabled": true,
+      "title": "[Docs] Verify tool list completeness",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Only 3 tools mentioned, verify if more exist",
+      "files_to_modify": [
+        {
+          "path": "docs/QUICK_START.md",
+          "description": "Update tool list"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Check src/tools/ for all tools",
+          "Update documentation",
+          "Add tool descriptions"
+        ]
+      },
+      "implementation_guidance": "List all available tools",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "QUICK_START.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-16",
+      "enabled": true,
+      "title": "[Docs] Add prerequisites to example commands",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Commands shown but Ollama requirement not upfront",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Add prerequisites"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add Prerequisites section",
+          "Move before Quick Start",
+          "Add optional vs required"
+        ]
+      },
+      "implementation_guidance": "Make requirements prominent",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-17",
+      "enabled": true,
+      "title": "[Docs] Update ROADMAP_TO_10_OUT_OF_10.md checkboxes",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Unchecked boxes should reflect completion",
+      "files_to_modify": [
+        {
+          "path": "docs/ROADMAP_TO_10_OUT_OF_10.md",
+          "description": "Update checkboxes"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Check completed items",
+          "Update percentages",
+          "Mark M1-M4 complete"
+        ]
+      },
+      "implementation_guidance": "Cross-check milestone reports",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "ROADMAP_TO_10_OUT_OF_10.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-18",
+      "enabled": true,
+      "title": "[Docs] Create or remove CODE_STYLE.md reference",
+      "priority": "LOW",
+      "effort_hours": 2,
+      "module": "docs",
+      "description": "INDEX.md references CODE_STYLE.md that doesn't exist",
+      "files_to_create": [
+        {
+          "path": "docs/CODE_STYLE.md",
+          "description": "Code style guide"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Create guide or remove reference",
+          "Document coding standards",
+          "Add linting config"
+        ]
+      },
+      "implementation_guidance": "Document project standards",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "INDEX.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-15",
+      "enabled": true,
+      "title": "[Docs] Verify and fix ConfigLoader examples",
+      "priority": "HIGH",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Examples work but should clarify auto-detection",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Add clarification"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add comment about auto-finding configs/",
+          "Document config_root parameter"
+        ]
+      },
+      "implementation_guidance": "Clarify auto-detection behavior",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-high-16",
+      "enabled": true,
+      "title": "[Docs] Verify AgentConfigInner vs AgentConfig usage",
+      "priority": "HIGH",
+      "effort_hours": 2,
+      "module": "docs",
+      "description": "API_REFERENCE shows AgentConfigInner but may be wrong",
+      "files_to_modify": [
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Verify class name"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Verify which class exists",
+          "Update all references",
+          "Fix import statements"
+        ]
+      },
+      "implementation_guidance": "Check src/compiler/schemas.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-18",
+      "enabled": true,
+      "title": "[Docs] Document workflow name vs path convention",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Inconsistent: some use names, some use paths",
+      "files_to_modify": [
+        {
+          "path": "docs/QUICK_START.md",
+          "description": "Add convention guide"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Document when to use workflow names",
+          "Document when to use file paths",
+          "Update examples consistently"
+        ]
+      },
+      "implementation_guidance": "Clarify naming conventions",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "QUICK_START.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-19",
+      "enabled": true,
+      "title": "[Docs] Clarify ConfigLoader return types",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "Unclear what load_workflow() and load_agent() return",
+      "files_to_modify": [
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Document return types"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Specify load_workflow() returns Dict or validated object",
+          "Specify load_agent() return type",
+          "Add type hints to examples"
+        ]
+      },
+      "implementation_guidance": "Check actual method signatures",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-med-20",
+      "enabled": true,
+      "title": "[Docs] Verify StandardAgent.stream_execute() exists",
+      "priority": "MEDIUM",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "API_REFERENCE mentions stream_execute() - verify it exists",
+      "files_to_modify": [
+        {
+          "path": "docs/API_REFERENCE.md",
+          "description": "Verify or remove"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Check if method exists in code",
+          "Update or remove from docs",
+          "Add example if exists"
+        ]
+      },
+      "implementation_guidance": "Check src/agents/standard_agent.py",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "API_REFERENCE.md"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-19",
+      "enabled": true,
+      "title": "[Docs] Fix link casing inconsistencies",
+      "priority": "LOW",
+      "effort_hours": 2,
+      "module": "docs",
+      "description": "Mix of lowercase and uppercase in file references",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Fix casing"
+        },
+        {
+          "path": "docs/QUICK_START.md",
+          "description": "Fix casing"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Audit all file refs",
+          "Match exact casing",
+          "Test on case-sensitive filesystem"
+        ]
+      },
+      "implementation_guidance": "Use ls to verify actual names",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "Multiple docs"
+        ]
+      }
+    },
+    {
+      "id": "doc-low-20",
+      "enabled": true,
+      "title": "[Docs] Align milestone completion metrics",
+      "priority": "LOW",
+      "effort_hours": 1,
+      "module": "docs",
+      "description": "README shows 69% but 91% test passing - confusing",
+      "files_to_modify": [
+        {
+          "path": "README.md",
+          "description": "Align metrics"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Clarify what percentages mean",
+          "Use consistent metrics",
+          "Explain difference if both needed"
+        ]
+      },
+      "implementation_guidance": "Define clear completion criteria",
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "README.md"
+        ]
+      }
+    }
+  ]
+}

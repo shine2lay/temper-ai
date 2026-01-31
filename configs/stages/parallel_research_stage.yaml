@@ -1,0 +1,78 @@
+# Parallel Research Stage - M3 Multi-Agent Feature
+# Purpose: Execute 3 research agents in parallel, synthesize with consensus
+# Features: Parallel execution, consensus voting, conflict detection
+
+stage:
+  name: parallel_research_stage
+  description: "Multi-agent parallel research with consensus synthesis"
+  version: "1.0"
+
+  # Stage type: multi-agent parallel
+  type: multi_agent_parallel  # M3 feature
+
+  # Agent configuration (execute in parallel)
+  agents:
+    - name: market_researcher
+      config_path: configs/agents/simple_researcher.yaml
+      role: market_analysis
+      description: "Analyzes market trends, size, growth"
+
+    - name: competitor_researcher
+      config_path: configs/agents/simple_researcher.yaml
+      role: competitor_analysis
+      description: "Analyzes competitive landscape"
+
+    - name: user_researcher
+      config_path: configs/agents/simple_researcher.yaml
+      role: user_research
+      description: "Analyzes user needs and pain points"
+
+  # Parallel execution settings (M3)
+  execution:
+    agent_mode: parallel  # Execute agents concurrently
+    max_concurrent: 3  # All 3 agents at once
+    timeout_seconds: 600  # 10 minutes per agent
+
+  # Error handling for parallel execution
+  error_handling:
+    min_successful_agents: 2  # Need at least 2/3 to succeed
+    on_agent_failure: continue  # Continue with successful agents
+    on_stage_failure: halt  # But halt if <2 succeed
+
+  # Collaboration configuration (M3)
+  collaboration:
+    strategy: consensus  # Use consensus voting
+    config:
+      threshold: 0.5  # Simple majority
+      require_unanimous: false
+      conflict_threshold: 0.3  # Flag conflicts >30% disagreement
+
+  # Quality gates (M3)
+  quality_gates:
+    enabled: false  # Disabled for basic example
+    min_confidence: 0.7
+    on_failure: proceed_with_warning
+
+  # Input/output schema
+  inputs:
+    required:
+      - topic
+    optional:
+      - focus_areas
+      - depth
+
+  outputs:
+    - synthesized_decision  # Consensus output
+    - agent_outputs  # Individual outputs
+    - synthesis_metadata  # Votes, confidence, conflicts
+    - agent_metrics  # Tokens, cost, duration per agent
+
+  # Metadata
+  tags:
+    - multi-agent
+    - parallel
+    - consensus
+    - milestone-3
+
+  created_by: m3-14-example-workflows
+  created_at: "2026-01-26"

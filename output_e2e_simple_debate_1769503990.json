@@ -1,0 +1,59 @@
+{
+  "workflow_name": "e2e_simple_debate",
+  "workflow_version": "1.0",
+  "execution_timestamp": "2026-01-27 00:53:10",
+  "stages": [
+    {
+      "stage_name": "e2e_simple_debate_stage",
+      "stage_type": "multi_agent_consensus",
+      "agents": [
+        {
+          "name": "product_manager",
+          "role": "Product Manager",
+          "decision": "option 3",
+          "reasoning": "This option presents a timely market opportunity with high growth potential, aligns with our company's competitive advantage strategy, and is supported by recent market trends.",
+          "confidence": 0.8,
+          "latency_ms": 700,
+          "tokens": 297
+        },
+        {
+          "name": "engineering_lead",
+          "role": "Engineering Lead",
+          "decision": "w",
+          "reasoning": "The provided workflow inputs lack specific details about the scenario, making it challenging to provide an informed recommendation. Without this information, I'm unable to analyze the best course of action or evaluate potential risks. Therefore, a decision cannot be made based on available data.",
+          "confidence": 0.0,
+          "latency_ms": 984,
+          "tokens": 320
+        },
+        {
+          "name": "data_analyst",
+          "role": "Data Analyst",
+          "decision": "workflows.inputs.scenario",
+          "reasoning": "The scenario provides insufficient context to make an informed decision. Without additional information about the workflow, inputs, or desired outcome, it is challenging to determine the most suitable option. A controlled experiment or data-driven approach would be necessary to inform the decision.",
+          "confidence": 0.6,
+          "latency_ms": 907,
+          "tokens": 313
+        }
+      ],
+      "synthesis": {
+        "decision": "option 3",
+        "confidence": 0.2333,
+        "method": "consensus_weak",
+        "votes": {
+          "option 3": 1,
+          "w": 1,
+          "workflows.inputs.scenario": 1
+        },
+        "reasoning": "No clear majority. Decision 'option 3' had 33.3% support, below 51.0% threshold. Consider conflict resolution."
+      }
+    }
+  ],
+  "final_decision": "option 3",
+  "final_confidence": 0.2333,
+  "metrics": {
+    "total_agents_executed": 3,
+    "total_tokens": 930,
+    "total_latency_ms": 2591,
+    "stages_executed": 1
+  }
+}

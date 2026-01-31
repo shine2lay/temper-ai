@@ -1,0 +1,52 @@
+=============================================
+Coordination System Concurrency Testing
+=============================================
+
+[0;34m[INFO][0m Test #1: Atomic read uses shared lock correctly
+[0;32m[PASS][0m Multiple simultaneous reads succeeded (shared lock working)
+[0;34m[INFO][0m Test #2: Atomic write uses exclusive lock correctly
+[0;32m[PASS][0m Atomic write: All 20 concurrent registrations persisted
+[0;32m[PASS][0m Atomic write: JSON integrity maintained after concurrent writes
+[0;34m[INFO][0m Test #3: Atomic update holds exclusive lock for entire read-modify-write
+[0;32m[PASS][0m Atomic update: All 30 concurrent task adds persisted
+[0;34m[INFO][0m Test #4: Concurrent lock acquisition on same file (mutual exclusion)
+[0;32m[PASS][0m Concurrent lock: Only one agent (agent2) acquired lock (mutual exclusion works)
+[0;32m[PASS][0m Concurrent lock: Exactly one lock recorded in state
+[0;34m[INFO][0m Test #5: lock-all atomicity (all-or-nothing)
+[0;32m[PASS][0m lock-all: Failed as expected when one file unavailable
+[0;32m[PASS][0m lock-all: No partial locks acquired (all-or-nothing works)
+[0;34m[INFO][0m Test #6: Concurrent task claim (only one agent should succeed)
+[0;32m[PASS][0m Concurrent task claim: Only one agent (agent1) claimed task
+[0;32m[PASS][0m Concurrent task claim: Task owner correctly recorded
+[0;34m[INFO][0m Test #7: Lock release cascades to unblock tasks
+[0;32m[PASS][0m Lock cascade: Task correctly marked as blocked
+[0;32m[PASS][0m Lock cascade: Task auto-unblocked when lock released
+[0;34m[INFO][0m Test #8: Corrupted JSON recovery
+[0;31m[FAIL][0m Corrupted JSON: System did not recover
+jq: parse error: Invalid numeric literal at line 1, column 10
+./.claude-coord/test-concurrency.sh: line 377: [: : integer expression expected
+[1;33m[WARN][0m Corrupted JSON: Unexpected agent count after recovery
+[0;34m[INFO][0m Test #9: Empty state file handling
+[0;32m[PASS][0m Empty state: System initialized valid JSON
+[0;34m[INFO][0m Test #10: Missing state file handling
+[0;32m[PASS][0m Missing state: Auto-created valid state file
+[0;34m[INFO][0m Test #11: Concurrent operations maintain JSON integrity
+[0;32m[PASS][0m Concurrent ops: JSON integrity maintained
+[0;34m[INFO][0m Test #12: Special characters in agent/task IDs
+[0;32m[PASS][0m Special chars: All test IDs handled correctly
+[0;32m[PASS][0m Special chars: JSON integrity maintained
+[0;34m[INFO][0m Test #13: Very long strings in fields
+[0;32m[PASS][0m Long strings: Handled 10KB description
+[0;32m[PASS][0m Long strings: JSON integrity maintained
+[0;34m[INFO][0m Test #14: Empty values in optional fields
+[0;32m[PASS][0m Empty values: Empty description handled
+[0;32m[PASS][0m Empty values: Task with empty description persisted
+[0;34m[INFO][0m Test #15: Unicode characters in fields
+[0;32m[PASS][0m Unicode: Handled Unicode characters
+[0;32m[PASS][0m Unicode: Subject stored correctly
+[0;34m[INFO][0m Test #16: Dead agent cleanup and lock release
+[0;32m[PASS][0m Dead agent: Agent removed
+[0;32m[PASS][0m Dead agent: Lock released
+[0;34m[INFO][0m Test #17: check command with inline dead agent cleanup
+[0;32m[PASS][0m Inline cleanup: check reported file as unlocked after cleanup
+[0;34m[INFO][0m Test #18: flock exclusive lock blocks concurrent operations

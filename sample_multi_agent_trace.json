@@ -1,0 +1,233 @@
+{
+  "id": "workflow-001",
+  "name": "Market Analysis Workflow",
+  "type": "workflow",
+  "start": "2026-01-27T01:27:26.825316+00:00",
+  "end": "2026-01-27T01:27:34.825316+00:00",
+  "duration": 8.0,
+  "status": "completed",
+  "metadata": {
+    "total_tokens": 8500,
+    "total_cost_usd": 0.017,
+    "total_agents": 3,
+    "environment": "production"
+  },
+  "children": [
+    {
+      "id": "stage-001",
+      "parent_id": "workflow-001",
+      "name": "Analysis Stage",
+      "type": "stage",
+      "start": "2026-01-27T01:27:26.925316+00:00",
+      "end": "2026-01-27T01:27:34.625316+00:00",
+      "duration": 7.7,
+      "status": "completed",
+      "metadata": {
+        "collaboration_rounds": 0,
+        "num_agents": 3
+      },
+      "children": [
+        {
+          "id": "agent-001",
+          "parent_id": "stage-001",
+          "name": "research_agent",
+          "type": "agent",
+          "start": "2026-01-27T01:27:27.025316+00:00",
+          "end": "2026-01-27T01:27:30.325316+00:00",
+          "duration": 3.3,
+          "status": "completed",
+          "metadata": {
+            "total_tokens": 2400,
+            "estimated_cost_usd": 0.0048,
+            "num_llm_calls": 2,
+            "num_tool_calls": 1
+          },
+          "children": [
+            {
+              "id": "llm-001",
+              "parent_id": "agent-001",
+              "name": "ollama/llama3.2:3b",
+              "type": "llm",
+              "start": "2026-01-27T01:27:27.075316+00:00",
+              "end": "2026-01-27T01:27:28.625316+00:00",
+              "duration": 1.55,
+              "status": "success",
+              "metadata": {
+                "model": "llama3.2:3b",
+                "total_tokens": 1200,
+                "prompt": "Research competitors..."
+              }
+            },
+            {
+              "id": "tool-001",
+              "parent_id": "agent-001",
+              "name": "WebScraper",
+              "type": "tool",
+              "start": "2026-01-27T01:27:28.675316+00:00",
+              "end": "2026-01-27T01:27:29.475316+00:00",
+              "duration": 0.8,
+              "status": "success",
+              "metadata": {
+                "tool_name": "WebScraper",
+                "url": "https://competitors.com"
+              }
+            },
+            {
+              "id": "llm-002",
+              "parent_id": "agent-001",
+              "name": "ollama/llama3.2:3b",
+              "type": "llm",
+              "start": "2026-01-27T01:27:29.525316+00:00",
+              "end": "2026-01-27T01:27:30.225316+00:00",
+              "duration": 0.7,
+              "status": "success",
+              "metadata": {
+                "model": "llama3.2:3b",
+                "total_tokens": 1200,
+                "prompt": "Summarize findings..."
+              }
+            }
+          ]
+        },
+        {
+          "id": "agent-002",
+          "parent_id": "stage-001",
+          "name": "analysis_agent",
+          "type": "agent",
+          "start": "2026-01-27T01:27:27.325316+00:00",
+          "end": "2026-01-27T01:27:33.025316+00:00",
+          "duration": 5.7,
+          "status": "completed",
+          "metadata": {
+            "total_tokens": 3800,
+            "estimated_cost_usd": 0.0076,
+            "num_llm_calls": 2,
+            "num_tool_calls": 2
+          },
+          "children": [
+            {
+              "id": "llm-003",
+              "parent_id": "agent-002",
+              "name": "ollama/llama3.2:3b",
+              "type": "llm",
+              "start": "2026-01-27T01:27:27.375316+00:00",
+              "end": "2026-01-27T01:27:30.025316+00:00",
+              "duration": 2.65,
+              "status": "success",
+              "metadata": {
+                "model": "llama3.2:3b",
+                "total_tokens": 2000,
+                "prompt": "Analyze pricing trends..."
+              }
+            },
+            {
+              "id": "tool-002",
+              "parent_id": "agent-002",
+              "name": "Calculator",
+              "type": "tool",
+              "start": "2026-01-27T01:27:30.075316+00:00",
+              "end": "2026-01-27T01:27:30.075316+00:00",
+              "duration": 0.0001,
+              "status": "success",
+              "metadata": {
+                "tool_name": "Calculator",
+                "expression": "avg([49, 59, 79, 99])"
+              }
+            },
+            {
+              "id": "tool-003",
+              "parent_id": "agent-002",
+              "name": "Calculator",
+              "type": "tool",
+              "start": "2026-01-27T01:27:30.085316+00:00",
+              "end": "2026-01-27T01:27:30.085316+00:00",
+              "duration": 0.0001,
+              "status": "success",
+              "metadata": {
+                "tool_name": "Calculator",
+                "expression": "stddev([49, 59, 79, 99])"
+              }
+            },
+            {
+              "id": "llm-004",
+              "parent_id": "agent-002",
+              "name": "ollama/llama3.2:3b",
+              "type": "llm",
+              "start": "2026-01-27T01:27:30.125316+00:00",
+              "end": "2026-01-27T01:27:32.925316+00:00",
+              "duration": 2.8,
+              "status": "success",
+              "metadata": {
+                "model": "llama3.2:3b",
+                "total_tokens": 1800,
+                "prompt": "Create pricing analysis..."
+              }
+            }
+          ]
+        },
+        {
+          "id": "agent-003",
+          "parent_id": "stage-001",
+          "name": "synthesis_agent",
+          "type": "agent",
+          "start": "2026-01-27T01:27:30.425316+00:00",
+          "end": "2026-01-27T01:27:34.525316+00:00",
+          "duration": 4.1,
+          "status": "completed",
+          "metadata": {
+            "total_tokens": 2300,
+            "estimated_cost_usd": 0.0046,
+            "num_llm_calls": 2,
+            "num_tool_calls": 1
+          },
+          "children": [
+            {
+              "id": "llm-005",
+              "parent_id": "agent-003",
+              "name": "ollama/llama3.2:3b",
+              "type": "llm",
+              "start": "2026-01-27T01:27:30.475316+00:00",
+              "end": "2026-01-27T01:27:32.725316+00:00",
+              "duration": 2.25,
+              "status": "success",
+              "metadata": {
+                "model": "llama3.2:3b",
+                "total_tokens": 1500,
+                "prompt": "Synthesize findings..."
+              }
+            },
+            {
+              "id": "tool-004",
+              "parent_id": "agent-003",
+              "name": "FileWriter",
+              "type": "tool",
+              "start": "2026-01-27T01:27:32.775316+00:00",
+              "end": "2026-01-27T01:27:32.785316+00:00",
+              "duration": 0.01,
+              "status": "success",
+              "metadata": {
+                "tool_name": "FileWriter",
+                "file_path": "market_analysis_report.md"
+              }
+            },
+            {
+              "id": "llm-006",
+              "parent_id": "agent-003",
+              "name": "ollama/llama3.2:3b",
+              "type": "llm",
+              "start": "2026-01-27T01:27:32.825316+00:00",
+              "end": "2026-01-27T01:27:34.425316+00:00",
+              "duration": 1.6,
+              "status": "success",
+              "metadata": {
+                "model": "llama3.2:3b",
+                "total_tokens": 800,
+                "prompt": "Generate executive summary..."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,140 @@
+# LLM Debate Stage - Real LLM-Powered Multi-Round Debate
+# Purpose: Use actual LLM calls for multi-agent debate
+# Features: Real reasoning, autonomous mind-changing, convergence detection
+
+stage:
+  name: llm_debate_stage
+  description: "LLM-powered debate with real agent reasoning"
+  version: "1.0"
+
+  # Stage type: LLM multi-agent debate
+  type: llm_multi_agent_debate  # M3 + LLM feature
+
+  # Debating agents (LLM-powered)
+  agents:
+    - name: optimist
+      role: Product Manager
+      persona: "You're optimistic and business-focused. You prioritize speed and market timing. You can be persuaded by strong technical or data arguments."
+      initial_position: "Launch Now"
+      initial_reasoning: "Market window is closing, competitors moving fast. Need first-mover advantage."
+      llm_config:
+        temperature: 0.7
+        max_tokens: 512
+
+    - name: realist
+      role: Engineering Lead
+      persona: "You're cautious and technical. You prioritize quality and security. You can be persuaded if risks are mitigated with concrete plans."
+      initial_position: "Wait 1 Month"
+      initial_reasoning: "Critical bugs in payment system. Customer data security risks too high."
+      llm_config:
+        temperature: 0.7
+        max_tokens: 512
+
+    - name: analyst
+      role: Data Scientist
+      persona: "You're data-driven and analytical. You seek evidence-based compromises. You value both speed and safety."
+      initial_position: "Launch Beta"
+      initial_reasoning: "Limited beta (500 users) lets us gather data while controlling risk."
+      llm_config:
+        temperature: 0.7
+        max_tokens: 512
+
+  # Execution: LLM-powered debate rounds
+  execution:
+    agent_mode: sequential_llm  # Each agent queries LLM in sequence
+    max_iterations: 3  # Max 3 debate rounds
+    timeout_seconds: 180  # 3 minutes total (LLM calls can be slow)
+    retry_on_llm_error: true
+    max_llm_retries: 2
+
+  # Collaboration: LLM debate with convergence
+  collaboration:
+    strategy: llm_debate_and_synthesize  # M3 + LLM strategy
+    config:
+      max_rounds: 3
+      convergence_threshold: 0.8  # Stop if 80% agents unchanged
+      require_unanimous: false
+      min_rounds: 1
+      temperature: 0.7  # LLM creativity level
+      structured_output: true  # Require JSON responses
+      include_debate_history: true  # Show agents previous rounds
+
+  # Convergence detection (M3)
+  convergence:
+    enabled: true
+    threshold: 0.8  # 80% agents unchanged
+    early_termination: true
+    track_position_changes: true
+    track_reasoning_evolution: true  # Track how reasoning changes
+
+  # LLM prompt configuration
+  prompt_config:
+    format: structured_json  # Require JSON output
+    include_persona: true  # Include agent persona in prompt
+    include_other_positions: true  # Show other agents' positions
+    include_debate_history: true  # Show voting trends
+    include_constraints: true  # Show decision options
+    enforce_json_schema: true  # Validate JSON structure
+
+  # Error handling
+  error_handling:
+    min_successful_agents: 2  # Need 2/3 agents
+    on_agent_failure: continue
+    on_llm_parse_error: retry  # Retry if JSON parsing fails
+    on_no_convergence: return_majority  # Return majority vote if no convergence
+    max_parse_retries: 2
+
+  # Quality gates (M3)
+  quality_gates:
+    enabled: true
+    min_confidence: 0.6  # Minimum confidence in final decision
+    min_changed_reasoning: true  # Require agents to provide reasoning
+    on_failure: proceed_with_warning
+
+  # Input/output schema
+  inputs:
+    required:
+      - scenario  # Debate scenario
+      - initial_positions  # Starting positions
+      - agent_personas  # Agent personalities
+
+    optional:
+      - max_rounds
+      - convergence_threshold
+      - temperature
+
+  outputs:
+    - decision  # Final consensus decision
+    - debate_history  # All rounds with LLM calls
+    - convergence_info  # Convergence metrics
+    - llm_traces  # Full prompts, responses, metadata
+    - token_usage  # Total tokens consumed
+    - latency_metrics  # Per-agent and total latency
+    - agent_mind_changes  # Which agents changed, when, why
+
+  # Performance tracking
+  performance:
+    track_latency: true  # Track LLM call latency
+    track_tokens: true  # Track token usage
+    track_costs: true  # Estimate costs
+    per_agent_metrics: true
+    per_round_metrics: true
+
+  # Metadata
+  tags:
+    - debate
+    - llm-powered
+    - real-reasoning
+    - convergence
+    - multi-round
+    - milestone-3
+
+  notes:
+    - "Uses actual LLM API calls - not simulated"
+    - "Agents genuinely reason and change their minds"
+    - "Results vary due to LLM temperature/randomness"
+    - "Requires LLM provider configured (Ollama, OpenAI, etc.)"
+    - "Typical debate: 6-9 LLM calls, ~3-5 seconds with local model"
+
+  created_by: m3-llm-debate-demo
+  created_at: "2026-01-27"

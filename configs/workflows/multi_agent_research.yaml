@@ -1,0 +1,78 @@
+# Multi-Agent Research Workflow - M3 Feature Demo
+# Purpose: Demonstrate parallel agent execution with consensus synthesis
+# Features: 3 agents execute in parallel, synthesize via consensus voting
+
+workflow:
+  name: multi_agent_research
+  description: "Parallel multi-agent research with consensus synthesis"
+  version: "1.0"
+
+  # Workflow metadata
+  lifecycle_type: research
+  product_type: comprehensive_analysis
+
+  # Workflow stages
+  stages:
+    - name: parallel_research
+      config_path: configs/stages/parallel_research_stage.yaml
+      inputs:
+        topic: "{{ workflow.inputs.topic }}"
+        focus_areas: "{{ workflow.inputs.focus_areas }}"
+        depth: "{{ workflow.inputs.depth | default('comprehensive') }}"
+
+      on_success:
+        action: continue
+
+      on_failure:
+        action: halt  # Strict: require all insights
+
+  # Workflow inputs
+  inputs:
+    required:
+      - topic  # Research topic
+    optional:
+      - focus_areas  # Specific research areas
+      - depth  # Analysis depth
+
+  # Workflow outputs
+  outputs:
+    - name: synthesized_insights
+      description: "Consensus insights from all agents"
+      source: parallel_research.synthesized_decision
+
+    - name: agent_perspectives
+      description: "Individual agent outputs"
+      source: parallel_research.agent_outputs
+
+    - name: consensus_metadata
+      description: "Synthesis details (confidence, votes, conflicts)"
+      source: parallel_research.synthesis_metadata
+
+  # Multi-agent execution
+  execution:
+    timeout_seconds: 1200  # 20 minutes
+    parallel_execution: true  # M3 feature
+    max_concurrent_agents: 3
+
+  # Observability
+  observability:
+    trace_all_decisions: true
+    track_collaboration_events: true  # M3 feature
+    log_level: DEBUG
+    metrics_enabled: true
+
+  # Metadata
+  tags:
+    - research
+    - multi-agent
+    - parallel
+    - consensus
+    - milestone-3
+
+  use_cases:
+    - "Market + Competitor + User research in parallel"
+    - "Multi-perspective analysis"
+    - "Comprehensive insights from diverse agents"
+
+  created_by: m3-14-example-workflows
+  created_at: "2026-01-26"

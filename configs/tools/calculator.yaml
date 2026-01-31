@@ -1,0 +1,100 @@
+# Calculator Tool Configuration
+# Purpose: Basic calculator tool for testing tool execution
+
+tool:
+  name: Calculator
+  description: "Basic calculator for arithmetic operations"
+  version: "1.0"
+
+  # Tool implementation
+  implementation:
+    type: builtin  # Built into the framework
+    module: src.tools.calculator
+    class: CalculatorTool
+
+  # Tool capabilities
+  operations:
+    - name: add
+      description: "Add two numbers"
+      parameters:
+        - name: a
+          type: number
+          required: true
+        - name: b
+          type: number
+          required: true
+      returns:
+        type: number
+        description: "Sum of a and b"
+
+    - name: subtract
+      description: "Subtract b from a"
+      parameters:
+        - name: a
+          type: number
+          required: true
+        - name: b
+          type: number
+          required: true
+      returns:
+        type: number
+        description: "Difference (a - b)"
+
+    - name: multiply
+      description: "Multiply two numbers"
+      parameters:
+        - name: a
+          type: number
+          required: true
+        - name: b
+          type: number
+          required: true
+      returns:
+        type: number
+        description: "Product of a and b"
+
+    - name: divide
+      description: "Divide a by b"
+      parameters:
+        - name: a
+          type: number
+          required: true
+        - name: b
+          type: number
+          required: true
+      returns:
+        type: number
+        description: "Quotient (a / b)"
+      errors:
+        - ZeroDivisionError: "Cannot divide by zero"
+
+  # Safety configuration for this tool
+  safety:
+    risk_level: low  # Calculator is very safe
+    require_approval: false
+    max_calls_per_execution: 10  # Limit iterations
+    timeout_seconds: 1  # Fast execution expected
+
+  # Usage examples
+  examples:
+    - operation: add
+      input: {a: 5, b: 3}
+      output: 8
+
+    - operation: multiply
+      input: {a: 4, b: 7}
+      output: 28
+
+    - operation: divide
+      input: {a: 10, b: 2}
+      output: 5.0
+
+  # Metadata
+  tags:
+    - math
+    - calculator
+    - basic
+    - milestone-1
+
+  created_by: m1-05-example-configs
+  created_at: "2026-01-26"

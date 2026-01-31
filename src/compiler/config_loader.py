@@ -1,0 +1,683 @@
+"""
+Configuration loader for YAML/JSON configs.
+
+Loads and validates configuration files for agents, stages, workflows, tools, and triggers.
+Supports environment variable substitution, secret references, and prompt template loading.
+"""
+import os
+import re
+import json
+from pathlib import Path
+from typing import Dict, Any, Optional, Union, List, Match, cast
+import yaml
+from pydantic import ValidationError
+
+# Import schemas for validation
+from src.compiler.schemas import (
+    AgentConfig,
+    StageConfig,
+    WorkflowConfig,
+    ToolConfig,
+    EventTrigger,
+    CronTrigger,
+    ThresholdTrigger
+)
+
+# Import secrets management
+from src.utils.secrets import SecretReference, resolve_secret
+
+# Import enhanced exceptions
+from src.utils.exceptions import (
+    ConfigNotFoundError,
+    ConfigValidationError,
+    ExecutionContext
+)
+
+# Maximum config file size (10MB) to prevent memory exhaustion from malicious configs
+MAX_CONFIG_SIZE = 10 * 1024 * 1024
+
+# Maximum environment variable value length (10KB) to prevent DoS attacks
+# Rationale: Most legitimate env vars are <1KB. 10KB allows for large JWTs/keys
+# while preventing memory exhaustion from ${VAR} expansion attacks
+MAX_ENV_VAR_SIZE = 10 * 1024
+
+# Maximum YAML nesting depth to prevent stack overflow and YAML bombs
+# Rationale: Legitimate configs rarely exceed 20 levels. 50 provides safety margin.
+MAX_YAML_NESTING_DEPTH = 50
+
+# Maximum number of YAML nodes to prevent billion laughs attacks
+# Rationale: Most configs have <1000 nodes. 100,000 allows large configs while
+# preventing exponential expansion attacks (billion laughs can create billions of nodes)
+MAX_YAML_NODES = 100_000
+
+
+__all__ = [
+    "ConfigLoader",
+    "ConfigNotFoundError",
+    "ConfigValidationError",
+]
+
+
+class ConfigLoader:
+    """
+    Loads and validates YAML/JSON configuration files.
+
+    Features:
+    - Loads configs from configs/ directory structure
+    - Supports both YAML and JSON formats
+    - Environment variable substitution (${VAR_NAME})
+    - Prompt template loading with variable substitution
+    - Validation against schemas (when provided)
+    - Caching for performance
+    """
+
+    def __init__(self, config_root: Optional[Union[str, Path]] = None, cache_enabled: bool = True):
+        """
+        Initialize config loader.
+
+        Args:
+            config_root: Root directory for configs (defaults to ./configs)
+            cache_enabled: Whether to cache loaded configs
+        """
+        if config_root is None:
+            # Default to configs/ in current directory or project root
+            config_root = Path.cwd() / "configs"
+            if not config_root.exists():
+                # Try to find project root
+                current = Path.cwd()
+                while current != current.parent:
+                    potential_root = current / "configs"
+                    if potential_root.exists():
+                        config_root = potential_root
+                        break
+                    current = current.parent
+
+        self.config_root = Path(config_root)
+        if not self.config_root.exists():
+            raise ConfigNotFoundError(
+                message=f"Config root directory not found: {self.config_root}",
+                config_path=str(self.config_root)
+            )
+
+        self.cache_enabled = cache_enabled
+        self._cache: Dict[str, Dict[str, Any]] = {}
+
+        # Subdirectories for each config type
+        self.agents_dir = self.config_root / "agents"
+        self.stages_dir = self.config_root / "stages"
+        self.workflows_dir = self.config_root / "workflows"
+        self.tools_dir = self.config_root / "tools"
+        self.triggers_dir = self.config_root / "triggers"
+        self.prompts_dir = self.config_root / "prompts"
+
+    def _load_config(
+        self,
+        config_type: str,
+        name: str,
+        directory: Path,
+        validate: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Generic config loading with caching, substitution, and validation.
+
+        Args:
+            config_type: Type of config (agent, stage, workflow, tool, trigger)
+            name: Config name (without extension)
+            directory: Directory to load from
+            validate: Whether to validate against schema
+
+        Returns:
+            Configuration dictionary
+
+        Raises:
+            ConfigNotFoundError: If config not found
+            ConfigValidationError: If validation fails
+        """
+        cache_key = f"{config_type}:{name}"
+        if self.cache_enabled and cache_key in self._cache:
+            return self._cache[cache_key]
+
+        config = self._load_config_file(directory, name)
+        config = self._substitute_env_vars(config)
+
+        # Resolve secret references (${env:VAR}, ${vault:path}, ${aws:secret-id})
+        config = self._resolve_secrets(config)
+
+        # Validate against schemas
+        if validate:
+            self._validate_config(config_type, config)
+
+        if self.cache_enabled:
+            self._cache[cache_key] = config
+
+        return cast(Dict[str, Any], config)
+
+    def load_agent(self, agent_name: str, validate: bool = True) -> Dict[str, Any]:
+        """
+        Load agent configuration.
+
+        Args:
+            agent_name: Name of the agent (without extension)
+            validate: Whether to validate the config (requires schema)
+
+        Returns:
+            Agent configuration dictionary
+
+        Raises:
+            ConfigNotFoundError: If agent config not found
+            ConfigValidationError: If validation fails
+        """
+        return self._load_config("agent", agent_name, self.agents_dir, validate)
+
+    def load_stage(self, stage_name: str, validate: bool = True) -> Dict[str, Any]:
+        """
+        Load stage configuration.
+
+        Args:
+            stage_name: Name of the stage (without extension)
+            validate: Whether to validate the config
+
+        Returns:
+            Stage configuration dictionary
+        """
+        return self._load_config("stage", stage_name, self.stages_dir, validate)
+
+    def load_workflow(self, workflow_name: str, validate: bool = True) -> Dict[str, Any]:
+        """
+        Load workflow configuration.
+
+        Args:
+            workflow_name: Name of the workflow (without extension)
+            validate: Whether to validate the config
+
+        Returns:
+            Workflow configuration dictionary
+        """
+        return self._load_config("workflow", workflow_name, self.workflows_dir, validate)
+
+    def load_tool(self, tool_name: str, validate: bool = True) -> Dict[str, Any]:
+        """
+        Load tool configuration.
+
+        Args:
+            tool_name: Name of the tool (without extension)
+            validate: Whether to validate the config
+
+        Returns:
+            Tool configuration dictionary
+        """
+        return self._load_config("tool", tool_name, self.tools_dir, validate)
+
+    def load_trigger(self, trigger_name: str, validate: bool = True) -> Dict[str, Any]:
+        """
+        Load trigger configuration.
+
+        Args:
+            trigger_name: Name of the trigger (without extension)
+            validate: Whether to validate the config
+
+        Returns:
+            Trigger configuration dictionary
+        """
+        return self._load_config("trigger", trigger_name, self.triggers_dir, validate)
+
+    def load_prompt_template(self, template_path: str, variables: Optional[Dict[str, str]] = None) -> str:
+        """
+        Load prompt template and substitute variables.
+
+        Args:
+            template_path: Relative path to template file (e.g., "researcher_base.txt")
+            variables: Variables to substitute in template
+
+        Returns:
+            Rendered prompt string
+
+        Example:
+            >>> loader.load_prompt_template("agent_base.txt", {"domain": "SaaS", "tone": "professional"})
+            "You are an expert in SaaS products. Use a professional tone..."
+
+        Raises:
+            ConfigNotFoundError: If template not found
+            ConfigValidationError: If path attempts directory traversal or file too large
+        """
+        # Resolve full path and validate it's within prompts directory (prevent directory traversal)
+        full_path = (self.prompts_dir / template_path).resolve()
+
+        try:
+            # Check if path is relative to prompts_dir (Python 3.9+)
+            full_path.relative_to(self.prompts_dir.resolve())
+        except ValueError:
+            raise ConfigValidationError(
+                f"Template path must be within prompts directory: {template_path}"
+            )
+
+        if not full_path.exists():
+            raise ConfigNotFoundError(
+                message=f"Prompt template not found: {full_path}",
+                config_path=str(full_path)
+            )
+
+        # Check file size to prevent memory exhaustion
+        file_size = full_path.stat().st_size
+        if file_size > MAX_CONFIG_SIZE:
+            raise ConfigValidationError(
+                f"Template file too large: {file_size} bytes (max: {MAX_CONFIG_SIZE})"
+            )
+
+        # Load template content
+        with open(full_path, 'r', encoding='utf-8') as f:
+            template = f.read()
+
+        # Substitute variables if provided
+        if variables:
+            template = self._substitute_template_vars(template, variables)
+
+        return template
+
+    def list_configs(self, config_type: str) -> List[str]:
+        """
+        List available configuration files of a given type.
+
+        Args:
+            config_type: One of: agent, stage, workflow, tool, trigger
+
+        Returns:
+            List of config names (without extensions)
+        """
+        type_dirs = {
+            "agent": self.agents_dir,
+            "stage": self.stages_dir,
+            "workflow": self.workflows_dir,
+            "tool": self.tools_dir,
+            "trigger": self.triggers_dir,
+        }
+
+        if config_type not in type_dirs:
+            raise ValueError(f"Unknown config type: {config_type}")
+
+        config_dir = type_dirs[config_type]
+        if not config_dir.exists():
+            return []
+
+        configs = []
+        for file_path in config_dir.iterdir():
+            if file_path.suffix in ['.yaml', '.yml', '.json']:
+                configs.append(file_path.stem)
+
+        return sorted(configs)
+
+    def clear_cache(self) -> None:
+        """Clear the configuration cache."""
+        self._cache.clear()
+
+    def _load_config_file(self, directory: Path, name: str) -> Dict[str, Any]:
+        """
+        Load a configuration file (YAML or JSON).
+
+        Tries both .yaml, .yml, and .json extensions.
+        """
+        # Try different extensions
+        for ext in ['.yaml', '.yml', '.json']:
+            file_path = directory / f"{name}{ext}"
+            if file_path.exists():
+                return self._parse_config_file(file_path)
+
+        raise ConfigNotFoundError(
+            message=f"Config file not found: {name} in {directory}\nTried extensions: .yaml, .yml, .json",
+            config_path=str(directory / name)
+        )
+
+    def _parse_config_file(self, file_path: Path) -> Dict[str, Any]:
+        """
+        Parse a YAML or JSON configuration file with security protections.
+
+        Args:
+            file_path: Path to config file
+
+        Returns:
+            Parsed configuration dictionary
+
+        Raises:
+            ConfigValidationError: If file too large, parsing fails, or security limits exceeded
+        """
+        # Check file size to prevent memory exhaustion
+        file_size = file_path.stat().st_size
+        if file_size > MAX_CONFIG_SIZE:
+            raise ConfigValidationError(
+                f"Config file too large: {file_size} bytes (max: {MAX_CONFIG_SIZE})"
+            )
+
+        try:
+            with open(file_path, 'r', encoding='utf-8') as f:
+                if file_path.suffix == '.json':
+                    config = json.load(f)
+                else:
+                    # Use safe_load with additional security checks
+                    config = yaml.safe_load(f)
+
+            # Validate the parsed config for security issues
+            self._validate_config_structure(config, file_path)
+
+            return cast(Dict[str, Any], config)
+
+        except yaml.YAMLError as e:
+            raise ConfigValidationError(
+                f"YAML parsing failed for {file_path}: {e}"
+            )
+        except json.JSONDecodeError as e:
+            raise ConfigValidationError(
+                f"JSON parsing failed for {file_path}: {e}"
+            )
+        except Exception as e:
+            raise ConfigValidationError(
+                f"Failed to parse config file {file_path}: {e}"
+            )
+
+    def _validate_config_structure(
+        self,
+        config: Any,
+        file_path: Path,
+        current_depth: int = 0,
+        visited: Optional[set[int]] = None,
+        node_count: Optional[list[int]] = None
+    ) -> None:
+        """
+        Validate config structure for security issues.
+
+        Checks for:
+        - Excessive nesting depth (>50 levels) - prevents stack overflow
+        - Too many nodes (>100k) - prevents YAML bomb (billion laughs)
+        - Circular references - prevents infinite loops
+
+        Args:
+            config: Configuration to validate
+            file_path: Path to config file (for error messages)
+            current_depth: Current nesting depth
+            visited: Set of visited object IDs (for circular reference detection)
+            node_count: List containing single integer (mutable counter for nodes)
+
+        Raises:
+            ConfigValidationError: If security limits exceeded
+        """
+        # Initialize tracking on first call
+        if visited is None:
+            visited = set()
+        if node_count is None:
+            node_count = [0]  # Use list to make it mutable in nested calls
+
+        # Check nesting depth
+        if current_depth > MAX_YAML_NESTING_DEPTH:
+            raise ConfigValidationError(
+                f"Config file {file_path} exceeds maximum nesting depth of {MAX_YAML_NESTING_DEPTH} levels. "
+                f"This may indicate a YAML bomb attack or malformed config."
+            )
+
+        # Increment node count
+        node_count[0] += 1
+        if node_count[0] > MAX_YAML_NODES:
+            raise ConfigValidationError(
+                f"Config file {file_path} exceeds maximum node count of {MAX_YAML_NODES}. "
+                f"This may indicate a YAML bomb (billion laughs) attack."
+            )
+
+        # Check for circular references (only for mutable objects)
+        if isinstance(config, (dict, list)):
+            obj_id = id(config)
+            if obj_id in visited:
+                raise ConfigValidationError(
+                    f"Circular reference detected in config file {file_path}. "
+                    f"This may cause infinite loops during processing."
+                )
+            visited.add(obj_id)
+
+            try:
+                # Recursively validate nested structures
+                if isinstance(config, dict):
+                    for key, value in config.items():
+                        self._validate_config_structure(
+                            value,
+                            file_path,
+                            current_depth + 1,
+                            visited,
+                            node_count
+                        )
+                elif isinstance(config, list):
+                    for item in config:
+                        self._validate_config_structure(
+                            item,
+                            file_path,
+                            current_depth + 1,
+                            visited,
+                            node_count
+                        )
+            finally:
+                # Remove from visited after processing children
+                # This allows the same object to appear in different branches
+                # but prevents cycles within a single branch
+                visited.discard(obj_id)
+
+    def _substitute_env_vars(self, config: Any) -> Any:
+        """
+        Recursively substitute environment variables in config.
+
+        Replaces ${VAR_NAME} with os.environ['VAR_NAME']
+        Replaces ${VAR_NAME:default_value} with os.environ.get('VAR_NAME', 'default_value')
+        """
+        if isinstance(config, dict):
+            return {k: self._substitute_env_vars(v) for k, v in config.items()}
+        elif isinstance(config, list):
+            return [self._substitute_env_vars(item) for item in config]
+        elif isinstance(config, str):
+            return self._substitute_env_var_string(config)
+        else:
+            return config
+
+    def _substitute_env_var_string(self, value: str) -> str:
+        """
+        Substitute environment variables in a string with security validation.
+
+        Supports:
+        - ${VAR_NAME} - required variable
+        - ${VAR_NAME:default} - optional variable with default
+
+        Note: This is for legacy env var substitution. Prefer secret references
+        (${env:VAR_NAME}) for credentials, which are handled by _resolve_secrets.
+
+        Validates environment variable values to prevent injection attacks.
+        """
+        # Skip if value looks like a secret reference (will be handled by _resolve_secrets)
+        if SecretReference.is_reference(value):
+            return value
+
+        # Pattern: ${VAR_NAME} or ${VAR_NAME:default}
+        pattern = r'\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}'
+
+        def replacer(match: Match[str]) -> str:
+            var_name = match.group(1)
+            default_value = match.group(2)
+
+            if var_name in os.environ:
+                env_value = os.environ[var_name]
+                # Validate environment variable value for security
+                self._validate_env_var_value(var_name, env_value)
+                return env_value
+            elif default_value is not None:
+                # Validate default values as well (they could contain malicious content)
+                self._validate_env_var_value(var_name, default_value)
+                return default_value
+            else:
+                raise ConfigValidationError(
+                    f"Environment variable '{var_name}' is required but not set"
+                )
+
+        return re.sub(pattern, replacer, value)
+
+    def _validate_env_var_value(self, var_name: str, value: str) -> None:
+        """
+        Validate environment variable value for security issues.
+
+        Checks for:
+        - Excessively long values (>10KB)
+        - Path traversal attempts (../)
+        - Shell metacharacters in command contexts
+        - SQL injection patterns in database contexts
+        - Credentials in URL contexts
+        - Null bytes
+
+        Args:
+            var_name: Name of environment variable
+            value: Value to validate
+
+        Raises:
+            ConfigValidationError: If value contains suspicious patterns
+        """
+        # Check length to prevent DoS
+        if len(value) > MAX_ENV_VAR_SIZE:
+            raise ConfigValidationError(
+                f"Environment variable '{var_name}' value too long: {len(value)} bytes (max: {MAX_ENV_VAR_SIZE} bytes)"
+            )
+
+        # Check for null bytes (common in injection attacks)
+        if '\x00' in value:
+            raise ConfigValidationError(
+                f"Environment variable '{var_name}' contains null bytes"
+            )
+
+        # Check for path traversal in path-like variables
+        path_var_names = ['path', 'dir', 'directory', 'file', 'config_root', 'template']
+        if any(name in var_name.lower() for name in path_var_names):
+            if '../' in value or '..\\' in value:
+                raise ConfigValidationError(
+                    f"Environment variable '{var_name}' contains path traversal pattern (../)"
+                )
+
+        # Check for shell metacharacters in command-like variables
+        # These are variables that might be used in shell commands
+        command_var_patterns = ['cmd', 'command', 'exec', 'script', 'shell', 'run']
+        if any(pattern in var_name.lower() for pattern in command_var_patterns):
+            # Dangerous shell metacharacters that enable command injection
+            shell_metacharacters = [';', '|', '&', '$', '`', '\n', '>', '<', '(', ')']
+            dangerous_chars = [char for char in shell_metacharacters if char in value]
+            if dangerous_chars:
+                raise ConfigValidationError(
+                    f"Environment variable '{var_name}' contains shell metacharacters: {dangerous_chars}. "
+                    f"This could enable command injection attacks."
+                )
+
+        # Check for SQL injection patterns in database-like variables
+        db_var_patterns = ['db', 'database', 'sql', 'query', 'table', 'schema']
+        if any(pattern in var_name.lower() for pattern in db_var_patterns):
+            # Common SQL injection patterns
+            sql_patterns = [
+                ("'--", "SQL comment injection"),
+                ("';", "SQL statement termination"),
+                ("' OR '", "SQL boolean injection"),
+                ("' UNION ", "SQL UNION injection"),
+                ("DROP TABLE", "SQL DROP command"),
+                ("DELETE FROM", "SQL DELETE command"),
+                ("INSERT INTO", "SQL INSERT command"),
+                ("UPDATE ", "SQL UPDATE command"),
+                ("EXEC ", "SQL EXEC command"),
+                ("xp_", "SQL Server extended procedure"),
+            ]
+            for pattern, description in sql_patterns:
+                if pattern in value.upper():
+                    raise ConfigValidationError(
+                        f"Environment variable '{var_name}' contains SQL injection pattern: {description}. "
+                        f"Use parameterized queries instead."
+                    )
+
+        # Check for credentials in URL-like variables
+        url_var_patterns = ['url', 'uri', 'endpoint', 'host', 'api']
+        if any(pattern in var_name.lower() for pattern in url_var_patterns):
+            # Check for credentials in URL (username:password@host pattern)
+            if re.search(r'://[^/]*:[^/]*@', value):
+                raise ConfigValidationError(
+                    f"Environment variable '{var_name}' contains credentials in URL. "
+                    f"Use separate API_KEY or TOKEN variables instead of embedding credentials in URLs."
+                )
+
+    def _resolve_secrets(self, config: Any) -> Any:
+        """
+        Recursively resolve secret references in configuration.
+
+        Resolves references like:
+        - ${env:VAR_NAME} - environment variable
+        - ${vault:path} - HashiCorp Vault (future)
+        - ${aws:secret-id} - AWS Secrets Manager (future)
+
+        Args:
+            config: Configuration to process (dict, list, str, etc.)
+
+        Returns:
+            Configuration with resolved secrets
+
+        Raises:
+            ConfigValidationError: If secret resolution fails
+        """
+        try:
+            return resolve_secret(config)
+        except (ValueError, NotImplementedError) as e:
+            raise ConfigValidationError(f"Secret resolution failed: {e}")
+
+    def _substitute_template_vars(self, template: str, variables: Dict[str, str]) -> str:
+        """
+        Substitute variables in a prompt template.
+
+        Replaces {{var_name}} with variables['var_name']
+        """
+        pattern = r'\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}'
+
+        def replacer(match: Match[str]) -> str:
+            var_name = match.group(1)
+            if var_name not in variables:
+                raise ConfigValidationError(
+                    f"Template variable '{var_name}' is required but not provided"
+                )
+            return variables[var_name]
+
+        return re.sub(pattern, replacer, template)
+
+    def _validate_config(self, config_type: str, config: Dict[str, Any]) -> None:
+        """
+        Validate configuration against Pydantic schemas.
+
+        Args:
+            config_type: Type of config (agent, stage, workflow, tool, trigger)
+            config: Configuration dictionary to validate
+
+        Raises:
+            ConfigValidationError: If validation fails
+        """
+        schema_map = {
+            "agent": AgentConfig,
+            "stage": StageConfig,
+            "workflow": WorkflowConfig,
+            "tool": ToolConfig,
+        }
+
+        try:
+            if config_type == "trigger":
+                # Triggers have multiple possible schemas - try each
+                trigger_type = config.get("trigger", {}).get("type")
+                if trigger_type == "EventTrigger":
+                    EventTrigger(**config)
+                elif trigger_type == "CronTrigger":
+                    CronTrigger(**config)
+                elif trigger_type == "ThresholdTrigger":
+                    ThresholdTrigger(**config)
+                else:
+                    raise ConfigValidationError(
+                        f"Unknown trigger type: {trigger_type}"
+                    )
+            elif config_type in schema_map:
+                # Validate with appropriate schema
+                schema_map[config_type](**config)
+            else:
+                # Unknown config type - skip validation
+                pass
+
+        except ValidationError as e:
+            raise ConfigValidationError(
+                f"Config validation failed for {config_type}: {e}"
+            )

@@ -1,0 +1,70 @@
+{
+  "workflow_name": "e2e_simple_debate",
+  "workflow_version": "1.0",
+  "execution_timestamp": "2026-01-27 01:03:05",
+  "stages": [
+    {
+      "stage_name": "e2e_simple_debate_stage",
+      "stage_type": "multi_agent_consensus",
+      "agents": [
+        {
+          "name": "product_manager",
+          "role": "Product Manager",
+          "decision": "L",
+          "reasoning": "We are launching now to capitalize on the increasing demand in the market, despite some remaining bugs. This allows us to stay competitive and generate revenue sooner rather than later. The potential benefits outweigh the risks of fixing all bugs before launch.",
+          "confidence": 0.7,
+          "latency_ms": 872,
+          "tokens": 386,
+          "start_timestamp": "2026-01-27T01:03:03.300324",
+          "end_timestamp": "2026-01-27T01:03:04.172332",
+          "prompt": "You are product_manager, a Product Manager.\n\nYour persona: You're business-focused and care about market timing, competitive advantage, and revenue. You're willing to take calculated risks for market opportunity.\n\nSCENARIO: Product Launch Timing Decision\n\nCONTEXT: We have a working product but some bugs remain. Market is competitive.\n\nAVAILABLE OPTIONS:\n  - [\n  - '\n  - L\n  - a\n  - u\n  - n\n  - c\n  - h\n  -  \n  - N\n  - o\n  - w\n  - '\n  - ,\n  -  \n  - '\n  - W\n  - a\n  - i\n  - t\n  -  \n  - 1\n  -  \n  - M\n  - o\n  - n\n  - t\n  - h\n  - '\n  - ,\n  -  \n  - '\n  - L\n  - a\n  - u\n  - n\n  - c\n  - h\n  -  \n  - B\n  - e\n  - t\n  - a\n  - '\n  - ]\n\nTASK: Provide your analysis and recommendation.\n\nRespond in this JSON format:\n{\n  \"decision\": \"one of the options above (exact match)\",\n  \"reasoning\": \"your detailed reasoning (2-3 sentences)\",\n  \"confidence\": 0.0-1.0\n}\n\nYour response (JSON only):",
+          "raw_response": "{\"decision\": \"L\", \"reasoning\": \"We are launching now to capitalize on the increasing demand in the market, despite some remaining bugs. This allows us to stay competitive and generate revenue sooner rather than later. The potential benefits outweigh the risks of fixing all bugs before launch.\", \"confidence\": 0.7}"
+        },
+        {
+          "name": "engineering_lead",
+          "role": "Engineering Lead",
+          "decision": "",
+          "reasoning": "We should not launch the product now due to remaining bugs. Prioritizing quality and security over market competition is crucial in the long run. Thorough testing will ensure a better user experience and reduce potential issues.",
+          "confidence": 0.8,
+          "latency_ms": 836,
+          "tokens": 379,
+          "start_timestamp": "2026-01-27T01:03:04.173039",
+          "end_timestamp": "2026-01-27T01:03:05.009233",
+          "prompt": "You are engineering_lead, a Engineering Lead.\n\nYour persona: You're technical and quality-focused. You care about code stability, security, and maintainability. You prefer thorough testing before launch.\n\nSCENARIO: Product Launch Timing Decision\n\nCONTEXT: We have a working product but some bugs remain. Market is competitive.\n\nAVAILABLE OPTIONS:\n  - [\n  - '\n  - L\n  - a\n  - u\n  - n\n  - c\n  - h\n  -  \n  - N\n  - o\n  - w\n  - '\n  - ,\n  -  \n  - '\n  - W\n  - a\n  - i\n  - t\n  -  \n  - 1\n  -  \n  - M\n  - o\n  - n\n  - t\n  - h\n  - '\n  - ,\n  -  \n  - '\n  - L\n  - a\n  - u\n  - n\n  - c\n  - h\n  -  \n  - B\n  - e\n  - t\n  - a\n  - '\n  - ]\n\nTASK: Provide your analysis and recommendation.\n\nRespond in this JSON format:\n{\n  \"decision\": \"one of the options above (exact match)\",\n  \"reasoning\": \"your detailed reasoning (2-3 sentences)\",\n  \"confidence\": 0.0-1.0\n}\n\nYour response (JSON only):",
+          "raw_response": "{\"decision\": \"\", \"reasoning\": \"We should not launch the product now due to remaining bugs. Prioritizing quality and security over market competition is crucial in the long run. Thorough testing will ensure a better user experience and reduce potential issues.\", \"confidence\": 0.8}"
+        },
+        {
+          "name": "data_analyst",
+          "role": "Data Analyst",
+          "decision": "L",
+          "reasoning": "Launching now will allow us to capitalize on market momentum and gain a competitive advantage, despite some bugs remaining. This approach also enables us to iterate and address issues through customer feedback and post-launch analysis. Confidence: 0.75",
+          "confidence": 0.5,
+          "latency_ms": 775,
+          "tokens": 376,
+          "start_timestamp": "2026-01-27T01:03:05.009930",
+          "end_timestamp": "2026-01-27T01:03:05.785852",
+          "prompt": "You are data_analyst, a Data Analyst.\n\nYour persona: You're data-driven and analytical. You prefer evidence-based decisions and controlled experiments. You value learning from user data.\n\nSCENARIO: Product Launch Timing Decision\n\nCONTEXT: We have a working product but some bugs remain. Market is competitive.\n\nAVAILABLE OPTIONS:\n  - [\n  - '\n  - L\n  - a\n  - u\n  - n\n  - c\n  - h\n  -  \n  - N\n  - o\n  - w\n  - '\n  - ,\n  -  \n  - '\n  - W\n  - a\n  - i\n  - t\n  -  \n  - 1\n  -  \n  - M\n  - o\n  - n\n  - t\n  - h\n  - '\n  - ,\n  -  \n  - '\n  - L\n  - a\n  - u\n  - n\n  - c\n  - h\n  -  \n  - B\n  - e\n  - t\n  - a\n  - '\n  - ]\n\nTASK: Provide your analysis and recommendation.\n\nRespond in this JSON format:\n{\n  \"decision\": \"one of the options above (exact match)\",\n  \"reasoning\": \"your detailed reasoning (2-3 sentences)\",\n  \"confidence\": 0.0-1.0\n}\n\nYour response (JSON only):",
+          "raw_response": "{\"decision\": \"L\", \"reasoning\": \"Launching now will allow us to capitalize on market momentum and gain a competitive advantage, despite some bugs remaining. This approach also enables us to iterate and address issues through customer feedback and post-launch analysis. Confidence: 0.75\"}"
+        }
+      ],
+      "synthesis": {
+        "decision": "L",
+        "confidence": 0.39999999999999997,
+        "method": "consensus",
+        "votes": {
+          "L": 2,
+          "": 1
+        },
+        "reasoning": "Consensus reached: 'L' with 66.7% support (2/3 agents). Vote breakdown: 'L': 2, '': 1. Supporting agents: product_manager, data_analyst. Dissenting agents: engineering_lead."
+      }
+    }
+  ],
+  "final_decision": "L",
+  "final_confidence": 0.39999999999999997,
+  "metrics": {
+    "total_agents_executed": 3,
+    "total_tokens": 1141,
+    "total_latency_ms": 2483,
+    "stages_executed": 1
+  }
+}

@@ -1,0 +1,84 @@
+# Debate-Based Decision Workflow - M3 Feature Demo
+# Purpose: Demonstrate multi-round debate with convergence detection
+# Features: Iterative argumentation, position refinement, convergence tracking
+
+workflow:
+  name: debate_decision
+  description: "Multi-round debate for high-quality decision making"
+  version: "1.0"
+
+  # Workflow metadata
+  lifecycle_type: decision_making
+  product_type: reasoned_decision
+
+  # Workflow stages
+  stages:
+    - name: debate_and_decide
+      config_path: configs/stages/debate_stage.yaml
+      inputs:
+        decision_prompt: "{{ workflow.inputs.decision_prompt }}"
+        context: "{{ workflow.inputs.context }}"
+        options: "{{ workflow.inputs.options }}"
+
+      on_success:
+        action: continue
+
+      on_failure:
+        action: escalate  # Escalate if no convergence
+
+  # Workflow inputs
+  inputs:
+    required:
+      - decision_prompt  # What needs to be decided
+      - options  # Available choices
+    optional:
+      - context  # Additional context
+      - max_rounds  # Max debate rounds (default: 3)
+
+  # Workflow outputs
+  outputs:
+    - name: final_decision
+      description: "Consensus decision after debate"
+      source: debate_and_decide.decision
+
+    - name: debate_transcript
+      description: "Complete debate history"
+      source: debate_and_decide.debate_history
+
+    - name: convergence_info
+      description: "Convergence metrics"
+      fields:
+        - converged  # Whether debate converged
+        - rounds_to_convergence
+        - final_confidence
+        - remaining_conflicts
+
+  # Execution settings
+  execution:
+    timeout_seconds: 1800  # 30 minutes for debate
+    parallel_execution: false  # Debate is sequential by nature
+    allow_early_termination: true  # Stop if converged
+
+  # Observability
+  observability:
+    trace_all_decisions: true
+    track_collaboration_events: true
+    track_convergence: true  # M3 feature
+    log_level: DEBUG
+
+  # Metadata
+  tags:
+    - decision-making
+    - debate
+    - convergence
+    - multi-round
+    - milestone-3
+
+  use_cases:
+    - "Architecture decisions (microservices vs monolith)"
+    - "Technology selection (React vs Vue vs Angular)"
+    - "Strategic planning (build vs buy)"
+    - "Any decision requiring deep reasoning"
+
+  created_by: m3-14-example-workflows
+  created_at: "2026-01-26"

@@ -1,0 +1,579 @@
+{
+  "metadata": {
+    "review_type": "code-review",
+    "status": "CREATED",
+    "generated": "2026-01-28T22:42:45Z",
+    "source_report": "code-review-20260128-224245.md",
+    "total_proposed": 56,
+    "reviewer": "shinelay",
+    "reviewed_at": "2026-01-29T06:51:32Z",
+    "review_notes": "",
+    "created_at": "2026-01-29T07:00:46Z"
+  },
+  "metrics": {
+    "code_smells": 62,
+    "security_issues": 45,
+    "bugs": 18,
+    "technical_debt_hours": 280,
+    "critical": 23,
+    "high": 33,
+    "medium": 56,
+    "low": 54,
+    "total_issues": 166
+  },
+  "tasks": [
+    {
+      "id": "code-crit-ssrf-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "Fix SSRF DNS rebinding vulnerability in WebScraper",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "tools",
+      "files_to_modify": [
+        {
+          "path": "src/tools/web_scraper.py",
+          "description": "Implement IP validation after connection establishment"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Validate resolved IPs AFTER connection using httpx transport hooks",
+          "Block private IPs, localhost, cloud metadata endpoints",
+          "Add dual-validation (pre-check + post-connection)"
+        ],
+        "security_controls": [
+          "Cannot bypass via DNS rebinding",
+          "All SSRF test vectors blocked",
+          "Cloud metadata endpoints unreachable"
+        ],
+        "testing": [
+          "Unit tests for DNS rebinding scenarios",
+          "Integration tests with mock DNS server",
+          "Penetration test with time-delayed DNS responses"
+        ]
+      },
+      "implementation_guidance": "Create SSRFProtectionTransport(httpx.HTTPTransport) that validates resolved IPs before request. Check peername() IP against blocked networks.",
+      "test_strategy": "Test with DNS server that changes resolution between check and request. Verify metadata endpoints (169.254.169.254) are blocked.",
+      "success_metrics": [
+        "All SSRF bypass attempts fail",
+        "No internal network access via DNS tricks",
+        "Security tests pass"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "WebScraper",
+          "validate_url_safety"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#1-ssrf-vulnerability"
+      ],
+      "notes": "Critical security issue - SSRF can expose AWS credentials and internal services"
+    },
+    {
+      "id": "code-crit-cmd-injection-02",
+      "enabled": true,
+      "review_note": "",
+      "title": "Strengthen command injection sanitization",
+      "priority": "CRITICAL",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "tools",
+      "files_to_modify": [
+        {
+          "path": "src/tools/base.py",
+          "description": "Enhance ParameterSanitizer.sanitize_command() with Unicode normalization and expanded patterns"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add Unicode NFKC normalization to prevent homoglyph attacks",
+          "Block $(...), ${...}, {...} patterns",
+          "Block null bytes and validate length",
+          "Expand dangerous pattern list"
+        ],
+        "security_controls": [
+          "Use subprocess with shell=False only",
+          "Maintain command allowlist",
+          "Add docstring warning about shell=True danger"
+        ],
+        "testing": [
+          "Test with Unicode homoglyphs (U+FF1B)",
+          "Test command substitution variants",
+          "Test brace expansion patterns",
+          "Fuzz test with OWASP payloads"
+        ]
+      },
+      "implementation_guidance": "Use unicodedata.normalize('NFKC', command). Add patterns: $(, ${, {, }, null byte, Unicode whitespace. Document shell=False requirement.",
+      "test_strategy": "Property-based testing with hypothesis. Test all OWASP command injection patterns. Verify subprocess.run uses shell=False.",
+      "success_metrics": [
+        "All OWASP test vectors blocked",
+        "Unicode attacks prevented",
+        "No false negatives"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "ParameterSanitizer",
+          "all tool execute methods"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#2-command-injection"
+      ],
+      "notes": "Critical - command injection can lead to full system compromise"
+    },
+    {
+      "id": "code-crit-path-traversal-03",
+      "enabled": true,
+      "review_note": "",
+      "title": "Fix path traversal vulnerabilities across modules",
+      "priority": "CRITICAL",
+      "effort_hours": 6.0,
+      "issues_addressed": 3,
+      "module": "Multiple",
+      "files_to_modify": [
+        {
+          "path": "src/tools/base.py",
+          "description": "Enhance ParameterSanitizer.sanitize_path()"
+        },
+        {
+          "path": "src/safety/rollback.py",
+          "description": "Add path validation in FileRollbackStrategy"
+        },
+        {
+          "path": "src/utils/path_safety.py",
+          "description": "Fix TOCTOU race, symlink handling, encoded paths"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Decode URL encoding before validation",
+          "Handle symlinks securely (don't follow or validate target)",
+          "Use content hashing to prevent TOCTOU",
+          "Validate resolved paths against allowed directories"
+        ],
+        "security_controls": [
+          "Block ../, %2e%2e, Unicode variants",
+          "Block symlinks or validate their targets",
+          "Block UNC paths and alternate data streams (Windows)",
+          "Centralize validation using PathSafetyValidator"
+        ],
+        "testing": [
+          "Test URL-encoded traversal attempts",
+          "Test symlink attacks",
+          "Test Windows-specific paths",
+          "Test TOCTOU race conditions"
+        ]
+      },
+      "implementation_guidance": "Use urllib.parse.unquote() before validation. Add is_symlink() check. Compute SHA256 hash of file content. Validate resolved path with .relative_to().",
+      "test_strategy": "Test with %2e%2e, symlinks, race conditions (threading). Verify all path operations use centralized validator.",
+      "success_metrics": [
+        "No path traversal possible",
+        "Encoded paths blocked",
+        "Symlink attacks prevented",
+        "TOCTOU races eliminated"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "ParameterSanitizer",
+          "FileRollbackStrategy",
+          "PathSafetyValidator"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#3-path-traversal"
+      ],
+      "notes": "Critical - affects multiple modules, can expose sensitive files"
+    },
+    {
+      "id": "code-crit-cache-collision-04",
+      "enabled": true,
+      "review_note": "",
+      "title": "Fix cache key collision vulnerability",
+      "priority": "CRITICAL",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "cache",
+      "files_to_modify": [
+        {
+          "path": "src/cache/llm_cache.py",
+          "description": "Include system_prompt and tools in cache key generation"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add system_prompt parameter to generate_key()",
+          "Add tools parameter to generate_key()",
+          "Sort tools list for deterministic hashing",
+          "Include all parameters in SHA256 hash"
+        ],
+        "security_controls": [
+          "Different prompts with different tools get different keys",
+          "Different system prompts get different keys",
+          "No cache poisoning possible"
+        ],
+        "testing": [
+          "Test same prompt with different system_prompt → different keys",
+          "Test same prompt with different tools → different keys",
+          "Test cache isolation between requests"
+        ]
+      },
+      "implementation_guidance": "Update generate_key signature to accept system_prompt and tools. Add to request dict before JSON serialization. Sort tools list.",
+      "test_strategy": "Unit tests with identical prompts but different system_prompt/tools. Verify cache misses occur correctly.",
+      "success_metrics": [
+        "No cache key collisions",
+        "Correct cache isolation",
+        "All parameters affect key"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "LLMCache",
+          "generate_key"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#1-cache-key-collision"
+      ],
+      "notes": "Critical - cache poisoning can return malicious responses to users"
+    },
+    {
+      "id": "code-crit-template-injection-05",
+      "enabled": true,
+      "review_note": "",
+      "title": "Fix Jinja2 template injection vulnerability",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "agents",
+      "files_to_modify": [
+        {
+          "path": "src/agents/prompt_engine.py",
+          "description": "Add variable validation and type checking"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Whitelist allowed variable types (str, int, float, bool, list, dict)",
+          "Validate all variables before rendering",
+          "Add size limits (100KB per variable)",
+          "Consider string.Template for untrusted input"
+        ],
+        "security_controls": [
+          "SSTI attacks blocked",
+          "No access to Python internals",
+          "Sandbox escape prevention"
+        ],
+        "testing": [
+          "Test with SSTI payloads ({{config}}, {{''.__class__}})",
+          "Test with oversized variables",
+          "Test with dangerous types (functions, classes)",
+          "Fuzz test with Burp SSTI payloads"
+        ]
+      },
+      "implementation_guidance": "Create _validate_variables() method. Check isinstance() for allowed types. Add length validation. Document risks in docstring.",
+      "test_strategy": "Test all known SSTI bypass techniques. Verify sandbox cannot be escaped. Test with polyglot payloads.",
+      "success_metrics": [
+        "All SSTI attacks fail",
+        "Sandbox remains secure",
+        "Security tests pass"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "PromptEngine",
+          "render_template"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#3-template-injection"
+      ],
+      "notes": "Critical - SSTI can lead to arbitrary code execution"
+    },
+    {
+      "id": "code-crit-dynamic-loading-06",
+      "enabled": true,
+      "review_note": "",
+      "title": "Secure dynamic tool loading mechanism",
+      "priority": "CRITICAL",
+      "effort_hours": 5.0,
+      "issues_addressed": 1,
+      "module": "agents",
+      "files_to_modify": [
+        {
+          "path": "src/agents/standard_agent.py",
+          "description": "Add strict validation, signatures, sandboxing for _load_tools_from_config"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Strict regex validation for tool names ([a-zA-Z0-9_]+)",
+          "Plugin registry with cryptographic signatures",
+          "Sandbox tool execution in separate processes",
+          "Audit logging for all tool loads"
+        ],
+        "security_controls": [
+          "Malicious tools cannot be loaded",
+          "Tool execution isolated",
+          "All loads audited"
+        ],
+        "testing": [
+          "Test with invalid tool names",
+          "Test with malicious tool classes",
+          "Test signature verification",
+          "Test sandbox isolation"
+        ]
+      },
+      "implementation_guidance": "Add TOOL_NAME_PATTERN regex. Implement signature verification with public key. Use multiprocessing for sandboxing. Log to security audit trail.",
+      "test_strategy": "Attempt to load tools with shell metacharacters. Test with unsigned tools. Verify sandboxed execution cannot affect parent process.",
+      "success_metrics": [
+        "Only signed tools load",
+        "Tool execution isolated",
+        "Security audit complete"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "StandardAgent",
+          "_load_tools_from_config",
+          "AVAILABLE_TOOLS"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#1-arbitrary-code-execution"
+      ],
+      "notes": "Critical - arbitrary code execution risk in multi-tenant environments"
+    },
+    {
+      "id": "code-crit-redos-patterns-07",
+      "enabled": true,
+      "review_note": "",
+      "title": "Fix ReDoS vulnerabilities in security patterns",
+      "priority": "CRITICAL",
+      "effort_hours": 3.0,
+      "issues_addressed": 2,
+      "module": "security",
+      "files_to_modify": [
+        {
+          "path": "src/safety/secret_detection.py",
+          "description": "Rewrite regex patterns to avoid catastrophic backtracking"
+        },
+        {
+          "path": "src/security/llm_security.py",
+          "description": "Fix injection detection patterns"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Use atomic groups (?> ...)",
+          "Replace nested quantifiers with specific character classes",
+          "Add regex timeout support",
+          "Validate input length before regex matching"
+        ],
+        "security_controls": [
+          "No ReDoS possible",
+          "All patterns complete in O(n) time",
+          "Timeouts prevent DoS"
+        ],
+        "testing": [
+          "Test with ReDoS payloads (evil regex patterns)",
+          "Benchmark pattern performance",
+          "Test with 100KB inputs",
+          "Use rxxr2 tool to analyze patterns"
+        ]
+      },
+      "implementation_guidance": "Replace r\"ignore[\\s._\\-|]+(all[\\s._\\-|]+)?\" with r\"\\bignore\\s+all\\s+previous\\b\". Add max_length=100_000 check. Use regex library with timeout.",
+      "test_strategy": "Generate ReDoS attack strings (aaaa...aaab). Measure execution time. Verify timeout mechanism works.",
+      "success_metrics": [
+        "All patterns complete in <1ms",
+        "No timeouts on legitimate input",
+        "ReDoS attacks timeout safely"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "SecretDetection",
+          "PromptInjectionDetector"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#3-redos-vulnerability"
+      ],
+      "notes": "Critical - ReDoS can cause service outages"
+    },
+    {
+      "id": "code-crit-sensitive-logging-08",
+      "enabled": true,
+      "review_note": "",
+      "title": "Implement prompt/response sanitization before storage",
+      "priority": "CRITICAL",
+      "effort_hours": 6.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/tracker.py",
+          "description": "Add sanitization before storing LLM prompts/responses"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Detect and redact API keys (sk-*, xox*, AKIA*)",
+          "Detect and mask PII (emails, SSNs, credit cards)",
+          "Truncate excessively long prompts (>10KB)",
+          "Add is_sanitized flag to track processing"
+        ],
+        "security_controls": [
+          "No API keys in database",
+          "No PII in database",
+          "Compliance with GDPR/HIPAA"
+        ],
+        "testing": [
+          "Test with prompts containing API keys",
+          "Test with PII patterns",
+          "Test with oversized content",
+          "Verify redaction completeness"
+        ]
+      },
+      "implementation_guidance": "Create _sanitize_sensitive_data() method. Use regex patterns from secret_detection. Add size checks. Set is_sanitized metadata flag.",
+      "test_strategy": "Insert test data with known secrets. Query database and verify all secrets redacted. Test PII detection accuracy.",
+      "success_metrics": [
+        "Zero secrets in database",
+        "PII detection >95% accuracy",
+        "Compliance requirements met"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "ExecutionTracker",
+          "track_llm_call"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#1-sensitive-data-logging"
+      ],
+      "notes": "Critical - GDPR/HIPAA compliance risk, credential exposure"
+    },
+    {
+      "id": "code-high-http-leak-09",
+      "enabled": true,
+      "review_note": "",
+      "title": "Fix HTTP client memory leak",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "agents",
+      "files_to_modify": [
+        {
+          "path": "src/agents/llm_providers.py",
+          "description": "Enforce context manager usage, add monitoring"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Mandate 'with' statement usage",
+          "Add warnings for unclosed clients",
+          "Implement connection monitoring",
+          "Add shutdown hooks"
+        ],
+        "security_controls": [
+          "No connection leaks",
+          "File descriptor limits respected",
+          "Graceful shutdown"
+        ],
+        "testing": [
+          "Test connection pool exhaustion scenarios",
+          "Monitor file descriptors during tests",
+          "Test shutdown under load"
+        ]
+      },
+      "implementation_guidance": "Add ResourceWarning in __del__. Document context manager requirement. Add connection pool metrics. Implement weakref.finalize() cleanup.",
+      "test_strategy": "Create 1000 clients without closing. Monitor file descriptors with lsof. Verify warnings appear. Test cleanup on process termination.",
+      "success_metrics": [
+        "No fd leaks after 10K requests",
+        "Warnings visible in logs",
+        "Cleanup hooks execute"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "LLMProvider",
+          "OpenAIProvider",
+          "AnthropicProvider"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#6-memory-leak-http"
+      ],
+      "notes": "High - resource leaks cause production crashes"
+    },
+    {
+      "id": "code-high-execution-timeout-10",
+      "enabled": true,
+      "review_note": "",
+      "title": "Add execution timeouts to prevent unbounded loops",
+      "priority": "HIGH",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "agents",
+      "files_to_modify": [
+        {
+          "path": "src/agents/standard_agent.py",
+          "description": "Implement total execution timeout and cost budgets"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Total execution timeout (5 minutes default)",
+          "Token budget limits",
+          "API call count limits",
+          "Circuit breakers per agent"
+        ],
+        "security_controls": [
+          "No infinite loops",
+          "Resource consumption bounded",
+          "Cost controls enforced"
+        ],
+        "testing": [
+          "Test with loops that exceed timeout",
+          "Test with high token consumption",
+          "Test circuit breaker activation"
+        ]
+      },
+      "implementation_guidance": "Use signal.SIGALRM for timeout. Track cumulative tokens/costs. Implement TokenBudget class. Add CircuitBreaker integration.",
+      "test_strategy": "Create agent that loops indefinitely. Verify timeout triggers. Test token budget exhaustion. Verify circuit opens after failures.",
+      "success_metrics": [
+        "All executions complete within timeout",
+        "Budgets enforced",
+        "No runaway costs"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "StandardAgent",
+          "execute",
+          "TokenBudget"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260128-224245.md#7-unbounded-tool-execution"
+      ],
+      "notes": "High - prevents DoS and runaway costs"
+    }
+  ]
+}

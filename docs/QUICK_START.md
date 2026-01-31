@@ -1,0 +1,428 @@
+# Quick Start Guide
+
+Get up and running with the Meta-Autonomous Agent Framework in 5 minutes.
+
+---
+
+## What is This?
+
+The Meta-Autonomous Agent Framework is a self-improving autonomous agent system that can execute complete product lifecycles with minimal human intervention. It features:
+
+- **Multi-agent collaboration** with parallel execution
+- **Full observability** - every decision is traced and queryable
+- **Configuration as code** - YAML-based workflow definitions
+- **Pluggable LLM providers** - Ollama, OpenAI, Anthropic, vLLM
+- **Swappable tools** - Calculator, WebScraper, FileWriter, and more
+
+---
+
+## Prerequisites
+
+- **Python 3.11 or higher**
+- **(Optional)** Ollama for local LLMs ([Install Ollama](https://ollama.ai))
+- **(Optional)** PostgreSQL for production observability
+
+---
+
+## Installation (5 minutes)
+
+### Step 1: Clone the Repository
+
+```bash
+git clone https://github.com/yourusername/meta-autonomous-framework.git
+cd meta-autonomous-framework
+```
+
+### Step 2: Create Virtual Environment
+
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
+
+### Step 3: Install Dependencies
+
+```bash
+pip install -e ".[dev]"
+```
+
+This installs the framework in development mode with all dependencies.
+
+### Step 4: Configure Environment
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` with your configuration:
+
+```bash
+# For OpenAI (optional)
+OPENAI_API_KEY=your_openai_api_key_here
+
+# For Anthropic (optional)
+ANTHROPIC_API_KEY=your_anthropic_api_key_here
+
+# For Ollama (local - recommended for getting started)
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+---
+
+## Your First Workflow (2 minutes)
+
+### Using Ollama (Local, Free)
+
+1. **Start Ollama** (if not already running):
+```bash
+ollama serve
+```
+
+2. **Pull a model** (first time only):
+```bash
+ollama pull llama3.2:3b
+```
+
+3. **Run the demo**:
+```bash
+python examples/milestone1_demo.py
+```
+
+You should see:
+- Agent execution logs
+- LLM interactions
+- Tool calls and results
+- Final workflow output
+
+### Using OpenAI or Anthropic
+
+1. **Set your API key** in `.env`:
+```bash
+OPENAI_API_KEY=sk-...
+```
+
+2. **Run a workflow** with a specific provider:
+```bash
+python examples/run_workflow.py simple_research \
+  --provider openai \
+  --model gpt-4 \
+  --prompt "Research the benefits of Python typing"
+```
+
+---
+
+## Run Example Workflows
+
+The framework includes several pre-built example workflows.
+
+### Simple Research Workflow
+
+Single-agent workflow for research tasks:
+
+```bash
+python examples/run_workflow.py simple_research \
+  --prompt "Research Python typing benefits"
+```
+
+### Multi-Agent Parallel Research
+
+Run 3 agents in parallel with consensus synthesis:
+
+```bash
+python examples/run_multi_agent_workflow.py parallel-research
+```
+
+**Output:**
+- 3 agents research independently
+- Results synthesized via consensus voting
+- 2-3x faster than sequential execution
+
+### Multi-Agent Debate
+
+Run 3 agents in a multi-round debate:
+
+```bash
+python examples/run_multi_agent_workflow.py debate-decision
+```
+
+**Output:**
+- Agents present positions
+- Debate across multiple rounds
+- Convergence detection stops early
+- Final decision with confidence score
+
+---
+
+## Create Your Own Workflow
+
+### Step 1: Define Agent Config
+
+Create `configs/agents/my_agent.yaml`:
+
+```yaml
+agent:
+  name: my_researcher
+  description: Research agent for technical topics
+  version: 1.0
+  type: standard
+
+  prompt:
+    inline: |
+      You are a technical research assistant.
+
+      Query: {{ query }}
+
+      Provide a comprehensive analysis.
+
+  inference:
+    provider: ollama
+    model: llama3.2:3b
+    base_url: http://localhost:11434
+    temperature: 0.7
+    max_tokens: 2048
+
+  tools:
+    - WebScraper
+    - Calculator
+
+  safety:
+    max_tool_calls_per_execution: 5
+```
+
+### Step 2: Define Workflow Config
+
+Create `configs/workflows/my_workflow.yaml`:
+
+```yaml
+workflow:
+  name: my_research_workflow
+  description: Custom research workflow
+  version: 1.0
+
+stages:
+  - name: research
+    type: agent
+    agent_ref: my_researcher
+    input_mapping:
+      query: $input.topic
+
+output_mapping:
+  result: $stages.research.output
+```
+
+### Step 3: Run Your Workflow
+
+```bash
+python examples/run_workflow.py my_workflow \
+  --input '{"topic": "Python async programming"}'
+```
+
+---
+
+## Understanding the Output
+
+When you run a workflow, you'll see:
+
+```
+🚀 Starting workflow: my_research_workflow
+📊 Stage: research (agent: my_researcher)
+🤖 Agent executing...
+💬 LLM call: llama3.2:3b
+🔧 Tool call: WebScraper(url="...")
+✅ Tool result: [content]
+📝 Agent output: [research findings]
+✅ Workflow complete!
+```
+
+**Workflow Result:**
+```json
+{
+  "result": "[Agent's research findings]",
+  "stage_outputs": {
+    "research": "[Detailed output]"
+  },
+  "metadata": {
+    "total_tokens": 1234,
+    "total_cost_usd": 0.002,
+    "duration_seconds": 5.3
+  }
+}
+```
+
+---
+
+## Next Steps
+
+### Learn Core Concepts
+
+- **[System Overview](./architecture/SYSTEM_OVERVIEW.md)** - Architecture diagrams
+- **[Agent Interface](./interfaces/core/agent_interface.md)** - How agents work
+- **[Tool Interface](./interfaces/core/tool_interface.md)** - How tools work
+- **[Config Schemas](./interfaces/models/config_schema.md)** - Configuration reference
+
+### Explore Multi-Agent Collaboration
+
+- **[Multi-Agent Collaboration Guide](./multi_agent_collaboration.md)** - Parallel execution, synthesis, conflict resolution
+- **[Collaboration Strategies](./collaboration_strategies.md)** - Consensus, debate, merit-weighted
+- **[M3 Examples](../examples/guides/multi_agent_collaboration_examples.md)** - Complete multi-agent examples
+
+### Advanced Topics
+
+- **[Execution Engine Architecture](./execution_engine_architecture.md)** - Engine abstraction layer
+- **[Custom Engine Tutorial](./custom_engine_tutorial.md)** - Build your own execution engine
+- **[Observability](./interfaces/models/observability_models.md)** - Tracing and analytics
+
+### Run Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run specific test suite
+pytest tests/integration/ -v
+
+# Run with coverage
+pytest --cov=src tests/
+```
+
+---
+
+## Common Issues & Solutions
+
+### Issue: "Command not found: ollama"
+
+**Solution:** Install Ollama from https://ollama.ai
+
+### Issue: "Model not found: llama3.2:3b"
+
+**Solution:** Pull the model:
+```bash
+ollama pull llama3.2:3b
+```
+
+### Issue: "OpenAI API key not found"
+
+**Solution:** Set your API key in `.env`:
+```bash
+OPENAI_API_KEY=sk-your_key_here
+```
+
+### Issue: "ImportError: No module named 'src'"
+
+**Solution:** Install in development mode:
+```bash
+pip install -e ".[dev]"
+```
+
+### Issue: "Database connection error"
+
+**Solution:** The framework uses SQLite by default. PostgreSQL is optional for production.
+
+---
+
+## Configuration Quick Reference
+
+### LLM Providers
+
+| Provider | Model Examples | Base URL |
+|----------|---------------|----------|
+| Ollama | llama3.2:3b, mistral | http://localhost:11434 |
+| OpenAI | gpt-4, gpt-3.5-turbo | https://api.openai.com/v1 |
+| Anthropic | claude-3-opus, claude-3-sonnet | https://api.anthropic.com/v1 |
+| vLLM | (custom) | http://localhost:8000 |
+
+### Available Tools
+
+| Tool | Description | Use Cases |
+|------|-------------|-----------|
+| Calculator | Math expressions | Calculations, numerical analysis |
+| WebScraper | Fetch web content | Research, data gathering |
+| FileWriter | Write to files | Report generation, data export |
+
+### Execution Modes
+
+| Mode | Description | When to Use |
+|------|-------------|-------------|
+| Sequential | One agent at a time | Simple workflows, debugging |
+| Parallel | Multiple agents concurrently | Research, consensus, speed |
+
+### Collaboration Strategies
+
+| Strategy | Description | Best For |
+|----------|-------------|----------|
+| Consensus | Majority voting | Quick decisions, research |
+| Debate | Multi-round argumentation | Complex decisions, analysis |
+| Merit-Weighted | Expert-weighted voting | Technical decisions, trust |
+
+---
+
+## Example Use Cases
+
+### 1. Research Assistant
+
+**Use Case:** Gather information on a technical topic
+
+**Workflow:** Single agent with WebScraper tool
+
+```bash
+python examples/run_workflow.py simple_research \
+  --prompt "Research GraphQL vs REST APIs"
+```
+
+### 2. Parallel Research
+
+**Use Case:** Fast research with multiple perspectives
+
+**Workflow:** 3 agents in parallel with consensus
+
+```bash
+python examples/run_multi_agent_workflow.py parallel-research
+```
+
+**Result:** 2-3x faster than sequential
+
+### 3. Technical Decision
+
+**Use Case:** Make a complex technical decision
+
+**Workflow:** Multi-agent debate with convergence
+
+```bash
+python examples/run_multi_agent_workflow.py debate-decision
+```
+
+**Result:** High-confidence decision with reasoning
+
+### 4. Data Analysis
+
+**Use Case:** Analyze data and generate reports
+
+**Workflow:** Agent with Calculator + FileWriter
+
+```bash
+python examples/run_workflow.py data_analysis \
+  --input '{"data_file": "sales.csv"}'
+```
+
+---
+
+## Getting Help
+
+- **Documentation:** Browse `/docs` for detailed guides
+- **Examples:** Check `/examples` for working code
+- **Issues:** Report bugs on GitHub
+- **Tests:** Run `pytest -v` to see working examples
+
+---
+
+## What's Next?
+
+You've successfully installed and run the Meta-Autonomous Agent Framework! Here's what to explore next:
+
+1. **Create custom agents** with different LLM providers
+2. **Experiment with multi-agent workflows** for parallel execution
+3. **Build custom tools** for domain-specific tasks
+4. **Integrate observability** to track and analyze agent behavior
+5. **Deploy to production** with safety policies and monitoring
+
+Happy building! 🚀

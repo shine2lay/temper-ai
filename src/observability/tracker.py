@@ -1,0 +1,713 @@
+"""
+Execution tracker for observability.
+
+Tracks workflow, stage, agent, LLM, and tool executions in real-time,
+writing to pluggable observability backends (SQL, Prometheus, S3, etc.).
+"""
+import uuid
+from datetime import datetime, timezone
+from contextlib import contextmanager
+from typing import Optional, Dict, Any, List, Generator
+from dataclasses import dataclass
+
+from src.observability.backend import ObservabilityBackend
+from src.utils.config_helpers import sanitize_config_for_display
+
+
+def utcnow() -> datetime:
+    """Get current UTC time with timezone awareness."""
+    return datetime.now(timezone.utc)
+
+
+@dataclass
+class ExecutionContext:
+    """Context for current execution."""
+    workflow_id: Optional[str] = None
+    stage_id: Optional[str] = None
+    agent_id: Optional[str] = None
+
+
+class ExecutionTracker:
+    """
+    Tracks execution using pluggable observability backends.
+
+    Provides context managers for tracking different execution levels:
+    - workflow
+    - stage
+    - agent
+    - LLM call
+    - tool call
+
+    Each level automatically:
+    - Creates record with status="running"
+    - Tracks start/end times
+    - Calculates duration
+    - Updates metrics
+    - Handles errors
+
+    Backend Abstraction:
+    - Supports multiple backends (SQL, Prometheus, S3, etc.)
+    - Backend-specific optimizations (session reuse, batching, etc.)
+    - Defaults to SQLObservabilityBackend for backward compatibility
+
+    Example:
+        >>> from src.observability.backends import SQLObservabilityBackend
+        >>> backend = SQLObservabilityBackend()
+        >>> tracker = ExecutionTracker(backend=backend)
+        >>> with tracker.track_workflow("research", config) as workflow_id:
+        ...     with tracker.track_stage("analyze", config, workflow_id) as stage_id:
+        ...         with tracker.track_agent("researcher", config, stage_id) as agent_id:
+        ...             tracker.track_llm_call(agent_id, llm_response)
+        ...             tracker.track_tool_call(agent_id, tool_name, params, result)
+    """
+
+    def __init__(self, backend: Optional[ObservabilityBackend] = None):
+        """
+        Initialize execution tracker.
+
+        Args:
+            backend: Observability backend to use. If None, defaults to SQLObservabilityBackend.
+        """
+        self.context = ExecutionContext()
+
+        # Use provided backend or default to SQL backend
+        if backend is None:
+            from src.observability.backends import SQLObservabilityBackend
+            backend = SQLObservabilityBackend()
+
+        self.backend = backend
+        self._session_stack: List[Any] = []  # Stack of active sessions for nested contexts
+
+    @contextmanager
+    def track_workflow(
+        self,
+        workflow_name: str,
+        workflow_config: Dict[str, Any],
+        trigger_type: Optional[str] = None,
+        trigger_data: Optional[Dict[str, Any]] = None,
+        optimization_target: Optional[str] = None,
+        product_type: Optional[str] = None,
+        environment: Optional[str] = "development",
+        tags: Optional[List[str]] = None,
+        experiment_id: Optional[str] = None,
+        variant_id: Optional[str] = None,
+        assignment_strategy: Optional[str] = None,
+        assignment_context: Optional[Dict[str, Any]] = None,
+        custom_metrics: Optional[Dict[str, Any]] = None
+    ) -> Generator[str, None, None]:
+        """
+        Track workflow execution.
+
+        Args:
+            workflow_name: Name of the workflow
+            workflow_config: Full workflow configuration
+            trigger_type: How workflow was triggered (manual, cron, event)
+            trigger_data: Trigger metadata
+            experiment_id: Optional experiment ID for A/B testing
+            variant_id: Optional variant ID for A/B testing
+            assignment_strategy: Optional assignment strategy used
+            assignment_context: Optional context used for assignment
+            custom_metrics: Optional custom metrics to track
+            optimization_target: Current optimization target (speed, quality, cost)
+            product_type: Type of product being built
+            environment: Execution environment (dev, staging, prod)
+            tags: Additional tags
+
+        Yields:
+            workflow_id: UUID of the workflow execution
+
+        Example:
+            >>> with tracker.track_workflow("research", config) as workflow_id:
+            ...     # Run workflow stages
+            ...     pass
+        """
+        workflow_id = str(uuid.uuid4())
+        self.context.workflow_id = workflow_id
+
+        start_time = utcnow()
+        # Sanitize config snapshot to prevent secrets in backend
+        sanitized_config = sanitize_config_for_display(workflow_config)
+
+        # Build extra_metadata with experiment info and custom metrics
+        extra_metadata: Dict[str, Any] = {}
+        if experiment_id:
+            extra_metadata["experiment_id"] = experiment_id
+        if variant_id:
+            extra_metadata["variant_id"] = variant_id
+        if assignment_strategy:
+            extra_metadata["assignment_strategy"] = assignment_strategy
+        if assignment_context:
+            extra_metadata["assignment_context"] = assignment_context
+        if custom_metrics:
+            extra_metadata["custom_metrics"] = custom_metrics
+
+        # Use backend session context (backend handles session management)
+        with self.backend.get_session_context() as session:
+            # Push session onto stack for child operations to use
+            self._session_stack.append(session)
+
+            # Record workflow start via backend
+            self.backend.track_workflow_start(
+                workflow_id=workflow_id,
+                workflow_name=workflow_name,
+                workflow_config=sanitized_config,
+                start_time=start_time,
+                trigger_type=trigger_type,
+                trigger_data=trigger_data,
+                optimization_target=optimization_target,
+                product_type=product_type,
+                environment=environment,
+                tags=tags,
+                extra_metadata=extra_metadata if extra_metadata else None
+            )
+
+            try:
+                yield workflow_id
+
+                # Success - update final status
+                end_time = utcnow()
+
+                self.backend.track_workflow_end(
+                    workflow_id=workflow_id,
+                    end_time=end_time,
+                    status="completed",
+                    error_message=None,
+                    error_stack_trace=None
+                )
+
+                # Aggregate and update metrics (backend handles aggregation logic)
+                # Only for SQL backend - other backends handle metrics differently
+                try:
+                    from sqlmodel import select, func
+                    from src.observability.models import AgentExecution, StageExecution
+
+                    if hasattr(session, 'exec') and session is not None:
+                        metrics_statement = select(
+                            func.sum(AgentExecution.num_llm_calls).label('total_llm_calls'),
+                            func.sum(AgentExecution.num_tool_calls).label('total_tool_calls'),
+                            func.sum(AgentExecution.total_tokens).label('total_tokens'),
+                            func.sum(AgentExecution.estimated_cost_usd).label('total_cost_usd')
+                        ).join(
+                            StageExecution,
+                            AgentExecution.stage_execution_id == StageExecution.id  # type: ignore[arg-type]
+                        ).where(StageExecution.workflow_execution_id == workflow_id)
+
+                        metrics = session.exec(metrics_statement).first()
+
+                        if metrics:
+                            self.backend.update_workflow_metrics(
+                                workflow_id=workflow_id,
+                                total_llm_calls=int(metrics.total_llm_calls or 0),
+                                total_tool_calls=int(metrics.total_tool_calls or 0),
+                                total_tokens=int(metrics.total_tokens or 0),
+                                total_cost_usd=float(metrics.total_cost_usd or 0.0)
+                            )
+                except Exception:
+                    # Non-SQL backends don't need metric aggregation
+                    pass
+
+            except Exception as e:
+                # Failure - record error
+                end_time = utcnow()
+
+                self.backend.track_workflow_end(
+                    workflow_id=workflow_id,
+                    end_time=end_time,
+                    status="failed",
+                    error_message=str(e),
+                    error_stack_trace=self._get_stack_trace()
+                )
+                raise
+
+            finally:
+                # Pop session from stack
+                self._session_stack.pop()
+                self.context.workflow_id = None
+
+    @contextmanager
+    def track_stage(
+        self,
+        stage_name: str,
+        stage_config: Dict[str, Any],
+        workflow_id: str,
+        input_data: Optional[Dict[str, Any]] = None
+    ) -> Generator[str, None, None]:
+        """
+        Track stage execution.
+
+        Args:
+            stage_name: Name of the stage
+            stage_config: Stage configuration
+            workflow_id: Parent workflow ID
+            input_data: Stage input data
+
+        Yields:
+            stage_id: UUID of the stage execution
+
+        Example:
+            >>> with tracker.track_stage("research", config, workflow_id) as stage_id:
+            ...     # Run stage agents
+            ...     pass
+        """
+        stage_id = str(uuid.uuid4())
+        self.context.stage_id = stage_id
+
+        start_time = utcnow()
+        # Sanitize config snapshot to prevent secrets in backend
+        sanitized_config = sanitize_config_for_display(stage_config)
+
+        # Reuse parent session if available, otherwise create new one
+        if self._session_stack:
+            # Use parent workflow's session
+            self.backend.track_stage_start(
+                stage_id=stage_id,
+                workflow_id=workflow_id,
+                stage_name=stage_name,
+                stage_config=sanitized_config,
+                start_time=start_time,
+                input_data=input_data
+            )
+
+            try:
+                yield stage_id
+
+                # Success
+                end_time = utcnow()
+
+                # Aggregate metrics from child agents (SQL backend only)
+                try:
+                    from sqlmodel import select, func
+                    from sqlalchemy import case
+                    from src.observability.models import AgentExecution
+
+                    session = self._session_stack[-1] if self._session_stack else None
+                    if hasattr(session, 'exec') and session is not None:
+                        metrics_statement = select(
+                            func.count(AgentExecution.id).label('total'),  # type: ignore[arg-type]
+                            func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
+                            func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
+                        ).where(AgentExecution.stage_execution_id == stage_id)
+
+                        metrics = session.exec(metrics_statement).first()
+
+                        self.backend.track_stage_end(
+                            stage_id=stage_id,
+                            end_time=end_time,
+                            status="completed",
+                            error_message=None,
+                            num_agents_executed=int(metrics.total or 0) if metrics else 0,
+                            num_agents_succeeded=int(metrics.succeeded or 0) if metrics else 0,
+                            num_agents_failed=int(metrics.failed or 0) if metrics else 0
+                        )
+                    else:
+                        self.backend.track_stage_end(
+                            stage_id=stage_id,
+                            end_time=end_time,
+                            status="completed"
+                        )
+                except Exception:
+                    # Fallback for non-SQL backends
+                    self.backend.track_stage_end(
+                        stage_id=stage_id,
+                        end_time=end_time,
+                        status="completed"
+                    )
+
+            except Exception as e:
+                # Failure
+                end_time = utcnow()
+
+                self.backend.track_stage_end(
+                    stage_id=stage_id,
+                    end_time=end_time,
+                    status="failed",
+                    error_message=str(e)
+                )
+                raise
+
+            finally:
+                self.context.stage_id = None
+        else:
+            # Standalone stage execution (no parent workflow) - create own session
+            with self.backend.get_session_context() as session:
+                self._session_stack.append(session)
+
+                self.backend.track_stage_start(
+                    stage_id=stage_id,
+                    workflow_id=workflow_id,
+                    stage_name=stage_name,
+                    stage_config=sanitized_config,
+                    start_time=start_time,
+                    input_data=input_data
+                )
+
+                try:
+                    yield stage_id
+
+                    # Success
+                    end_time = utcnow()
+                    self.backend.track_stage_end(
+                        stage_id=stage_id,
+                        end_time=end_time,
+                        status="completed"
+                    )
+
+                except Exception as e:
+                    # Failure
+                    end_time = utcnow()
+                    self.backend.track_stage_end(
+                        stage_id=stage_id,
+                        end_time=end_time,
+                        status="failed",
+                        error_message=str(e)
+                    )
+                    raise
+
+                finally:
+                    self._session_stack.pop()
+                    self.context.stage_id = None
+
+    @contextmanager
+    def track_agent(
+        self,
+        agent_name: str,
+        agent_config: Dict[str, Any],
+        stage_id: str,
+        input_data: Optional[Dict[str, Any]] = None
+    ) -> Generator[str, None, None]:
+        """
+        Track agent execution.
+
+        Args:
+            agent_name: Name of the agent
+            agent_config: Agent configuration
+            stage_id: Parent stage ID
+            input_data: Agent input data
+
+        Yields:
+            agent_id: UUID of the agent execution
+
+        Example:
+            >>> with tracker.track_agent("researcher", config, stage_id) as agent_id:
+            ...     # Run agent
+            ...     tracker.track_llm_call(agent_id, llm_response)
+        """
+        agent_id = str(uuid.uuid4())
+        self.context.agent_id = agent_id
+
+        start_time = utcnow()
+        # Sanitize config snapshot to prevent secrets in backend
+        sanitized_config = sanitize_config_for_display(agent_config)
+
+        # Reuse parent session if available, otherwise create new one
+        if self._session_stack:
+            # Use parent stage's session
+            self.backend.track_agent_start(
+                agent_id=agent_id,
+                stage_id=stage_id,
+                agent_name=agent_name,
+                agent_config=sanitized_config,
+                start_time=start_time,
+                input_data=input_data
+            )
+
+            try:
+                yield agent_id
+
+                # Success
+                end_time = utcnow()
+                self.backend.track_agent_end(
+                    agent_id=agent_id,
+                    end_time=end_time,
+                    status="completed"
+                )
+
+            except Exception as e:
+                # Failure
+                end_time = utcnow()
+                self.backend.track_agent_end(
+                    agent_id=agent_id,
+                    end_time=end_time,
+                    status="failed",
+                    error_message=str(e)
+                )
+                raise
+
+            finally:
+                self.context.agent_id = None
+        else:
+            # Standalone agent execution (no parent stage) - create own session
+            with self.backend.get_session_context() as session:
+                self._session_stack.append(session)
+
+                self.backend.track_agent_start(
+                    agent_id=agent_id,
+                    stage_id=stage_id,
+                    agent_name=agent_name,
+                    agent_config=sanitized_config,
+                    start_time=start_time,
+                    input_data=input_data
+                )
+
+                try:
+                    yield agent_id
+
+                    # Success
+                    end_time = utcnow()
+                    self.backend.track_agent_end(
+                        agent_id=agent_id,
+                        end_time=end_time,
+                        status="completed"
+                    )
+
+                except Exception as e:
+                    # Failure
+                    end_time = utcnow()
+                    self.backend.track_agent_end(
+                        agent_id=agent_id,
+                        end_time=end_time,
+                        status="failed",
+                        error_message=str(e)
+                    )
+                    raise
+
+                finally:
+                    self._session_stack.pop()
+                    self.context.agent_id = None
+
+    def track_llm_call(
+        self,
+        agent_id: str,
+        provider: str,
+        model: str,
+        prompt: str,
+        response: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        latency_ms: int,
+        estimated_cost_usd: float,
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+        status: str = "success",
+        error_message: Optional[str] = None
+    ) -> str:
+        """
+        Track LLM call.
+
+        Args:
+            agent_id: Parent agent execution ID
+            provider: LLM provider (ollama, openai, anthropic)
+            model: Model name
+            prompt: Input prompt
+            response: LLM response
+            prompt_tokens: Number of prompt tokens
+            completion_tokens: Number of completion tokens
+            latency_ms: Latency in milliseconds
+            estimated_cost_usd: Estimated cost
+            temperature: Temperature setting
+            max_tokens: Max tokens setting
+            status: Call status (success, failed)
+            error_message: Error if failed
+
+        Returns:
+            llm_call_id: UUID of the LLM call
+
+        Example:
+            >>> call_id = tracker.track_llm_call(
+            ...     agent_id,
+            ...     "ollama",
+            ...     "llama3.2:3b",
+            ...     "Hello",
+            ...     "Hi there!",
+            ...     10, 5, 250, 0.001
+            ... )
+        """
+        llm_call_id = str(uuid.uuid4())
+        start_time = utcnow()
+
+        self.backend.track_llm_call(
+            llm_call_id=llm_call_id,
+            agent_id=agent_id,
+            provider=provider,
+            model=model,
+            prompt=prompt,
+            response=response,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+            estimated_cost_usd=estimated_cost_usd,
+            start_time=start_time,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            status=status,
+            error_message=error_message
+        )
+
+        return llm_call_id
+
+    def track_tool_call(
+        self,
+        agent_id: str,
+        tool_name: str,
+        input_params: Dict[str, Any],
+        output_data: Dict[str, Any],
+        duration_seconds: float,
+        status: str = "success",
+        error_message: Optional[str] = None,
+        safety_checks: Optional[List[str]] = None,
+        approval_required: bool = False
+    ) -> str:
+        """
+        Track tool execution.
+
+        Args:
+            agent_id: Parent agent execution ID
+            tool_name: Name of the tool
+            input_params: Tool input parameters
+            output_data: Tool output data
+            duration_seconds: Execution duration
+            status: Execution status (success, failed)
+            error_message: Error if failed
+            safety_checks: Safety checks applied
+            approval_required: Whether approval was required
+
+        Returns:
+            tool_execution_id: UUID of the tool execution
+
+        Example:
+            >>> tool_id = tracker.track_tool_call(
+            ...     agent_id,
+            ...     "calculator",
+            ...     {"operation": "add", "a": 1, "b": 2},
+            ...     {"result": 3},
+            ...     0.01
+            ... )
+        """
+        tool_execution_id = str(uuid.uuid4())
+        start_time = utcnow()
+
+        self.backend.track_tool_call(
+            tool_execution_id=tool_execution_id,
+            agent_id=agent_id,
+            tool_name=tool_name,
+            input_params=input_params,
+            output_data=output_data,
+            start_time=start_time,
+            duration_seconds=duration_seconds,
+            status=status,
+            error_message=error_message,
+            safety_checks=safety_checks,
+            approval_required=approval_required
+        )
+
+        return tool_execution_id
+
+    def _get_stack_trace(self) -> str:
+        """Get current exception stack trace."""
+        import traceback
+        return traceback.format_exc()
+
+    def set_agent_output(
+        self,
+        agent_id: str,
+        output_data: Dict[str, Any],
+        reasoning: Optional[str] = None,
+        confidence_score: Optional[float] = None,
+        total_tokens: Optional[int] = None,
+        prompt_tokens: Optional[int] = None,
+        completion_tokens: Optional[int] = None,
+        estimated_cost_usd: Optional[float] = None,
+        num_llm_calls: Optional[int] = None,
+        num_tool_calls: Optional[int] = None
+    ) -> None:
+        """
+        Set agent output data after execution.
+
+        Args:
+            agent_id: Agent execution ID
+            output_data: Agent output data
+            reasoning: Agent reasoning text
+            confidence_score: Confidence score (0-1)
+            total_tokens: Total tokens used
+            prompt_tokens: Prompt tokens used
+            completion_tokens: Completion tokens used
+            estimated_cost_usd: Estimated cost in USD
+            num_llm_calls: Number of LLM calls made
+            num_tool_calls: Number of tool calls made
+        """
+        self.backend.set_agent_output(
+            agent_id=agent_id,
+            output_data=output_data,
+            reasoning=reasoning,
+            confidence_score=confidence_score,
+            total_tokens=total_tokens,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            estimated_cost_usd=estimated_cost_usd,
+            num_llm_calls=num_llm_calls,
+            num_tool_calls=num_tool_calls
+        )
+
+    def set_stage_output(
+        self,
+        stage_id: str,
+        output_data: Dict[str, Any]
+    ) -> None:
+        """
+        Set stage output data after execution.
+
+        Args:
+            stage_id: Stage execution ID
+            output_data: Stage output data
+        """
+        self.backend.set_stage_output(
+            stage_id=stage_id,
+            output_data=output_data
+        )
+
+    def track_safety_violation(
+        self,
+        violation_severity: str,
+        violation_message: str,
+        policy_name: str,
+        service_name: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """
+        Track safety violation for observability and metrics.
+
+        Records safety violations in the execution context for analysis,
+        alerting, and policy enforcement monitoring.
+
+        Args:
+            violation_severity: Severity level (INFO, LOW, MEDIUM, HIGH, CRITICAL)
+            violation_message: Detailed violation message
+            policy_name: Name of policy that was violated
+            service_name: Service that detected the violation
+            context: Additional context (action, params, etc.)
+
+        Example:
+            >>> tracker.track_safety_violation(
+            ...     violation_severity="HIGH",
+            ...     violation_message="Path traversal attempt detected",
+            ...     policy_name="PathAccessPolicy",
+            ...     service_name="file_system_service",
+            ...     context={"path": "/etc/passwd", "action": "read"}
+            ... )
+        """
+        # Get current execution IDs from context
+        workflow_id = self.context.workflow_id
+        stage_id = self.context.stage_id
+        agent_id = self.context.agent_id
+
+        self.backend.track_safety_violation(
+            workflow_id=workflow_id,
+            stage_id=stage_id,
+            agent_id=agent_id,
+            violation_severity=violation_severity,
+            violation_message=violation_message,
+            policy_name=policy_name,
+            service_name=service_name,
+            context=context,
+            timestamp=utcnow()
+        )

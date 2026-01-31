@@ -1,0 +1,170 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meta-autonomous-framework"
+version = "0.1.0"
+description = "Meta-autonomous agent framework with self-improvement and full observability"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+    {name = "Meta Autonomous Framework Team"}
+]
+keywords = ["ai", "agents", "autonomous", "langgraph", "observability", "self-improvement"]
+
+dependencies = [
+    # Core execution
+    "langchain>=0.1.0",
+    "langgraph>=0.1.0",
+
+    # Configuration
+    "pyyaml>=6.0",
+    "pydantic>=2.0",
+    "jinja2>=3.1",
+
+    # Database & Observability
+    "sqlmodel>=0.0.14",
+    "sqlalchemy>=2.0",
+    "alembic>=1.13",
+
+    # Console UI
+    "rich>=13.0",
+
+    # HTTP & Web
+    "httpx>=0.25",
+    "requests>=2.31",
+    "beautifulsoup4>=4.12",
+    "lxml>=4.9",
+
+    # Environment & Config
+    "python-dotenv>=1.0",
+
+    # Utilities
+    "tenacity>=8.2",
+
+    # Security
+    "cryptography>=42.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.1",
+    "pytest-benchmark>=5.0",
+    "hypothesis>=6.0",
+    "psutil>=5.9",
+    "black>=23.0",
+    "ruff>=0.1",
+    "mypy>=1.5",
+]
+
+llm-providers = [
+    "openai>=1.0",
+    "anthropic>=0.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/meta-autonomous-framework"
+Documentation = "https://github.com/yourusername/meta-autonomous-framework/docs"
+Repository = "https://github.com/yourusername/meta-autonomous-framework"
+
+[project.scripts]
+meta-autonomous = "src.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "memory: marks tests that check for memory leaks",
+    "benchmark: marks tests that measure performance",
+]
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "W",    # pycodestyle warnings
+    "S",    # bandit (security)
+]
+ignore = [
+    "E501",   # line too long
+    "S101",   # use of assert (OK in tests)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101"]  # Allow assert in tests
+
+[tool.ruff.lint.flake8-bandit]
+check-typed-exception = true
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_any_unimported = false
+disallow_any_expr = false
+disallow_any_decorated = false
+disallow_any_explicit = false
+disallow_any_generics = false
+disallow_subclassing_any = true
+disallow_untyped_calls = false
+disallow_untyped_decorators = false
+disallow_incomplete_defs = true
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+strict_equality = true
+show_error_codes = true
+show_error_context = true
+pretty = true
+
+# Allow some flexibility for third-party libraries
+[[tool.mypy.overrides]]
+module = [
+    "langchain.*",
+    "langgraph.*",
+    "anthropic.*",
+    "openai.*",
+    "sqlmodel.*",
+    "alembic.*",
+    "jinja2.*",
+    "yaml.*",
+    "bs4.*",
+    "lxml.*",
+    "plotly.*",
+]
+ignore_missing_imports = true
+
+# Exclude examples and tests from strict checking (for now)
+[[tool.mypy.overrides]]
+module = "examples.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false

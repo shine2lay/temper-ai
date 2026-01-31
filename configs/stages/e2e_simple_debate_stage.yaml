@@ -1,0 +1,88 @@
+# End-to-End Simple Debate Stage
+# Purpose: Single-stage multi-agent consensus for E2E demo
+# Features: 3 agents, LLM-powered, consensus synthesis
+
+stage:
+  name: e2e_simple_debate_stage
+  description: "Simple debate stage with 3 LLM agents"
+  version: "1.0"
+
+  # Stage type
+  type: multi_agent_consensus
+
+  # Agent configuration (3 agents with different perspectives)
+  agents:
+    - name: product_manager
+      role: Product Manager
+      persona: "You're business-focused and care about market timing, competitive advantage, and revenue. You're willing to take calculated risks for market opportunity."
+      llm_config:
+        temperature: 0.7
+        max_tokens: 300
+
+    - name: engineering_lead
+      role: Engineering Lead
+      persona: "You're technical and quality-focused. You care about code stability, security, and maintainability. You prefer thorough testing before launch."
+      llm_config:
+        temperature: 0.7
+        max_tokens: 300
+
+    - name: data_analyst
+      role: Data Analyst
+      persona: "You're data-driven and analytical. You prefer evidence-based decisions and controlled experiments. You value learning from user data."
+      llm_config:
+        temperature: 0.7
+        max_tokens: 300
+
+  # Execution settings
+  execution:
+    agent_mode: sequential
+    max_iterations: 1  # Single round (no debate)
+    timeout_seconds: 180
+
+  # Collaboration: Simple consensus
+  collaboration:
+    strategy: consensus
+    config:
+      threshold: 0.5  # Simple majority
+      require_unanimous: false
+      tie_breaker: confidence  # Use confidence for ties
+
+  # Error handling
+  error_handling:
+    min_successful_agents: 2  # Need at least 2/3 agents
+    on_agent_failure: continue
+    on_stage_failure: halt
+
+  # Quality gates
+  quality_gates:
+    enabled: false  # Disabled for simple demo
+    min_confidence: 0.6
+    on_failure: proceed_with_warning
+
+  # Input/output schema
+  inputs:
+    required:
+      - scenario
+      - options
+    optional:
+      - context
+
+  outputs:
+    - decision
+    - agent_outputs
+    - synthesis_metadata
+
+  # Metadata
+  tags:
+    - e2e-demo
+    - consensus
+    - simple
+    - milestone-3
+
+  notes:
+    - "Simplified single-round consensus (no debate)"
+    - "3 agents with different perspectives"
+    - "LLM-powered decision making"
+
+  created_by: m3-e2e-demo
+  created_at: "2026-01-27"

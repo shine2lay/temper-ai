@@ -1,0 +1,252 @@
+# Action Policy Engine Configuration
+#
+# This file defines:
+# - Policy engine configuration (caching, performance)
+# - Policy-to-action-type mappings
+# - Global policies (apply to all actions)
+
+# ============================================================================
+# Policy Engine Configuration
+# ============================================================================
+
+policy_engine:
+  # Cache configuration
+  cache_ttl: 60              # Cache validation results for 60 seconds
+  max_cache_size: 1000       # Maximum number of cached results
+  enable_caching: true       # Enable result caching for performance
+
+  # Execution behavior
+  short_circuit_critical: true   # Stop validation on CRITICAL violations
+  enable_async: true             # Use async validation where possible
+
+  # Observability
+  log_violations: true       # Log all violations to observability system
+  metrics_enabled: true      # Track engine performance metrics
+
+# ============================================================================
+# Policy-to-Action-Type Mappings
+# ============================================================================
+
+# Each action type can have multiple policies. Policies execute in priority
+# order (highest first): P0 (200) → P1 (100) → P2 (50)
+
+policy_mappings:
+  # --------------------------------------------------------------------------
+  # File Operations
+  # --------------------------------------------------------------------------
+
+  file_write:
+    - file_access_policy          # Check path permissions (P0)
+    - forbidden_ops_policy        # Block bash file writes (P0)
+    - secret_detection_policy     # Scan for secrets (P0)
+    - resource_limit_policy       # Check file size limits (P1)
+    - rate_limit_policy           # Rate limiting (P1)
+
+  file_read:
+    - file_access_policy          # Check read permissions (P0)
+    - resource_limit_policy       # Check file size limits (P1)
+
+  file_delete:
+    - file_access_policy          # Check delete permissions (P0)
+    - approval_workflow_policy    # Require approval for sensitive paths (P1)
+
+  # --------------------------------------------------------------------------
+  # Git Operations
+  # --------------------------------------------------------------------------
+
+  git_commit:
+    - forbidden_ops_policy        # Block dangerous git operations (P0)
+    - secret_detection_policy     # Scan commits for secrets (P0)
+    - file_access_policy          # Check file permissions (P0)
+    - rate_limit_policy           # Limit commit rate (P1)
+    - blast_radius_policy         # Check commit size (P1)
+
+  git_push:
+    - rate_limit_policy           # Limit push rate (P1)
+    - approval_workflow_policy    # Require approval for production branches (P1)
+
+  # --------------------------------------------------------------------------
+  # Deployment Operations
+  # --------------------------------------------------------------------------
+
+  deploy:
+    - approval_workflow_policy    # Always require approval (P0)
+    - rate_limit_policy           # Limit deployment rate (P1)
+    - circuit_breaker_policy      # Check circuit breaker state (P1)
+
+  rollback:
+    - approval_workflow_policy    # Require approval for rollbacks (P1)
+    - circuit_breaker_policy      # Check circuit breaker state (P1)
+
+  # --------------------------------------------------------------------------
+  # Tool Execution
+  # --------------------------------------------------------------------------
+
+  tool_call:
+    - forbidden_ops_policy        # Block dangerous tool calls (P0)
+    - resource_limit_policy       # Check resource limits (P1)
+    - rate_limit_policy           # Rate limiting (P1)
+
+  bash_command:
+    - forbidden_ops_policy        # Block dangerous bash commands (P0)
+    - secret_detection_policy     # Scan for secrets in commands (P0)
+
+  # --------------------------------------------------------------------------
+  # LLM Operations
+  # --------------------------------------------------------------------------
+
+  llm_call:
+    - rate_limit_policy           # Token and request rate limits (P1)
+    - resource_limit_policy       # Check token limits (P1)
+
+  # --------------------------------------------------------------------------
+  # API Operations
+  # --------------------------------------------------------------------------
+
+  api_call:
+    - rate_limit_policy           # API rate limiting (P1)
+    - circuit_breaker_policy      # Circuit breaker for external APIs (P1)
+
+  # --------------------------------------------------------------------------
+  # Database Operations
+  # --------------------------------------------------------------------------
+
+  db_write:
+    - approval_workflow_policy    # Require approval for production writes (P1)
+    - rate_limit_policy           # Rate limiting (P1)
+
+  db_delete:
+    - approval_workflow_policy    # Always require approval (P0)
+
+# ============================================================================
+# Global Policies
+# ============================================================================
+
+# These policies apply to ALL action types regardless of mapping above.
+# Use for cross-cutting concerns like circuit breakers, monitoring, etc.
+
+global_policies:
+  - circuit_breaker_policy        # Global circuit breaker (P1)
+  # Note: Add more global policies as needed
+
+# ============================================================================
+# Policy Configuration Overrides
+# ============================================================================
+
+# Policy-specific configuration overrides. Each policy can have custom
+# configuration that overrides its defaults.
+
+policy_config:
+  rate_limit_policy:
+    # Override default rate limits
+    limits:
+      file_write: 100/min          # 100 file writes per minute
+      git_commit: 10/hour          # 10 commits per hour
+      git_push: 5/hour             # 5 pushes per hour
+      deploy: 2/hour               # 2 deployments per hour
+      llm_call: 1000/hour          # 1000 LLM calls per hour
+
+  file_access_policy:
+    # Forbidden paths (read/write/delete)
+    forbidden_paths:
+      - /etc/passwd
+      - /etc/shadow
+      - /root
+      - /sys
+      - /proc
+      - .ssh/id_rsa
+      - .ssh/id_ed25519
+
+    # Read-only paths (no write/delete)
+    read_only_paths:
+      - /usr
+      - /lib
+      - /lib64
+
+  blast_radius_policy:
+    # Commit size limits
+    max_files_per_commit: 20
+    max_lines_per_file: 500
+    max_total_lines_per_commit: 2000
+
+  approval_workflow_policy:
+    # Actions requiring approval
+    require_approval:
+      - deploy                     # All deployments
+      - rollback                   # All rollbacks
+      - db_delete                  # All database deletes
+      - file_delete               # Sensitive file deletes
+
+  circuit_breaker_policy:
+    # Circuit breaker thresholds
+    failure_threshold: 5           # Open after 5 failures
+    timeout_seconds: 60            # Try again after 60 seconds
+    success_threshold: 2           # Close after 2 successes
+
+# ============================================================================
+# Environment-Specific Overrides
+# ============================================================================
+
+# Override settings for different environments (dev, staging, prod)
+
+environments:
+  development:
+    policy_engine:
+      cache_ttl: 30              # Shorter cache for faster feedback
+      short_circuit_critical: false  # Don't short-circuit (see all violations)
+
+    policy_config:
+      approval_workflow_policy:
+        require_approval: []     # No approvals in dev
+
+  staging:
+    policy_engine:
+      cache_ttl: 60
+
+    policy_config:
+      approval_workflow_policy:
+        require_approval:
+          - deploy               # Only deployments in staging
+
+  production:
+    policy_engine:
+      cache_ttl: 120            # Longer cache for performance
+      short_circuit_critical: true
+
+    policy_config:
+      rate_limit_policy:
+        limits:
+          deploy: 1/hour        # Stricter in production
+          git_push: 3/hour
+
+      approval_workflow_policy:
+        require_approval:
+          - deploy
+          - rollback
+          - db_delete
+          - file_delete
+
+# ============================================================================
+# Notes
+# ============================================================================
+
+# Priority Levels:
+#   P0 (200): Critical security policies - NEVER compromise
+#   P1 (100): Important policies - balance safety and productivity
+#   P2 (50):  Nice-to-have policies - can be relaxed if needed
+#
+# Policy Execution:
+#   - Policies execute in priority order (highest first)
+#   - Short-circuit on CRITICAL violations (if enabled)
+#   - All violations logged to observability
+#
+# Cache Behavior:
+#   - Results cached by (policy, action, agent_id, action_type)
+#   - workflow_id and stage_id NOT included in cache key
+#   - This allows cache reuse across workflow instances
+#
+# Adding New Policies:
+#   1. Implement policy class (inherit from SafetyPolicy)
+#   2. Register in ServiceFactory or policy loader
+#   3. Add to policy_mappings or global_policies
+#   4. Configure in policy_config if needed

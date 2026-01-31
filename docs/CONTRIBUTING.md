@@ -517,6 +517,67 @@ Update documentation when:
 - **Use active voice**
 - **Avoid jargon** (or explain it)
 
+### Emoji Usage Policy
+
+**When to use emojis:**
+- ✅ **README files** - Emojis enhance readability and visual appeal
+- ✅ **User-facing guides and tutorials** - Makes content more engaging
+- ✅ **QUICK_START.md** - Helps users navigate getting started
+- ✅ **Status indicators** - Quick visual feedback (✓, ✗, ⚠️)
+
+**When NOT to use emojis:**
+- ❌ **API documentation** - Keep formal and professional
+- ❌ **Technical specifications** - Clarity over aesthetics
+- ❌ **Code comments** - Use clear text instead
+- ❌ **Error messages** - Text-only for parsing/searching
+- ❌ **Configuration files** - Avoid potential encoding issues
+
+**Approved emojis for status indicators:**
+
+| Emoji | Usage | Example |
+|-------|-------|---------|
+| ✅ ✓ | Success, completed, allowed | ✅ Tests passing |
+| ❌ ✗ | Error, failed, blocked | ❌ Action blocked |
+| ⚠️ | Warning, caution | ⚠️ Deprecated feature |
+| ℹ️ | Information, note | ℹ️ See documentation |
+| ⏸ | Paused, pending | ⏸ Planned feature |
+| 🔥 | Critical, important | 🔥 Security issue |
+| 🚀 | New feature, deployment | 🚀 Feature released |
+| 🐛 | Bug | 🐛 Fixed authentication bug |
+| 📝 | Documentation | 📝 Updated API docs |
+
+**Examples:**
+
+**Good (README.md):**
+```markdown
+## Quick Start
+
+✅ **Supported:** Python 3.8+
+❌ **Not Supported:** Python 3.7
+
+### Features
+
+🚀 Multi-agent collaboration
+🔒 Built-in safety policies
+📊 Observability and monitoring
+```
+
+**Bad (API_REFERENCE.md):**
+```markdown
+## ActionPolicyEngine
+
+✅ The ActionPolicyEngine validates actions... ❌ WRONG!
+```
+
+**Correct (API_REFERENCE.md):**
+```markdown
+## ActionPolicyEngine
+
+The ActionPolicyEngine validates actions against registered policies.
+```
+
+**Rule of thumb:** If the document is for developers reading code or API specs, avoid emojis. If it's for users getting started or learning the framework, emojis are welcome.
+
 ---
 
 ## Issue Guidelines

@@ -298,8 +298,62 @@ tools = registry.get_all_tools()
 - `get(name, version=None)`: Get tool by name (optionally specify version)
 - `get_all_tools()`: Get all registered tools
 - `has(name, version=None)`: Check if tool exists
-- `list_available_tools()`: Get detailed information about all registered tools (class, description, version, category, etc.)
-- `get_registration_report()`: Get formatted report with registration details for debugging
+- `list_available_tools()`: Get detailed information about all registered tools
+- `get_registration_report()`: Get formatted debugging report
+
+#### Advanced Methods
+
+**list_available_tools() → Dict[str, Dict[str, Any]]**
+
+Get detailed information about all registered tools (latest version of each):
+
+```python
+registry = ToolRegistry(auto_discover=True)
+
+# Get detailed tool information
+tools = registry.list_available_tools()
+
+for name, info in tools.items():
+    print(f"Tool: {name}")
+    print(f"  Class: {info['class']}")
+    print(f"  Description: {info['description']}")
+    print(f"  Version: {info['version']}")
+    print(f"  Category: {info.get('category', 'general')}")
+    print(f"  Metadata: {info['metadata']}")
+```
+
+**Returns:** Dictionary mapping tool names to detailed information:
+- `class`: Tool class name
+- `description`: Tool description
+- `version`: Tool version
+- `category`: Tool category (optional)
+- `metadata`: Tool metadata (ToolMetadata object)
+
+**get_registration_report() → str**
+
+Get formatted debugging report with registration statistics:
+
+```python
+registry = ToolRegistry(auto_discover=True)
+
+# Print detailed registration report
+print(registry.get_registration_report())
+
+# Output:
+# Tool Registry Report
+# ====================
+# Total registered tools: 3 (5 versions)
+#
+# Registered tools:
+#   - calculator (v1.0.0, v2.0.0)
+#   - web_scraper (v1.0.0)
+#   - file_writer (v1.0.0, v1.1.0)
+```
+
+**Returns:** Formatted multi-line report string with:
+- Total tool count (unique names and versions)
+- List of all registered tools with their versions
+- Useful for debugging registration issues
 
 ### ToolExecutor
 

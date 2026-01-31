@@ -64,7 +64,7 @@ This comprehensive checklist ensures the M4 Safety System is ready for productio
 ### Hardware
 
 #### Minimum (Development/Staging)
-- [ ] Python 3.9+ installed
+- [ ] Python 3.11+ installed
 - [ ] 512MB RAM available
 - [ ] 1 CPU core
 - [ ] 10GB disk space
@@ -81,7 +81,7 @@ This comprehensive checklist ensures the M4 Safety System is ready for productio
 ### Software
 
 #### Dependencies
-- [ ] Python 3.9+ with pip
+- [ ] Python 3.11+ with pip
 - [ ] All required packages installed (`pip install -r requirements.txt`)
 - [ ] Database (PostgreSQL 12+ for multi-process deployment)
 - [ ] Cache (Redis 6+ for multi-process deployment)
@@ -90,7 +90,7 @@ This comprehensive checklist ensures the M4 Safety System is ready for productio
 #### Verification Commands
 ```bash
 # Python version
-python --version  # Should be 3.9+
+python --version  # Should be 3.11+
 
 # M4 installation
 python -c "from src.safety import *; print('M4 installed')"

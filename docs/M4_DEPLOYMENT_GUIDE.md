@@ -27,7 +27,7 @@ This guide covers deploying the M4 Safety System in various environments, from d
 ### System Requirements
 
 **Minimum:**
-- Python 3.9+
+- Python 3.11+
 - 512MB RAM
 - 1 CPU core
 - 10GB disk space
@@ -53,7 +53,7 @@ pip install -r requirements-dev.txt
 ```
 # requirements.txt
 uuid>=1.30
-dataclasses>=0.6  # Python 3.9 only
+dataclasses>=0.6  # Not needed for Python 3.11+ (built-in since 3.7)
 typing-extensions>=4.0
 pathlib>=1.0
 ```
@@ -1125,7 +1125,7 @@ python -c "from src.safety import *; print('OK')"
 ```
 
 **Solutions:**
-1. Verify Python version (3.9+)
+1. Verify Python version (3.11+)
 2. Check storage path exists and is writable
 3. Verify database connectivity (if multi-process)
 4. Review configuration file syntax

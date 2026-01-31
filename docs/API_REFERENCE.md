@@ -1626,6 +1626,334 @@ tracker = ExecutionTracker(hooks=[CustomHook()])
 set_tracker(tracker)
 ```
 
+### Observability Backends
+
+The framework supports pluggable storage backends for observability data.
+
+#### ObservabilityBackend (Abstract Interface)
+
+Base interface that all backends must implement.
+
+```python
+from src.observability.backend import ObservabilityBackend
+```
+
+**Core Tracking Methods:**
+- `track_workflow_start(workflow_id, workflow_name, workflow_config, start_time, ...)`
+- `track_workflow_end(workflow_id, end_time, status, error_message, ...)`
+- `update_workflow_metrics(workflow_id, total_llm_calls, total_tool_calls, ...)`
+- `track_stage_start(stage_id, workflow_id, stage_name, ...)`
+- `track_stage_end(stage_id, end_time, status, ...)`
+- `set_stage_output(stage_id, output_data)`
+- `track_agent_start(agent_id, stage_id, agent_name, ...)`
+- `track_agent_end(agent_id, end_time, status, ...)`
+- `set_agent_output(agent_id, output_data, reasoning, ...)`
+- `track_llm_call(llm_call_id, agent_id, provider, model, ...)`
+- `track_tool_call(tool_execution_id, agent_id, tool_name, ...)`
+- `track_safety_violation(workflow_id, stage_id, agent_id, violation_severity, ...)`
+- `track_collaboration_event(stage_id, event_type, agents_involved, ...)`
+
+**Context Management:**
+- `get_session_context()`: Backend-specific session/transaction context manager
+
+**Maintenance:**
+- `cleanup_old_records(retention_days, dry_run=False)`: Delete old records
+- `get_stats()`: Get backend statistics and health information
+
+#### SQLObservabilityBackend
+
+Production-ready SQL backend supporting SQLite (dev/test) and PostgreSQL (production).
+
+**Features:**
+- Session reuse via session stack (reduces connection overhead 5-50ms per operation)
+- Automatic metrics aggregation using SQL
+- Foreign key constraints for data integrity
+- Indexes on common query patterns
+- Retention policy support
+- Optional buffering for batch operations (90% query reduction)
+
+**Basic Usage:**
+
+```python
+from src.observability.backends.sql_backend import SQLObservabilityBackend
+from src.observability import ExecutionTracker
+
+# Create SQL backend
+backend = SQLObservabilityBackend()
+
+# Use with tracker
+tracker = ExecutionTracker(backend=backend)
+```
+
+**With Buffering (Performance Optimization):**
+
+```python
+from src.observability.backends.sql_backend import SQLObservabilityBackend
+from src.observability.buffer import ObservabilityBuffer
+
+# Create buffer (batches LLM/tool calls)
+buffer = ObservabilityBuffer(
+    max_size=100,        # Flush after 100 items
+    max_age_seconds=1.0  # Or after 1 second
+)
+
+# Create backend with buffer
+backend = SQLObservabilityBackend(buffer=buffer)
+tracker = ExecutionTracker(backend=backend)
+```
+
+**Performance Benefits:**
+- **Without buffering**: 200 database queries for 100 LLM calls
+- **With buffering**: ~2 batch queries for 100 LLM calls (90% reduction)
+- **Session reuse**: Saves 5-50ms per operation
+
+**Configuration:**
+
+```yaml
+observability:
+  backend: sql
+  database_url: "postgresql://user:pass@localhost/observability"  # Production
+  # database_url: "sqlite:///observability.db"  # Development
+  enable_buffering: true
+  buffer_size: 100
+  buffer_flush_interval: 1.0
+```
+
+**Maintenance Operations:**
+
+```python
+from src.observability.backends.sql_backend import SQLObservabilityBackend
+
+backend = SQLObservabilityBackend()
+
+# Clean up old records (30-day retention)
+deleted = backend.cleanup_old_records(retention_days=30, dry_run=False)
+print(f"Deleted {deleted['workflows']} workflows")
+
+# Get backend statistics
+stats = backend.get_stats()
+print(f"Total workflows: {stats['total_workflows']}")
+print(f"Total agents: {stats['total_agents']}")
+print(f"Total LLM calls: {stats['total_llm_calls']}")
+```
+
+**Database Schema:**
+
+The SQL backend uses the following tables:
+- `workflow_executions`: Top-level workflow tracking
+- `stage_executions`: Stage execution tracking (linked to workflows)
+- `agent_executions`: Agent execution tracking (linked to stages)
+- `llm_calls`: LLM API call tracking (linked to agents)
+- `tool_executions`: Tool execution tracking (linked to agents)
+- `collaboration_events`: Multi-agent collaboration events (linked to stages)
+
+**Indexes:**
+
+Optimized for common query patterns:
+- `workflow_name`, `start_time` (workflow queries)
+- `stage_name`, `status` (stage queries)
+- `agent_name`, `status` (agent queries)
+- `provider`, `model` (LLM analytics)
+- `tool_name`, `status` (tool analytics)
+
+#### PrometheusObservabilityBackend (Stub)
+
+Metrics-focused backend for Prometheus time-series monitoring (planned for M6).
+
+**Status:** Stub implementation - logs metrics but doesn't push to Prometheus yet.
+
+**Future Features:**
+- Push metrics to Prometheus push gateway
+- Track workflow execution counts by name and status
+- Track stage/agent execution durations (histograms)
+- Track LLM token consumption and costs
+- Track tool call rates and errors
+- Support custom labels for filtering
+
+**Example Usage (Future):**
+
+```python
+from src.observability.backends.prometheus_backend import PrometheusObservabilityBackend
+
+backend = PrometheusObservabilityBackend(
+    push_gateway_url="http://localhost:9091"
+)
+tracker = ExecutionTracker(backend=backend)
+```
+
+**Example Metrics (Future):**
+
+```
+workflow_executions_total{workflow_name="research", status="completed"} 42
+workflow_duration_seconds{workflow_name="research"} histogram
+agent_llm_tokens_total{agent_name="researcher"} 15000
+agent_tool_calls_total{tool_name="web_scraper"} 120
+```
+
+**Configuration (Future):**
+
+```yaml
+observability:
+  backend: prometheus
+  push_gateway_url: "http://prometheus-pushgateway:9091"
+  push_interval_seconds: 10
+  job_name: "autonomous-agents"
+```
+
+#### S3ObservabilityBackend (Stub)
+
+Object storage backend for long-term archival and analytics (planned for M6).
+
+**Status:** Stub implementation - logs events but doesn't write to S3 yet.
+
+**Future Features:**
+- Store execution events as JSON/Parquet in S3
+- Partition by date: `s3://bucket/observability/2024/03/01/workflows/...`
+- Batch uploads (buffer events, upload every N seconds)
+- Compress events (gzip) before upload
+- Support lifecycle policies (auto-delete after N days)
+- Enable querying via Athena/Presto
+
+**Example Usage (Future):**
+
+```python
+from src.observability.backends.s3_backend import S3ObservabilityBackend
+
+backend = S3ObservabilityBackend(
+    bucket_name="my-observability-bucket",
+    prefix="observability",
+    region="us-east-1"
+)
+tracker = ExecutionTracker(backend=backend)
+```
+
+**Example S3 Structure (Future):**
+
+```
+s3://my-bucket/observability/
+    2024/03/01/
+        workflows/
+            workflow-abc123.json.gz
+            workflow-def456.json.gz
+        stages/
+            stage-xyz789.json.gz
+        agents/
+            agent-aaa111.json.gz
+        llm_calls/
+            llm-bbb222.json.gz
+        tool_calls/
+            tool-ccc333.json.gz
+```
+
+**Configuration (Future):**
+
+```yaml
+observability:
+  backend: s3
+  bucket_name: "my-observability-bucket"
+  prefix: "observability"
+  region: "us-east-1"
+  compression: gzip
+  format: json  # or parquet
+  batch_size: 100
+  batch_interval_seconds: 60
+```
+
+**Querying with Athena (Future):**
+
+```sql
+-- Create external table
+CREATE EXTERNAL TABLE workflows (
+  workflow_id STRING,
+  workflow_name STRING,
+  status STRING,
+  start_time TIMESTAMP,
+  duration_seconds DOUBLE
+)
+PARTITIONED BY (year STRING, month STRING, day STRING)
+STORED AS PARQUET
+LOCATION 's3://my-bucket/observability/workflows/';
+
+-- Query workflows
+SELECT workflow_name, COUNT(*) as count, AVG(duration_seconds) as avg_duration
+FROM workflows
+WHERE year='2024' AND month='03'
+GROUP BY workflow_name;
+```
+
+#### Multi-Backend Support
+
+Use multiple backends simultaneously (e.g., SQL for querying + S3 for archival):
+
+```python
+from src.observability.backends.sql_backend import SQLObservabilityBackend
+from src.observability.backends.s3_backend import S3ObservabilityBackend
+from src.observability import ExecutionTracker
+
+# Create multiple backends
+sql_backend = SQLObservabilityBackend()
+s3_backend = S3ObservabilityBackend(bucket_name="archive")
+
+# Tracker will write to all backends
+tracker = ExecutionTracker(backends=[sql_backend, s3_backend])
+```
+
+**Configuration:**
+
+```yaml
+observability:
+  backends:
+    - type: sql
+      database_url: "postgresql://localhost/observability"
+      enable_buffering: true
+    - type: s3
+      bucket_name: "observability-archive"
+      prefix: "production"
+```
+
+#### Custom Backend Implementation
+
+Implement `ObservabilityBackend` interface for custom storage:
+
+```python
+from src.observability.backend import ObservabilityBackend
+from contextlib import contextmanager
+from typing import Optional, Dict, Any
+from datetime import datetime
+
+class CustomBackend(ObservabilityBackend):
+    """Custom observability backend."""
+
+    def track_workflow_start(
+        self,
+        workflow_id: str,
+        workflow_name: str,
+        workflow_config: Dict[str, Any],
+        start_time: datetime,
+        **kwargs
+    ) -> None:
+        # Custom implementation
+        self.custom_storage.save_workflow(workflow_id, workflow_name, start_time)
+
+    # Implement all other abstract methods...
+
+    @contextmanager
+    def get_session_context(self):
+        # Custom session management
+        yield self.custom_session()
+
+    def cleanup_old_records(self, retention_days: int, dry_run: bool = False):
+        # Custom cleanup logic
+        return {"workflows": 0}
+
+    def get_stats(self):
+        # Custom stats
+        return {"backend_type": "custom"}
+
+# Use custom backend
+tracker = ExecutionTracker(backend=CustomBackend())
+```
+
 ---
 
 ## Multi-Agent Collaboration

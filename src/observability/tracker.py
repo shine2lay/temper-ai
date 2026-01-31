@@ -711,3 +711,148 @@ class ExecutionTracker:
             context=context,
             timestamp=utcnow()
         )
+
+    def track_collaboration_event(
+        self,
+        event_type: str,
+        stage_id: Optional[str] = None,
+        agents_involved: Optional[List[str]] = None,
+        event_data: Optional[Dict[str, Any]] = None,
+        round_number: Optional[int] = None,
+        resolution_strategy: Optional[str] = None,
+        outcome: Optional[str] = None,
+        confidence_score: Optional[float] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+        # Legacy parameters for backward compatibility with executors
+        stage_name: Optional[str] = None,
+        agents: Optional[List[str]] = None,
+        decision: Optional[str] = None,
+        confidence: Optional[float] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Track collaboration event for multi-agent interactions.
+
+        Records collaboration events such as voting, conflicts, resolutions,
+        consensus building, and debate rounds for analysis and monitoring.
+
+        Supports both schema-aligned parameters and legacy executor calls for
+        backward compatibility.
+
+        Args:
+            event_type: Type of event (vote, conflict, resolution, consensus,
+                debate_round, synthesis, quality_gate_failure, adaptive_mode_switch)
+            stage_id: ID of the stage where collaboration occurred
+            agents_involved: List of agent IDs participating
+            event_data: Event-specific data (votes, positions, arguments)
+            round_number: Round number for multi-round collaborations
+            resolution_strategy: Strategy used for conflict resolution
+            outcome: Final outcome of the collaboration event
+            confidence_score: Confidence score of outcome (0.0-1.0)
+            extra_metadata: Additional metadata for custom tracking
+
+            # Legacy parameters (for backward compatibility):
+            stage_name: Legacy parameter, maps to stage_id via context lookup
+            agents: Legacy parameter, maps to agents_involved
+            decision: Legacy parameter, maps to outcome
+            confidence: Legacy parameter, maps to confidence_score
+            metadata: Legacy parameter, maps to event_data
+
+        Returns:
+            str: ID of created collaboration event record (format: "collab-{12-char-hex}"),
+                 or empty string if tracking failed (safe to ignore - tracking failures
+                 do not break workflow execution)
+
+        Example:
+            >>> tracker.track_collaboration_event(
+            ...     event_type="consensus",
+            ...     stage_id="stage-123",
+            ...     agents_involved=["agent-1", "agent-2", "agent-3"],
+            ...     event_data={"votes": {"option_a": 2, "option_b": 1}},
+            ...     resolution_strategy="consensus",
+            ...     outcome="option_a",
+            ...     confidence_score=0.85
+            ... )
+            'collab-456abc789def'
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # Map legacy parameters to new schema
+        if stage_name and not stage_id:
+            stage_id = self.context.stage_id or stage_name
+
+        if agents and not agents_involved:
+            agents_involved = agents
+
+        if decision is not None and not outcome:
+            outcome = decision
+
+        if confidence is not None and confidence_score is None:
+            confidence_score = confidence
+
+        if metadata and not event_data:
+            event_data = metadata
+
+        # Validation: Get stage_id from context if not provided
+        if not stage_id:
+            stage_id = self.context.stage_id
+            if not stage_id:
+                logger.warning(
+                    "track_collaboration_event called without stage_id context",
+                    extra={
+                        "event_type": event_type,
+                        "has_workflow_context": bool(self.context.workflow_id),
+                        "has_stage_context": bool(self.context.stage_id),
+                        "has_agent_context": bool(self.context.agent_id)
+                    }
+                )
+                return ""
+
+        # Validation: event_type is required
+        if not event_type:
+            logger.error(
+                "track_collaboration_event called without event_type",
+                extra={
+                    "stage_id": stage_id,
+                    "has_workflow_context": bool(self.context.workflow_id)
+                }
+            )
+            return ""
+
+        # Normalize agents_involved
+        if agents_involved is None:
+            agents_involved = []
+
+        # Validate confidence_score range
+        if confidence_score is not None and not (0.0 <= confidence_score <= 1.0):
+            logger.warning(
+                f"Invalid confidence_score {confidence_score}, clamping to [0.0, 1.0]",
+                extra={"event_type": event_type, "stage_id": stage_id}
+            )
+            confidence_score = max(0.0, min(1.0, confidence_score))
+
+        # Delegate to backend with error handling
+        try:
+            return self.backend.track_collaboration_event(
+                stage_id=stage_id,
+                event_type=event_type,
+                agents_involved=agents_involved,
+                event_data=event_data,
+                round_number=round_number,
+                resolution_strategy=resolution_strategy,
+                outcome=outcome,
+                confidence_score=confidence_score,
+                extra_metadata=extra_metadata,
+                timestamp=utcnow()
+            )
+        except Exception as e:
+            logger.error(
+                f"Failed to track collaboration event: {e}",
+                exc_info=True,
+                extra={
+                    "event_type": event_type,
+                    "stage_id": stage_id
+                }
+            )
+            return ""

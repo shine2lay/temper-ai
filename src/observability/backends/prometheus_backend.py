@@ -121,6 +121,20 @@ class PrometheusObservabilityBackend(ObservabilityBackend):
             f"severity={violation_severity}"
         )
 
+    def track_collaboration_event(  # type: ignore[override]
+        self,
+        stage_id: str,
+        event_type: str,
+        agents_involved: List[str],
+        **kwargs: Any
+    ) -> str:
+        logger.debug(
+            f"[Prometheus STUB] Collaboration event: {event_type} "
+            f"stage={stage_id} agents={len(agents_involved)}"
+        )
+        # Return stub event ID
+        return f"collab-stub-{event_type}"
+
     @contextmanager
     def get_session_context(self) -> Any:
         """No-op context manager for Prometheus (stateless)."""

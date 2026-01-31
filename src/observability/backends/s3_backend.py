@@ -129,6 +129,20 @@ class S3ObservabilityBackend(ObservabilityBackend):
             f"[S3 STUB] Safety violation: {policy_name} severity={violation_severity}"
         )
 
+    def track_collaboration_event(  # type: ignore[override]
+        self,
+        stage_id: str,
+        event_type: str,
+        agents_involved: List[str],
+        **kwargs: Any
+    ) -> str:
+        logger.debug(
+            f"[S3 STUB] Collaboration event: {event_type} "
+            f"stage={stage_id} agents={len(agents_involved)}"
+        )
+        # Return stub event ID
+        return f"collab-stub-{event_type}"
+
     @contextmanager
     def get_session_context(self) -> Any:
         """No-op context manager for S3 (stateless)."""

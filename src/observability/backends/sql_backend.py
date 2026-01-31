@@ -20,6 +20,7 @@ from src.observability.models import (
     AgentExecution,
     LLMCall,
     ToolExecution,
+    CollaborationEvent,
 )
 
 logger = logging.getLogger(__name__)
@@ -563,6 +564,115 @@ class SQLObservabilityBackend(ObservabilityBackend):
                 wf_metadata["safety_violation_count"] = len(wf_metadata["safety_violations"])
                 workflow.extra_metadata = cast(Any, wf_metadata)
                 session.commit()
+
+    def track_collaboration_event(
+        self,
+        stage_id: str,
+        event_type: str,
+        agents_involved: List[str],
+        event_data: Optional[Dict[str, Any]] = None,
+        round_number: Optional[int] = None,
+        resolution_strategy: Optional[str] = None,
+        outcome: Optional[str] = None,
+        confidence_score: Optional[float] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None
+    ) -> str:
+        """
+        Track collaboration event to SQL database.
+
+        Creates a CollaborationEvent record linked to the specified stage execution.
+        Uses optimistic insert with foreign key constraint enforcement by the database.
+
+        Args:
+            stage_id: ID of the stage where collaboration occurred
+            event_type: Type of event (vote, conflict, resolution, consensus,
+                debate_round, synthesis, quality_gate_failure, adaptive_mode_switch)
+            agents_involved: List of agent IDs participating
+            event_data: Event-specific data (votes, positions, arguments)
+            round_number: Round number for multi-round collaborations
+            resolution_strategy: Strategy used for conflict resolution
+            outcome: Final outcome of the collaboration event
+            confidence_score: Confidence score of outcome (0.0-1.0)
+            extra_metadata: Additional metadata for custom tracking
+            timestamp: Event timestamp
+
+        Returns:
+            str: ID of created collaboration event record (format: "collab-{12-char-hex}")
+        """
+        import uuid
+        from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+
+        # Generate unique event ID
+        event_id = f"collab-{uuid.uuid4().hex[:12]}"
+
+        # Use current timestamp if not provided
+        if timestamp is None:
+            timestamp = datetime.now(timezone.utc)
+
+        # Create collaboration event record
+        event = CollaborationEvent(
+            id=event_id,
+            stage_execution_id=stage_id,
+            event_type=event_type,
+            timestamp=timestamp,
+            round_number=round_number,
+            agents_involved=agents_involved,
+            event_data=event_data,
+            resolution_strategy=resolution_strategy,
+            outcome=outcome,
+            confidence_score=confidence_score,
+            extra_metadata=extra_metadata
+        )
+
+        session = self._get_or_create_session()
+
+        try:
+            session.add(event)
+            session.commit()
+            logger.debug(
+                f"Tracked collaboration event {event_id}: type={event_type}, stage={stage_id}"
+            )
+            return event_id
+
+        except IntegrityError as e:
+            session.rollback()
+
+            # Robust foreign key violation detection (supports multiple databases)
+            error_msg = str(e).lower()
+            orig_error = str(e.orig).lower() if hasattr(e, 'orig') else ""
+            is_fk_violation = (
+                'foreign key' in error_msg or
+                'foreign_key' in error_msg or
+                'violates foreign key constraint' in error_msg or
+                'foreign key constraint failed' in error_msg or  # SQLite
+                'foreign key' in orig_error
+            )
+
+            if is_fk_violation:
+                logger.warning(
+                    f"Foreign key violation: stage {stage_id} not found for collaboration event {event_id}",
+                    extra={"event_id": event_id, "stage_id": stage_id, "event_type": event_type}
+                )
+            else:
+                logger.error(
+                    f"Database integrity error tracking collaboration event {event_id}: {e}",
+                    exc_info=True,
+                    extra={"event_id": event_id, "event_type": event_type}
+                )
+
+            # Return event_id anyway - tracking failures shouldn't break workflows
+            return event_id
+
+        except SQLAlchemyError as e:
+            session.rollback()
+            logger.error(
+                f"Database error tracking collaboration event: {e}",
+                exc_info=True,
+                extra={"event_id": event_id, "event_type": event_type, "stage_id": stage_id}
+            )
+            # Return event_id anyway - tracking failures shouldn't break workflows
+            return event_id
 
     # ========== Context Management ==========
 

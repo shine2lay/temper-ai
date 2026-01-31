@@ -355,6 +355,41 @@ class ObservabilityBackend(ABC):
         """
         pass
 
+    @abstractmethod
+    def track_collaboration_event(
+        self,
+        stage_id: str,
+        event_type: str,
+        agents_involved: List[str],
+        event_data: Optional[Dict[str, Any]] = None,
+        round_number: Optional[int] = None,
+        resolution_strategy: Optional[str] = None,
+        outcome: Optional[str] = None,
+        confidence_score: Optional[float] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None
+    ) -> str:
+        """
+        Track collaboration event to backend.
+
+        Args:
+            stage_id: ID of the stage where collaboration occurred
+            event_type: Type of event (vote, conflict, resolution, consensus,
+                debate_round, synthesis, quality_gate_failure, adaptive_mode_switch)
+            agents_involved: List of agent IDs participating
+            event_data: Event-specific data (votes, positions, arguments)
+            round_number: Round number for multi-round collaborations
+            resolution_strategy: Strategy used for conflict resolution
+            outcome: Final outcome of the collaboration event
+            confidence_score: Confidence score of outcome (0.0-1.0)
+            extra_metadata: Additional metadata for custom tracking
+            timestamp: Event timestamp
+
+        Returns:
+            str: ID of created collaboration event record
+        """
+        pass
+
     # ========== Context Management ==========
 
     @abstractmethod

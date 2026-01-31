@@ -112,6 +112,23 @@ config: Dict[str, Any] = {
 }
 ```
 
+**Cache TTL Configuration by Environment:**
+
+| Environment | cache_ttl | Rationale |
+|-------------|-----------|-----------|
+| **Default** | 60s | Balanced performance (code default) |
+| **Development** | 30s | Fast iteration - see fresh results quickly |
+| **Testing** | 30s | Consistent with development |
+| **Staging** | 60s | Production-like performance testing |
+| **Production** | 120s | Maximum cache efficiency, reduced validation overhead |
+
+**When to adjust cache_ttl:**
+- **Lower (10-30s):** Rapid development, frequent policy changes, debugging
+- **Default (60s):** Balanced performance for most use cases
+- **Higher (120-300s):** High-throughput production, stable policies, cost optimization
+
+**Note:** Cached results are invalidated on policy configuration changes.
+
 **Performance:**
 - Validation overhead: <10ms per action (typical)
 - Cache hit rate: >70% (typical)
@@ -574,9 +591,10 @@ metrics: Dict[str, Any] = {
 ### Optimization Strategies
 
 1. **Result Caching**
-   - Cache validation results for 60 seconds
+   - Cache validation results (default: 60s, configurable per environment)
    - Cache key: hash(policy, action, agent_id, action_type)
    - LRU eviction when cache exceeds max size
+   - See [Cache TTL Configuration](#cache-ttl-configuration-by-environment) for environment-specific values
 
 2. **Short-Circuit Evaluation**
    - Stop on CRITICAL violations (save ~30% CPU)
@@ -800,9 +818,11 @@ Track violations over time to identify:
 
 ### 5. Cache Wisely
 
-- Use caching in production (60-120s TTL)
-- Disable caching in development (see fresh results)
+- Use caching in production (120s TTL recommended)
+- Use shorter TTL in development (30s for fresh results)
+- Default TTL is 60s (balanced for most use cases)
 - Monitor cache hit rate (target: >70%)
+- See [Cache TTL Configuration](#cache-ttl-configuration-by-environment) for environment-specific recommendations
 
 ### 6. Custom Policies
 

@@ -12,12 +12,29 @@ States:
 - HALF_OPEN: Testing if provider recovered, allow limited requests
 """
 from enum import Enum
-from dataclasses import dataclass
-from typing import Callable, Any, TypeVar, Optional, Type
+from dataclasses import dataclass, asdict
+from typing import Callable, Any, TypeVar, Optional, Type, Protocol
 import time
 import threading
+import json
 
 T = TypeVar('T')
+
+
+class StateStorage(Protocol):
+    """Protocol for state persistence storage backends."""
+
+    def get(self, key: str) -> Optional[str]:
+        """Retrieve state by key."""
+        ...
+
+    def set(self, key: str, value: str) -> None:
+        """Store state by key."""
+        ...
+
+    def delete(self, key: str) -> None:
+        """Delete state by key."""
+        ...
 
 
 class CircuitState(Enum):
@@ -58,21 +75,34 @@ class CircuitBreaker:
         ...     print("Circuit is open, provider is down")
     """
 
-    def __init__(self, name: str, config: Optional[CircuitBreakerConfig] = None):
+    def __init__(
+        self,
+        name: str,
+        config: Optional[CircuitBreakerConfig] = None,
+        storage: Optional[StateStorage] = None
+    ):
         """
         Initialize circuit breaker.
 
         Args:
             name: Provider name (for error messages)
             config: Circuit breaker configuration
+            storage: Optional storage backend for state persistence
         """
         self.name = name
         self.config = config or CircuitBreakerConfig()
-        self.state = CircuitState.CLOSED
-        self.failure_count = 0
-        self.success_count = 0
-        self.last_failure_time: Optional[float] = None
+        self.storage = storage
         self.lock = threading.Lock()
+
+        # Try to load persisted state if storage provided
+        if self.storage:
+            self._load_state()
+        else:
+            # Initialize in-memory state
+            self.state = CircuitState.CLOSED
+            self.failure_count = 0
+            self.success_count = 0
+            self.last_failure_time: Optional[float] = None
 
     def call(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """
@@ -103,6 +133,8 @@ class CircuitBreaker:
                     # Transition to half-open to test recovery
                     self.state = CircuitState.HALF_OPEN
                     self.success_count = 0
+                    if self.storage:
+                        self._save_state()
                 else:
                     # Circuit still open, fast-fail
                     raise CircuitBreakerError(
@@ -133,6 +165,10 @@ class CircuitBreaker:
                     self.state = CircuitState.CLOSED
                     self.success_count = 0
 
+            # Persist state if storage available
+            if self.storage:
+                self._save_state()
+
     def _on_failure(self, error: Exception) -> None:
         """Handle failed call."""
         # Only count certain errors
@@ -149,6 +185,10 @@ class CircuitBreaker:
             # If closed and hit threshold, open circuit
             elif self.failure_count >= self.config.failure_threshold:
                 self.state = CircuitState.OPEN
+
+            # Persist state if storage available
+            if self.storage:
+                self._save_state()
 
     def _should_count_failure(self, error: Exception) -> bool:
         """
@@ -240,6 +280,61 @@ class CircuitBreaker:
     def reset(self) -> None:
         """Reset circuit breaker to closed state (for testing)."""
         with self.lock:
+            self.state = CircuitState.CLOSED
+            self.failure_count = 0
+            self.success_count = 0
+            self.last_failure_time = None
+            if self.storage:
+                self._save_state()
+
+    def _get_state_key(self) -> str:
+        """Get storage key for this circuit breaker."""
+        return f"circuit_breaker:{self.name}:state"
+
+    def _save_state(self) -> None:
+        """Save circuit breaker state to storage."""
+        if not self.storage:
+            return
+
+        state_dict = {
+            "state": self.state.value,
+            "failure_count": self.failure_count,
+            "success_count": self.success_count,
+            "last_failure_time": self.last_failure_time,
+            "config": asdict(self.config)
+        }
+
+        key = self._get_state_key()
+        self.storage.set(key, json.dumps(state_dict))
+
+    def _load_state(self) -> None:
+        """Load circuit breaker state from storage."""
+        if not self.storage:
+            return
+
+        key = self._get_state_key()
+        data = self.storage.get(key)
+
+        if data:
+            try:
+                state_dict = json.loads(data)
+                self.state = CircuitState(state_dict["state"])
+                self.failure_count = state_dict["failure_count"]
+                self.success_count = state_dict["success_count"]
+                self.last_failure_time = state_dict.get("last_failure_time")
+
+                # Update config if saved config exists
+                if "config" in state_dict:
+                    saved_config = state_dict["config"]
+                    self.config = CircuitBreakerConfig(**saved_config)
+            except (json.JSONDecodeError, KeyError, ValueError):
+                # If state is corrupted, start fresh
+                self.state = CircuitState.CLOSED
+                self.failure_count = 0
+                self.success_count = 0
+                self.last_failure_time = None
+        else:
+            # No persisted state, start fresh
             self.state = CircuitState.CLOSED
             self.failure_count = 0
             self.success_count = 0

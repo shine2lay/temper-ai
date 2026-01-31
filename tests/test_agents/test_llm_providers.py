@@ -7,6 +7,7 @@ import pytest
 import httpx
 from unittest.mock import Mock, patch, MagicMock
 import time
+from typing import Optional
 
 from src.agents.llm_providers import (
     BaseLLM,
@@ -22,7 +23,30 @@ from src.agents.llm_providers import (
     LLMRateLimitError,
     LLMAuthenticationError,
 )
-from src.llm.circuit_breaker import CircuitState, CircuitBreakerError
+from src.llm.circuit_breaker import CircuitState, CircuitBreakerError, CircuitBreaker, CircuitBreakerConfig
+
+
+class InMemoryStorage:
+    """In-memory storage backend for testing (mimics Redis)."""
+
+    def __init__(self):
+        self._store = {}
+
+    def get(self, key: str) -> Optional[str]:
+        """Retrieve value by key."""
+        return self._store.get(key)
+
+    def set(self, key: str, value: str) -> None:
+        """Store value by key."""
+        self._store[key] = value
+
+    def delete(self, key: str) -> None:
+        """Delete value by key."""
+        self._store.pop(key, None)
+
+    def clear(self) -> None:
+        """Clear all stored data."""
+        self._store.clear()
 
 
 @pytest.fixture
@@ -1582,3 +1606,332 @@ class TestFailoverProvider:
 
                 # Backup should NOT be called
                 backup_mock.assert_not_called()
+
+
+class TestCircuitBreakerPersistence:
+    """Test circuit breaker state persistence across restarts."""
+
+    @pytest.fixture
+    def storage(self):
+        """Create in-memory storage for testing."""
+        store = InMemoryStorage()
+        yield store
+        store.clear()
+
+    def test_state_persists_across_restart(self, storage):
+        """Test that circuit breaker state persists when instance is recreated."""
+        # Create breaker and open circuit
+        breaker1 = CircuitBreaker('llm-provider', storage=storage)
+        
+        # Simulate failures to open circuit
+        for _ in range(5):
+            try:
+                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            except:
+                pass
+        
+        assert breaker1.state == CircuitState.OPEN
+        del breaker1
+        
+        # Simulate process restart - create new breaker with same name
+        breaker2 = CircuitBreaker('llm-provider', storage=storage)
+        
+        # State should be restored from storage
+        assert breaker2.state == CircuitState.OPEN
+
+    def test_failure_count_persists(self, storage):
+        """Test that failure count persists across instances."""
+        breaker1 = CircuitBreaker('test-provider', storage=storage)
+        
+        # Record 3 failures (threshold is 5)
+        for _ in range(3):
+            try:
+                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            except:
+                pass
+        
+        assert breaker1.failure_count == 3
+        assert breaker1.state == CircuitState.CLOSED  # Not yet open
+        del breaker1
+        
+        # Recreate breaker
+        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        
+        # Failure count should persist
+        assert breaker2.failure_count == 3
+        assert breaker2.state == CircuitState.CLOSED
+
+    def test_half_open_state_persists(self, storage):
+        """Test that HALF_OPEN state persists correctly."""
+        config = CircuitBreakerConfig(failure_threshold=1, timeout=1)
+        breaker1 = CircuitBreaker('test-provider', config=config, storage=storage)
+
+        # Open circuit
+        try:
+            breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+        except:
+            pass
+
+        assert breaker1.state == CircuitState.OPEN
+
+        # Wait for timeout
+        time.sleep(1.1)
+
+        # Manually transition to HALF_OPEN and save
+        with breaker1.lock:
+            breaker1.state = CircuitState.HALF_OPEN
+            breaker1.success_count = 0
+            if breaker1.storage:
+                breaker1._save_state()
+
+        assert breaker1.state == CircuitState.HALF_OPEN
+        del breaker1
+
+        # Recreate breaker
+        breaker2 = CircuitBreaker('test-provider', config=config, storage=storage)
+
+        # HALF_OPEN state should persist
+        assert breaker2.state == CircuitState.HALF_OPEN
+
+    def test_config_persists(self, storage):
+        """Test that configuration persists with state."""
+        config = CircuitBreakerConfig(
+            failure_threshold=10,
+            success_threshold=3,
+            timeout=120
+        )
+        breaker1 = CircuitBreaker('test-provider', config=config, storage=storage)
+        
+        # Open circuit
+        for _ in range(10):
+            try:
+                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            except:
+                pass
+        
+        assert breaker1.state == CircuitState.OPEN
+        del breaker1
+        
+        # Recreate breaker (without passing config)
+        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        
+        # Config should be restored from storage
+        assert breaker2.config.failure_threshold == 10
+        assert breaker2.config.success_threshold == 3
+        assert breaker2.config.timeout == 120
+
+    def test_multiple_instances_share_state(self, storage):
+        """Test that multiple instances with same name share state via storage."""
+        breaker1 = CircuitBreaker('shared-provider', storage=storage)
+        breaker2 = CircuitBreaker('shared-provider', storage=storage)
+        
+        # Open circuit via breaker1
+        for _ in range(5):
+            try:
+                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            except:
+                pass
+        
+        assert breaker1.state == CircuitState.OPEN
+        
+        # Reload state in breaker2
+        breaker2._load_state()
+        
+        # Both should see OPEN state
+        assert breaker2.state == CircuitState.OPEN
+
+    def test_isolated_state_for_different_names(self, storage):
+        """Test that different circuit breaker names have isolated state."""
+        breaker1 = CircuitBreaker('provider-a', storage=storage)
+        breaker2 = CircuitBreaker('provider-b', storage=storage)
+        
+        # Open circuit for provider-a
+        for _ in range(5):
+            try:
+                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            except:
+                pass
+        
+        assert breaker1.state == CircuitState.OPEN
+        assert breaker2.state == CircuitState.CLOSED  # Different provider
+
+    def test_reset_clears_persisted_state(self, storage):
+        """Test that reset() updates persisted state."""
+        breaker1 = CircuitBreaker('test-provider', storage=storage)
+        
+        # Open circuit
+        for _ in range(5):
+            try:
+                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            except:
+                pass
+        
+        assert breaker1.state == CircuitState.OPEN
+        
+        # Reset
+        breaker1.reset()
+        assert breaker1.state == CircuitState.CLOSED
+        del breaker1
+        
+        # Recreate - should see CLOSED state
+        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        assert breaker2.state == CircuitState.CLOSED
+
+    def test_success_updates_persisted_state(self, storage):
+        """Test that successful calls update persisted state."""
+        config = CircuitBreakerConfig(failure_threshold=1, success_threshold=2, timeout=1)
+        breaker1 = CircuitBreaker('test-provider', config=config, storage=storage)
+
+        # Open circuit
+        try:
+            breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+        except:
+            pass
+
+        assert breaker1.state == CircuitState.OPEN
+
+        # Wait for timeout (1 second in config)
+        time.sleep(1.1)
+
+        # Manually transition to HALF_OPEN and save
+        with breaker1.lock:
+            breaker1.state = CircuitState.HALF_OPEN
+            breaker1.success_count = 0
+            if breaker1.storage:
+                breaker1._save_state()
+
+        # Record success
+        breaker1.call(lambda: "success")
+        assert breaker1.success_count == 1
+        del breaker1
+
+        # Recreate - success count should persist
+        breaker2 = CircuitBreaker('test-provider', config=config, storage=storage)
+        assert breaker2.success_count == 1
+        assert breaker2.state == CircuitState.HALF_OPEN
+
+    def test_corrupted_state_handled_gracefully(self, storage):
+        """Test that corrupted state data doesn't crash breaker."""
+        # Manually inject corrupted data
+        storage.set('circuit_breaker:test-provider:state', 'invalid json{{{')
+        
+        # Should not crash, should start with fresh state
+        breaker = CircuitBreaker('test-provider', storage=storage)
+        
+        assert breaker.state == CircuitState.CLOSED
+        assert breaker.failure_count == 0
+
+    def test_missing_state_starts_fresh(self, storage):
+        """Test that missing state starts circuit breaker fresh."""
+        # Create breaker with empty storage
+        breaker = CircuitBreaker('new-provider', storage=storage)
+        
+        # Should start in CLOSED state
+        assert breaker.state == CircuitState.CLOSED
+        assert breaker.failure_count == 0
+        assert breaker.success_count == 0
+
+    def test_last_failure_time_persists(self, storage):
+        """Test that last failure time persists across restarts."""
+        breaker1 = CircuitBreaker('test-provider', storage=storage)
+        
+        # Record failure
+        before_time = time.time()
+        try:
+            breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+        except:
+            pass
+        after_time = time.time()
+        
+        assert breaker1.last_failure_time is not None
+        assert before_time <= breaker1.last_failure_time <= after_time
+        
+        saved_time = breaker1.last_failure_time
+        del breaker1
+        
+        # Recreate
+        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        
+        # Last failure time should persist
+        assert breaker2.last_failure_time == saved_time
+
+    def test_state_serialization_deserialization(self, storage):
+        """Test complete serialize/deserialize cycle."""
+        config = CircuitBreakerConfig(failure_threshold=7, success_threshold=3, timeout=90)
+        breaker1 = CircuitBreaker('test-provider', config=config, storage=storage)
+        
+        # Set various state values
+        breaker1.failure_count = 4
+        breaker1.success_count = 2
+        breaker1.last_failure_time = 1234567890.5
+        breaker1._save_state()
+        
+        # Load into new instance
+        breaker2 = CircuitBreaker('test-provider', storage=storage)
+        
+        # All state should match
+        assert breaker2.failure_count == 4
+        assert breaker2.success_count == 2
+        assert breaker2.last_failure_time == 1234567890.5
+        assert breaker2.config.failure_threshold == 7
+        assert breaker2.config.success_threshold == 3
+        assert breaker2.config.timeout == 90
+
+    def test_without_storage_no_persistence(self):
+        """Test that breaker without storage doesn't persist."""
+        # Create breaker without storage
+        breaker1 = CircuitBreaker('test-provider')
+        
+        # Open circuit
+        for _ in range(5):
+            try:
+                breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+            except:
+                pass
+        
+        assert breaker1.state == CircuitState.OPEN
+        del breaker1
+        
+        # New breaker (still no storage) starts fresh
+        breaker2 = CircuitBreaker('test-provider')
+        assert breaker2.state == CircuitState.CLOSED
+
+    def test_concurrent_instances_eventually_consistent(self, storage):
+        """Test that concurrent instances stay eventually consistent."""
+        import threading
+        
+        breaker1 = CircuitBreaker('shared-provider', storage=storage)
+        breaker2 = CircuitBreaker('shared-provider', storage=storage)
+        
+        results = []
+        
+        def open_circuit(breaker):
+            for _ in range(5):
+                try:
+                    breaker.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
+                except:
+                    pass
+            results.append(breaker.state)
+        
+        # Both try to open circuit concurrently
+        t1 = threading.Thread(target=open_circuit, args=(breaker1,))
+        t2 = threading.Thread(target=open_circuit, args=(breaker2,))
+        
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+        
+        # Both should end up OPEN
+        assert CircuitState.OPEN in results
+        
+        # After reloading, both should see consistent state
+        breaker1._load_state()
+        breaker2._load_state()
+        
+        # At least one should be OPEN (eventual consistency)
+        assert breaker1.state == CircuitState.OPEN or breaker2.state == CircuitState.OPEN
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])

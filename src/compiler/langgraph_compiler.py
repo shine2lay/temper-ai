@@ -17,7 +17,7 @@ Architecture:
 
 Supports M2 (sequential) and M3 (parallel, adaptive) execution modes.
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple, List
 from langgraph.graph import StateGraph
 
 from src.compiler.config_loader import ConfigLoader
@@ -162,6 +162,44 @@ class LangGraphCompiler:
 
         # Step 4: Compile to graph (delegate to StageCompiler)
         return self.stage_compiler.compile_stages(stage_names, workflow_config)  # type: ignore[return-value]
+
+    def _validate_quality_gates(
+        self,
+        synthesis_result: Any,
+        stage_config: Dict[str, Any],
+        stage_name: str
+    ) -> Tuple[bool, List[str]]:
+        """Validate synthesis result against quality gates.
+
+        Delegates to ParallelStageExecutor for actual validation logic.
+        This method exists for backwards compatibility with tests and
+        provides a convenient API on the main compiler class.
+
+        Args:
+            synthesis_result: SynthesisResult from agent synthesis
+            stage_config: Stage configuration dict with quality_gates settings
+            stage_name: Name of the stage being validated
+
+        Returns:
+            Tuple of (passed: bool, violations: List[str])
+                - passed: True if all quality gates passed
+                - violations: List of violation messages (empty if passed)
+
+        Example:
+            >>> result = SynthesisResult(decision="A", confidence=0.9, ...)
+            >>> config = {"quality_gates": {"enabled": True, "min_confidence": 0.7}}
+            >>> passed, violations = compiler._validate_quality_gates(result, config, "research")
+            >>> assert passed is True
+            >>> assert violations == []
+        """
+        # Delegate to ParallelStageExecutor which has the validation logic
+        # Pass empty state dict for backward compatibility (state not used in validation)
+        return self.executors['parallel']._validate_quality_gates(
+            synthesis_result=synthesis_result,
+            stage_config=stage_config,
+            stage_name=stage_name,
+            state={}  # Empty state for testing/backward compatibility
+        )
 
     def _parse_workflow(self, workflow_config: Dict[str, Any]) -> Dict[str, Any]:
         """Parse workflow section from config.

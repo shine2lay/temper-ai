@@ -64,6 +64,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                    If provided, enables buffered mode for LLM/tool calls.
         """
         self._session_stack: List[Any] = []  # Stack of active sessions for nested contexts
+        self._standalone_session: Optional[Any] = None  # Standalone session for non-context operations
         self._buffer = buffer
 
         # Set up flush callback if buffer provided
@@ -109,7 +110,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         session = self._get_or_create_session()
         session.add(workflow_exec)
-        session.commit()
+        self._commit_and_cleanup(session)
 
     def track_workflow_end(
         self,
@@ -136,7 +137,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             wf.duration_seconds = (end_time - start_time).total_seconds()
             wf.error_message = error_message
             wf.error_stack_trace = error_stack_trace
-            session.commit()
+            self._commit_and_cleanup(session)
 
     def update_workflow_metrics(
         self,
@@ -156,7 +157,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             wf.total_tool_calls = total_tool_calls
             wf.total_tokens = total_tokens
             wf.total_cost_usd = total_cost_usd
-            session.commit()
+            self._commit_and_cleanup(session)
 
     # ========== Stage Tracking ==========
 
@@ -186,7 +187,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         session = self._get_or_create_session()
         session.add(stage_exec)
-        session.commit()
+        self._commit_and_cleanup(session)
 
     def track_stage_end(
         self,
@@ -234,7 +235,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                     st.num_agents_succeeded = int(metrics.succeeded or 0)
                     st.num_agents_failed = int(metrics.failed or 0)
 
-            session.commit()
+            self._commit_and_cleanup(session)
 
     def set_stage_output(
         self,
@@ -248,7 +249,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
         stage = session.exec(statement).first()
         if stage:
             stage.output_data = output_data
-            session.commit()
+            self._commit_and_cleanup(session)
 
     # ========== Agent Tracking ==========
 
@@ -282,7 +283,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         session = self._get_or_create_session()
         session.add(agent_exec)
-        session.commit()
+        self._commit_and_cleanup(session)
 
     def track_agent_end(
         self,
@@ -307,7 +308,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                 end_time = end_time.replace(tzinfo=timezone.utc)
             ag.duration_seconds = (end_time - start_time).total_seconds()
             ag.error_message = error_message
-            session.commit()
+            self._commit_and_cleanup(session)
 
     def set_agent_output(
         self,
@@ -346,7 +347,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             if num_tool_calls is not None:
                 agent.num_tool_calls = num_tool_calls
 
-            session.commit()
+            self._commit_and_cleanup(session)
 
     # ========== LLM Call Tracking ==========
 
@@ -413,7 +414,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         session = self._get_or_create_session()
         session.add(llm_call)
-        session.commit()
+        self._commit_and_cleanup(session)
 
         # Update parent agent metrics
         statement = select(AgentExecution).where(AgentExecution.id == agent_id)
@@ -424,7 +425,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             agent.prompt_tokens = (agent.prompt_tokens or 0) + prompt_tokens
             agent.completion_tokens = (agent.completion_tokens or 0) + completion_tokens
             agent.estimated_cost_usd = (agent.estimated_cost_usd or 0.0) + estimated_cost_usd
-            session.commit()
+            self._commit_and_cleanup(session)
 
     # ========== Tool Call Tracking ==========
 
@@ -481,14 +482,14 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         session = self._get_or_create_session()
         session.add(tool_exec)
-        session.commit()
+        self._commit_and_cleanup(session)
 
         # Update parent agent metrics
         statement = select(AgentExecution).where(AgentExecution.id == agent_id)
         agent = session.exec(statement).first()
         if agent:
             agent.num_tool_calls = (agent.num_tool_calls or 0) + 1
-            session.commit()
+            self._commit_and_cleanup(session)
 
     # ========== Safety Tracking ==========
 
@@ -535,7 +536,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                 metadata["has_safety_violations"] = True
                 metadata["safety_violation_count"] = len(metadata["safety_violations"])
                 agent.extra_metadata = metadata
-                session.commit()
+                self._commit_and_cleanup(session)
 
         # Update stage execution with violation (if stage context exists)
         if stage_id:
@@ -549,7 +550,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                 stage_metadata["has_safety_violations"] = True
                 stage_metadata["safety_violation_count"] = len(stage_metadata["safety_violations"])
                 stage.extra_metadata = cast(Any, stage_metadata)
-                session.commit()
+                self._commit_and_cleanup(session)
 
         # Update workflow execution with violation (if workflow context exists)
         if workflow_id:
@@ -563,7 +564,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                 wf_metadata["has_safety_violations"] = True
                 wf_metadata["safety_violation_count"] = len(wf_metadata["safety_violations"])
                 workflow.extra_metadata = cast(Any, wf_metadata)
-                session.commit()
+                self._commit_and_cleanup(session)
 
     def track_collaboration_event(
         self,
@@ -629,7 +630,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         try:
             session.add(event)
-            session.commit()
+            self._commit_and_cleanup(session)
             logger.debug(
                 f"Tracked collaboration event {event_id}: type={event_type}, stage={stage_id}"
             )
@@ -697,13 +698,46 @@ class SQLObservabilityBackend(ObservabilityBackend):
                     self._session_stack.pop()
 
     def _get_or_create_session(self) -> Any:
-        """Get current session or create standalone session."""
+        """
+        Get current session or create standalone session.
+
+        IMPORTANT: If this creates a standalone session, caller must ensure
+        _cleanup_standalone_session() is called after committing.
+        """
         if self._session_stack:
             return self._session_stack[-1]
         else:
-            # For standalone operations, use the contextmanager
-            # This is a workaround - ideally all operations should be in context
-            return self._session_stack[-1] if self._session_stack else get_session().__enter__()
+            # Create standalone session for operations outside context manager
+            # Note: This session must be cleaned up via _cleanup_standalone_session()
+            if self._standalone_session is None:
+                self._standalone_session = get_session().__enter__()
+            return self._standalone_session
+
+    def _cleanup_standalone_session(self) -> None:
+        """
+        Clean up standalone session if one exists.
+
+        Call this after committing in operations that don't use context manager.
+        """
+        if self._standalone_session is not None:
+            try:
+                self._standalone_session.__exit__(None, None, None)
+            except Exception:
+                # Best effort cleanup - don't propagate exceptions
+                pass
+            finally:
+                self._standalone_session = None
+
+    def _commit_and_cleanup(self, session: Any) -> None:
+        """
+        Commit session and clean up standalone session if needed.
+
+        Use this instead of session.commit() in tracking methods.
+        """
+        self._commit_and_cleanup(session)
+        # Only cleanup if we're not in a managed context
+        if not self._session_stack:
+            self._cleanup_standalone_session()
 
     # ========== Maintenance Operations ==========
 
@@ -745,7 +779,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                     WorkflowExecution.start_time < cutoff_date  # type: ignore[arg-type]
                 )
                 session.exec(delete_statement)
-                session.commit()
+                self._commit_and_cleanup(session)
                 logger.info(
                     f"Deleted {counts['workflows']} workflows older than {retention_days} days"
                 )
@@ -852,7 +886,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                 logger.debug(f"Batch inserted {len(tool_models)} tool calls")
 
             # Commit inserts
-            session.commit()
+            self._commit_and_cleanup(session)
 
             # Batch update agent metrics
             if agent_metrics:
@@ -866,7 +900,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                         agent.prompt_tokens = (agent.prompt_tokens or 0) + metrics.prompt_tokens
                         agent.completion_tokens = (agent.completion_tokens or 0) + metrics.completion_tokens
                         agent.estimated_cost_usd = (agent.estimated_cost_usd or 0) + metrics.estimated_cost_usd
-                session.commit()
+                self._commit_and_cleanup(session)
                 logger.debug(f"Batch updated {len(agent_metrics)} agent metrics")
 
     # ========== Performance Optimizations ==========

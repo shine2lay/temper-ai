@@ -1,5 +1,9 @@
 # M4 Safety & Governance System - Completion Report
 
+[🏠 Home](../../README.md) > [📚 Docs](../INDEX.md) > [Milestones](./README.md) > Milestone 4 Completion
+
+---
+
 **Milestone**: M4 - Safety & Governance System
 **Status**: ✅ COMPLETE
 **Completion Date**: 2026-01-27

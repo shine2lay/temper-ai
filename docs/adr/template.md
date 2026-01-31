@@ -1,5 +1,9 @@
 # ADR-NNNN: [Short Title]
 
+[🏠 Home](../../README.md) > [📚 Docs](../INDEX.md) > [ADRs](./README.md) > ADR Template
+
+---
+
 **Date:** YYYY-MM-DD
 **Status:** [Proposed | Accepted | Deprecated | Superseded]
 **Deciders:** [Names or roles of decision makers]

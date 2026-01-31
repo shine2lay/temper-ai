@@ -1,5 +1,9 @@
 # System Architecture Overview
 
+[🏠 Home](../../README.md) > [📚 Docs](../INDEX.md) > [Architecture](./) > System Overview
+
+---
+
 ## High-Level Architecture
 
 ```

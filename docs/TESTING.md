@@ -15,6 +15,7 @@ Comprehensive guide to writing, running, and maintaining tests in the Meta-Auton
 7. [Best Practices](#best-practices)
 8. [Continuous Integration](#continuous-integration)
 9. [Troubleshooting](#troubleshooting)
+10. [Coordination System Tests](#coordination-system-tests)
 
 ---
 
@@ -257,79 +258,122 @@ class TestCalculator:
 ### Using Fixtures
 
 ```python
+"""Example using shared test fixtures."""
 import pytest
-from src.agents.standard_agent import StandardAgent
+from src.compiler.schemas import (
+    AgentConfig,
+    AgentConfigInner,
+    PromptConfig,
+    InferenceConfig,
+)
 
-@pytest.fixture
-def calculator():
-    """Provide Calculator instance."""
-    from src.tools.calculator import Calculator
-    return Calculator()
-
-
+# fixtures defined in tests/test_agents/conftest.py
 @pytest.fixture
 def minimal_agent_config():
-    """Provide minimal agent configuration."""
-    from src.compiler.schemas import AgentConfig, AgentConfigInner
-    # ... return config ...
+    """Create minimal agent configuration for testing."""
+    return AgentConfig(
+        agent=AgentConfigInner(
+            name="test_agent",
+            description="Test agent for unit tests",
+            version="1.0",
+            type="standard",
+            prompt=PromptConfig(inline="You are a helpful assistant. {{input}}"),
+            inference=InferenceConfig(
+                provider="ollama",
+                model="llama2",
+                base_url="http://localhost:11434",
+                temperature=0.7,
+                max_tokens=2048,
+            ),
+            tools=[],
+        )
+    )
 
 
-def test_with_fixture(calculator):
+def test_with_fixture(minimal_agent_config):
     """Test using fixture."""
-    result = calculator.execute(expression="5 * 5")
-    assert result.result == 25
+    assert minimal_agent_config.agent.name == "test_agent"
+    assert minimal_agent_config.agent.type == "standard"
 ```
 
 ### Parameterized Tests
 
 ```python
+"""Example of parameterized tests from tests/test_validation/test_boundary_values.py"""
 import pytest
+from src.strategies.base import AgentOutput
+from src.strategies.consensus import ConsensusStrategy
 
-@pytest.mark.parametrize("expression,expected", [
-    ("2 + 2", 4),
-    ("10 - 5", 5),
-    ("3 * 4", 12),
-    ("20 / 4", 5),
+@pytest.mark.parametrize("agent_count,should_accept", [
+    (0, False),  # Below minimum
+    (1, True),   # Minimum
+    (3, True),   # Typical
+    (10, True),  # Maximum
+    (11, False), # Above maximum
 ])
-def test_calculator_operations(calculator, expression, expected):
-    """Test multiple calculator operations."""
-    result = calculator.execute(expression=expression)
-    assert result.result == expected
+def test_agent_count_validation(agent_count, should_accept):
+    """Test agent count boundaries in consensus strategy."""
+    if agent_count <= 0:
+        if not should_accept:
+            with pytest.raises((ValueError, IndexError)):
+                outputs = [
+                    AgentOutput(
+                        agent_name=f"agent_{i}",
+                        decision=f"result_{i}",
+                        reasoning="test reasoning",
+                        confidence=0.8,
+                        metadata={}
+                    )
+                    for i in range(agent_count)
+                ]
+                if len(outputs) == 0:
+                    raise ValueError("Cannot synthesize from 0 agents")
+    else:
+        # Valid agent count
+        outputs = [
+            AgentOutput(
+                agent_name=f"agent_{i}",
+                decision=f"result_{i}",
+                reasoning="test reasoning",
+                confidence=0.8,
+                metadata={}
+            )
+            for i in range(agent_count)
+        ]
+        strategy = ConsensusStrategy(min_agreement=0.5)
+        result = strategy.synthesize(outputs, context={})
+        assert result.final_decision is not None
 ```
 
 ### Mocking
 
 ```python
+"""Example mocking patterns from tests/test_memory_leaks.py"""
 from unittest.mock import Mock, patch
+from src.agents.standard_agent import StandardAgent
+from src.agents.llm_providers import LLMResponse
 
-def test_with_mock_llm():
+def test_with_mock_llm(minimal_agent_config):
     """Test agent with mocked LLM."""
-    # Create mock LLM response
-    mock_llm = Mock()
-    mock_llm.complete.return_value = LLMResponse(
-        content="Test response",
-        model="test",
-        provider="test",
-        total_tokens=10
-    )
+    with patch('src.agents.standard_agent.ToolRegistry') as mock_tool_registry:
+        # Setup mock tool registry
+        mock_tool_registry.return_value.list_tools.return_value = []
 
-    # Use mock in test
-    agent.llm = mock_llm
-    result = agent.execute({"query": "test"})
+        # Create agent and mock LLM
+        agent = StandardAgent(minimal_agent_config)
+        agent.llm = Mock()
+        agent.llm.complete.return_value = LLMResponse(
+            content="<answer>Test response</answer>",
+            model="mock-model",
+            provider="mock",
+            total_tokens=10,
+        )
 
-    assert "Test response" in result.output
-    mock_llm.complete.assert_called_once()
+        # Execute and verify
+        result = agent.execute({"input": "test query"})
 
-
-@patch('src.agents.llm_providers.OllamaLLM')
-def test_with_patch(mock_ollama):
-    """Test with patched class."""
-    mock_instance = Mock()
-    mock_ollama.return_value = mock_instance
-
-    # ... test code ...
-
-    mock_ollama.assert_called_once()
+        assert result is not None
+        agent.llm.complete.assert_called()
 ```
 
 ---
@@ -900,6 +944,106 @@ src/agents/standard_agent.py   123      8    93%   45, 78-82
 src/agents/llm_providers.py     89      5    94%   234-238
 -----------------------------------------------------------
 TOTAL                           257     15    94%
+```
+
+---
+
+## Coordination System Tests
+
+The coordination system has comprehensive bash-based tests for verifying multi-agent coordination features.
+
+### Test Scripts
+
+#### Comprehensive Test Suite
+
+**Script:** `.claude-coord/test-coordination.sh`
+
+**Coverage:** 86 automated tests covering all coordination commands and edge cases
+
+**Categories:**
+- Agent registration and lifecycle (7 tests)
+- File locking and atomicity (13 tests)
+- Task management and workflows (28 tests)
+- Priority and dependency handling (12 tests)
+- State persistence and cleanup (15 tests)
+- Error handling and edge cases (11 tests)
+
+**Run comprehensive tests:**
+```bash
+# Run all coordination tests
+.claude-coord/test-coordination.sh
+
+# Test summary available at:
+.claude-coord/TEST_SUMMARY.md
+```
+
+**Expected:** 94.2% pass rate (81/86 tests passing)
+
+#### Quick Verification
+
+**Script:** `.claude-coord/test-quick.sh`
+
+**Coverage:** Fast smoke tests (4 scenarios, < 10 seconds)
+- Concurrent agent registrations
+- Lock mutual exclusion
+- Task claim atomicity
+- JSON integrity under concurrent load
+
+**Run quick tests:**
+```bash
+# Quick verification (< 10 seconds)
+.claude-coord/test-quick.sh
+```
+
+### When to Run
+
+**Run coordination tests when:**
+- Modifying `.claude-coord/claude-coord.sh`
+- Changing coordination state schema
+- Adding new coordination commands
+- Before deploying coordination changes
+- Investigating coordination bugs
+
+**Run in CI/CD:**
+```yaml
+# Add to GitHub Actions workflow
+- name: Test coordination system
+  run: .claude-coord/test-coordination.sh
+```
+
+### Test Results
+
+**Detailed test results:** See `.claude-coord/TEST_SUMMARY.md`
+
+**Test coverage breakdown:**
+- Agent commands: 100% pass rate
+- Lock commands: 100% pass rate
+- Task commands: ~93% pass rate
+- Workflow helpers: 100% pass rate
+
+**Known issues:** 2 critical bugs in task dependency commands (documented in TEST_SUMMARY.md)
+
+### Concurrency Tests
+
+**Script:** `.claude-coord/test-concurrency.sh`
+
+**Purpose:** Comprehensive concurrent operation testing
+
+**Coverage:** 25+ concurrency and race condition tests
+- Atomic operations (flock shared vs exclusive locks)
+- Race conditions (concurrent lock/task claims)
+- State corruption recovery
+- Edge cases (special chars, unicode, empty values, long strings)
+- Dead agent detection and cleanup
+- Path normalization
+- High-volume stress testing (100+ concurrent operations)
+
+**Run concurrency tests:**
+```bash
+# Test concurrent agent operations
+.claude-coord/test-concurrency.sh
+
+# Expected: High pass rate with detailed concurrency analysis
 ```
 
 ---

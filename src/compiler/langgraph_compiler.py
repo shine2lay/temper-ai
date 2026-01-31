@@ -201,6 +201,68 @@ class LangGraphCompiler:
             state={}  # Empty state for testing/backward compatibility
         )
 
+    def _get_agent_mode(self, stage_config: Dict[str, Any]) -> str:
+        """Get agent execution mode from stage configuration.
+
+        Determines whether agents should execute sequentially or in parallel.
+        This method exists for backwards compatibility with integration tests.
+
+        Args:
+            stage_config: Stage configuration dict with optional execution settings
+
+        Returns:
+            Agent mode: "parallel", "sequential", or default ("sequential")
+
+        Example:
+            >>> config = {"execution": {"agent_mode": "parallel"}}
+            >>> mode = compiler._get_agent_mode(config)
+            >>> assert mode == "parallel"
+        """
+        if "execution" in stage_config and "agent_mode" in stage_config["execution"]:
+            return stage_config["execution"]["agent_mode"]
+        return "sequential"  # Default mode
+
+    def _execute_parallel_stage(
+        self,
+        stage_name: str,
+        stage_config: Dict[str, Any],
+        state: Any
+    ) -> Dict[str, Any]:
+        """Execute stage with parallel agent execution.
+
+        Delegates to ParallelStageExecutor for actual execution.
+        This method exists for backwards compatibility with integration tests.
+
+        Args:
+            stage_name: Name of the stage being executed
+            stage_config: Stage configuration dict
+            state: Current workflow state (WorkflowState object or dict)
+
+        Returns:
+            Dict with stage outputs and synthesis results
+
+        Example:
+            >>> result = compiler._execute_parallel_stage("research", config, state)
+            >>> assert "stage_outputs" in result
+        """
+        # Convert WorkflowState to dict if needed (for test compatibility)
+        # Use exclude_internal=False to preserve infrastructure components (tracker, registry)
+        if hasattr(state, 'to_dict'):
+            state_dict = state.to_dict(exclude_none=False, exclude_internal=False)
+        else:
+            state_dict = state
+
+        # Delegate to ParallelStageExecutor
+        # Note: This is a simplified wrapper for testing purposes
+        # Real execution flow uses NodeBuilder and stage compilation
+        return self.executors['parallel'].execute_stage(
+            stage_name=stage_name,
+            stage_config=stage_config,
+            state=state_dict,
+            config_loader=self.config_loader,
+            tool_registry=None  # Tests don't use tool registry
+        )
+
     def _parse_workflow(self, workflow_config: Dict[str, Any]) -> Dict[str, Any]:
         """Parse workflow section from config.
 

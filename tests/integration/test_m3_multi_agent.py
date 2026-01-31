@@ -255,7 +255,6 @@ class TestMeritWeightedResolution:
 class TestParallelExecution:
     """Test parallel agent execution."""
 
-    @pytest.mark.skip(reason="LangGraphCompiler._get_agent_mode not implemented yet")
     def test_parallel_mode_detection(self, compiler):
         """Test detection of parallel vs sequential mode."""
         # Parallel config
@@ -276,7 +275,6 @@ class TestParallelExecution:
         stage_config_default = {"agents": ["agent1"]}
         assert compiler._get_agent_mode(stage_config_default) == "sequential"
 
-    @pytest.mark.skip(reason="LangGraphCompiler._execute_parallel_stage not implemented yet")
     def test_parallel_execution_with_consensus(self, compiler, mock_agent_responses):
         """Test 3 agents execute in parallel with consensus synthesis."""
         # Create mock agents
@@ -324,7 +322,6 @@ class TestParallelExecution:
                     assert stage_output["decision"] == "Option A"
                     assert stage_output["synthesis"]["method"] == "consensus"
 
-    @pytest.mark.skip(reason="LangGraphCompiler._execute_parallel_stage not implemented yet")
     def test_partial_agent_failure(self, compiler, mock_agent_responses):
         """Test partial agent failure (2/3 succeed) with min_successful_agents=2."""
         mock_agents = {}
@@ -374,7 +371,6 @@ class TestParallelExecution:
                     assert stage_output["aggregate_metrics"]["num_successful"] == 2
                     assert stage_output["aggregate_metrics"]["num_failed"] == 1
 
-    @pytest.mark.skip(reason="LangGraphCompiler._execute_parallel_stage not implemented yet")
     def test_min_successful_agents_enforcement(self, compiler, mock_agent_responses):
         """Test failure when min_successful_agents not met."""
         mock_agents = {}
@@ -619,7 +615,6 @@ class TestM3Performance:
 class TestQualityGates:
     """Test M3-12: Quality Gates and Confidence Thresholds."""
 
-    @pytest.mark.skip(reason="LangGraphCompiler._validate_quality_gates not implemented yet")
     def test_quality_gates_confidence_failure_escalate(self):
         """Test quality gate failure with escalate action."""
         from src.compiler.langgraph_compiler import LangGraphCompiler
@@ -658,7 +653,6 @@ class TestQualityGates:
         assert len(violations) == 1
         assert "Confidence" in violations[0]
 
-    @pytest.mark.skip(reason="LangGraphCompiler._validate_quality_gates not implemented yet")
     def test_quality_gates_proceed_with_warning(self):
         """Test quality gate failure with proceed_with_warning action."""
         from src.compiler.langgraph_compiler import LangGraphCompiler
@@ -694,7 +688,6 @@ class TestQualityGates:
         assert passed is False
         assert len(violations) > 0
 
-    @pytest.mark.skip(reason="LangGraphCompiler._validate_quality_gates not implemented yet")
     def test_quality_gates_all_checks_pass(self):
         """Test quality gates with all checks passing."""
         from src.compiler.langgraph_compiler import LangGraphCompiler

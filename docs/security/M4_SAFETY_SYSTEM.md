@@ -53,19 +53,19 @@ The M4 Safety System is a comprehensive, multi-layered security framework that v
 ┌─────────────────────────────────────────────────────────────┐
 │                Safety Policies (Validators)                  │
 │                                                               │
-│  P0 (CRITICAL - Priority 200):                               │
-│  ├─ ForbiddenOperationsPolicy   (bash file writes, rm -rf)  │
-│  ├─ FileAccessPolicy             (path permissions)          │
-│  └─ SecretDetectionPolicy        (API keys, passwords)       │
+│  P0 (CRITICAL - Priority 90-200):                            │
+│  ├─ ForbiddenOperationsPolicy   (200: bash file writes, rm) │
+│  ├─ FileAccessPolicy             (95: path permissions)      │
+│  └─ SecretDetectionPolicy        (95: API keys, passwords)   │
 │                                                               │
-│  P1 (IMPORTANT - Priority 100):                              │
-│  ├─ RateLimitPolicy              (rate limiting)             │
-│  ├─ ResourceLimitPolicy          (memory, tokens)            │
-│  ├─ BlastRadiusPolicy            (commit size)               │
-│  └─ ApprovalWorkflowPolicy       (require approval)          │
+│  P1 (IMPORTANT - Priority 80-89):                            │
+│  ├─ BlastRadiusPolicy            (90: commit size limits)    │
+│  ├─ RateLimitPolicy              (85: rate limiting)         │
+│  ├─ ResourceLimitPolicy          (80: memory, tokens)        │
+│  └─ ApprovalWorkflowPolicy       (80: require approval)      │
 │                                                               │
-│  P2 (OPTIMIZATION - Priority 50):                            │
-│  └─ CircuitBreakerPolicy         (external APIs)             │
+│  P2 (OPTIMIZATION - Priority 50-79):                         │
+│  └─ CircuitBreakerPolicy         (50-79: external APIs)      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -183,7 +183,7 @@ if not result.valid:
 
 ## Available Policies
 
-### P0 Policies (CRITICAL - Priority 200)
+### P0 Policies (CRITICAL - Priority 90-200)
 
 #### ForbiddenOperationsPolicy
 **Location:** `src/safety/forbidden_operations.py`
@@ -247,7 +247,7 @@ Detects secrets (API keys, passwords, tokens) in code and commands.
 - Database connection strings
 - JWT tokens
 
-### P1 Policies (IMPORTANT - Priority 100)
+### P1 Policies (IMPORTANT - Priority 80-89)
 
 #### RateLimitPolicy
 **Location:** `src/safety/rate_limiter.py`
@@ -293,7 +293,7 @@ Requires approval for sensitive operations.
 - Database deletes
 - Sensitive file deletes
 
-### P2 Policies (OPTIMIZATION - Priority 50)
+### P2 Policies (OPTIMIZATION - Priority 50-79)
 
 #### CircuitBreakerPolicy
 **Location:** `src/safety/circuit_breaker.py`
@@ -309,14 +309,23 @@ Circuit breaker for external API calls.
 
 ## Policy Priority Levels
 
-### P0 - CRITICAL (Priority 200) - NEVER COMPROMISE
+### Priority Numbering System
+
+Policies use numeric priorities where **higher values execute first**:
+- **P0 (Critical):** Priority 90-200 - Security and data protection
+- **P1 (Important):** Priority 80-89 - Resource management and blast radius
+- **P2 (Optimization):** Priority 50-79 - Performance and reliability
+
+**Note:** Priority values within each tier can vary to establish fine-grained execution order. For example, ForbiddenOperationsPolicy (200) runs before FileAccessPolicy (95), even though both are P0-level.
+
+### P0 - CRITICAL (Priority 90-200) - NEVER COMPROMISE
 
 **Purpose:** Prevent security breaches, data loss, and system damage.
 
 **Policies:**
-- ForbiddenOperationsPolicy
-- FileAccessPolicy
-- SecretDetectionPolicy
+- ForbiddenOperationsPolicy (priority: 200)
+- FileAccessPolicy (priority: 95)
+- SecretDetectionPolicy (priority: 95)
 
 **Enforcement:**
 - Always enabled
@@ -329,15 +338,15 @@ Circuit breaker for external API calls.
 - Block secrets in code/commands
 - Block access to forbidden paths
 
-### P1 - IMPORTANT (Priority 100) - Balance Safety & Productivity
+### P1 - IMPORTANT (Priority 80-89) - Balance Safety & Productivity
 
 **Purpose:** Prevent resource exhaustion, enforce best practices, limit blast radius.
 
 **Policies:**
-- RateLimitPolicy
-- ResourceLimitPolicy
-- BlastRadiusPolicy
-- ApprovalWorkflowPolicy
+- BlastRadiusPolicy (priority: 90)
+- RateLimitPolicy (priority: 85)
+- ResourceLimitPolicy (priority: 80)
+- ApprovalWorkflowPolicy (priority: 80)
 
 **Enforcement:**
 - Enabled by default
@@ -350,12 +359,12 @@ Circuit breaker for external API calls.
 - Limit commit size to 20 files
 - Limit file size to 10MB
 
-### P2 - OPTIMIZATION (Priority 50) - Can Be Relaxed
+### P2 - OPTIMIZATION (Priority 50-79) - Can Be Relaxed
 
 **Purpose:** Improve reliability, reduce costs, optimize performance.
 
 **Policies:**
-- CircuitBreakerPolicy
+- CircuitBreakerPolicy (priority: 50-79)
 - CachingPolicy (future)
 - OptimizationPolicy (future)
 
@@ -440,8 +449,8 @@ See [POLICY_CONFIGURATION_GUIDE.md](./POLICY_CONFIGURATION_GUIDE.md) for complet
 from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 
 class AgentExecutor:
-    def __init__(self, ...):
-        self.policy_engine = ServiceFactory.get_service('action_policy_engine')
+    def __init__(self, policy_engine: ActionPolicyEngine, ...):
+        self.policy_engine = policy_engine
 
     async def execute_action(self, action: Dict[str, Any]) -> Any:
         """Execute action with policy enforcement."""
@@ -468,20 +477,20 @@ class AgentExecutor:
         return await self._execute_action_impl(action)
 ```
 
-### Service Factory Registration
+### Service Initialization
 
 ```python
-from src.core.service_factory import ServiceFactory
 from src.safety.action_policy_engine import ActionPolicyEngine
 from src.safety.policy_registry import PolicyRegistry
 
-# Register policy registry
+# Create policy registry
 registry = PolicyRegistry()
-ServiceFactory.register_service('policy_registry', registry, singleton=True)
 
-# Register policy engine
+# Create policy engine
 engine = ActionPolicyEngine(registry, config=engine_config)
-ServiceFactory.register_service('action_policy_engine', engine, singleton=True)
+
+# Use the engine and registry in your application
+# These instances can be stored and reused as needed
 ```
 
 ---

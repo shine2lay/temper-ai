@@ -813,6 +813,7 @@ def isolated_cache():
 @pytest.mark.integration # Integration test
 @pytest.mark.security    # Security test
 @pytest.mark.benchmark   # Performance benchmark
+@pytest.mark.memory      # Memory leak test
 @pytest.mark.skip        # Skip this test
 @pytest.mark.xfail       # Expected to fail
 ```

@@ -5,6 +5,7 @@
 - [README](../README.md) - Project overview and quick start
 - [Vision Document](./VISION.md) - Long-term vision
 - [Technical Specification](../TECHNICAL_SPECIFICATION.md) - Complete technical spec
+- [Glossary](./GLOSSARY.md) - Terminology reference and common confusions
 
 ## Milestone Reports
 

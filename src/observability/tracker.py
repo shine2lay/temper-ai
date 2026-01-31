@@ -11,6 +11,7 @@ from typing import Optional, Dict, Any, List, Generator
 from dataclasses import dataclass
 
 from src.observability.backend import ObservabilityBackend
+from src.observability.sanitization import DataSanitizer, SanitizationConfig
 from src.utils.config_helpers import sanitize_config_for_display
 
 
@@ -61,12 +62,17 @@ class ExecutionTracker:
         ...             tracker.track_tool_call(agent_id, tool_name, params, result)
     """
 
-    def __init__(self, backend: Optional[ObservabilityBackend] = None):
+    def __init__(
+        self,
+        backend: Optional[ObservabilityBackend] = None,
+        sanitization_config: Optional[SanitizationConfig] = None
+    ):
         """
-        Initialize execution tracker.
+        Initialize execution tracker with sanitization support.
 
         Args:
             backend: Observability backend to use. If None, defaults to SQLObservabilityBackend.
+            sanitization_config: Configuration for data sanitization. If None, uses secure defaults.
         """
         self.context = ExecutionContext()
 
@@ -77,6 +83,9 @@ class ExecutionTracker:
 
         self.backend = backend
         self._session_stack: List[Any] = []  # Stack of active sessions for nested contexts
+
+        # Initialize sanitizer with provided or default config
+        self.sanitizer = DataSanitizer(sanitization_config)
 
     @contextmanager
     def track_workflow(
@@ -492,14 +501,19 @@ class ExecutionTracker:
         error_message: Optional[str] = None
     ) -> str:
         """
-        Track LLM call.
+        Track LLM call with automatic sanitization.
+
+        Automatically redacts:
+        - Secrets (API keys, tokens, passwords)
+        - PII (emails, SSNs, phone numbers)
+        - Truncates large payloads
 
         Args:
             agent_id: Parent agent execution ID
             provider: LLM provider (ollama, openai, anthropic)
             model: Model name
-            prompt: Input prompt
-            response: LLM response
+            prompt: Input prompt (will be sanitized before storage)
+            response: LLM response (will be sanitized before storage)
             prompt_tokens: Number of prompt tokens
             completion_tokens: Number of completion tokens
             latency_ms: Latency in milliseconds
@@ -525,13 +539,35 @@ class ExecutionTracker:
         llm_call_id = str(uuid.uuid4())
         start_time = utcnow()
 
+        # SECURITY: Sanitize prompt and response before storage
+        prompt_result = self.sanitizer.sanitize_text(prompt, context="prompt")
+        response_result = self.sanitizer.sanitize_text(response, context="response")
+
+        # Log sanitization activity if redactions were made
+        if prompt_result.was_sanitized or response_result.was_sanitized:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(
+                "Sanitized LLM call data before storage",
+                extra={
+                    "llm_call_id": llm_call_id,
+                    "prompt_redactions": prompt_result.num_redactions,
+                    "response_redactions": response_result.num_redactions,
+                    "redaction_types": list(
+                        set(prompt_result.to_metadata().get("redaction_types", []) +
+                            response_result.to_metadata().get("redaction_types", []))
+                    )
+                }
+            )
+
+        # Track LLM call with sanitized content
         self.backend.track_llm_call(
             llm_call_id=llm_call_id,
             agent_id=agent_id,
             provider=provider,
             model=model,
-            prompt=prompt,
-            response=response,
+            prompt=prompt_result.sanitized_text,  # Sanitized
+            response=response_result.sanitized_text,  # Sanitized
             prompt_tokens=prompt_tokens,
             completion_tokens=completion_tokens,
             latency_ms=latency_ms,
@@ -542,6 +578,12 @@ class ExecutionTracker:
             status=status,
             error_message=error_message
         )
+
+        # NOTE: Sanitization metadata (redaction counts, hashes, etc.) is available
+        # via prompt_result.to_metadata() and response_result.to_metadata() but
+        # is currently logged only, not stored in the database extra_metadata field.
+        # This is sufficient for security purposes - the important thing is that
+        # secrets/PII are redacted from the stored prompt/response.
 
         return llm_call_id
 

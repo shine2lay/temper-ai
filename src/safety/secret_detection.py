@@ -12,6 +12,7 @@ Common patterns detected:
 - Database connection strings
 """
 import re
+import hashlib
 from typing import Dict, Any, List, Optional
 from src.safety.base import BaseSafetyPolicy
 from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
@@ -137,7 +138,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
         """Check if text appears to be a test/example secret.
 
         Args:
-            text: Text to check
+            text: Text to Check
 
         Returns:
             True if likely a test secret
@@ -150,6 +151,47 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
             test_word in text_lower
             for test_word in self.TEST_SECRETS
         )
+
+    def _create_redacted_preview(self, text: str, pattern_name: str) -> str:
+        """Create safe preview of detected secret.
+
+        Shows pattern type and length, not actual value.
+
+        Args:
+            text: Detected secret text
+            pattern_name: Type of secret detected
+
+        Returns:
+            Redacted preview safe for logging
+
+        Examples:
+            >>> _create_redacted_preview("AKIAIOSFODNN7EXAMPLE", "aws_access_key")
+            '[AWS_ACCESS_KEY:20_chars]'
+
+            >>> _create_redacted_preview("sk-proj-abc123def456...", "generic_api_key")
+            '[GENERIC_API_KEY:50_chars]'
+        """
+        length = len(text)
+        pattern_upper = pattern_name.upper()
+        return f"[{pattern_upper}:{length}_chars]"
+
+    def _hash_secret(self, text: str) -> str:
+        """Create SHA256 hash of secret for deduplication.
+
+        Allows tracking same secret across multiple violations without
+        storing the actual value.
+
+        Args:
+            text: Secret text
+
+        Returns:
+            SHA256 hash (hex, first 16 characters)
+
+        Example:
+            >>> _hash_secret("AKIAIOSFODNN7EXAMPLE")
+            'a1b2c3d4e5f6g7h8'  # First 16 chars of SHA256
+        """
+        return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
     def _validate_impl(
         self,
@@ -216,17 +258,22 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
                 else:
                     severity = ViolationSeverity.MEDIUM
 
+                # Create safe redacted preview (never expose actual secret)
+                redacted_preview = self._create_redacted_preview(matched_text, pattern_name)
+
                 violations.append(SafetyViolation(
                     policy_name=self.name,
                     severity=severity,
-                    message=f"Potential secret detected ({pattern_name}): {matched_text[:50]}...",
+                    message=f"Potential secret detected ({pattern_name}): {redacted_preview}",
                     action=f"file_path={file_path}, pattern={pattern_name}",
                     context=context,
                     remediation_hint="Use environment variables or secret management service",
                     metadata={
                         "pattern_type": pattern_name,
                         "entropy": round(entropy, 2),
-                        "match_position": match.start()
+                        "match_position": match.start(),
+                        "match_length": len(matched_text),
+                        "secret_hash": self._hash_secret(matched_text)
                     }
                 ))
 

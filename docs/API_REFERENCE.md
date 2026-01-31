@@ -12,12 +12,13 @@ Complete API documentation for the Meta-Autonomous Agent Framework.
 4. [Tools](#tools)
 5. [Configuration](#configuration)
 6. [Workflows](#workflows)
-7. [Observability](#observability)
-8. [Multi-Agent Collaboration](#multi-agent-collaboration)
-9. [Safety System](#safety-system)
-10. [Caching](#caching)
-11. [Data Models](#data-models)
-12. [Examples](#examples)
+7. [Execution Engines](#execution-engines)
+8. [Observability](#observability)
+9. [Multi-Agent Collaboration](#multi-agent-collaboration)
+10. [Safety System](#safety-system)
+11. [Caching](#caching)
+12. [Data Models](#data-models)
+13. [Examples](#examples)
 
 ---
 
@@ -479,6 +480,424 @@ workflow:
         - researcher_2
         - researcher_3
       min_consensus: 0.6
+```
+
+---
+
+## Execution Engines
+
+The execution engine abstraction layer decouples workflow execution from specific graph libraries (like LangGraph), enabling vendor independence, alternative execution strategies, and runtime feature detection.
+
+### ExecutionEngine
+
+Abstract base class for workflow execution engines.
+
+```python
+from src.compiler.execution_engine import ExecutionEngine, ExecutionMode
+
+class CustomEngine(ExecutionEngine):
+    """Custom execution engine implementation."""
+
+    def compile(self, workflow_config: Dict[str, Any]) -> CompiledWorkflow:
+        """Compile workflow configuration into executable form."""
+        # Validate and optimize workflow config
+        # Return engine-specific compiled representation
+        pass
+
+    def execute(
+        self,
+        compiled_workflow: CompiledWorkflow,
+        input_data: Dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.SYNC
+    ) -> Dict[str, Any]:
+        """Execute compiled workflow."""
+        # Execute workflow and return final state
+        pass
+
+    def supports_feature(self, feature: str) -> bool:
+        """Check if engine supports specific feature."""
+        supported_features = {
+            "sequential_stages",
+            "parallel_stages",
+            "checkpointing"
+        }
+        return feature in supported_features
+```
+
+**Supported Features:**
+- `sequential_stages` - Sequential stage execution
+- `parallel_stages` - Parallel stage execution
+- `conditional_routing` - Conditional transitions
+- `convergence_detection` - Convergence detection
+- `checkpointing` - Save/restore execution state
+- `streaming_execution` - Stream intermediate results
+- `nested_workflows` - Nested workflow support
+- `distributed_execution` - Distributed execution
+
+### LangGraphExecutionEngine
+
+Default execution engine using LangGraph.
+
+```python
+from src.compiler.langgraph_engine import LangGraphExecutionEngine
+
+# Create engine instance
+engine = LangGraphExecutionEngine(config_loader=config_loader)
+
+# Compile workflow
+workflow_config = {
+    "name": "my_workflow",
+    "stages": [
+        {"name": "analysis", "agents": ["analyzer"], "mode": "sequential"},
+        {"name": "synthesis", "agents": ["synthesizer"], "mode": "sequential"}
+    ]
+}
+compiled = engine.compile(workflow_config)
+
+# Execute workflow
+result = engine.execute(
+    compiled,
+    input_data={"task": "Analyze the data"},
+    mode=ExecutionMode.SYNC
+)
+print(result)  # Final workflow state
+```
+
+### EngineRegistry
+
+Factory for managing and creating execution engines.
+
+```python
+from src.compiler.engine_registry import EngineRegistry
+from src.compiler.execution_engine import ExecutionEngine
+
+# Get registry instance (singleton)
+registry = EngineRegistry()
+
+# Register custom engine
+registry.register_engine("custom", CustomEngine)
+
+# Get engine by name
+engine = registry.get_engine("custom", config_loader=config_loader)
+
+# List available engines
+engines = registry.list_engines()
+print(engines)  # ["langgraph", "custom"]
+```
+
+**Usage:**
+- Engine selection via workflow configuration (`engine: "langgraph"`)
+- Runtime A/B testing of different engines
+- Plugin architecture for third-party engines
+
+### Stage Executors
+
+Stage executors control how agents within a stage are executed in multi-agent workflows. Available executors:
+
+#### SequentialStageExecutor
+
+Executes agents one at a time in order (default M2 behavior).
+
+```python
+from src.compiler.executors.sequential import SequentialStageExecutor
+
+# Create sequential executor
+executor = SequentialStageExecutor()
+
+# Execute stage (used internally by execution engine)
+result = executor.execute_stage(
+    stage_name="analysis",
+    stage_config={
+        "agents": ["analyzer1", "analyzer2"],
+        "mode": "sequential"
+    },
+    state={"task": "Analyze data"},
+    config_loader=config_loader
+)
+```
+
+**When to use:**
+- Simple workflows with dependent agent outputs
+- When agents must run in specific order
+- Lower resource usage (one agent at a time)
+- Deterministic execution order
+
+**Configuration:**
+```yaml
+stages:
+  - name: analysis
+    agents: [analyzer1, analyzer2]
+    mode: sequential  # Default
+```
+
+#### ParallelStageExecutor
+
+Executes multiple agents concurrently using nested LangGraph subgraphs (M3 feature).
+
+```python
+from src.compiler.executors.parallel import ParallelStageExecutor
+from src.strategies.registry import StrategyRegistry
+
+# Get collaboration strategy
+strategy_registry = StrategyRegistry()
+consensus_strategy = strategy_registry.get_strategy("consensus")
+
+# Create parallel executor with synthesis
+executor = ParallelStageExecutor(
+    synthesis_coordinator=consensus_strategy
+)
+
+# Execute stage with parallel agents
+result = executor.execute_stage(
+    stage_name="analysis",
+    stage_config={
+        "agents": ["agent1", "agent2", "agent3"],
+        "mode": "parallel",
+        "collaboration_strategy": "consensus",
+        "min_consensus": 0.7
+    },
+    state={"task": "Analyze data"},
+    config_loader=config_loader
+)
+
+# Result contains synthesized output
+print(result["synthesis_result"])
+print(result["agent_outputs"])  # Individual agent outputs
+```
+
+**When to use:**
+- Independent agent perspectives needed
+- Faster execution with concurrent processing
+- Multi-agent collaboration (consensus, debate)
+- Quality improvement through diversity
+
+**Configuration:**
+```yaml
+stages:
+  - name: analysis
+    agents: [researcher1, researcher2, researcher3]
+    mode: parallel
+    collaboration_strategy: consensus
+    min_consensus: 0.7
+```
+
+#### AdaptiveStageExecutor
+
+Starts with parallel execution, switches to sequential if disagreement is high (M3 advanced feature).
+
+```python
+from src.compiler.executors.adaptive import AdaptiveStageExecutor
+
+# Create adaptive executor
+executor = AdaptiveStageExecutor(
+    disagreement_threshold=0.3
+)
+
+# Execute stage - automatically adapts based on convergence
+result = executor.execute_stage(
+    stage_name="analysis",
+    stage_config={
+        "agents": ["agent1", "agent2", "agent3"],
+        "mode": "adaptive",
+        "disagreement_threshold": 0.3
+    },
+    state={"task": "Analyze data"},
+    config_loader=config_loader
+)
+
+# Check if fallback occurred
+if result.get("fallback_to_sequential"):
+    print("High disagreement detected, switched to sequential mode")
+```
+
+**When to use:**
+- Uncertain consensus scenarios
+- Cost optimization (try parallel first, fallback if needed)
+- Automatic convergence detection
+- Resource-aware execution
+
+**Configuration:**
+```yaml
+stages:
+  - name: analysis
+    agents: [agent1, agent2, agent3]
+    mode: adaptive
+    disagreement_threshold: 0.3  # 30% disagreement triggers sequential
+```
+
+**Executor Selection:**
+
+```yaml
+# Workflow configuration with stage executors
+name: multi_agent_workflow
+engine: langgraph
+
+stages:
+  # Sequential stage (default)
+  - name: data_collection
+    agents: [collector]
+    mode: sequential
+
+  # Parallel stage with consensus
+  - name: analysis
+    agents: [analyst1, analyst2, analyst3]
+    mode: parallel
+    collaboration_strategy: consensus
+    min_consensus: 0.7
+
+  # Adaptive stage with automatic fallback
+  - name: recommendation
+    agents: [recommender1, recommender2]
+    mode: adaptive
+    disagreement_threshold: 0.3
+```
+
+### CompiledWorkflow
+
+Abstract compiled workflow representation.
+
+```python
+from src.compiler.execution_engine import CompiledWorkflow
+
+# Execute compiled workflow
+result = compiled_workflow.invoke({"input": "data"})
+
+# Async execution
+result = await compiled_workflow.ainvoke({"input": "data"})
+
+# Get metadata
+metadata = compiled_workflow.get_metadata()
+print(metadata["engine"])   # "langgraph"
+print(metadata["stages"])   # ["stage1", "stage2"]
+
+# Visualize workflow
+graph_viz = compiled_workflow.visualize()
+print(graph_viz)  # Mermaid/DOT graph representation
+
+# Cancel execution
+compiled_workflow.cancel()
+if compiled_workflow.is_cancelled():
+    print("Workflow cancelled")
+```
+
+### Execution Modes
+
+```python
+from src.compiler.execution_engine import ExecutionMode
+
+# Synchronous execution (blocking)
+result = engine.execute(compiled, input_data, mode=ExecutionMode.SYNC)
+
+# Asynchronous execution (non-blocking)
+result = engine.execute(compiled, input_data, mode=ExecutionMode.ASYNC)
+
+# Streaming execution (yields intermediate results)
+result = engine.execute(compiled, input_data, mode=ExecutionMode.STREAM)
+```
+
+### Creating Custom Engines
+
+```python
+from src.compiler.execution_engine import (
+    ExecutionEngine,
+    CompiledWorkflow,
+    ExecutionMode,
+    WorkflowCancelledError
+)
+from typing import Dict, Any
+
+class MyCompiledWorkflow(CompiledWorkflow):
+    """Custom compiled workflow implementation."""
+
+    def __init__(self, internal_repr):
+        self.internal_repr = internal_repr
+        self._cancelled = False
+
+    def _execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute workflow logic (user-defined implementation)."""
+        # Example: Execute stages sequentially
+        current_state = state.copy()
+        for stage in self.internal_repr.stages:
+            # Execute stage logic here
+            current_state[f"{stage}_output"] = f"Result from {stage}"
+        return current_state
+
+    def invoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if self._cancelled:
+            raise WorkflowCancelledError("Workflow cancelled")
+        # Execute workflow synchronously
+        return self._execute(state)
+
+    async def ainvoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        if self._cancelled:
+            raise WorkflowCancelledError("Workflow cancelled")
+        # Execute workflow asynchronously
+        return self._execute(state)
+
+    def get_metadata(self) -> Dict[str, Any]:
+        return {
+            "engine": "custom",
+            "version": "1.0.0",
+            "config": self.internal_repr.config,
+            "stages": self.internal_repr.stages
+        }
+
+    def visualize(self) -> str:
+        # Return Mermaid or DOT representation
+        return "graph TD\n  A[stage1] --> B[stage2]"
+
+    def cancel(self) -> None:
+        self._cancelled = True
+
+    def is_cancelled(self) -> bool:
+        return self._cancelled
+
+class MyCustomEngine(ExecutionEngine):
+    """Custom execution engine implementation."""
+
+    def _build_internal_repr(self, workflow_config: Dict[str, Any]):
+        """Build internal representation from config (user-defined implementation)."""
+        # Simple example: Create a structure with stage names
+        from collections import namedtuple
+        InternalRepr = namedtuple("InternalRepr", ["config", "stages"])
+        stage_names = [stage["name"] for stage in workflow_config.get("stages", [])]
+        return InternalRepr(config=workflow_config, stages=stage_names)
+
+    def compile(self, workflow_config: Dict[str, Any]) -> CompiledWorkflow:
+        # Validate workflow config
+        if "stages" not in workflow_config:
+            raise ValueError("Workflow must have stages")
+
+        # Create internal representation
+        internal_repr = self._build_internal_repr(workflow_config)
+
+        # Return compiled workflow
+        return MyCompiledWorkflow(internal_repr)
+
+    def execute(
+        self,
+        compiled_workflow: CompiledWorkflow,
+        input_data: Dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.SYNC
+    ) -> Dict[str, Any]:
+        if not isinstance(compiled_workflow, MyCompiledWorkflow):
+            raise TypeError("Wrong compiled workflow type")
+
+        if mode == ExecutionMode.SYNC:
+            return compiled_workflow.invoke(input_data)
+        elif mode == ExecutionMode.ASYNC:
+            import asyncio
+            return asyncio.run(compiled_workflow.ainvoke(input_data))
+        else:
+            raise NotImplementedError(f"Mode {mode} not supported")
+
+    def supports_feature(self, feature: str) -> bool:
+        return feature in {"sequential_stages", "checkpointing"}
+
+# Register custom engine
+from src.compiler.engine_registry import EngineRegistry
+registry = EngineRegistry()
+registry.register_engine("my_custom_engine", MyCustomEngine)
 ```
 
 ---
@@ -1139,6 +1558,8 @@ if not result.valid:
 
 - [Quick Start Guide](./QUICK_START.md)
 - [Configuration Reference](./CONFIGURATION.md)
+- [Execution Engine Architecture](./features/execution/execution_engine_architecture.md)
+- [Custom Engine Tutorial](./features/execution/custom_engine_guide.md)
 - [Integration Guide](./INTEGRATION.md)
 - [Testing Guide](./TESTING.md)
 - [Contributing Guide](./CONTRIBUTING.md)

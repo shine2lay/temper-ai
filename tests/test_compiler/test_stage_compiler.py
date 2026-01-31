@@ -55,8 +55,9 @@ class TestCompileStages:
         # Verify graph structure
         graph_structure = graph.get_graph()
         assert graph_structure is not None, "Graph structure should be retrievable"
-        assert len(graph_structure.nodes) >= 3, \
-            f"Graph should have at least 3 nodes (init + 2 stages), got {len(graph_structure.nodes)}"
+        # Expect: __start__, init, stage1, stage2, __end__ = 5 nodes
+        assert len(graph_structure.nodes) == 5, \
+            f"Graph should have exactly 5 nodes (__start__, init, 2 stages, __end__), got {len(graph_structure.nodes)}: {list(graph_structure.nodes.keys())}"
 
     def test_compile_stages_adds_init_node(self):
         """Test that compile_stages adds initialization node."""
@@ -188,8 +189,8 @@ class TestSequentialEdges:
         edges = graph_structure.edges
 
         # Should have edges: __start__ -> init -> research -> analysis -> __end__ (4 edges)
-        assert len(edges) >= 4, \
-            f"Should have at least 4 edges (start->init, init->research, research->analysis, analysis->end), got {len(edges)}"
+        assert len(edges) == 4, \
+            f"Should have exactly 4 edges (start->init, init->research, research->analysis, analysis->end), got {len(edges)}: {edges}"
 
         # Verify sequential flow exists
         edge_pairs = [(e.source, e.target) for e in edges]

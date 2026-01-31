@@ -127,7 +127,61 @@ class PathSafetyValidator:
                     f"Path component '{component[:50]}...' exceeds maximum length of {self.MAX_COMPONENT_LENGTH} characters"
                 )
 
-        # Resolve to absolute path (follows symlinks)
+        # SECURITY: Check for symlinks BEFORE resolution to prevent path traversal
+        # Check if the path itself is a symlink
+        if path.is_symlink():
+            # Get the symlink target without following it
+            try:
+                symlink_target = path.readlink()
+
+                # If symlink target is absolute, check it's within allowed root
+                if symlink_target.is_absolute():
+                    try:
+                        symlink_target.relative_to(self.allowed_root)
+                    except ValueError:
+                        raise PathSafetyError(
+                            f"Symlink '{path}' points to absolute path outside allowed root: {symlink_target}"
+                        )
+                else:
+                    # Relative symlink - resolve it relative to symlink location
+                    symlink_resolved = (path.parent / symlink_target).resolve()
+                    try:
+                        symlink_resolved.relative_to(self.allowed_root)
+                    except ValueError:
+                        raise PathSafetyError(
+                            f"Symlink '{path}' points outside allowed root: {symlink_resolved}"
+                        )
+            except OSError as e:
+                raise PathSafetyError(f"Cannot read symlink target: {e}")
+
+        # Check parent directories for symlinks
+        current = path.absolute()
+        allowed_root_abs = Path(self.allowed_root).absolute()
+
+        # Walk up the directory tree checking for symlinks
+        while current != current.parent and current != allowed_root_abs:
+            if current.is_symlink():
+                try:
+                    symlink_target = current.readlink()
+
+                    # Resolve symlink and check it's within bounds
+                    if symlink_target.is_absolute():
+                        symlink_resolved = symlink_target
+                    else:
+                        symlink_resolved = (current.parent / symlink_target).resolve()
+
+                    try:
+                        symlink_resolved.relative_to(allowed_root_abs)
+                    except ValueError:
+                        raise PathSafetyError(
+                            f"Parent directory '{current}' is a symlink pointing outside allowed root: {symlink_resolved}"
+                        )
+                except OSError as e:
+                    raise PathSafetyError(f"Cannot validate symlink in path: {e}")
+
+            current = current.parent
+
+        # Resolve to absolute path (follows symlinks - but we've validated them above)
         try:
             resolved = path.resolve()
         except (OSError, RuntimeError) as e:

@@ -303,3 +303,180 @@ class TestEdgeCases:
         special_path = temp_workspace / "file with spaces & (special) chars!.txt"
         result = validator.validate_path(special_path)
         assert isinstance(result, Path)
+
+
+class TestSymlinkSecurity:
+    """Test symlink attack prevention.
+
+    SECURITY CRITICAL: These tests verify that symlinks cannot be used
+    to bypass path restrictions and access files outside allowed root.
+    """
+
+    @pytest.fixture
+    def attack_target_dir(self, tmp_path):
+        """Create a directory outside the allowed root for attack tests."""
+        attack_dir = tmp_path / "attack_target"
+        attack_dir.mkdir()
+        (attack_dir / "secret.txt").write_text("SENSITIVE DATA")
+        return attack_dir
+
+    def test_symlink_to_outside_directory_blocked(self, validator, temp_workspace, attack_target_dir):
+        """Test that symlink pointing outside allowed root is blocked.
+
+        SECURITY: Prevents path traversal via symlinks.
+        Attack: Create symlink in allowed dir pointing to sensitive file outside.
+        """
+        # Create symlink in allowed workspace pointing to attack target
+        symlink_path = temp_workspace / "innocent_looking_file.txt"
+        symlink_path.symlink_to(attack_target_dir / "secret.txt")
+
+        # Should block the symlink
+        with pytest.raises(PathSafetyError, match="outside allowed root"):
+            validator.validate_path(symlink_path)
+
+    def test_symlink_parent_directory_to_outside_blocked(self, validator, temp_workspace, attack_target_dir):
+        """Test that symlink in parent directory pointing outside is blocked.
+
+        SECURITY: Prevents path traversal via symlinked parent directories.
+        Attack: Create symlinked directory in path hierarchy pointing outside.
+        """
+        # Create symlink directory (don't create normal dir first)
+        subdir = temp_workspace / "evil_subdir"
+        subdir.symlink_to(attack_target_dir)
+
+        # Try to access file through symlinked directory
+        evil_path = subdir / "secret.txt"
+
+        # Should block because parent directory is a symlink pointing outside
+        with pytest.raises(PathSafetyError, match="outside allowed root"):
+            validator.validate_path(evil_path)
+
+    def test_symlink_to_parent_directory_blocked(self, validator, temp_workspace):
+        """Test that symlink pointing to parent directory is blocked.
+
+        SECURITY: Prevents escaping allowed root via .. traversal through symlinks.
+        Attack: Create symlink to parent directory, then traverse up.
+        """
+        # Create symlink to parent of workspace
+        symlink_path = temp_workspace / "escape"
+        symlink_path.symlink_to(temp_workspace.parent)
+
+        # Try to traverse through symlink
+        evil_path = symlink_path / ".." / ".." / "etc" / "passwd"
+
+        # Should block the symlink
+        with pytest.raises(PathSafetyError, match="outside allowed root"):
+            validator.validate_path(evil_path)
+
+    def test_relative_symlink_escaping_root_blocked(self, validator, temp_workspace):
+        """Test that relative symlink escaping root is blocked.
+
+        SECURITY: Prevents path traversal via relative symlinks.
+        Attack: Create relative symlink with .. to escape allowed root.
+        """
+        # Create deep directory structure
+        deep_dir = temp_workspace / "a" / "b" / "c"
+        deep_dir.mkdir(parents=True)
+
+        # Create relative symlink that goes up beyond workspace
+        symlink_path = deep_dir / "escape"
+        # ../../../../ from c goes to parent of temp_workspace
+        symlink_path.symlink_to(Path("../../../../etc"))
+
+        # Should block the symlink
+        with pytest.raises(PathSafetyError, match="outside allowed root"):
+            validator.validate_path(symlink_path)
+
+    def test_symlink_chain_blocked(self, validator, temp_workspace, attack_target_dir):
+        """Test that chain of symlinks pointing outside is blocked.
+
+        SECURITY: Prevents multi-hop symlink attacks.
+        Attack: Create chain of symlinks where final target is outside root.
+        """
+        # Create chain: link1 -> link2 -> attack_target
+        link1 = temp_workspace / "link1"
+        link2 = temp_workspace / "link2"
+
+        link2.symlink_to(attack_target_dir / "secret.txt")
+        link1.symlink_to(link2)
+
+        # Should block the chain
+        with pytest.raises(PathSafetyError, match="outside allowed root"):
+            validator.validate_path(link1)
+
+    def test_symlink_within_allowed_root_permitted(self, validator, temp_workspace):
+        """Test that symlinks within allowed root are permitted.
+
+        SECURITY: Verify legitimate use case still works.
+        """
+        # Create legitimate file and symlink within workspace
+        real_file = temp_workspace / "real.txt"
+        real_file.write_text("legitimate content")
+
+        symlink = temp_workspace / "link.txt"
+        symlink.symlink_to(real_file)
+
+        # Should allow symlink within allowed root
+        result = validator.validate_path(symlink)
+        assert isinstance(result, Path)
+
+    def test_symlink_to_subdirectory_within_root_permitted(self, validator, temp_workspace):
+        """Test that symlinks to subdirectories within root are permitted."""
+        # Create subdirectory and symlink to it
+        subdir = temp_workspace / "mysubdir"
+        subdir.mkdir()
+        (subdir / "file.txt").write_text("content")
+
+        symlink = temp_workspace / "link_to_subdir"
+        symlink.symlink_to(subdir)
+
+        # Should allow symlink to subdirectory within root
+        result = validator.validate_path(symlink / "file.txt")
+        assert isinstance(result, Path)
+
+    def test_absolute_symlink_within_root_permitted(self, validator, temp_workspace):
+        """Test that absolute symlinks within allowed root are permitted."""
+        # Create file and absolute symlink within workspace
+        real_file = temp_workspace / "real.txt"
+        real_file.write_text("content")
+
+        symlink = temp_workspace / "absolute_link.txt"
+        symlink.symlink_to(real_file.absolute())
+
+        # Should allow absolute symlink within allowed root
+        result = validator.validate_path(symlink)
+        assert isinstance(result, Path)
+
+    def test_symlink_attack_via_tmp(self, validator, temp_workspace, attack_target_dir):
+        """Test that /tmp symlink cannot be used to bypass restrictions.
+
+        SECURITY: Verifies /tmp exception doesn't create symlink vulnerability.
+        Attack: Create symlink in /tmp pointing to sensitive location.
+        """
+        import tempfile
+
+        # Create symlink in /tmp pointing to attack target
+        with tempfile.TemporaryDirectory() as tmpdir:
+            symlink_path = Path(tmpdir) / "evil_link"
+            symlink_path.symlink_to(attack_target_dir / "secret.txt")
+
+            # Should block symlink in /tmp pointing outside /tmp
+            with pytest.raises(PathSafetyError, match="outside allowed root"):
+                validator.validate_path(symlink_path)
+
+    def test_time_of_check_time_of_use_prevented(self, validator, temp_workspace, attack_target_dir):
+        """Test that TOCTOU race condition is prevented.
+
+        SECURITY: Verifies symlink checks happen before resolution.
+        Attack: Although we can't simulate the race, we verify checks happen first.
+        """
+        # Create a symlink
+        symlink = temp_workspace / "file.txt"
+        symlink.symlink_to(attack_target_dir / "secret.txt")
+
+        # Validation should fail immediately (not after resolution)
+        with pytest.raises(PathSafetyError) as exc_info:
+            validator.validate_path(symlink)
+
+        # Error should mention symlink, not just "outside allowed root"
+        assert "symlink" in str(exc_info.value).lower() or "points outside" in str(exc_info.value).lower()

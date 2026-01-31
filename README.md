@@ -273,8 +273,8 @@ mypy src/
 
 - [Vision Document](./docs/VISION.md) - The ultimate vision and philosophy
 - [Technical Specification](./TECHNICAL_SPECIFICATION.md) - Implementation details and schemas
-- [Configuration Guide](./docs/configuration.md) - How to configure agents, stages, workflows (Coming soon)
-- [Observability Guide](./docs/observability.md) - Understanding traces and metrics (Coming soon)
+- [Configuration Guide](./docs/CONFIGURATION.md) - How to configure agents, stages, workflows
+- Observability Guide - Understanding traces and metrics (Coming soon)
 
 ## Technology Stack
 

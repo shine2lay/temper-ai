@@ -262,14 +262,14 @@ When you run a workflow, you'll see:
 
 ### Explore Multi-Agent Collaboration
 
-- **[Multi-Agent Collaboration Guide](./multi_agent_collaboration.md)** - Parallel execution, synthesis, conflict resolution
-- **[Collaboration Strategies](./collaboration_strategies.md)** - Consensus, debate, merit-weighted
+- **[Multi-Agent Collaboration Guide](./features/collaboration/multi_agent_collaboration.md)** - Parallel execution, synthesis, conflict resolution
+- **[Collaboration Strategies](./features/collaboration/collaboration_strategies.md)** - Consensus, debate, merit-weighted
 - **[M3 Examples](../examples/guides/multi_agent_collaboration_examples.md)** - Complete multi-agent examples
 
 ### Advanced Topics
 
-- **[Execution Engine Architecture](./execution_engine_architecture.md)** - Engine abstraction layer
-- **[Custom Engine Tutorial](./custom_engine_tutorial.md)** - Build your own execution engine
+- **[Execution Engine Architecture](./features/execution/execution_engine_architecture.md)** - Engine abstraction layer
+- **[Custom Engine Tutorial](./features/execution/custom_engine_guide.md)** - Build your own execution engine
 - **[Observability](./interfaces/models/observability_models.md)** - Tracing and analytics
 
 ### Run Tests

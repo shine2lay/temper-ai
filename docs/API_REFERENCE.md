@@ -13,12 +13,13 @@ Complete API documentation for the Meta-Autonomous Agent Framework.
 5. [Configuration](#configuration)
 6. [Workflows](#workflows)
 7. [Execution Engines](#execution-engines)
-8. [Observability](#observability)
-9. [Multi-Agent Collaboration](#multi-agent-collaboration)
-10. [Safety System](#safety-system)
-11. [Caching](#caching)
-12. [Data Models](#data-models)
-13. [Examples](#examples)
+8. [Checkpointing](#checkpointing)
+9. [Observability](#observability)
+10. [Multi-Agent Collaboration](#multi-agent-collaboration)
+11. [Safety System](#safety-system)
+12. [Caching](#caching)
+13. [Data Models](#data-models)
+14. [Examples](#examples)
 
 ---
 
@@ -898,6 +899,360 @@ class MyCustomEngine(ExecutionEngine):
 from src.compiler.engine_registry import EngineRegistry
 registry = EngineRegistry()
 registry.register_engine("my_custom_engine", MyCustomEngine)
+```
+
+---
+
+## Checkpointing
+
+Checkpoint and resume support for long-running workflows, enabling recovery from failures and distributed execution.
+
+### CheckpointManager
+
+High-level checkpoint management for workflows.
+
+```python
+from src.compiler.checkpoint_manager import (
+    CheckpointManager,
+    CheckpointStrategy
+)
+from src.compiler.checkpoint_backends import FileCheckpointBackend
+from src.compiler.domain_state import WorkflowDomainState
+
+# Create manager with file backend (default)
+manager = CheckpointManager()
+
+# Or specify custom backend
+backend = FileCheckpointBackend(checkpoint_dir="./my-checkpoints")
+manager = CheckpointManager(
+    backend=backend,
+    strategy=CheckpointStrategy.EVERY_STAGE,
+    max_checkpoints=10
+)
+
+# Save checkpoint
+domain = WorkflowDomainState(workflow_id="wf-123", input="analyze data")
+domain.set_stage_output("research", {"findings": ["data1", "data2"]})
+checkpoint_id = manager.save_checkpoint(domain)
+
+# Resume from checkpoint
+restored_domain = manager.load_checkpoint("wf-123")
+print(restored_domain.stage_outputs)  # {"research": {"findings": [...]}}
+
+# Check if checkpoint exists
+if manager.has_checkpoint("wf-123"):
+    domain = manager.load_checkpoint("wf-123")
+
+# List all checkpoints for a workflow
+checkpoints = manager.list_checkpoints("wf-123")
+for cp in checkpoints:
+    print(f"{cp['checkpoint_id']}: {cp['stage']} at {cp['created_at']}")
+
+# Delete old checkpoints
+manager.delete_checkpoint("wf-123", checkpoint_id)
+```
+
+**Checkpoint Strategies:**
+
+```python
+from src.compiler.checkpoint_manager import CheckpointStrategy
+
+# Save after every stage (default)
+manager = CheckpointManager(strategy=CheckpointStrategy.EVERY_STAGE)
+
+# Save at fixed time intervals (e.g., every 5 minutes)
+manager = CheckpointManager(
+    strategy=CheckpointStrategy.PERIODIC,
+    periodic_interval=300  # seconds
+)
+
+# Only save when explicitly requested
+manager = CheckpointManager(strategy=CheckpointStrategy.MANUAL)
+
+# Disable automatic checkpointing
+manager = CheckpointManager(strategy=CheckpointStrategy.DISABLED)
+```
+
+**Lifecycle Hooks:**
+
+```python
+# Register callbacks for checkpoint events
+def on_saved(workflow_id: str, checkpoint_id: str):
+    print(f"Checkpoint saved: {checkpoint_id}")
+
+def on_loaded(workflow_id: str, checkpoint_id: str):
+    print(f"Checkpoint loaded: {checkpoint_id}")
+
+def on_failed(workflow_id: str, error: Exception):
+    print(f"Checkpoint failed: {error}")
+
+manager.on_checkpoint_saved = on_saved
+manager.on_checkpoint_loaded = on_loaded
+manager.on_checkpoint_failed = on_failed
+```
+
+### CheckpointBackend
+
+Abstract base class for checkpoint storage backends.
+
+**Required Methods for Custom Backends:**
+- `save_checkpoint()` - Persist workflow domain state
+- `load_checkpoint()` - Restore workflow domain state
+- `list_checkpoints()` - List available checkpoints
+- `delete_checkpoint()` - Remove a checkpoint
+- `get_latest_checkpoint()` - Get most recent checkpoint ID
+
+**Optional Helper Methods:**
+- `has_checkpoint()` - Check if checkpoint exists (can use default implementation or override)
+
+**FileCheckpointBackend** - Store checkpoints as JSON files (default, no dependencies):
+
+```python
+from src.compiler.checkpoint_backends import FileCheckpointBackend
+
+# Create file backend
+backend = FileCheckpointBackend(checkpoint_dir="./checkpoints")
+
+# Save checkpoint
+from src.compiler.domain_state import WorkflowDomainState
+domain = WorkflowDomainState(workflow_id="wf-123", input="test")
+checkpoint_id = backend.save_checkpoint(
+    workflow_id="wf-123",
+    domain_state=domain,
+    metadata={"stage": "research", "user": "alice"}
+)
+
+# Load checkpoint
+loaded_domain = backend.load_checkpoint("wf-123", checkpoint_id)
+
+# List all checkpoints for a workflow
+checkpoints = backend.list_checkpoints("wf-123")
+
+# Get latest checkpoint
+latest = backend.get_latest_checkpoint("wf-123")
+
+# Delete checkpoint
+backend.delete_checkpoint("wf-123", checkpoint_id)
+```
+
+**RedisCheckpointBackend** - Store checkpoints in Redis (for distributed systems):
+
+```python
+from src.compiler.checkpoint_backends import RedisCheckpointBackend
+
+# Create Redis backend
+backend = RedisCheckpointBackend(
+    redis_url="redis://localhost:6379",
+    ttl=3600  # Optional TTL in seconds (1 hour)
+)
+
+# Usage is same as FileCheckpointBackend
+checkpoint_id = backend.save_checkpoint("wf-123", domain)
+loaded_domain = backend.load_checkpoint("wf-123", checkpoint_id)
+```
+
+**Custom Backend:**
+
+```python
+from src.compiler.checkpoint_backends import CheckpointBackend
+from src.compiler.domain_state import WorkflowDomainState
+from typing import Dict, Any, Optional, List
+
+class S3CheckpointBackend(CheckpointBackend):
+    """Store checkpoints in AWS S3."""
+
+    def __init__(self, bucket_name: str):
+        import boto3
+        self.bucket = bucket_name
+        self.s3 = boto3.client('s3')
+
+    def save_checkpoint(
+        self,
+        workflow_id: str,
+        domain_state: WorkflowDomainState,
+        checkpoint_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        import json
+        from datetime import datetime, UTC
+
+        # Generate checkpoint ID if not provided
+        if not checkpoint_id:
+            timestamp = datetime.now(UTC).isoformat()
+            checkpoint_id = f"cp-{timestamp}"
+
+        # Serialize checkpoint
+        checkpoint_data = {
+            "checkpoint_id": checkpoint_id,
+            "workflow_id": workflow_id,
+            "created_at": datetime.now(UTC).isoformat(),
+            "domain_state": domain_state.to_dict(),
+            "metadata": metadata or {}
+        }
+
+        # Save to S3
+        key = f"checkpoints/{workflow_id}/{checkpoint_id}.json"
+        self.s3.put_object(
+            Bucket=self.bucket,
+            Key=key,
+            Body=json.dumps(checkpoint_data)
+        )
+
+        return checkpoint_id
+
+    def load_checkpoint(
+        self,
+        workflow_id: str,
+        checkpoint_id: Optional[str] = None
+    ) -> WorkflowDomainState:
+        import json
+        from src.compiler.checkpoint_backends import CheckpointNotFoundError
+
+        # Get latest if checkpoint_id not specified
+        if not checkpoint_id:
+            checkpoint_id = self.get_latest_checkpoint(workflow_id)
+
+        # Load from S3
+        key = f"checkpoints/{workflow_id}/{checkpoint_id}.json"
+        try:
+            response = self.s3.get_object(Bucket=self.bucket, Key=key)
+            checkpoint_data = json.loads(response['Body'].read())
+            return WorkflowDomainState.from_dict(checkpoint_data["domain_state"])
+        except self.s3.exceptions.NoSuchKey:
+            raise CheckpointNotFoundError(
+                f"Checkpoint not found: {workflow_id}/{checkpoint_id}"
+            )
+
+    def list_checkpoints(self, workflow_id: str) -> List[Dict[str, Any]]:
+        """List all checkpoints for a workflow from S3."""
+        # List objects with prefix checkpoints/{workflow_id}/
+        response = self.s3.list_objects_v2(
+            Bucket=self.bucket,
+            Prefix=f"checkpoints/{workflow_id}/"
+        )
+        checkpoints = []
+        for obj in response.get('Contents', []):
+            # Parse checkpoint metadata from S3 object
+            checkpoints.append({
+                'checkpoint_id': obj['Key'].split('/')[-1].replace('.json', ''),
+                'created_at': obj['LastModified'].isoformat(),
+                'size': obj['Size']
+            })
+        return sorted(checkpoints, key=lambda x: x['created_at'], reverse=True)
+
+    def delete_checkpoint(self, workflow_id: str, checkpoint_id: str) -> None:
+        """Delete a checkpoint from S3."""
+        key = f"checkpoints/{workflow_id}/{checkpoint_id}.json"
+        self.s3.delete_object(Bucket=self.bucket, Key=key)
+
+    def get_latest_checkpoint(self, workflow_id: str) -> str:
+        """Get the most recent checkpoint ID from S3."""
+        checkpoints = self.list_checkpoints(workflow_id)
+        if not checkpoints:
+            from src.compiler.checkpoint_backends import CheckpointNotFoundError
+            raise CheckpointNotFoundError(f"No checkpoints found for {workflow_id}")
+        return checkpoints[0]['checkpoint_id']
+
+    def has_checkpoint(self, workflow_id: str, checkpoint_id: Optional[str] = None) -> bool:
+        """Check if a checkpoint exists in S3."""
+        if checkpoint_id:
+            key = f"checkpoints/{workflow_id}/{checkpoint_id}.json"
+            try:
+                self.s3.head_object(Bucket=self.bucket, Key=key)
+                return True
+            except self.s3.exceptions.ClientError:
+                return False
+        else:
+            # Check if any checkpoint exists for workflow
+            return len(self.list_checkpoints(workflow_id)) > 0
+
+# Use custom backend
+backend = S3CheckpointBackend(bucket_name="my-checkpoints")
+manager = CheckpointManager(backend=backend)
+```
+
+### WorkflowDomainState
+
+State container for workflow execution, used with checkpoints.
+
+```python
+from src.compiler.domain_state import WorkflowDomainState
+
+# Create domain state
+domain = WorkflowDomainState(
+    workflow_id="wf-123",
+    input="analyze customer data",
+    metadata={"user": "alice", "priority": "high"}
+)
+
+# Set stage outputs as workflow progresses
+domain.set_stage_output("research", {
+    "findings": ["trend1", "trend2"],
+    "sources": ["db", "api"]
+})
+
+domain.set_stage_output("analysis", {
+    "insights": ["insight1", "insight2"],
+    "confidence": 0.95
+})
+
+# Access stage outputs
+print(domain.stage_outputs["research"])  # {"findings": [...], "sources": [...]}
+
+# Serialize for checkpointing
+state_dict = domain.to_dict()
+
+# Deserialize from checkpoint
+restored_domain = WorkflowDomainState.from_dict(state_dict)
+```
+
+### Workflow Resume Example
+
+Complete example showing checkpoint and resume:
+
+```python
+from src.compiler.checkpoint_manager import CheckpointManager, CheckpointStrategy
+from src.compiler.domain_state import WorkflowDomainState
+
+# Initialize checkpoint manager
+manager = CheckpointManager(strategy=CheckpointStrategy.EVERY_STAGE)
+
+# Workflow execution with checkpointing
+workflow_id = "long-running-workflow-123"
+
+# Try to resume from checkpoint
+if manager.has_checkpoint(workflow_id):
+    print(f"Resuming workflow {workflow_id}...")
+    domain = manager.load_checkpoint(workflow_id)
+    print(f"Resuming from stage: {domain.current_stage}")
+    print(f"Completed stages: {list(domain.stage_outputs.keys())}")
+else:
+    print(f"Starting new workflow {workflow_id}...")
+    domain = WorkflowDomainState(
+        workflow_id=workflow_id,
+        input="process large dataset"
+    )
+
+# Execute stages (with automatic checkpointing after each)
+stages = ["stage1", "stage2", "stage3"]
+for stage in stages:
+    # Skip already completed stages
+    if stage in domain.stage_outputs:
+        print(f"Skipping completed stage: {stage}")
+        continue
+
+    print(f"Executing stage: {stage}")
+    # Execute stage logic here
+    stage_output = {"result": f"output from {stage}"}
+
+    # Update domain state
+    domain.set_stage_output(stage, stage_output)
+
+    # Checkpoint saves automatically with EVERY_STAGE strategy
+    checkpoint_id = manager.save_checkpoint(domain)
+    print(f"Checkpoint saved: {checkpoint_id}")
+
+print("Workflow completed!")
 ```
 
 ---

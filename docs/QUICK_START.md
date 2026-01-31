@@ -272,6 +272,61 @@ When you run a workflow, you'll see:
 - **[Custom Engine Tutorial](./features/execution/custom_engine_guide.md)** - Build your own execution engine
 - **[Observability](./interfaces/models/observability_models.md)** - Tracing and analytics
 
+### Checkpoint and Resume Workflows
+
+Save and resume long-running workflows:
+
+```python
+from src.compiler.checkpoint_manager import CheckpointManager, CheckpointStrategy
+from src.compiler.checkpoint_backends import CheckpointNotFoundError
+from src.compiler.domain_state import WorkflowDomainState
+
+# Initialize checkpoint manager
+manager = CheckpointManager(strategy=CheckpointStrategy.EVERY_STAGE)
+
+workflow_id = "long-running-task-123"
+
+# Try to resume from checkpoint
+try:
+    if manager.has_checkpoint(workflow_id):
+        print("Resuming from checkpoint...")
+        domain = manager.load_checkpoint(workflow_id)
+        print(f"Resuming from stage: {domain.current_stage}")
+    else:
+        print("Starting new workflow...")
+        domain = WorkflowDomainState(workflow_id=workflow_id, input="task data")
+except CheckpointNotFoundError as e:
+    print(f"Checkpoint load failed: {e}")
+    print("Starting new workflow...")
+    domain = WorkflowDomainState(workflow_id=workflow_id, input="task data")
+
+# Execute workflow stages
+for stage in ["research", "analysis", "synthesis"]:
+    if stage in domain.stage_outputs:
+        continue  # Skip completed stages
+
+    # Execute stage...
+    output = {"result": f"output from {stage}"}
+    domain.set_stage_output(stage, output)
+
+    # Save checkpoint (automatic with EVERY_STAGE strategy)
+    checkpoint_id = manager.save_checkpoint(domain)
+    print(f"Checkpoint saved: {checkpoint_id}")
+```
+
+**Configuration:**
+
+```yaml
+# Enable checkpointing in workflow config
+name: my_workflow
+checkpoint_strategy: every_stage  # or: periodic, manual, disabled
+checkpoint_backend: file  # or: redis
+checkpoint_dir: ./checkpoints
+max_checkpoints: 10
+```
+
+See [API Reference - Checkpointing](./API_REFERENCE.md#checkpointing) for complete documentation.
+
 ### Run Tests
 
 ```bash

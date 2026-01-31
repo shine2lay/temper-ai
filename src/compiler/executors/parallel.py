@@ -236,11 +236,24 @@ class ParallelStageExecutor(StageExecutor):
                 state=state
             )
 
+            # Reset retry counter if quality gates passed (successful after retry)
+            if passed and "stage_retry_counts" in state and stage_name in state["stage_retry_counts"]:
+                retry_count = state["stage_retry_counts"][stage_name]
+                del state["stage_retry_counts"][stage_name]
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(
+                    f"Stage '{stage_name}' passed quality gates after {retry_count} retries"
+                )
+
             # Handle quality gate failures
             if not passed:
                 stage_dict = stage_config if isinstance(stage_config, dict) else {}
                 quality_gates_config = stage_dict.get("quality_gates", {})
                 on_failure = quality_gates_config.get("on_failure", "retry_stage")
+
+                # Get retry count for observability tracking
+                retry_count = state.get("stage_retry_counts", {}).get(stage_name, 0)
 
                 # Track quality gate failure in observability
                 tracker = state.get("tracker")
@@ -254,7 +267,9 @@ class ParallelStageExecutor(StageExecutor):
                         metadata={
                             "violations": violations,
                             "on_failure_action": on_failure,
-                            "synthesis_method": synthesis_result.method
+                            "synthesis_method": synthesis_result.method,
+                            "retry_count": retry_count,
+                            "max_retries": quality_gates_config.get("max_retries", 2)
                         }
                     )
 
@@ -275,9 +290,59 @@ class ParallelStageExecutor(StageExecutor):
                         synthesis_result.metadata = {}
                     synthesis_result.metadata["quality_gate_warning"] = violations
                 elif on_failure == "retry_stage":
-                    # For now, raise exception with retry hint
-                    raise RuntimeError(
-                        f"Quality gates failed for stage '{stage_name}' (retry_stage not yet fully implemented): {'; '.join(violations)}"
+                    # Get max retries configuration
+                    max_retries = quality_gates_config.get("max_retries", 2)
+
+                    # Initialize retry tracking in state if needed
+                    if "stage_retry_counts" not in state:
+                        state["stage_retry_counts"] = {}
+
+                    # Get current retry count for this stage
+                    retry_count = state["stage_retry_counts"].get(stage_name, 0)
+
+                    # Check if retries exhausted
+                    if retry_count >= max_retries:
+                        # Retries exhausted - escalate
+                        raise RuntimeError(
+                            f"Quality gates failed for stage '{stage_name}' after {retry_count} retries "
+                            f"(max: {max_retries}). Final violations: {'; '.join(violations)}"
+                        )
+
+                    # Increment retry counter
+                    state["stage_retry_counts"][stage_name] = retry_count + 1
+
+                    # Track retry attempt in observability
+                    if tracker and hasattr(tracker, 'track_collaboration_event'):
+                        tracker.track_collaboration_event(
+                            event_type="quality_gate_retry",
+                            stage_name=stage_name,
+                            agents=[],
+                            decision=None,
+                            confidence=getattr(synthesis_result, "confidence", 0.0),
+                            metadata={
+                                "violations": violations,
+                                "retry_attempt": retry_count + 1,
+                                "max_retries": max_retries,
+                                "synthesis_method": synthesis_result.method
+                            }
+                        )
+
+                    # Log retry attempt
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        f"Quality gates failed for stage '{stage_name}', retrying "
+                        f"(attempt {retry_count + 2}/{max_retries + 1}). Violations: {'; '.join(violations)}"
+                    )
+
+                    # Recursively retry the stage execution
+                    # This re-runs the entire parallel execution + synthesis + validation
+                    return self.execute_stage(
+                        stage_name=stage_name,
+                        stage_config=stage_config,
+                        state=state,  # State now contains updated retry count
+                        config_loader=config_loader,
+                        tool_registry=tool_registry
                     )
 
             # Update state with enhanced multi-agent tracking

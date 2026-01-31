@@ -578,6 +578,54 @@ The ActionPolicyEngine validates actions against registered policies.
 
 **Rule of thumb:** If the document is for developers reading code or API specs, avoid emojis. If it's for users getting started or learning the framework, emojis are welcome.
 
+### File Naming Convention
+
+**Main documentation (`docs/*.md`):**
+- ✅ **UPPERCASE.md** - All primary documentation files
+- Examples: `README.md`, `API_REFERENCE.md`, `CONFIGURATION.md`, `TESTING.md`
+- Rationale: Easy to distinguish important docs, consistent with GitHub conventions
+
+**Subdirectory documentation (`docs/*/`):**
+- ✅ **UPPERCASE.md** - Major documents (API reference, configuration, guides)
+- ✅ **README.md** - Directory index or overview (GitHub convention)
+- ✅ **lowercase_with_underscores.md** - Supporting documents, examples, notes
+
+**Examples:**
+
+```
+docs/
+├── API_REFERENCE.md                    # ✅ Main API doc
+├── CONFIGURATION.md                    # ✅ Main config doc
+├── TESTING.md                          # ✅ Main testing doc
+├── security/
+│   ├── README.md                       # ✅ Security overview
+│   ├── M4_SAFETY_SYSTEM.md            # ✅ Major doc
+│   ├── SAFETY_EXAMPLES.md             # ✅ Major doc
+│   └── threat_model.md                # ✅ Supporting doc
+└── features/
+    ├── README.md                       # ✅ Features index
+    ├── multi_agent_collab.md          # ✅ Feature detail
+    └── observability.md               # ✅ Feature detail
+```
+
+**When to use UPPERCASE:**
+- Primary framework documentation (API, config, testing, architecture)
+- Major feature guides (M4 Safety, Multi-Agent, Observability)
+- Top-level docs that users will frequently reference
+
+**When to use lowercase:**
+- Supporting documentation within subdirectories
+- Examples, tutorials, how-tos
+- Archive documents, changelogs, meeting notes
+- Internal development docs
+
+**Never use:**
+- ❌ **Title-Case.md** or **Title_Case.md** - Inconsistent, hard to predict
+- ❌ **mixedCase.md** or **camelCase.md** - Violates Python community conventions
+- ❌ **Spaces In Names.md** - Breaks command-line tools and URLs
+
+**Rule of thumb:** If it's a major doc users will search for, use UPPERCASE.md. If it's supporting content, use lowercase_with_underscores.md.
+
 ---
 
 ## Issue Guidelines

@@ -92,6 +92,41 @@ markers = [
     "security: marks security tests (select with '-m security')",
 ]
 
+# pytest-benchmark configuration
+[tool.pytest.ini_options.benchmark]
+# Store benchmarks in .benchmarks/ directory
+storage = ".benchmarks"
+# Automatically save benchmarks with timestamp
+autosave = false
+# Fail CI if performance regresses (multiple thresholds)
+compare_fail = [
+    "mean:10%",           # Mean regression threshold
+    "median:10%",         # Median regression threshold
+    "stddev:50%"          # Standard deviation regression
+]
+# Warm up before benchmarking to account for JIT compilation
+warmup = true
+# Minimum rounds to run each benchmark
+min_rounds = 5
+# Minimum time to run benchmarks (seconds)
+min_time = 0.005
+# Maximum time to run benchmarks (seconds)
+max_time = 1.0
+# Number of warmup iterations
+warmup_iterations = 2
+# Calibration precision
+calibration_precision = 10
+# Disable GC during benchmarks for more consistent results
+disable_gc = true
+# Save detailed data for analysis
+save_data = true
+# Generate histograms for visualization
+histogram = true
+# Group benchmarks by category
+group_by = "group"
+# Sort by mean time
+sort = "mean"
+
 [tool.black]
 line-length = 100
 target-version = ['py311']

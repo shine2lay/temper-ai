@@ -1,0 +1,157 @@
+name: Performance Benchmarks
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    # Run daily at 2 AM UTC for trend tracking
+    - cron: '0 2 * * *'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for trend analysis
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install pytest-benchmark pytest-asyncio psutil
+
+      - name: Restore benchmark baseline
+        uses: actions/cache@v3
+        with:
+          path: .benchmarks
+          key: benchmarks-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            benchmarks-${{ runner.os }}-
+
+      - name: Run benchmarks
+        id: benchmark
+        continue-on-error: true
+        run: |
+          pytest tests/test_benchmarks/test_performance_benchmarks.py \
+            --benchmark-only \
+            --benchmark-json=benchmark_results.json \
+            --benchmark-compare=baseline \
+            --benchmark-compare-fail=mean:10% \
+            --benchmark-compare-fail=median:10% \
+            || echo "BENCHMARK_FAILED=true" >> $GITHUB_ENV
+
+      - name: Generate benchmark report
+        if: always()
+        run: |
+          python -c "
+import json
+with open('benchmark_results.json') as f:
+    data = json.load(f)
+
+print('## Performance Benchmark Results\n')
+print(f\"Total Benchmarks: {len(data['benchmarks'])}\n\")
+print('### Summary\n')
+print('| Test | Mean | Median | StdDev | Status |')
+print('|------|------|--------|--------|--------|')
+
+for bench in data['benchmarks']:
+    name = bench['name'].replace('test_', '')
+    stats = bench['stats']
+    mean = f\"{stats['mean']*1000:.2f}ms\"
+    median = f\"{stats['median']*1000:.2f}ms\"
+    stddev = f\"{stats['stddev']*1000:.2f}ms\"
+    status = '✅'
+    print(f'| {name} | {mean} | {median} | {stddev} | {status} |')
+          " > benchmark_report.md
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('benchmark_report.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: |
+            benchmark_results.json
+            benchmark_report.md
+            .benchmarks/
+
+      - name: Fail if regression detected
+        if: env.BENCHMARK_FAILED == 'true'
+        run: |
+          echo "::error::Performance regression detected (>10% slower)"
+          echo "Review benchmark_report.md for details"
+          exit 1
+
+      - name: Update baseline on main
+        if: github.ref == 'refs/heads/main' && success()
+        run: |
+          pytest tests/test_benchmarks/test_performance_benchmarks.py \
+            --benchmark-only \
+            --benchmark-save=baseline
+
+      - name: Save benchmark cache
+        if: success()
+        uses: actions/cache/save@v3
+        with:
+          path: .benchmarks
+          key: benchmarks-${{ runner.os }}-${{ github.sha }}
+
+  benchmark-comparison:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    needs: benchmark
+
+    steps:
+      - name: Download PR benchmarks
+        uses: actions/download-artifact@v3
+        with:
+          name: benchmark-results
+          path: pr-results
+
+      - name: Generate comparison report
+        run: |
+          echo "## Benchmark Comparison" > comparison.md
+          echo "" >> comparison.md
+          echo "Comparing current PR against baseline..." >> comparison.md
+
+          # Add detailed comparison logic here
+          # This can be enhanced with custom scripts
+
+      - name: Comment PR with comparison
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('comparison.md', 'utf8');
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: report
+            });

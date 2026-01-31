@@ -229,6 +229,197 @@ from src.agents import (
 )
 ```
 
+### LLM Reliability
+
+#### FailoverProvider
+
+Automatic failover between multiple LLM providers for high availability.
+
+**Features:**
+- Automatic failover to backup providers when primary fails
+- Sticky sessions (remembers last successful provider)
+- Configurable failover conditions
+- Automatic retry of primary after N successful backup calls
+
+**Basic Usage:**
+
+```python
+from src.agents.llm_providers import OllamaLLM, OpenAILLM
+from src.agents.llm_failover import FailoverProvider, FailoverConfig
+
+# Create providers
+primary = OllamaLLM(model="llama3.2")
+backup = OpenAILLM(model="gpt-4", api_key="...")
+
+# Create failover provider with defaults
+failover = FailoverProvider(providers=[primary, backup])
+
+# Use like any LLM provider - automatically fails over
+response = failover.complete("What is 2+2?")
+
+# Async support
+response = await failover.acomplete("What is 2+2?")
+```
+
+**Advanced Configuration:**
+
+```python
+from src.agents.llm_failover import FailoverConfig
+
+config = FailoverConfig(
+    sticky_session=True,           # Use last successful provider first
+    retry_primary_after=10,        # Retry primary after 10 backup successes
+    failover_on_timeout=True,      # Failover on timeout errors
+    failover_on_rate_limit=True,   # Failover on rate limits
+    failover_on_connection_error=True,  # Failover on connection errors
+    failover_on_server_error=True, # Failover on 5xx errors
+    failover_on_client_error=False # Don't failover on 4xx (user errors)
+)
+
+failover = FailoverProvider(providers=[primary, backup, tertiary], config=config)
+```
+
+**Methods:**
+
+- `complete(prompt, **kwargs)`: Generate completion with automatic failover
+- `acomplete(prompt, **kwargs)`: Async version of complete
+- `reset()`: Reset to prefer primary provider
+- `model`: Property returning current provider's model name
+- `provider_name`: Property returning current provider's name
+
+**Error Handling:**
+
+```python
+from src.agents.llm_providers import LLMError
+
+try:
+    response = failover.complete("Hello")
+except LLMError as e:
+    # All providers failed
+    print(f"All providers failed: {e}")
+```
+
+**Failover Behavior:**
+
+1. **Sticky Session Mode** (default):
+   - Starts with last successful provider
+   - Only returns to primary after N successful backup calls
+   - Reduces unnecessary switching
+
+2. **Non-Sticky Mode**:
+   - Always tries primary first
+   - More predictable but may cause more load on primary
+
+3. **Error Classification**:
+   - **Failover errors**: Timeout, rate limit, connection, 5xx
+   - **Non-failover errors**: Authentication (same credentials), 4xx (user error)
+
+#### CircuitBreaker
+
+Circuit breaker pattern to prevent cascading failures when providers are down.
+
+**States:**
+- `CLOSED`: Normal operation, requests pass through
+- `OPEN`: Too many failures, fast-fail without calling provider
+- `HALF_OPEN`: Testing recovery, allowing limited requests
+
+**Features:**
+- Fast-fail when provider is down (reduces latency)
+- Automatic recovery through half-open state
+- Thread-safe for concurrent requests
+- Configurable failure thresholds and timeouts
+
+**Basic Usage:**
+
+```python
+from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError
+
+# Create circuit breaker for a provider
+breaker = CircuitBreaker(name="ollama")
+
+def api_request(prompt):
+    # Your LLM API call
+    return llm.complete(prompt)
+
+# Execute through circuit breaker
+try:
+    result = breaker.call(api_request, prompt="Hello")
+except CircuitBreakerError:
+    print("Circuit is open, provider is down")
+```
+
+**Configuration:**
+
+```python
+config = CircuitBreakerConfig(
+    failure_threshold=5,   # Open circuit after 5 failures
+    success_threshold=2,   # Close after 2 successes in half-open
+    timeout=60             # Try half-open after 60 seconds
+)
+
+breaker = CircuitBreaker(name="provider", config=config)
+```
+
+**Methods:**
+
+- `call(func, *args, **kwargs)`: Execute function through circuit breaker
+- `reset()`: Manually reset to closed state (for testing)
+
+**State Transitions:**
+
+```
+CLOSED --[failures >= threshold]--> OPEN
+OPEN --[timeout elapsed]--> HALF_OPEN
+HALF_OPEN --[success >= threshold]--> CLOSED
+HALF_OPEN --[any failure]--> OPEN
+```
+
+**Error Counting:**
+
+Circuit breaker only counts **transient** errors that may recover:
+- ✅ Connection errors (provider down)
+- ✅ Timeouts (provider slow)
+- ✅ HTTP 5xx (server errors)
+- ✅ HTTP 429 (rate limiting)
+- ❌ HTTP 401 (authentication - won't recover)
+- ❌ HTTP 400, 404 (client errors - won't recover)
+
+**Example with LLM Provider:**
+
+```python
+from src.agents.llm_providers import OllamaLLM
+from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerError
+
+llm = OllamaLLM(model="llama3.2")
+breaker = CircuitBreaker(name="ollama")
+
+def safe_complete(prompt):
+    """LLM completion with circuit breaker protection."""
+    try:
+        return breaker.call(llm.complete, prompt)
+    except CircuitBreakerError:
+        # Provider is down, use fallback or return error
+        return {"error": "LLM provider unavailable"}
+
+result = safe_complete("What is 2+2?")
+```
+
+**Combining with FailoverProvider:**
+
+```python
+from src.agents.llm_failover import FailoverProvider
+from src.llm.circuit_breaker import CircuitBreaker
+
+# Wrap each provider with circuit breaker
+primary_breaker = CircuitBreaker("primary")
+backup_breaker = CircuitBreaker("backup")
+
+# Note: FailoverProvider has built-in error handling
+# Circuit breakers are most useful when used per-provider
+# or when you need custom fast-fail behavior
+failover = FailoverProvider(providers=[primary, backup])
+```
+
 ---
 
 ## Tools

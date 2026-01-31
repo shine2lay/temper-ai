@@ -30,8 +30,14 @@ class PathSafetyValidator:
     - Forbidden path blocking (e.g., /etc, system configs)
     - Symlink resolution and validation
     - Working directory constraints
+    - Dedicated temporary directory (replaces unsafe /tmp access)
     - Unicode normalization
     - Path length limits
+
+    Security Notes:
+    - /tmp access is NO LONGER allowed (removed in security fix for code-crit-13)
+    - Use get_temp_path() for temporary files (creates allowed_root/.tmp)
+    - Temp directory has owner-only permissions (0o700) to prevent cross-user access
     """
 
     # Path length limits (conservative values for cross-platform safety)
@@ -64,7 +70,8 @@ class PathSafetyValidator:
     def __init__(
         self,
         allowed_root: Optional[Path] = None,
-        additional_forbidden: Optional[List[str]] = None
+        additional_forbidden: Optional[List[str]] = None,
+        enable_temp_directory: bool = True
     ):
         """
         Initialize path safety validator.
@@ -72,6 +79,8 @@ class PathSafetyValidator:
         Args:
             allowed_root: Root directory to constrain operations to (default: cwd)
             additional_forbidden: Additional forbidden path patterns
+            enable_temp_directory: Create dedicated temp directory under allowed_root
+                                 (replaces unsafe /tmp access)
         """
         self.allowed_root = Path(allowed_root or Path.cwd()).resolve()
 
@@ -79,6 +88,24 @@ class PathSafetyValidator:
         self.forbidden = self.FORBIDDEN_PATHS.copy()
         if additional_forbidden:
             self.forbidden.extend(additional_forbidden)
+
+        # Create dedicated temp directory (replaces /tmp for security)
+        if enable_temp_directory:
+            self.temp_dir = self.allowed_root / ".tmp"
+            try:
+                self.temp_dir.mkdir(mode=0o700, exist_ok=True)
+                # Ensure restrictive permissions (owner-only)
+                self.temp_dir.chmod(0o700)
+            except OSError as e:
+                # If we can't create secure temp dir, disable it
+                import logging
+                logging.warning(
+                    f"Could not create secure temp directory: {e}. "
+                    "Temp directory disabled."
+                )
+                self.temp_dir = None
+        else:
+            self.temp_dir = None
 
     def validate_path(
         self,
@@ -191,18 +218,13 @@ class PathSafetyValidator:
                 raise PathSafetyError(f"Symlink chain too deep or circular: {e}")
             raise PathSafetyError(f"Cannot resolve path: {e}")
 
-        # Check if within allowed root or /tmp (safe temporary location)
+        # Check if within allowed root
         is_in_allowed_root = False
         try:
             resolved.relative_to(self.allowed_root)
             is_in_allowed_root = True
         except ValueError:
-            # Check if in /tmp (safe for temporary files)
-            try:
-                resolved.relative_to("/tmp")
-                is_in_allowed_root = True
-            except ValueError:
-                pass
+            pass
 
         if not is_in_allowed_root:
             raise PathSafetyError(
@@ -278,7 +300,7 @@ class PathSafetyValidator:
             while not parent_to_check.exists() and parent_to_check != parent_to_check.parent:
                 parent_to_check = parent_to_check.parent
 
-            # Check this ancestor is within allowed root or /tmp
+            # Check this ancestor is within allowed root
             if parent_to_check.exists():
                 parent_resolved = parent_to_check.resolve()
             else:
@@ -290,12 +312,7 @@ class PathSafetyValidator:
                 parent_resolved.relative_to(self.allowed_root)
                 is_parent_allowed = True
             except ValueError:
-                # Check if in /tmp (safe for temporary files)
-                try:
-                    parent_resolved.relative_to("/tmp")
-                    is_parent_allowed = True
-                except ValueError:
-                    pass
+                pass
 
             if not is_parent_allowed:
                 raise PathSafetyError(
@@ -314,6 +331,91 @@ class PathSafetyValidator:
             raise PathSafetyError(f"No write permission in directory: {parent}")
 
         return resolved
+
+    def get_temp_path(self, filename: str) -> Path:
+        """
+        Get a secure temporary file path within allowed_root.
+
+        This replaces the use of /tmp with a dedicated directory
+        that is scoped to the current allowed_root, preventing
+        cross-user access and symlink attacks.
+
+        SECURITY: Temporary files are created under allowed_root/.tmp
+        with owner-only permissions (0o700), preventing:
+        - Cross-user file access
+        - Symlink attacks via world-writable /tmp
+        - Path traversal outside allowed_root
+
+        Args:
+            filename: Name for temporary file (no path components allowed)
+
+        Returns:
+            Path to temporary file within allowed_root/.tmp
+
+        Raises:
+            PathSafetyError: If temp directory is disabled or filename invalid
+
+        Example:
+            >>> validator = PathSafetyValidator(allowed_root='/var/app')
+            >>> temp_file = validator.get_temp_path('session_data.json')
+            >>> # Returns: /var/app/.tmp/session_data.json
+        """
+        if self.temp_dir is None:
+            raise PathSafetyError(
+                "Temporary directory is disabled. "
+                "Enable with enable_temp_directory=True"
+            )
+
+        # Validate filename doesn't contain path traversal
+        if "/" in filename or "\\" in filename or ".." in filename:
+            raise PathSafetyError(
+                f"Invalid temp filename (no path components allowed): {filename}"
+            )
+
+        # Validate filename length
+        if len(filename) > self.MAX_COMPONENT_LENGTH:
+            raise PathSafetyError(
+                f"Temp filename too long (max {self.MAX_COMPONENT_LENGTH}): {len(filename)}"
+            )
+
+        temp_path = self.temp_dir / filename
+        return self.validate_path(temp_path, must_exist=False, allow_create=True)
+
+    def cleanup_temp_directory(self) -> None:
+        """
+        Remove all files in the temporary directory.
+
+        Should be called on application shutdown or session end to clean up
+        temporary files.
+
+        SECURITY: Only cleans files within allowed_root/.tmp, preventing
+        accidental deletion of files outside the allowed root.
+
+        Raises:
+            PathSafetyError: If temp directory is disabled
+
+        Example:
+            >>> validator = PathSafetyValidator(allowed_root='/var/app')
+            >>> # ... use temp files ...
+            >>> validator.cleanup_temp_directory()  # Clean up on exit
+        """
+        if self.temp_dir is None:
+            raise PathSafetyError(
+                "Temporary directory is disabled. "
+                "Enable with enable_temp_directory=True"
+            )
+
+        if self.temp_dir.exists():
+            import shutil
+            try:
+                # Remove all contents
+                shutil.rmtree(self.temp_dir)
+                # Recreate with secure permissions
+                self.temp_dir.mkdir(mode=0o700, exist_ok=True)
+                self.temp_dir.chmod(0o700)
+            except OSError as e:
+                import logging
+                logging.warning(f"Could not cleanup temp directory: {e}")
 
     def _check_forbidden(self, resolved: Path) -> None:
         """

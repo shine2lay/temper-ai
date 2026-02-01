@@ -144,7 +144,8 @@ class TestCompileStages:
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
         # Should successfully create graph with one stage
-        assert graph is not None
+        assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
+        assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
         assert self.node_builder.create_stage_node.call_count == 1
 
     def test_compile_stages_multiple_stages(self):
@@ -158,7 +159,8 @@ class TestCompileStages:
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
         # Should successfully create graph with multiple stages
-        assert graph is not None
+        assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
+        assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
         assert self.node_builder.create_stage_node.call_count == 4
 
 
@@ -262,7 +264,8 @@ class TestCompileParallelStages:
         # Should not raise, should delegate to compile_stages
         graph = compiler.compile_parallel_stages(stage_names, workflow_config)
 
-        assert graph is not None
+        assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
+        assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
 
 
 class TestCompileConditionalStages:
@@ -288,7 +291,8 @@ class TestCompileConditionalStages:
             conditions
         )
 
-        assert graph is not None
+        assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
+        assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
 
 
 class TestIntegrationWithRealGraph:

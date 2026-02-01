@@ -56,8 +56,10 @@ class TestFileCheckpointBackend:
             sample_domain_state
         )
 
-        assert checkpoint_id is not None
-        assert checkpoint_id.startswith("cp-")
+        assert checkpoint_id.startswith("cp-"), \
+            f"Checkpoint ID must start with 'cp-', got: {checkpoint_id}"
+        assert len(checkpoint_id) >= 15, \
+            f"Checkpoint ID too short (needs timestamp + counter + random): {checkpoint_id}"
 
     def test_load_checkpoint(self, backend, sample_domain_state):
         """Test loading a saved checkpoint."""

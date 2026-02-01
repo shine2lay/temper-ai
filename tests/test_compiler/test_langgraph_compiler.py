@@ -18,9 +18,11 @@ def test_workflow_state_creation():
 def test_compiler_initialization():
     """Test LangGraphCompiler can be initialized."""
     compiler = LangGraphCompiler()
-    assert compiler is not None
-    assert compiler.tool_registry is not None
-    assert compiler.config_loader is not None
+    assert isinstance(compiler, LangGraphCompiler), \
+        f"Expected LangGraphCompiler instance, got {type(compiler)}"
+    assert hasattr(compiler, 'tool_registry'), "Compiler must have tool_registry attribute"
+    assert hasattr(compiler, 'config_loader'), "Compiler must have config_loader attribute"
+    assert hasattr(compiler, 'compile'), "Compiler must have compile method"
 
 
 def test_compiler_with_custom_registry():
@@ -73,9 +75,9 @@ def test_compile_creates_state_graph():
     graph = compiler.compile(workflow_config)
 
     # Should return a compiled graph
-    assert graph is not None
-    # Graph should be callable (invoke method exists)
-    assert hasattr(graph, 'invoke')
+    assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
+    assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
+    assert callable(graph.invoke), "invoke must be callable"
 
 
 def test_compile_sequential_stages():
@@ -100,7 +102,8 @@ def test_compile_sequential_stages():
 
     # Compile (should not raise)
     graph = compiler.compile(workflow_config)
-    assert graph is not None
+    assert hasattr(graph, 'invoke'), "Graph must have invoke method for execution"
+    assert hasattr(graph, 'get_graph'), "Graph must have get_graph for introspection"
 
 
 def test_workflow_executor_initialization():

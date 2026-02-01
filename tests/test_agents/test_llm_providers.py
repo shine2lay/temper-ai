@@ -1942,8 +1942,9 @@ class TestConnectionPoolCleanup:
 
         # Trigger client creation
         client = llm._get_client()
-        assert client is not None
-        assert llm._client is not None
+        assert isinstance(client, httpx.Client), \
+            f"Expected httpx.Client, got {type(client)}"
+        assert llm._client is client, "Should cache client instance"
 
         # Close and verify cleanup
         llm.close()
@@ -1958,8 +1959,9 @@ class TestConnectionPoolCleanup:
 
             # Trigger async client creation
             client = llm._get_async_client()
-            assert client is not None
-            assert llm._async_client is not None
+            assert isinstance(client, httpx.AsyncClient), \
+                f"Expected httpx.AsyncClient, got {type(client)}"
+            assert llm._async_client is client, "Should cache async client instance"
 
             # Close using async method
             await llm.aclose()
@@ -1978,8 +1980,9 @@ class TestConnectionPoolCleanup:
 
         # Trigger async client creation
         client = llm._get_async_client()
-        assert client is not None
-        assert llm._async_client is not None
+        assert isinstance(client, httpx.AsyncClient), \
+            f"Expected httpx.AsyncClient, got {type(client)}"
+        assert llm._async_client is client, "Should cache async client instance"
 
         # Close without event loop (this previously leaked connections)
         # The fix should use asyncio.run() to create temporary event loop
@@ -1992,10 +1995,12 @@ class TestConnectionPoolCleanup:
         """Verify context manager properly closes connections."""
         with OllamaLLM(model="llama2", base_url="http://localhost:11434") as llm:
             # Trigger both client creations
-            llm._get_client()
-            llm._get_async_client()
-            assert llm._client is not None
-            assert llm._async_client is not None
+            sync_client = llm._get_client()
+            async_client = llm._get_async_client()
+            assert isinstance(sync_client, httpx.Client), \
+                f"Expected httpx.Client, got {type(sync_client)}"
+            assert isinstance(async_client, httpx.AsyncClient), \
+                f"Expected httpx.AsyncClient, got {type(async_client)}"
 
         # After context exit, both should be closed
         assert llm._client is None
@@ -2004,8 +2009,9 @@ class TestConnectionPoolCleanup:
     def test_del_cleanup_sync_client(self):
         """Verify __del__ cleanup closes sync client."""
         llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
-        llm._get_client()
-        assert llm._client is not None
+        client = llm._get_client()
+        assert isinstance(client, httpx.Client), \
+            f"Expected httpx.Client, got {type(client)}"
 
         # Trigger garbage collection cleanup
         llm.__del__()
@@ -2017,8 +2023,9 @@ class TestConnectionPoolCleanup:
         Previously, __del__ only closed sync client, causing async connection leaks.
         """
         llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
-        llm._get_async_client()
-        assert llm._async_client is not None
+        async_client = llm._get_async_client()
+        assert isinstance(async_client, httpx.AsyncClient), \
+            f"Expected httpx.AsyncClient, got {type(async_client)}"
 
         # Trigger garbage collection cleanup
         llm.__del__()

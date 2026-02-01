@@ -70,8 +70,9 @@ def test_async_client_lazy_initialization(ollama_config):
     client = llm._get_async_client()
 
     # Now it should be created
-    assert client is not None
-    assert isinstance(client, httpx.AsyncClient)
+    assert isinstance(client, httpx.AsyncClient), \
+        f"Expected httpx.AsyncClient, got {type(client)}"
+    assert not client.is_closed, "Client should not be closed immediately after creation"
 
     # Getting again should return same instance
     client2 = llm._get_async_client()
@@ -90,11 +91,13 @@ async def test_async_context_manager(ollama_config):
     """Test async context manager properly cleans up resources."""
     async with OllamaLLM(**ollama_config) as llm:
         # Client should exist
-        assert llm is not None
+        assert isinstance(llm, OllamaLLM), \
+            f"Expected OllamaLLM instance, got {type(llm)}"
 
         # Get async client to initialize it
         client = llm._get_async_client()
-        assert client is not None
+        assert isinstance(client, httpx.AsyncClient), \
+            f"Expected httpx.AsyncClient, got {type(client)}"
 
     # After exiting context, client should be closed
     # Note: We can't directly test if client is closed,
@@ -442,8 +445,9 @@ class TestAsyncErrorPaths:
 
         # Track connection pool state
         async_client = llm._get_async_client()
-        assert async_client is not None
-        assert llm._async_client is async_client  # Same instance
+        assert isinstance(async_client, httpx.AsyncClient), \
+            f"Expected httpx.AsyncClient, got {type(async_client)}"
+        assert llm._async_client is async_client, "Should return same client instance (singleton)"
 
         # Mock connection error
         with patch.object(async_client, 'post', new_callable=AsyncMock) as mock_post:
@@ -457,7 +461,8 @@ class TestAsyncErrorPaths:
                     await llm.acomplete("test prompt")
 
         # Verify client still exists (lazy cleanup)
-        assert llm._async_client is not None
+        assert isinstance(llm._async_client, httpx.AsyncClient), \
+            "Client should persist after connection errors (lazy cleanup)"
 
         # Cleanup
         await llm.aclose()
@@ -485,8 +490,10 @@ class TestAsyncErrorPaths:
         # Initialize both clients
         sync_client = llm._get_client()
         async_client = llm._get_async_client()
-        assert sync_client is not None
-        assert async_client is not None
+        assert isinstance(sync_client, httpx.Client), \
+            f"Expected httpx.Client, got {type(sync_client)}"
+        assert isinstance(async_client, httpx.AsyncClient), \
+            f"Expected httpx.AsyncClient, got {type(async_client)}"
 
         # Mock aclose() to fail
         original_aclose = async_client.aclose
@@ -541,7 +548,8 @@ class TestAsyncErrorPaths:
 
         # Verify: Connection pool should not be exhausted
         # Note: httpx.AsyncClient uses connection pooling, we verify client is still functional
-        assert llm._async_client is not None
+        assert isinstance(llm._async_client, httpx.AsyncClient), \
+            "Client should remain functional after concurrent failures"
 
         # Cleanup
         await llm.aclose()
@@ -721,8 +729,9 @@ class TestAsyncErrorPaths:
                     await llm1.acomplete("test prompt")
 
         # Verify llm2 is still functional (independent)
-        assert llm2._async_client is not None
-        assert llm2._closed is False
+        assert isinstance(llm2._async_client, httpx.AsyncClient), \
+            "llm2 should remain functional when llm1 fails (isolation)"
+        assert llm2._closed is False, "llm2 should not be closed when llm1 fails"
 
         # Cleanup
         await llm1.aclose()

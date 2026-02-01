@@ -228,10 +228,14 @@ def test_standard_agent_execute_llm_error(minimal_agent_config):
         response = agent.execute({"input": "Hello"})
 
         # Should return error response
-        assert isinstance(response, AgentResponse)
-        assert response.error is not None
-        assert "LLM call failed" in response.error
-        assert "Connection failed" in response.error
+        assert isinstance(response, AgentResponse), \
+            f"Expected AgentResponse, got {type(response)}"
+        assert response.error is not None, "Error should be set for LLM failures"
+        assert isinstance(response.error, str), "Error should be string message"
+        assert "LLM call failed" in response.error, \
+            f"Error should mention LLM failure, got: {response.error}"
+        assert "Connection failed" in response.error, \
+            f"Error should include root cause, got: {response.error}"
 
 
 def test_standard_agent_execute_max_iterations(minimal_agent_config):
@@ -269,9 +273,13 @@ def test_standard_agent_execute_max_iterations(minimal_agent_config):
         response = agent.execute({"input": "Test"})
 
         # Should stop after max iterations
-        assert isinstance(response, AgentResponse)
-        assert "Max tool calling iterations reached" in response.error or response.error is not None
-        assert len(response.tool_calls) >= 1
+        assert isinstance(response, AgentResponse), \
+            f"Expected AgentResponse, got {type(response)}"
+        assert response.error is not None, "Should have error when max iterations reached"
+        assert "Max tool calling iterations reached" in response.error, \
+            f"Error should mention max iterations, got: {response.error}"
+        assert len(response.tool_calls) >= 1, \
+            f"Should record tool calls made before stopping, got {len(response.tool_calls)}"
 
 
 def test_standard_agent_extract_reasoning(minimal_agent_config):
@@ -557,8 +565,10 @@ def test_tool_loading_with_configuration():
 
         # Verify Calculator was loaded
         calc = agent.tool_registry.get("Calculator")
-        assert calc is not None
-        assert isinstance(calc, Calculator)
+        assert calc is not None, "Calculator should be loaded from tool registry"
+        assert type(calc).__name__ == 'Calculator', \
+            f"Expected Calculator tool, got {type(calc).__name__}"
+        assert hasattr(calc, 'execute'), "Calculator must have execute method"
         # Verify config is set (even if empty)
         assert hasattr(calc, 'config')
         assert isinstance(calc.config, dict)
@@ -612,5 +622,8 @@ def test_tool_loading_with_custom_config():
 
         # Verify Calculator was loaded with custom config
         calc = agent.tool_registry.get("Calculator")
-        assert calc is not None
-        assert calc.config == {"precision": 10}
+        assert calc is not None, "Calculator should be loaded from tool registry"
+        assert type(calc).__name__ == 'Calculator', \
+            f"Expected Calculator tool, got {type(calc).__name__}"
+        assert calc.config == {"precision": 10}, \
+            f"Expected config with precision=10, got {calc.config}"

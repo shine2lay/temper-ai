@@ -17,6 +17,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from threading import Lock
 from src.utils.logging import get_logger
+from src.cache.constants import DEFAULT_CACHE_SIZE, DEFAULT_TTL_SECONDS
 
 logger = get_logger(__name__)
 
@@ -84,7 +85,7 @@ class InMemoryCache(CacheBackend):
     - No external dependencies
     """
 
-    def __init__(self, max_size: int = 1000):
+    def __init__(self, max_size: int = DEFAULT_CACHE_SIZE):
         """
         Initialize in-memory cache.
 
@@ -345,8 +346,8 @@ class LLMCache:
     def __init__(
         self,
         backend: str = "memory",
-        ttl: Optional[int] = 3600,
-        max_size: int = 1000,
+        ttl: Optional[int] = DEFAULT_TTL_SECONDS,
+        max_size: int = DEFAULT_CACHE_SIZE,
         redis_host: str = "localhost",
         redis_port: int = 6379,
         redis_db: int = 0,

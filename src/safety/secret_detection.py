@@ -57,13 +57,22 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
         # IMPROVED: Added upper bounds {20,500} to prevent ReDoS
         # NOTE: These patterns are filtered by entropy (>3.5) to reduce false positives
         "generic_api_key": r"(api[_-]?key|apikey)['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-+/]{20,500})['\"]?",
-        # IMPROVED: Increased minimum from 8 to 12 chars, added upper bound
-        "generic_secret": r"(secret|password|passwd|pwd)['\"]?\s*[:=]\s*['\"]?([^\s]{12,500})['\"]?",
+        # IMPROVED: Allow word characters after keyword (e.g., "SECRET_KEY", "password_hash")
+        # Increased minimum from 8 to 12 chars, added upper bound
+        "generic_secret": r"(secret|password|passwd|pwd)[\w_-]*['\"]?\s*[:=]\s*['\"]?([^\s]{12,500})['\"]?",
     }
 
     # Test/example secrets to allow (case-insensitive matching)
     # IMPROVED: Expanded to reduce false positives from documentation and test code
-    TEST_SECRETS = [
+    #
+    # SECURITY NOTE: These are split into two categories:
+    # 1. KEYWORD indicators (checked as substrings) - e.g., "test", "demo", "placeholder"
+    # 2. PATTERN indicators (checked as exact match) - e.g., "abcdefgh", "12345678"
+    #
+    # This prevents false positives where legitimate secrets happen to contain
+    # common patterns like "abcdefgh" or "12345678" as substrings.
+
+    TEST_SECRET_KEYWORDS = [
         # Original test indicators
         "test",
         "example",
@@ -80,10 +89,14 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
         "mock",
         "stub",
         "fixture",
-        "your_",
-        "_here",
+        "your-",     # Matches "your-api-key-here", "your-secret-here"
+        "your_",     # Matches "your_api_key_here"
+        "-here",     # Matches "api-key-here", "secret-here"
+        "_here",     # Matches "api_key_here"
         "todo",
         "fixme",
+        "-from-",    # Matches "key-from-provider"
+        "_from_",    # Matches "key_from_config"
 
         # Development indicators
         "dev",
@@ -97,8 +110,10 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
         "guest",
         "password",
         "secret",
+    ]
 
-        # Pattern indicators (repeated/sequential characters)
+    # Pattern indicators (exact match only to avoid false positives)
+    TEST_SECRET_PATTERNS = [
         "xxxxxxxx",
         "aaaaaaaa",
         "11111111",
@@ -184,20 +199,39 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
     def _is_test_secret(self, text: str) -> bool:
         """Check if text appears to be a test/example secret.
 
+        Uses two types of matching:
+        1. Keyword matching (substring) - for words like "test", "demo", "example"
+        2. Pattern matching (exact) - for patterns like "abcdefgh", "12345678"
+        3. Function call detection - filters out function calls like "get_secret()"
+
+        This prevents false positives where legitimate secrets happen to contain
+        common patterns as substrings (e.g., "sk_live_...abcdefgh..." is NOT a test secret).
+
         Args:
             text: Text to Check
 
         Returns:
-            True if likely a test secret
+            True if likely a test secret or non-literal value
         """
         if not self.allow_test_secrets:
             return False
 
         text_lower = text.lower()
-        return any(
-            test_word in text_lower
-            for test_word in self.TEST_SECRETS
-        )
+
+        # Check for keyword indicators (substring match)
+        if any(keyword in text_lower for keyword in self.TEST_SECRET_KEYWORDS):
+            return True
+
+        # Check for pattern indicators (exact match only)
+        if text_lower in self.TEST_SECRET_PATTERNS:
+            return True
+
+        # Filter out function calls and method invocations
+        # These are not literal secrets (e.g., "get_secret()", "retrieve_api_key_from_config()")
+        if '(' in text and ')' in text:
+            return True
+
+        return False
 
     def _create_redacted_preview(self, text: str, pattern_name: str) -> str:
         """Create safe preview of detected secret.

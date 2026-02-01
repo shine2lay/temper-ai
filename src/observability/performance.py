@@ -14,6 +14,14 @@ from contextlib import contextmanager
 import logging
 
 from src.observability.datetime_utils import utcnow
+from src.observability.constants import (
+    MAX_LATENCY_SAMPLES,
+    MAX_SLOW_OPERATIONS,
+    DEFAULT_CLEANUP_INTERVAL,
+    DEFAULT_SLOW_THRESHOLD_MS,
+    MS_PER_SECOND,
+    DEFAULT_THRESHOLDS_MS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +32,7 @@ class LatencyMetrics:
 
     operation: str
     samples: List[float] = field(default_factory=list)
-    slow_threshold_ms: float = 1000.0  # Default 1 second
+    slow_threshold_ms: float = DEFAULT_SLOW_THRESHOLD_MS
     last_updated: datetime = field(default_factory=utcnow)
 
     def record(self, latency_ms: float) -> None:
@@ -32,9 +40,9 @@ class LatencyMetrics:
         self.samples.append(latency_ms)
         self.last_updated = utcnow()
 
-        # Keep only recent samples (last 1000) to prevent memory growth
-        if len(self.samples) > 1000:
-            self.samples = self.samples[-1000:]
+        # Keep only recent samples to prevent memory growth
+        if len(self.samples) > MAX_LATENCY_SAMPLES:
+            self.samples = self.samples[-MAX_LATENCY_SAMPLES:]
 
     def get_percentiles(self) -> Dict[str, float]:
         """
@@ -131,24 +139,17 @@ class PerformanceTracker:
         )
 
         # Set default slow thresholds
-        self.default_thresholds = {
-            "stage_execution": 10000.0,  # 10 seconds
-            "llm_call": 5000.0,           # 5 seconds
-            "tool_execution": 3000.0,     # 3 seconds
-            "agent_execution": 30000.0,   # 30 seconds
-            "workflow_execution": 60000.0, # 1 minute
-        }
-
+        self.default_thresholds = DEFAULT_THRESHOLDS_MS.copy()
         if slow_thresholds:
             self.default_thresholds.update(slow_thresholds)
 
         # Track slow operations for diagnostics
         self.slow_operations: List[SlowOperation] = []
-        self.max_slow_ops = 100  # Keep last 100 slow operations
+        self.max_slow_ops = MAX_SLOW_OPERATIONS
 
         # Cleanup tracking to prevent unbounded memory growth
         self._record_count = 0
-        self._cleanup_interval = 1000  # Run cleanup every 1000 records
+        self._cleanup_interval = DEFAULT_CLEANUP_INTERVAL
         self._expiration_hours = 24  # Remove metrics older than 24 hours
 
     @contextmanager
@@ -196,7 +197,7 @@ class PerformanceTracker:
 
         # Initialize metrics for this operation if not exists
         if operation not in self.metrics:
-            threshold = self.default_thresholds.get(operation, 1000.0)
+            threshold = self.default_thresholds.get(operation, DEFAULT_SLOW_THRESHOLD_MS)
             self.metrics[operation] = LatencyMetrics(
                 operation=operation,
                 slow_threshold_ms=threshold

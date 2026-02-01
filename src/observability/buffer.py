@@ -2,7 +2,7 @@
 Observability buffer for batching database operations.
 
 Reduces N+1 query problem by batching LLM calls, tool calls, and metric updates.
-Performance improvement: 200 queries → ~2 queries for 100 LLM calls.
+Performance improvement: Reduces queries significantly through batching.
 """
 import threading
 import time
@@ -11,6 +11,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from collections import defaultdict
 import logging
+
+from src.observability.constants import (
+    DEFAULT_BUFFER_SIZE,
+    MAX_RETRY_ATTEMPTS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,10 +129,10 @@ class ObservabilityBuffer:
 
     def __init__(
         self,
-        flush_size: int = 100,
+        flush_size: int = DEFAULT_BUFFER_SIZE,
         flush_interval: float = 1.0,
         auto_flush: bool = True,
-        max_retries: int = 3,
+        max_retries: int = MAX_RETRY_ATTEMPTS,
         enable_dlq: bool = True
     ):
         """

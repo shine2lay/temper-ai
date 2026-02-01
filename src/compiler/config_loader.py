@@ -7,6 +7,7 @@ Supports environment variable substitution, secret references, and prompt templa
 import os
 import re
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List, Match, cast
 import yaml
@@ -233,8 +234,41 @@ class ConfigLoader:
 
         Raises:
             ConfigNotFoundError: If template not found
-            ConfigValidationError: If path attempts directory traversal or file too large
+            ConfigValidationError: If path attempts directory traversal, contains null bytes,
+                                   contains control characters, or file too large
         """
+        logger = logging.getLogger(__name__)
+
+        # SECURITY FIX: Check for null bytes FIRST (before any path operations)
+        # Prevents null byte injection attacks where attacker provides: "safe.txt\x00../../etc/passwd"
+        if '\x00' in template_path:
+            logger.warning(
+                f"Security violation: Null byte detected in template path",
+                extra={
+                    "template_path": repr(template_path),
+                    "attack_type": "null_byte_injection"
+                }
+            )
+            raise ConfigValidationError(
+                'Invalid template path: null byte detected. '
+                'This may indicate a path traversal attack attempt.'
+            )
+
+        # SECURITY FIX: Check for control characters (0x00-0x1F except newline, carriage return, tab)
+        # Control characters can bypass validation or cause unexpected behavior
+        if any(ord(c) < 32 and c not in '\n\r\t' for c in template_path):
+            logger.warning(
+                f"Security violation: Control characters detected in template path",
+                extra={
+                    "template_path": repr(template_path),
+                    "attack_type": "control_character_injection"
+                }
+            )
+            raise ConfigValidationError(
+                'Invalid template path: control characters detected. '
+                'Only printable characters are allowed in paths.'
+            )
+
         # Resolve full path and validate it's within prompts directory (prevent directory traversal)
         full_path = (self.prompts_dir / template_path).resolve()
 
@@ -242,6 +276,15 @@ class ConfigLoader:
             # Check if path is relative to prompts_dir (Python 3.9+)
             full_path.relative_to(self.prompts_dir.resolve())
         except ValueError:
+            logger.warning(
+                f"Security violation: Path traversal attempt detected",
+                extra={
+                    "template_path": repr(template_path),
+                    "resolved_path": str(full_path),
+                    "prompts_dir": str(self.prompts_dir),
+                    "attack_type": "path_traversal"
+                }
+            )
             raise ConfigValidationError(
                 f"Template path must be within prompts directory: {template_path}"
             )

@@ -383,6 +383,183 @@ Use clear and concise communication."""
         assert result == expected
 
 
+class TestPromptTemplateSecurityValidation:
+    """Test security validation for prompt template loading (path traversal protection)."""
+
+    def test_null_byte_injection_blocked(self, config_loader, temp_config_dir):
+        """Test that null byte injection in template path is blocked."""
+        # Create a valid template file
+        template_path = temp_config_dir / "prompts" / "test.txt"
+        with open(template_path, 'w') as f:
+            f.write("Hello {{name}}")
+
+        # Attempt to load with null byte injection (path traversal attack)
+        malicious_path = "test.txt\x00/../../etc/passwd"
+
+        with pytest.raises(ConfigValidationError, match="null byte"):
+            config_loader.load_prompt_template(malicious_path)
+
+    def test_null_byte_at_start_blocked(self, config_loader):
+        """Test that null byte at start of path is blocked."""
+        malicious_path = "\x00/etc/passwd"
+
+        with pytest.raises(ConfigValidationError, match="null byte"):
+            config_loader.load_prompt_template(malicious_path)
+
+    def test_null_byte_at_end_blocked(self, config_loader):
+        """Test that null byte at end of path is blocked."""
+        malicious_path = "safe.txt\x00"
+
+        with pytest.raises(ConfigValidationError, match="null byte"):
+            config_loader.load_prompt_template(malicious_path)
+
+    def test_multiple_null_bytes_blocked(self, config_loader):
+        """Test that multiple null bytes in path are blocked."""
+        malicious_path = "path\x00with\x00multiple\x00nulls"
+
+        with pytest.raises(ConfigValidationError, match="null byte"):
+            config_loader.load_prompt_template(malicious_path)
+
+    def test_control_character_soh_blocked(self, config_loader):
+        """Test that SOH (Start of Heading) control character is blocked."""
+        malicious_path = "file\x01.txt"
+
+        with pytest.raises(ConfigValidationError, match="control character"):
+            config_loader.load_prompt_template(malicious_path)
+
+    def test_control_character_stx_blocked(self, config_loader):
+        """Test that STX (Start of Text) control character is blocked."""
+        malicious_path = "file\x02.txt"
+
+        with pytest.raises(ConfigValidationError, match="control character"):
+            config_loader.load_prompt_template(malicious_path)
+
+    def test_control_character_escape_blocked(self, config_loader):
+        """Test that ESC (Escape) control character is blocked (ANSI injection)."""
+        malicious_path = "file\x1b.txt"
+
+        with pytest.raises(ConfigValidationError, match="control character"):
+            config_loader.load_prompt_template(malicious_path)
+
+    def test_null_byte_with_path_traversal_blocked(self, config_loader):
+        """Test that null byte combined with path traversal is blocked."""
+        malicious_path = "../../../etc/passwd\x00safe.txt"
+
+        with pytest.raises(ConfigValidationError, match="null byte"):
+            config_loader.load_prompt_template(malicious_path)
+
+    def test_control_char_with_path_traversal_blocked(self, config_loader):
+        """Test that control character combined with path traversal is blocked."""
+        malicious_path = "link\x01/../../../etc/shadow"
+
+        with pytest.raises(ConfigValidationError, match="control character"):
+            config_loader.load_prompt_template(malicious_path)
+
+    def test_security_violation_null_byte_logged(self, config_loader, caplog):
+        """Test that null byte security violations are logged."""
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        malicious_path = "test\x00file.txt"
+
+        with pytest.raises(ConfigValidationError):
+            config_loader.load_prompt_template(malicious_path)
+
+        # Verify security event was logged at WARNING level
+        assert "Null byte detected" in caplog.text
+        # Check that the log level is WARNING
+        assert any(record.levelname == "WARNING" for record in caplog.records)
+
+    def test_security_violation_control_char_logged(self, config_loader, caplog):
+        """Test that control character security violations are logged."""
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        malicious_path = "test\x01file.txt"
+
+        with pytest.raises(ConfigValidationError):
+            config_loader.load_prompt_template(malicious_path)
+
+        # Verify security event was logged at WARNING level
+        assert "Control characters detected" in caplog.text
+        # Check that the log level is WARNING
+        assert any(record.levelname == "WARNING" for record in caplog.records)
+
+    def test_legitimate_paths_still_work(self, config_loader, temp_config_dir):
+        """Test that legitimate paths are not blocked by new validation."""
+        # Create test templates
+        simple_path = temp_config_dir / "prompts" / "simple.txt"
+        with open(simple_path, 'w') as f:
+            f.write("Hello")
+
+        spaces_path = temp_config_dir / "prompts" / "with spaces.txt"
+        with open(spaces_path, 'w') as f:
+            f.write("World")
+
+        # Should work
+        assert config_loader.load_prompt_template("simple.txt") == "Hello"
+        assert config_loader.load_prompt_template("with spaces.txt") == "World"
+
+    def test_unicode_paths_work(self, config_loader, temp_config_dir):
+        """Test that legitimate Unicode paths work."""
+        unicode_file = temp_config_dir / "prompts" / "测试文件.txt"
+        with open(unicode_file, 'w', encoding='utf-8') as f:
+            f.write("Unicode content")
+
+        result = config_loader.load_prompt_template("测试文件.txt")
+        assert result == "Unicode content"
+
+    def test_path_traversal_still_blocked(self, config_loader, temp_config_dir):
+        """Test that existing path traversal check still works."""
+        # Create a file outside prompts_dir
+        outside_path = temp_config_dir / "outside.txt"
+        with open(outside_path, 'w') as f:
+            f.write("Outside content")
+
+        # Attempt to load with path traversal
+        with pytest.raises(ConfigValidationError, match="within prompts directory"):
+            config_loader.load_prompt_template("../outside.txt")
+
+    def test_path_traversal_logged(self, config_loader, temp_config_dir, caplog):
+        """Test that path traversal attempts are logged."""
+        import logging
+        caplog.set_level(logging.WARNING)
+
+        # Create a file outside prompts_dir
+        outside_path = temp_config_dir / "outside.txt"
+        with open(outside_path, 'w') as f:
+            f.write("Outside content")
+
+        # Attempt to load with path traversal
+        with pytest.raises(ConfigValidationError):
+            config_loader.load_prompt_template("../outside.txt")
+
+        # Verify security event was logged at WARNING level
+        assert "Path traversal attempt detected" in caplog.text
+        # Check that the log level is WARNING
+        assert any(record.levelname == "WARNING" for record in caplog.records)
+
+    def test_empty_path_handled(self, config_loader):
+        """Test that empty path is handled gracefully."""
+        # Empty path resolves to prompts directory itself, which is a directory not a file
+        with pytest.raises((ConfigNotFoundError, IsADirectoryError)):
+            config_loader.load_prompt_template("")
+
+    def test_all_control_characters_blocked(self, config_loader):
+        """Test that all control characters (0x00-0x1F) except safe ones are blocked."""
+        # Test all control characters except \n (0x0A), \r (0x0D), \t (0x09)
+        for i in range(32):  # 0x00 to 0x1F
+            char = chr(i)
+            if char in '\n\r\t':
+                # Skip safe whitespace characters
+                continue
+
+            malicious_path = f"file{char}.txt"
+
+            with pytest.raises(ConfigValidationError, match="control character|null byte"):
+                config_loader.load_prompt_template(malicious_path)
+
+
 class TestCaching:
     """Test configuration caching functionality."""
 

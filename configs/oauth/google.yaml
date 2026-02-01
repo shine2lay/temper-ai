@@ -1,0 +1,58 @@
+# Google OAuth Provider Configuration
+# SECURITY: Uses ${env:VAR} references (resolved at runtime by config_loader.py)
+# Never hardcode credentials in this file - always use environment variable references
+
+provider: google
+client_id: ${env:GOOGLE_CLIENT_ID}
+client_secret: ${env:GOOGLE_CLIENT_SECRET}
+
+# Callback URL whitelist (validates redirect_uri parameter)
+# SECURITY: Only URLs in this list can receive OAuth callbacks (prevents open redirect attacks)
+callback_urls:
+  - ${env:GOOGLE_OAUTH_CALLBACK_URL}
+  - ${env:GOOGLE_OAUTH_CALLBACK_URL_DEV}
+
+# OAuth scopes requested from Google
+# See: https://developers.google.com/identity/protocols/oauth2/scopes
+scopes: ${env:GOOGLE_OAUTH_SCOPES:openid,email,profile}
+
+# Google OAuth endpoints
+# Source: https://developers.google.com/identity/protocols/oauth2/web-server
+auth_uri: https://accounts.google.com/o/oauth2/v2/auth
+token_uri: https://oauth2.googleapis.com/token
+user_info_uri: https://www.googleapis.com/oauth2/v2/userinfo
+revoke_uri: https://oauth2.googleapis.com/revoke
+
+# Security settings
+security:
+  # CSRF protection: State parameter prevents cross-site request forgery
+  require_state: true
+  state_expiry_seconds: 600  # 10 minutes
+
+  # Token encryption: Protects tokens at rest using Fernet (AES-128-CBC + HMAC)
+  encrypt_tokens_at_rest: true
+  token_encryption_key: ${env:OAUTH_TOKEN_ENCRYPTION_KEY}
+
+  # Rate limiting: Prevents brute force attacks
+  max_auth_attempts_per_ip: 5
+  rate_limit_window_seconds: 300  # 5 minutes
+
+  # HTTPS enforcement: Require HTTPS for callback URLs in production
+  require_https_callback: true  # Disabled for localhost in development
+
+  # Token refresh: Automatically refresh access tokens before expiry
+  auto_refresh_tokens: true
+  refresh_buffer_seconds: 300  # Refresh 5 minutes before expiry
+
+# Additional provider-specific settings
+provider_options:
+  # Access type: 'offline' to receive refresh token
+  # See: https://developers.google.com/identity/protocols/oauth2/web-server#offline
+  access_type: offline
+
+  # Prompt: 'consent' forces consent screen (ensures refresh token)
+  # Options: none, consent, select_account
+  prompt: consent
+
+  # Include granted scopes in token response
+  include_granted_scopes: true

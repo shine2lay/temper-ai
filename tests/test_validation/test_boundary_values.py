@@ -39,7 +39,7 @@ class TestAgentCountBoundaries:
         (10, True),  # Maximum
         (11, False), # Above maximum
     ])
-    def test_agent_count_validation(self, agent_count, should_accept):
+    def test_agent_count_boundaries(self, agent_count, should_accept):
         """Test agent count boundaries in consensus strategy."""
         if agent_count <= 0:
             # Should raise error when creating empty list
@@ -101,7 +101,7 @@ class TestConfidenceScoreBoundaries:
         (1.0, True),    # Maximum
         (1.1, False),   # Above maximum
     ])
-    def test_confidence_score_validation(self, confidence, should_accept):
+    def test_confidence_score_boundaries(self, confidence, should_accept):
         """Test confidence score boundaries in AgentOutput."""
         if should_accept:
             # Should succeed
@@ -188,7 +188,7 @@ class TestDebateRoundBoundaries:
         (10, True),  # Maximum
         (11, False), # Above maximum
     ])
-    def test_debate_round_validation(self, max_rounds, should_accept):
+    def test_debate_round_boundaries(self, max_rounds, should_accept):
         """Test debate round boundaries."""
         if should_accept:
             # Valid round counts should be positive
@@ -210,7 +210,7 @@ class TestTemperatureBoundaries:
         (2.0, True),    # Maximum
         (2.1, False),   # Above maximum
     ])
-    def test_temperature_validation(self, temperature, should_accept):
+    def test_temperature_boundaries(self, temperature, should_accept):
         """Test temperature boundaries."""
         if should_accept:
             assert 0.0 <= temperature <= 2.0
@@ -228,7 +228,7 @@ class TestFileSizeBoundaries:
         (10485760, True),  # 10 MB (at limit)
         (10485761, False), # Above limit
     ])
-    def test_file_size_validation(self, file_size, should_accept):
+    def test_file_size_boundaries(self, file_size, should_accept):
         """Test file size boundaries."""
         MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
@@ -248,7 +248,7 @@ class TestMaxTokensBoundaries:
         (100000, True),  # Maximum
         (100001, False), # Above maximum
     ])
-    def test_max_tokens_validation(self, max_tokens, should_accept):
+    def test_max_tokens_boundaries(self, max_tokens, should_accept):
         """Test max_tokens boundaries."""
         MAX_ALLOWED = 100000
 
@@ -268,7 +268,7 @@ class TestTimeoutBoundaries:
         (600, True),  # Maximum (10 minutes)
         (601, False), # Above maximum
     ])
-    def test_timeout_validation(self, timeout, should_accept):
+    def test_timeout_boundaries(self, timeout, should_accept):
         """Test timeout boundaries."""
         MAX_TIMEOUT = 600  # 10 minutes
 
@@ -289,7 +289,7 @@ class TestPriorityBoundaries:
         (5, True),   # Maximum
         (6, False),  # Above maximum
     ])
-    def test_priority_validation(self, priority, should_accept):
+    def test_priority_boundaries(self, priority, should_accept):
         """Test priority boundaries."""
         if should_accept:
             assert 0 <= priority <= 5
@@ -307,7 +307,7 @@ class TestRateLimitBoundaries:
         (1000, True),  # Maximum
         (1001, False), # Above maximum
     ])
-    def test_rate_limit_validation(self, rate_limit, should_accept):
+    def test_rate_limit_boundaries(self, rate_limit, should_accept):
         """Test rate limit boundaries."""
         MAX_RATE = 1000
 

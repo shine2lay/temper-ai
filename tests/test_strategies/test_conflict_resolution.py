@@ -19,7 +19,7 @@ def test_resolution_strategy_is_abstract():
         ConflictResolutionStrategy()
 
 
-def test_resolution_result_validation():
+def test_resolution_result_boundaries():
     """Test ResolutionResult validation."""
     # Valid result
     result = ResolutionResult(

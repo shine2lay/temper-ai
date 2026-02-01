@@ -45,7 +45,7 @@ class TestSchemaValidation:
         )
         assert config.agent.name == "test_agent"
 
-    def test_config_validation_with_inline_prompt(self):
+    def test_config_inline_prompt(self):
         """
         Regression test for inline prompt validation.
 

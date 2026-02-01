@@ -368,7 +368,7 @@ class TestAgentMerit:
         assert merit.recent_performance == 0.9
         assert merit.expertise_level == "expert"
 
-    def test_agent_merit_validation(self):
+    def test_agent_merit_boundaries(self):
         """Test AgentMerit validates score ranges."""
         # Out of range domain_merit
         with pytest.raises(ValueError, match="domain_merit must be between 0 and 1"):
@@ -451,7 +451,7 @@ class TestResolution:
         assert resolution.method == "merit_weighted_auto"
         assert "expert" in resolution.winning_agents
 
-    def test_resolution_confidence_validation(self):
+    def test_resolution_confidence_boundaries(self):
         """Test Resolution validates confidence range."""
         # Out of range confidence
         with pytest.raises(ValueError, match="Confidence must be between 0 and 1"):

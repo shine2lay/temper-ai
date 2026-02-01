@@ -77,7 +77,7 @@ class TestAgentOutput:
         assert output.confidence == 0.9
         assert output.metadata == {"tokens": 100}
 
-    def test_agent_output_confidence_validation_too_high(self):
+    def test_agent_output_confidence_too_high(self):
         """Test AgentOutput rejects confidence > 1."""
         with pytest.raises(ValueError, match="Confidence must be between 0 and 1"):
             AgentOutput(
@@ -88,7 +88,7 @@ class TestAgentOutput:
                 metadata={}
             )
 
-    def test_agent_output_confidence_validation_too_low(self):
+    def test_agent_output_confidence_too_low(self):
         """Test AgentOutput rejects confidence < 0."""
         with pytest.raises(ValueError, match="Confidence must be between 0 and 1"):
             AgentOutput(
@@ -148,7 +148,7 @@ class TestConflict:
         assert conflict.disagreement_score == 0.67
         assert conflict.context == {"num_rounds": 3}
 
-    def test_conflict_disagreement_score_validation_too_high(self):
+    def test_conflict_disagreement_score_too_high(self):
         """Test Conflict rejects disagreement_score > 1."""
         with pytest.raises(ValueError, match="disagreement_score must be between 0 and 1"):
             Conflict(
@@ -158,7 +158,7 @@ class TestConflict:
                 context={}
             )
 
-    def test_conflict_disagreement_score_validation_too_low(self):
+    def test_conflict_disagreement_score_too_low(self):
         """Test Conflict rejects disagreement_score < 0."""
         with pytest.raises(ValueError, match="disagreement_score must be between 0 and 1"):
             Conflict(
@@ -177,7 +177,7 @@ class TestConflict:
         )
         assert conflict.context == {}
 
-    def test_conflict_empty_agents_validation(self):
+    def test_conflict_empty_agents(self):
         """Test Conflict rejects empty agents list."""
         with pytest.raises(ValueError, match="Conflict must have at least one agent"):
             Conflict(
@@ -187,7 +187,7 @@ class TestConflict:
                 context={}
             )
 
-    def test_conflict_empty_decisions_validation(self):
+    def test_conflict_empty_decisions(self):
         """Test Conflict rejects empty decisions list."""
         with pytest.raises(ValueError, match="Conflict must have at least one decision"):
             Conflict(
@@ -221,7 +221,7 @@ class TestSynthesisResult:
         assert result.reasoning == "Majority voted for Option A"
         assert result.metadata == {"rounds": 1}
 
-    def test_synthesis_result_confidence_validation(self):
+    def test_synthesis_result_confidence_boundaries(self):
         """Test SynthesisResult validates confidence score."""
         with pytest.raises(ValueError, match="Confidence must be between 0 and 1"):
             SynthesisResult(

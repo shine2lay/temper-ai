@@ -6,14 +6,18 @@ Handles client connections and request processing.
 
 import hashlib
 import json
+import logging
 import os
 import socket
 import threading
 from pathlib import Path
 from typing import Optional
 
+from .auth import TokenManager, AuthenticationLayer
 from .operations import OperationHandler
 from .protocol import Request, Response, ParseError, InvalidRequest
+
+logger = logging.getLogger(__name__)
 
 
 class CoordinationServer:
@@ -37,6 +41,13 @@ class CoordinationServer:
         self.socket: Optional[socket.socket] = None
         self.running = False
         self.threads = []
+
+        # Initialize authentication
+        coord_dir = Path(project_root) / '.claude-coord'
+        self.token_manager = TokenManager(coord_dir)
+        auth_token = self.token_manager.load_or_generate()
+        self.auth_layer = AuthenticationLayer(auth_token)
+        logger.info("Authentication initialized")
 
     def start(self):
         """Start the server."""
@@ -142,6 +153,19 @@ class CoordinationServer:
                     "invalid_request",
                     "INVALID_REQUEST",
                     str(e)
+                )
+                client_socket.sendall(response.to_json().encode('utf-8'))
+                return
+
+            # Verify authentication
+            request_dict = json.loads(data.decode('utf-8'))
+            auth_error = self.auth_layer.verify_request(request_dict)
+            if auth_error:
+                response = Response.create_error(
+                    request.id,
+                    auth_error['code'],
+                    auth_error['message'],
+                    data=auth_error.get('data')
                 )
                 client_socket.sendall(response.to_json().encode('utf-8'))
                 return

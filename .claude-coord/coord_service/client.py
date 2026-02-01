@@ -9,8 +9,10 @@ import json
 import os
 import socket
 import sys
+from pathlib import Path
 from typing import Any, Dict
 
+from .auth import TokenManager
 from .protocol import Request, Response
 
 
@@ -30,6 +32,17 @@ class CoordinationClient:
         # Generate socket path
         project_hash = hashlib.sha256(self.project_root.encode()).hexdigest()[:8]
         self.socket_path = f"/tmp/coord-{project_hash}.sock"
+
+        # Load authentication token
+        coord_dir = Path(self.project_root) / '.claude-coord'
+        self.token_manager = TokenManager(coord_dir)
+        try:
+            self.auth_token = self.token_manager.load_or_generate()
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to load authentication token: {e}\n"
+                "Ensure coordination daemon is running."
+            )
 
     def call(self, method: str, params: Dict[str, Any] = None) -> Any:
         """Call a daemon method.
@@ -58,8 +71,12 @@ class CoordinationClient:
             raise RuntimeError("Connection timeout. Is daemon hung?")
 
         try:
-            # Send request
-            sock.sendall(request.to_json().encode('utf-8'))
+            # Send request with authentication
+            request_dict = json.loads(request.to_json())
+            request_dict['auth_token'] = self.auth_token
+            request_json = json.dumps(request_dict)
+
+            sock.sendall(request_json.encode('utf-8'))
 
             # Receive response
             data = b""
@@ -73,8 +90,21 @@ class CoordinationClient:
             response = Response.from_json(data.decode('utf-8'))
 
             if response.error:
+                error_code = response.error.get('code', '')
                 error_msg = response.error['message']
                 error_data = response.error.get('data', {})
+
+                # Handle authentication errors with token reload
+                if error_code == 'AUTH_INVALID':
+                    # Server was restarted with new token - reload and retry once
+                    try:
+                        self.auth_token = self.token_manager.load_or_generate()
+                        # Retry the request with new token
+                        return self.call(method, params)
+                    except Exception as reload_error:
+                        raise RuntimeError(
+                            f"{error_msg}\nFailed to reload token: {reload_error}"
+                        )
 
                 # Format validation errors nicely
                 if 'validation_errors' in error_data:

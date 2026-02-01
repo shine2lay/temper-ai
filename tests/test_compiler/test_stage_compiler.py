@@ -8,6 +8,10 @@ from src.compiler.stage_compiler import StageCompiler
 from src.compiler.state import WorkflowState
 from src.compiler.state_manager import StateManager
 from src.compiler.node_builder import NodeBuilder
+from tests.fixtures.realistic_data import (
+    create_realistic_workflow_config,
+    REALISTIC_COMPLEX_METADATA
+)
 
 
 class TestStageCompilerInitialization:
@@ -67,7 +71,7 @@ class TestCompileStages:
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research"]
-        workflow_config = {}
+        workflow_config = create_realistic_workflow_config("test_workflow", 1)
 
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
@@ -85,7 +89,7 @@ class TestCompileStages:
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis", "synthesis"]
-        workflow_config = {"workflow": {}}
+        workflow_config = create_realistic_workflow_config("multi_stage_workflow", 3)
 
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
@@ -135,7 +139,7 @@ class TestCompileStages:
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research"]
-        workflow_config = {}
+        workflow_config = create_realistic_workflow_config("single_stage_workflow", 1, include_metadata=False)
 
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
@@ -149,7 +153,7 @@ class TestCompileStages:
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis", "synthesis", "recommendation"]
-        workflow_config = {}
+        workflow_config = create_realistic_workflow_config("four_stage_workflow", 4)
 
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
@@ -176,7 +180,7 @@ class TestSequentialEdges:
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis"]
-        workflow_config = {}
+        workflow_config = create_realistic_workflow_config("edge_test_workflow", 2, include_metadata=False)
 
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
@@ -208,7 +212,7 @@ class TestSequentialEdges:
 
         # Test with multiple stages
         stage_names = ["stage1", "stage2", "stage3", "stage4"]
-        workflow_config = {}
+        workflow_config = create_realistic_workflow_config("multi_edge_workflow", 4, include_metadata=False)
 
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
@@ -253,7 +257,7 @@ class TestCompileParallelStages:
         node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis"]
-        workflow_config = {}
+        workflow_config = create_realistic_workflow_config("parallel_workflow", 2, include_metadata=False)
 
         # Should not raise, should delegate to compile_stages
         graph = compiler.compile_parallel_stages(stage_names, workflow_config)
@@ -274,7 +278,7 @@ class TestCompileConditionalStages:
         node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis"]
-        workflow_config = {}
+        workflow_config = create_realistic_workflow_config("conditional_workflow", 2, include_metadata=False)
         conditions = {"research": "state.quality > 0.8"}
 
         # Should not raise, should delegate to compile_stages
@@ -316,7 +320,7 @@ class TestIntegrationWithRealGraph:
 
         with patch.object(node_builder, 'create_stage_node', return_value=mock_stage_node):
             stage_names = ["test_stage"]
-            workflow_config = {}
+            workflow_config = create_realistic_workflow_config("integration_test", 1, include_metadata=False)
 
             graph = compiler.compile_stages(stage_names, workflow_config)
 
@@ -366,7 +370,7 @@ class TestIntegrationWithRealGraph:
 
         with patch.object(node_builder, 'create_stage_node', side_effect=create_stage_node_tracker):
             stage_names = ["research", "analysis", "synthesis"]
-            workflow_config = {}
+            workflow_config = create_realistic_workflow_config("sequential_flow_test", 3)
 
             graph = compiler.compile_stages(stage_names, workflow_config)
 

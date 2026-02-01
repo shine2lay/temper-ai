@@ -58,6 +58,12 @@ from src.compiler.schemas import (
     InferenceConfig,
     ErrorHandlingConfig,
 )
+from tests.fixtures.realistic_data import (
+    REALISTIC_RESEARCH_WORKFLOW_AGENTS,
+    REALISTIC_CODE_WORKFLOW_AGENTS,
+    REALISTIC_MULTI_AGENT_TEAM,
+    create_realistic_workflow_config
+)
 
 # ============================================================================
 # Performance Budgets (seconds)
@@ -242,7 +248,7 @@ def minimal_agent_config():
                 temperature=0.7,
                 max_tokens=2048,
             ),
-            tools=[],
+            tools=["calculator", "web_search", "document_reader"],
             error_handling=ErrorHandlingConfig(
                 retry_strategy="ExponentialBackoff",
                 fallback="GracefulDegradation",
@@ -271,7 +277,7 @@ def test_compiler_simple_workflow(simple_workflow_config, benchmark):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader
 
@@ -292,7 +298,7 @@ def test_compiler_medium_workflow(medium_workflow_config, benchmark):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader
 
@@ -312,7 +318,7 @@ def test_compiler_large_workflow(large_workflow_config, benchmark):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader
 
@@ -333,7 +339,7 @@ def test_compiler_complex_workflow(complex_workflow_config, benchmark):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader
 
@@ -385,7 +391,7 @@ def test_compiler_schema_validation(benchmark):
                     model="llama2",
                     base_url="http://localhost:11434"
                 ),
-                tools=[]
+                tools=["code_executor", "test_runner", "linter"]
             )
         )
 
@@ -469,7 +475,7 @@ def test_compiler_sequential_stage(simple_workflow_config, benchmark):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_stage_config.stage.collaboration.strategy = "sequential"
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader
@@ -488,7 +494,7 @@ def test_compiler_parallel_stage(simple_workflow_config, benchmark):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_stage_config.stage.collaboration.strategy = "parallel"
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader
@@ -1556,7 +1562,7 @@ def test_e2e_simple_m2_workflow(simple_workflow_config, benchmark):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_stage_config.stage.collaboration.strategy = "sequential"
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader
@@ -1612,7 +1618,7 @@ def test_e2e_workflow_with_checkpointing(simple_workflow_config, benchmark):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader
 
@@ -1677,7 +1683,7 @@ def test_e2e_workflow_memory_baseline(simple_workflow_config):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader
 
@@ -1708,7 +1714,7 @@ def test_e2e_adaptive_workflow_execution(simple_workflow_config, benchmark):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
-        mock_stage_config.stage.agents = []
+        mock_stage_config.stage.agents = REALISTIC_RESEARCH_WORKFLOW_AGENTS
         mock_stage_config.stage.collaboration.strategy = "adaptive"
         mock_loader.load_stage.return_value = mock_stage_config
         compiler.config_loader = mock_loader

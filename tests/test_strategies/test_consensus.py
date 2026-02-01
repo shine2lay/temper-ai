@@ -13,6 +13,31 @@ This test module verifies:
 import pytest
 from src.strategies.consensus import ConsensusStrategy
 from src.strategies.base import AgentOutput, SynthesisResult
+from tests.fixtures.realistic_data import (
+    REALISTIC_AGENT_OUTPUTS_UNANIMOUS,
+    REALISTIC_AGENT_OUTPUTS_MAJORITY,
+    REALISTIC_AGENT_OUTPUTS_SPLIT
+)
+
+
+# Realistic metadata for agent outputs (replacing empty dicts)
+REALISTIC_METADATA_RESEARCH = {
+    "sources": 12,
+    "confidence_factors": ["literature_review", "expert_consensus"],
+    "evidence_quality": "high"
+}
+
+REALISTIC_METADATA_ANALYSIS = {
+    "sample_size": 5000,
+    "statistical_significance": 0.01,
+    "method": "quantitative_analysis"
+}
+
+REALISTIC_METADATA_SYNTHESIS = {
+    "supporting_evidence": "strong",
+    "risk_level": "low",
+    "implementation_difficulty": "moderate"
+}
 
 
 class TestConsensusStrategy:
@@ -22,9 +47,9 @@ class TestConsensusStrategy:
         """Test unanimous decision (all agents agree)."""
         strategy = ConsensusStrategy()
         outputs = [
-            AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
-            AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
-            AgentOutput("agent3", "Option A", "reason3", 0.85, {})
+            AgentOutput("agent1", "Option A", "reason1", 0.9, REALISTIC_METADATA_RESEARCH),
+            AgentOutput("agent2", "Option A", "reason2", 0.8, REALISTIC_METADATA_ANALYSIS),
+            AgentOutput("agent3", "Option A", "reason3", 0.85, REALISTIC_METADATA_SYNTHESIS)
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -43,9 +68,9 @@ class TestConsensusStrategy:
         """Test majority decision (2/3 agents agree)."""
         strategy = ConsensusStrategy()
         outputs = [
-            AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
-            AgentOutput("agent2", "Option A", "reason2", 0.8, {}),
-            AgentOutput("agent3", "Option B", "reason3", 0.7, {})
+            AgentOutput("agent1", "Option A", "reason1", 0.9, REALISTIC_METADATA_RESEARCH),
+            AgentOutput("agent2", "Option A", "reason2", 0.8, REALISTIC_METADATA_ANALYSIS),
+            AgentOutput("agent3", "Option B", "reason3", 0.7, REALISTIC_METADATA_SYNTHESIS)
         ]
 
         result = strategy.synthesize(outputs, {})
@@ -64,8 +89,8 @@ class TestConsensusStrategy:
         """Test tie-breaking using confidence."""
         strategy = ConsensusStrategy()
         outputs = [
-            AgentOutput("agent1", "Option A", "reason1", 0.9, {}),
-            AgentOutput("agent2", "Option B", "reason2", 0.7, {})
+            AgentOutput("agent1", "Option A", "reason1", 0.9, REALISTIC_METADATA_RESEARCH),
+            AgentOutput("agent2", "Option B", "reason2", 0.7, REALISTIC_METADATA_ANALYSIS)
         ]
 
         result = strategy.synthesize(outputs, {"tie_breaker": "confidence"})

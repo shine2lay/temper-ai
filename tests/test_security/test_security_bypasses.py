@@ -146,24 +146,23 @@ class TestPathTraversalEncodingBypasses:
 
     @pytest.mark.parametrize("name,attack_path", UNICODE_VULNERABILITIES)
     def test_unicode_slash_vulnerability(self, file_access_policy, name, attack_path):
-        """VULNERABILITY: Unicode division slash bypasses /etc forbidden directory check.
+        """FIXED: Unicode division slash now blocked by Unicode normalization.
 
-        /etc\u2215passwd uses U+2215 instead of / so it doesn't start with "/etc"
-        literally, bypassing the forbidden directory check. CRITICAL vulnerability.
+        /etc\u2215passwd is normalized to /etc/passwd which is then
+        blocked by forbidden file check. CRITICAL vulnerability was fixed
+        in test-crit-unicode-norm-01.
         """
         result = file_access_policy.validate(
             action={"path": attack_path},
             context={}
         )
 
-        if result.valid:
-            pytest.skip(
-                f"CRITICAL VULNERABILITY: {name} bypasses forbidden directory checks. "
-                "TODO: Add Unicode normalization (NFKC) before forbidden directory/file checks"
-            )
-        else:
-            # If this starts failing, the vulnerability was fixed!
-            assert not result.valid, f"Vulnerability {name} was fixed!"
+        # Should now be blocked after Unicode normalization fix
+        assert not result.valid, f"Unicode bypass {name} should be blocked after normalization"
+        assert any(
+            "forbidden" in v.message.lower() or "/etc" in v.message.lower() or "passwd" in v.message.lower()
+            for v in result.violations
+        ), f"Expected forbidden file/directory violation for {name}"
 
     NULL_BYTE_BYPASSES = [
         ("null_at_end", "/etc/passwd\x00.txt"),
@@ -571,12 +570,14 @@ class TestSecurityGaps:
         pass
 
     def test_unicode_normalization_gap(self):
-        """Document: Unicode normalization bypasses are not detected."""
-        pytest.skip(
-            "SECURITY GAP: FileAccessPolicy does not normalize Unicode. "
-            "Bypasses using U+2215 (division slash) or U+00B7 (middle dot) are not detected. "
-            "RECOMMENDATION: Add Unicode normalization (NFKC) before path checks"
-        )
+        """FIXED: Unicode normalization bypasses now detected.
+
+        FileAccessPolicy now normalizes Unicode using NFKC in _normalize_path()
+        before validation. Bypasses using U+2215 (division slash) or fullwidth
+        characters are properly detected. Fixed in test-crit-unicode-norm-01.
+        """
+        # This gap has been fixed - no longer skip
+        pass
 
     def test_sql_injection_gap(self):
         """Document: SQL injection detection is not implemented."""

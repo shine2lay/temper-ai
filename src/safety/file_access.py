@@ -11,6 +11,7 @@ Supports both allowlist (explicit permissions) and denylist (explicit denials) m
 """
 import os
 import re
+import unicodedata
 import urllib.parse
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Set
@@ -485,16 +486,85 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             f"Path may contain deeply nested encoding: {path[:100]}"
         )
 
+    def _normalize_unicode(self, path: str) -> str:
+        """Normalize Unicode to prevent bypass attacks.
+
+        SECURITY FIX (test-crit-unicode-norm-01): Prevent Unicode bypass attacks.
+
+        Uses NFKC normalization plus manual replacement of dangerous lookalikes that
+        NFKC doesn't handle (U+2215, U+2044, etc.).
+
+        Args:
+            path: Path to normalize
+
+        Returns:
+            Normalized path with dangerous Unicode converted to ASCII
+
+        Examples:
+            >>> _normalize_unicode('/etc\u2215passwd')
+            '/etc/passwd'
+            >>> _normalize_unicode('ｆｉｌｅ.ｔｘｔ')
+            'file.txt'
+            >>> _normalize_unicode('/et\u200bc/passwd')  # Zero-width space
+            '/etc/passwd'
+        """
+        # Strip BOM (Byte Order Mark) if present at start
+        if path and path[0] == '\ufeff':
+            path = path[1:]
+
+        # Remove zero-width characters (often used in obfuscation)
+        # These are invisible and can hide malicious patterns
+        zero_width_chars = [
+            '\u200b',  # ZERO WIDTH SPACE
+            '\u200c',  # ZERO WIDTH NON-JOINER
+            '\u200d',  # ZERO WIDTH JOINER
+            '\ufeff',  # ZERO WIDTH NO-BREAK SPACE (BOM)
+            '\u2060',  # WORD JOINER
+        ]
+        for char in zero_width_chars:
+            path = path.replace(char, '')
+
+        # CRITICAL: Manually replace dangerous Unicode lookalikes that NFKC doesn't normalize
+        # These characters are NOT in NFKC compatibility decomposition table
+        dangerous_lookalikes = {
+            '\u2215': '/',  # DIVISION SLASH → SOLIDUS
+            '\u2044': '/',  # FRACTION SLASH → SOLIDUS
+            '\u29f8': '/',  # BIG SOLIDUS → SOLIDUS
+            '\u2024': '.',  # ONE DOT LEADER → PERIOD
+            '\u2025': '..',  # TWO DOT LEADER → TWO PERIODS
+            '\u2026': '...',  # HORIZONTAL ELLIPSIS → THREE PERIODS
+            '\u00b7': '.',  # MIDDLE DOT → PERIOD
+            '\u2027': '.',  # HYPHENATION POINT → PERIOD
+            '\u0338': '',  # COMBINING LONG SOLIDUS OVERLAY → remove
+        }
+        for dangerous, safe in dangerous_lookalikes.items():
+            path = path.replace(dangerous, safe)
+
+        # Apply NFKC normalization
+        # NFKC handles fullwidth characters and some compatibility equivalents
+        # Example: ＡＢＣ → ABC, ＿ → _, ／ → /
+        try:
+            normalized = unicodedata.normalize('NFKC', path)
+        except Exception:
+            # If normalization fails (invalid Unicode), return current state
+            # Better to potentially reject than to crash
+            return path
+
+        return normalized
+
     def _normalize_path(self, path: str) -> str:
         """Normalize path for comparison.
 
-        SECURITY: Decodes URL encoding BEFORE normalization to prevent bypasses.
+        SECURITY: Applies multiple normalization layers to prevent bypasses:
+        1. URL decoding (test-crit-url-decode-01)
+        2. Unicode normalization (test-crit-unicode-norm-01)
+        3. Path normalization
 
         Args:
             path: File path
 
         Returns:
-            Normalized path
+            Fully normalized path
         """
         # SECURITY FIX (test-crit-url-decode-01): Decode URL encoding FIRST
         # This prevents bypasses like /etc/%2e%2e/passwd or /etc%2fpasswd
@@ -505,9 +575,14 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             # Return original path which will likely fail validation
             decoded = path
 
+        # SECURITY FIX (test-crit-unicode-norm-01): Normalize Unicode SECOND
+        # This prevents bypasses like /etc\u2215passwd (unicode slash)
+        # MUST happen after URL decoding (e.g., %2F → / then \u2215 → /)
+        unicode_normalized = self._normalize_unicode(decoded)
+
         # Convert to Path object for normalization
         try:
-            p = Path(decoded)
+            p = Path(unicode_normalized)
             # Resolve . and .. components (but not symlinks)
             normalized = str(p)
 
@@ -518,7 +593,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             return normalized
         except Exception:
             # If path is invalid, return as-is for error reporting
-            return decoded if self.case_sensitive else decoded.lower()
+            return unicode_normalized if self.case_sensitive else unicode_normalized.lower()
 
     def _has_parent_traversal(self, path: str) -> bool:
         """Check if path contains parent directory traversal.

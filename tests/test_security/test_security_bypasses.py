@@ -96,24 +96,23 @@ class TestPathTraversalEncodingBypasses:
 
     @pytest.mark.parametrize("name,attack_path", URL_ENCODED_VULNERABILITIES)
     def test_url_encoded_slash_vulnerability(self, file_access_policy, name, attack_path):
-        """VULNERABILITY: URL-encoded slashes bypass /etc forbidden directory check.
+        """FIXED: URL-encoded slashes now blocked by URL decoding.
 
-        /etc%2f%2e%2e%2fpasswd doesn't start with literal "/etc" so it bypasses
-        the forbidden directory check. This is a CRITICAL security vulnerability.
+        /etc%2f%2e%2e%2fpasswd is decoded to /etc/../passwd which is then
+        blocked by forbidden directory check. CRITICAL vulnerability was fixed
+        in test-crit-url-decode-01.
         """
         result = file_access_policy.validate(
             action={"path": attack_path},
             context={}
         )
 
-        if result.valid:
-            pytest.skip(
-                f"CRITICAL VULNERABILITY: {name} bypasses forbidden directory checks. "
-                "TODO: Add URL decoding before forbidden directory/file checks"
-            )
-        else:
-            # If this starts failing, the vulnerability was fixed!
-            assert not result.valid, f"Vulnerability {name} was fixed!"
+        # Should now be blocked after URL decoding fix
+        assert not result.valid, f"URL-encoded bypass {name} should be blocked after decoding"
+        assert any(
+            "forbidden" in v.message.lower() or "/etc" in v.message.lower() or "passwd" in v.message.lower()
+            for v in result.violations
+        ), f"Expected forbidden file/directory violation for {name}"
 
     UNICODE_BYPASSES = [
         ("unicode_dot", "/\u00b7\u00b7/etc/passwd"),  # U+00B7 MIDDLE DOT
@@ -562,12 +561,14 @@ class TestSecurityGaps:
     """Document known security gaps that need to be addressed."""
 
     def test_url_encoding_gap(self):
-        """Document: URL-encoded path traversal bypasses are not detected."""
-        pytest.skip(
-            "SECURITY GAP: FileAccessPolicy does not decode URL-encoded paths. "
-            "Bypasses like /etc/%2e%2e/passwd are not detected. "
-            "RECOMMENDATION: Add URL decoding to _has_parent_traversal()"
-        )
+        """FIXED: URL-encoded path traversal bypasses now detected.
+
+        FileAccessPolicy now decodes URL-encoded paths in _normalize_path()
+        before validation. Bypasses like /etc/%2e%2e/passwd are properly detected.
+        Fixed in test-crit-url-decode-01.
+        """
+        # This gap has been fixed - no longer skip
+        pass
 
     def test_unicode_normalization_gap(self):
         """Document: Unicode normalization bypasses are not detected."""

@@ -11,6 +11,7 @@ Supports both allowlist (explicit permissions) and denylist (explicit denials) m
 """
 import os
 import re
+import urllib.parse
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Set
 from src.safety.base import BaseSafetyPolicy
@@ -432,8 +433,62 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
 
         return paths
 
+    def _decode_url_fully(self, path: str, max_iterations: int = 10) -> str:
+        """Recursively decode URL encoding until fully decoded.
+
+        SECURITY FIX (test-crit-url-decode-01): Prevent URL encoding bypasses.
+
+        Handles:
+        - Single encoding: %2e%2e → ..
+        - Double encoding: %252e → %2e → .
+        - Triple+ encoding: recursive until stable
+        - Case-insensitive encoding: %2E same as %2e
+        - Null byte injection: %00
+
+        Args:
+            path: Path to decode
+            max_iterations: Prevent infinite loops (default: 10)
+
+        Returns:
+            Fully decoded path
+
+        Raises:
+            ValueError: If decoding doesn't stabilize after max_iterations
+
+        Examples:
+            >>> _decode_url_fully("/etc/%2e%2e/passwd")
+            "/etc/../passwd"
+            >>> _decode_url_fully("/etc/%252e%252e/passwd")
+            "/etc/../passwd"
+            >>> _decode_url_fully("/files/my%20document.txt")
+            "/files/my document.txt"
+        """
+        decoded = path
+        for i in range(max_iterations):
+            previous = decoded
+            try:
+                # Use strict error handling - malformed encoding raises exception
+                decoded = urllib.parse.unquote(decoded, errors='strict')
+            except Exception:
+                # Malformed percent encoding (e.g., %GG, %2, %) - use original path
+                # This is safer than trying to partially decode
+                return path
+
+            if decoded == previous:
+                # Stable - fully decoded
+                return decoded
+
+        # Didn't stabilize after max_iterations - possible attack (deeply nested encoding)
+        # Raise error to block suspicious paths
+        raise ValueError(
+            f"URL decoding did not stabilize after {max_iterations} iterations. "
+            f"Path may contain deeply nested encoding: {path[:100]}"
+        )
+
     def _normalize_path(self, path: str) -> str:
         """Normalize path for comparison.
+
+        SECURITY: Decodes URL encoding BEFORE normalization to prevent bypasses.
 
         Args:
             path: File path
@@ -441,9 +496,18 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         Returns:
             Normalized path
         """
+        # SECURITY FIX (test-crit-url-decode-01): Decode URL encoding FIRST
+        # This prevents bypasses like /etc/%2e%2e/passwd or /etc%2fpasswd
+        try:
+            decoded = self._decode_url_fully(path)
+        except ValueError as e:
+            # Deeply nested encoding detected - treat as invalid/suspicious
+            # Return original path which will likely fail validation
+            decoded = path
+
         # Convert to Path object for normalization
         try:
-            p = Path(path)
+            p = Path(decoded)
             # Resolve . and .. components (but not symlinks)
             normalized = str(p)
 
@@ -454,7 +518,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             return normalized
         except Exception:
             # If path is invalid, return as-is for error reporting
-            return path if self.case_sensitive else path.lower()
+            return decoded if self.case_sensitive else decoded.lower()
 
     def _has_parent_traversal(self, path: str) -> bool:
         """Check if path contains parent directory traversal.

@@ -140,9 +140,9 @@ class Database:
         with self.transaction():
             # Release all locks
             self.execute("DELETE FROM locks WHERE owner = ?", (agent_id,))
-            # Release any claimed task
+            # Release any claimed task (but NOT completed tasks)
             self.execute(
-                "UPDATE tasks SET status = 'pending', owner = NULL WHERE owner = ?",
+                "UPDATE tasks SET status = 'pending', owner = NULL WHERE owner = ? AND status != 'completed'",
                 (agent_id,)
             )
             # Delete agent

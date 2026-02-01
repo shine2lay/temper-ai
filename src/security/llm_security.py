@@ -337,21 +337,36 @@ class OutputSanitizer:
                 # Collect replacement (will apply in reverse order later)
                 replacements.append((match.start(), match.end(), f"[REDACTED_{secret_type.upper()}]"))
 
-        # Sort replacements by start position in reverse order to preserve indices
-        replacements.sort(key=lambda x: x[0], reverse=True)
+        # SECURITY FIX (code-crit-20): Use longest-match-first strategy to prevent
+        # partial secret leakage when patterns overlap
+        #
+        # Sort by:
+        # 1. Length (longest first) - ensures we redact the maximum sensitive span
+        # 2. Start position (leftmost first) - stable ordering for same length
+        #
+        # Example attack prevented:
+        #   Text: "my secret is password123"
+        #   Pattern 1 (long): "secret is password123" (len=20)
+        #   Pattern 2 (short): "password123" (len=11)
+        #   Without fix: Only "password123" redacted, "my secret is " leaked
+        #   With fix: Entire "secret is password123" redacted
+        replacements.sort(key=lambda x: (-(x[1] - x[0]), x[0]))
 
-        # Deduplicate overlapping replacements (keep the first one in sorted order, which is the rightmost)
+        # Deduplicate overlapping replacements (keep longest match)
         deduplicated: List[Tuple[int, int, str]] = []
         for start, end, replacement in replacements:
             # Check if this replacement overlaps with any already added
             overlaps = False
             for existing_start, existing_end, _ in deduplicated:
                 if not (end <= existing_start or start >= existing_end):
-                    # Overlaps with existing, skip this one
+                    # Overlaps with existing longer match, skip this shorter one
                     overlaps = True
                     break
             if not overlaps:
                 deduplicated.append((start, end, replacement))
+
+        # Sort by start position in reverse for safe string replacement
+        deduplicated.sort(key=lambda x: x[0], reverse=True)
 
         # Apply all deduplicated replacements
         for start, end, replacement in deduplicated:

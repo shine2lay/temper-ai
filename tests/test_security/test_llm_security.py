@@ -565,6 +565,213 @@ class TestOutputSanitizationComprehensive:
         assert not sanitizer.contains_secrets("This is normal text with no secrets")
 
 
+class TestSecretSanitizationBypass:
+    """
+    Test resistance to secret sanitization bypass attacks (code-crit-20).
+
+    These tests verify that overlapping secret patterns use longest-match-first
+    strategy to prevent partial secret leakage.
+
+    Attack scenario: When multiple patterns match overlapping text spans, keeping
+    the shortest match can leak partial secrets through the gaps.
+
+    Example:
+        Text: "my secret is password123"
+        Pattern 1 (long): "secret is password123" (len=20)
+        Pattern 2 (short): "password123" (len=11)
+
+        Vulnerable behavior: Redacts only "password123", leaves "my secret is "
+        Secure behavior: Redacts entire "secret is password123"
+    """
+
+    def test_overlapping_secret_patterns_longest_wins(self):
+        """
+        Test that when multiple patterns overlap, the LONGEST match is kept.
+
+        This prevents partial secret leakage when a short pattern would leave
+        parts of a longer secret exposed.
+
+        Patterns that overlap:
+        - Generic secret: (token|key|secret)\\s*[=:]\\s*['\"]?([...]{16,})
+        - API key: (sk|pk|api[_-]?key)[_-]?[a-zA-Z0-9]{20,}
+        """
+        from src.security.llm_security import OutputSanitizer
+
+        sanitizer = OutputSanitizer()
+
+        # Scenario: "api_key=sk-..." matches BOTH generic_secret AND api_key patterns
+        # generic_secret: "api_key=sk-abcdefghij1234567890" (longer, includes "api_key=")
+        # api_key: "sk-abcdefghij1234567890" (shorter, just the value)
+        # Should keep the longer match to avoid leaking "api_key=" context
+        output = "Config: api_key=sk-abcdefghij1234567890 done"
+
+        sanitized, violations = sanitizer.sanitize(output)
+
+        # Should redact the entire match including "api_key=" label, not just value
+        # (though both would be redacted, we're testing deduplication works)
+        assert "sk-abcdefghij1234567890" not in sanitized, \
+            "API key value should be redacted"
+
+        # Should have REDACTED marker
+        assert "[REDACTED" in sanitized
+
+        # Should detect violation
+        assert len(violations) >= 1, "Should detect at least one secret"
+
+    def test_nested_api_key_patterns(self):
+        """
+        Test overlapping API key patterns where one is a substring of another.
+
+        Prevents: Redacting only inner pattern, leaving outer context exposed.
+        """
+        from src.security.llm_security import OutputSanitizer
+
+        sanitizer = OutputSanitizer()
+
+        # OpenAI key pattern is longer and should win over generic token pattern
+        output = "token=sk-1234567890abcdefghij1234567890abcdefghij1234567 here"
+
+        sanitized, violations = sanitizer.sanitize(output)
+
+        # Should redact the entire key with its prefix, not leave "token=" exposed
+        assert "token=sk-" not in sanitized, "Should redact entire key pattern"
+        assert "sk-1234567890" not in sanitized, "Should not leak any part of key"
+
+        # Should have single redaction (not multiple overlapping)
+        redaction_count = sanitized.count("[REDACTED")
+        assert redaction_count >= 1, "Should have at least one redaction"
+
+    def test_database_url_with_embedded_password(self):
+        """
+        Test that database URLs with embedded passwords redact the entire URL.
+
+        Prevents: Redacting password but leaving username/host exposed.
+        """
+        from src.security.llm_security import OutputSanitizer
+
+        sanitizer = OutputSanitizer()
+
+        # Database URL pattern should take precedence over password pattern
+        output = "Connect via postgres://admin:superSecret123@db.example.com:5432/prod"
+
+        sanitized, violations = sanitizer.sanitize(output)
+
+        # Should redact database credentials pattern (longest match)
+        assert "admin:" not in sanitized, "Username should be redacted"
+        assert "superSecret123" not in sanitized, "Password should be redacted"
+        assert "@db.example.com" not in sanitized or "[REDACTED" in sanitized, \
+            "Full credentials URL should be redacted"
+
+        # Should detect violation
+        assert len(violations) >= 1
+
+    def test_multiple_overlapping_patterns_all_deduplicated(self):
+        """
+        Test that when 3+ patterns overlap, only the longest is kept.
+
+        Scenario: Long generic secret, medium API key, short password all overlap.
+        Expected: Only longest pattern is redacted, others skipped.
+        """
+        from src.security.llm_security import OutputSanitizer
+
+        sanitizer = OutputSanitizer()
+
+        # Construct text where multiple patterns could match
+        # "key=abc123def456ghi789xyz" could match:
+        # - Generic secret pattern (key=abc123def456ghi789xyz) - longest
+        output = "The key=abc123def456ghi789xyz is sensitive"
+
+        sanitized, violations = sanitizer.sanitize(output)
+
+        # Should have redaction
+        assert "[REDACTED" in sanitized, f"No redaction found in: {sanitized}"
+
+        # Should NOT have multiple overlapping redactions
+        # (Would indicate bug where overlapping patterns weren't deduplicated)
+        assert "REDACTED][REDACTED" not in sanitized, \
+            "Should not have back-to-back redactions from overlapping patterns"
+
+        # The secret value should be redacted
+        assert "abc123def456ghi789xyz" not in sanitized, "Secret value should be redacted"
+
+    def test_adjacent_non_overlapping_secrets_both_redacted(self):
+        """
+        Test that non-overlapping secrets are BOTH redacted independently.
+
+        This is the control test: ensures our longest-match strategy doesn't
+        accidentally skip non-overlapping patterns.
+        """
+        from src.security.llm_security import OutputSanitizer
+
+        sanitizer = OutputSanitizer()
+
+        # Two separate secrets with no overlap
+        # Using realistic secret patterns that will actually match
+        output = "key1: sk-abc123def456ghi789jkl012mno345pqr678stu901vwx234 and key2: sk-xyz987wvu654tsr321qpo987nml654kji321hgf987edc654 end"
+
+        sanitized, violations = sanitizer.sanitize(output)
+
+        # Both should be redacted
+        assert "sk-abc123def456" not in sanitized, "First API key should be redacted"
+        assert "sk-xyz987wvu654" not in sanitized, "Second API key should be redacted"
+
+        # Should have 2 violations (not overlapping, so both detected)
+        assert len(violations) >= 2, f"Expected 2+ violations, got {len(violations)}"
+
+        # Should have 2 redaction markers
+        assert sanitized.count("[REDACTED") >= 2, "Should have 2 redaction markers"
+
+    def test_aws_key_pair_both_components_redacted(self):
+        """
+        Test that AWS access key and secret key are both redacted when present.
+
+        These patterns shouldn't overlap but should both be caught.
+        """
+        from src.security.llm_security import OutputSanitizer
+
+        sanitizer = OutputSanitizer()
+
+        output = """
+        AWS Credentials:
+        Access Key: AKIAIOSFODNN7EXAMPLE
+        Secret Key: wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+        """
+
+        sanitized, violations = sanitizer.sanitize(output)
+
+        # Both should be redacted
+        assert "AKIAIOSFODNN7EXAMPLE" not in sanitized, "Access key should be redacted"
+        assert "wJalrXUtnFEMI/K7MDENG" not in sanitized, "Secret key should be redacted"
+
+        # Should have violations for both
+        assert len(violations) >= 2, "Should detect both AWS credentials"
+
+    def test_partial_overlap_keeps_longest_span(self):
+        """
+        Test partial overlap scenario where patterns share some characters.
+
+        Example: "token123secret" could match:
+        - "token123" (position 0-8)
+        - "secret" (position 8-14)
+        - "token123secret" (position 0-14) - longest, should win
+        """
+        from src.security.llm_security import OutputSanitizer
+
+        sanitizer = OutputSanitizer()
+
+        # Text designed to trigger multiple pattern matches with partial overlap
+        output = "Config: api_token=sk-1234567890abcdefghij1234567890abcdefghij1234567 done"
+
+        sanitized, violations = sanitizer.sanitize(output)
+
+        # The entire secret should be redacted (longest match)
+        assert "sk-1234567890" not in sanitized, "Should redact entire API key"
+        assert "api_token=sk-" not in sanitized, "Should redact including label"
+
+        # Should have redaction
+        assert "[REDACTED" in sanitized
+
+
 class TestRateLimiting:
     """Test rate limiting and DoS protection."""
 

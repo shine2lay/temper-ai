@@ -37,7 +37,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
     - Foreign key constraints for data integrity
     - Indexes on common query patterns
     - Retention policy support
-    - Optional buffering for batch operations (reduces N+1 queries)
+    - Buffering enabled by default for batch operations (reduces N+1 queries)
 
     Database Session Optimization:
     - Reuses database session within each tracking context
@@ -50,10 +50,12 @@ class SQLObservabilityBackend(ObservabilityBackend):
     - Aggregation queries use SQL instead of Python
     - Buffering: 200 queries → ~2 queries for 100 LLM calls (90% reduction)
 
-    Buffering Mode:
-    - When buffer is enabled, LLM and tool calls are batched
+    Buffering Mode (Default):
+    - Buffer is created automatically with default settings (100 items, 5s timeout)
+    - LLM and tool calls are batched to reduce N+1 queries
     - Reduces individual commits to periodic batch commits
-    - Automatic flush based on size (default: 100 items) or time (default: 1s)
+    - Automatic flush based on size or time
+    - To disable buffering, pass buffer=False explicitly
     """
 
     def __init__(self, buffer: Any = None) -> None:
@@ -62,13 +64,29 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         Args:
             buffer: Optional ObservabilityBuffer for batching operations.
-                   If provided, enables buffered mode for LLM/tool calls.
+                   If None, a default buffer will be created to enable buffered mode.
+                   Pass buffer=False to explicitly disable buffering.
         """
         self._session_stack: List[Any] = []  # Stack of active sessions for nested contexts
         self._standalone_session: Optional[Any] = None  # Standalone session for non-context operations
-        self._buffer = buffer
 
-        # Set up flush callback if buffer provided
+        # Create default buffer if none provided (unless explicitly disabled with buffer=False)
+        if buffer is None:
+            from src.observability.buffer import ObservabilityBuffer
+            from src.observability.constants import DEFAULT_BUFFER_SIZE, DEFAULT_BUFFER_TIMEOUT_SECONDS
+            self._buffer = ObservabilityBuffer(
+                flush_size=DEFAULT_BUFFER_SIZE,
+                flush_interval=DEFAULT_BUFFER_TIMEOUT_SECONDS,
+                auto_flush=True
+            )
+        elif buffer is False:
+            # Explicitly disabled buffering
+            self._buffer = None
+        else:
+            # Custom buffer provided
+            self._buffer = buffer
+
+        # Set up flush callback if buffer enabled
         if self._buffer:
             self._buffer.set_flush_callback(self._flush_buffer)
 

@@ -82,9 +82,11 @@ class ExecutionTracker:
         """
         self.context = ExecutionContext()
 
-        # Use provided backend or default to SQL backend
+        # Use provided backend or default to SQL backend with buffering
         if backend is None:
             from src.observability.backends import SQLObservabilityBackend
+            # SQLObservabilityBackend creates a default buffer automatically
+            # to reduce N+1 queries (from 2N to N/batch_size)
             backend = SQLObservabilityBackend()
 
         self.backend = backend

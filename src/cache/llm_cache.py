@@ -283,6 +283,14 @@ class LLMCache:
         >>> cached = cache.get(key)
     """
 
+    # SECURITY: Reserved parameter names that cannot be overridden via kwargs
+    # Prevents cache poisoning via parameter injection and namespace pollution
+    _RESERVED_PARAMS = frozenset({
+        'model', 'prompt', 'temperature', 'max_tokens',
+        'user_id', 'tenant_id', 'session_id',
+        'security_context', 'request'  # Prevent namespace pollution
+    })
+
     def __init__(
         self,
         backend: str = "memory",
@@ -379,6 +387,16 @@ class LLMCache:
                 "Cache key generation requires user_id or tenant_id for security. "
                 "Multi-tenant caching without isolation is a privacy violation. "
                 "See: HIPAA 164.312(a)(1), GDPR Article 32, SOC 2 CC6.6"
+            )
+
+        # SECURITY FIX: Validate kwargs to prevent parameter override attacks
+        # Prevents cache poisoning via reserved parameter injection (code-crit-15)
+        conflicting_params = self._RESERVED_PARAMS.intersection(kwargs.keys())
+        if conflicting_params:
+            raise ValueError(
+                f"Cannot override reserved parameters via kwargs: {conflicting_params}. "
+                f"Reserved parameters: {self._RESERVED_PARAMS}. "
+                f"Use explicit arguments instead of **kwargs for these parameters."
             )
 
         # Build canonical request dict

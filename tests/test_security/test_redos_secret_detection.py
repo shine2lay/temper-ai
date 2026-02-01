@@ -38,9 +38,9 @@ class TestReDoSPrevention:
         assert is_secret is False
 
     def test_long_valid_base64_within_limit(self):
-        """Verify base64 strings up to 500 chars are detected."""
-        # Create 400-char base64 string
-        long_base64 = "A" * 400 + "=="
+        """Verify base64 strings up to 100 chars are detected."""
+        # Create 90-char base64 string (within new limit)
+        long_base64 = "A" * 90 + "=="
 
         is_secret, confidence = detect_secret_patterns(long_base64)
         assert is_secret is True
@@ -86,22 +86,22 @@ class TestReDoSPrevention:
         assert elapsed < 0.1, f"ReDoS detected: took {elapsed:.3f}s"
         # The key security fix is preventing exponential time complexity
 
-    def test_exactly_500_chars_detected(self):
-        """Verify base64 at upper limit (500 chars) is detected."""
-        # Exactly 500-char base64 string
-        base64_500 = "A" * 500
+    def test_exactly_100_chars_detected(self):
+        """Verify base64 at upper limit (100 chars) is detected."""
+        # Exactly 100-char base64 string (new limit per code-crit-redos-regex-05)
+        base64_100 = "A" * 100
 
-        is_secret, confidence = detect_secret_patterns(base64_500)
+        is_secret, confidence = detect_secret_patterns(base64_100)
         assert is_secret is True
         assert confidence == "medium"
 
-    def test_over_500_chars_not_detected(self):
-        """Verify base64 over 500 chars still matches within limit."""
-        # 501-char base64 string
-        base64_501 = "A" * 501
+    def test_over_100_chars_still_detected(self):
+        """Verify base64 over 100 chars still matches within limit."""
+        # 150-char base64 string
+        base64_150 = "A" * 150
 
-        is_secret, confidence = detect_secret_patterns(base64_501)
-        # Pattern matches first 40-500 chars via re.search()
+        is_secret, confidence = detect_secret_patterns(base64_150)
+        # Pattern matches first 40-100 chars via re.search()
         # This is acceptable - the key fix is preventing ReDoS
         assert is_secret is True
         assert confidence == "medium"
@@ -213,3 +213,81 @@ class TestPerformance:
 
         # Should complete in < 50ms even in worst case
         assert elapsed < 0.05, f"Worst case too slow: {elapsed:.3f}s"
+
+
+class TestAdditionalReDoSPatterns:
+    """Test ReDoS protection for Anthropic and Google OAuth patterns (code-crit-redos-regex-05)."""
+
+    def test_anthropic_key_redos_prevented(self):
+        """Verify Anthropic API key pattern doesn't cause ReDoS."""
+        # Attack payload: valid prefix + many digits + long key + invalid char
+        attack = "sk-ant-api" + "9" * 10 + "-" + "A" * 150 + "!"
+        
+        start = time.time()
+        result = detect_secret_patterns(attack)
+        elapsed = time.time() - start
+        
+        # Should complete quickly (bounded quantifiers prevent catastrophic backtracking)
+        assert elapsed < 0.01, f"Anthropic pattern ReDoS: {elapsed:.3f}s"
+
+    def test_google_oauth_redos_prevented(self):
+        """Verify Google OAuth pattern doesn't cause ReDoS."""
+        # Attack payload: valid prefix + many valid chars + invalid char
+        attack = "ya29." + "A" * 600 + "!"
+        
+        start = time.time()
+        result = detect_secret_patterns(attack)
+        elapsed = time.time() - start
+        
+        # Should complete quickly (bounded quantifiers prevent catastrophic backtracking)
+        assert elapsed < 0.01, f"Google OAuth pattern ReDoS: {elapsed:.3f}s"
+
+    def test_legitimate_anthropic_key_detected(self):
+        """Verify legitimate Anthropic keys are still detected."""
+        # Valid Anthropic API key format
+        valid_key = "sk-ant-api03-" + "A" * 50
+        
+        is_secret, confidence = detect_secret_patterns(valid_key)
+        assert is_secret is True
+        assert confidence == "high"
+
+    def test_legitimate_google_oauth_detected(self):
+        """Verify legitimate Google OAuth tokens are still detected."""
+        # Valid Google OAuth token format
+        valid_token = "ya29." + "a" * 100
+        
+        is_secret, confidence = detect_secret_patterns(valid_token)
+        assert is_secret is True
+        assert confidence == "high"
+
+
+class TestInputValidation:
+    """Test input length validation (defense in depth)."""
+
+    def test_oversized_input_rejected(self):
+        """Verify inputs over 10KB are rejected."""
+        huge_input = "A" * 11000  # 11KB
+        
+        with pytest.raises(ValueError, match="too long"):
+            detect_secret_patterns(huge_input)
+
+    def test_exactly_10kb_accepted(self):
+        """Verify 10KB input is accepted."""
+        max_input = "A" * (10 * 1024)  # Exactly 10KB
+        
+        # Should not raise ValueError
+        result = detect_secret_patterns(max_input)
+        # Result doesn't matter, just verify it doesn't raise
+
+    def test_input_validation_error_message(self):
+        """Verify error message is clear and informative."""
+        huge_input = "A" * 15000
+        
+        try:
+            detect_secret_patterns(huge_input)
+            assert False, "Should have raised ValueError"
+        except ValueError as e:
+            error_msg = str(e)
+            assert "15000" in error_msg  # Actual size
+            assert "10" in error_msg or "10240" in error_msg  # Max size
+            assert "ReDoS" in error_msg  # Explains why

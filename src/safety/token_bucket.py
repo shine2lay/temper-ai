@@ -79,19 +79,65 @@ class RateLimit:
     burst_size: Optional[int] = None
 
     def __post_init__(self) -> None:
-        """Validate configuration."""
+        """Validate configuration with safety bounds."""
+        # SECURITY (code-high-12): Validate max_tokens (must be positive, bounded to prevent DoS)
+        if not isinstance(self.max_tokens, int):
+            raise ValueError(
+                f"max_tokens must be an integer, got {type(self.max_tokens).__name__}"
+            )
         if self.max_tokens <= 0:
-            raise ValueError("max_tokens must be positive")
-        if self.refill_rate <= 0:
-            raise ValueError("refill_rate must be positive")
-        if self.refill_period <= 0:
-            raise ValueError("refill_period must be positive")
+            raise ValueError(
+                f"max_tokens must be positive, got {self.max_tokens}"
+            )
+        if self.max_tokens > 1_000_000:
+            raise ValueError(
+                f"max_tokens must be <= 1,000,000 (safety limit), got {self.max_tokens}"
+            )
 
-        # Default burst_size to max_tokens if not specified
+        # SECURITY: Validate refill_rate (must be positive, bounded)
+        if not isinstance(self.refill_rate, (int, float)):
+            raise ValueError(
+                f"refill_rate must be numeric, got {type(self.refill_rate).__name__}"
+            )
+        if self.refill_rate <= 0:
+            raise ValueError(
+                f"refill_rate must be positive, got {self.refill_rate}"
+            )
+        if self.refill_rate > 1_000_000:
+            raise ValueError(
+                f"refill_rate must be <= 1,000,000 (safety limit), got {self.refill_rate}"
+            )
+
+        # SECURITY: Validate refill_period
+        if not isinstance(self.refill_period, (int, float)):
+            raise ValueError(
+                f"refill_period must be numeric, got {type(self.refill_period).__name__}"
+            )
+        if self.refill_period <= 0:
+            raise ValueError(
+                f"refill_period must be positive, got {self.refill_period}"
+            )
+        if self.refill_period > 86400:  # Max 24 hours
+            raise ValueError(
+                f"refill_period must be <= 86400s (24h), got {self.refill_period}"
+            )
+
+        # SECURITY: Validate burst_size
         if self.burst_size is None:
             self.burst_size = self.max_tokens
-        elif self.burst_size > self.max_tokens:
-            raise ValueError("burst_size cannot exceed max_tokens")
+        else:
+            if not isinstance(self.burst_size, int):
+                raise ValueError(
+                    f"burst_size must be an integer, got {type(self.burst_size).__name__}"
+                )
+            if self.burst_size <= 0:
+                raise ValueError(
+                    f"burst_size must be positive, got {self.burst_size}"
+                )
+            if self.burst_size > self.max_tokens:
+                raise ValueError(
+                    f"burst_size ({self.burst_size}) cannot exceed max_tokens ({self.max_tokens})"
+                )
 
 
 class TokenBucket:

@@ -1,6 +1,97 @@
 {
-  "agents": {},
-  "locks": {},
+  "agents": {
+    "agent-074c04": {
+      "pid": 497746,
+      "registered_at": "2026-02-01 03:14:21",
+      "last_heartbeat": "2026-02-01 03:14:21"
+    },
+    "agent-b087c2": {
+      "pid": 498383,
+      "registered_at": "2026-02-01 03:14:26",
+      "last_heartbeat": "2026-02-01 03:14:26"
+    },
+    "agent-c4d462": {
+      "pid": 498507,
+      "registered_at": "2026-02-01 03:14:26",
+      "last_heartbeat": "2026-02-01 03:14:26"
+    },
+    "agent-fe06ff": {
+      "pid": 498823,
+      "registered_at": "2026-02-01 03:14:35",
+      "last_heartbeat": "2026-02-01 03:14:35"
+    },
+    "agent-39b8e9": {
+      "pid": 499179,
+      "registered_at": "2026-02-01 03:14:43",
+      "last_heartbeat": "2026-02-01 03:14:43"
+    },
+    "agent-318dc7": {
+      "pid": 499282,
+      "registered_at": "2026-02-01 03:14:43",
+      "last_heartbeat": "2026-02-01 03:14:43"
+    },
+    "agent-073771": {
+      "pid": 499693,
+      "registered_at": "2026-02-01 03:14:53",
+      "last_heartbeat": "2026-02-01 03:14:53"
+    }
+  },
+  "locks": {
+    "src/safety/secret_detection.py": [
+      {
+        "owner": "agent-318dc7",
+        "acquired_at": "2026-02-01 03:15:23"
+      }
+    ],
+    "src/compiler/config_loader.py": [
+      {
+        "owner": "agent-073771",
+        "acquired_at": "2026-02-01 03:15:26"
+      }
+    ],
+    "src/safety/base.py": [
+      {
+        "owner": "agent-fe06ff",
+        "acquired_at": "2026-02-01 03:17:26"
+      }
+    ],
+    "src/safety/circuit_breaker.py": [
+      {
+        "owner": "agent-fe06ff",
+        "acquired_at": "2026-02-01 03:17:26"
+      }
+    ],
+    "src/safety/token_bucket.py": [
+      {
+        "owner": "agent-fe06ff",
+        "acquired_at": "2026-02-01 03:17:26"
+      }
+    ],
+    "src/safety/forbidden_operations.py": [
+      {
+        "owner": "agent-fe06ff",
+        "acquired_at": "2026-02-01 03:17:26"
+      }
+    ],
+    "src/safety/validation.py": [
+      {
+        "owner": "agent-fe06ff",
+        "acquired_at": "2026-02-01 03:17:26"
+      }
+    ],
+    "src/compiler/executors/parallel.py": [
+      {
+        "owner": "agent-073771",
+        "acquired_at": "2026-02-01 03:18:08"
+      }
+    ],
+    "src/compiler/langgraph_state.py": [
+      {
+        "owner": "agent-39b8e9",
+        "acquired_at": "2026-02-01 03:18:43"
+      }
+    ]
+  },
   "tasks": {
     "test-crit-secret-detection-01": {
       "subject": "Create test suite for Secret Detection Policy",
@@ -535,22 +626,22 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-08.md",
       "activeForm": null,
       "priority": 2,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-b087c2",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:00:12",
-      "completed_at": "2026-02-01 03:00:39"
+      "started_at": "2026-02-01 03:14:30",
+      "completed_at": "2026-02-01 03:16:30"
     },
     "code-high-09": {
       "subject": "Unhandled Timezone Inconsistencies",
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-09.md",
       "activeForm": null,
       "priority": 2,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-39b8e9",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:55:11",
-      "completed_at": "2026-02-01 02:56:26"
+      "started_at": "2026-02-01 03:14:45",
+      "completed_at": "2026-02-01 03:16:28"
     },
     "code-high-10": {
       "subject": "Silent Exception Swallowing",
@@ -579,10 +670,10 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-12.md",
       "activeForm": null,
       "priority": 2,
-      "status": "pending",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "agent-fe06ff",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:00:44",
+      "started_at": "2026-02-01 03:14:52",
       "completed_at": "2026-02-01 02:54:10"
     },
     "code-high-13": {
@@ -601,10 +692,10 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-14.md",
       "activeForm": null,
       "priority": 2,
-      "status": "pending",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "agent-318dc7",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:07:59",
+      "started_at": "2026-02-01 03:14:55",
       "completed_at": "2026-02-01 03:07:59"
     },
     "code-high-15": {
@@ -612,43 +703,43 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-15.md",
       "activeForm": null,
       "priority": 2,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-b087c2",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:53:50",
-      "completed_at": "2026-02-01 02:54:54"
+      "started_at": "2026-02-01 03:16:34",
+      "completed_at": "2026-02-01 03:17:59"
     },
     "code-high-16": {
       "subject": "Missing Input Sanitization in Logging",
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-16.md",
       "activeForm": null,
       "priority": 2,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-39b8e9",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:53:57",
-      "completed_at": "2026-02-01 02:55:33"
+      "started_at": "2026-02-01 03:16:42",
+      "completed_at": "2026-02-01 03:17:57"
     },
     "code-medi-01": {
       "subject": "Duplicate Duration Calculations",
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-01.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-c4d462",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:08:55",
-      "completed_at": "2026-02-01 03:09:56"
+      "started_at": "2026-02-01 03:15:51",
+      "completed_at": "2026-02-01 03:17:01"
     },
     "code-medi-02": {
       "subject": "Duplicate Agent Name Extraction",
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-02.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "agent-b087c2",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:08:32",
+      "started_at": "2026-02-01 03:18:02",
       "completed_at": "2026-02-01 03:08:55"
     },
     "code-medi-03": {
@@ -656,54 +747,54 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-03.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-074c04",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:57:23",
-      "completed_at": "2026-02-01 03:00:09"
+      "started_at": "2026-02-01 03:14:21",
+      "completed_at": "2026-02-01 03:14:58"
     },
     "code-medi-04": {
       "subject": "Magic Numbers Throughout",
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-04.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-c4d462",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:10:09",
-      "completed_at": "2026-02-01 03:13:44"
+      "started_at": "2026-02-01 03:14:26",
+      "completed_at": "2026-02-01 03:15:44"
     },
     "code-medi-05": {
       "subject": "Hardcoded Security Limits",
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-05.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-073771",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 03:14:56",
+      "completed_at": "2026-02-01 03:17:18"
     },
     "code-medi-06": {
       "subject": "Hardcoded Paths",
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-06.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-074c04",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 03:15:10",
+      "completed_at": "2026-02-01 03:16:40"
     },
     "code-medi-07": {
       "subject": "Inefficient LRU Eviction",
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-07.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "agent-074c04",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 03:16:49",
       "completed_at": null
     },
     "code-medi-08": {
@@ -711,21 +802,21 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-08.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-c4d462",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 03:17:13",
+      "completed_at": "2026-02-01 03:18:41"
     },
     "code-medi-09": {
       "subject": "Redundant Dictionary Copying",
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-09.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "agent-073771",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 03:17:35",
       "completed_at": null
     },
     "code-medi-10": {
@@ -733,10 +824,10 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-10.md",
       "activeForm": null,
       "priority": 3,
-      "status": "pending",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "agent-39b8e9",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 03:18:11",
       "completed_at": null
     },
     "code-medi-11": {

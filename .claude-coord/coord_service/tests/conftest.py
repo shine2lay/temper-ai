@@ -53,12 +53,20 @@ def db(db_path):
     database.initialize()
     yield database
     # Cleanup connections
-    if hasattr(database, '_get_connection'):
-        try:
-            conn = database._get_connection()
-            conn.close()
-        except:
-            pass
+    try:
+        # Import thread_local from database module
+        from coord_service.database import _thread_local
+
+        # Close connection if it exists
+        if hasattr(_thread_local, 'conn'):
+            try:
+                _thread_local.conn.close()
+            except:
+                pass
+            # CRITICAL: Delete the thread-local reference so next test gets fresh connection
+            delattr(_thread_local, 'conn')
+    except:
+        pass
 
 
 @pytest.fixture

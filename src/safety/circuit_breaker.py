@@ -138,19 +138,62 @@ class CircuitBreaker:
         timeout_seconds: int = 60,
         success_threshold: int = 2
     ):
-        """Initialize circuit breaker.
+        """Initialize circuit breaker with validated parameters.
 
         Args:
-            name: Circuit breaker name
-            failure_threshold: Number of failures before opening circuit
-            timeout_seconds: Seconds to wait before attempting recovery
-            success_threshold: Successes needed in HALF_OPEN to close circuit
+            name: Circuit breaker name (1-100 characters)
+            failure_threshold: Number of failures before opening circuit (1-1000)
+            timeout_seconds: Seconds to wait before attempting recovery (1-86400)
+            success_threshold: Successes needed in HALF_OPEN to close circuit (1-100)
+
+        Raises:
+            ValueError: If parameters are invalid
         """
+        # SECURITY (code-high-12): Validate name
+        if not isinstance(name, str):
+            raise ValueError(
+                f"name must be a string, got {type(name).__name__}"
+            )
+        if not name or len(name) > 100:
+            raise ValueError(
+                f"name must be 1-100 characters, got {len(name)}"
+            )
         self.name = name
+
+        # SECURITY: Validate failure_threshold
+        if not isinstance(failure_threshold, int):
+            raise ValueError(
+                f"failure_threshold must be an integer, got {type(failure_threshold).__name__}"
+            )
+        if failure_threshold < 1 or failure_threshold > 1000:
+            raise ValueError(
+                f"failure_threshold must be 1-1000, got {failure_threshold}"
+            )
         self.failure_threshold = failure_threshold
+
+        # SECURITY: Validate timeout_seconds
+        if not isinstance(timeout_seconds, int):
+            raise ValueError(
+                f"timeout_seconds must be an integer, got {type(timeout_seconds).__name__}"
+            )
+        if timeout_seconds < 1 or timeout_seconds > 86400:  # Max 24 hours
+            raise ValueError(
+                f"timeout_seconds must be 1-86400 (24h), got {timeout_seconds}"
+            )
         self.timeout_seconds = timeout_seconds
+
+        # SECURITY: Validate success_threshold
+        if not isinstance(success_threshold, int):
+            raise ValueError(
+                f"success_threshold must be an integer, got {type(success_threshold).__name__}"
+            )
+        if success_threshold < 1 or success_threshold > 100:
+            raise ValueError(
+                f"success_threshold must be 1-100, got {success_threshold}"
+            )
         self.success_threshold = success_threshold
 
+        # Initialize state
         self._state = CircuitBreakerState.CLOSED
         self._failure_count = 0
         self._success_count = 0
@@ -516,24 +559,32 @@ class CircuitBreakerManager:
         timeout_seconds: int = 60,
         success_threshold: int = 2
     ) -> CircuitBreaker:
-        """Create and register a circuit breaker.
+        """Create and register a circuit breaker with validated parameters.
 
         Args:
-            name: Breaker name
-            failure_threshold: Failures before opening
-            timeout_seconds: Timeout before attempting recovery
-            success_threshold: Successes needed to close from half-open
+            name: Breaker name (1-100 characters)
+            failure_threshold: Failures before opening (1-1000)
+            timeout_seconds: Timeout before attempting recovery (1-86400)
+            success_threshold: Successes needed to close from half-open (1-100)
 
         Returns:
             CircuitBreaker instance
 
         Raises:
-            ValueError: If breaker with name already exists
+            ValueError: If breaker with name already exists or parameters invalid
         """
+        # SECURITY (code-high-12): Validate name before checking duplicates
+        if not isinstance(name, str):
+            raise ValueError(f"name must be a string, got {type(name).__name__}")
+        if not name or len(name) > 100:
+            raise ValueError(f"name must be 1-100 characters, got {len(name)}")
+
         with self._lock:
+            # Check for duplicates
             if name in self._breakers:
                 raise ValueError(f"Circuit breaker '{name}' already exists")
 
+            # CircuitBreaker.__init__ will validate the other parameters
             breaker = CircuitBreaker(
                 name=name,
                 failure_threshold=failure_threshold,

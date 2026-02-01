@@ -61,8 +61,18 @@ class ParallelStageExecutor(StageExecutor):
         """
         # Custom reducer for merging dict updates
         def merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
-            """Merge two dicts for concurrent updates."""
-            result = left.copy() if left else {}
+            """Merge two dicts for concurrent updates.
+
+            Optimization: Avoid unnecessary dictionary copies when one dict is empty.
+            - If left is empty, return right directly (no copy needed)
+            - If right is empty, return left as-is (no merge needed)
+            - Otherwise, copy left and update with right
+            """
+            if not left:
+                return right if right else {}
+            if not right:
+                return left
+            result = left.copy()
             result.update(right)
             return result
 

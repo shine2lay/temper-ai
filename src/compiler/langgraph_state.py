@@ -82,6 +82,10 @@ class LangGraphWorkflowState:
     config_loader: Optional[Any] = None
     visualizer: Optional[Any] = None
 
+    # Cache for to_dict() results (performance optimization)
+    _dict_cache: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
+    _dict_cache_exclude_internal: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
+
     def __post_init__(self) -> None:
         """Validate state after initialization."""
         # Ensure focus_areas is a list if provided
@@ -96,8 +100,37 @@ class LangGraphWorkflowState:
         if not isinstance(self.stage_outputs, dict):
             self.stage_outputs = {}  # type: ignore
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Override setattr to invalidate cache on field modification.
+
+        When any field is modified, cached dictionaries are invalidated
+        to ensure to_dict() returns up-to-date state.
+
+        Args:
+            name: Field name
+            value: New value
+        """
+        # Invalidate cache if modifying non-cache fields
+        if not name.startswith('_dict_cache') and hasattr(self, '_dict_cache'):
+            # Only invalidate if cache exists (avoid invalidating during __init__)
+            if self._dict_cache is not None or self._dict_cache_exclude_internal is not None:
+                object.__setattr__(self, '_dict_cache', None)
+                object.__setattr__(self, '_dict_cache_exclude_internal', None)
+
+        # Set the actual value
+        object.__setattr__(self, name, value)
+
+    def _invalidate_cache(self) -> None:
+        """Invalidate dictionary cache when state is modified.
+
+        This method should be called whenever any field is modified to ensure
+        cached dictionaries are regenerated on next access.
+        """
+        self._dict_cache = None
+        self._dict_cache_exclude_internal = None
+
     def to_dict(self, exclude_internal: bool = False) -> Dict[str, Any]:
-        """Convert state to dictionary.
+        """Convert state to dictionary with caching.
 
         Args:
             exclude_internal: Exclude infrastructure objects (for serialization)
@@ -109,6 +142,13 @@ class LangGraphWorkflowState:
             When exclude_internal=True, only domain fields are included.
             This matches the interface expected by executors and checkpointing.
 
+            Results are cached to avoid repeated dataclass field iteration.
+            Cache is invalidated automatically when state is modified.
+
+        Performance:
+            - First call: O(n) where n = number of fields
+            - Subsequent calls: O(1) (cache hit)
+
         Example:
             >>> # For executor (includes infrastructure)
             >>> state_dict = state.to_dict()
@@ -116,11 +156,25 @@ class LangGraphWorkflowState:
             >>> # For checkpointing (domain only)
             >>> checkpoint = state.to_dict(exclude_internal=True)
         """
+        # Check cache first
+        if exclude_internal:
+            if self._dict_cache_exclude_internal is not None:
+                return self._dict_cache_exclude_internal
+        else:
+            if self._dict_cache is not None:
+                return self._dict_cache
+
+        # Cache miss - compute and cache
         from dataclasses import fields
 
         state_dict = {}
         for f in fields(self):
             key = f.name
+
+            # Skip cache fields
+            if key.startswith('_dict_cache'):
+                continue
+
             value = getattr(self, key)
 
             # Skip infrastructure fields if requested
@@ -132,6 +186,12 @@ class LangGraphWorkflowState:
                 value = value.isoformat()
 
             state_dict[key] = value
+
+        # Store in appropriate cache
+        if exclude_internal:
+            self._dict_cache_exclude_internal = state_dict
+        else:
+            self._dict_cache = state_dict
 
         return state_dict
 

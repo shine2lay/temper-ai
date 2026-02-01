@@ -52,11 +52,38 @@ class BaseSafetyPolicy(SafetyPolicy):
     """
 
     def __init__(self, config: Dict[str, Any]):
-        """Initialize base safety policy.
+        """Initialize base safety policy with validation.
 
         Args:
             config: Policy configuration dictionary
+
+        Raises:
+            ValueError: If config contains invalid values
         """
+        # SECURITY (code-high-12): Validate config is a dictionary
+        if not isinstance(config, dict):
+            raise ValueError(
+                f"config must be a dictionary, got {type(config).__name__}"
+            )
+
+        # SECURITY: Validate config size to prevent DoS
+        if len(config) > 100:
+            raise ValueError(
+                f"config exceeds maximum size of 100 keys, got {len(config)}"
+            )
+
+        # SECURITY: Validate all keys are strings (prevent injection)
+        for key in config.keys():
+            if not isinstance(key, str):
+                raise ValueError(
+                    f"config keys must be strings, got {type(key).__name__}: {key}"
+                )
+            if len(key) > 100:
+                raise ValueError(
+                    f"config key exceeds 100 characters: {key[:20]}..."
+                )
+
+        # Store validated config
         self.config = config
         self._child_policies: List[SafetyPolicy] = []
 

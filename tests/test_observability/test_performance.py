@@ -3,6 +3,8 @@ Tests for performance instrumentation and metrics tracking.
 """
 import time
 import pytest
+from datetime import datetime, timedelta
+from unittest.mock import patch
 from src.observability.performance import (
     PerformanceTracker,
     LatencyMetrics,

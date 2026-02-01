@@ -23,10 +23,12 @@ class LatencyMetrics:
     operation: str
     samples: List[float] = field(default_factory=list)
     slow_threshold_ms: float = 1000.0  # Default 1 second
+    last_updated: datetime = field(default_factory=datetime.utcnow)
 
     def record(self, latency_ms: float) -> None:
         """Record a latency sample."""
         self.samples.append(latency_ms)
+        self.last_updated = datetime.utcnow()
 
         # Keep only recent samples (last 1000) to prevent memory growth
         if len(self.samples) > 1000:
@@ -142,6 +144,11 @@ class PerformanceTracker:
         self.slow_operations: List[SlowOperation] = []
         self.max_slow_ops = 100  # Keep last 100 slow operations
 
+        # Cleanup tracking to prevent unbounded memory growth
+        self._record_count = 0
+        self._cleanup_interval = 1000  # Run cleanup every 1000 records
+        self._expiration_hours = 24  # Remove metrics older than 24 hours
+
     @contextmanager
     def measure(self, operation: str, context: Optional[Dict[str, Any]] = None) -> Generator[None, None, None]:
         """
@@ -179,6 +186,12 @@ class PerformanceTracker:
             latency_ms: Latency in milliseconds
             context: Additional context for diagnostics
         """
+        # Periodically cleanup expired metrics to prevent unbounded growth
+        self._record_count += 1
+        if self._record_count >= self._cleanup_interval:
+            self.cleanup_expired_metrics(self._expiration_hours)
+            self._record_count = 0
+
         # Initialize metrics for this operation if not exists
         if operation not in self.metrics:
             threshold = self.default_thresholds.get(operation, 1000.0)
@@ -294,6 +307,47 @@ class PerformanceTracker:
         """Reset all metrics and slow operation records."""
         self.metrics.clear()
         self.slow_operations.clear()
+
+    def cleanup_expired_metrics(self, expiration_hours: int = 24) -> int:
+        """
+        Remove metrics that haven't been updated in the specified time period.
+
+        This prevents unbounded memory growth in long-running applications
+        by removing stale operation metrics.
+
+        Args:
+            expiration_hours: Hours of inactivity before metrics are removed (default: 24)
+
+        Returns:
+            Number of operations removed
+
+        Example:
+            >>> tracker = PerformanceTracker()
+            >>> # Record some operations...
+            >>> removed = tracker.cleanup_expired_metrics(expiration_hours=24)
+            >>> print(f"Removed {removed} expired operations")
+        """
+        now = datetime.utcnow()
+        expiration_threshold = now - timedelta(hours=expiration_hours)
+
+        # Find expired operations
+        expired_ops = [
+            operation
+            for operation, metrics in self.metrics.items()
+            if metrics.last_updated < expiration_threshold
+        ]
+
+        # Remove expired metrics
+        for operation in expired_ops:
+            del self.metrics[operation]
+
+        if expired_ops:
+            logger.info(
+                f"Cleaned up {len(expired_ops)} expired operations "
+                f"(older than {expiration_hours} hours)"
+            )
+
+        return len(expired_ops)
 
     def set_slow_threshold(self, operation: str, threshold_ms: float) -> None:
         """

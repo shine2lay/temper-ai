@@ -7,7 +7,7 @@ import threading
 from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
-from sqlalchemy import text
+from sqlalchemy import text, event
 import os
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,34 @@ class DatabaseManager:
                 poolclass=StaticPool,
                 echo=False
             )
+
+            # SECURITY FIX (test-crit-foreign-keys-01): Enable foreign key constraints
+            # SQLite disables foreign keys by default - must enable per connection
+            @event.listens_for(engine, "connect")
+            def set_sqlite_pragma(dbapi_connection, connection_record):
+                """Enable foreign keys and verify on every connection.
+
+                CRITICAL: This prevents orphaned records and enforces referential integrity.
+                Must be set PER CONNECTION as it's not persistent.
+                """
+                cursor = dbapi_connection.cursor()
+
+                # Enable foreign keys
+                cursor.execute("PRAGMA foreign_keys = ON")
+
+                # Defensive check: Verify foreign keys actually enabled
+                cursor.execute("PRAGMA foreign_keys")
+                result = cursor.fetchone()
+                if result[0] != 1:
+                    cursor.close()
+                    raise RuntimeError(
+                        "Failed to enable SQLite foreign keys. "
+                        "Database integrity cannot be guaranteed."
+                    )
+
+                cursor.close()
+                logger.debug("SQLite foreign keys enabled for connection")
+
         else:
             # PostgreSQL settings
             engine = create_engine(

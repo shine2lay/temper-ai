@@ -1017,15 +1017,14 @@ class TestTransactionConflictsRecovery:
         assert success_count >= num_processes * 0.8, \
             f"Only {success_count}/{num_processes} processes succeeded with retry"
 
-    @pytest.mark.skip(reason="SQLite foreign keys not enabled by default - see database.py")
     def test_foreign_key_constraint_enforcement(self, shared_db, temp_db_path):
         """
         Test that foreign key constraints are enforced in concurrent scenarios.
 
         CRITICAL: Verifies data integrity with foreign key relationships.
 
-        NOTE: Currently skipped because SQLite foreign key constraints are not enabled.
-        To fix: Add PRAGMA foreign_keys = ON in database.py _create_engine()
+        FIXED (test-crit-foreign-keys-01): Foreign keys now enabled via event listener
+        in database.py _create_engine(). PRAGMA foreign_keys = ON set on every connection.
         """
         def create_orphaned_stage(db_url: str, result_queue: Queue):
             """Try to create stage with non-existent workflow."""

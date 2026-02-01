@@ -661,6 +661,153 @@ class TestInputValidation:
         # High entropy might be detected
         # This is less strict since legitimate inputs can have high entropy
 
+    def test_entropy_dos_protection_small_input(self):
+        """Test entropy calculation works correctly for small inputs."""
+        import time
+        detector = PromptInjectionDetector()
+
+        # Small input should have entropy calculated
+        small_text = "a" * 100  # 100 characters
+        start = time.perf_counter()
+        is_safe, violations = detector.detect(small_text)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        # Should complete quickly (< 10ms)
+        assert elapsed_ms < 10, f"Small input took too long: {elapsed_ms:.2f}ms"
+        assert isinstance(is_safe, bool), "Should return boolean"
+
+    def test_entropy_dos_protection_medium_input(self):
+        """Test entropy calculation for medium inputs (just under MAX_ENTROPY_LENGTH)."""
+        import time
+        detector = PromptInjectionDetector()
+
+        # Medium input just under 10KB limit
+        medium_text = "abcdefgh" * 1200  # 9,600 characters
+        assert len(medium_text) < detector.MAX_ENTROPY_LENGTH, "Should be under limit"
+
+        start = time.perf_counter()
+        is_safe, violations = detector.detect(medium_text)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        # Should still be fast (< 20ms)
+        assert elapsed_ms < 20, f"Medium input took too long: {elapsed_ms:.2f}ms"
+        assert isinstance(is_safe, bool), "Should return boolean"
+
+    def test_entropy_dos_protection_large_input(self):
+        """Test DoS protection for large inputs (over MAX_ENTROPY_LENGTH).
+
+        SECURITY: Prevents memory exhaustion from large Unicode character dictionaries.
+        Reference: code-crit-19 - Entropy Calculation DoS
+        """
+        import time
+        detector = PromptInjectionDetector()
+
+        # Large input over 10KB limit - entropy should be skipped
+        large_text = "abcdefgh" * 2000  # 16,000 characters
+        assert len(large_text) > detector.MAX_ENTROPY_LENGTH, "Should be over limit"
+
+        start = time.perf_counter()
+        is_safe, violations = detector.detect(large_text)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        # DoS protection active - should be fast despite large size (< 30ms)
+        assert elapsed_ms < 30, f"Large input took too long: {elapsed_ms:.2f}ms (DoS protection should skip entropy)"
+        assert isinstance(is_safe, bool), "Should return boolean"
+
+        # Verify entropy was skipped (no high_entropy violation)
+        high_entropy_violations = [v for v in violations if v.violation_type == "high_entropy"]
+        assert len(high_entropy_violations) == 0, "Entropy check should be skipped for large inputs"
+
+    def test_entropy_dos_protection_huge_unicode(self):
+        """Test DoS protection against 1MB+ Unicode inputs.
+
+        SECURITY: Prevents memory exhaustion attack from massive Unicode character dictionaries.
+        Attack scenario: 10MB Unicode input creates massive char_counts defaultdict,
+        consuming gigabytes of memory and causing denial of service.
+
+        Protection: MAX_ENTROPY_LENGTH = 10KB limit skips entropy calculation for large inputs.
+        Reference: code-crit-19 - Entropy Calculation DoS
+        """
+        import time
+        detector = PromptInjectionDetector()
+
+        # Huge Unicode input (1MB+ with multibyte characters)
+        huge_unicode = "你好世界🚀" * 100_000  # ~1MB of Unicode
+        assert len(huge_unicode) > detector.MAX_ENTROPY_LENGTH, "Should be over limit"
+
+        start = time.perf_counter()
+        is_safe, violations = detector.detect(huge_unicode)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        # Should complete quickly despite huge size (< 100ms)
+        assert elapsed_ms < 100, f"Huge Unicode input took too long: {elapsed_ms:.2f}ms (DoS protection should skip entropy)"
+        assert isinstance(is_safe, bool), "Should return boolean"
+
+        # Verify entropy was skipped (no high_entropy violation)
+        high_entropy_violations = [v for v in violations if v.violation_type == "high_entropy"]
+        assert len(high_entropy_violations) == 0, "Entropy check should be skipped for huge inputs"
+
+    def test_entropy_dos_protection_attack_scenario(self):
+        """Test against actual DoS attack scenario from code review.
+
+        SECURITY: Original vulnerability allowed 10MB Unicode inputs to create
+        massive character dictionaries in _calculate_entropy(), causing memory
+        exhaustion and process crash.
+
+        Fix: MAX_ENTROPY_LENGTH = 10KB prevents entropy calculation on large inputs.
+        Reference: code-crit-19 - Entropy Calculation DoS
+        """
+        import time
+        import sys
+        detector = PromptInjectionDetector()
+
+        # Simulate attack: Multiple MB of diverse Unicode characters
+        # Each unique Unicode char increases char_counts dict size
+        attack_input = ""
+        for i in range(200_000):
+            # Mix of ASCII, Latin-1, CJK, emoji (diverse Unicode)
+            attack_input += chr(0x41 + (i % 26))  # A-Z
+            attack_input += chr(0x4E00 + (i % 100))  # CJK characters
+            attack_input += chr(0x1F600 + (i % 50))  # Emoji range
+
+        # Verify attack input is large
+        input_size_mb = len(attack_input.encode('utf-8')) / (1024 * 1024)
+        assert input_size_mb > 1, f"Attack input should be > 1MB (got {input_size_mb:.2f}MB)"
+
+        # Measure memory before (rough estimate)
+        # In real attack, this would consume gigabytes of memory without protection
+
+        start = time.perf_counter()
+        is_safe, violations = detector.detect(attack_input)
+        elapsed_ms = (time.perf_counter() - start) * 1000
+
+        # DoS protection should keep execution time reasonable (< 500ms for 1MB+)
+        assert elapsed_ms < 500, f"Attack input took too long: {elapsed_ms:.2f}ms (DoS protection active)"
+        assert isinstance(is_safe, bool), "Should return boolean without crashing"
+
+        # Verify no high_entropy violation (entropy was skipped)
+        high_entropy_violations = [v for v in violations if v.violation_type == "high_entropy"]
+        assert len(high_entropy_violations) == 0, "Entropy should be skipped to prevent DoS"
+
+    def test_entropy_calculation_correctness_under_limit(self):
+        """Test entropy calculation is still correct for inputs under limit."""
+        detector = PromptInjectionDetector()
+
+        # Test 1: Low entropy text (repetitive)
+        low_entropy_text = "aaa" * 100  # Very low entropy (only 'a' character)
+        entropy_low = detector._calculate_entropy(low_entropy_text)
+        assert entropy_low < 1.0, f"Repetitive text should have low entropy (got {entropy_low:.2f})"
+
+        # Test 2: High entropy text (random)
+        high_entropy_text = "aKj8#mN$pQ2@vX9!wZ4%rT7&bY3*cF6lD5^hG1~iP0" * 10
+        entropy_high = detector._calculate_entropy(high_entropy_text)
+        assert entropy_high > 4.0, f"Random text should have high entropy (got {entropy_high:.2f})"
+
+        # Test 3: Medium entropy text (normal language)
+        medium_entropy_text = "The quick brown fox jumps over the lazy dog" * 10
+        entropy_medium = detector._calculate_entropy(medium_entropy_text)
+        assert 2.0 < entropy_medium < 4.5, f"Normal text should have medium entropy (got {entropy_medium:.2f})"
+
     def test_null_byte_handling(self):
         """Test that null bytes in inputs are handled safely."""
         detector = PromptInjectionDetector()

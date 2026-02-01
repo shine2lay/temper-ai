@@ -26,6 +26,7 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, cast
 from pathlib import Path
 import json
+import secrets
 import time
 from datetime import datetime, UTC
 
@@ -198,10 +199,19 @@ class FileCheckpointBackend(CheckpointBackend):
         return workflow_dir
 
     def _generate_checkpoint_id(self) -> str:
-        """Generate a unique checkpoint ID."""
+        """Generate a unique checkpoint ID with cryptographic randomness.
+
+        Uses timestamp for ordering + counter for uniqueness within millisecond
+        + secrets.token_hex for cryptographic randomness to prevent enumeration.
+
+        Returns:
+            Checkpoint ID in format: cp-{timestamp}-{counter}-{random}
+            Example: cp-1706745600000-1-a3f2d9
+        """
         timestamp = int(time.time() * 1000)  # Millisecond precision
         self._counter += 1
-        return f"cp-{timestamp}-{self._counter}"
+        random_suffix = secrets.token_hex(6)  # 12 hex chars (48 bits of entropy)
+        return f"cp-{timestamp}-{self._counter}-{random_suffix}"
 
     def _get_checkpoint_path(self, workflow_id: str, checkpoint_id: str) -> Path:
         """Get file path for a checkpoint."""

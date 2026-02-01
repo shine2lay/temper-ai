@@ -240,6 +240,60 @@ class TestFileCheckpointBackend:
         assert loaded1.input == "input1"
         assert loaded2.input == "input2"
 
+    def test_checkpoint_id_entropy(self, backend):
+        """Test that checkpoint IDs have sufficient entropy to prevent enumeration attacks.
+
+        Security requirement: Checkpoint IDs must be unpredictable to prevent:
+        - Enumeration attacks (guessing valid checkpoint IDs)
+        - Collision attacks (creating conflicting checkpoints)
+        - Timing attacks (predicting when checkpoints were created)
+        """
+        # Generate multiple checkpoint IDs
+        checkpoint_ids = set()
+        for i in range(100):
+            checkpoint_id = backend._generate_checkpoint_id()
+            checkpoint_ids.add(checkpoint_id)
+
+        # Verify all IDs are unique (no collisions)
+        assert len(checkpoint_ids) == 100, "Checkpoint IDs must be unique"
+
+        # Verify format: cp-{timestamp}-{counter}-{random_hex}
+        for checkpoint_id in checkpoint_ids:
+            parts = checkpoint_id.split("-")
+            assert len(parts) == 4, f"Expected 4 parts, got {len(parts)}: {checkpoint_id}"
+            assert parts[0] == "cp", "Must start with 'cp'"
+            assert parts[1].isdigit(), "Timestamp must be numeric"
+            assert parts[2].isdigit(), "Counter must be numeric"
+            assert len(parts[3]) == 12, "Random suffix must be 12 hex chars (48 bits entropy)"
+            # Verify it's valid hex
+            int(parts[3], 16)
+
+        # Verify random suffixes are different (high entropy)
+        random_suffixes = [checkpoint_id.split("-")[3] for checkpoint_id in checkpoint_ids]
+        unique_suffixes = set(random_suffixes)
+        assert len(unique_suffixes) == 100, "Random suffixes must be unique (high entropy)"
+
+    def test_checkpoint_id_not_predictable(self, backend):
+        """Test that consecutive checkpoint IDs are not predictable.
+
+        Even with the same timestamp, the random component should make IDs unpredictable.
+        """
+        id1 = backend._generate_checkpoint_id()
+        id2 = backend._generate_checkpoint_id()
+
+        # Extract random suffixes
+        suffix1 = id1.split("-")[3]
+        suffix2 = id2.split("-")[3]
+
+        # Random suffixes should be completely different (not sequential)
+        assert suffix1 != suffix2, "Random suffixes must be different"
+
+        # They should not differ by just 1 (not a simple counter)
+        # Convert hex to int to check
+        val1 = int(suffix1, 16)
+        val2 = int(suffix2, 16)
+        assert abs(val1 - val2) > 1, "Random values must not be sequential"
+
 
 # Redis backend tests require a running Redis instance
 # These are skipped by default and can be run with: pytest -m redis

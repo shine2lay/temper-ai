@@ -1,0 +1,2629 @@
+{
+  "metadata": {
+    "review_type": "code-review",
+    "status": "PROPOSED",
+    "generated": "2026-01-31T06:41:14.595351+00:00",
+    "source_report": "code-review-20260130-223423.md",
+    "total_proposed": 58,
+    "reviewer": null,
+    "reviewed_at": null,
+    "review_notes": "All 58 tasks from code review"
+  },
+  "metrics": {
+    "total_files_reviewed": 105,
+    "total_loc": 35954,
+    "code_smells": 46,
+    "security_issues": 38,
+    "performance_issues": 21,
+    "reliability_issues": 28,
+    "bugs": 0,
+    "technical_debt_hours": 140,
+    "critical": 25,
+    "high": 36,
+    "medium": 46,
+    "low": 39,
+    "total_issues": 146
+  },
+  "tasks": [
+    {
+      "id": "code-crit-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "SQL Injection via Raw Migration Execution",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: SQL Injection via Raw Migration Execution",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-02",
+      "enabled": true,
+      "review_note": "",
+      "title": "ReDoS Vulnerability in Forbidden Operations",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "safety",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: ReDoS Vulnerability in Forbidden Operations",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-03",
+      "enabled": true,
+      "review_note": "",
+      "title": "Path Traversal via Rollback Operations",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "safety",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Path Traversal via Rollback Operations",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-04",
+      "enabled": true,
+      "review_note": "",
+      "title": "Arbitrary File Deletion in Rollback",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "safety",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Arbitrary File Deletion in Rollback",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-05",
+      "enabled": true,
+      "review_note": "",
+      "title": "Insecure Cache Key Generation",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "safety",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Insecure Cache Key Generation",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-06",
+      "enabled": true,
+      "review_note": "",
+      "title": "Sensitive Data Exposure in Logs",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "safety + observability",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Sensitive Data Exposure in Logs",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-07",
+      "enabled": true,
+      "review_note": "",
+      "title": "Command Injection via Environment Variables",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Command Injection via Environment Variables",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-08",
+      "enabled": true,
+      "review_note": "",
+      "title": "SQL Injection Pattern Detection Incomplete",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: SQL Injection Pattern Detection Incomplete",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-09",
+      "enabled": true,
+      "review_note": "",
+      "title": "SSRF DNS Timing Attack",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "tools",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: SSRF DNS Timing Attack",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-10",
+      "enabled": true,
+      "review_note": "",
+      "title": "AST-based Calculator DoS",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "tools",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: AST-based Calculator DoS",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-11",
+      "enabled": true,
+      "review_note": "",
+      "title": "Path Traversal via Symlinks",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "tools",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Path Traversal via Symlinks",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-12",
+      "enabled": true,
+      "review_note": "",
+      "title": "Weak Cryptography in Secrets Module",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "utils",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Weak Cryptography in Secrets Module",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-13",
+      "enabled": true,
+      "review_note": "",
+      "title": "Path Traversal in /tmp Access",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "utils",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Path Traversal in /tmp Access",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-14",
+      "enabled": true,
+      "review_note": "",
+      "title": "ReDoS in Secret Detection",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "utils",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: ReDoS in Secret Detection",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-15",
+      "enabled": true,
+      "review_note": "",
+      "title": "Cache Poisoning via Key Injection",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "cache",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Cache Poisoning via Key Injection",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-16",
+      "enabled": true,
+      "review_note": "",
+      "title": "Hash Collision Privacy Leak",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "cache",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Hash Collision Privacy Leak",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-17",
+      "enabled": true,
+      "review_note": "",
+      "title": "Circuit Breaker State Race Condition",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "llm",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Circuit Breaker State Race Condition",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-18",
+      "enabled": true,
+      "review_note": "",
+      "title": "ReDoS in Prompt Injection Detection",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "security",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: ReDoS in Prompt Injection Detection",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-19",
+      "enabled": true,
+      "review_note": "",
+      "title": "Entropy Calculation DoS",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "security",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Entropy Calculation DoS",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-20",
+      "enabled": true,
+      "review_note": "",
+      "title": "Secret Sanitization Bypass",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "security",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Secret Sanitization Bypass",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-crit-21",
+      "enabled": true,
+      "review_note": "",
+      "title": "SQL Injection via Experiment Name",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 1,
+      "module": "experimentation",
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: SQL Injection via Experiment Name",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "CRITICAL priority from code review"
+    },
+    {
+      "id": "code-high-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "Connection Leak in SQL Backend",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/backends/sql_backend.py:589-596",
+          "description": "Connection Leak in SQL Backend"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Connection Leak in SQL Backend",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-02",
+      "enabled": true,
+      "review_note": "",
+      "title": "LLM Client Connection Pool Leak",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "agents",
+      "files_to_modify": [
+        {
+          "path": "src/agents/llm_providers.py:173-223",
+          "description": "LLM Client Connection Pool Leak"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: LLM Client Connection Pool Leak",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-03",
+      "enabled": true,
+      "review_note": "",
+      "title": "N+1 Query Problem in Service",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "core",
+      "files_to_modify": [
+        {
+          "path": "src/core/service.py:128-138",
+          "description": "N+1 Query Problem in Service"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: N+1 Query Problem in Service",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-04",
+      "enabled": true,
+      "review_note": "",
+      "title": "Unbounded Memory Growth in Performance Tracker",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/performance.py:27-33",
+          "description": "Unbounded Memory Growth in Performance Tracker"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Unbounded Memory Growth in Performance Tracker",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-05",
+      "enabled": true,
+      "review_note": "",
+      "title": "Registry Singleton Memory Leak",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "strategies",
+      "files_to_modify": [
+        {
+          "path": "src/strategies/registry.py:65-80",
+          "description": "Registry Singleton Memory Leak"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Registry Singleton Memory Leak",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-06",
+      "enabled": true,
+      "review_note": "",
+      "title": "Rate Limiter Unbounded Growth",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "tools",
+      "files_to_modify": [
+        {
+          "path": "src/tools/web_scraper.py:107-148",
+          "description": "Rate Limiter Unbounded Growth"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Rate Limiter Unbounded Growth",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-07",
+      "enabled": true,
+      "review_note": "",
+      "title": "Cache Access Order Never Cleaned",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "cache",
+      "files_to_modify": [
+        {
+          "path": "src/cache/llm_cache.py:94-98",
+          "description": "Cache Access Order Never Cleaned"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Cache Access Order Never Cleaned",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-08",
+      "enabled": true,
+      "review_note": "",
+      "title": "Missing Buffer Flush Error Handling",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/buffer.py:279-303",
+          "description": "Missing Buffer Flush Error Handling"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Missing Buffer Flush Error Handling",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-09",
+      "enabled": true,
+      "review_note": "",
+      "title": "Unhandled Timezone Inconsistencies",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/backends/sql_backend.py:129-135",
+          "description": "Unhandled Timezone Inconsistencies"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Unhandled Timezone Inconsistencies",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-10",
+      "enabled": true,
+      "review_note": "",
+      "title": "Silent Exception Swallowing",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/tracker.py:205-207",
+          "description": "Silent Exception Swallowing"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Silent Exception Swallowing",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-11",
+      "enabled": true,
+      "review_note": "",
+      "title": "Race Condition in Token Bucket",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "safety",
+      "files_to_modify": [
+        {
+          "path": "src/safety/token_bucket.py:150-167",
+          "description": "Race Condition in Token Bucket"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Race Condition in Token Bucket",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-12",
+      "enabled": true,
+      "review_note": "",
+      "title": "Missing Input Validation in Policies",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "safety",
+      "files_to_modify": [
+        {
+          "path": "multiple files",
+          "description": "Missing Input Validation in Policies"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Missing Input Validation in Policies",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-13",
+      "enabled": true,
+      "review_note": "",
+      "title": "Weak Entropy in Checkpoint IDs",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [
+        {
+          "path": "src/compiler/checkpoint_backends.py:200-204",
+          "description": "Weak Entropy in Checkpoint IDs"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Weak Entropy in Checkpoint IDs",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-14",
+      "enabled": true,
+      "review_note": "",
+      "title": "Weak Secret Detection Patterns",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "safety",
+      "files_to_modify": [
+        {
+          "path": "src/safety/secret_detection.py:42-54",
+          "description": "Weak Secret Detection Patterns"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Weak Secret Detection Patterns",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-15",
+      "enabled": true,
+      "review_note": "",
+      "title": "Insufficient Disk Space Check",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "safety",
+      "files_to_modify": [
+        {
+          "path": "src/safety/policies/resource_limit_policy.py:243-292",
+          "description": "Insufficient Disk Space Check"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Insufficient Disk Space Check",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-high-16",
+      "enabled": true,
+      "review_note": "",
+      "title": "Missing Input Sanitization in Logging",
+      "priority": "HIGH",
+      "effort_hours": 3.0,
+      "issues_addressed": 1,
+      "module": "utils",
+      "files_to_modify": [
+        {
+          "path": "src/utils/logging.py:73-88",
+          "description": "Missing Input Sanitization in Logging"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Missing Input Sanitization in Logging",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Input validation",
+          "Security tests"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "HIGH priority from code review"
+    },
+    {
+      "id": "code-med-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "Duplicate Duration Calculations",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/backends/sql_backend.py:129-138,208-214,301-307",
+          "description": "Duplicate Duration Calculations"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Duplicate Duration Calculations",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-02",
+      "enabled": true,
+      "review_note": "",
+      "title": "Duplicate Agent Name Extraction",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [
+        {
+          "path": "3 files",
+          "description": "Duplicate Agent Name Extraction"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Duplicate Agent Name Extraction",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-03",
+      "enabled": true,
+      "review_note": "",
+      "title": "Duplicate Validation Logic",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "agents",
+      "files_to_modify": [
+        {
+          "path": "src/agents/standard_agent.py:270-277,575-582",
+          "description": "Duplicate Validation Logic"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Duplicate Validation Logic",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-04",
+      "enabled": true,
+      "review_note": "",
+      "title": "Hardcoded Security Limits",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [
+        {
+          "path": "src/compiler/config_loader.py:37-51",
+          "description": "Hardcoded Security Limits"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Hardcoded Security Limits",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-05",
+      "enabled": true,
+      "review_note": "",
+      "title": "Hardcoded Paths",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "utils",
+      "files_to_modify": [
+        {
+          "path": "src/utils/path_safety.py:42-54",
+          "description": "Hardcoded Paths"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Hardcoded Paths",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-06",
+      "enabled": true,
+      "review_note": "",
+      "title": "Inefficient LRU Eviction",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "cache",
+      "files_to_modify": [
+        {
+          "path": "src/cache/llm_cache.py:155-168",
+          "description": "Inefficient LRU Eviction"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Inefficient LRU Eviction",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-07",
+      "enabled": true,
+      "review_note": "",
+      "title": "Inefficient String Operations",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/visualize_trace.py:186-200",
+          "description": "Inefficient String Operations"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Inefficient String Operations",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-08",
+      "enabled": true,
+      "review_note": "",
+      "title": "Redundant Dictionary Copying",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [
+        {
+          "path": "src/compiler/executors/parallel.py:62-66",
+          "description": "Redundant Dictionary Copying"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Redundant Dictionary Copying",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-09",
+      "enabled": true,
+      "review_note": "",
+      "title": "Inefficient State Conversions",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [
+        {
+          "path": "src/compiler/node_builder.py:77",
+          "description": "Inefficient State Conversions"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Inefficient State Conversions",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-10",
+      "enabled": true,
+      "review_note": "",
+      "title": "Inconsistent Error Handling",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "compiler, strategies, tools",
+      "files_to_modify": [
+        {
+          "path": "multiple files",
+          "description": "Inconsistent Error Handling"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Inconsistent Error Handling",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-11",
+      "enabled": true,
+      "review_note": "",
+      "title": "Overly Broad Exception Catching",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [
+        {
+          "path": "src/compiler/executors/parallel.py:432-450",
+          "description": "Overly Broad Exception Catching"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Overly Broad Exception Catching",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-12",
+      "enabled": true,
+      "review_note": "",
+      "title": "Missing Type Validation",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/tracker.py:478-603",
+          "description": "Missing Type Validation"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Missing Type Validation",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-med-13",
+      "enabled": true,
+      "review_note": "",
+      "title": "Weak Dry-Run Implementation",
+      "priority": "MEDIUM",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "cli",
+      "files_to_modify": [
+        {
+          "path": "src/cli/rollback.py:148-161",
+          "description": "Weak Dry-Run Implementation"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Weak Dry-Run Implementation",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "MEDIUM priority from code review"
+    },
+    {
+      "id": "code-low-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "Inconsistent Naming Conventions",
+      "priority": "LOW",
+      "effort_hours": 1.0,
+      "issues_addressed": 1,
+      "module": "observability, compiler, agents",
+      "files_to_modify": [
+        {
+          "path": "multiple files",
+          "description": "Inconsistent Naming Conventions"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Inconsistent Naming Conventions",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "LOW priority from code review"
+    },
+    {
+      "id": "code-low-02",
+      "enabled": true,
+      "review_note": "",
+      "title": "Missing Docstring Examples",
+      "priority": "LOW",
+      "effort_hours": 1.0,
+      "issues_addressed": 1,
+      "module": "observability, compiler",
+      "files_to_modify": [
+        {
+          "path": "multiple backend files",
+          "description": "Missing Docstring Examples"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Missing Docstring Examples",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "LOW priority from code review"
+    },
+    {
+      "id": "code-low-03",
+      "enabled": true,
+      "review_note": "",
+      "title": "Incomplete Type Hints",
+      "priority": "LOW",
+      "effort_hours": 1.0,
+      "issues_addressed": 1,
+      "module": "observability, compiler, strategies",
+      "files_to_modify": [
+        {
+          "path": "multiple files",
+          "description": "Incomplete Type Hints"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Incomplete Type Hints",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "LOW priority from code review"
+    },
+    {
+      "id": "code-low-04",
+      "enabled": true,
+      "review_note": "",
+      "title": "Verbose Import Statements",
+      "priority": "LOW",
+      "effort_hours": 1.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/__init__.py",
+          "description": "Verbose Import Statements"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Verbose Import Statements",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "LOW priority from code review"
+    },
+    {
+      "id": "code-low-05",
+      "enabled": true,
+      "review_note": "",
+      "title": "Hardcoded File Paths",
+      "priority": "LOW",
+      "effort_hours": 1.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/database.py:28",
+          "description": "Hardcoded File Paths"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Hardcoded File Paths",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "LOW priority from code review"
+    },
+    {
+      "id": "code-low-06",
+      "enabled": true,
+      "review_note": "",
+      "title": "Incomplete TODOs",
+      "priority": "LOW",
+      "effort_hours": 1.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [
+        {
+          "path": "src/compiler/stage_compiler.py:160,workflow_executor.py:194",
+          "description": "Incomplete TODOs"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Incomplete TODOs",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "LOW priority from code review"
+    },
+    {
+      "id": "code-low-07",
+      "enabled": true,
+      "review_note": "",
+      "title": "Unused Parameters",
+      "priority": "LOW",
+      "effort_hours": 1.0,
+      "issues_addressed": 1,
+      "module": "observability",
+      "files_to_modify": [
+        {
+          "path": "src/observability/visualize_trace.py:276,408",
+          "description": "Unused Parameters"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Unused Parameters",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "LOW priority from code review"
+    },
+    {
+      "id": "code-low-08",
+      "enabled": true,
+      "review_note": "",
+      "title": "Commented Out Code",
+      "priority": "LOW",
+      "effort_hours": 1.0,
+      "issues_addressed": 1,
+      "module": "compiler",
+      "files_to_modify": [
+        {
+          "path": "check for blocks",
+          "description": "Commented Out Code"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: Commented Out Code",
+          "Add tests",
+          "Update documentation"
+        ],
+        "security_controls": [
+          "Follow best practices"
+        ],
+        "testing": [
+          "Unit tests",
+          "Integration tests",
+          "Regression tests"
+        ]
+      },
+      "implementation_guidance": "See: .claude-coord/reports/code-review-20260130-223423.md",
+      "test_strategy": "Comprehensive testing",
+      "success_metrics": [
+        "Issue resolved",
+        "Tests passing"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": []
+      },
+      "design_references": [
+        ".claude-coord/reports/code-review-20260130-223423.md"
+      ],
+      "notes": "LOW priority from code review"
+    }
+  ]
+}

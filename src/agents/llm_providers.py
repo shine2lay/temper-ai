@@ -8,6 +8,7 @@ import httpx
 import json
 import time
 import asyncio
+import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, AsyncIterator, Union, Tuple, Type, Literal
 from types import TracebackType
@@ -38,6 +39,9 @@ from src.utils.exceptions import (
 
 # Import circuit breaker for resilience
 from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError
+
+# Module logger for connection management warnings
+logger = logging.getLogger(__name__)
 
 
 __all__ = [
@@ -226,22 +230,49 @@ class BaseLLM(ABC):
         return self._async_client
 
     def close(self) -> None:
-        """Close HTTPx clients (sync and async) and release resources."""
+        """Close HTTPx clients (sync and async) and release resources.
+
+        RELIABILITY FIX (code-high-02): Force synchronous close of async client
+        to prevent connection pool leaks when no event loop is running.
+        """
         if self._client is not None:
             self._client.close()
             self._client = None
 
-        # Note: Cannot close async client from sync method
-        # Use aclose() in async context or ensure proper cleanup
+        # RELIABILITY FIX: Force synchronous close of async client
+        # Previous code only closed async client if event loop was running,
+        # causing connection pool leaks in non-async contexts
         if self._async_client is not None:
-            # Schedule async cleanup if event loop is running
             try:
                 loop = asyncio.get_running_loop()
+                # Event loop running - use async cleanup
                 loop.create_task(self._async_client.aclose())
                 self._async_client = None
             except RuntimeError:
-                # No event loop running, will need manual cleanup via aclose()
-                pass
+                # No event loop running - force synchronous close
+                # This prevents "Too many open files" errors
+                try:
+                    # Use asyncio.run() to execute async close in new event loop
+                    asyncio.run(self._async_client.aclose())
+                    self._async_client = None
+                except Exception as e:
+                    # Last resort - try httpx internal sync close
+                    # This may emit warnings but prevents connection leak
+                    try:
+                        # Access internal transport and close it synchronously
+                        if hasattr(self._async_client, '_transport'):
+                            transport = getattr(self._async_client, '_transport', None)
+                            if transport and hasattr(transport, 'close'):
+                                transport.close()
+                        self._async_client = None
+                    except Exception:
+                        # Log failure but don't crash - connections will leak
+                        # but at least we tried
+                        logger.warning(
+                            f"Failed to close async HTTP client: {e}. "
+                            f"Connections may leak. Use aclose() in async context."
+                        )
+                        pass
 
     async def aclose(self) -> None:
         """Async close for HTTPx clients and release resources."""
@@ -253,7 +284,11 @@ class BaseLLM(ABC):
             self._async_client = None
 
     def __del__(self) -> None:
-        """Cleanup HTTPx clients on garbage collection."""
+        """Cleanup HTTPx clients on garbage collection.
+
+        RELIABILITY FIX (code-high-02): Close both sync and async clients
+        to prevent connection pool leaks during garbage collection.
+        """
         # Safety net - close sync client if not already closed
         try:
             if self._client is not None:
@@ -261,6 +296,26 @@ class BaseLLM(ABC):
                 self._client = None
         except Exception:
             # Ignore errors during cleanup
+            pass
+
+        # RELIABILITY FIX: Also close async client during cleanup
+        # Previous code only closed sync client, causing async connection leaks
+        try:
+            if self._async_client is not None:
+                # Attempt to close async client in finalizer
+                # This is best-effort - may not work in all contexts
+                try:
+                    # Try to run async close in new event loop
+                    asyncio.run(self._async_client.aclose())
+                except Exception:
+                    # If async close fails, try internal sync close
+                    if hasattr(self._async_client, '_transport'):
+                        transport = getattr(self._async_client, '_transport', None)
+                        if transport and hasattr(transport, 'close'):
+                            transport.close()
+                self._async_client = None
+        except Exception:
+            # Silence all errors in __del__ - don't crash during cleanup
             pass
 
     def __enter__(self) -> "BaseLLM":

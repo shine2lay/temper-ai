@@ -5,6 +5,7 @@ Tracks workflow, stage, agent, LLM, and tool executions in real-time,
 writing to pluggable observability backends (SQL, Prometheus, S3, etc.).
 """
 import uuid
+import logging
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from typing import Optional, Dict, Any, List, Generator
@@ -13,6 +14,8 @@ from dataclasses import dataclass
 from src.observability.backend import ObservabilityBackend
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
 from src.utils.config_helpers import sanitize_config_for_display
+
+logger = logging.getLogger(__name__)
 
 
 def utcnow() -> datetime:
@@ -211,9 +214,17 @@ class ExecutionTracker:
                                 total_tokens=int(metrics.total_tokens or 0),
                                 total_cost_usd=float(metrics.total_cost_usd or 0.0)
                             )
-                except Exception:
+                except (ImportError, AttributeError):
                     # Non-SQL backends don't need metric aggregation
+                    # Expected when backend doesn't support SQL queries
                     pass
+                except Exception as e:
+                    # Unexpected error during metric aggregation
+                    # Log and continue (don't fail workflow for observability issues)
+                    logger.warning(
+                        f"Failed to aggregate workflow metrics for {workflow_id}: {e}",
+                        exc_info=True
+                    )
 
             except Exception as e:
                 # Failure - record error
@@ -314,8 +325,23 @@ class ExecutionTracker:
                             end_time=end_time,
                             status="completed"
                         )
-                except Exception:
-                    # Fallback for non-SQL backends
+                except (ImportError, AttributeError):
+                    # Expected for non-SQL backends (Prometheus, S3, etc.)
+                    # - ImportError: sqlmodel/sqlalchemy not available
+                    # - AttributeError: session doesn't have 'exec' method
+                    self.backend.track_stage_end(
+                        stage_id=stage_id,
+                        end_time=end_time,
+                        status="completed"
+                    )
+                except Exception as e:
+                    # Unexpected error during stage metric aggregation
+                    # Log and continue (don't fail stage for observability issues)
+                    logger.warning(
+                        f"Failed to aggregate stage metrics for {stage_id}: {e}",
+                        exc_info=True
+                    )
+                    # Fallback: complete stage without detailed metrics
                     self.backend.track_stage_end(
                         stage_id=stage_id,
                         end_time=end_time,
@@ -551,8 +577,6 @@ class ExecutionTracker:
 
         # Log sanitization activity if redactions were made
         if prompt_result.was_sanitized or response_result.was_sanitized:
-            import logging
-            logger = logging.getLogger(__name__)
             logger.info(
                 "Sanitized LLM call data before storage",
                 extra={
@@ -668,8 +692,6 @@ class ExecutionTracker:
         Returns:
             Sanitized dictionary with secrets redacted
         """
-        import logging
-
         if not isinstance(data, dict):
             return data
 
@@ -700,7 +722,6 @@ class ExecutionTracker:
                 else:
                     # Non-serializable object - convert to safe type indicator
                     # SECURITY: Log error type but NOT the value
-                    logger = logging.getLogger(__name__)
                     logger.warning(
                         "Non-serializable object in tool parameters",
                         extra={
@@ -711,7 +732,6 @@ class ExecutionTracker:
                     sanitized[safe_key] = f"[SANITIZED:{type(value).__name__}]"
             except Exception as e:
                 # SECURITY: Log exception type but NOT the data
-                logger = logging.getLogger(__name__)
                 logger.warning(
                     "Sanitization error for key",
                     extra={
@@ -900,9 +920,6 @@ class ExecutionTracker:
             ... )
             'collab-456abc789def'
         """
-        import logging
-        logger = logging.getLogger(__name__)
-
         # Map legacy parameters to new schema
         if stage_name and not stage_id:
             stage_id = self.context.stage_id or stage_name

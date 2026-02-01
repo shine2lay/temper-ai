@@ -1,12 +1,51 @@
 {
   "agents": {
-    "test-agent-001": {
-      "pid": 341834,
-      "registered_at": "2026-01-31 23:51:08",
-      "last_heartbeat": "2026-01-31 23:51:08"
+    "agent-9e1408": {
+      "pid": 441811,
+      "registered_at": "2026-02-01 02:26:36",
+      "last_heartbeat": "2026-02-01 02:26:36"
+    },
+    "agent-a62d33": {
+      "pid": 456305,
+      "registered_at": "2026-02-01 02:28:19",
+      "last_heartbeat": "2026-02-01 02:28:19"
+    },
+    "agent-235084": {
+      "pid": 458256,
+      "registered_at": "2026-02-01 02:30:07",
+      "last_heartbeat": "2026-02-01 02:30:07"
+    },
+    "agent-ecfbec": {
+      "pid": 459856,
+      "registered_at": "2026-02-01 02:31:14",
+      "last_heartbeat": "2026-02-01 02:31:14"
+    },
+    "agent-f50479": {
+      "pid": 460427,
+      "registered_at": "2026-02-01 02:31:32",
+      "last_heartbeat": "2026-02-01 02:31:32"
     }
   },
-  "locks": {},
+  "locks": {
+    "src/safety/token_bucket.py": [
+      {
+        "owner": "agent-a62d33",
+        "acquired_at": "2026-02-01 02:28:19"
+      }
+    ],
+    "src/observability/buffer.py": [
+      {
+        "owner": "agent-9e1408",
+        "acquired_at": "2026-02-01 02:29:46"
+      }
+    ],
+    "src/observability/performance.py": [
+      {
+        "owner": "agent-f50479",
+        "acquired_at": "2026-02-01 02:31:32"
+      }
+    ]
+  },
   "tasks": {
     "test-crit-secret-detection-01": {
       "subject": "Create test suite for Secret Detection Policy",
@@ -288,11 +327,11 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-06.md",
       "activeForm": null,
       "priority": 1,
-      "status": "pending",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "agent-235084",
       "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T07:20:23Z",
-      "completed_at": null
+      "started_at": "2026-02-01 02:30:10",
+      "completed_at": "2026-02-01 02:27:05"
     },
     "code-crit-07": {
       "subject": "Command Injection via Environment Variables",
@@ -343,11 +382,11 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-11.md",
       "activeForm": null,
       "priority": 1,
-      "status": "pending",
-      "owner": null,
+      "status": "completed",
+      "owner": "agent-ecfbec",
       "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T21:42:06Z",
-      "completed_at": null
+      "started_at": "2026-02-01 02:31:17",
+      "completed_at": "2026-02-01 02:31:31"
     },
     "code-crit-12": {
       "subject": "Weak Cryptography in Secrets Module",
@@ -390,8 +429,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:24:23",
+      "completed_at": "2026-02-01 02:26:02"
     },
     "code-crit-16": {
       "subject": "Hash Collision Privacy Leak",
@@ -401,8 +440,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:26:07",
+      "completed_at": "2026-02-01 02:26:20"
     },
     "code-crit-17": {
       "subject": "Circuit Breaker State Race Condition",
@@ -412,8 +451,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:25:21",
+      "completed_at": "2026-02-01 02:26:09"
     },
     "code-crit-18": {
       "subject": "ReDoS in Prompt Injection Detection",
@@ -423,8 +462,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:25:26",
+      "completed_at": "2026-02-01 02:26:06"
     },
     "code-crit-19": {
       "subject": "Entropy Calculation DoS",
@@ -434,8 +473,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:26:13",
+      "completed_at": "2026-02-01 02:26:41"
     },
     "code-crit-20": {
       "subject": "Secret Sanitization Bypass",
@@ -445,8 +484,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:25:37",
+      "completed_at": "2026-02-01 02:26:54"
     },
     "code-crit-21": {
       "subject": "SQL Injection via Experiment Name",
@@ -456,8 +495,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:26:17",
+      "completed_at": "2026-02-01 02:20:04"
     },
     "code-high-01": {
       "subject": "Connection Leak in SQL Backend",
@@ -478,8 +517,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:22:24",
+      "completed_at": "2026-02-01 02:23:47"
     },
     "code-high-03": {
       "subject": "N+1 Query Problem in Service",
@@ -489,8 +528,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:22:30",
+      "completed_at": "2026-02-01 02:25:56"
     },
     "code-high-04": {
       "subject": "Unbounded Memory Growth in Performance Tracker",
@@ -500,8 +539,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:26:20",
+      "completed_at": "2026-02-01 02:27:08"
     },
     "code-high-05": {
       "subject": "Registry Singleton Memory Leak",
@@ -511,8 +550,8 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "started_at": "2026-02-01 02:22:37",
+      "completed_at": "2026-02-01 02:24:16"
     },
     "code-high-06": {
       "subject": "Rate Limiter Unbounded Growth",
@@ -522,7 +561,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 02:22:49",
       "completed_at": null
     },
     "code-high-07": {
@@ -533,7 +572,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 02:26:32",
       "completed_at": null
     },
     "code-high-08": {
@@ -541,10 +580,10 @@
       "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-08.md",
       "activeForm": null,
       "priority": 2,
-      "status": "pending",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "agent-9e1408",
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 02:26:42",
       "completed_at": null
     },
     "code-high-09": {
@@ -555,7 +594,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 02:26:49",
       "completed_at": null
     },
     "code-high-10": {
@@ -566,7 +605,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 02:27:00",
       "completed_at": null
     },
     "code-high-11": {
@@ -577,7 +616,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 02:27:11",
       "completed_at": null
     },
     "code-high-12": {
@@ -588,7 +627,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
+      "started_at": "2026-02-01 02:27:20",
       "completed_at": null
     },
     "code-high-13": {
@@ -1138,7 +1177,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
+      "started_at": "2026-02-01 00:46:43",
       "completed_at": null
     },
     "test-med-standardize-naming-02": {
@@ -1149,7 +1188,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
+      "started_at": "2026-02-01 00:52:22",
       "completed_at": null
     },
     "test-med-unicode-edge-cases-03": {
@@ -1160,7 +1199,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
+      "started_at": "2026-02-01 01:08:02",
       "completed_at": null
     },
     "test-med-empty-null-edge-cases-04": {
@@ -1193,7 +1232,7 @@
       "status": "pending",
       "owner": null,
       "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
+      "started_at": "2026-02-01 01:12:30",
       "completed_at": null
     },
     "test-med-consolidate-test-fixtures-07": {

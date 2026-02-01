@@ -80,7 +80,7 @@ class StatisticalAnalyzer:
 
         # Check minimum sample size
         min_samples = experiment.min_sample_size_per_variant
-        if any(metrics["count"] < min_samples for metrics in variant_metrics.values()):
+        if any(metrics.get("count", 0) < min_samples for metrics in variant_metrics.values()):
             return self._inconclusive_result("Insufficient sample size")
 
         # Find control variant

@@ -8,10 +8,12 @@ import time
 import statistics
 from typing import Dict, List, Optional, Any, Generator
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict
 from contextlib import contextmanager
 import logging
+
+from src.observability.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +25,12 @@ class LatencyMetrics:
     operation: str
     samples: List[float] = field(default_factory=list)
     slow_threshold_ms: float = 1000.0  # Default 1 second
-    last_updated: datetime = field(default_factory=datetime.utcnow)
+    last_updated: datetime = field(default_factory=utcnow)
 
     def record(self, latency_ms: float) -> None:
         """Record a latency sample."""
         self.samples.append(latency_ms)
-        self.last_updated = datetime.utcnow()
+        self.last_updated = utcnow()
 
         # Keep only recent samples (last 1000) to prevent memory growth
         if len(self.samples) > 1000:
@@ -209,7 +211,7 @@ class PerformanceTracker:
             slow_op = SlowOperation(
                 operation=operation,
                 latency_ms=latency_ms,
-                timestamp=datetime.now(),
+                timestamp=utcnow(),
                 context=context or {}
             )
 
@@ -327,7 +329,7 @@ class PerformanceTracker:
             >>> removed = tracker.cleanup_expired_metrics(expiration_hours=24)
             >>> print(f"Removed {removed} expired operations")
         """
-        now = datetime.utcnow()
+        now = utcnow()
         expiration_threshold = now - timedelta(hours=expiration_hours)
 
         # Find expired operations

@@ -1,0 +1,564 @@
+{
+  "metadata": {
+    "review_type": "docs-review",
+    "status": "PROPOSED",
+    "generated": "2026-01-31T06:42:08.050708Z",
+    "total_proposed": 23,
+    "source_report": ".claude-coord/reports/docs-review-20260130-223705.md"
+  },
+  "metrics": {
+    "total_issues": 206,
+    "critical": 53,
+    "high": 43,
+    "medium": 64,
+    "low": 46,
+    "documentation_accuracy": "78%",
+    "files_reviewed": 372,
+    "total_words": 472385
+  },
+  "tasks": [
+    {
+      "id": "docs-crit-import-01",
+      "enabled": true,
+      "title": "Fix Strategy class names in API documentation",
+      "priority": "CRITICAL",
+      "category": "doc-code-mismatch",
+      "description": "API documentation uses wrong class names for collaboration strategies. Users copying examples will get ImportError.",
+      "location": "docs/API_REFERENCE.md:640-685",
+      "current": "DebateStrategy, MeritWeightedStrategy, HierarchicalStrategy",
+      "should_be": "DebateAndSynthesize, MeritWeightedResolver, (HierarchicalStrategy doesn't exist)",
+      "impact": "CRITICAL - All strategy examples cause ImportError",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Replace DebateStrategy with DebateAndSynthesize",
+          "Replace MeritWeightedStrategy with MeritWeightedResolver",
+          "Remove or clarify HierarchicalStrategy (doesn't exist)",
+          "Update all import examples"
+        ],
+        "testing": [
+          "Verify: python -c 'from src.strategies.debate import DebateAndSynthesize'",
+          "All code examples in docs/API_REFERENCE.md work"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-import-02",
+      "enabled": true,
+      "title": "Fix ToolRegistry method names in API documentation",
+      "priority": "CRITICAL",
+      "category": "doc-code-mismatch",
+      "description": "ToolRegistry API documentation uses wrong method names. All examples will fail.",
+      "location": "docs/API_REFERENCE.md:273-296",
+      "current": "register_tool(), get_tool(), has_tool()",
+      "should_be": "register(), get(), (has_tool doesn't exist)",
+      "impact": "CRITICAL - All ToolRegistry examples fail",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Replace register_tool() with register()",
+          "Replace get_tool() with get()",
+          "Remove has_tool() or document alternative",
+          "Update all examples"
+        ],
+        "testing": [
+          "Verify: python -c 'from src.tools import ToolRegistry; r = ToolRegistry(); hasattr(r, \"register\")'",
+          "All ToolRegistry examples work"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-import-03",
+      "enabled": true,
+      "title": "Replace PolicyViolation with SafetyViolation in security docs",
+      "priority": "CRITICAL",
+      "category": "doc-code-mismatch",
+      "description": "Security documentation uses PolicyViolation but code uses SafetyViolation. Global find/replace needed.",
+      "location": "docs/security/M4_SAFETY_SYSTEM.md (multiple locations)",
+      "current": "PolicyViolation",
+      "should_be": "SafetyViolation",
+      "impact": "CRITICAL - All policy examples cause NameError",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Global replace PolicyViolation → SafetyViolation in all security docs",
+          "Update imports",
+          "Update class references",
+          "Update examples"
+        ],
+        "testing": [
+          "Verify: python -c 'from src.safety.interfaces import SafetyViolation'",
+          "Grep security docs to ensure no PolicyViolation references remain"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-import-04",
+      "enabled": true,
+      "title": "Remove ServiceFactory references from security docs",
+      "priority": "CRITICAL",
+      "category": "doc-code-mismatch",
+      "description": "Documentation references ServiceFactory but class doesn't exist in codebase.",
+      "location": "docs/security/M4_SAFETY_SYSTEM.md:481-494",
+      "current": "from src.core.service_factory import ServiceFactory",
+      "should_be": "Remove or document actual service registration",
+      "impact": "CRITICAL - Integration examples won't work",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Remove ServiceFactory references",
+          "OR document actual service registration pattern",
+          "Update integration examples"
+        ],
+        "testing": [
+          "Verify examples use only existing classes",
+          "Check src/core/ doesn't have service_factory.py"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-import-05",
+      "enabled": true,
+      "title": "Fix PolicyComposer method names in M4 API docs",
+      "priority": "CRITICAL",
+      "category": "doc-code-mismatch",
+      "description": "PolicyComposer documentation shows clear() but actual method is clear_policies(). Also documents non-existent set_fail_fast().",
+      "location": "docs/M4_API_REFERENCE.md:175-180, 184-198",
+      "current": "clear(), set_fail_fast(enabled: bool)",
+      "should_be": "clear_policies(), (set_fail_fast doesn't exist)",
+      "impact": "CRITICAL - Examples won't work",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Replace clear() with clear_policies()",
+          "Remove set_fail_fast() or implement it",
+          "Document short_circuit_on_critical (exists but not documented)",
+          "Document parallel_execution (exists but not documented)"
+        ],
+        "testing": [
+          "Verify: grep 'def clear_policies' src/safety/composition.py",
+          "All PolicyComposer examples work"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-missing-01",
+      "enabled": true,
+      "title": "Create LICENSE file",
+      "priority": "CRITICAL",
+      "category": "missing-file",
+      "description": "README.md references LICENSE file but it doesn't exist in project root.",
+      "location": "README.md:291",
+      "current": "No LICENSE file",
+      "should_be": "LICENSE file with MIT license",
+      "impact": "CRITICAL - Legal/licensing issue",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Create LICENSE file in project root",
+          "Use MIT license text as specified in README",
+          "Verify README reference is correct"
+        ],
+        "testing": [
+          "Verify: ls -la LICENSE",
+          "LICENSE contains MIT license text"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-missing-02",
+      "enabled": true,
+      "title": "Add ExecutionEngine section to API documentation",
+      "priority": "CRITICAL",
+      "category": "missing-docs",
+      "description": "Major M2.5 feature (ExecutionEngine abstraction) not documented in API reference. Users don't know how to swap engines.",
+      "location": "docs/API_REFERENCE.md (missing section)",
+      "current": "No ExecutionEngine documentation in API reference",
+      "should_be": "Complete ExecutionEngine API documentation",
+      "impact": "CRITICAL - Major feature invisible to users",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add 'Execution Engines' section to API_REFERENCE.md",
+          "Document ExecutionEngine abstract class",
+          "Document LangGraphExecutionEngine",
+          "Document EngineRegistry",
+          "Document stage executors (Parallel, Sequential, Adaptive)",
+          "Provide usage examples"
+        ],
+        "testing": [
+          "All code examples work",
+          "Cross-reference with docs/features/execution/execution_engine_architecture.md"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-missing-03",
+      "enabled": true,
+      "title": "Add CheckpointManager to API documentation",
+      "priority": "CRITICAL",
+      "category": "missing-docs",
+      "description": "Checkpoint/resume capability not documented. Users don't know framework supports checkpointing.",
+      "location": "docs/API_REFERENCE.md, docs/QUICK_START.md",
+      "current": "No checkpoint documentation",
+      "should_be": "Complete checkpoint/resume documentation",
+      "impact": "CRITICAL - Important feature hidden",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add CheckpointManager section to API_REFERENCE.md",
+          "Document StateManager",
+          "Document checkpoint backends (File, Redis)",
+          "Add checkpoint example to QUICK_START.md",
+          "Provide usage examples"
+        ],
+        "testing": [
+          "All checkpoint examples work",
+          "Verify src/compiler/checkpoint_manager.py exists"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-sig-01",
+      "enabled": true,
+      "title": "Add missing AgentResponse fields to API docs",
+      "priority": "CRITICAL",
+      "category": "doc-code-mismatch",
+      "description": "AgentResponse documentation missing important fields like reasoning, tokens, confidence.",
+      "location": "docs/API_REFERENCE.md:932-947",
+      "current": "Only documents output, metadata, tool_calls, error",
+      "should_be": "Document all fields including reasoning, tokens, confidence, etc.",
+      "impact": "HIGH - Users won't know about important fields",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add reasoning: Optional[str]",
+          "Add tokens: int",
+          "Add estimated_cost_usd: float",
+          "Add latency_seconds: float",
+          "Add confidence: Optional[float]",
+          "Document auto-calculation behavior for confidence"
+        ],
+        "testing": [
+          "Verify: python -c 'from src.agents import AgentResponse; import inspect; print(inspect.signature(AgentResponse))'",
+          "Cross-reference with src/agents/base_agent.py:14-38"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-sig-02",
+      "enabled": true,
+      "title": "Remove non-existent RollbackManager methods from docs",
+      "priority": "CRITICAL",
+      "category": "doc-code-mismatch",
+      "description": "Documentation shows delete_snapshot() and cleanup_old_snapshots() but these methods don't exist.",
+      "location": "docs/M4_API_REFERENCE.md:714-745",
+      "current": "Documents delete_snapshot(), cleanup_old_snapshots()",
+      "should_be": "Remove or implement these methods",
+      "impact": "CRITICAL - Examples will fail",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Remove delete_snapshot() from docs OR implement it",
+          "Remove cleanup_old_snapshots() from docs OR implement it",
+          "Update examples to use only existing methods"
+        ],
+        "testing": [
+          "Grep src/safety/rollback.py for these methods",
+          "All RollbackManager examples work"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-sig-03",
+      "enabled": true,
+      "title": "Fix non-existent methods in M4 API docs",
+      "priority": "CRITICAL",
+      "category": "doc-code-mismatch",
+      "description": "Multiple documented methods don't exist: CircuitBreaker.force_close(), ApprovalRequest.is_resolved(), RollbackResult.partial_success",
+      "location": "docs/M4_API_REFERENCE.md (multiple)",
+      "current": "Documents non-existent methods",
+      "should_be": "Remove or implement missing methods",
+      "impact": "CRITICAL - Examples will fail",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "CircuitBreaker.force_close() → use reset() instead",
+          "ApprovalRequest.is_resolved() → remove or implement",
+          "RollbackResult.partial_success → remove (doesn't exist)",
+          "Update all affected examples"
+        ],
+        "testing": [
+          "Grep source files to verify method existence",
+          "All API examples work"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-path-01",
+      "enabled": true,
+      "title": "Fix wrong file paths in security documentation",
+      "priority": "CRITICAL",
+      "category": "doc-code-mismatch",
+      "description": "Security docs reference wrong file paths for ApprovalWorkflowPolicy and ResourceLimitPolicy.",
+      "location": "docs/security/M4_SAFETY_SYSTEM.md (multiple)",
+      "current": "approval_workflow.py, resource_limits.py",
+      "should_be": "approval.py, policies/resource_limit_policy.py",
+      "impact": "CRITICAL - Users can't find referenced files",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Fix: src/safety/approval_workflow.py → src/safety/approval.py",
+          "Fix: src/safety/resource_limits.py → src/safety/policies/resource_limit_policy.py",
+          "Update all file path references"
+        ],
+        "testing": [
+          "Verify: ls -la src/safety/approval.py",
+          "Verify: ls -la src/safety/policies/resource_limit_policy.py",
+          "Grep docs for old paths"
+        ]
+      }
+    },
+    {
+      "id": "docs-crit-link-01",
+      "enabled": true,
+      "title": "Fix broken internal links in README and QUICK_START",
+      "priority": "CRITICAL",
+      "category": "broken-links",
+      "description": "Multiple broken internal links due to case mismatch and wrong paths.",
+      "location": "README.md, QUICK_START.md",
+      "current": "Links to configuration.md, observability.md, etc.",
+      "should_be": "Correct paths and case",
+      "impact": "HIGH - Users can't navigate documentation",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "README.md:276 → ./docs/CONFIGURATION.md (fix case)",
+          "README.md:277 → fix or remove observability.md link",
+          "QUICK_START.md:266 → correct path to multi_agent_collaboration.md",
+          "QUICK_START.md:267 → correct path to collaboration_strategies.md",
+          "Verify all internal links work"
+        ],
+        "testing": [
+          "Run link checker",
+          "Manually test all links in README and QUICK_START"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-consistency-01",
+      "enabled": true,
+      "title": "Sync README milestone status with ROADMAP",
+      "priority": "HIGH",
+      "category": "consistency",
+      "description": "README says M3 is 69% complete but ROADMAP says M4 is complete.",
+      "location": "README.md:11, ROADMAP.md",
+      "current": "README: M3 69% complete",
+      "should_be": "README: M4 complete (matching ROADMAP)",
+      "impact": "HIGH - Confusing project status",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Update README.md lines 11-56 to reflect M4 completion",
+          "Sync with ROADMAP.md status",
+          "Update completion percentages"
+        ],
+        "testing": [
+          "README and ROADMAP show same milestone status",
+          "No contradictions"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-consistency-02",
+      "enabled": true,
+      "title": "Fix M3 completion report self-contradiction",
+      "priority": "HIGH",
+      "category": "consistency",
+      "description": "M3 completion doc says 'COMPLETE' in title but '69%' in content.",
+      "location": "docs/milestones/milestone3_completion.md",
+      "current": "Title: COMPLETE, Content: 69%",
+      "should_be": "Consistent status",
+      "impact": "MEDIUM - Confusing milestone status",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Either mark as 100% complete",
+          "OR mark as incomplete with remaining tasks in backlog",
+          "Remove contradiction"
+        ],
+        "testing": [
+          "No self-contradictory statements",
+          "Clear completion status"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-consistency-03",
+      "enabled": true,
+      "title": "Standardize Python version requirement",
+      "priority": "HIGH",
+      "category": "consistency",
+      "description": "Inconsistent Python requirements: 3.9+ vs 3.11+ across different docs.",
+      "location": "README.md, M4_DEPLOYMENT_GUIDE.md, TECHNICAL_SPECIFICATION.md",
+      "current": "Mix of 3.9+ and 3.11+",
+      "should_be": "Consistent 3.11+ everywhere",
+      "impact": "MEDIUM - Users may install wrong version",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Standardize on Python 3.11+",
+          "Update all docs to use consistent requirement",
+          "Update installation instructions"
+        ],
+        "testing": [
+          "Grep all docs for Python version mentions",
+          "All show 3.11+"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-accuracy-01",
+      "enabled": true,
+      "title": "Fix Vision document file references",
+      "priority": "HIGH",
+      "category": "broken-links",
+      "description": "Vision doc references non-existent file names.",
+      "location": "docs/VISION.md:1574-1576",
+      "current": "META_AUTONOMOUS_FRAMEWORK_TECHNICAL_SPEC.md, META_AUTONOMOUS_FRAMEWORK_ROADMAP.md",
+      "should_be": "TECHNICAL_SPECIFICATION.md, ROADMAP.md",
+      "impact": "MEDIUM - Broken links",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Update to actual file names",
+          "Verify links work"
+        ],
+        "testing": [
+          "All Vision doc links work",
+          "Referenced files exist"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-accuracy-02",
+      "enabled": true,
+      "title": "Update architecture diagram with M2-M4 components",
+      "priority": "HIGH",
+      "category": "staleness",
+      "description": "Architecture diagram missing ExecutionEngine, SafetyGate, multi-agent components.",
+      "location": "docs/architecture/SYSTEM_OVERVIEW.md:6-53",
+      "current": "Legacy WORKFLOW EXECUTOR component",
+      "should_be": "Current architecture with M2-M4 additions",
+      "impact": "MEDIUM - Outdated architecture view",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add ExecutionEngine abstraction (M2.5)",
+          "Add SafetyGate and M4 components",
+          "Add multi-agent collaboration (M3)",
+          "Update diagram"
+        ],
+        "testing": [
+          "Diagram matches current implementation",
+          "All major components shown"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-testing-01",
+      "enabled": true,
+      "title": "Correct test review report analysis errors",
+      "priority": "HIGH",
+      "category": "accuracy",
+      "description": "Previous test review has incorrect analyses - race condition test is correct, not broken.",
+      "location": ".claude-coord/reports/test-review-20260128-200844.md",
+      "current": "Claims race condition test is broken",
+      "should_be": "Clarify it's a demonstration test",
+      "impact": "MEDIUM - Misleading report",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Update race condition analysis",
+          "Remove false positive rate claim (unverifiable)",
+          "Correct checkpoint test status (they exist)"
+        ],
+        "testing": [
+          "Report accurately reflects test implementation"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-testing-02",
+      "enabled": true,
+      "title": "Use actual test names in TESTING.md examples",
+      "priority": "HIGH",
+      "category": "accuracy",
+      "description": "Documentation uses hypothetical test names that don't exist in codebase.",
+      "location": "docs/TESTING.md:534-551",
+      "current": "test_cache_returns_none_for_nonexistent_key, etc.",
+      "should_be": "Actual test names from codebase",
+      "impact": "MEDIUM - Confusing examples",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Use actual test names from tests/",
+          "Verify all example test names exist",
+          "Update to match real test patterns"
+        ],
+        "testing": [
+          "Grep tests/ for documented test names",
+          "All referenced tests exist"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-testing-03",
+      "enabled": true,
+      "title": "Add venv activation to pytest commands in TESTING.md",
+      "priority": "HIGH",
+      "category": "completeness",
+      "description": "Test commands assume pytest is globally installed.",
+      "location": "docs/TESTING.md:159-169",
+      "current": "Direct pytest commands",
+      "should_be": "Include venv activation step",
+      "impact": "MEDIUM - Commands fail for new users",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add prerequisite section",
+          "Show venv activation",
+          "Note: pip install -e '.[dev]' required"
+        ],
+        "testing": [
+          "Instructions work for new users"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-security-01",
+      "enabled": true,
+      "title": "Standardize security policy priority numbering",
+      "priority": "HIGH",
+      "category": "consistency",
+      "description": "Priority ranges inconsistent - BlastRadiusPolicy listed as P1 but has P0 priority value.",
+      "location": "docs/security/M4_SAFETY_SYSTEM.md:311-380",
+      "current": "Conflicting priority ranges",
+      "should_be": "Consistent priority system",
+      "impact": "MEDIUM - Confusing priority values",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Clarify: P0 = 90-200, P1 = 80-89, etc.",
+          "Fix BlastRadiusPolicy classification",
+          "Verify all actual implementation values"
+        ],
+        "testing": [
+          "All documented priorities match code",
+          "No conflicts"
+        ]
+      }
+    },
+    {
+      "id": "docs-high-security-02",
+      "enabled": true,
+      "title": "Add all implemented policies to architecture docs",
+      "priority": "HIGH",
+      "category": "completeness",
+      "description": "RateLimitPolicy and ResourceLimitPolicy missing from architecture diagram.",
+      "location": "docs/security/M4_SAFETY_SYSTEM.md:54-69",
+      "current": "Incomplete policy list",
+      "should_be": "All policies documented",
+      "impact": "MEDIUM - Users won't know about all policies",
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Add RateLimitPolicy",
+          "Add ResourceLimitPolicy",
+          "Verify all src/safety/policies/ are documented"
+        ],
+        "testing": [
+          "Compare policy list to src/safety/policies/",
+          "All implemented policies shown"
+        ]
+      }
+    }
+  ]
+}

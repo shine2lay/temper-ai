@@ -206,6 +206,35 @@ now() {
     date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
+# Log activity to activity.jsonl
+log_activity() {
+    local activity_file="$COORD_DIR/activity.jsonl"
+    local timestamp=$(now)
+    local action="$1"
+    shift
+
+    # Build JSON with all provided arguments
+    local json_data="{\"timestamp\":\"$timestamp\",\"action\":\"$action\""
+
+    # Parse key=value pairs
+    while [ $# -gt 0 ]; do
+        local key="${1%%=*}"
+        local value="${1#*=}"
+        # Add to JSON (quote strings, keep numbers as-is)
+        if [[ "$value" =~ ^[0-9]+$ ]]; then
+            json_data="$json_data,\"$key\":$value"
+        else
+            json_data="$json_data,\"$key\":\"$value\""
+        fi
+        shift
+    done
+
+    json_data="$json_data}"
+
+    # Append to activity log (atomic append)
+    echo "$json_data" >> "$activity_file"
+}
+
 # Clean up dead agents and their locks
 # FIXED: Now holds exclusive lock for entire read-modify-write cycle
 cleanup_dead_agents() {
@@ -283,6 +312,10 @@ cmd_register() {
 
         printf "%s\n" "$state" > "$STATE_FILE"
     '
+
+    # Log activity (outside flock)
+    log_activity "agent_register" agent_id="$agent_id" pid="$pid"
+
     echo "Registered agent: $agent_id (pid: $pid)"
 }
 
@@ -329,6 +362,8 @@ cmd_unregister() {
 
     case "$result" in
         OK)
+            # Log activity (outside flock)
+            log_activity "agent_unregister" agent_id="$agent_id"
             echo "Unregistered agent: $agent_id"
             ;;
         NOT_FOUND)
@@ -414,6 +449,9 @@ cmd_lock() {
         printf "%s\n" "$state" > "$STATE_FILE"
         echo "Locked: $file_path"
     '
+
+    # Log activity (outside flock)
+    log_activity "lock" agent_id="$agent_id" file_path="$file_path"
 }
 
 cmd_lock_all() {
@@ -480,6 +518,9 @@ cmd_lock_all() {
         printf "%s\n" "$state" > "$STATE_FILE"
         echo "Locked $file_count files"
     '
+
+    # Log activity (outside flock)
+    log_activity "lock_all" agent_id="$agent_id" file_count="$file_count"
 }
 
 cmd_unlock() {
@@ -524,6 +565,9 @@ cmd_unlock() {
         printf "%s\n" "$state" > "$STATE_FILE"
         echo "Unlocked: $file_path"
     '
+
+    # Log activity (outside flock)
+    log_activity "unlock" agent_id="$agent_id" file_path="$file_path"
 }
 
 cmd_unlock_all() {
@@ -568,6 +612,9 @@ cmd_unlock_all() {
             echo "Unblocked $unblocked_count tasks"
         fi
     '
+
+    # Log activity (outside flock)
+    log_activity "unlock_all" agent_id="$agent_id"
 }
 
 cmd_check() {
@@ -692,6 +739,13 @@ cmd_task_add() {
         printf "%s\n" "$state" > "$STATE_FILE"
     '
 
+    # Log activity
+    if [ -n "$created_by" ]; then
+        log_activity "task_add" task_id="$task_id" priority="$priority" created_by="$created_by" depends_on="$depends_on"
+    else
+        log_activity "task_add" task_id="$task_id" priority="$priority" depends_on="$depends_on"
+    fi
+
     if [ -n "$depends_on" ]; then
         echo "Added task: $task_id (priority: $priority, depends on: $depends_on)"
     else
@@ -755,6 +809,9 @@ cmd_task_claim() {
         printf "%s\n" "$state" > "$STATE_FILE"
         echo "Claimed task: $task_id"
     '
+
+    # Log activity (outside flock)
+    log_activity "task_claim" task_id="$task_id" agent_id="$agent_id"
 }
 
 cmd_task_complete() {
@@ -807,6 +864,10 @@ cmd_task_complete() {
 
         printf "%s\n" "$state" > "$STATE_FILE"
     '
+
+    # Log activity (outside flock) - task completion
+    log_activity "task_complete" task_id="$task_id" agent_id="$agent_id"
+
     echo "Completed task: $task_id"
 }
 
@@ -839,6 +900,10 @@ cmd_task_release() {
 
         printf "%s\n" "$state" > "$STATE_FILE"
     '
+
+    # Log activity (outside flock) - task released/abandoned
+    log_activity "task_release" task_id="$task_id" agent_id="$agent_id"
+
     echo "Released task: $task_id"
 }
 
@@ -933,6 +998,327 @@ cmd_task_stats() {
     echo "  Blocked:     $blocked"
     echo "  ─────────────────"
     echo "  Total:       $total"
+}
+
+cmd_task_metrics() {
+    local filter_prefix="${1:-}"  # Optional prefix filter (e.g., "m1", "test-crit")
+    local metrics_file="$COORD_DIR/metrics.jsonl"
+
+    # Create metrics file if doesn't exist
+    [ ! -f "$metrics_file" ] && touch "$metrics_file"
+
+    # Check if metrics file is empty
+    if [ ! -s "$metrics_file" ]; then
+        echo "No completed tasks yet (metrics file empty)"
+        echo ""
+        echo "Metrics will be tracked as you complete tasks using:"
+        echo "  $0 task-done <agent> <task-id>"
+        return 0
+    fi
+
+    echo "=========================================="
+    echo "TASK PROGRESS METRICS"
+    if [ -n "$filter_prefix" ]; then
+        echo "Filter: $filter_prefix*"
+    fi
+    echo "=========================================="
+    echo ""
+
+    # Apply filter if specified
+    local filter_jq='.'
+    if [ -n "$filter_prefix" ]; then
+        filter_jq="select(.task_id | startswith(\"$filter_prefix\"))"
+    fi
+
+    # === Overall Progress ===
+    echo "=== OVERALL PROGRESS ==="
+    echo ""
+
+    local completed_count=$(jq -r "$filter_jq | .task_id" "$metrics_file" 2>/dev/null | wc -l)
+    local state=$(atomic_read)
+    local total_tasks=$(echo "$state" | jq '.tasks | length')
+    local pending_tasks=$(echo "$state" | jq '[.tasks | to_entries[] | select(.value.status == "pending")] | length')
+    local in_progress_tasks=$(echo "$state" | jq '[.tasks | to_entries[] | select(.value.status == "in_progress")] | length')
+
+    if [ $total_tasks -gt 0 ]; then
+        local pct=$((completed_count * 100 / (completed_count + total_tasks)))
+        echo "✅ Completed: $completed_count"
+        echo "📋 Pending: $pending_tasks"
+        echo "🔄 In Progress: $in_progress_tasks"
+        echo "Progress: $pct%"
+    else
+        echo "✅ Completed: $completed_count tasks"
+    fi
+    echo ""
+
+    # === By Priority ===
+    echo "=== BY PRIORITY ==="
+    echo ""
+    jq -r "$filter_jq | \"P\(.priority)\"" "$metrics_file" 2>/dev/null | sort | uniq -c | sort -k2 -n | while read count priority; do
+        printf "  %s: %3d tasks\n" "$priority" "$count"
+    done
+    echo ""
+
+    # === By Prefix (Top 10) ===
+    echo "=== BY PREFIX (Top 10) ==="
+    echo ""
+    jq -r "$filter_jq | .prefix" "$metrics_file" 2>/dev/null | sort | uniq -c | sort -rn | head -10 | while read count prefix; do
+        printf "  %-15s %3d tasks\n" "$prefix:" "$count"
+    done
+    echo ""
+
+    # === Velocity (Last 7 Days) ===
+    echo "=== VELOCITY (Last 7 days) ==="
+    echo ""
+    local seven_days_ago=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
+    local recent_count=$(jq -r "$filter_jq | select(.timestamp >= \"$seven_days_ago\") | .task_id" "$metrics_file" 2>/dev/null | wc -l)
+
+    if [ $recent_count -gt 0 ]; then
+        local avg_per_day=$(echo "scale=1; $recent_count / 7" | bc 2>/dev/null || echo "~$((recent_count / 7))")
+        echo "Tasks completed: $recent_count"
+        echo "Avg per day: $avg_per_day"
+
+        if [ $pending_tasks -gt 0 ] && [ $(echo "$avg_per_day > 0" | bc 2>/dev/null || echo 0) -eq 1 ]; then
+            local eta_days=$(echo "scale=0; $pending_tasks / $avg_per_day" | bc 2>/dev/null || echo "N/A")
+            echo "ETA at current rate: ~$eta_days days"
+        fi
+    else
+        echo "No tasks completed in last 7 days"
+    fi
+    echo ""
+
+    # === Recent Completions ===
+    echo "=== RECENT COMPLETIONS (Last 5) ==="
+    echo ""
+    jq -r "$filter_jq | \"\(.timestamp | split(\"T\")[0]) \(.task_id) (P\(.priority))\"" "$metrics_file" 2>/dev/null | tail -5
+    echo ""
+
+    # === Average Duration ===
+    echo "=== TASK DURATION ==="
+    echo ""
+    local avg_duration=$(jq -r "$filter_jq | select(.duration_seconds > 0) | .duration_seconds" "$metrics_file" 2>/dev/null | awk '{sum+=$1; count++} END {if(count>0) print int(sum/count); else print 0}')
+
+    if [ "$avg_duration" -gt 0 ]; then
+        local avg_hours=$((avg_duration / 3600))
+        local avg_mins=$(( (avg_duration % 3600) / 60 ))
+        echo "Average time per task: ${avg_hours}h ${avg_mins}m"
+    else
+        echo "Duration data not available"
+    fi
+    echo ""
+}
+
+cmd_task_insights() {
+    local activity_file="$COORD_DIR/activity.jsonl"
+
+    # Create activity file if doesn't exist
+    [ ! -f "$activity_file" ] && touch "$activity_file"
+
+    # Check if activity file is empty
+    if [ ! -s "$activity_file" ]; then
+        echo "No activity logged yet (activity file empty)"
+        echo ""
+        echo "Activity will be tracked automatically as you use coordination commands"
+        return 0
+    fi
+
+    echo "=========================================="
+    echo "TASK INSIGHTS & PERFORMANCE METRICS"
+    echo "=========================================="
+    echo ""
+
+    # === 1. Task Completion Times ===
+    echo "=== TASK COMPLETION TIMES ==="
+    echo ""
+
+    # Build a map of task_id -> {claimed_at, completed_at}
+    local task_times=$(mktemp)
+    grep '"action":"task_claim"' "$activity_file" | jq -r '[.timestamp, .task_id] | @tsv' > "$task_times.claims"
+    grep '"action":"task_complete"' "$activity_file" | jq -r '[.timestamp, .task_id] | @tsv' > "$task_times.completes"
+
+    local total_duration=0
+    local task_count=0
+    local min_duration=999999
+    local max_duration=0
+
+    while IFS=$'\t' read -r complete_ts task_id; do
+        # Find corresponding claim
+        claim_ts=$(grep -F "$task_id" "$task_times.claims" | head -1 | cut -f1)
+
+        if [ -n "$claim_ts" ]; then
+            # Calculate duration in seconds
+            claim_epoch=$(date -d "$claim_ts" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$claim_ts" +%s 2>/dev/null)
+            complete_epoch=$(date -d "$complete_ts" +%s 2>/dev/null || date -j -f "%Y-%m-%dT%H:%M:%SZ" "$complete_ts" +%s 2>/dev/null)
+            duration=$((complete_epoch - claim_epoch))
+
+            if [ $duration -ge 0 ]; then
+                total_duration=$((total_duration + duration))
+                task_count=$((task_count + 1))
+
+                [ $duration -lt $min_duration ] && min_duration=$duration
+                [ $duration -gt $max_duration ] && max_duration=$duration
+            fi
+        fi
+    done < "$task_times.completes"
+
+    if [ $task_count -gt 0 ]; then
+        local avg_duration=$((total_duration / task_count))
+        local avg_minutes=$((avg_duration / 60))
+        local avg_hours=$((avg_minutes / 60))
+        local avg_mins=$((avg_minutes % 60))
+        local min_minutes=$((min_duration / 60))
+        local max_minutes=$((max_duration / 60))
+
+        echo "Completed tasks: $task_count"
+        echo "Average time: ${avg_hours}h ${avg_mins}m (${avg_duration}s)"
+        echo "Fastest: ${min_minutes}m (${min_duration}s)"
+        echo "Slowest: ${max_minutes}m (${max_duration}s)"
+    else
+        echo "No completed tasks with timing data"
+    fi
+
+    rm -f "$task_times" "$task_times.claims" "$task_times.completes"
+    echo ""
+
+    # === 2. Orphaned Tasks ===
+    echo "=== ORPHANED TASKS (Claimed but never completed/released) ==="
+    echo ""
+
+    local claimed_tasks=$(mktemp)
+    local completed_tasks=$(mktemp)
+    local released_tasks=$(mktemp)
+
+    grep '"action":"task_claim"' "$activity_file" | jq -r '.task_id' | sort -u > "$claimed_tasks"
+    grep '"action":"task_complete"' "$activity_file" | jq -r '.task_id' | sort -u > "$completed_tasks"
+    grep '"action":"task_release"' "$activity_file" | jq -r '.task_id' | sort -u > "$released_tasks"
+
+    # Find claimed tasks that were never completed or released
+    local orphaned=$(comm -23 <(sort "$claimed_tasks") <(cat "$completed_tasks" "$released_tasks" | sort -u))
+    local orphaned_count=0
+    if [ -n "$orphaned" ]; then
+        orphaned_count=$(echo "$orphaned" | wc -l | tr -d ' ')
+    fi
+
+    if [ "$orphaned_count" -gt 0 ] 2>/dev/null; then
+        echo "⚠️  Orphaned tasks: $orphaned_count"
+        echo "$orphaned" | head -10 | while read task_id; do
+            echo "  - $task_id"
+        done
+        [ "$orphaned_count" -gt 10 ] && echo "  ... and $((orphaned_count - 10)) more"
+    else
+        echo "✅ No orphaned tasks"
+    fi
+
+    rm -f "$claimed_tasks" "$completed_tasks" "$released_tasks"
+    echo ""
+
+    # === 3. Blocked Tasks Analysis ===
+    echo "=== BLOCKED TASKS (Never unblocked) ==="
+    echo ""
+
+    local blocked_tasks=$(mktemp)
+    local unblocked_tasks=$(mktemp)
+
+    grep '"action":"task_block"' "$activity_file" | jq -r '.task_id' | sort -u > "$blocked_tasks"
+    grep '"action":"task_unblock"' "$activity_file" | jq -r '.task_id' | sort -u > "$unblocked_tasks"
+
+    # Find blocked tasks that were never unblocked
+    local stuck_blocked=$(comm -23 <(sort "$blocked_tasks") <(sort "$unblocked_tasks"))
+    local stuck_count=0
+    if [ -n "$stuck_blocked" ]; then
+        stuck_count=$(echo "$stuck_blocked" | wc -l | tr -d ' ')
+    fi
+
+    if [ "$stuck_count" -gt 0 ] 2>/dev/null; then
+        echo "⚠️  Permanently blocked: $stuck_count tasks"
+        echo "$stuck_blocked" | head -10 | while read task_id; do
+            # Find what blocked it
+            blocker=$(grep "\"task_id\":\"$task_id\"" "$activity_file" | grep '"action":"task_block"' | tail -1 | jq -r '.blocked_by')
+            echo "  - $task_id (blocked by: $blocker)"
+        done
+        [ "$stuck_count" -gt 10 ] && echo "  ... and $((stuck_count - 10)) more"
+    else
+        echo "✅ No permanently blocked tasks"
+    fi
+
+    rm -f "$blocked_tasks" "$unblocked_tasks"
+    echo ""
+
+    # === 4. Velocity (Tasks completed per day) ===
+    echo "=== VELOCITY (Last 7 days) ==="
+    echo ""
+
+    local seven_days_ago=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-7d +%Y-%m-%dT%H:%M:%SZ 2>/dev/null)
+    local recent_completions=$(grep '"action":"task_complete"' "$activity_file" | jq -r --arg cutoff "$seven_days_ago" 'select(.timestamp >= $cutoff) | .task_id' | wc -l)
+
+    if [ $recent_completions -gt 0 ]; then
+        local avg_per_day=$(echo "scale=1; $recent_completions / 7" | bc 2>/dev/null || echo "~$((recent_completions / 7))")
+        echo "Tasks completed: $recent_completions"
+        echo "Average per day: $avg_per_day"
+    else
+        echo "No tasks completed in last 7 days"
+    fi
+    echo ""
+
+    # === 5. Concurrency Analysis ===
+    echo "=== CONCURRENCY ANALYSIS ==="
+    echo ""
+
+    # Count max concurrent agents
+    local max_concurrent=0
+    local peak_time=""
+    local agent_activity=$(mktemp)
+
+    # Get all agent register/unregister events with timestamps
+    grep -E '"action":"(agent_register|agent_unregister)"' "$activity_file" | \
+        jq -r '[.timestamp, .action, .agent_id] | @tsv' | \
+        sort -k1 > "$agent_activity"
+
+    # Track agents over time using associative array simulation
+    local active_count=0
+    declare -A active_map
+    while IFS=$'\t' read -r ts action agent_id; do
+        if [ "$action" = "agent_register" ]; then
+            active_map["$agent_id"]=1
+        else
+            unset active_map["$agent_id"]
+        fi
+
+        # Count active agents
+        active_count=${#active_map[@]}
+        if [ $active_count -gt $max_concurrent ]; then
+            max_concurrent=$active_count
+            peak_time="$ts"
+        fi
+    done < "$agent_activity"
+
+    echo "Max concurrent agents: $max_concurrent"
+    if [ $max_concurrent -gt 0 ] && [ -n "$peak_time" ]; then
+        echo "Peak time: $peak_time"
+    fi
+
+    rm -f "$agent_activity"
+    echo ""
+
+    # === 6. Performance Impact Analysis ===
+    if [ $task_count -gt 5 ]; then
+        echo "=== PERFORMANCE IMPACT (Concurrency vs Speed) ==="
+        echo ""
+
+        echo "📊 To analyze performance impact of concurrency:"
+        echo "   1. Tasks completed: $task_count"
+        echo "   2. Average duration: ${avg_duration}s"
+        echo "   3. Max concurrent agents: $max_concurrent"
+        echo ""
+        echo "   Compare these metrics before and after running more agents"
+        echo "   to determine optimal concurrency level."
+        echo ""
+    fi
+
+    echo "=========================================="
+    echo ""
+    echo "📁 Activity log: $activity_file"
+    echo "   $(wc -l < "$activity_file") total events logged"
 }
 
 cmd_task_cleanup() {
@@ -1107,6 +1493,13 @@ cmd_task_block() {
 
         echo "Blocked task: $task_id (by $blocked_by on $blocked_file)"
     '
+
+    # Log activity (outside flock)
+    if [ -n "$blocked_file" ]; then
+        log_activity "task_block" task_id="$task_id" blocked_by="$blocked_by" blocked_file="$blocked_file"
+    else
+        log_activity "task_block" task_id="$task_id" blocked_by="$blocked_by"
+    fi
 }
 
 cmd_task_unblock() {
@@ -1162,6 +1555,13 @@ cmd_task_unblock() {
 
         echo "Unblocked task: $task_id"
     '
+
+    # Log activity (outside flock)
+    if [ -n "$unblocked_by" ]; then
+        log_activity "task_unblock" task_id="$task_id" unblocked_by="$unblocked_by"
+    else
+        log_activity "task_unblock" task_id="$task_id"
+    fi
 }
 
 cmd_task_priority() {
@@ -1213,6 +1613,13 @@ cmd_task_priority() {
         printf "%s\n" "$state" > "$STATE_FILE"
         echo "Set priority: $task_id → P$priority"
     '
+
+    # Log activity (outside flock)
+    if [ -n "$updated_by" ]; then
+        log_activity "task_priority" task_id="$task_id" priority="$priority" updated_by="$updated_by"
+    else
+        log_activity "task_priority" task_id="$task_id" priority="$priority"
+    fi
 }
 
 cmd_task_prefix_set() {
@@ -1423,6 +1830,9 @@ cmd_task_depends() {
 
         printf "%s\n" "$new_state" > "$STATE_FILE"
     ' >/dev/null
+
+    # Log activity (outside flock)
+    log_activity "task_depends" task_id="$task_id" blocked_by="$blocking_tasks"
 
     echo "Set dependencies for $task_id:"
     echo "  Blocked by: $blocking_tasks"
@@ -1687,6 +2097,166 @@ cmd_task_next() {
 }
 
 # ============================================================
+# WORKFLOW HELPER COMMANDS
+# ============================================================
+
+cmd_task_work() {
+    local agent_id="$1"
+    local task_id="$2"
+
+    [ -z "$agent_id" ] || [ -z "$task_id" ] && {
+        echo "Usage: $0 task-work <agent_id> <task_id>" >&2
+        echo "  Atomic operation: claim task + lock files + show spec" >&2
+        echo "  Files are auto-locked based on task spec (## Files to Modify section)" >&2
+        exit 1
+    }
+
+    # Step 1: Claim the task
+    echo "→ Claiming task $task_id..."
+    if ! "$0" task-claim "$agent_id" "$task_id" 2>&1; then
+        echo "ERROR: Failed to claim task $task_id" >&2
+        exit 1
+    fi
+    echo "✓ Task claimed"
+    echo ""
+
+    # Step 2: Lock files from task spec (if spec exists)
+    local spec_file="$COORD_DIR/task-specs/${task_id}.md"
+    if [ -f "$spec_file" ]; then
+        echo "→ Locking files from task spec..."
+
+        # Extract files from "## Files to Modify" and "## Files to Create" sections
+        local files=$(awk '
+            /^## Files to (Modify|Create)/ { in_section=1; next }
+            /^## / { in_section=0 }
+            in_section && /^- `[^`]+`/ {
+                match($0, /`([^`]+)`/, arr);
+                print arr[1]
+            }
+        ' "$spec_file")
+
+        if [ -n "$files" ]; then
+            local locked_count=0
+            while IFS= read -r file; do
+                [ -z "$file" ] && continue
+                if "$0" lock "$agent_id" "$file" 2>&1; then
+                    echo "  ✓ Locked: $file"
+                    locked_count=$((locked_count + 1))
+                else
+                    echo "  ⚠ Could not lock: $file (already locked or doesn't exist)"
+                fi
+            done <<< "$files"
+            echo "✓ Locked $locked_count file(s)"
+        else
+            echo "  (No files specified in spec)"
+        fi
+        echo ""
+    else
+        echo "→ No detailed spec found"
+        echo "  (Lock files manually if needed: $0 lock $agent_id <file>)"
+        echo ""
+    fi
+
+    # Step 3: Display task information
+    echo "=========================================="
+    if [ -f "$spec_file" ]; then
+        echo "TASK SPECIFICATION: $task_id"
+    else
+        echo "TASK: $task_id"
+    fi
+    echo "=========================================="
+    echo ""
+
+    if [ -f "$spec_file" ]; then
+        # Use task-spec-helpers if available
+        if [ -f "$COORD_DIR/task-spec-helpers.sh" ]; then
+            "$COORD_DIR/task-spec-helpers.sh" task-spec "$task_id"
+        else
+            cat "$spec_file"
+        fi
+    else
+        # Fallback to basic task info (JSON)
+        echo "Note: No detailed specification found"
+        echo "Showing basic task info:"
+        echo ""
+        "$0" task-get "$task_id"
+    fi
+
+    echo ""
+    echo "=========================================="
+    echo "Ready to work on: $task_id"
+    echo "=========================================="
+}
+
+cmd_task_done() {
+    local agent_id="$1"
+    local task_id="$2"
+
+    [ -z "$agent_id" ] || [ -z "$task_id" ] && {
+        echo "Usage: $0 task-done <agent_id> <task_id>" >&2
+        echo "  Atomic operation: unlock all + complete task + show next" >&2
+        exit 1
+    }
+
+    # Step 1: Unlock all files
+    echo "→ Unlocking all files..."
+    "$0" unlock-all "$agent_id"
+    echo "✓ All files unlocked"
+    echo ""
+
+    # Step 2: Mark task complete
+    echo "→ Marking task $task_id complete..."
+    if ! "$0" task-complete "$agent_id" "$task_id" 2>&1; then
+        echo "ERROR: Failed to complete task $task_id" >&2
+        exit 1
+    fi
+    echo "✓ Task completed"
+    echo ""
+
+    # Step 2.5: Log metrics (for historical tracking)
+    local metrics_file="$COORD_DIR/metrics.jsonl"
+    local completed_ts=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Get task details for metrics
+    local task_data=$("$0" task-get "$task_id" 2>/dev/null)
+    if [ -n "$task_data" ]; then
+        local priority=$(echo "$task_data" | jq -r '.priority // 3')
+        local started_at=$(echo "$task_data" | jq -r '.started_at // empty')
+        local prefix=$(echo "$task_id" | sed 's/-[0-9].*//')
+
+        # Calculate duration if started_at exists
+        local duration=0
+        if [ -n "$started_at" ] && [ "$started_at" != "null" ]; then
+            local started_ts=$(date -d "$started_at" +%s 2>/dev/null || echo 0)
+            local completed_ts_epoch=$(date +%s)
+            duration=$((completed_ts_epoch - started_ts))
+        fi
+
+        # Append metrics (one line per completion)
+        echo "{\"timestamp\":\"$completed_ts\",\"task_id\":\"$task_id\",\"prefix\":\"$prefix\",\"priority\":$priority,\"duration_seconds\":$duration,\"agent_id\":\"$agent_id\"}" >> "$metrics_file"
+    fi
+
+    # Step 3: Show next available task
+    echo "=========================================="
+    echo "NEXT AVAILABLE TASK"
+    echo "=========================================="
+    echo ""
+
+    local next_task=$("$0" task-next "$agent_id" 2>&1)
+    if [ "$next_task" = "(no tasks available)" ]; then
+        echo "🎉 No more tasks available!"
+        echo ""
+        echo "Task stats:"
+        "$0" task-stats
+    else
+        echo "Next task: $next_task"
+        echo ""
+        echo "To start working on it:"
+        echo "  $0 task-work $agent_id $next_task"
+    fi
+}
+
+# ============================================================
 # CLEANUP COMMAND
 # ============================================================
 
@@ -1944,9 +2514,13 @@ case "${1:-}" in
     task-unblock) cmd_task_unblock "$2" "$3" ;;
     task-priority) cmd_task_priority "$2" "$3" "$4" ;;
     task-next)   cmd_task_next "$2" ;;
+    task-work)   cmd_task_work "$2" "$3" ;;
+    task-done)   cmd_task_done "$2" "$3" ;;
     task-list)   cmd_task_list "$2" ;;
     task-search) cmd_task_search "$2" "$3" ;;
     task-stats)  cmd_task_stats ;;
+    task-metrics) cmd_task_metrics "$2" ;;
+    task-insights) cmd_task_insights ;;
     task-cleanup) cmd_task_cleanup "$2" "$3" ;;
     task-archive) cmd_task_archive "$2" ;;
     task-recover) cmd_task_recover "$2" ;;
@@ -1987,6 +2561,11 @@ case "${1:-}" in
         echo "  task-list [filter]                 List tasks (all|pending|available|blocked)"
         echo "  task-search <keyword> [status]     Search tasks (check for duplicates)"
         echo "  task-stats                         Show task counts by status"
+        echo "  task-metrics [prefix]              Show progress metrics & velocity (from metrics.jsonl)"
+        echo ""
+        echo "Workflow helpers (shortcuts):"
+        echo "  task-work <agent> <id>             Claim + lock files + show spec"
+        echo "  task-done <agent> <id>             Unlock all + complete + show next"
         echo "  task-cleanup [days] [--dry-run]    Remove completed tasks older than N days"
         echo "  task-archive [file]                Export completed tasks to JSON file"
         echo "  task-recover [--dry-run]           Release orphaned tasks (dead/unregistered owners)"

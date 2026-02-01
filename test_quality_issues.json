@@ -1,0 +1,599 @@
+{
+  "review_metadata": {
+    "review_date": "2026-01-30",
+    "reviewer": "QA Engineering Agent",
+    "scope": "tests/test_tools/ (9 files, 5,389 LOC) + tests/integration/ (8 files, 4,619 LOC)",
+    "total_lines": 10008,
+    "total_tests": 420,
+    "total_test_classes": 57,
+    "overall_grade": "B+ (8.2/10)"
+  },
+  "summary": {
+    "critical_issues": 2,
+    "high_priority_issues": 8,
+    "medium_priority_issues": 12,
+    "low_priority_issues": 15,
+    "estimated_coverage": "78%",
+    "quality_score": 8.2
+  },
+  "critical_issues": [
+    {
+      "id": "C1",
+      "title": "SQL Injection Test Bypasses",
+      "severity": "critical",
+      "type": "coverage-gap",
+      "file": "tests/test_tools/test_parameter_sanitization.py",
+      "lines": "305-403",
+      "description": "SQL injection tests miss advanced obfuscation techniques including comment-based bypasses, time-based blind injection, and error-based extraction",
+      "impact": "Production vulnerability if LLM generates obfuscated SQL injection payloads",
+      "missing_test_cases": [
+        "admin' OR '1'/*comment*/'='1",
+        "admin' OR SLEEP(5)--",
+        "admin' UNION SELECT NULL,NULL,table_name FROM information_schema.tables--",
+        "admin' AND EXTRACTVALUE(1,CONCAT(0x7e,version()))--"
+      ],
+      "recommendation": "Add comprehensive OWASP SQL injection test suite covering all major injection techniques",
+      "priority": "P0",
+      "estimated_effort_hours": 8
+    },
+    {
+      "id": "C2",
+      "title": "Race Condition in Rate Limiter",
+      "severity": "critical",
+      "type": "missing",
+      "file": "tests/test_tools/test_executor.py",
+      "lines": "821-882",
+      "description": "Rate limiter tests only verify sequential execution, not thread-safety under concurrent access",
+      "impact": "Race condition could allow rate limit bypass when multiple threads execute simultaneously",
+      "current_gap": "Sequential test at line 821-853 doesn't verify concurrent safety",
+      "required_test": "Concurrent stress test with 50+ threads hitting rate limiter simultaneously",
+      "recommendation": "Add concurrent rate limiter stress tests verifying thread-safe enforcement",
+      "priority": "P0",
+      "estimated_effort_hours": 6
+    }
+  ],
+  "high_priority_issues": [
+    {
+      "id": "H1",
+      "title": "Incomplete Timeout Tests",
+      "severity": "high",
+      "type": "coverage-gap",
+      "file": "tests/test_tools/test_executor.py",
+      "lines": "478-576",
+      "description": "Timeout tests don't verify edge cases like infinite loops, I/O blocks, or critical section locks",
+      "missing_scenarios": [
+        "Tool with infinite loop (not just sleep)",
+        "Tool blocked on I/O (file lock, network wait)",
+        "Tool holding mutex during timeout",
+        "Multiple consecutive timeouts causing thread pool exhaustion"
+      ],
+      "recommendation": "Add comprehensive timeout edge case suite testing non-sleep blocking scenarios",
+      "priority": "P1",
+      "estimated_effort_hours": 12
+    },
+    {
+      "id": "H2",
+      "title": "Missing Error Recovery Tests",
+      "severity": "high",
+      "type": "missing",
+      "file": "tests/test_tools/test_executor.py",
+      "lines": "N/A (new tests)",
+      "description": "No dedicated tests for error recovery scenarios after tool exceptions",
+      "required_tests": [
+        "test_executor_recovers_from_tool_exception",
+        "test_executor_recovers_from_validation_error",
+        "test_batch_execution_continues_after_failures (expand existing)"
+      ],
+      "recommendation": "Add comprehensive error recovery test class",
+      "priority": "P1",
+      "estimated_effort_hours": 8
+    },
+    {
+      "id": "H3",
+      "title": "Weak Assertion Quality",
+      "severity": "high",
+      "type": "quality",
+      "file": "tests/test_tools/test_tool_edge_cases.py",
+      "lines": "24-99",
+      "description": "Many tests use generic assertions that don't verify specific expected behavior",
+      "examples": [
+        {
+          "line": "86-91",
+          "test": "test_extremely_long_expression",
+          "issue": "Generic assertion - doesn't verify specific behavior",
+          "current": "assert isinstance(result, ToolResult)",
+          "should_be": "assert result.result == 10000 OR 'too long' in result.error.lower()"
+        },
+        {
+          "line": "108-115",
+          "test": "test_unsupported_ast_node",
+          "issue": "Should verify specific unsupported type mentioned in error"
+        }
+      ],
+      "recommendation": "Replace generic assertions with specific expected values",
+      "priority": "P1",
+      "estimated_effort_hours": 10
+    },
+    {
+      "id": "H4",
+      "title": "Test Independence Violations",
+      "severity": "high",
+      "type": "organization",
+      "file": "tests/test_tools/test_web_scraper.py",
+      "lines": "14-60",
+      "description": "RateLimiter tests may share state if rate limiter has global state",
+      "issue": "Tests create new RateLimiter instances but don't isolate state",
+      "recommendation": "Add fixtures to ensure test independence and prevent state leakage",
+      "priority": "P1",
+      "estimated_effort_hours": 4
+    },
+    {
+      "id": "H5",
+      "title": "Missing Performance Tests",
+      "severity": "high",
+      "type": "missing",
+      "file": "tests/test_tools/ (new file needed)",
+      "lines": "N/A",
+      "description": "No performance/benchmark tests to establish baseline and catch regressions",
+      "required_tests": [
+        "test_executor_throughput_baseline (100 tools/sec)",
+        "test_registry_lookup_performance (O(1) with 1000 tools)",
+        "test_batch_execution_scaling (linear scaling)"
+      ],
+      "recommendation": "Create test_tool_performance.py with benchmark suite",
+      "priority": "P1",
+      "estimated_effort_hours": 16
+    },
+    {
+      "id": "H6",
+      "title": "Flaky Test Risk",
+      "severity": "high",
+      "type": "performance",
+      "file": "tests/test_tools/test_web_scraper.py",
+      "lines": "36-49",
+      "description": "Time-based tests may be flaky on slow CI/CD systems",
+      "flaky_tests": [
+        {
+          "name": "test_allows_requests_after_window",
+          "line": "36-49",
+          "issue": "time.sleep(1.1) may fail on slow systems"
+        },
+        {
+          "name": "test_timeout_accuracy_within_10_percent",
+          "file": "test_executor.py",
+          "line": "481-501",
+          "issue": "Strict 10% timing tolerance"
+        },
+        {
+          "name": "test_timeout_accuracy_stress_test",
+          "file": "test_executor.py",
+          "line": "658-697",
+          "issue": "Concurrent timing assumptions"
+        }
+      ],
+      "recommendation": "Increase timing margins (1.1s → 1.5s), add retry logic, use pytest-timeout",
+      "priority": "P1",
+      "estimated_effort_hours": 6
+    },
+    {
+      "id": "H7",
+      "title": "Missing Rollback Integration Tests",
+      "severity": "high",
+      "type": "coverage-gap",
+      "file": "tests/integration/test_tool_rollback.py",
+      "lines": "exists but incomplete",
+      "description": "Rollback tests focus on RollbackManager in isolation, missing ToolExecutor integration",
+      "missing_tests": [
+        "test_auto_rollback_on_tool_failure",
+        "test_rollback_skipped_for_read_only_tools",
+        "test_rollback_ordering_multiple_tools (LIFO)",
+        "test_rollback_failure_handling"
+      ],
+      "recommendation": "Expand rollback integration test coverage with executor integration",
+      "priority": "P1",
+      "estimated_effort_hours": 12
+    },
+    {
+      "id": "H8",
+      "title": "Insufficient Security Test Vectors",
+      "severity": "high",
+      "type": "coverage-gap",
+      "file": "tests/test_tools/test_parameter_sanitization.py",
+      "lines": "N/A (expansion needed)",
+      "description": "Security tests miss OWASP Top 10 attack vectors beyond path traversal, command injection, SQL injection",
+      "missing_attack_vectors": [
+        {
+          "type": "LDAP Injection",
+          "example": "cn=*)(uid=*))(|(uid=*"
+        },
+        {
+          "type": "XML External Entity (XXE)",
+          "example": "<?xml version='1.0'?><!DOCTYPE foo [<!ENTITY xxe SYSTEM 'file:///etc/passwd'>]><foo>&xxe;</foo>"
+        },
+        {
+          "type": "CRLF Injection",
+          "example": "header1: value1\\r\\nX-Injected-Header: malicious"
+        },
+        {
+          "type": "Template Injection",
+          "example": "{{ 7*7 }} or ${7*7}"
+        },
+        {
+          "type": "NoSQL Injection",
+          "example": "{ '$ne': null }"
+        }
+      ],
+      "recommendation": "Add comprehensive OWASP attack vector test suite",
+      "priority": "P1",
+      "estimated_effort_hours": 16
+    }
+  ],
+  "medium_priority_issues": [
+    {
+      "id": "M1",
+      "title": "Test Data Quality - Unrealistic Scenarios",
+      "severity": "medium",
+      "type": "quality",
+      "file": "tests/test_tools/test_calculator.py",
+      "lines": "252-277",
+      "description": "Tests use trivial examples (2 + 3) instead of realistic LLM-generated expressions",
+      "recommendation": "Add realistic scenario tests based on actual LLM usage patterns",
+      "priority": "P2",
+      "estimated_effort_hours": 6
+    },
+    {
+      "id": "M2",
+      "title": "Missing Negative Tests",
+      "severity": "medium",
+      "type": "coverage-gap",
+      "file": "tests/test_tools/test_registry.py",
+      "lines": "145-166",
+      "description": "Tests focus on happy path, insufficient negative testing (None, invalid metadata, concurrent registration)",
+      "recommendation": "Add comprehensive negative test cases",
+      "priority": "P2",
+      "estimated_effort_hours": 8
+    },
+    {
+      "id": "M3",
+      "title": "Mocking Strategy - Over-Mocking",
+      "severity": "medium",
+      "type": "quality",
+      "file": "tests/integration/test_m2_e2e.py",
+      "lines": "181-220",
+      "description": "Integration tests mock too much (entire LLM), reducing integration value",
+      "recommendation": "Mock at HTTP/service level, not interface level for true integration testing",
+      "priority": "P2",
+      "estimated_effort_hours": 10
+    },
+    {
+      "id": "M4",
+      "title": "Setup/Teardown Leaks",
+      "severity": "medium",
+      "type": "organization",
+      "file": "tests/test_tools/test_file_writer.py",
+      "lines": "120-133",
+      "description": "Inconsistent cleanup patterns - some use fixtures, others manual teardown",
+      "recommendation": "Standardize on fixture-based cleanup for guaranteed cleanup",
+      "priority": "P2",
+      "estimated_effort_hours": 4
+    },
+    {
+      "id": "M5",
+      "title": "Test Naming Inconsistency",
+      "severity": "medium",
+      "type": "organization",
+      "file": "Multiple files",
+      "lines": "N/A",
+      "description": "Inconsistent test naming conventions across files",
+      "recommendation": "Enforce naming convention: test_<action>_<condition>_<expected_result>",
+      "priority": "P2",
+      "estimated_effort_hours": 8
+    },
+    {
+      "id": "M6",
+      "title": "Insufficient Boundary Value Testing",
+      "severity": "medium",
+      "type": "coverage-gap",
+      "file": "Multiple test files",
+      "lines": "N/A",
+      "description": "Missing systematic boundary testing (min, min+1, max-1, max)",
+      "recommendation": "Add boundary value tests for all integer/range parameters",
+      "priority": "P2",
+      "estimated_effort_hours": 6
+    },
+    {
+      "id": "M7",
+      "title": "Missing Unicode/Encoding Edge Cases",
+      "severity": "medium",
+      "type": "coverage-gap",
+      "file": "tests/test_tools/test_file_writer.py",
+      "lines": "86-98 (basic only)",
+      "description": "Only basic Unicode test, missing normalization, combining characters, RTL text",
+      "recommendation": "Add comprehensive Unicode edge case tests",
+      "priority": "P2",
+      "estimated_effort_hours": 4
+    },
+    {
+      "id": "M8",
+      "title": "No Tests for Concurrent Tool Registration",
+      "severity": "medium",
+      "type": "missing",
+      "file": "tests/test_tools/test_registry.py",
+      "lines": "N/A (new test)",
+      "description": "No tests verifying thread-safe tool registration during concurrent access",
+      "recommendation": "Add concurrent registration stress tests",
+      "priority": "P2",
+      "estimated_effort_hours": 6
+    },
+    {
+      "id": "M9",
+      "title": "Missing Tests for Tool Versioning Conflicts",
+      "severity": "medium",
+      "type": "coverage-gap",
+      "file": "tests/test_tools/test_registry.py",
+      "lines": "618-864 (partial)",
+      "description": "Versioning tests don't cover semantic version conflict resolution edge cases",
+      "recommendation": "Add comprehensive version conflict resolution tests",
+      "priority": "P2",
+      "estimated_effort_hours": 4
+    },
+    {
+      "id": "M10",
+      "title": "Incomplete Error Message Validation",
+      "severity": "medium",
+      "type": "quality",
+      "file": "Multiple test files",
+      "lines": "N/A",
+      "description": "Tests check for error presence but not specific content/format",
+      "recommendation": "Verify exact error messages match expected format",
+      "priority": "P2",
+      "estimated_effort_hours": 6
+    },
+    {
+      "id": "M11",
+      "title": "Missing Tests for Parameter Default Values",
+      "severity": "medium",
+      "type": "coverage-gap",
+      "file": "tests/test_tools/test_registry.py",
+      "lines": "N/A (new tests)",
+      "description": "No tests verifying parameter default values are applied correctly",
+      "recommendation": "Add parameter default value tests",
+      "priority": "P2",
+      "estimated_effort_hours": 4
+    },
+    {
+      "id": "M12",
+      "title": "No Tests for Metadata Validation",
+      "severity": "medium",
+      "type": "coverage-gap",
+      "file": "tests/test_tools/test_registry.py",
+      "lines": "N/A (new tests)",
+      "description": "No tests verifying metadata validation (required fields, formats)",
+      "recommendation": "Add metadata validation tests",
+      "priority": "P2",
+      "estimated_effort_hours": 4
+    }
+  ],
+  "coverage_gaps": {
+    "src/tools/base.py": {
+      "estimated_coverage": "75%",
+      "missing_areas": [
+        "Custom validators in get_parameters_model()",
+        "Edge cases in validate_params() with Pydantic models",
+        "ParameterSanitizer URL-encoded payload handling"
+      ]
+    },
+    "src/tools/registry.py": {
+      "estimated_coverage": "90%",
+      "missing_areas": [
+        "Auto-discovery module import error paths",
+        "Version comparison edge cases (malformed versions)",
+        "Concurrent registration scenarios"
+      ]
+    },
+    "src/tools/executor.py": {
+      "estimated_coverage": "85%",
+      "missing_areas": [
+        "Rollback manager integration paths",
+        "Policy engine validation failures",
+        "Approval workflow race conditions",
+        "Thread pool shutdown during execution"
+      ]
+    },
+    "src/tools/calculator.py": {
+      "estimated_coverage": "95%",
+      "missing_areas": [
+        "Some mathematical edge cases (overflow, underflow)"
+      ]
+    },
+    "src/tools/file_writer.py": {
+      "estimated_coverage": "90%",
+      "missing_areas": [
+        "Permission error scenarios",
+        "Encoding edge cases (rare encodings)",
+        "Filesystem full scenarios"
+      ]
+    },
+    "src/tools/web_scraper.py": {
+      "estimated_coverage": "95%",
+      "missing_areas": [
+        "Some SSRF edge cases (IPv6 edge cases)",
+        "Content-Type edge cases"
+      ]
+    }
+  },
+  "performance_metrics": {
+    "slow_tests": [
+      {
+        "name": "test_multiple_consecutive_timeouts_no_resource_leak",
+        "file": "test_executor.py",
+        "line": "517-543",
+        "duration_estimate": "10s",
+        "reason": "10 timeout cycles of 0.5s each"
+      },
+      {
+        "name": "test_timeout_accuracy_stress_test",
+        "file": "test_executor.py",
+        "line": "658-699",
+        "duration_estimate": "15s",
+        "reason": "Concurrent timeout stress test"
+      },
+      {
+        "name": "test_allows_requests_after_window",
+        "file": "test_web_scraper.py",
+        "line": "36-49",
+        "duration_estimate": "2s",
+        "reason": "Deliberate time.sleep(1.1)"
+      }
+    ],
+    "flaky_tests": [
+      {
+        "name": "test_timeout_accuracy_within_10_percent",
+        "file": "test_executor.py",
+        "line": "481-501",
+        "risk": "high",
+        "reason": "Strict 10% tolerance on timeout"
+      },
+      {
+        "name": "test_allows_requests_after_window",
+        "file": "test_web_scraper.py",
+        "line": "36-49",
+        "risk": "high",
+        "reason": "May fail on slow CI/CD systems"
+      },
+      {
+        "name": "test_timeout_accuracy_stress_test",
+        "file": "test_executor.py",
+        "line": "658-697",
+        "risk": "medium",
+        "reason": "Concurrent timing assumptions"
+      },
+      {
+        "name": "test_concurrent_execution_tracking",
+        "file": "test_executor.py",
+        "line": "748-781",
+        "risk": "medium",
+        "reason": "Race condition if threads not started"
+      }
+    ]
+  },
+  "recommendations": {
+    "immediate_actions": [
+      {
+        "week": 1,
+        "priority": "P0",
+        "tasks": [
+          "Fix SQL injection test gaps (C1) - 8 hours",
+          "Add concurrent rate limiter tests (C2) - 6 hours",
+          "Add URL-encoded path traversal tests - 4 hours"
+        ],
+        "total_hours": 18
+      }
+    ],
+    "high_priority": [
+      {
+        "weeks": "2-3",
+        "priority": "P1",
+        "tasks": [
+          "Expand timeout tests (H1) - 12 hours",
+          "Add error recovery tests (H2) - 8 hours",
+          "Improve assertion quality (H3) - 10 hours",
+          "Add test independence (H4) - 4 hours",
+          "Create performance test suite (H5) - 16 hours",
+          "Stabilize flaky tests (H6) - 6 hours",
+          "Expand rollback integration tests (H7) - 12 hours",
+          "Add OWASP attack vector tests (H8) - 16 hours"
+        ],
+        "total_hours": 84
+      }
+    ],
+    "medium_priority": [
+      {
+        "weeks": "4-6",
+        "priority": "P2",
+        "tasks": [
+          "Add realistic test data (M1) - 6 hours",
+          "Expand negative tests (M2) - 8 hours",
+          "Reduce over-mocking (M3) - 10 hours",
+          "Standardize cleanup (M4) - 4 hours",
+          "Enforce naming (M5) - 8 hours",
+          "Add boundary tests (M6) - 6 hours",
+          "Unicode edge cases (M7) - 4 hours",
+          "Concurrent registration (M8) - 6 hours"
+        ],
+        "total_hours": 52
+      }
+    ],
+    "long_term": [
+      {
+        "timeline": "Month 2+",
+        "initiatives": [
+          "Property-based testing with Hypothesis",
+          "Mutation testing with mutmut",
+          "Coverage enforcement in CI (85% minimum)",
+          "Test documentation and strategy guide",
+          "Automated test generation for new tools"
+        ]
+      }
+    ]
+  },
+  "quality_metrics": {
+    "test_distribution": {
+      "unit_tests": 320,
+      "unit_tests_percentage": 76,
+      "integration_tests": 70,
+      "integration_tests_percentage": 17,
+      "e2e_tests": 30,
+      "e2e_tests_percentage": 7
+    },
+    "by_category": {
+      "critical_security": {
+        "count": 85,
+        "percentage": 20
+      },
+      "edge_cases": {
+        "count": 120,
+        "percentage": 29
+      },
+      "happy_path": {
+        "count": 140,
+        "percentage": 33
+      },
+      "performance": {
+        "count": 45,
+        "percentage": 11
+      },
+      "other": {
+        "count": 30,
+        "percentage": 7
+      }
+    },
+    "quality_scores": {
+      "test_independence": {
+        "score": 90,
+        "grade": "A-",
+        "description": "Most tests use fixtures properly"
+      },
+      "assertion_quality": {
+        "score": 75,
+        "grade": "C+",
+        "description": "Many generic assertions need improvement"
+      },
+      "test_speed": {
+        "score": 85,
+        "grade": "B+",
+        "description": "85% of tests complete in <1s"
+      },
+      "flakiness_risk": {
+        "score": 85,
+        "grade": "B+",
+        "description": "15 tests at risk, needs attention"
+      },
+      "documentation": {
+        "score": 60,
+        "grade": "D",
+        "description": "60% have docstrings, needs improvement"
+      }
+    }
+  }
+}

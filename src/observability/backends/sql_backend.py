@@ -14,6 +14,7 @@ from sqlalchemy import case, Index
 
 from src.observability.backend import ObservabilityBackend
 from src.observability.database import get_session
+from src.observability.datetime_utils import safe_duration_seconds, ensure_utc
 from src.observability.models import (
     WorkflowExecution,
     StageExecution,
@@ -127,14 +128,15 @@ class SQLObservabilityBackend(ObservabilityBackend):
         wf = session.exec(statement).first()
         if wf:
             wf.status = status
-            wf.end_time = end_time
-            # Handle timezone-aware and timezone-naive datetime subtraction
-            start_time = wf.start_time
-            if end_time.tzinfo and not start_time.tzinfo:
-                start_time = start_time.replace(tzinfo=timezone.utc)
-            elif not end_time.tzinfo and start_time.tzinfo:
-                end_time = end_time.replace(tzinfo=timezone.utc)
-            wf.duration_seconds = (end_time - start_time).total_seconds()
+            wf.end_time = ensure_utc(end_time)
+
+            # Use safe duration calculation
+            wf.duration_seconds = safe_duration_seconds(
+                wf.start_time,
+                wf.end_time,
+                context=f"workflow {workflow_id}"
+            )
+
             wf.error_message = error_message
             wf.error_stack_trace = error_stack_trace
             self._commit_and_cleanup(session)
@@ -206,14 +208,15 @@ class SQLObservabilityBackend(ObservabilityBackend):
         st = session.exec(statement).first()
         if st:
             st.status = status
-            st.end_time = end_time
-            # Handle timezone-aware and timezone-naive datetime subtraction
-            start_time = st.start_time
-            if end_time.tzinfo and not start_time.tzinfo:
-                start_time = start_time.replace(tzinfo=timezone.utc)
-            elif not end_time.tzinfo and start_time.tzinfo:
-                end_time = end_time.replace(tzinfo=timezone.utc)
-            st.duration_seconds = (end_time - start_time).total_seconds()
+            st.end_time = ensure_utc(end_time)
+
+            # Use safe duration calculation
+            st.duration_seconds = safe_duration_seconds(
+                st.start_time,
+                st.end_time,
+                context=f"stage {stage_id}"
+            )
+
             st.error_message = error_message
 
             # Use provided metrics or aggregate from child agents
@@ -299,14 +302,15 @@ class SQLObservabilityBackend(ObservabilityBackend):
         ag = session.exec(statement).first()
         if ag:
             ag.status = status
-            ag.end_time = end_time
-            # Handle timezone-aware and timezone-naive datetime subtraction
-            start_time = ag.start_time
-            if end_time.tzinfo and not start_time.tzinfo:
-                start_time = start_time.replace(tzinfo=timezone.utc)
-            elif not end_time.tzinfo and start_time.tzinfo:
-                end_time = end_time.replace(tzinfo=timezone.utc)
-            ag.duration_seconds = (end_time - start_time).total_seconds()
+            ag.end_time = ensure_utc(end_time)
+
+            # Use safe duration calculation
+            ag.duration_seconds = safe_duration_seconds(
+                ag.start_time,
+                ag.end_time,
+                context=f"agent {agent_id}"
+            )
+
             ag.error_message = error_message
             self._commit_and_cleanup(session)
 
@@ -734,7 +738,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         Use this instead of session.commit() in tracking methods.
         """
-        self._commit_and_cleanup(session)
+        session.commit()
         # Only cleanup if we're not in a managed context
         if not self._session_stack:
             self._cleanup_standalone_session()

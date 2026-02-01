@@ -10,6 +10,13 @@ Key Features:
 - Rollback history and audit trail
 - Integration with approval workflow
 - Partial rollback support
+- Path traversal protection with symlink detection
+
+Security:
+- All file paths validated against allowed directories
+- Symlinks detected and rejected to prevent path traversal
+- Path normalization with realpath() before validation
+- Whitelist-based access control
 
 Example:
     >>> manager = RollbackManager()
@@ -38,6 +45,14 @@ from typing import Dict, Any, Optional, List, Callable
 from uuid import uuid4
 import os
 import shutil
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+class RollbackSecurityError(Exception):
+    """Raised when rollback operation fails security validation."""
+    pass
 
 
 class RollbackStatus(Enum):
@@ -131,6 +146,140 @@ class RollbackResult:
         }
 
 
+def validate_rollback_path(
+    file_path: str,
+    allowed_directories: Optional[List[str]] = None,
+    check_symlinks: bool = True
+) -> tuple[bool, Optional[str]]:
+    """Validate file path for rollback operations.
+
+    Security validation for file paths to prevent:
+    - Path traversal attacks (../../etc/passwd)
+    - Symlink attacks (symlink pointing to /etc/passwd)
+    - Access to system files
+    - Access outside allowed directories
+
+    Args:
+        file_path: Path to validate
+        allowed_directories: List of allowed directory paths. If None, uses safe defaults.
+        check_symlinks: Whether to reject symlinks (default: True)
+
+    Returns:
+        Tuple of (is_valid, error_message)
+        - (True, None) if path is valid
+        - (False, error_message) if path is invalid
+
+    Security Notes:
+        - Uses os.path.realpath() to resolve symlinks and relative paths
+        - Checks if resolved path is within allowed directories
+        - Rejects symlinks by default (can be disabled for testing)
+        - Uses strict path validation to prevent traversal
+
+    Example:
+        >>> is_valid, error = validate_rollback_path("/tmp/myfile.txt")
+        >>> if not is_valid:
+        ...     raise RollbackSecurityError(error)
+    """
+    try:
+        # Default allowed directories if none specified
+        if allowed_directories is None:
+            # Safe defaults: temporary directories and workspace
+            allowed_directories = [
+                "/tmp",
+                "/var/tmp",
+                os.path.expanduser("~/.cache"),
+                os.getcwd(),  # Current working directory
+            ]
+
+            # Add platform-specific temp directories
+            import tempfile
+            temp_dir = tempfile.gettempdir()
+            if temp_dir not in allowed_directories:
+                allowed_directories.append(temp_dir)
+
+        # Convert to Path for easier handling
+        path_obj = Path(file_path)
+
+        # Check for null bytes (security bypass technique)
+        if "\x00" in str(file_path):
+            return False, "Path contains null bytes (security violation)"
+
+        # Detect symlinks BEFORE resolving (security check)
+        if check_symlinks:
+            try:
+                # Check if any component in the path is a symlink
+                current_path = Path(file_path)
+                if current_path.exists() and current_path.is_symlink():
+                    return False, f"Path is a symlink: {file_path} (security violation)"
+
+                # Check parent directories for symlinks
+                for parent in current_path.parents:
+                    if parent.exists() and parent.is_symlink():
+                        return False, f"Path contains symlink in parent: {parent} (security violation)"
+            except (OSError, PermissionError) as e:
+                # If we can't check, fail closed
+                return False, f"Cannot verify symlink status: {str(e)}"
+
+        # Resolve to absolute real path
+        try:
+            real_path = os.path.realpath(os.path.abspath(file_path))
+        except (OSError, ValueError) as e:
+            return False, f"Cannot resolve path: {str(e)}"
+
+        # Validate against allowed directories
+        path_allowed = False
+        for allowed_dir in allowed_directories:
+            try:
+                # Normalize allowed directory
+                allowed_real = os.path.realpath(os.path.abspath(allowed_dir))
+
+                # Check if real_path is within allowed_real
+                # Use os.path.commonpath to detect if they share a common prefix
+                try:
+                    common = os.path.commonpath([real_path, allowed_real])
+                    # If common path equals the allowed directory, file is inside it
+                    if common == allowed_real:
+                        path_allowed = True
+                        break
+                except ValueError:
+                    # Paths are on different drives (Windows) - not allowed
+                    continue
+
+            except (OSError, ValueError):
+                # Skip invalid allowed directories
+                continue
+
+        if not path_allowed:
+            return False, (
+                f"Path outside allowed directories: {real_path}\n"
+                f"Allowed: {', '.join(allowed_directories)}"
+            )
+
+        # Additional security checks
+        # Check for dangerous system directories (even if technically allowed)
+        dangerous_patterns = [
+            "/etc/",
+            "/sys/",
+            "/proc/",
+            "/dev/",
+            "/boot/",
+            "C:\\Windows\\System32",
+            "C:\\Windows\\SysWOW64",
+        ]
+
+        for dangerous in dangerous_patterns:
+            if real_path.startswith(dangerous):
+                return False, f"Access to system directory denied: {dangerous}"
+
+        # Path is valid
+        return True, None
+
+    except Exception as e:
+        # Any unexpected error - fail closed
+        logger.error(f"Path validation error for {file_path}: {e}")
+        return False, f"Path validation failed: {str(e)}"
+
+
 class RollbackStrategy(ABC):
     """Abstract rollback strategy for reverting specific action types.
 
@@ -215,6 +364,19 @@ class FileRollbackStrategy(RollbackStrategy):
 
         # Capture current file contents
         for file_path in file_paths:
+            # SECURITY: Validate path before accessing
+            is_valid, error = validate_rollback_path(file_path)
+            if not is_valid:
+                logger.error(
+                    f"SECURITY: Rejected invalid path in snapshot: {file_path}",
+                    extra={"error": error, "action": action}
+                )
+                raise RollbackSecurityError(
+                    f"Invalid file path rejected: {file_path}\n"
+                    f"Reason: {error}\n"
+                    f"This may indicate a path traversal attack."
+                )
+
             path = Path(file_path)
             if path.exists() and path.is_file():
                 try:
@@ -252,6 +414,17 @@ class FileRollbackStrategy(RollbackStrategy):
         # Revert each file
         for file_path, content in snapshot.file_snapshots.items():
             try:
+                # SECURITY: Validate path before writing
+                is_valid, error = validate_rollback_path(file_path)
+                if not is_valid:
+                    logger.error(
+                        f"SECURITY: Rejected invalid path in rollback restore: {file_path}",
+                        extra={"error": error, "snapshot_id": snapshot.id}
+                    )
+                    result.failed_items.append(file_path)
+                    result.errors.append(f"Security violation: {error}")
+                    continue
+
                 # Restore file content
                 with open(file_path, 'w') as f:
                     f.write(content)
@@ -264,6 +437,18 @@ class FileRollbackStrategy(RollbackStrategy):
         for key, existed in snapshot.metadata.items():
             if key.endswith("_existed") and not existed:
                 file_path = key.replace("_existed", "")
+
+                # SECURITY: Validate path before deletion
+                is_valid, error = validate_rollback_path(file_path)
+                if not is_valid:
+                    logger.error(
+                        f"SECURITY: Rejected invalid path in rollback deletion: {file_path}",
+                        extra={"error": error, "snapshot_id": snapshot.id}
+                    )
+                    result.failed_items.append(file_path)
+                    result.errors.append(f"Security violation (delete): {error}")
+                    continue
+
                 try:
                     if os.path.exists(file_path):
                         os.remove(file_path)

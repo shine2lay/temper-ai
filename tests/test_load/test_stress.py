@@ -70,6 +70,7 @@ def tool_registry():
 # Load Tests - Tool Registry
 # ============================================================================
 
+@pytest.mark.slow
 def test_1000_tool_executions(tool_registry):
     """Test 1000+ tool executions under load.
 
@@ -101,6 +102,7 @@ def test_1000_tool_executions(tool_registry):
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_concurrent_tool_execution():
     """Test 100+ concurrent tool executions.
 
@@ -158,6 +160,7 @@ async def test_concurrent_tool_execution():
 # ============================================================================
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_1000_database_writes(test_db):
     """Test 1000+ database write operations.
 
@@ -184,6 +187,7 @@ async def test_1000_database_writes(test_db):
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_concurrent_database_access(test_db):
     """Test 100+ concurrent database operations.
 
@@ -211,6 +215,7 @@ async def test_concurrent_database_access(test_db):
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_database_write_contention(test_db):
     """Test database under heavy concurrent write load.
 
@@ -248,6 +253,7 @@ async def test_database_write_contention(test_db):
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_database_read_write_mix(test_db):
     """Test database under mixed read/write load.
 
@@ -286,6 +292,7 @@ async def test_database_read_write_mix(test_db):
 # Stress Tests - Memory
 # ============================================================================
 
+@pytest.mark.slow
 def test_memory_pressure_tool_registry():
     """Test tool registry under memory pressure.
 
@@ -337,6 +344,7 @@ def test_memory_pressure_tool_registry():
     assert memory_growth < 50, f"Memory leak detected: grew by {memory_growth:.1f}MB"
 
 
+@pytest.mark.slow
 def test_memory_leak_detection_database():
     """Test for memory leaks in database operations.
 
@@ -371,6 +379,7 @@ def test_memory_leak_detection_database():
 # Stress Tests - Resource Exhaustion
 # ============================================================================
 
+@pytest.mark.slow
 def test_file_descriptor_management(test_db):
     """Test file descriptor management.
 
@@ -397,6 +406,7 @@ def test_file_descriptor_management(test_db):
 # Performance Tests - Throughput
 # ============================================================================
 
+@pytest.mark.slow
 def test_tool_registry_throughput():
     """Test tool registry maximum throughput.
 
@@ -443,6 +453,7 @@ def test_tool_registry_throughput():
 
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_async_throughput():
     """Test async operation throughput.
 
@@ -481,6 +492,7 @@ async def test_async_throughput():
 # ============================================================================
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_error_handling_under_load():
     """Test error handling when operations fail under load.
 
@@ -516,6 +528,7 @@ async def test_error_handling_under_load():
 # ============================================================================
 
 @pytest.mark.asyncio
+@pytest.mark.slow
 async def test_sustained_load_1000_operations():
     """Test sustained load with 1000 operations.
 

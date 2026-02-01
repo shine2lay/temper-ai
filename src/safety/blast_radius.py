@@ -13,9 +13,10 @@ or malicious action could affect many resources.
 from typing import Dict, Any, List, Optional
 from src.safety.base import BaseSafetyPolicy
 from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
+from src.safety.validation import ValidationMixin
 
 
-class BlastRadiusPolicy(BaseSafetyPolicy):
+class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
     """Enforces blast radius limits to prevent widespread damage.
 
     Configuration options:
@@ -47,20 +48,81 @@ class BlastRadiusPolicy(BaseSafetyPolicy):
     DEFAULT_MAX_OPS_PER_MINUTE = 20
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize blast radius policy.
+        """Initialize blast radius policy with validated configuration.
 
         Args:
             config: Policy configuration (optional)
+
+        Raises:
+            ValueError: If configuration contains invalid values
+
+        Configuration Validation:
+            - max_files_per_operation: Must be positive integer (1-10000)
+            - max_lines_per_file: Must be positive integer (1-1000000)
+            - max_total_lines: Must be positive integer (1-10000000)
+            - max_entities_affected: Must be positive integer (1-100000)
+            - max_operations_per_minute: Must be positive integer (1-1000)
+            - forbidden_patterns: Must be valid regex patterns list
         """
         super().__init__(config or {})
 
-        # Extract limits from config with defaults
-        self.max_files = self.config.get("max_files_per_operation", self.DEFAULT_MAX_FILES)
-        self.max_lines_per_file = self.config.get("max_lines_per_file", self.DEFAULT_MAX_LINES_PER_FILE)
-        self.max_total_lines = self.config.get("max_total_lines", self.DEFAULT_MAX_TOTAL_LINES)
-        self.max_entities = self.config.get("max_entities_affected", self.DEFAULT_MAX_ENTITIES)
-        self.max_ops_per_minute = self.config.get("max_operations_per_minute", self.DEFAULT_MAX_OPS_PER_MINUTE)
-        self.forbidden_patterns = self.config.get("forbidden_patterns", [])
+        # Validate and extract limits from config with defaults
+        self.max_files = self._validate_positive_int(
+            self.config.get("max_files_per_operation", self.DEFAULT_MAX_FILES),
+            "max_files_per_operation",
+            min_value=1,
+            max_value=10000
+        )
+
+        self.max_lines_per_file = self._validate_positive_int(
+            self.config.get("max_lines_per_file", self.DEFAULT_MAX_LINES_PER_FILE),
+            "max_lines_per_file",
+            min_value=1,
+            max_value=1000000
+        )
+
+        self.max_total_lines = self._validate_positive_int(
+            self.config.get("max_total_lines", self.DEFAULT_MAX_TOTAL_LINES),
+            "max_total_lines",
+            min_value=1,
+            max_value=10000000
+        )
+
+        self.max_entities = self._validate_positive_int(
+            self.config.get("max_entities_affected", self.DEFAULT_MAX_ENTITIES),
+            "max_entities_affected",
+            min_value=1,
+            max_value=100000
+        )
+
+        self.max_ops_per_minute = self._validate_positive_int(
+            self.config.get("max_operations_per_minute", self.DEFAULT_MAX_OPS_PER_MINUTE),
+            "max_operations_per_minute",
+            min_value=1,
+            max_value=1000
+        )
+
+        # Validate forbidden patterns
+        forbidden_patterns_raw = self.config.get("forbidden_patterns", [])
+        forbidden_patterns_validated = self._validate_string_list(
+            forbidden_patterns_raw,
+            "forbidden_patterns",
+            allow_empty=True,
+            max_items=1000,
+            max_item_length=1000
+        )
+
+        # Compile and test each pattern for ReDoS
+        self.forbidden_patterns = []
+        for pattern_str in forbidden_patterns_validated:
+            # Validate regex pattern (compiles and tests for ReDoS)
+            compiled_pattern = self._validate_regex_pattern(
+                pattern_str,
+                f"forbidden_patterns['{pattern_str}']",
+                max_length=1000,
+                test_timeout=0.1
+            )
+            self.forbidden_patterns.append(compiled_pattern)
 
     @property
     def name(self) -> str:
@@ -155,15 +217,16 @@ class BlastRadiusPolicy(BaseSafetyPolicy):
         # Check for forbidden patterns in content
         content = action.get("content", "")
         if isinstance(content, str):
-            for pattern in self.forbidden_patterns:
-                if pattern.lower() in content.lower():
+            for compiled_pattern in self.forbidden_patterns:
+                match = compiled_pattern.search(content)
+                if match:
                     violations.append(SafetyViolation(
                         policy_name=self.name,
                         severity=ViolationSeverity.CRITICAL,
-                        message=f"Forbidden pattern detected: '{pattern}'",
+                        message=f"Forbidden pattern detected: '{compiled_pattern.pattern}'",
                         action=str(action),
                         context=context,
-                        remediation_hint=f"Remove or refactor code containing '{pattern}'"
+                        remediation_hint=f"Remove or refactor code containing '{compiled_pattern.pattern}'"
                     ))
 
         # Determine validity (invalid if any HIGH or CRITICAL violations)

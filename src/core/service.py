@@ -292,28 +292,32 @@ class SafetyServiceMixin:
                 ViolationSeverity.CRITICAL: logger.critical,
             }.get(violation.severity, logger.warning)
 
-            # SECURITY: Sanitize context before logging to prevent exposure of
-            # detected secrets, PII, or credentials in application logs
+            # SECURITY: Sanitize context and metadata before logging to prevent
+            # exposure of detected secrets, PII, or credentials in application logs
             sanitized_context = _sanitize_violation_context(violation.context)
+            sanitized_metadata = _sanitize_violation_context(violation.metadata) if violation.metadata else None
 
             log_level(
                 f"Safety violation: {violation.message}",
                 extra={
                     'severity': violation.severity.name,
                     'policy': violation.policy_name,
-                    'context': sanitized_context
+                    'context': sanitized_context,
+                    'metadata': sanitized_metadata
                 }
             )
 
             # Track violation in observability system
             if tracker and hasattr(tracker, 'track_safety_violation'):
                 try:
+                    # SECURITY: Use sanitized context to prevent secrets/PII exposure
+                    # in observability database and logs (see line 297 for sanitization)
                     tracker.track_safety_violation(
                         violation_severity=violation.severity.name,
                         violation_message=violation.message,
                         policy_name=violation.policy_name,
                         service_name=getattr(self, 'name', 'unknown'),
-                        context=violation.context
+                        context=sanitized_context
                     )
                 except Exception as e:
                     # Don't fail violation handling if tracking fails

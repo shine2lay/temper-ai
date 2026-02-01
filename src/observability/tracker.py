@@ -543,6 +543,12 @@ class ExecutionTracker:
         prompt_result = self.sanitizer.sanitize_text(prompt, context="prompt")
         response_result = self.sanitizer.sanitize_text(response, context="response")
 
+        # SECURITY: Sanitize error message as well (may contain prompt fragments)
+        safe_error_message = None
+        if error_message:
+            error_result = self.sanitizer.sanitize_text(error_message, context="error")
+            safe_error_message = error_result.sanitized_text
+
         # Log sanitization activity if redactions were made
         if prompt_result.was_sanitized or response_result.was_sanitized:
             import logging
@@ -576,7 +582,7 @@ class ExecutionTracker:
             temperature=temperature,
             max_tokens=max_tokens,
             status=status,
-            error_message=error_message
+            error_message=safe_error_message  # Sanitized
         )
 
         # NOTE: Sanitization metadata (redaction counts, hashes, etc.) is available

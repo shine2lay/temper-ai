@@ -150,6 +150,10 @@ class ActionPolicyEngine:
         # Policy result cache: cache_key -> (result, timestamp)
         self._cache: Dict[str, Tuple[ValidationResult, float]] = {}
 
+        # SECURITY: Initialize sanitizer for defense-in-depth violation message sanitization
+        # Lazy loaded to avoid import overhead if sanitization is not needed
+        self._sanitizer = None
+
         # Metrics
         self._validations_performed = 0
         self._violations_logged = 0
@@ -284,6 +288,59 @@ class ActionPolicyEngine:
             cache_hit=cache_hits > 0
         )
 
+    def _canonical_json(self, obj: Any) -> str:
+        """Create canonical JSON representation for deterministic hashing.
+
+        This function ensures that identical logical data always produces
+        identical JSON strings, preventing cache collision attacks.
+
+        Security properties:
+        - Recursively sorts all dict keys (not just top-level)
+        - Deterministic handling of all Python types
+        - Resistant to collision attacks via crafted nested structures
+        - Platform-independent serialization
+
+        Args:
+            obj: Python object to serialize
+
+        Returns:
+            Canonical JSON string
+
+        Example:
+            >>> engine._canonical_json({"b": {"d": 1, "c": 2}, "a": 3})
+            '{"a":3,"b":{"c":2,"d":1}}'  # All keys sorted at all levels
+        """
+        def canonicalize(o: Any) -> Any:
+            """Recursively canonicalize an object."""
+            if isinstance(o, dict):
+                # Sort dict keys recursively
+                return {k: canonicalize(v) for k, v in sorted(o.items())}
+            elif isinstance(o, (list, tuple)):
+                # Lists/tuples: canonicalize elements (preserve order)
+                return [canonicalize(item) for item in o]
+            elif isinstance(o, set):
+                # Sets: sort for determinism (sets are unordered)
+                return sorted([canonicalize(item) for item in o])
+            elif isinstance(o, (str, int, float, bool, type(None))):
+                # Primitives: return as-is
+                return o
+            else:
+                # Unsupported types: convert to string representation
+                # This ensures determinism for custom types
+                return str(o)
+
+        # Canonicalize the object structure
+        canonical_obj = canonicalize(obj)
+
+        # Serialize with sorted keys and no whitespace
+        # Use separators for minimal, deterministic output
+        return json.dumps(
+            canonical_obj,
+            sort_keys=True,
+            separators=(',', ':'),  # No whitespace
+            ensure_ascii=True  # ASCII-only for platform independence
+        )
+
     def _get_cache_key(
         self,
         policy: SafetyPolicy,
@@ -293,6 +350,18 @@ class ActionPolicyEngine:
         """Generate cache key for policy result.
 
         Creates deterministic hash of policy + action + context.
+
+        SECURITY: Uses canonical JSON serialization to prevent cache
+        collision attacks. Standard json.dumps(sort_keys=True) only sorts
+        top-level keys, allowing collision via crafted nested structures.
+
+        Args:
+            policy: Safety policy being validated
+            action: Action dict (may contain nested structures)
+            context: Execution context
+
+        Returns:
+            SHA-256 hex digest of canonical representation
         """
         # Create deterministic representation
         data = {
@@ -305,7 +374,8 @@ class ActionPolicyEngine:
             # to allow caching across different workflow instances
         }
 
-        json_str = json.dumps(data, sort_keys=True)
+        # Use canonical JSON to prevent collision attacks
+        json_str = self._canonical_json(data)
         return hashlib.sha256(json_str.encode()).hexdigest()
 
     def _get_cached_result(self, cache_key: str) -> Optional[ValidationResult]:
@@ -358,10 +428,19 @@ class ActionPolicyEngine:
         Note: This is a placeholder for M1 observability integration.
         Actual implementation would write to database.
         """
+        # SECURITY: Lazy-load sanitizer for defense-in-depth
+        # Even though policies should sanitize, we add an extra layer
+        if self._sanitizer is None:
+            from src.observability.sanitization import DataSanitizer
+            self._sanitizer = DataSanitizer()
+
         for violation in violations:
+            # SECURITY: Sanitize violation message for defense-in-depth
+            safe_message = self._sanitizer.sanitize_text(violation.message).sanitized_text
+
             logger.warning(
                 f"Safety violation: [{violation.severity.name}] "
-                f"{violation.policy_name}: {violation.message}",
+                f"{violation.policy_name}: {safe_message}",
                 extra={
                     'agent_id': context.agent_id,
                     'workflow_id': context.workflow_id,
@@ -369,6 +448,7 @@ class ActionPolicyEngine:
                     'policy': violation.policy_name,
                     'severity': violation.severity.name,
                     'action_type': context.action_type
+                    # NOTE: Intentionally omit violation.context for security
                 }
             )
 

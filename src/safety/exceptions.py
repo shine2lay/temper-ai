@@ -134,14 +134,20 @@ class SafetyViolationException(Exception):
             >>> exc = SafetyViolationException.from_violation(violation)
             >>> raise exc
         """
+        # SECURITY: Sanitize context defensively in case violation was created
+        # with unsanitized data. This provides defense-in-depth protection.
+        from src.core.service import _sanitize_violation_context
+        sanitized_context = _sanitize_violation_context(violation.context)
+        sanitized_metadata = _sanitize_violation_context(violation.metadata) if violation.metadata else None
+
         return cls(
             policy_name=violation.policy_name,
             severity=violation.severity,
             message=violation.message,
             action=violation.action,
-            context=violation.context,
+            context=sanitized_context,
             remediation_hint=violation.remediation_hint,
-            metadata=violation.metadata
+            metadata=sanitized_metadata
         )
 
 

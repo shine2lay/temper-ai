@@ -198,6 +198,27 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
         """
         return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
+    def _sanitize_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
+        """Sanitize execution context to prevent re-exposure of detected secrets.
+
+        The context parameter comes from the action validation call and may contain
+        the full action data structure including the content that was scanned for
+        secrets. We must sanitize this to avoid re-exposing the secrets we detected.
+
+        Args:
+            context: Raw execution context
+
+        Returns:
+            Sanitized context safe for logging
+
+        Example:
+            >>> context = {"api_key": "sk-proj-secret123", "file_path": "config.py"}
+            >>> _sanitize_context(context)
+            {'file_path': 'config.py'}  # Secret removed/redacted
+        """
+        from src.utils.config_helpers import sanitize_config_for_display
+        return sanitize_config_for_display(context)
+
     def _validate_impl(
         self,
         action: Dict[str, Any],
@@ -276,12 +297,16 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
                     hashlib.sha256
                 ).hexdigest()[:16]  # 16 chars = 64 bits = low collision probability
 
+                # SECURITY: Sanitize context to prevent re-exposing detected secrets
+                # in observability logs and violation records
+                sanitized_context = self._sanitize_context(context)
+
                 violations.append(SafetyViolation(
                     policy_name=self.name,
                     severity=severity,
                     message=f"Potential secret detected ({pattern_name}): {redacted_preview}",
                     action=f"file_path={file_path}, pattern={pattern_name}",
-                    context=context,
+                    context=sanitized_context,
                     remediation_hint="Use environment variables or secret management service",
                     metadata={
                         "pattern_type": pattern_name,

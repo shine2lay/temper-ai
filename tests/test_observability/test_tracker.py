@@ -350,6 +350,82 @@ class TestLLMTracking:
             assert ag.completion_tokens == 13  # 5 + 8
             assert ag.estimated_cost_usd == 0.003  # 0.001 + 0.002
 
+    def test_reject_negative_prompt_tokens(self, tracker):
+        """Test that negative prompt_tokens raises ValueError."""
+        config_wf = {}
+        config_st = {}
+        config_ag = {}
+
+        with tracker.track_workflow("test_wf", config_wf) as workflow_id:
+            with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
+                with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
+                    with pytest.raises(ValueError, match="prompt_tokens must be non-negative"):
+                        tracker.track_llm_call(
+                            agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
+                            -10, 5, 200, 0.001  # Negative prompt_tokens
+                        )
+
+    def test_reject_negative_completion_tokens(self, tracker):
+        """Test that negative completion_tokens raises ValueError."""
+        config_wf = {}
+        config_st = {}
+        config_ag = {}
+
+        with tracker.track_workflow("test_wf", config_wf) as workflow_id:
+            with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
+                with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
+                    with pytest.raises(ValueError, match="completion_tokens must be non-negative"):
+                        tracker.track_llm_call(
+                            agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
+                            10, -5, 200, 0.001  # Negative completion_tokens
+                        )
+
+    def test_reject_negative_latency_ms(self, tracker):
+        """Test that negative latency_ms raises ValueError."""
+        config_wf = {}
+        config_st = {}
+        config_ag = {}
+
+        with tracker.track_workflow("test_wf", config_wf) as workflow_id:
+            with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
+                with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
+                    with pytest.raises(ValueError, match="latency_ms must be non-negative"):
+                        tracker.track_llm_call(
+                            agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
+                            10, 5, -200, 0.001  # Negative latency_ms
+                        )
+
+    def test_reject_negative_estimated_cost(self, tracker):
+        """Test that negative estimated_cost_usd raises ValueError."""
+        config_wf = {}
+        config_st = {}
+        config_ag = {}
+
+        with tracker.track_workflow("test_wf", config_wf) as workflow_id:
+            with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
+                with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
+                    with pytest.raises(ValueError, match="estimated_cost_usd must be non-negative"):
+                        tracker.track_llm_call(
+                            agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
+                            10, 5, 200, -0.001  # Negative cost
+                        )
+
+    def test_accept_zero_values(self, tracker):
+        """Test that zero values are accepted (valid edge case)."""
+        config_wf = {}
+        config_st = {}
+        config_ag = {}
+
+        with tracker.track_workflow("test_wf", config_wf) as workflow_id:
+            with tracker.track_stage("test_st", config_st, workflow_id) as stage_id:
+                with tracker.track_agent("researcher", config_ag, stage_id) as agent_id:
+                    # Should not raise - zeros are valid
+                    llm_call_id = tracker.track_llm_call(
+                        agent_id, "ollama", "llama3.2:3b", "Hello", "Hi",
+                        0, 0, 0, 0.0  # All zeros (valid)
+                    )
+                    assert llm_call_id is not None
+
 
 class TestToolTracking:
     """Tests for tool execution tracking."""

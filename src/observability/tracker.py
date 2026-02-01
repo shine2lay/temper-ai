@@ -561,7 +561,20 @@ class ExecutionTracker:
             ...     "Hi there!",
             ...     10, 5, 250, 0.001
             ... )
+
+        Raises:
+            ValueError: If numeric parameters are negative
         """
+        # VALIDATION (code-medi-13): Validate numeric parameters are non-negative
+        if prompt_tokens < 0:
+            raise ValueError(f"prompt_tokens must be non-negative, got {prompt_tokens}")
+        if completion_tokens < 0:
+            raise ValueError(f"completion_tokens must be non-negative, got {completion_tokens}")
+        if latency_ms < 0:
+            raise ValueError(f"latency_ms must be non-negative, got {latency_ms}")
+        if estimated_cost_usd < 0:
+            raise ValueError(f"estimated_cost_usd must be non-negative, got {estimated_cost_usd}")
+
         llm_call_id = str(uuid.uuid4())
         start_time = utcnow()
 

@@ -13,6 +13,7 @@ an average rate limit over time.
 import time
 import threading
 import functools
+import math
 from typing import Optional, Dict, Any, Tuple, Callable
 from dataclasses import dataclass
 
@@ -98,6 +99,11 @@ class RateLimit:
         if not isinstance(self.refill_rate, (int, float)):
             raise ValueError(
                 f"refill_rate must be numeric, got {type(self.refill_rate).__name__}"
+            )
+        # SECURITY: Check for NaN/Inf to prevent bypass and undefined behavior
+        if math.isnan(self.refill_rate) or math.isinf(self.refill_rate):
+            raise ValueError(
+                f"refill_rate must be a finite number, got {self.refill_rate}"
             )
         if self.refill_rate <= 0:
             raise ValueError(

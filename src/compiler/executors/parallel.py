@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, List, Callable, cast
 from typing_extensions import TypedDict as TD, Annotated
 import uuid
 import time
+import logging
 
 from langgraph.graph import StateGraph, START, END
 
@@ -14,6 +15,9 @@ from src.compiler.utils import extract_agent_name
 from src.agents.agent_factory import AgentFactory
 from src.agents.base_agent import ExecutionContext
 from src.utils.config_helpers import get_nested_value
+from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class ParallelStageExecutor(StageExecutor):
@@ -505,11 +509,11 @@ class ParallelStageExecutor(StageExecutor):
                     "errors": {}  # Empty errors on success
                 }
 
-            except Exception as e:
-                # Calculate duration even on failure
+            except (ConfigNotFoundError, ConfigValidationError, ValueError, TypeError, KeyError) as e:
+                # Expected configuration or validation errors - log as info
+                logger.info(f"Agent {agent_name} configuration/validation error: {e}")
                 duration = time.time() - start_time
 
-                # Return error updates
                 return {
                     "agent_outputs": {},
                     "agent_statuses": {agent_name: "failed"},
@@ -522,7 +526,34 @@ class ParallelStageExecutor(StageExecutor):
                             "retries": 0
                         }
                     },
-                    "errors": {agent_name: str(e)}
+                    "errors": {agent_name: f"{type(e).__name__}: {str(e)}"}
+                }
+
+            except (KeyboardInterrupt, SystemExit):
+                # System-level interrupts should propagate
+                raise
+
+            except Exception as e:
+                # Unexpected errors - log with full context for debugging
+                logger.error(
+                    f"Unexpected error in agent {agent_name}: {type(e).__name__}: {e}",
+                    exc_info=True  # Include full traceback
+                )
+                duration = time.time() - start_time
+
+                return {
+                    "agent_outputs": {},
+                    "agent_statuses": {agent_name: "failed"},
+                    "agent_metrics": {
+                        agent_name: {
+                            "tokens": 0,
+                            "cost_usd": 0.0,
+                            "duration_seconds": duration,
+                            "tool_calls": 0,
+                            "retries": 0
+                        }
+                    },
+                    "errors": {agent_name: f"Unexpected error: {type(e).__name__}: {str(e)}"}
                 }
 
         return agent_node

@@ -190,19 +190,80 @@ class WorkflowExecutor:
             tracker=self.tracker
         )
 
-        # Execute with periodic checkpointing
-        # TODO: Implement stage-by-stage execution with checkpointing
-        # For now, use standard execution and save checkpoint at end
-        result = self.graph.invoke(state)  # type: ignore[attr-defined]
+        # Execute with streaming checkpoints
+        final_state = None
+        stage_count = 0
 
-        # Save final checkpoint
-        domain_state = self._extract_domain_state(result)
-        self.checkpoint_manager.save_checkpoint(
-            domain_state.workflow_id,
-            domain_state
-        )
+        try:
+            for chunk in self.graph.stream(state):  # type: ignore[attr-defined]
+                # chunk format: {stage_name: updated_state}
+                # Update final state with latest chunk
+                if chunk:
+                    # Get the updated state from the chunk
+                    # (chunk is dict with single key = stage name)
+                    stage_name = list(chunk.keys())[0]
+                    final_state = chunk[stage_name]
+                    stage_count += 1
 
-        return cast(Dict[str, Any], result)
+                    # Checkpoint after checkpoint_interval stages
+                    if stage_count % checkpoint_interval == 0:
+                        domain_state = self._extract_domain_state(final_state)
+                        self.checkpoint_manager.save_checkpoint(
+                            domain_state.workflow_id,
+                            domain_state
+                        )
+
+                        if self.tracker:
+                            self.tracker.log_event(
+                                "checkpoint_saved",
+                                {
+                                    "workflow_id": domain_state.workflow_id,
+                                    "stage": stage_name,
+                                    "stage_count": stage_count
+                                }
+                            )
+
+            # Ensure we have a final state
+            if final_state is None:
+                raise RuntimeError("Workflow execution produced no output")
+
+            # Save final checkpoint
+            domain_state = self._extract_domain_state(final_state)
+            self.checkpoint_manager.save_checkpoint(
+                domain_state.workflow_id,
+                domain_state
+            )
+
+            return cast(Dict[str, Any], final_state)
+
+        except Exception as e:
+            # On error, save checkpoint at failure point if we have state
+            if final_state is not None:
+                try:
+                    domain_state = self._extract_domain_state(final_state)
+                    self.checkpoint_manager.save_checkpoint(
+                        domain_state.workflow_id,
+                        domain_state
+                    )
+                    if self.tracker:
+                        self.tracker.log_event(
+                            "checkpoint_saved_on_error",
+                            {
+                                "workflow_id": domain_state.workflow_id,
+                                "error": str(e),
+                                "stage_count": stage_count
+                            }
+                        )
+                except Exception as checkpoint_error:
+                    # Log but don't mask original error
+                    if self.tracker:
+                        self.tracker.log_event(
+                            "checkpoint_save_failed",
+                            {"error": str(checkpoint_error)}
+                        )
+
+            # Re-raise original error
+            raise
 
     def resume_from_checkpoint(
         self,
@@ -236,36 +297,79 @@ class WorkflowExecutor:
         # Load checkpoint
         domain_state = self.checkpoint_manager.resume(workflow_id)
 
+        if self.tracker:
+            self.tracker.log_event(
+                "checkpoint_resumed",
+                {
+                    "workflow_id": workflow_id,
+                    "current_stage": domain_state.current_stage,
+                    "completed_stages": list(domain_state.stage_outputs.keys())
+                }
+            )
+
         # Merge additional input if provided
         if input_data:
             for key, value in input_data.items():
                 if not hasattr(domain_state, key) or getattr(domain_state, key) is None:
                     setattr(domain_state, key, value)
 
-        # Create execution context
-        context = ExecutionContext(
-            tracker=self.tracker,
-            # TODO: Add other infrastructure components if needed
-        )
-
         # Convert to state dict for execution
         state_dict = domain_state.to_dict()
 
         # Add infrastructure to state dict (WorkflowState compatibility)
-        if context.tracker:
-            state_dict["tracker"] = context.tracker
+        if self.tracker:
+            state_dict["tracker"] = self.tracker
 
-        # Continue execution from checkpoint
-        result = self.graph.invoke(state_dict)  # type: ignore[attr-defined]
+        # Continue execution using streaming with checkpoints
+        # LangGraph will skip already-completed stages automatically
+        # because they check stage_outputs and skip if present
+        final_state = None
+        stage_count = len(domain_state.stage_outputs)
 
-        # Save final checkpoint
-        final_domain_state = self._extract_domain_state(result)
-        self.checkpoint_manager.save_checkpoint(
-            final_domain_state.workflow_id,
-            final_domain_state
-        )
+        try:
+            for chunk in self.graph.stream(state_dict):  # type: ignore[attr-defined]
+                if chunk:
+                    stage_name = list(chunk.keys())[0]
+                    final_state = chunk[stage_name]
+                    stage_count += 1
 
-        return cast(Dict[str, Any], result)
+                    # Checkpoint after each new stage
+                    domain_state_updated = self._extract_domain_state(final_state)
+                    self.checkpoint_manager.save_checkpoint(
+                        domain_state_updated.workflow_id,
+                        domain_state_updated
+                    )
+
+            if final_state is None:
+                # No new stages executed - workflow was already complete
+                if self.tracker:
+                    self.tracker.log_event(
+                        "workflow_already_complete",
+                        {"workflow_id": workflow_id}
+                    )
+                return state_dict
+
+            # Save final checkpoint
+            final_domain_state = self._extract_domain_state(final_state)
+            self.checkpoint_manager.save_checkpoint(
+                final_domain_state.workflow_id,
+                final_domain_state
+            )
+
+            return cast(Dict[str, Any], final_state)
+
+        except Exception as e:
+            # On error, checkpoint at failure point
+            if final_state is not None:
+                try:
+                    domain_state_updated = self._extract_domain_state(final_state)
+                    self.checkpoint_manager.save_checkpoint(
+                        domain_state_updated.workflow_id,
+                        domain_state_updated
+                    )
+                except Exception:
+                    pass  # Don't mask original error
+            raise
 
     def _extract_domain_state(self, state_dict: Dict[str, Any]) -> WorkflowDomainState:
         """Extract domain state from workflow state dict.

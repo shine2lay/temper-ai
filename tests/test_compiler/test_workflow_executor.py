@@ -265,11 +265,15 @@ class TestCheckpointSupport:
         import tempfile
 
         mock_graph = Mock()
-        mock_graph.invoke = Mock(return_value={
-            "workflow_id": "wf-checkpoint-test",
-            "stage_outputs": {"stage1": "output1"},
-            "current_stage": "stage1",
-        })
+        # Mock stream to return chunks (updated to use streaming)
+        stage_chunks = [
+            {"stage1": {
+                "workflow_id": "wf-checkpoint-test",
+                "stage_outputs": {"stage1": "output1"},
+                "current_stage": "stage1",
+            }}
+        ]
+        mock_graph.stream = Mock(return_value=iter(stage_chunks))
 
         with tempfile.TemporaryDirectory() as tmpdir:
             checkpoint_manager = CheckpointManager(storage_path=tmpdir)
@@ -316,15 +320,19 @@ class TestCheckpointSupport:
 
             # Create executor and resume
             mock_graph = Mock()
-            mock_graph.invoke = Mock(return_value={
-                "workflow_id": "wf-resume-test",
-                "stage_outputs": {
-                    "stage1": "output1",
-                    "stage2": "output2"  # New stage completed
-                },
-                "current_stage": "stage2",
-                "input": "test input",
-            })
+            # Mock stream to return remaining chunks (updated to use streaming)
+            remaining_chunks = [
+                {"stage2": {
+                    "workflow_id": "wf-resume-test",
+                    "stage_outputs": {
+                        "stage1": "output1",
+                        "stage2": "output2"  # New stage completed
+                    },
+                    "current_stage": "stage2",
+                    "input": "test input",
+                }}
+            ]
+            mock_graph.stream = Mock(return_value=iter(remaining_chunks))
 
             executor = WorkflowExecutor(
                 mock_graph,
@@ -337,9 +345,9 @@ class TestCheckpointSupport:
             assert result["workflow_id"] == "wf-resume-test"
             assert "stage2" in result["stage_outputs"]
 
-            # Verify graph was invoked with checkpointed state
-            mock_graph.invoke.assert_called_once()
-            call_args = mock_graph.invoke.call_args[0][0]
+            # Verify graph was streamed with checkpointed state
+            mock_graph.stream.assert_called_once()
+            call_args = mock_graph.stream.call_args[0][0]
             assert "stage_outputs" in call_args
             assert "stage1" in call_args["stage_outputs"]
 

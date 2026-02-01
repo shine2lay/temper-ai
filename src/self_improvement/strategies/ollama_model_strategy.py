@@ -95,21 +95,20 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         Check if this strategy applies to the problem.
 
         Model selection is applicable to:
-        - low_quality: Try higher-quality models
-        - high_cost: Try smaller/faster models
-        - slow_response: Try faster models
+        - quality_low: Try higher-quality models
+        - cost_too_high: Try smaller/faster models
+        - too_slow: Try faster models
 
         Args:
-            problem_type: Type of problem detected
+            problem_type: Type of problem detected (from ProblemType enum)
 
         Returns:
             True if strategy can help with this problem type
         """
         applicable_types = {
-            "low_quality",
-            "high_cost",
-            "slow_response",
-            "high_error_rate",  # May benefit from better models
+            "quality_low",
+            "cost_too_high",
+            "too_slow",
         }
         return problem_type in applicable_types
 
@@ -123,14 +122,13 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         Returns:
             Estimated improvement (0.0-1.0)
         """
-        problem_type = problem.get("type", "unknown")
+        problem_type = problem.get("problem_type", problem.get("type", "unknown"))
 
         # Model selection has high impact on quality and moderate on speed/cost
         impact_by_type = {
-            "low_quality": 0.4,  # 40% quality improvement expected
-            "slow_response": 0.3,  # 30% speed improvement
-            "high_cost": 0.3,  # 30% cost reduction
-            "high_error_rate": 0.25,  # 25% error reduction
+            "quality_low": 0.4,  # 40% quality improvement expected
+            "too_slow": 0.3,  # 30% speed improvement
+            "cost_too_high": 0.3,  # 30% cost reduction
         }
 
         return impact_by_type.get(problem_type, 0.1)
@@ -151,13 +149,11 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         # Map pattern types to problem types
         for pattern in patterns:
             if "quality" in pattern.pattern_type.lower():
-                return "low_quality"
+                return "quality_low"
             elif "cost" in pattern.pattern_type.lower():
-                return "high_cost"
+                return "cost_too_high"
             elif "slow" in pattern.pattern_type.lower() or "latency" in pattern.pattern_type.lower():
-                return "slow_response"
-            elif "error" in pattern.pattern_type.lower():
-                return "high_error_rate"
+                return "too_slow"
 
         return "balanced"
 
@@ -179,13 +175,13 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         # Remove current model from candidates
         candidates = [m for m in all_models if m.name != current_model]
 
-        if problem_type == "low_quality":
+        if problem_type == "quality_low":
             # Prioritize higher quality models
             candidates.sort(
                 key=lambda m: self._quality_score(m),
                 reverse=True
             )
-        elif problem_type == "high_cost" or problem_type == "slow_response":
+        elif problem_type == "cost_too_high" or problem_type == "too_slow":
             # Prioritize faster/smaller models
             candidates.sort(
                 key=lambda m: self._speed_score(m),

@@ -80,6 +80,11 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
         self.excluded_paths = self.config.get("excluded_paths", [])
         self.allow_test_secrets = self.config.get("allow_test_secrets", True)
 
+        # SECURITY: Session-scoped secret key for HMAC-based violation IDs
+        # Provides deduplication (same secret = same ID) without rainbow table risk
+        import os
+        self._session_key = os.urandom(32)
+
         # Compile regex patterns
         self.compiled_patterns = {
             name: re.compile(pattern, re.IGNORECASE)
@@ -261,6 +266,16 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
                 # Create safe redacted preview (never expose actual secret)
                 redacted_preview = self._create_redacted_preview(matched_text, pattern_name)
 
+                # SECURITY: Generate violation ID using HMAC for secure deduplication
+                # HMAC ensures: same secret = same ID (deduplication) without rainbow table risk
+                # Session key rotates per process, so IDs are not correlatable across sessions
+                import hmac
+                violation_id = hmac.new(
+                    self._session_key,
+                    matched_text.encode('utf-8'),
+                    hashlib.sha256
+                ).hexdigest()[:16]  # 16 chars = 64 bits = low collision probability
+
                 violations.append(SafetyViolation(
                     policy_name=self.name,
                     severity=severity,
@@ -273,7 +288,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
                         "entropy": round(entropy, 2),
                         "match_position": match.start(),
                         "match_length": len(matched_text),
-                        "secret_hash": self._hash_secret(matched_text)
+                        "violation_id": violation_id  # For deduplication within session
                     }
                 ))
 

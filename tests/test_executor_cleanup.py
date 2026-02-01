@@ -332,7 +332,7 @@ class TestConcurrentExecution:
         assert executor.is_shutdown()
 
 
-class TestErrorScenarios:
+class TestErrors:
     """Tests for error scenarios during cleanup."""
 
     def test_shutdown_exception_propagated(self):

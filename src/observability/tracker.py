@@ -628,12 +628,17 @@ class ExecutionTracker:
         tool_execution_id = str(uuid.uuid4())
         start_time = utcnow()
 
+        # SECURITY: Sanitize tool parameters before storage
+        # Tools may receive/return credentials in parameters (e.g., Authorization headers)
+        sanitized_input = self._sanitize_dict(input_params)
+        sanitized_output = self._sanitize_dict(output_data)
+
         self.backend.track_tool_call(
             tool_execution_id=tool_execution_id,
             agent_id=agent_id,
             tool_name=tool_name,
-            input_params=input_params,
-            output_data=output_data,
+            input_params=sanitized_input,
+            output_data=sanitized_output,
             start_time=start_time,
             duration_seconds=duration_seconds,
             status=status,
@@ -643,6 +648,74 @@ class ExecutionTracker:
         )
 
         return tool_execution_id
+
+    def _sanitize_dict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Recursively sanitize dictionary values to remove secrets.
+
+        SECURITY: Prevents credential exposure in tool parameters/outputs.
+        Uses recursive traversal instead of JSON round-trip to avoid injection attacks.
+
+        Args:
+            data: Dictionary to sanitize
+
+        Returns:
+            Sanitized dictionary with secrets redacted
+        """
+        import logging
+
+        if not isinstance(data, dict):
+            return data
+
+        sanitized = {}
+        for key, value in data.items():
+            try:
+                # Sanitize key as well (keys might contain secrets)
+                safe_key_result = self.sanitizer.sanitize_text(str(key), context="config")
+                safe_key = safe_key_result.sanitized_text
+
+                # Recursively sanitize value based on type
+                if isinstance(value, dict):
+                    sanitized[safe_key] = self._sanitize_dict(value)
+                elif isinstance(value, list):
+                    sanitized[safe_key] = [
+                        self._sanitize_dict(item) if isinstance(item, dict)
+                        else self.sanitizer.sanitize_text(str(item), context="config").sanitized_text
+                        if isinstance(item, str)
+                        else item
+                        for item in value
+                    ]
+                elif isinstance(value, str):
+                    result = self.sanitizer.sanitize_text(value, context="config")
+                    sanitized[safe_key] = result.sanitized_text
+                elif value is None or isinstance(value, (bool, int, float)):
+                    # Safe primitive types - no sanitization needed
+                    sanitized[safe_key] = value
+                else:
+                    # Non-serializable object - convert to safe type indicator
+                    # SECURITY: Log error type but NOT the value
+                    logger = logging.getLogger(__name__)
+                    logger.warning(
+                        "Non-serializable object in tool parameters",
+                        extra={
+                            "value_type": type(value).__name__,
+                            "key": safe_key
+                        }
+                    )
+                    sanitized[safe_key] = f"[SANITIZED:{type(value).__name__}]"
+            except Exception as e:
+                # SECURITY: Log exception type but NOT the data
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    "Sanitization error for key",
+                    extra={
+                        "error_type": type(e).__name__,
+                        "key_type": type(key).__name__
+                    }
+                )
+                sanitized[str(key)] = "[SANITIZATION_ERROR]"
+
+        return sanitized
 
     def _get_stack_trace(self) -> str:
         """Get current exception stack trace."""
@@ -742,6 +815,10 @@ class ExecutionTracker:
         stage_id = self.context.stage_id
         agent_id = self.context.agent_id
 
+        # SECURITY: Sanitize context to prevent sensitive data exposure
+        # The context may contain detected secrets or PII that should not be logged
+        sanitized_context = self._sanitize_dict(context) if context else None
+
         self.backend.track_safety_violation(
             workflow_id=workflow_id,
             stage_id=stage_id,
@@ -750,7 +827,7 @@ class ExecutionTracker:
             violation_message=violation_message,
             policy_name=policy_name,
             service_name=service_name,
-            context=context,
+            context=sanitized_context,
             timestamp=utcnow()
         )
 

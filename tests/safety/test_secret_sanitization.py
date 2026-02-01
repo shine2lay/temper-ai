@@ -117,30 +117,42 @@ class TestSecretSanitizationInViolations:
         assert aws_key not in metadata_str
         assert "AKIAIOSFODNN7" not in metadata_str
 
-        # But should have pattern type and hash
+        # But should have pattern type and violation_id (not secret_hash for security)
         assert "pattern_type" in violation.metadata
-        assert "secret_hash" in violation.metadata
+        assert "violation_id" in violation.metadata
+        # SECURITY: secret_hash removed to prevent rainbow table attacks
+        assert "secret_hash" not in violation.metadata
 
-    def test_secret_hash_in_metadata(self):
-        """Ensure secret hash is included for deduplication."""
+    def test_violation_id_in_metadata(self):
+        """Ensure violation_id is included for deduplication (not secret_hash)."""
         policy = SecretDetectionPolicy({"allow_test_secrets": False})
 
         # Test with API key
         api_key = "api_key=sk_live_abc123def456"
         result = policy.validate({"content": api_key}, {})
 
-        # Should have violation with hash
+        # Should have violation with violation_id
         assert not result.valid
         violation = result.violations[0]
 
-        # Should have hash in metadata
-        assert "secret_hash" in violation.metadata
-        assert len(violation.metadata["secret_hash"]) == 16  # First 16 chars of SHA256
+        # SECURITY: Should have violation_id (not secret_hash to prevent rainbow tables)
+        assert "violation_id" in violation.metadata
+        assert len(violation.metadata["violation_id"]) == 16  # HMAC truncated to 16 chars (64 bits)
+        assert "secret_hash" not in violation.metadata  # Must NOT have secret_hash
 
-        # Hash should be deterministic (same input = same hash)
+        # HMAC-based violation_ids provide session-scoped deduplication
+        # Same secret in same session = same violation_id
         result2 = policy.validate({"content": api_key}, {})
         violation2 = result2.violations[0]
-        assert violation.metadata["secret_hash"] == violation2.metadata["secret_hash"]
+        assert "violation_id" in violation2.metadata
+        # Same secret should have same violation_id (HMAC is deterministic within session)
+        assert violation.metadata["violation_id"] == violation2.metadata["violation_id"]
+
+        # Different secret should have different violation_id
+        different_key = "api_key=sk_live_xyz789different"
+        result3 = policy.validate({"content": different_key}, {})
+        violation3 = result3.violations[0]
+        assert violation.metadata["violation_id"] != violation3.metadata["violation_id"]
 
     def test_match_length_in_metadata(self):
         """Ensure match length is included in metadata."""

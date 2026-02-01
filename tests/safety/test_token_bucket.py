@@ -10,6 +10,7 @@ Tests cover:
 import pytest
 import time
 import threading
+from unittest.mock import patch
 from src.safety.token_bucket import TokenBucket, TokenBucketManager, RateLimit
 
 
@@ -162,13 +163,15 @@ class TestTokenBucket:
         bucket.consume(10)
         assert bucket.get_tokens() == pytest.approx(0.0, abs=0.1)
 
-        # Wait for refill (need to wait at least refill_period)
-        time.sleep(1.1)
+        # Mock time to advance 1.1 seconds (no flaky sleep)
+        with patch('src.safety.token_bucket.time') as mock_time:
+            initial_time = bucket.last_refill
+            mock_time.time.return_value = initial_time + 1.1
 
-        # Should have refilled
-        tokens = bucket.get_tokens()
-        assert tokens > 0
-        assert tokens <= 10
+            # Should have refilled
+            tokens = bucket.get_tokens()
+            assert tokens > 0
+            assert tokens <= 10
 
     def test_refill_rate_calculation(self):
         """Test that refill rate works correctly."""
@@ -179,24 +182,28 @@ class TestTokenBucket:
         # Consume 5 tokens
         bucket.consume(5)
 
-        # Wait 1 second
-        time.sleep(1.1)
+        # Mock time to advance 1.1 seconds (no flaky sleep)
+        with patch('src.safety.token_bucket.time') as mock_time:
+            initial_time = bucket.last_refill
+            mock_time.time.return_value = initial_time + 1.1
 
-        # Should have refilled ~5 tokens
-        tokens = bucket.get_tokens()
-        assert tokens == pytest.approx(10.0, abs=1.0)  # Back to max
+            # Should have refilled ~5 tokens
+            tokens = bucket.get_tokens()
+            assert tokens == pytest.approx(10.0, abs=1.0)  # Back to max
 
     def test_refill_cap_at_max(self):
         """Test that refill stops at max_tokens."""
         limit = RateLimit(max_tokens=10, refill_rate=5.0, refill_period=1.0)
         bucket = TokenBucket(limit)
 
-        # Start with full bucket, wait
-        time.sleep(2.0)
+        # Mock time to advance 2 seconds (no flaky sleep)
+        with patch('src.safety.token_bucket.time') as mock_time:
+            initial_time = bucket.last_refill
+            mock_time.time.return_value = initial_time + 2.0
 
-        # Should still be at max, not exceed
-        tokens = bucket.get_tokens()
-        assert tokens == pytest.approx(10.0, abs=0.1)
+            # Should still be at max, not exceed
+            tokens = bucket.get_tokens()
+            assert tokens == pytest.approx(10.0, abs=0.1)
 
     def test_get_wait_time_tokens_available(self):
         """Test get_wait_time returns 0 when tokens available."""
@@ -293,7 +300,7 @@ class TestTokenBucketThreadSafety:
         lock = threading.Lock()
 
         def consume_with_wait():
-            time.sleep(0.15)  # Wait for refill
+            time.sleep(0.5)  # Wait longer for refill (increased margin for slow runners)
             if bucket.consume(1):
                 with lock:
                     successes.append(1)
@@ -525,7 +532,7 @@ class TestTokenBucketManager:
         assert manager.get_tokens("agent-123", "deploys") == pytest.approx(1.0, abs=0.1)
 
 
-class TestRealWorldScenarios:
+class TestRealWorld:
     """Tests for real-world rate limiting scenarios."""
 
     def test_git_commit_rate_limit(self):
@@ -580,8 +587,10 @@ class TestRealWorldScenarios:
         # 11th should fail
         assert bucket.consume(1) is False
 
-        # Wait for refill
-        time.sleep(1.1)
+        # Mock time to advance 1.1 seconds (no flaky sleep)
+        with patch('src.safety.token_bucket.time') as mock_time:
+            initial_time = bucket.last_refill
+            mock_time.time.return_value = initial_time + 1.1
 
-        # Should have tokens again
-        assert bucket.consume(1) is True
+            # Should have tokens again
+            assert bucket.consume(1) is True

@@ -312,7 +312,7 @@ class TestCheckpointManager:
         assert not manager.should_skip_stage("wf-manager-test", "stage3")
 
 
-class TestCheckpointResumeScenarios:
+class TestCheckpointResume:
     """Test realistic checkpoint/resume scenarios."""
 
     @pytest.fixture

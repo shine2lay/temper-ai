@@ -491,7 +491,7 @@ class TestConfigLoaderIntegration:
         assert loaded_config["llm"]["model"] == "gpt-4"
 
 
-class TestRegressionPrevention:
+class TestRegressionDefense:
     """Test that the fix doesn't break existing functionality."""
 
     def test_existing_command_variable_validation_still_works(self):

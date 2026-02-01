@@ -323,7 +323,7 @@ class TestStateFactoryFunctions:
         assert merged.stage_outputs == {"research": {"data": "original"}}
 
 
-class TestCheckpointScenarios:
+class TestCheckpoint:
     """Test real-world checkpoint/resume scenarios."""
 
     def test_checkpoint_save_and_resume(self):

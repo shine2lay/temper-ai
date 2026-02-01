@@ -733,5 +733,292 @@ class TestStringRepresentation:
         assert "cache_size=" in repr_str
 
 
+class TestCacheKeySecurityFixes:
+    """Test cache key generation security fixes (code-crit-05)."""
+
+    def test_canonical_json_sorts_nested_dicts(self):
+        """Test that canonical JSON sorts nested dictionary keys."""
+        engine = ActionPolicyEngine(registry=MagicMock(), config={})
+
+        # Different key orders, same logical data
+        obj1 = {"b": {"d": 1, "c": 2}, "a": 3}
+        obj2 = {"a": 3, "b": {"c": 2, "d": 1}}
+
+        json1 = engine._canonical_json(obj1)
+        json2 = engine._canonical_json(obj2)
+
+        # Should produce identical JSON
+        assert json1 == json2
+        # Should have sorted keys at all levels
+        assert json1 == '{"a":3,"b":{"c":2,"d":1}}'
+
+    def test_canonical_json_handles_lists(self):
+        """Test that canonical JSON preserves list order."""
+        engine = ActionPolicyEngine(registry=MagicMock(), config={})
+
+        obj1 = {"items": [3, 1, 2]}
+        obj2 = {"items": [3, 1, 2]}
+
+        json1 = engine._canonical_json(obj1)
+        json2 = engine._canonical_json(obj2)
+
+        # Same list order produces same JSON
+        assert json1 == json2
+        assert json1 == '{"items":[3,1,2]}'
+
+        # Different list order produces different JSON (lists are ordered)
+        obj3 = {"items": [1, 2, 3]}
+        json3 = engine._canonical_json(obj3)
+        assert json3 != json1
+
+    def test_canonical_json_sorts_sets(self):
+        """Test that canonical JSON sorts sets for determinism."""
+        engine = ActionPolicyEngine(registry=MagicMock(), config={})
+
+        # Sets are unordered in Python, but should serialize deterministically
+        obj1 = {"tags": {3, 1, 2}}
+        obj2 = {"tags": {2, 3, 1}}
+
+        json1 = engine._canonical_json(obj1)
+        json2 = engine._canonical_json(obj2)
+
+        # Same set produces same JSON regardless of internal order
+        assert json1 == json2
+        # Should be sorted
+        assert json1 == '{"tags":[1,2,3]}'
+
+    def test_canonical_json_deeply_nested_structures(self):
+        """Test canonical JSON with deeply nested structures."""
+        engine = ActionPolicyEngine(registry=MagicMock(), config={})
+
+        obj1 = {
+            "level1": {
+                "level2": {
+                    "level3": {"c": 3, "b": 2, "a": 1}
+                }
+            }
+        }
+        obj2 = {
+            "level1": {
+                "level2": {
+                    "level3": {"a": 1, "b": 2, "c": 3}
+                }
+            }
+        }
+
+        json1 = engine._canonical_json(obj1)
+        json2 = engine._canonical_json(obj2)
+
+        assert json1 == json2
+
+    def test_canonical_json_mixed_types(self):
+        """Test canonical JSON with mixed data types."""
+        engine = ActionPolicyEngine(registry=MagicMock(), config={})
+
+        obj = {
+            "string": "hello",
+            "number": 42,
+            "float": 3.14,
+            "bool": True,
+            "null": None,
+            "list": [1, 2, 3],
+            "nested": {"key": "value"}
+        }
+
+        json_str = engine._canonical_json(obj)
+
+        # Should be valid JSON
+        parsed = json.loads(json_str)
+        assert parsed["string"] == "hello"
+        assert parsed["number"] == 42
+        assert parsed["float"] == 3.14
+        assert parsed["bool"] is True
+        assert parsed["null"] is None
+
+    def test_cache_key_prevents_collision_via_nested_key_order(self):
+        """Test that cache key prevents collision via nested key order manipulation."""
+        registry = MagicMock()
+        engine = ActionPolicyEngine(registry=registry, config={})
+
+        policy = MagicMock()
+        policy.name = "test_policy"
+        policy.version = "1.0"
+
+        context = PolicyExecutionContext(
+            agent_id="agent1",
+            action_type="test_action",
+            workflow_id="workflow1",
+            stage_id="stage1"
+        )
+
+        # Two actions with same logical content but different key order
+        action1 = {
+            "tool": "write_file",
+            "params": {"path": "/tmp/file.txt", "mode": "w"}
+        }
+        action2 = {
+            "tool": "write_file",
+            "params": {"mode": "w", "path": "/tmp/file.txt"}  # Different order
+        }
+
+        key1 = engine._get_cache_key(policy, action1, context)
+        key2 = engine._get_cache_key(policy, action2, context)
+
+        # Should produce the SAME cache key (no collision, same logical data)
+        assert key1 == key2
+
+    def test_cache_key_different_for_different_actions(self):
+        """Test that different actions produce different cache keys."""
+        registry = MagicMock()
+        engine = ActionPolicyEngine(registry=registry, config={})
+
+        policy = MagicMock()
+        policy.name = "test_policy"
+        policy.version = "1.0"
+
+        context = PolicyExecutionContext(
+            agent_id="agent1",
+            action_type="test_action",
+            workflow_id="workflow1",
+            stage_id="stage1"
+        )
+
+        action1 = {"tool": "write_file", "path": "/tmp/file1.txt"}
+        action2 = {"tool": "write_file", "path": "/tmp/file2.txt"}
+
+        key1 = engine._get_cache_key(policy, action1, context)
+        key2 = engine._get_cache_key(policy, action2, context)
+
+        # Different actions should produce different keys
+        assert key1 != key2
+
+    def test_cache_key_sensitive_to_nested_value_changes(self):
+        """Test that cache key changes when nested values change."""
+        registry = MagicMock()
+        engine = ActionPolicyEngine(registry=registry, config={})
+
+        policy = MagicMock()
+        policy.name = "test_policy"
+        policy.version = "1.0"
+
+        context = PolicyExecutionContext(
+            agent_id="agent1",
+            action_type="test_action",
+            workflow_id="workflow1",
+            stage_id="stage1"
+        )
+
+        action1 = {
+            "tool": "api_call",
+            "params": {"endpoint": "/api/users", "data": {"role": "admin"}}
+        }
+        action2 = {
+            "tool": "api_call",
+            "params": {"endpoint": "/api/users", "data": {"role": "user"}}
+        }
+
+        key1 = engine._get_cache_key(policy, action1, context)
+        key2 = engine._get_cache_key(policy, action2, context)
+
+        # Different nested values should produce different keys
+        assert key1 != key2
+
+    def test_cache_key_excludes_workflow_and_stage_id(self):
+        """Test that workflow_id and stage_id are excluded from cache key."""
+        registry = MagicMock()
+        engine = ActionPolicyEngine(registry=registry, config={})
+
+        policy = MagicMock()
+        policy.name = "test_policy"
+        policy.version = "1.0"
+
+        action = {"tool": "test"}
+
+        context1 = PolicyExecutionContext(
+            agent_id="agent1",
+            action_type="test_action",
+            workflow_id="workflow1",
+            stage_id="stage1"
+        )
+        context2 = PolicyExecutionContext(
+            agent_id="agent1",
+            action_type="test_action",
+            workflow_id="workflow2",  # Different workflow
+            stage_id="stage2"  # Different stage
+        )
+
+        key1 = engine._get_cache_key(policy, action, context1)
+        key2 = engine._get_cache_key(policy, action, context2)
+
+        # Should produce same key (workflow/stage excluded)
+        assert key1 == key2
+
+    def test_cache_key_includes_policy_version(self):
+        """Test that policy version affects cache key."""
+        registry = MagicMock()
+        engine = ActionPolicyEngine(registry=registry, config={})
+
+        policy1 = MagicMock()
+        policy1.name = "test_policy"
+        policy1.version = "1.0"
+
+        policy2 = MagicMock()
+        policy2.name = "test_policy"
+        policy2.version = "2.0"  # Different version
+
+        context = PolicyExecutionContext(
+            agent_id="agent1",
+            action_type="test_action",
+            workflow_id="workflow1",
+            stage_id="stage1"
+        )
+
+        action = {"tool": "test"}
+
+        key1 = engine._get_cache_key(policy1, action, context)
+        key2 = engine._get_cache_key(policy2, action, context)
+
+        # Different policy versions should produce different keys
+        assert key1 != key2
+
+    def test_canonical_json_handles_empty_structures(self):
+        """Test canonical JSON with empty structures."""
+        engine = ActionPolicyEngine(registry=MagicMock(), config={})
+
+        empty_dict = {}
+        empty_list = []
+
+        json_dict = engine._canonical_json(empty_dict)
+        json_list = engine._canonical_json(empty_list)
+
+        assert json_dict == '{}'
+        assert json_list == '[]'
+
+    def test_canonical_json_deterministic_for_complex_action(self):
+        """Test canonical JSON is deterministic for complex real-world action."""
+        engine = ActionPolicyEngine(registry=MagicMock(), config={})
+
+        # Simulate complex action with nested structures
+        action = {
+            "tool": "execute_workflow",
+            "params": {
+                "stages": [
+                    {"name": "stage1", "config": {"timeout": 30}},
+                    {"name": "stage2", "config": {"retry": 3}}
+                ],
+                "metadata": {
+                    "tags": ["production", "critical"],
+                    "owner": "team-a"
+                }
+            }
+        }
+
+        # Generate key multiple times
+        keys = [engine._canonical_json(action) for _ in range(10)]
+
+        # All keys should be identical
+        assert len(set(keys)) == 1
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

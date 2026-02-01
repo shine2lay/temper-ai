@@ -738,7 +738,7 @@ class TestViolationMetadata:
 # Test Integration Scenarios
 # ============================================================================
 
-class TestIntegrationScenarios:
+class TestIntegration:
     """Test realistic integration scenarios."""
 
     def test_multiple_violations_detected(self):

@@ -14,7 +14,7 @@ import pytest
 from src.compiler.schemas import AgentConfig, AgentConfigInner, PromptConfig, InferenceConfig, ErrorHandlingConfig
 
 
-class TestSchemaValidationRegression:
+class TestSchemaValidation:
     """Regression tests for schema validation bugs."""
 
     def test_config_with_all_required_fields(self):
@@ -73,7 +73,7 @@ class TestSchemaValidationRegression:
         assert config.agent.prompt.inline == "Valid prompt text"
 
 
-class TestToolsConfigRegression:
+class TestToolsConfig:
     """Regression tests for tools configuration bugs."""
 
     def test_empty_tools_list_handling(self):
@@ -107,7 +107,7 @@ class TestToolsConfigRegression:
         assert len(config.agent.tools) == 0
 
 
-class TestInferenceConfigRegression:
+class TestInferenceConfig:
     """Regression tests for inference configuration bugs."""
 
     def test_provider_case_handling(self):

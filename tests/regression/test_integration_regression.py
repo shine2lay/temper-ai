@@ -14,7 +14,7 @@ from src.tools.registry import ToolRegistry
 from src.tools.calculator import Calculator
 
 
-class TestAgentToolIntegrationRegression:
+class TestAgentToolIntegration:
     """Regression tests for agent-tool integration bugs."""
 
     def test_agent_tool_registry_mismatch(self):
@@ -52,7 +52,7 @@ class TestAgentToolIntegrationRegression:
         assert "tool" in error_msg or "nonexistent" in error_msg
 
 
-class TestConfigAgentIntegrationRegression:
+class TestConfigAgentIntegration:
     """Regression tests for config-agent integration bugs."""
 
     def test_config_to_agent_field_mapping(self, minimal_agent_config):
@@ -74,7 +74,7 @@ class TestConfigAgentIntegrationRegression:
             assert agent.version == minimal_agent_config.agent.version
 
 
-class TestToolExecutorIntegrationRegression:
+class TestToolExecutorIntegration:
     """Regression tests for tool executor integration bugs."""
 
     def test_executor_result_metadata_missing(self):
@@ -105,7 +105,7 @@ class TestToolExecutorIntegrationRegression:
             assert isinstance(result.metadata, dict)
 
 
-class TestAgentFactoryRegression:
+class TestAgentFactory:
     """Regression tests for AgentFactory bugs."""
 
     def test_factory_default_type_handling(self, minimal_agent_config):
@@ -129,7 +129,7 @@ class TestAgentFactoryRegression:
             assert isinstance(agent, StandardAgent)
 
 
-class TestErrorHandlingIntegrationRegression:
+class TestErrorHandlingIntegration:
     """Regression tests for error handling integration bugs."""
 
     def test_error_propagation_from_tools(self):
@@ -160,7 +160,7 @@ class TestErrorHandlingIntegrationRegression:
         assert len(result.error) > 0
 
 
-class TestConcurrencyRegression:
+class TestConcurrency:
     """Regression tests for concurrency bugs."""
 
     def test_concurrent_tool_execution_safety(self):

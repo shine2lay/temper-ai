@@ -616,7 +616,7 @@ class TestCaseSensitivity:
         assert result.valid
 
 
-class TestComplexScenarios:
+class TestComplexCases:
     """Tests for complex real-world scenarios."""
 
     def test_strict_project_isolation(self):

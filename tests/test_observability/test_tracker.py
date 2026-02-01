@@ -501,6 +501,7 @@ class TestNestedTracking:
 class TestHighVolumePerformance:
     """Performance tests for high-volume event tracking."""
 
+    @pytest.mark.slow
     def test_track_10k_workflows_throughput(self, tracker):
         """Test throughput of tracking 10,000 workflows."""
         import time
@@ -546,6 +547,7 @@ class TestHighVolumePerformance:
         print(f"  Total time: {elapsed_time:.2f}s")
         print(f"  Memory increase: {memory_increase_mb:.1f}MB")
 
+    @pytest.mark.slow
     def test_track_10k_stages_no_errors(self, tracker):
         """Test tracking 10,000 stages without errors."""
         config = {"workflow": {"name": "perf_test"}}
@@ -566,6 +568,7 @@ class TestHighVolumePerformance:
             ).count()
             assert count == 10000, f"Expected 10000 stages, got {count}"
 
+    @pytest.mark.slow
     def test_track_10k_agents_no_errors(self, tracker):
         """Test tracking 10,000 agents without errors."""
         config_wf = {"workflow": {"name": "perf_test"}}

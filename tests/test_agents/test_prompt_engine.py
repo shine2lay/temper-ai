@@ -768,7 +768,7 @@ class TestTemplateCaching:
         assert stats["cache_hits"] == 2
 
 
-class TestRealWorldScenarios:
+class TestRealWorld:
     """Tests simulating real-world usage."""
 
     def test_complex_research_prompt(self):
@@ -1124,6 +1124,7 @@ class TestTemplateInjectionPrevention:
 class TestLargeTemplatePerformance:
     """Performance tests for large template rendering (P2)."""
 
+    @pytest.mark.slow
     def test_10kb_template_performance(self):
         """
         Test that 10KB template renders in <50ms.
@@ -1164,6 +1165,7 @@ class TestLargeTemplatePerformance:
         # Performance requirement: <50ms for 10KB template
         assert elapsed_ms < 50, f"10KB template took {elapsed_ms:.2f}ms (baseline: <50ms)"
 
+    @pytest.mark.slow
     def test_100kb_template_performance(self):
         """
         Test that 100KB template renders in <500ms.
@@ -1339,6 +1341,7 @@ class TestLargeTemplatePerformance:
         # Performance should still be reasonable
         assert elapsed_ms < 200, f"Complex template took {elapsed_ms:.2f}ms (should be <200ms)"
 
+    @pytest.mark.slow
     def test_very_large_loop_performance(self):
         """
         Test performance with very large loops (1000+ iterations).

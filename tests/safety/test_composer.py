@@ -726,7 +726,7 @@ class TestCompositeValidationResult:
 # Test Integration Scenarios
 # ============================================================================
 
-class TestIntegrationScenarios:
+class TestIntegration:
     """Test realistic composition scenarios."""
 
     def test_p0_p1_p2_priority_cascade(self):

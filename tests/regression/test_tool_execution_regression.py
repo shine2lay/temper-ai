@@ -15,7 +15,7 @@ from src.tools.registry import ToolRegistry
 from src.tools.executor import ToolExecutor
 
 
-class TestCalculatorRegression:
+class TestCalculator:
     """Regression tests for Calculator tool bugs."""
 
     def test_division_by_zero_error_handling(self):
@@ -53,7 +53,7 @@ class TestCalculatorRegression:
         assert result.error is not None
 
 
-class TestFileWriterRegression:
+class TestFileWriter:
     """Regression tests for FileWriter tool bugs."""
 
     def setup_method(self):
@@ -119,7 +119,7 @@ class TestFileWriterRegression:
         assert "exist" in result2.error.lower() or "overwrite" in result2.error.lower()
 
 
-class TestWebScraperRegression:
+class TestWebScraper:
     """Regression tests for WebScraper tool bugs."""
 
     def test_ssrf_localhost_vulnerability(self):
@@ -167,7 +167,7 @@ class TestWebScraperRegression:
         assert can_proceed is False
 
 
-class TestToolExecutorRegression:
+class TestToolExecutor:
     """Regression tests for ToolExecutor bugs."""
 
     def test_timeout_not_enforced(self):
@@ -219,7 +219,7 @@ class TestToolExecutorRegression:
         assert "not found" in result.error.lower()
 
 
-class TestToolRegistryRegression:
+class TestToolRegistry:
     """Regression tests for ToolRegistry bugs."""
 
     def test_duplicate_tool_registration(self):

@@ -317,8 +317,8 @@ class TestGlobalTracker:
 class TestPerformanceMetrics:
     """Integration tests for performance metrics."""
 
-    def test_real_world_scenario(self):
-        """Test realistic performance tracking scenario."""
+    def test_performance_real_world_workflow(self):
+        """Test realistic performance tracking workflow."""
         tracker = PerformanceTracker()
 
         # Simulate workflow with multiple operations

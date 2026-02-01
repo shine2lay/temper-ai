@@ -484,7 +484,7 @@ class TestRealWorldDeploymentWorkflow:
         # No execution, no rollback needed
 
 
-class TestFailureRecoveryScenarios:
+class TestFailureRecovery:
     """Test various failure and recovery scenarios."""
 
     def test_circuit_breaker_automatic_recovery(self):

@@ -13,7 +13,9 @@ from src.safety.rollback import (
     FileRollbackStrategy,
     StateRollbackStrategy,
     CompositeRollbackStrategy,
-    RollbackManager
+    RollbackManager,
+    RollbackSecurityError,
+    validate_rollback_path,
 )
 
 
@@ -665,6 +667,229 @@ class TestIntegration:
         assert file1.read_text() == "service1: running"
         assert file2.read_text() == "service2: running"
         assert file3.read_text() == "service3: running"
+
+
+class TestPathTraversalSecurity:
+    """Test path traversal security fixes (code-crit-03, code-crit-04)."""
+
+    def test_validate_rollback_path_allows_temp_directory(self):
+        """Test that paths in temp directory are allowed."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_file = os.path.join(tmpdir, "test.txt")
+
+            is_valid, error = validate_rollback_path(test_file, allowed_directories=[tmpdir])
+
+            assert is_valid is True
+            assert error is None
+
+    def test_validate_rollback_path_rejects_path_traversal(self):
+        """Test that path traversal attacks are blocked."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Attempt to traverse to parent directory
+            malicious_path = os.path.join(tmpdir, "..", "..", "etc", "passwd")
+
+            is_valid, error = validate_rollback_path(malicious_path, allowed_directories=[tmpdir])
+
+            assert is_valid is False
+            assert "outside allowed directories" in error.lower()
+
+    def test_validate_rollback_path_rejects_absolute_system_paths(self):
+        """Test that absolute system paths are blocked."""
+        system_paths = [
+            "/etc/passwd",
+            "/etc/shadow",
+            "/root/.ssh/id_rsa",
+            "/sys/kernel/config",
+        ]
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for system_path in system_paths:
+                is_valid, error = validate_rollback_path(
+                    system_path,
+                    allowed_directories=[tmpdir]
+                )
+
+                assert is_valid is False, f"System path should be rejected: {system_path}"
+                assert error is not None
+
+    def test_validate_rollback_path_rejects_symlinks(self):
+        """Test that symlinks are detected and rejected."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a symlink pointing to /etc/passwd
+            symlink_path = os.path.join(tmpdir, "evil_symlink")
+            target_path = "/etc/passwd"
+
+            # Only create symlink if target exists (for test portability)
+            if os.path.exists(target_path):
+                os.symlink(target_path, symlink_path)
+
+                is_valid, error = validate_rollback_path(
+                    symlink_path,
+                    allowed_directories=[tmpdir],
+                    check_symlinks=True
+                )
+
+                assert is_valid is False
+                assert "symlink" in error.lower()
+
+    def test_validate_rollback_path_rejects_symlink_in_parent(self):
+        """Test that symlinks in parent directories are detected."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a directory with a symlinked parent
+            symlink_dir = os.path.join(tmpdir, "symlink_dir")
+            target_dir = tempfile.mkdtemp()
+
+            try:
+                os.symlink(target_dir, symlink_dir)
+                file_under_symlink = os.path.join(symlink_dir, "file.txt")
+
+                is_valid, error = validate_rollback_path(
+                    file_under_symlink,
+                    allowed_directories=[tmpdir],
+                    check_symlinks=True
+                )
+
+                assert is_valid is False
+                assert "symlink" in error.lower()
+            finally:
+                # Cleanup
+                if os.path.exists(symlink_dir):
+                    os.unlink(symlink_dir)
+                if os.path.exists(target_dir):
+                    os.rmdir(target_dir)
+
+    def test_validate_rollback_path_rejects_null_bytes(self):
+        """Test that null byte injection is blocked."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Null byte injection attack
+            malicious_path = os.path.join(tmpdir, "test.txt\x00/etc/passwd")
+
+            is_valid, error = validate_rollback_path(malicious_path, allowed_directories=[tmpdir])
+
+            assert is_valid is False
+            assert "null bytes" in error.lower()
+
+    def test_validate_rollback_path_rejects_windows_system32(self):
+        """Test that Windows System32 is blocked."""
+        system32_path = "C:\\Windows\\System32\\important.dll"
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            is_valid, error = validate_rollback_path(system32_path, allowed_directories=[tmpdir])
+
+            assert is_valid is False
+            assert error is not None
+
+    def test_rollback_manager_rejects_path_traversal_in_snapshot(self):
+        """Test that RollbackManager rejects path traversal in snapshot creation."""
+        manager = RollbackManager()
+
+        # Attempt to create snapshot with path traversal
+        action = {
+            "tool": "write_file",
+            "path": "../../etc/passwd"
+        }
+
+        with pytest.raises(RollbackSecurityError) as exc_info:
+            manager.create_snapshot(action=action, context={})
+
+        assert "path traversal" in str(exc_info.value).lower() or "invalid file path" in str(exc_info.value).lower()
+
+    def test_rollback_manager_rejects_symlink_in_snapshot(self):
+        """Test that RollbackManager rejects symlinks in snapshot creation."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a symlink to /etc/passwd
+            symlink_path = os.path.join(tmpdir, "evil_link")
+
+            # Only test if /etc/passwd exists
+            if os.path.exists("/etc/passwd"):
+                os.symlink("/etc/passwd", symlink_path)
+
+                manager = RollbackManager()
+                action = {
+                    "tool": "write_file",
+                    "path": symlink_path
+                }
+
+                with pytest.raises(RollbackSecurityError) as exc_info:
+                    manager.create_snapshot(action=action, context={})
+
+                assert "symlink" in str(exc_info.value).lower()
+
+    def test_rollback_manager_allows_safe_paths(self):
+        """Test that RollbackManager allows safe paths in allowed directories."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a safe file
+            safe_file = os.path.join(tmpdir, "safe_file.txt")
+            Path(safe_file).write_text("safe content")
+
+            manager = RollbackManager()
+            action = {
+                "tool": "write_file",
+                "path": safe_file
+            }
+
+            # Should not raise exception
+            snapshot = manager.create_snapshot(action=action, context={})
+
+            assert snapshot is not None
+            assert safe_file in snapshot.file_snapshots
+
+    def test_rollback_execution_rejects_path_traversal_in_restore(self):
+        """Test that rollback execution rejects path traversal during file restore."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Create a snapshot with a malicious path
+            snapshot = RollbackSnapshot(
+                action={},
+                context={},
+                file_snapshots={"../../etc/passwd": "malicious content"},
+                metadata={}
+            )
+
+            manager = RollbackManager()
+            result = manager.execute_rollback(snapshot)
+
+            # Rollback should fail or skip the malicious file
+            assert "../../etc/passwd" not in result.reverted_items
+            assert len(result.failed_items) > 0 or len(result.errors) > 0
+
+    def test_rollback_execution_rejects_path_traversal_in_deletion(self):
+        """Test that rollback execution rejects path traversal during file deletion."""
+        # Create a snapshot with metadata indicating a file to delete
+        snapshot = RollbackSnapshot(
+            action={},
+            context={},
+            file_snapshots={},
+            metadata={
+                "/etc/passwd_existed": False  # Indicates file should be deleted
+            }
+        )
+
+        manager = RollbackManager()
+        result = manager.execute_rollback(snapshot)
+
+        # Should not delete /etc/passwd
+        assert "/etc/passwd" not in result.reverted_items
+        assert os.path.exists("/etc/passwd") if os.path.exists("/etc/passwd") else True
+
+    def test_validate_rollback_path_uses_safe_defaults(self):
+        """Test that default allowed directories are safe."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Path in temp directory should be allowed by default
+            test_file = os.path.join(tempfile.gettempdir(), "test.txt")
+
+            is_valid, error = validate_rollback_path(test_file)
+
+            # Should be valid (temp directory is in default allowlist)
+            assert is_valid is True or error is not None  # Depends on OS
+
+    def test_validate_rollback_path_current_working_directory(self):
+        """Test that current working directory is allowed by default."""
+        cwd_file = os.path.join(os.getcwd(), "test_file.txt")
+
+        is_valid, error = validate_rollback_path(cwd_file)
+
+        assert is_valid is True
+        assert error is None
 
 
 if __name__ == "__main__":

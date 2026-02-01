@@ -117,7 +117,7 @@ class TestToolExecutionPerformance:
         assert overhead < 0.005, f"Regression! Executor overhead {overhead*1000:.2f}ms (baseline: <5ms)"
 
 
-class TestMemoryRegression:
+class TestMemory:
     """Memory leak and usage regression tests."""
 
     def test_agent_creation_memory_leak(self, minimal_agent_config):
@@ -175,7 +175,7 @@ class TestMemoryRegression:
         assert True
 
 
-class TestScalabilityRegression:
+class TestScalability:
     """Scalability regression tests."""
 
     def test_tool_registry_lookup_performance(self):

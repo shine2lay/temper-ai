@@ -18,30 +18,37 @@ Example:
 """
 import re
 import hashlib
+import hmac
+import os
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
 
 
 @dataclass
 class SanitizationConfig:
-    """Configuration for data sanitization."""
+    """
+    Configuration for data sanitization.
 
-    # Secret detection
+    SECURITY: Production-secure defaults to prevent sensitive data exposure.
+    All redaction flags default to True for defense-in-depth.
+    """
+
+    # Secret detection - ALWAYS REDACT
     enable_secret_detection: bool = True
     redact_high_confidence_secrets: bool = True
-    redact_medium_confidence_secrets: bool = False
+    redact_medium_confidence_secrets: bool = True  # CHANGED: was False
 
-    # PII detection
+    # PII detection - ALWAYS ENABLED
     enable_pii_detection: bool = True
     redact_emails: bool = True
     redact_ssn: bool = True
     redact_phone_numbers: bool = True
     redact_credit_cards: bool = True
-    redact_ip_addresses: bool = False
+    redact_ip_addresses: bool = True  # CHANGED: was False (prevents network topology exposure)
 
-    # Length limiting
-    max_prompt_length: int = 10000  # 10KB
-    max_response_length: int = 50000  # 50KB
+    # Length limiting - REDUCED for aggressive truncation
+    max_prompt_length: int = 5000   # CHANGED: was 10000 (5KB instead of 10KB)
+    max_response_length: int = 20000  # CHANGED: was 50000 (20KB instead of 50KB)
 
     # Hash generation
     include_hash: bool = True  # For debugging/correlation
@@ -139,6 +146,19 @@ class DataSanitizer:
             for name, pattern in self.SECRET_PATTERNS.items()
         }
 
+        # SECURITY: Use HMAC key for content hashing to prevent rainbow table attacks
+        # Generate or load from environment variable
+        hmac_key_hex = os.environ.get('OBSERVABILITY_HMAC_KEY')
+        if hmac_key_hex:
+            try:
+                self._hmac_key = bytes.fromhex(hmac_key_hex)
+            except ValueError:
+                # Invalid hex, generate new random key
+                self._hmac_key = os.urandom(32)
+        else:
+            # Generate random key (32 bytes = 256 bits)
+            self._hmac_key = os.urandom(32)
+
     def sanitize_text(
         self,
         text: str,
@@ -201,10 +221,17 @@ class DataSanitizer:
                 "truncated_to": self.config.max_response_length
             })
 
-        # Step 4: Generate hash for correlation
+        # Step 4: Generate HMAC hash for correlation
+        # SECURITY: Use HMAC instead of raw SHA256 to prevent rainbow table attacks
+        # This allows correlation of sanitized content without enabling brute-force
         content_hash = None
         if self.config.include_hash:
-            content_hash = hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
+            h = hmac.new(
+                self._hmac_key,
+                text.encode('utf-8'),
+                hashlib.sha256
+            )
+            content_hash = h.hexdigest()[:16]
 
         return SanitizationResult(
             sanitized_text=sanitized,

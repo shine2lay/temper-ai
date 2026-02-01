@@ -193,3 +193,32 @@ def verify_database_invariants(request, db):
     except Exception as e:
         # Make invariant violations very visible
         pytest.fail(f"DATABASE INVARIANT VIOLATION: {e}")
+
+
+# ============================================================================
+# Error Testing Fixtures
+# ============================================================================
+
+@pytest.fixture
+def mock_disk_full():
+    """Simulate disk full error."""
+    def side_effect(*args, **kwargs):
+        raise sqlite3.OperationalError("database or disk is full")
+    return side_effect
+
+
+@pytest.fixture
+def mock_database_locked():
+    """Simulate database locked error."""
+    def side_effect(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+    return side_effect
+
+
+@pytest.fixture
+def corrupt_db_file(tmp_path):
+    """Create a corrupted database file."""
+    db_path = tmp_path / "corrupt.db"
+    with open(db_path, 'wb') as f:
+        f.write(b'NOT A VALID SQLITE DATABASE FILE')
+    return db_path

@@ -22,6 +22,8 @@ import logging
 from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig, get_provider_endpoints
 from src.auth.oauth.token_store import SecureTokenStore
 from src.auth.oauth.callback_validator import CallbackURLValidator
+from src.auth.oauth.state_store import StateStore, create_state_store
+from src.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +81,9 @@ class OAuthService:
         config: OAuthConfig,
         token_store: Optional[SecureTokenStore] = None,
         callback_validator: Optional[CallbackURLValidator] = None,
-        http_client: Optional[httpx.AsyncClient] = None
+        http_client: Optional[httpx.AsyncClient] = None,
+        state_store: Optional[StateStore] = None,
+        rate_limiter: Optional[OAuthRateLimiter] = None
     ):
         """Initialize OAuth service.
 
@@ -88,6 +92,8 @@ class OAuthService:
             token_store: Token storage (default: creates new SecureTokenStore)
             callback_validator: Callback URL validator (default: creates from config)
             http_client: HTTP client for API calls (default: creates new)
+            state_store: State storage (default: creates Redis or in-memory store)
+            rate_limiter: Rate limiter (default: creates new OAuthRateLimiter)
         """
         self.config = config
 
@@ -106,16 +112,24 @@ class OAuthService:
         self._http_client = http_client
         self._owns_http_client = http_client is None
 
-        # In-memory state storage (use Redis in production)
-        # Maps state -> {user_id, provider, code_verifier, created_at}
-        self._state_store: Dict[str, Dict[str, Any]] = {}
+        # State storage (Redis-backed for production, falls back to in-memory)
+        self._state_store: StateStore = state_store or create_state_store()
+
+        # Rate limiter (protects against abuse)
+        self._rate_limiter = rate_limiter or OAuthRateLimiter()
 
     async def _get_http_client(self) -> httpx.AsyncClient:
-        """Get or create HTTP client."""
+        """Get or create HTTP client with security hardening."""
         if self._http_client is None:
             self._http_client = httpx.AsyncClient(
-                timeout=30.0,
-                follow_redirects=False
+                timeout=httpx.Timeout(30.0, connect=5.0),
+                follow_redirects=False,
+                limits=httpx.Limits(
+                    max_connections=100,
+                    max_keepalive_connections=20
+                ),
+                # Verify SSL certificates (enabled by default, but explicit for clarity)
+                verify=True
             )
         return self._http_client
 
@@ -124,6 +138,10 @@ class OAuthService:
         if self._owns_http_client and self._http_client:
             await self._http_client.aclose()
             self._http_client = None
+
+        # Close state store connection (e.g., Redis)
+        if self._state_store:
+            await self._state_store.close()
 
     def _generate_state(self) -> str:
         """Generate cryptographically secure state token for CSRF protection."""
@@ -139,11 +157,12 @@ class OAuthService:
         challenge = base64.urlsafe_b64encode(digest).rstrip(b'=')
         return challenge.decode('ascii')
 
-    def get_authorization_url(
+    async def get_authorization_url(
         self,
         provider: str,
         user_id: str,
-        extra_params: Optional[Dict[str, str]] = None
+        extra_params: Optional[Dict[str, str]] = None,
+        ip_address: Optional[str] = None
     ) -> Tuple[str, str]:
         """Generate OAuth authorization URL with CSRF and PKCE protection.
 
@@ -151,13 +170,24 @@ class OAuthService:
             provider: Provider name (google, github, etc.)
             user_id: User identifier
             extra_params: Additional query parameters
+            ip_address: Client IP address (for rate limiting)
 
         Returns:
             (authorization_url, state) tuple
 
         Raises:
             OAuthError: If provider not configured
+            RateLimitExceeded: If rate limit exceeded
         """
+        # Rate limiting (if IP provided)
+        if ip_address:
+            try:
+                self._rate_limiter.check_oauth_init(ip_address, user_id)
+            except RateLimitExceeded as e:
+                logger.warning(
+                    f"Rate limit exceeded for OAuth init: ip={ip_address}, user={user_id}"
+                )
+                raise
         # Get provider config
         provider_config = self.config.get_provider_config(provider)
         if not provider_config:
@@ -174,14 +204,17 @@ class OAuthService:
         code_verifier = self._generate_code_verifier()
         code_challenge = self._generate_code_challenge(code_verifier)
 
-        # Store state data (TTL: 10 minutes)
-        self._state_store[state] = {
-            'user_id': user_id,
-            'provider': provider,
-            'code_verifier': code_verifier,
-            'created_at': datetime.utcnow(),
-            'expires_at': datetime.utcnow() + timedelta(minutes=10)
-        }
+        # Store state data (TTL: 10 minutes) - async for Redis support
+        await self._state_store.set_state(
+            state=state,
+            data={
+                'user_id': user_id,
+                'provider': provider,
+                'code_verifier': code_verifier,
+                'created_at': datetime.utcnow().isoformat()
+            },
+            ttl_seconds=600  # 10 minutes
+        )
 
         # Build authorization URL
         params = {
@@ -212,7 +245,7 @@ class OAuthService:
 
         return auth_url, state
 
-    def _validate_state(self, state: str, expected_provider: str) -> Dict[str, Any]:
+    async def _validate_state(self, state: str, expected_provider: str) -> Dict[str, Any]:
         """Validate state parameter (CSRF protection).
 
         Args:
@@ -225,19 +258,12 @@ class OAuthService:
         Raises:
             OAuthStateError: If state invalid or expired
         """
-        state_data = self._state_store.get(state)
+        # Get and delete state (one-time use) - async for Redis support
+        state_data = await self._state_store.get_state(state)
 
         if not state_data:
             raise OAuthStateError(
                 "Invalid or expired state token",
-                provider=expected_provider
-            )
-
-        # Check expiration
-        if datetime.utcnow() > state_data['expires_at']:
-            del self._state_store[state]
-            raise OAuthStateError(
-                "State token expired",
                 provider=expected_provider
             )
 
@@ -256,7 +282,8 @@ class OAuthService:
         provider: str,
         code: str,
         state: str,
-        redirect_uri: Optional[str] = None
+        redirect_uri: Optional[str] = None,
+        ip_address: Optional[str] = None
     ) -> Dict[str, Any]:
         """Exchange authorization code for access/refresh tokens.
 
@@ -265,6 +292,7 @@ class OAuthService:
             code: Authorization code from callback
             state: State token from callback
             redirect_uri: Override redirect URI (must match authorization request)
+            ip_address: Client IP address (for rate limiting)
 
         Returns:
             Token data dict with access_token, refresh_token, expires_in, etc.
@@ -272,9 +300,20 @@ class OAuthService:
         Raises:
             OAuthStateError: If state validation fails
             OAuthProviderError: If token exchange fails
+            RateLimitExceeded: If rate limit exceeded
         """
-        # Validate state (CSRF protection)
-        state_data = self._validate_state(state, provider)
+        # Rate limiting (if IP provided)
+        if ip_address:
+            try:
+                self._rate_limiter.check_token_exchange(ip_address)
+            except RateLimitExceeded as e:
+                logger.warning(
+                    f"Rate limit exceeded for token exchange: ip={ip_address}"
+                )
+                raise
+
+        # Validate state (CSRF protection) - also deletes state (one-time use)
+        state_data = await self._validate_state(state, provider)
         user_id = state_data['user_id']
         code_verifier = state_data['code_verifier']
 
@@ -331,8 +370,7 @@ class OAuthService:
                 expires_in=expires_in
             )
 
-            # Clean up state
-            del self._state_store[state]
+            # Note: State already deleted by _validate_state (one-time use)
 
             logger.info(
                 f"Successfully exchanged OAuth code for tokens: provider={provider}, user={user_id}"
@@ -453,7 +491,17 @@ class OAuthService:
 
         Raises:
             OAuthError: If user info retrieval fails
+            RateLimitExceeded: If rate limit exceeded
         """
+        # Rate limiting
+        try:
+            self._rate_limiter.check_userinfo(user_id)
+        except RateLimitExceeded as e:
+            logger.warning(
+                f"Rate limit exceeded for user info: user={user_id}"
+            )
+            raise
+
         # Get tokens
         tokens = self.token_store.retrieve_token(user_id)
         if not tokens:

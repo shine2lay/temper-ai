@@ -305,12 +305,14 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
             for match in matches:
                 matched_text = match.group(0)
 
-                # Skip if likely a test secret
-                if self._is_test_secret(matched_text):
-                    continue
-
                 # Extract actual secret value (usually in capture group)
                 secret_value = match.group(2) if match.lastindex and match.lastindex >= 2 else matched_text
+
+                # Skip if likely a test secret (check the VALUE, not the full match)
+                # SECURITY FIX (code-high-14): Check secret_value instead of matched_text
+                # to avoid filtering real secrets that happen to contain keywords like "secret" or "password"
+                if self._is_test_secret(secret_value):
+                    continue
 
                 # Calculate entropy
                 entropy = self._calculate_entropy(secret_value)

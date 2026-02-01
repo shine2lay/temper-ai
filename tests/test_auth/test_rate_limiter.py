@@ -21,7 +21,7 @@ class TestSlidingWindowRateLimiter:
             limiter.check_limit("test", "identifier_1", max_requests=10, window_seconds=60)
 
     def test_exceeds_limit(self):
-        """Requests exceeding limit should raise RateLimitExceeded."""
+        """Requests exceeding limit should raise RateLimitExceeded with specific error details."""
         limiter = SlidingWindowRateLimiter()
 
         # First 5 requests succeed
@@ -32,7 +32,10 @@ class TestSlidingWindowRateLimiter:
         with pytest.raises(RateLimitExceeded) as exc_info:
             limiter.check_limit("test", "identifier_1", max_requests=5, window_seconds=60)
 
-        assert exc_info.value.retry_after > 0
+        error = exc_info.value
+        # Validate retry_after is present and reasonable
+        assert error.retry_after > 0, "Missing retry_after"
+        assert error.retry_after <= 60, f"Retry_after too long: {error.retry_after}s"
 
     def test_sliding_window_expiry(self):
         """Old requests should expire from the sliding window."""
@@ -214,28 +217,44 @@ class TestOAuthRateLimiter:
             limiter.check_token_exchange("192.168.1.1")
 
     def test_rate_limit_error_message(self):
-        """RateLimitExceeded should have helpful error message."""
+        """RateLimitExceeded should have helpful error message without leaking sensitive info."""
         limiter = OAuthRateLimiter()
+
+        sensitive_ip = "192.168.1.100"  # Use realistic IP that might be sensitive
 
         # Fill limit
         for i in range(10):
-            limiter.check_oauth_init("192.168.1.1", f"user_{i}")
+            limiter.check_oauth_init(sensitive_ip, f"user_{i}")
 
         # Should get detailed error
         with pytest.raises(RateLimitExceeded) as exc_info:
-            limiter.check_oauth_init("192.168.1.1", "user_11")
+            limiter.check_oauth_init(sensitive_ip, "user_11")
 
         error = exc_info.value
-        assert "Rate limit exceeded" in str(error)
+        error_msg = str(error)
+
+        # Validate error message contains rate limit info
+        assert "Rate limit exceeded" in error_msg or "rate limit" in error_msg.lower()
         assert error.retry_after > 0
         assert error.retry_after <= 60  # Should be within window
 
+        # SECURITY: Verify error message doesn't leak sensitive information
+        assert sensitive_ip not in error_msg, \
+            f"Error message leaks IP address: {error_msg}"
+
+        # Verify error message doesn't leak exact counts (prevents enumeration)
+        assert not any(
+            pattern in error_msg
+            for pattern in ["10/10", "11/10", "count=10", "requests=10"]
+        ), f"Error message leaks request counts: {error_msg}"
+
     def test_concurrent_requests(self):
-        """Rate limiting should be thread-safe."""
+        """Rate limiting should be thread-safe (TOCTOU protection)."""
         import threading
 
         limiter = OAuthRateLimiter()
         results = {"success": 0, "failed": 0}
+        errors = []
         lock = threading.Lock()
 
         def make_request(i):
@@ -243,9 +262,10 @@ class TestOAuthRateLimiter:
                 limiter.check_oauth_init("192.168.1.1", f"user_{i}")
                 with lock:
                     results["success"] += 1
-            except RateLimitExceeded:
+            except RateLimitExceeded as e:
                 with lock:
                     results["failed"] += 1
+                    errors.append((i, e))
 
         # Make 15 concurrent requests (limit is 10)
         threads = []
@@ -258,6 +278,13 @@ class TestOAuthRateLimiter:
         for t in threads:
             t.join()
 
-        # Should have 10 successes and 5 failures
-        assert results["success"] == 10
-        assert results["failed"] == 5
+        # SECURITY: Validate TOCTOU protection - exactly 10 should succeed
+        assert results["success"] == 10, \
+            f"TOCTOU vulnerability: {results['success']} requests succeeded (should be exactly 10)"
+        assert results["failed"] == 5, \
+            f"Expected 5 failures, got {results['failed']}"
+
+        # Validate all failures have proper error details
+        for request_id, error in errors:
+            assert error.retry_after > 0, \
+                f"Request {request_id} should have valid retry_after value"

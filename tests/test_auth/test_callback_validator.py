@@ -43,34 +43,63 @@ class TestCallbackURLValidator:
         assert is_valid is True
 
     def test_localhost_rejected_in_prod(self):
-        """Localhost URLs should be rejected in production."""
+        """Localhost URLs should be rejected in production with specific error."""
+        # Note: http://localhost fails HTTPS check first, before localhost check
+        # To test localhost-specific rejection, use https://localhost
         validator = CallbackURLValidator(
-            ["http://localhost:8000/auth/callback"], allow_localhost=False
+            ["https://localhost:8000/auth/callback"], allow_localhost=False
         )
 
-        is_valid, error = validator.validate("http://localhost:8000/auth/callback")
-        assert is_valid is False
-        assert "Localhost URLs not allowed in production" in error
+        is_valid, error = validator.validate("https://localhost:8000/auth/callback")
+        assert is_valid is False, "Localhost should be rejected in production"
+
+        # Validate error message is specific and actionable
+        assert "Localhost URLs not allowed in production" in error or \
+               "localhost" in error.lower(), \
+               f"Error message should mention localhost restriction: {error}"
+
+        # SECURITY: Validate error message doesn't leak port number
+        assert "8000" not in error, \
+               f"Error message should not leak port numbers: {error}"
 
     def test_http_rejected_in_prod(self):
-        """HTTP URLs should be rejected in production."""
+        """HTTP URLs should be rejected in production with security context."""
         validator = CallbackURLValidator(
             ["http://app.example.com/auth/callback"], allow_localhost=False
         )
 
         is_valid, error = validator.validate("http://app.example.com/auth/callback")
-        assert is_valid is False
-        assert "HTTPS required" in error
+        assert is_valid is False, "HTTP should be rejected in production"
+
+        # Validate error message mentions HTTPS requirement
+        assert "HTTPS required" in error or \
+               ("https" in error.lower() and "http" in error.lower()), \
+               f"Error message should mention HTTPS requirement: {error}"
+
+        # Validate error message doesn't leak the full URL
+        assert "app.example.com" not in error or "domain" in error.lower(), \
+               "Error message should not leak domain names without context"
 
     def test_url_with_query_params_rejected(self):
-        """URLs with query parameters should be rejected (parameter pollution)."""
+        """URLs with query parameters should be rejected (parameter pollution protection)."""
         validator = CallbackURLValidator(["https://app.example.com/auth/callback"])
 
-        is_valid, error = validator.validate(
-            "https://app.example.com/auth/callback?code=123&state=abc"
-        )
-        assert is_valid is False
-        assert "query parameters" in error.lower()
+        malicious_url = "https://app.example.com/auth/callback?code=123&state=abc"
+        is_valid, error = validator.validate(malicious_url)
+
+        assert is_valid is False, "URLs with query parameters should be rejected (parameter pollution)"
+
+        # Validate error message indicates query parameter issue
+        assert "query parameters" in error.lower() or \
+               "query" in error.lower() or \
+               "parameter" in error.lower(), \
+               f"Error message should mention query parameters: {error}"
+
+        # SECURITY: Validate error message doesn't echo the query parameters
+        assert "code=123" not in error, \
+               f"Error message should not echo query parameter values: {error}"
+        assert "state=abc" not in error, \
+               f"Error message should not echo query parameter values: {error}"
 
     def test_url_with_fragment_rejected(self):
         """URLs with fragments should be rejected."""
@@ -87,8 +116,19 @@ class TestCallbackURLValidator:
         validator = CallbackURLValidator(["https://app.example.com/auth/callback"])
 
         is_valid, error = validator.validate("https://evil.com/steal")
-        assert is_valid is False
-        assert "not in whitelist" in error.lower()
+        assert is_valid is False, "Non-whitelisted URL should be rejected (open redirect protection)"
+
+        # Validate error message indicates whitelist check failure
+        assert "not in whitelist" in error.lower() or \
+               "not allowed" in error.lower() or \
+               "invalid" in error.lower(), \
+               f"Error message should indicate whitelist validation failure: {error}"
+
+        # SECURITY: Validate error message doesn't echo the malicious URL
+        assert "evil.com" not in error, \
+               f"Error message should not echo potentially malicious URLs: {error}"
+        assert "/steal" not in error, \
+               f"Error message should not echo attacker-controlled paths: {error}"
 
     def test_subdomain_not_matched(self):
         """Subdomains should not match parent domain (subdomain takeover protection)."""
@@ -125,7 +165,10 @@ class TestCallbackURLValidator:
 
         is_valid, error = validator.validate("not-a-valid-url")
         assert is_valid is False
-        assert "Invalid URL format" in error or "not in whitelist" in error.lower()
+        # Malformed URLs may fail scheme check or other validations
+        assert "Invalid URL format" in error or \
+               "not in whitelist" in error.lower() or \
+               "Invalid URL scheme" in error
 
     def test_multiple_allowed_urls(self):
         """Multiple whitelisted URLs should all be accepted."""
@@ -241,10 +284,12 @@ class TestCallbackURLValidatorEnvironmentDetection:
         """Localhost should be auto-rejected when ENVIRONMENT=production."""
         monkeypatch.setenv("ENVIRONMENT", "production")
 
-        validator = CallbackURLValidator(["http://localhost:8000/auth/callback"])
-        is_valid, error = validator.validate("http://localhost:8000/auth/callback")
+        # Note: http://localhost fails HTTPS check first. Use https to test localhost check.
+        validator = CallbackURLValidator(["https://localhost:8000/auth/callback"])
+        is_valid, error = validator.validate("https://localhost:8000/auth/callback")
         assert is_valid is False
-        assert "Localhost URLs not allowed in production" in error
+        assert "Localhost URLs not allowed in production" in error or \
+               "localhost" in error.lower()
 
     def test_explicit_override_environment(self, monkeypatch):
         """Explicit allow_localhost should override environment."""

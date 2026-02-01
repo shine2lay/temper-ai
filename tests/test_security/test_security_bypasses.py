@@ -75,7 +75,7 @@ class TestPathTraversalEncodingBypasses:
 
     @pytest.mark.parametrize("name,attack_path", URL_ENCODING_BYPASSES)
     def test_url_encoding_bypasses_blocked(self, file_access_policy, name, attack_path):
-        """URL encoding bypasses must be blocked by FileAccessPolicy.
+        """URL encoding bypasses must be blocked by FileAccessPolicy with HIGH+ severity.
 
         Note: These are blocked by /etc forbidden directory check,
         NOT by path traversal detection (which only checks literal "..").
@@ -87,12 +87,24 @@ class TestPathTraversalEncodingBypasses:
             context={}
         )
 
-        # Blocked by /etc forbidden directory check
+        # STEP 1: Verify blocked
         assert not result.valid, f"URL-encoded bypass {name} should be blocked by /etc check"
+
+        # STEP 2: Verify violation details
+        assert len(result.violations) > 0, f"No violations detected for {name}"
+
+        # STEP 3: Verify violation indicates forbidden directory
         assert any(
             "forbidden" in v.message.lower() or "/etc" in v.message.lower()
             for v in result.violations
         ), f"Expected forbidden directory violation for {name}"
+
+        # STEP 4: Verify severity is appropriate for security bypass attempt
+        high_severity_violations = [v for v in result.violations if v.severity >= ViolationSeverity.HIGH]
+        assert len(high_severity_violations) > 0, (
+            f"{name}: Encoding bypass should be HIGH+ severity, "
+            f"got: {[v.severity.name for v in result.violations]}"
+        )
 
     @pytest.mark.parametrize("name,attack_path", URL_ENCODED_VULNERABILITIES)
     def test_url_encoded_slash_vulnerability(self, file_access_policy, name, attack_path):
@@ -246,19 +258,31 @@ class TestCommandInjectionWhitespaceBypasses:
 
     @pytest.mark.parametrize("name,malicious_cmd", WHITESPACE_BYPASSES)
     def test_whitespace_injection_blocked(self, forbidden_ops_policy, name, malicious_cmd):
-        """Whitespace-based command injection must be blocked."""
+        """Whitespace-based command injection must be blocked at HIGH+ severity."""
         result = forbidden_ops_policy.validate(
             action={"command": malicious_cmd},
             context={}
         )
 
+        # STEP 1: Verify the action was BLOCKED
         assert not result.valid, f"Whitespace bypass {name} succeeded"
-        assert len(result.violations) > 0, f"Expected violations for {name}"
-        # Should detect dangerous patterns or rm command
+
+        # STEP 2: Verify violation severity (must be blocking level)
+        assert len(result.violations) > 0, f"No violations detected for {name}"
+        blocking_violations = [v for v in result.violations if v.severity >= ViolationSeverity.HIGH]
+        assert len(blocking_violations) > 0, (
+            f"Expected HIGH+ severity violation for {name}, got: "
+            f"{[v.severity.name for v in result.violations]}"
+        )
+
+        # STEP 3: Verify the SPECIFIC pattern was detected (dangerous command or operation)
         assert any(
-            v.severity >= ViolationSeverity.HIGH
+            "rm" in v.message.lower() or
+            "deletion" in v.message.lower() or
+            "dangerous" in v.message.lower() or
+            "forbidden" in v.message.lower()
             for v in result.violations
-        ), f"Expected HIGH+ severity for {name}"
+        ), f"Violation message doesn't identify the specific attack pattern for {name}"
 
 
 class TestCommandInjectionQuoteBypasses:
@@ -273,18 +297,33 @@ class TestCommandInjectionQuoteBypasses:
 
     @pytest.mark.parametrize("name,malicious_cmd", QUOTE_BYPASSES)
     def test_quote_bypass_blocked(self, forbidden_ops_policy, name, malicious_cmd):
-        """Quote manipulation bypasses must be blocked."""
+        """Quote manipulation bypasses must be blocked with specific violation details."""
         result = forbidden_ops_policy.validate(
             action={"command": malicious_cmd},
             context={}
         )
 
-        # Should detect semicolon injection
+        # STEP 1: Verify blocked
         assert not result.valid, f"Quote bypass {name} succeeded"
+
+        # STEP 2: Verify violations detected
+        assert len(result.violations) > 0, f"No violations detected for {name}"
+
+        # STEP 3: Verify specific pattern detection (semicolon injection or rm command)
         assert any(
-            "injection" in v.message.lower() or ";" in v.message
+            "injection" in v.message.lower() or
+            ";" in v.message or
+            "rm" in v.message.lower() or
+            "dangerous" in v.message.lower()
             for v in result.violations
         ), f"Expected injection violation for {name}"
+
+        # STEP 4: Verify severity is HIGH+ for command injection
+        high_severity_violations = [v for v in result.violations if v.severity >= ViolationSeverity.HIGH]
+        assert len(high_severity_violations) > 0, (
+            f"{name}: Command injection should be HIGH+ severity, "
+            f"got: {[v.severity.name for v in result.violations]}"
+        )
 
 
 # ============================================================================

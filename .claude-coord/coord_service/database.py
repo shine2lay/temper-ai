@@ -219,7 +219,7 @@ class Database:
     def claim_task(self, task_id: str, agent_id: str):
         """Claim a task for an agent."""
         with self.transaction() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 UPDATE tasks
                 SET status = 'in_progress', owner = ?, started_at = CURRENT_TIMESTAMP
@@ -227,6 +227,13 @@ class Database:
                 """,
                 (agent_id, task_id)
             )
+
+            # Verify the update succeeded
+            if cursor.rowcount == 0:
+                raise ValueError(
+                    f"Cannot claim task {task_id}: either task doesn't exist, "
+                    f"is not pending, or is already claimed"
+                )
 
             # Update task timing
             conn.execute(
@@ -237,7 +244,7 @@ class Database:
     def complete_task(self, task_id: str, agent_id: str):
         """Mark task as completed."""
         with self.transaction() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 UPDATE tasks
                 SET status = 'completed', completed_at = CURRENT_TIMESTAMP
@@ -245,6 +252,13 @@ class Database:
                 """,
                 (task_id, agent_id)
             )
+
+            # Verify the update succeeded
+            if cursor.rowcount == 0:
+                raise ValueError(
+                    f"Cannot complete task {task_id}: either task doesn't exist, "
+                    f"is not owned by agent {agent_id}, or is already completed"
+                )
 
             # Update task timing
             conn.execute(

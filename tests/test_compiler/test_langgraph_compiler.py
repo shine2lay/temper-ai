@@ -5,6 +5,7 @@ from unittest.mock import Mock, MagicMock, patch
 from src.compiler.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
 from src.compiler.state import WorkflowState
 from src.compiler.schemas import WorkflowConfig
+from tests.fixtures.realistic_data import REALISTIC_CONFIG_LOADER, create_realistic_stage_config
 
 
 def test_workflow_state_creation():
@@ -29,10 +30,11 @@ def test_compiler_with_custom_registry():
     assert compiler.tool_registry is mock_registry
 
 
-@patch('src.compiler.langgraph_compiler.ConfigLoader')
-def test_compile_validates_workflow_config(mock_config_loader):
+def test_compile_validates_workflow_config():
     """Test compile validates that workflow has stages."""
     compiler = LangGraphCompiler()
+    # Use realistic config loader instead of mock
+    compiler.config_loader = REALISTIC_CONFIG_LOADER
 
     # Create minimal workflow config with no stages
     workflow_config = {
@@ -49,20 +51,11 @@ def test_compile_validates_workflow_config(mock_config_loader):
         compiler.compile(workflow_config)
 
 
-@patch('src.compiler.langgraph_compiler.ConfigLoader')
-def test_compile_creates_state_graph(mock_config_loader):
+def test_compile_creates_state_graph():
     """Test compile creates a StateGraph with nodes."""
-    # Mock the config loader
-    mock_loader_instance = Mock()
-    mock_config_loader.return_value = mock_loader_instance
-
-    # Mock stage config
-    mock_stage_config = Mock()
-    mock_stage_config.stage.agents = []
-    mock_loader_instance.load_stage.return_value = mock_stage_config
-
     compiler = LangGraphCompiler()
-    compiler.config_loader = mock_loader_instance
+    # Use realistic config loader with pre-configured stages
+    compiler.config_loader = REALISTIC_CONFIG_LOADER
 
     # Create simple workflow config (using name field)
     workflow_config = {
@@ -71,7 +64,7 @@ def test_compile_creates_state_graph(mock_config_loader):
             "description": "Simple test workflow",
             "version": "1.0",
             "stages": [
-                {"name": "stage1"}
+                {"name": "research"}  # Use pre-configured stage in REALISTIC_CONFIG_LOADER
             ]
         }
     }
@@ -85,31 +78,22 @@ def test_compile_creates_state_graph(mock_config_loader):
     assert hasattr(graph, 'invoke')
 
 
-@patch('src.compiler.langgraph_compiler.ConfigLoader')
-def test_compile_sequential_stages(mock_config_loader):
+def test_compile_sequential_stages():
     """Test compile creates sequential edges between stages."""
-    # Mock the config loader
-    mock_loader_instance = Mock()
-    mock_config_loader.return_value = mock_loader_instance
-
-    # Mock stage config
-    mock_stage_config = Mock()
-    mock_stage_config.stage.agents = []
-    mock_loader_instance.load_stage.return_value = mock_stage_config
-
     compiler = LangGraphCompiler()
-    compiler.config_loader = mock_loader_instance
+    # Use realistic config loader with pre-configured stages
+    compiler.config_loader = REALISTIC_CONFIG_LOADER
 
-    # Create workflow with multiple stages
+    # Create workflow with multiple stages using pre-configured stages
     workflow_config = {
         "workflow": {
             "name": "multi_stage_workflow",
             "description": "Multi-stage workflow",
             "version": "1.0",
             "stages": [
-                {"name": "stage1"},
-                {"name": "stage2"},
-                {"name": "stage3"}
+                {"name": "research"},
+                {"name": "analysis"},
+                {"name": "synthesis"}
             ]
         }
     }

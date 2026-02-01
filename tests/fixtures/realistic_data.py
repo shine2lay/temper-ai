@@ -5,7 +5,8 @@ and empty configurations. Using realistic data helps catch more edge cases
 and makes tests more representative of actual usage.
 """
 
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
+import copy
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
@@ -943,3 +944,432 @@ def get_realistic_edge_case(case_name: str):
     if case_name not in REALISTIC_EDGE_CASES:
         raise KeyError(f"Unknown edge case '{case_name}'. Available: {list(REALISTIC_EDGE_CASES.keys())}")
     return copy.deepcopy(REALISTIC_EDGE_CASES[case_name])
+
+
+# ==============================================================================
+# MOCK REDUCTION FIXTURES - Phase 1 (Priority 1)
+# ==============================================================================
+
+class RealisticConfigLoader:
+    """In-memory ConfigLoader for testing without filesystem dependencies.
+
+    Replaces Mock(spec=ConfigLoader) with realistic behavior.
+    This allows tests to use real config loading logic without file I/O.
+
+    Example:
+        >>> loader = RealisticConfigLoader()
+        >>> agent_config = loader.load_agent("research_agent")
+        >>> assert agent_config["agent"]["name"] == "research_agent"
+    """
+
+    def __init__(self, agents: Dict[str, Dict] = None, stages: Dict[str, Dict] = None):
+        """Initialize with custom agent and stage configurations.
+
+        Args:
+            agents: Dict mapping agent names to agent config dicts
+            stages: Dict mapping stage names to stage config dicts
+        """
+        self.agents = agents or {}
+        self.stages = stages or {}
+
+    def load_agent(self, agent_ref: str) -> Dict[str, Any]:
+        """Load agent config from in-memory store.
+
+        Args:
+            agent_ref: Agent reference name
+
+        Returns:
+            Agent configuration dict with all required fields
+        """
+        if agent_ref in self.agents:
+            return copy.deepcopy(self.agents[agent_ref])
+
+        # Return realistic default agent config
+        return {
+            "agent": {
+                "name": agent_ref,
+                "type": "standard",
+                "description": f"Test agent {agent_ref}",
+                "version": "1.0",
+                "prompt": {"inline": f"You are {agent_ref}"},
+                "inference": {
+                    "provider": "ollama",
+                    "model": "llama2",
+                    "base_url": "http://localhost:11434",
+                    "temperature": 0.7,
+                    "max_tokens": 2000
+                },
+                "tools": [],
+                "error_handling": {
+                    "retry_strategy": "ExponentialBackoff",
+                    "fallback": "GracefulDegradation"
+                }
+            }
+        }
+
+    def load_stage(self, stage_ref: str) -> Dict[str, Any]:
+        """Load stage config from in-memory store.
+
+        Args:
+            stage_ref: Stage reference name
+
+        Returns:
+            Stage configuration dict with all required fields
+        """
+        if stage_ref in self.stages:
+            return copy.deepcopy(self.stages[stage_ref])
+
+        # Return realistic default stage config
+        return {
+            "stage": {
+                "name": stage_ref,
+                "agents": []
+            },
+            "execution": {"agent_mode": "sequential"},
+            "error_handling": {"min_successful_agents": 1},
+            "quality_gates": {"enabled": False}
+        }
+
+
+# Pre-configured realistic loader with common agents and stages
+REALISTIC_CONFIG_LOADER = RealisticConfigLoader(
+    agents={
+        "research_agent": {
+            "agent": REALISTIC_RESEARCH_AGENT.agent.model_dump()
+        },
+        "analyst_agent": {
+            "agent": REALISTIC_ANALYST_AGENT.agent.model_dump()
+        },
+        "synthesis_agent": {
+            "agent": REALISTIC_SYNTHESIS_AGENT.agent.model_dump()
+        },
+        "code_agent": {
+            "agent": REALISTIC_CODE_AGENT.agent.model_dump()
+        },
+        "review_agent": {
+            "agent": REALISTIC_REVIEW_AGENT.agent.model_dump()
+        },
+    },
+    stages={
+        "research": {
+            "stage": {"name": "research", "agents": ["research_agent"]},
+            "execution": {"agent_mode": "sequential"},
+            "error_handling": {"min_successful_agents": 1},
+            "quality_gates": {"enabled": False}
+        },
+        "analysis": {
+            "stage": {"name": "analysis", "agents": ["analyst_agent"]},
+            "execution": {"agent_mode": "sequential"},
+            "error_handling": {"min_successful_agents": 1},
+            "quality_gates": {"enabled": False}
+        },
+        "synthesis": {
+            "stage": {"name": "synthesis", "agents": ["synthesis_agent"]},
+            "execution": {"agent_mode": "sequential"},
+            "error_handling": {"min_successful_agents": 1},
+            "quality_gates": {"enabled": False}
+        }
+    }
+)
+
+
+def create_realistic_stage_config(
+    name: str = "test_stage",
+    agents: List[str] = None,
+    agent_mode: str = "sequential",
+    enable_synthesis: bool = False,
+    enable_quality_gates: bool = False,
+    min_successful_agents: int = 1
+) -> Dict[str, Any]:
+    """Create realistic stage configuration.
+
+    Replaces manual dict creation with consistent, production-like configs.
+
+    Args:
+        name: Stage name
+        agents: List of agent names (defaults to ["test_agent"])
+        agent_mode: One of "sequential", "parallel", "adaptive"
+        enable_synthesis: Enable collaboration/synthesis
+        enable_quality_gates: Enable quality gates
+        min_successful_agents: Minimum successful agents required
+
+    Returns:
+        Complete stage configuration dict
+
+    Example:
+        >>> config = create_realistic_stage_config(
+        ...     name="parallel_stage",
+        ...     agents=["agent1", "agent2"],
+        ...     agent_mode="parallel",
+        ...     enable_synthesis=True
+        ... )
+        >>> assert config["stage"]["name"] == "parallel_stage"
+        >>> assert config["execution"]["agent_mode"] == "parallel"
+    """
+    agents = agents or ["test_agent"]
+
+    config = {
+        "stage": {
+            "name": name,
+            "agents": agents
+        },
+        "execution": {
+            "agent_mode": agent_mode
+        },
+        "error_handling": {
+            "min_successful_agents": min_successful_agents,
+            "on_stage_failure": "halt"
+        },
+        "quality_gates": {
+            "enabled": enable_quality_gates
+        }
+    }
+
+    if enable_synthesis:
+        config["collaboration"] = {
+            "strategy": "consensus",
+            "min_confidence": 0.7
+        }
+
+    return config
+
+
+# Pre-configured stage configs for common scenarios
+REALISTIC_SEQUENTIAL_STAGE_CONFIG = create_realistic_stage_config(
+    name="sequential_stage",
+    agents=["agent1", "agent2"],
+    agent_mode="sequential"
+)
+
+REALISTIC_PARALLEL_STAGE_CONFIG = create_realistic_stage_config(
+    name="parallel_stage",
+    agents=["agent1", "agent2", "agent3"],
+    agent_mode="parallel",
+    enable_synthesis=True
+)
+
+REALISTIC_ADAPTIVE_STAGE_CONFIG = create_realistic_stage_config(
+    name="adaptive_stage",
+    agents=["agent1", "agent2", "agent3"],
+    agent_mode="adaptive",
+    enable_synthesis=True
+)
+
+
+# ==============================================================================
+# TEST AGENT CLASS - Replaces mock agents with deterministic behavior
+# ==============================================================================
+
+class TestAgent:
+    """Deterministic test agent with no LLM calls.
+
+    Replaces mock agents with realistic behavior.
+    Use for integration tests where agent execution is needed without actual LLM calls.
+
+    Example:
+        >>> agent = TestAgent("test_agent", output_template="Result: {input}")
+        >>> response = agent.execute({"input": "test data"})
+        >>> assert response["output"] == "Result: test data"
+        >>> assert response["confidence"] == 0.85
+    """
+
+    def __init__(
+        self,
+        name: str,
+        output_template: Optional[str] = None,
+        confidence: float = 0.85,
+        reasoning_template: Optional[str] = None
+    ):
+        """Initialize test agent.
+
+        Args:
+            name: Agent name
+            output_template: Template for output formatting (can use {input} and other keys)
+            confidence: Confidence score for responses
+            reasoning_template: Template for reasoning (optional)
+        """
+        self.name = name
+        self.output_template = output_template or f"Output from {name}: {{input}}"
+        self.reasoning_template = reasoning_template or f"Deterministic reasoning from {name}"
+        self.confidence = confidence
+        self.call_count = 0
+        self.last_input = None
+
+    def execute(self, input_data: Dict[str, Any], context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Execute with deterministic output - no LLM calls.
+
+        Args:
+            input_data: Input data dict (should have "input" key)
+            context: Optional context data
+
+        Returns:
+            AgentResponse-like dict with output, reasoning, confidence, etc.
+        """
+        self.call_count += 1
+        self.last_input = copy.deepcopy(input_data)
+
+        # Format output based on template
+        try:
+            output = self.output_template.format(
+                input=input_data.get("input", ""),
+                **input_data
+            )
+        except KeyError:
+            # Fallback if template has keys not in input_data
+            output = f"Output from {self.name}: {input_data.get('input', str(input_data))}"
+
+        # Format reasoning
+        try:
+            reasoning = self.reasoning_template.format(
+                input=input_data.get("input", ""),
+                **input_data
+            )
+        except (KeyError, AttributeError):
+            reasoning = self.reasoning_template
+
+        return {
+            "output": output,
+            "reasoning": reasoning,
+            "confidence": self.confidence,
+            "tokens": 100 + len(output),
+            "estimated_cost_usd": 0.001,
+            "tool_calls": [],
+            "metadata": {
+                "agent": self.name,
+                "test_mode": True,
+                "call_count": self.call_count
+            }
+        }
+
+
+def create_test_agent(name: str, output: str = None, confidence: float = 0.85) -> TestAgent:
+    """Create test agent with specific output.
+
+    Args:
+        name: Agent name
+        output: Output template (defaults to "Output from {name}")
+        confidence: Confidence score
+
+    Returns:
+        Configured TestAgent instance
+
+    Example:
+        >>> agent = create_test_agent("research", "Research result: {input}")
+        >>> response = agent.execute({"input": "query"})
+        >>> assert "Research result: query" in response["output"]
+    """
+    return TestAgent(name, output or f"Output from {name}", confidence)
+
+
+def create_research_test_agent() -> TestAgent:
+    """Create research agent for testing.
+
+    Returns:
+        TestAgent configured for research tasks
+    """
+    return TestAgent(
+        "research_agent",
+        "Research findings: {input}. Based on 12 sources with high confidence.",
+        confidence=0.92,
+        reasoning_template="Analyzed multiple sources and synthesized key findings"
+    )
+
+
+def create_analyst_test_agent() -> TestAgent:
+    """Create analyst agent for testing.
+
+    Returns:
+        TestAgent configured for analysis tasks
+    """
+    return TestAgent(
+        "analyst_agent",
+        "Analysis: {input}. Key patterns identified with statistical significance.",
+        confidence=0.88,
+        reasoning_template="Applied statistical analysis to identify trends"
+    )
+
+
+def create_synthesis_test_agent() -> TestAgent:
+    """Create synthesis agent for testing.
+
+    Returns:
+        TestAgent configured for synthesis tasks
+    """
+    return TestAgent(
+        "synthesis_agent",
+        "Synthesis: {input}. Combined insights into actionable recommendations.",
+        confidence=0.90,
+        reasoning_template="Synthesized findings from research and analysis phases"
+    )
+
+
+# ==============================================================================
+# SYNTHESIS RESULT FIXTURES - Replaces manual SynthesisResult creation
+# ==============================================================================
+
+def create_synthesis_result(
+    decision: str = "Approach A",
+    confidence: float = 0.85,
+    method: str = "consensus",
+    votes: Optional[Dict[str, int]] = None,
+    conflicts: Optional[List] = None,
+    reasoning: Optional[str] = None
+) -> Dict[str, Any]:
+    """Create realistic SynthesisResult for testing.
+
+    Args:
+        decision: The synthesized decision
+        confidence: Confidence score
+        method: Synthesis method used
+        votes: Vote distribution
+        conflicts: List of conflicts
+        reasoning: Reasoning for decision
+
+    Returns:
+        SynthesisResult-like dict
+
+    Example:
+        >>> result = create_synthesis_result("Use PostgreSQL", confidence=0.92)
+        >>> assert result["decision"] == "Use PostgreSQL"
+        >>> assert result["confidence"] == 0.92
+    """
+    votes = votes or {decision: 3}
+    conflicts = conflicts or []
+    reasoning = reasoning or f"Synthesized decision: {decision} based on {sum(votes.values())} agent votes"
+
+    return {
+        "decision": decision,
+        "confidence": confidence,
+        "method": method,
+        "votes": votes,
+        "conflicts": conflicts,
+        "reasoning": reasoning,
+        "metadata": {"test_mode": True}
+    }
+
+
+# Pre-configured synthesis results for common scenarios
+REALISTIC_UNANIMOUS_SYNTHESIS = create_synthesis_result(
+    decision="Approach A",
+    confidence=0.92,
+    method="consensus",
+    votes={"Approach A": 3},
+    reasoning="All agents agree on Approach A with high confidence"
+)
+
+REALISTIC_MAJORITY_SYNTHESIS = create_synthesis_result(
+    decision="Approach A",
+    confidence=0.80,
+    method="majority_vote",
+    votes={"Approach A": 2, "Approach B": 1},
+    reasoning="Majority of agents support Approach A"
+)
+
+REALISTIC_SPLIT_SYNTHESIS = create_synthesis_result(
+    decision="Approach A",
+    confidence=0.65,
+    method="weighted_vote",
+    votes={"Approach A": 1, "Approach B": 1, "Approach C": 1},
+    conflicts=["No clear consensus", "Conflicting priorities"],
+    reasoning="Split decision resolved by weighted voting"
+)

@@ -344,13 +344,73 @@ class RedisCache(CacheBackend):
             logger.error(f"Redis delete error: {e}")
             return False
 
-    def clear(self) -> None:
-        """Clear entire Redis database."""
+    def clear(self, pattern: str = "*", dry_run: bool = False, batch_size: int = 100) -> int:
+        """
+        Clear cache keys safely using SCAN.
+
+        SECURITY FIX (code-crit-redis-flush-08): Replace dangerous flushdb() with
+        SCAN-based deletion to prevent data loss across shared Redis instances.
+
+        WARNING: Currently deletes ALL keys (pattern="*") since RedisCache doesn't
+        use key prefixes. Use with caution in shared Redis environments.
+        TODO: Add key_prefix support in separate task for proper isolation.
+
+        Args:
+            pattern: Redis key pattern to delete (default: "*" = all keys)
+                    Example: "llm_cache:*" to delete only cache keys
+            dry_run: If True, count keys without deleting
+            batch_size: Keys to process per batch (default: 100)
+
+        Returns:
+            Number of keys deleted (or would delete in dry-run)
+
+        Note:
+            Uses SCAN instead of KEYS to avoid blocking Redis.
+            Use pattern parameter to limit scope when sharing Redis.
+        """
         try:
-            self._client.flushdb()
-            logger.info("Redis database cleared")
+            cursor = 0
+            deleted_count = 0
+
+            logger.info(f"Clearing Redis keys matching '{pattern}' (dry_run={dry_run})")
+
+            while True:
+                # SCAN is non-blocking and returns cursor + batch of keys
+                cursor, keys = self._client.scan(
+                    cursor=cursor,
+                    match=pattern,
+                    count=batch_size
+                )
+
+                if keys:
+                    if dry_run:
+                        # Just count, don't delete
+                        deleted_count += len(keys)
+                        logger.debug(f"Would delete {len(keys)} keys")
+                    else:
+                        # Delete batch using pipeline for efficiency
+                        pipe = self._client.pipeline()
+                        for key in keys:
+                            pipe.delete(key)
+                        pipe.execute()
+
+                        deleted_count += len(keys)
+                        logger.debug(f"Deleted {len(keys)} keys")
+
+                # cursor=0 means we've scanned entire keyspace
+                if cursor == 0:
+                    break
+
+            logger.info(
+                f"Redis clear {'dry-run' if dry_run else 'complete'}: "
+                f"{deleted_count} keys {'would be' if dry_run else ''} deleted"
+            )
+
+            return deleted_count
+
         except Exception as e:
             logger.error(f"Redis clear error: {e}")
+            return 0
 
     def exists(self, key: str) -> bool:
         """Check if key exists in Redis."""

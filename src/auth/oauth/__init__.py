@@ -5,5 +5,18 @@ defense-in-depth security measures.
 """
 from .callback_validator import CallbackURLValidator
 from .token_store import SecureTokenStore
+from .config import OAuthConfig, OAuthProviderConfig, get_provider_endpoints, ConfigurationError
+from .service import OAuthService, OAuthError, OAuthStateError, OAuthProviderError
 
-__all__ = ["CallbackURLValidator", "SecureTokenStore"]
+__all__ = [
+    "CallbackURLValidator",
+    "SecureTokenStore",
+    "OAuthConfig",
+    "OAuthProviderConfig",
+    "get_provider_endpoints",
+    "ConfigurationError",
+    "OAuthService",
+    "OAuthError",
+    "OAuthStateError",
+    "OAuthProviderError",
+]

@@ -1228,3 +1228,107 @@ SECRET_KEY = "sk-proj-aB3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5zA7"
         result = policy.validate({'content': content}, {})
         # May or may not match depending on entropy - just verify no crash
         assert isinstance(result.valid, bool)
+
+
+# ============================================================================
+# Test Class 22: Detection Summary and Introspection (code-high-14 enhancement)
+# ============================================================================
+
+class TestDetectionSummary:
+    """Tests for get_detection_summary() helper method.
+
+    Added for code-high-14 to make configuration more transparent and debuggable.
+    """
+
+    def test_get_detection_summary_default_config(self):
+        """Default configuration summary should show all patterns enabled."""
+        policy = SecretDetectionPolicy()
+        summary = policy.get_detection_summary()
+
+        assert summary["pattern_count"] == 11
+        assert summary["entropy_threshold"] == 4.5
+        assert summary["entropy_threshold_generic"] == 3.5
+        assert summary["allow_test_secrets"] is True
+        assert summary["excluded_paths"] == []
+        assert len(summary["enabled_patterns"]) == 11
+        assert len(summary["specific_patterns"]) == 9  # All except generic_*
+        assert len(summary["generic_patterns"]) == 2  # generic_api_key, generic_secret
+
+    def test_get_detection_summary_custom_config(self):
+        """Custom configuration should be reflected in summary."""
+        config = {
+            "enabled_patterns": ["aws_access_key", "github_token", "generic_api_key"],
+            "entropy_threshold": 5.0,
+            "entropy_threshold_generic": 4.0,
+            "allow_test_secrets": False,
+            "excluded_paths": [".git/", "venv/"]
+        }
+        policy = SecretDetectionPolicy(config)
+        summary = policy.get_detection_summary()
+
+        assert summary["pattern_count"] == 3
+        assert summary["entropy_threshold"] == 5.0
+        assert summary["entropy_threshold_generic"] == 4.0
+        assert summary["allow_test_secrets"] is False
+        assert summary["excluded_paths"] == [".git/", "venv/"]
+        assert len(summary["specific_patterns"]) == 2  # aws_access_key, github_token
+        assert len(summary["generic_patterns"]) == 1  # generic_api_key
+
+    def test_get_detection_summary_only_specific_patterns(self):
+        """Configuration with only specific patterns should show no generic patterns."""
+        config = {"enabled_patterns": ["aws_access_key", "github_token", "private_key"]}
+        policy = SecretDetectionPolicy(config)
+        summary = policy.get_detection_summary()
+
+        assert summary["pattern_count"] == 3
+        assert len(summary["specific_patterns"]) == 3
+        assert len(summary["generic_patterns"]) == 0
+        assert "generic_api_key" not in summary["enabled_patterns"]
+        assert "generic_secret" not in summary["enabled_patterns"]
+
+    def test_get_detection_summary_only_generic_patterns(self):
+        """Configuration with only generic patterns should show no specific patterns."""
+        config = {"enabled_patterns": ["generic_api_key", "generic_secret"]}
+        policy = SecretDetectionPolicy(config)
+        summary = policy.get_detection_summary()
+
+        assert summary["pattern_count"] == 2
+        assert len(summary["specific_patterns"]) == 0
+        assert len(summary["generic_patterns"]) == 2
+        assert "generic_api_key" in summary["enabled_patterns"]
+        assert "generic_secret" in summary["enabled_patterns"]
+
+    def test_get_detection_summary_test_secret_counts(self):
+        """Summary should include test secret keyword/pattern counts."""
+        policy = SecretDetectionPolicy()
+        summary = policy.get_detection_summary()
+
+        # TEST_SECRET_KEYWORDS has ~20+ entries
+        assert summary["test_secret_keywords"] > 20
+
+        # TEST_SECRET_PATTERNS has 5 entries (xxxxxxxx, aaaaaaaa, etc.)
+        assert summary["test_secret_patterns"] == 5
+
+    def test_detection_summary_useful_for_debugging(self):
+        """Summary should be useful for debugging and understanding detection behavior."""
+        policy = SecretDetectionPolicy({
+            "enabled_patterns": ["aws_access_key", "generic_secret"],
+            "entropy_threshold_generic": 3.0,
+            "allow_test_secrets": False
+        })
+        summary = policy.get_detection_summary()
+
+        # Should be able to understand:
+        # 1. Which patterns are enabled
+        assert "aws_access_key" in summary["enabled_patterns"]
+        assert "generic_secret" in summary["enabled_patterns"]
+
+        # 2. Whether test secrets are filtered
+        assert summary["allow_test_secrets"] is False
+
+        # 3. Entropy thresholds
+        assert summary["entropy_threshold_generic"] == 3.0
+
+        # 4. Pattern categories
+        assert "aws_access_key" in summary["specific_patterns"]
+        assert "generic_secret" in summary["generic_patterns"]

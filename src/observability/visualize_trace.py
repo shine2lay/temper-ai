@@ -183,25 +183,29 @@ def _flatten_trace_with_tree(
 
         # Build tree structure prefix
         if show_tree_lines:
-            prefix = ""
+            # Build prefix using list for better performance (avoid repeated string concatenation)
+            # String concatenation in loops is O(n²), list joining is O(n)
+            prefix_parts = []
 
             # Add vertical lines for parent levels
             for i, is_last in enumerate(is_last_child[:-1]):
                 if is_last:
-                    prefix += "    "  # 4 spaces for cleared level
+                    prefix_parts.append("    ")  # 4 spaces for cleared level
                 else:
-                    prefix += "│   "  # Vertical line + 3 spaces
+                    prefix_parts.append("│   ")  # Vertical line + 3 spaces
 
             # Add branch for current level
             if depth > 0:
                 if is_last_child[-1]:
-                    prefix += "└─ "  # Last child
+                    prefix_parts.append("└─ ")  # Last child
                 else:
-                    prefix += "├─ "  # Middle child
+                    prefix_parts.append("├─ ")  # Middle child
 
             # Add collapse indicator for nodes with children
             if node.get("children"):
-                prefix += "▼ "
+                prefix_parts.append("▼ ")
+
+            prefix = "".join(prefix_parts)
 
             display_name = f"{prefix}{node['name']}"
         else:

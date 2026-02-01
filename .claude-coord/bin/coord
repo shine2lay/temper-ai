@@ -30,6 +30,7 @@ def main():
         print("  task-get <task-id>", file=sys.stderr)
         print("  task-list [--limit N]", file=sys.stderr)
         print("  task-search <prefix>", file=sys.stderr)
+        print("  task-filter [--prefix PREFIX] [--status STATUS] [--limit N]", file=sys.stderr)
         print("  task-next <agent-id>", file=sys.stderr)
         print("  task-work <agent-id> <task-id>", file=sys.stderr)
         print("  task-done <agent-id> <task-id>", file=sys.stderr)
@@ -276,6 +277,58 @@ def main():
             else:
                 print(f"No tasks found with prefix: {prefix}", file=sys.stderr)
                 sys.exit(1)
+
+        elif command == 'task-filter':
+            # Parse filter options
+            prefix = None
+            status = None
+            limit = 1000
+
+            i = 0
+            while i < len(args):
+                if args[i] == '--prefix' and i + 1 < len(args):
+                    prefix = args[i + 1]
+                    i += 2
+                elif args[i] == '--status' and i + 1 < len(args):
+                    status = args[i + 1]
+                    i += 2
+                elif args[i] == '--limit' and i + 1 < len(args):
+                    limit = int(args[i + 1])
+                    i += 2
+                else:
+                    i += 1
+
+            # Build query
+            query = "SELECT * FROM tasks WHERE 1=1"
+            query_params = []
+
+            if prefix:
+                query += " AND id LIKE ?"
+                query_params.append(f"{prefix}%")
+
+            if status:
+                query += " AND status = ?"
+                query_params.append(status)
+
+            query += " ORDER BY priority ASC, created_at ASC LIMIT ?"
+            query_params.append(limit)
+
+            # Execute direct query
+            from coord_service.database import Database
+            db = Database(str(Path(project_root) / '.claude-coord' / 'coordination.db'))
+            tasks = db.query(query, tuple(query_params))
+
+            if tasks:
+                for task in tasks:
+                    print(f"{task['id']}: {task['subject']} [{task['status']}]")
+            else:
+                filters = []
+                if prefix:
+                    filters.append(f"prefix={prefix}")
+                if status:
+                    filters.append(f"status={status}")
+                filter_str = ", ".join(filters) if filters else "no filters"
+                print(f"No tasks found ({filter_str})", file=sys.stderr)
 
         elif command == 'task-next':
             agent_id = args[0]

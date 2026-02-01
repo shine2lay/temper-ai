@@ -926,7 +926,9 @@ class TestCacheKeySecurityValidation:
             'max_tokens',    # Max response length
             'user_id',       # User security context
             'tenant_id',     # Tenant security context
-            'session_id'     # Session security context
+            'session_id',    # Session security context
+            'security_context',  # Namespace protection
+            'request'        # Namespace protection
         }
 
         # Verify this matches the validation in the code
@@ -936,5 +938,212 @@ class TestCacheKeySecurityValidation:
         # All reserved params should be rejected if in kwargs (defense-in-depth)
         # Python prevents this in normal use, but validation provides extra safety
         for param in RESERVED_PARAMS:
-            assert param in {'model', 'prompt', 'temperature', 'max_tokens',
-                             'user_id', 'tenant_id', 'session_id'}
+            assert param in cache._RESERVED_PARAMS
+
+    def test_prevent_security_context_injection_via_kwargs(self):
+        """Verify that security_context cannot be injected via kwargs."""
+        cache = LLMCache()
+
+        malicious_kwargs = {"security_context": {"tenant_id": "evil"}}
+
+        with pytest.raises(ValueError, match="Cannot override reserved parameters.*security_context"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="Hello",
+                tenant_id="legitimate",
+                **malicious_kwargs
+            )
+
+    def test_prevent_request_injection_via_kwargs(self):
+        """Verify that request cannot be injected via kwargs."""
+        cache = LLMCache()
+
+        malicious_kwargs = {"request": {"model": "cheap-model"}}
+
+        with pytest.raises(ValueError, match="Cannot override reserved parameters.*request"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="Hello",
+                tenant_id="test",
+                **malicious_kwargs
+            )
+
+
+class TestCacheKeyTypeValidation:
+    """Type validation tests for cache key generation (code-crit-15)."""
+
+    def test_reject_non_string_model(self):
+        """Verify model parameter must be string."""
+        cache = LLMCache()
+
+        with pytest.raises(TypeError, match="model must be str"):
+            cache.generate_key(
+                model=123,  # Invalid: integer
+                prompt="test",
+                tenant_id="test"
+            )
+
+        with pytest.raises(TypeError, match="model must be str"):
+            cache.generate_key(
+                model=None,  # Invalid: None
+                prompt="test",
+                tenant_id="test"
+            )
+
+        with pytest.raises(TypeError, match="model must be str"):
+            cache.generate_key(
+                model={"name": "gpt-4"},  # Invalid: dict
+                prompt="test",
+                tenant_id="test"
+            )
+
+    def test_reject_non_string_prompt(self):
+        """Verify prompt parameter must be string."""
+        cache = LLMCache()
+
+        with pytest.raises(TypeError, match="prompt must be str"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt=123,  # Invalid: integer
+                tenant_id="test"
+            )
+
+        with pytest.raises(TypeError, match="prompt must be str"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt=["list", "prompt"],  # Invalid: list
+                tenant_id="test"
+            )
+
+    def test_reject_non_numeric_temperature(self):
+        """Verify temperature parameter must be numeric."""
+        cache = LLMCache()
+
+        with pytest.raises(TypeError, match="temperature must be numeric"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="test",
+                temperature="0.7",  # Invalid: string
+                tenant_id="test"
+            )
+
+        with pytest.raises(TypeError, match="temperature must be numeric"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="test",
+                temperature=None,  # Invalid: None
+                tenant_id="test"
+            )
+
+    def test_reject_non_integer_max_tokens(self):
+        """Verify max_tokens parameter must be integer."""
+        cache = LLMCache()
+
+        with pytest.raises(TypeError, match="max_tokens must be int"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="test",
+                max_tokens="2048",  # Invalid: string
+                tenant_id="test"
+            )
+
+        with pytest.raises(TypeError, match="max_tokens must be int"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="test",
+                max_tokens=2048.5,  # Invalid: float
+                tenant_id="test"
+            )
+
+    def test_reject_non_string_user_id(self):
+        """Verify user_id parameter must be string or None."""
+        cache = LLMCache()
+
+        with pytest.raises(TypeError, match="user_id must be str or None"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="test",
+                user_id=123,  # Invalid: integer
+                tenant_id="test"
+            )
+
+    def test_reject_non_string_tenant_id(self):
+        """Verify tenant_id parameter must be string or None."""
+        cache = LLMCache()
+
+        with pytest.raises(TypeError, match="tenant_id must be str or None"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="test",
+                tenant_id=123  # Invalid: integer
+            )
+
+    def test_reject_non_string_session_id(self):
+        """Verify session_id parameter must be string or None."""
+        cache = LLMCache()
+
+        with pytest.raises(TypeError, match="session_id must be str or None"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="test",
+                session_id=123,  # Invalid: integer
+                tenant_id="test"
+            )
+
+    def test_accept_valid_types(self):
+        """Verify that valid types are accepted."""
+        cache = LLMCache()
+
+        # All valid types
+        key = cache.generate_key(
+            model="gpt-4",
+            prompt="test prompt",
+            temperature=0.7,
+            max_tokens=2048,
+            user_id="user123",
+            tenant_id="tenant456",
+            session_id="session789"
+        )
+
+        assert isinstance(key, str)
+        assert len(key) == 64  # SHA-256 hex digest
+
+    def test_accept_valid_numeric_types(self):
+        """Verify that both int and float are accepted for temperature."""
+        cache = LLMCache()
+
+        # Integer temperature
+        key1 = cache.generate_key(
+            model="gpt-4",
+            prompt="test",
+            temperature=1,  # int
+            tenant_id="test"
+        )
+
+        # Float temperature
+        key2 = cache.generate_key(
+            model="gpt-4",
+            prompt="test",
+            temperature=1.0,  # float
+            tenant_id="test"
+        )
+
+        assert isinstance(key1, str)
+        assert isinstance(key2, str)
+
+    def test_reject_non_serializable_kwargs(self):
+        """Verify that non-JSON-serializable kwargs are rejected."""
+        cache = LLMCache()
+
+        class CustomObject:
+            pass
+
+        non_serializable_kwargs = {"custom": CustomObject()}
+
+        with pytest.raises(ValueError, match="Cache key generation failed.*JSON-serializable"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="test",
+                tenant_id="test",
+                **non_serializable_kwargs
+            )

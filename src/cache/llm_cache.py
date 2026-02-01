@@ -389,6 +389,22 @@ class LLMCache:
                 "See: HIPAA 164.312(a)(1), GDPR Article 32, SOC 2 CC6.6"
             )
 
+        # SECURITY FIX: Validate parameter types to prevent type confusion attacks
+        if not isinstance(model, str):
+            raise TypeError(f"model must be str, got {type(model).__name__}")
+        if not isinstance(prompt, str):
+            raise TypeError(f"prompt must be str, got {type(prompt).__name__}")
+        if not isinstance(temperature, (int, float)):
+            raise TypeError(f"temperature must be numeric, got {type(temperature).__name__}")
+        if not isinstance(max_tokens, int):
+            raise TypeError(f"max_tokens must be int, got {type(max_tokens).__name__}")
+        if user_id is not None and not isinstance(user_id, str):
+            raise TypeError(f"user_id must be str or None, got {type(user_id).__name__}")
+        if tenant_id is not None and not isinstance(tenant_id, str):
+            raise TypeError(f"tenant_id must be str or None, got {type(tenant_id).__name__}")
+        if session_id is not None and not isinstance(session_id, str):
+            raise TypeError(f"session_id must be str or None, got {type(session_id).__name__}")
+
         # SECURITY FIX: Validate kwargs to prevent parameter override attacks
         # Prevents cache poisoning via reserved parameter injection (code-crit-15)
         conflicting_params = self._RESERVED_PARAMS.intersection(kwargs.keys())
@@ -417,11 +433,22 @@ class LLMCache:
         if session_id:
             security_context['session_id'] = session_id
 
-        # Combine request and security context
-        canonical = json.dumps({
-            'request': request,
-            'security_context': security_context
-        }, sort_keys=True)
+        # Combine request and security context with strict JSON serialization
+        try:
+            canonical = json.dumps(
+                {
+                    'request': request,
+                    'security_context': security_context
+                },
+                sort_keys=True,
+                ensure_ascii=True,  # Consistent Unicode handling
+                separators=(',', ':')  # Consistent whitespace
+            )
+        except (TypeError, ValueError) as e:
+            raise ValueError(
+                f"Cache key generation failed: parameters must be JSON-serializable. "
+                f"Error: {e}"
+            )
 
         # Hash with SHA-256
         hash_obj = hashlib.sha256(canonical.encode('utf-8'))

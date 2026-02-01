@@ -534,35 +534,49 @@ class RateLimiter:
 _prompt_detector: Optional[PromptInjectionDetector] = None
 _output_sanitizer: Optional[OutputSanitizer] = None
 _rate_limiter: Optional[RateLimiter] = None
+_security_lock = Lock()
 
 
 def get_prompt_detector() -> PromptInjectionDetector:
     """Get global PromptInjectionDetector instance."""
     global _prompt_detector
+    # Double-check locking pattern
     if _prompt_detector is None:
-        _prompt_detector = PromptInjectionDetector()
+        with _security_lock:
+            # Check again inside lock
+            if _prompt_detector is None:
+                _prompt_detector = PromptInjectionDetector()
     return _prompt_detector
 
 
 def get_output_sanitizer() -> OutputSanitizer:
     """Get global OutputSanitizer instance."""
     global _output_sanitizer
+    # Double-check locking pattern
     if _output_sanitizer is None:
-        _output_sanitizer = OutputSanitizer()
+        with _security_lock:
+            # Check again inside lock
+            if _output_sanitizer is None:
+                _output_sanitizer = OutputSanitizer()
     return _output_sanitizer
 
 
 def get_rate_limiter() -> RateLimiter:
     """Get global RateLimiter instance."""
     global _rate_limiter
+    # Double-check locking pattern
     if _rate_limiter is None:
-        _rate_limiter = RateLimiter()
+        with _security_lock:
+            # Check again inside lock
+            if _rate_limiter is None:
+                _rate_limiter = RateLimiter()
     return _rate_limiter
 
 
 def reset_security_components() -> None:
     """Reset all global security components (useful for testing)."""
     global _prompt_detector, _output_sanitizer, _rate_limiter
-    _prompt_detector = None
-    _output_sanitizer = None
-    _rate_limiter = None
+    with _security_lock:
+        _prompt_detector = None
+        _output_sanitizer = None
+        _rate_limiter = None

@@ -1083,6 +1083,222 @@ class TestWorkflowSecurity:
         assert len(violations) > 0, "Should report secret leakage"
 
 
+class TestSingletonThreadSafety:
+    """Test thread safety of singleton instances for security components.
+
+    SECURITY: code-high-singleton-thread-14
+    Prevents race conditions from creating duplicate instances which can lead to:
+    - Memory leaks
+    - Duplicate initialization
+    - Inconsistent state
+    """
+
+    def test_singleton_only_one_instance(self):
+        """Test that only one instance is created for each component."""
+        # Reset singletons
+        reset_security_components()
+
+        # Get instances multiple times
+        detector1 = get_prompt_detector()
+        detector2 = get_prompt_detector()
+
+        sanitizer1 = get_output_sanitizer()
+        sanitizer2 = get_output_sanitizer()
+
+        limiter1 = get_rate_limiter()
+        limiter2 = get_rate_limiter()
+
+        # All should be same instance
+        assert detector1 is detector2, "PromptInjectionDetector should be singleton"
+        assert sanitizer1 is sanitizer2, "OutputSanitizer should be singleton"
+        assert limiter1 is limiter2, "RateLimiter should be singleton"
+
+    def test_concurrent_initialization_race_safe_prompt_detector(self):
+        """Test no race condition with concurrent PromptInjectionDetector initialization."""
+        import threading
+
+        instances = []
+        lock = threading.Lock()
+
+        def create_instance():
+            instance = get_prompt_detector()
+            with lock:
+                instances.append(instance)
+
+        # Reset singleton
+        reset_security_components()
+
+        # Create 50 threads trying to get instance
+        threads = [threading.Thread(target=create_instance) for _ in range(50)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # All should get same instance
+        assert len(instances) == 50, f"Expected 50 instances, got {len(instances)}"
+        assert all(inst is instances[0] for inst in instances), \
+            "All threads should get same instance (no race condition)"
+
+    def test_concurrent_initialization_race_safe_output_sanitizer(self):
+        """Test no race condition with concurrent OutputSanitizer initialization."""
+        import threading
+
+        instances = []
+        lock = threading.Lock()
+
+        def create_instance():
+            instance = get_output_sanitizer()
+            with lock:
+                instances.append(instance)
+
+        # Reset singleton
+        reset_security_components()
+
+        # Create 50 threads trying to get instance
+        threads = [threading.Thread(target=create_instance) for _ in range(50)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # All should get same instance
+        assert len(instances) == 50, f"Expected 50 instances, got {len(instances)}"
+        assert all(inst is instances[0] for inst in instances), \
+            "All threads should get same instance (no race condition)"
+
+    def test_concurrent_initialization_race_safe_rate_limiter(self):
+        """Test no race condition with concurrent RateLimiter initialization."""
+        import threading
+
+        instances = []
+        lock = threading.Lock()
+
+        def create_instance():
+            instance = get_rate_limiter()
+            with lock:
+                instances.append(instance)
+
+        # Reset singleton
+        reset_security_components()
+
+        # Create 50 threads trying to get instance
+        threads = [threading.Thread(target=create_instance) for _ in range(50)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # All should get same instance
+        assert len(instances) == 50, f"Expected 50 instances, got {len(instances)}"
+        assert all(inst is instances[0] for inst in instances), \
+            "All threads should get same instance (no race condition)"
+
+    def test_concurrent_stress_all_components(self):
+        """Stress test all three components with high concurrency."""
+        import threading
+
+        detector_instances = []
+        sanitizer_instances = []
+        limiter_instances = []
+        lock = threading.Lock()
+
+        def create_all_instances():
+            detector = get_prompt_detector()
+            sanitizer = get_output_sanitizer()
+            limiter = get_rate_limiter()
+
+            with lock:
+                detector_instances.append(detector)
+                sanitizer_instances.append(sanitizer)
+                limiter_instances.append(limiter)
+
+        # Reset all singletons
+        reset_security_components()
+
+        # Create 100 threads trying to get all instances
+        threads = [threading.Thread(target=create_all_instances) for _ in range(100)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # All should get same instances
+        assert len(detector_instances) == 100
+        assert all(inst is detector_instances[0] for inst in detector_instances), \
+            "All PromptInjectionDetector instances should be same"
+
+        assert len(sanitizer_instances) == 100
+        assert all(inst is sanitizer_instances[0] for inst in sanitizer_instances), \
+            "All OutputSanitizer instances should be same"
+
+        assert len(limiter_instances) == 100
+        assert all(inst is limiter_instances[0] for inst in limiter_instances), \
+            "All RateLimiter instances should be same"
+
+    def test_reset_thread_safety(self):
+        """Test that reset_security_components is thread-safe."""
+        import threading
+
+        def reset_and_get():
+            reset_security_components()
+            detector = get_prompt_detector()
+            sanitizer = get_output_sanitizer()
+            limiter = get_rate_limiter()
+            return detector, sanitizer, limiter
+
+        # Run reset and get from multiple threads
+        threads = []
+        for _ in range(20):
+            t = threading.Thread(target=reset_and_get)
+            threads.append(t)
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # Should not crash - verify final state is valid
+        detector = get_prompt_detector()
+        sanitizer = get_output_sanitizer()
+        limiter = get_rate_limiter()
+
+        assert detector is not None
+        assert sanitizer is not None
+        assert limiter is not None
+
+    def test_singleton_performance_minimal_overhead(self):
+        """Test that double-check locking has minimal performance overhead."""
+        import time
+
+        # Reset singleton
+        reset_security_components()
+
+        # First call (initialization)
+        start = time.perf_counter()
+        _ = get_prompt_detector()
+        first_call_ms = (time.perf_counter() - start) * 1000
+
+        # Subsequent calls (should be fast - just double-check)
+        iterations = 10000
+        start = time.perf_counter()
+        for _ in range(iterations):
+            _ = get_prompt_detector()
+        elapsed_ms = (time.perf_counter() - start) * 1000
+        avg_call_ms = elapsed_ms / iterations
+
+        # Average call should be very fast (< 0.001ms = 1 microsecond)
+        assert avg_call_ms < 0.01, \
+            f"Double-check locking too slow: {avg_call_ms:.6f}ms per call (target <0.01ms)"
+
+
 # ==============================================================================
 # Implementation Complete
 # ==============================================================================

@@ -1,0 +1,48 @@
+# Model Pricing Configuration
+# Prices in USD per 1M tokens
+# Last updated: 2026-02-01
+# Source: https://anthropic.com/pricing, https://openai.com/pricing
+
+schema_version: "1.0"
+last_updated: "2026-02-01"
+
+# Model pricing tables
+# Each model specifies input/output price per 1M tokens
+models:
+  claude-3-opus:
+    input_price: 15.00   # USD per 1M input tokens
+    output_price: 75.00  # USD per 1M output tokens
+    effective_date: "2026-01-01"
+    source_url: "https://anthropic.com/pricing"
+
+  claude-3-sonnet:
+    input_price: 3.00
+    output_price: 15.00
+    effective_date: "2026-01-01"
+    source_url: "https://anthropic.com/pricing"
+
+  claude-3-haiku:
+    input_price: 0.25
+    output_price: 1.25
+    effective_date: "2026-01-01"
+    source_url: "https://anthropic.com/pricing"
+
+  gpt-4:
+    input_price: 30.00
+    output_price: 60.00
+    effective_date: "2026-01-01"
+    source_url: "https://openai.com/pricing"
+
+  gpt-3.5-turbo:
+    input_price: 0.50
+    output_price: 1.50
+    effective_date: "2026-01-01"
+    source_url: "https://openai.com/pricing"
+
+# Fallback pricing for unknown models
+# Used when a model is not found in the models list above
+default:
+  input_price: 3.00    # Average across common models
+  output_price: 15.00  # Average output price
+  effective_date: "2026-01-01"
+  notes: "Fallback pricing for unknown models"

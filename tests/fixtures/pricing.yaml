@@ -1,0 +1,19 @@
+# Test pricing configuration
+schema_version: "1.0"
+last_updated: "2026-02-01"
+
+models:
+  test-model-1:
+    input_price: 1.00
+    output_price: 2.00
+    effective_date: "2026-01-01"
+
+  test-model-2:
+    input_price: 10.00
+    output_price: 20.00
+    effective_date: "2026-01-01"
+
+default:
+  input_price: 3.00
+  output_price: 15.00
+  effective_date: "2026-01-01"

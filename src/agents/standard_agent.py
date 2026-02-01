@@ -33,17 +33,8 @@ REASONING_PATTERNS = {
 # - OpenAI/Anthropic: Use HTTPS (443) via their public APIs
 OLLAMA_DEFAULT_PORT = 11434
 
-# Cost estimation constants
-# Rationale: Default pricing for cost estimation when model-specific pricing unavailable
-# - Average cost across common models (GPT-3.5, Claude, etc.) is ~$0.002 per 1K tokens
-# - This is a rough estimate; production systems should use model-specific pricing
-DEFAULT_COST_PER_1K_TOKENS = 0.002  # USD per 1,000 tokens
-
-# Token conversion constant
-# Rationale: LLM providers measure tokens in thousands for pricing
-# - Used to convert total_tokens to cost calculation
-# - Example: 5000 tokens / 1000.0 = 5.0 thousand tokens * $0.002 = $0.01
-TOKENS_TO_THOUSANDS = 1000.0
+# Note: Cost estimation constants removed - now using config/model_pricing.yaml
+# See src/agents/pricing.py for pricing configuration
 
 from src.agents.base_agent import BaseAgent, AgentResponse, ExecutionContext
 from src.agents.llm_providers import (
@@ -56,6 +47,7 @@ from src.agents.llm_providers import (
     LLMProvider
 )
 from src.agents.prompt_engine import PromptEngine, PromptRenderError
+from src.agents.pricing import get_pricing_manager
 from src.compiler.schemas import AgentConfig
 from src.tools.registry import ToolRegistry
 from src.tools.base import BaseTool, ToolResult
@@ -771,10 +763,10 @@ class StandardAgent(BaseAgent):
         return None
 
     def _estimate_cost(self, llm_response: LLMResponse) -> float:
-        """Estimate cost of LLM call.
+        """Estimate cost of LLM call using configured pricing.
 
-        This is a simplified estimation. In production, would use provider-specific
-        pricing tables.
+        Uses model-specific pricing from config/model_pricing.yaml.
+        Falls back to default pricing for unknown models.
 
         Args:
             llm_response: LLM response with token counts
@@ -785,8 +777,24 @@ class StandardAgent(BaseAgent):
         if not llm_response.total_tokens:
             return 0.0
 
-        # Simplified pricing (rough average)
-        return (llm_response.total_tokens / TOKENS_TO_THOUSANDS) * DEFAULT_COST_PER_1K_TOKENS
+        # Get pricing manager
+        pricing = get_pricing_manager()
+
+        # Get model from response or fallback to LLM client's model
+        model = llm_response.model or (getattr(self.llm, 'model', 'unknown'))
+
+        # Get input/output tokens from response
+        input_tokens = llm_response.prompt_tokens or 0
+        output_tokens = llm_response.completion_tokens or 0
+
+        # If split not available, estimate from total_tokens
+        if input_tokens == 0 and output_tokens == 0 and llm_response.total_tokens:
+            # Rough estimate: assume 60% input, 40% output (typical for agent interactions)
+            total = llm_response.total_tokens
+            input_tokens = int(total * 0.6)
+            output_tokens = int(total * 0.4)
+
+        return pricing.get_cost(model, input_tokens, output_tokens)
 
     def get_capabilities(self) -> Dict[str, Any]:
         """Get agent capabilities.

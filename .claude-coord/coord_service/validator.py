@@ -105,14 +105,26 @@ class StateValidator:
 
     # Valid task prefixes and categories
     VALID_PREFIXES = ['test', 'code', 'docs', 'gap', 'refactor', 'perf']
-    VALID_CATEGORIES = ['crit', 'high', 'med', 'medi', 'low']
+    VALID_CATEGORIES = ['crit', 'high', 'med', 'medi', 'low', 'quick']
 
-    # Priority definitions
-    PRIORITY_CRITICAL = 1
-    PRIORITY_HIGH = 2
-    PRIORITY_MEDIUM = 3
-    PRIORITY_LOW = 4
-    PRIORITY_BACKLOG = 5
+    # Priority definitions (0 is highest, 3 is lowest)
+    PRIORITY_CRITICAL = 0
+    PRIORITY_HIGH = 1
+    PRIORITY_MEDIUM = 2
+    PRIORITY_LOW = 3
+
+    # Category to priority mapping (enforced)
+    CATEGORY_TO_PRIORITY = {
+        'crit': 0,
+        'high': 1,
+        'med': 2,
+        'medi': 2,
+        'low': 3,
+        'quick': 2  # Quick tasks default to medium priority
+    }
+
+    # Categories that skip spec file validation
+    VALIDATION_SKIP_CATEGORIES = ['quick']
 
     def __init__(self, db):
         """Initialize validator.
@@ -121,6 +133,30 @@ class StateValidator:
             db: Database instance
         """
         self.db = db
+
+        # Derive project root from database path
+        # db_path is like: /path/to/project/.claude-coord/coordination.db
+        db_dir = os.path.dirname(self.db.db_path)  # /path/to/project/.claude-coord
+        self.project_root = os.path.dirname(db_dir)  # /path/to/project
+
+    def derive_priority_from_task_id(self, task_id: str) -> int:
+        """Derive priority from task ID category.
+
+        Args:
+            task_id: Task identifier
+
+        Returns:
+            Priority level (0-3) based on category
+
+        Raises:
+            ValueError: If task ID doesn't have valid category
+        """
+        parts = task_id.split('-')
+        if len(parts) < 2:
+            return self.PRIORITY_MEDIUM  # Default fallback
+
+        category = parts[1]
+        return self.CATEGORY_TO_PRIORITY.get(category, self.PRIORITY_MEDIUM)
 
     def validate_task_create(
         self,
@@ -136,7 +172,7 @@ class StateValidator:
             task_id: Task identifier
             subject: Task subject/title
             description: Task description
-            priority: Task priority (1-5)
+            priority: Task priority (0-3, where 0 is highest)
             spec_path: Optional path to task spec file
 
         Raises:
@@ -178,8 +214,22 @@ class StateValidator:
                     code="UNKNOWN_CATEGORY",
                     message=f"Unknown category '{category}'",
                     valid_categories=self.VALID_CATEGORIES,
-                    hint="Use standard categories: crit, high, med/medi, low"
+                    hint="Use standard categories: crit, high, med/medi, low, quick"
                 ))
+            else:
+                # Enforce category-to-priority mapping
+                expected_priority = self.CATEGORY_TO_PRIORITY[category]
+                if priority != expected_priority:
+                    errors.append(ValidationError(
+                        code="PRIORITY_CATEGORY_MISMATCH",
+                        message=f"Priority {priority} doesn't match category '{category}' (expected {expected_priority})",
+                        hint=f"Category '{category}' must have priority {expected_priority}, or omit --priority flag to auto-set",
+                        details={
+                            "category": category,
+                            "provided_priority": priority,
+                            "expected_priority": expected_priority
+                        }
+                    ))
 
         # Subject required and non-empty
         if not subject or not subject.strip():
@@ -197,8 +247,13 @@ class StateValidator:
                 hint="Keep subject concise but descriptive"
             ))
 
-        # Description required for critical/high priority
-        if priority in [self.PRIORITY_CRITICAL, self.PRIORITY_HIGH]:
+        # Check if this category skips validation
+        parts = task_id.split('-')
+        category = parts[1] if len(parts) >= 2 else None
+        skip_validation = category in self.VALIDATION_SKIP_CATEGORIES
+
+        # Description required for critical/high priority (unless quick)
+        if not skip_validation and priority in [self.PRIORITY_CRITICAL, self.PRIORITY_HIGH]:
             if not description or len(description) < 20:
                 errors.append(ValidationError(
                     code="INSUFFICIENT_DESCRIPTION",
@@ -206,17 +261,19 @@ class StateValidator:
                     hint="Provide at least 20 characters describing the task"
                 ))
 
-        # Priority must be in range 1-5
-        if not (1 <= priority <= 5):
+        # Priority must be in range 0-3
+        if not (0 <= priority <= 3):
             errors.append(ValidationError(
                 code="INVALID_PRIORITY",
-                message=f"Priority {priority} out of range (1-5)",
-                hint="1=critical, 2=high, 3=medium, 4=low, 5=backlog"
+                message=f"Priority {priority} out of range (0-3)",
+                hint="0=critical, 1=high, 2=medium, 3=low"
             ))
 
-        # Task spec validation for critical/high priority
-        if priority in [self.PRIORITY_CRITICAL, self.PRIORITY_HIGH]:
-            expected_spec = f".claude-coord/task-specs/{task_id}.md"
+        # Task spec validation for critical/high priority (unless quick)
+        if not skip_validation and priority in [self.PRIORITY_CRITICAL, self.PRIORITY_HIGH]:
+            # Use absolute path from project root
+            relative_spec = f".claude-coord/task-specs/{task_id}.md"
+            expected_spec = os.path.join(self.project_root, relative_spec)
             spec_file = spec_path or expected_spec
 
             if not os.path.exists(spec_file):
@@ -224,7 +281,7 @@ class StateValidator:
                     code="MISSING_TASK_SPEC",
                     message="Critical/high priority task missing spec file",
                     expected_path=expected_spec,
-                    hint="Create spec file with acceptance criteria, test strategy"
+                    hint="Create spec file with acceptance criteria, test strategy, or use 'quick' category"
                 ))
             else:
                 # Validate spec file has required sections

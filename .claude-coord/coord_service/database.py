@@ -63,6 +63,14 @@ class Database:
 
             conn = self._get_connection()
             conn.executescript(schema_sql)
+
+            # Apply v2 schema (dependencies)
+            schema_v2_path = Path(__file__).parent / "schema_v2_dependencies.sql"
+            if schema_v2_path.exists():
+                with open(schema_v2_path) as f:
+                    schema_v2_sql = f.read()
+                conn.executescript(schema_v2_sql)
+
             self._initialized = True
 
     @contextmanager
@@ -183,25 +191,48 @@ class Database:
         return row is not None
 
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """Get task by ID."""
+        """Get task by ID with dependencies."""
         row = self.query_one(
             "SELECT * FROM tasks WHERE id = ? AND status != 'deleted'",
             (task_id,)
         )
-        return dict(row) if row else None
+
+        if not row:
+            return None
+
+        task = dict(row)
+
+        # Add dependency information
+        task['depends_on'] = self.get_task_dependencies(task_id)
+        task['blocks'] = self.get_task_dependents(task_id)
+
+        return task
 
     def create_task(
         self,
         task_id: str,
         subject: str,
         description: str,
-        priority: int = 3,
+        priority: int = 2,
         active_form: str = None,
         spec_path: str = None,
-        metadata: Dict = None
+        metadata: Dict = None,
+        depends_on: List[str] = None
     ):
-        """Create a new task."""
+        """Create a new task with optional dependencies.
+
+        Args:
+            task_id: Unique task identifier
+            subject: Task subject/title
+            description: Detailed description
+            priority: Priority level (0-3, where 0 is highest, default 2)
+            active_form: Active form for UI display
+            spec_path: Path to task specification file
+            metadata: Additional metadata
+            depends_on: List of task IDs this task depends on
+        """
         with self.transaction() as conn:
+            # Create task
             conn.execute(
                 """
                 INSERT INTO tasks (id, subject, description, priority, active_form, spec_path, metadata)
@@ -215,6 +246,22 @@ class Database:
                 "INSERT INTO task_timing (task_id, created_at) VALUES (?, CURRENT_TIMESTAMP)",
                 (task_id,)
             )
+
+            # Add dependencies if provided
+            if depends_on:
+                for dep_task_id in depends_on:
+                    # Check for circular dependencies
+                    if self._would_create_cycle(task_id, dep_task_id):
+                        raise ValueError(
+                            f"Cannot add dependency on {dep_task_id}: "
+                            f"would create circular dependency with {task_id}"
+                        )
+
+                    # Add dependency
+                    conn.execute(
+                        "INSERT INTO task_dependencies (task_id, depends_on) VALUES (?, ?)",
+                        (task_id, dep_task_id)
+                    )
 
     def claim_task(self, task_id: str, agent_id: str):
         """Claim a task for an agent."""
@@ -267,20 +314,27 @@ class Database:
             )
 
     def get_available_tasks(self, limit: int = 10) -> List[Dict[str, Any]]:
-        """Get available (pending) tasks.
+        """Get available (pending) tasks with no unsatisfied dependencies.
 
         Args:
             limit: Maximum number of tasks to return
 
         Returns:
-            List of available tasks
+            List of available tasks (pending, not blocked by dependencies)
         """
         rows = self.query(
             """
-            SELECT * FROM tasks
-            WHERE status = 'pending'
-              AND completed_at IS NULL
-            ORDER BY priority ASC, created_at ASC
+            SELECT t.* FROM tasks t
+            WHERE t.status = 'pending'
+              AND t.completed_at IS NULL
+              AND NOT EXISTS (
+                  -- Check if task has any dependencies on incomplete tasks
+                  SELECT 1 FROM task_dependencies d
+                  JOIN tasks dep_task ON d.depends_on = dep_task.id
+                  WHERE d.task_id = t.id
+                    AND dep_task.status != 'completed'
+              )
+            ORDER BY t.priority ASC, t.created_at ASC
             LIMIT ?
             """,
             (limit,)
@@ -294,6 +348,131 @@ class Database:
             (agent_id,)
         )
         return dict(row) if row else None
+
+    # Task dependency operations
+    def add_dependency(self, task_id: str, depends_on: str):
+        """Add a task dependency.
+
+        Args:
+            task_id: The task that has the dependency
+            depends_on: The task it depends on (must complete first)
+
+        Raises:
+            ValueError: If dependency would create a cycle
+        """
+        with self.transaction() as conn:
+            # Check for circular dependencies
+            if self._would_create_cycle(task_id, depends_on):
+                raise ValueError(
+                    f"Cannot add dependency: would create circular dependency "
+                    f"between {task_id} and {depends_on}"
+                )
+
+            # Insert dependency
+            conn.execute(
+                """
+                INSERT OR IGNORE INTO task_dependencies (task_id, depends_on)
+                VALUES (?, ?)
+                """,
+                (task_id, depends_on)
+            )
+
+    def remove_dependency(self, task_id: str, depends_on: str):
+        """Remove a task dependency.
+
+        Args:
+            task_id: The task that has the dependency
+            depends_on: The dependency to remove
+        """
+        self.execute(
+            "DELETE FROM task_dependencies WHERE task_id = ? AND depends_on = ?",
+            (task_id, depends_on)
+        )
+
+    def get_task_dependencies(self, task_id: str) -> List[str]:
+        """Get list of tasks that this task depends on.
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            List of task IDs that must complete before this task
+        """
+        rows = self.query(
+            "SELECT depends_on FROM task_dependencies WHERE task_id = ?",
+            (task_id,)
+        )
+        return [row['depends_on'] for row in rows]
+
+    def get_task_dependents(self, task_id: str) -> List[str]:
+        """Get list of tasks that depend on this task.
+
+        Args:
+            task_id: Task ID
+
+        Returns:
+            List of task IDs that are waiting for this task to complete
+        """
+        rows = self.query(
+            "SELECT task_id FROM task_dependencies WHERE depends_on = ?",
+            (task_id,)
+        )
+        return [row['task_id'] for row in rows]
+
+    def get_blocked_tasks(self) -> List[Dict[str, Any]]:
+        """Get all tasks that are blocked by dependencies.
+
+        Returns:
+            List of pending tasks with incomplete dependencies
+        """
+        rows = self.query(
+            """
+            SELECT DISTINCT t.*, COUNT(d.depends_on) as blocked_by_count
+            FROM tasks t
+            JOIN task_dependencies d ON t.id = d.task_id
+            JOIN tasks dep_task ON d.depends_on = dep_task.id
+            WHERE t.status = 'pending'
+              AND dep_task.status != 'completed'
+            GROUP BY t.id
+            ORDER BY t.priority ASC, t.created_at ASC
+            """
+        )
+        return [dict(row) for row in rows]
+
+    def _would_create_cycle(self, task_id: str, depends_on: str) -> bool:
+        """Check if adding a dependency would create a cycle.
+
+        Uses depth-first search to detect cycles.
+
+        Args:
+            task_id: Task to add dependency to
+            depends_on: Task it would depend on
+
+        Returns:
+            True if adding this dependency would create a cycle
+        """
+        # If depends_on task depends on task_id (directly or indirectly),
+        # adding task_id -> depends_on would create a cycle
+
+        visited = set()
+        stack = [depends_on]
+
+        while stack:
+            current = stack.pop()
+
+            if current == task_id:
+                return True  # Found a cycle
+
+            if current in visited:
+                continue
+
+            visited.add(current)
+
+            # Get all dependencies of current task
+            deps = self.get_task_dependencies(current)
+            stack.extend(deps)
+
+        return False
 
     # Lock operations
     def acquire_lock(self, file_path: str, agent_id: str):

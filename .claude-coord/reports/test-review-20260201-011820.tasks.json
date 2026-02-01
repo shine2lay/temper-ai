@@ -1,0 +1,282 @@
+{
+  "metadata": {
+    "review_type": "test-review",
+    "status": "PROPOSED",
+    "generated": "2026-02-01T01:18:20.245536",
+    "source_report": ".claude-coord/reports/test-review-20260201-011820.md",
+    "total_proposed": 31,
+    "reviewer": null,
+    "reviewed_at": null,
+    "review_notes": ""
+  },
+  "metrics": {
+    "coverage_current": 66.4,
+    "coverage_target": 80.0,
+    "total_issues": 106,
+    "critical": 26,
+    "high": 24,
+    "medium": 35,
+    "low": 21
+  },
+  "tasks": [
+    {
+      "id": "test-crit-url-decode-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "Add URL decoding to path validation to prevent bypass",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 4,
+      "module": "Security - Path Validation",
+      "files_to_create": [
+        {
+          "path": "tests/test_security/test_url_encoding_bypasses.py",
+          "description": "Tests for URL-encoded path traversal detection"
+        }
+      ],
+      "files_to_modify": [
+        {
+          "path": "src/safety/file_access_policy.py",
+          "description": "Add URL decoding before forbidden path checks"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "URL-encoded dots (%2e%2e) are decoded and detected as path traversal",
+          "URL-encoded slashes (%2f) are decoded and validated",
+          "Double-encoded paths are properly decoded",
+          "Valid paths with URL encoding are allowed"
+        ],
+        "testing": [
+          "Unskip 4 tests in test_security_bypasses.py:110",
+          "All URL encoding bypass tests pass",
+          "Add regression test for production URL formats"
+        ]
+      },
+      "implementation_guidance": "import urllib.parse; decoded_path = urllib.parse.unquote(path); # Then validate decoded_path",
+      "test_strategy": "Test all URL encoding schemes: single-encoded, double-encoded, mixed encoding",
+      "success_metrics": [
+        "4 previously skipped tests now passing",
+        "Zero URL encoding bypasses possible",
+        "Performance impact <1ms per validation"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "FileAccessPolicy",
+          "PathValidator"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/test-review-20260201-011820.md#security-vulnerabilities"
+      ],
+      "notes": "SECURITY CRITICAL - known vulnerability documented in skipped tests"
+    },
+    {
+      "id": "test-crit-unicode-norm-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "Add Unicode normalization to prevent path traversal bypass",
+      "priority": "CRITICAL",
+      "effort_hours": 4.0,
+      "issues_addressed": 5,
+      "module": "Security - Path Validation",
+      "files_to_create": [],
+      "files_to_modify": [
+        {
+          "path": "src/safety/file_access_policy.py",
+          "description": "Apply NFKC normalization before path validation"
+        },
+        {
+          "path": "tests/test_security/test_security_bypasses.py",
+          "description": "Unskip 5 Unicode bypass tests at line 161"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Unicode slash (\\u2215) normalized to ASCII slash",
+          "Fullwidth characters normalized to ASCII equivalents",
+          "Overlong UTF-8 sequences normalized",
+          "All Unicode forms (NFC, NFD, NFKC, NFKD) handled correctly"
+        ],
+        "testing": [
+          "Unskip 5 tests in test_security_bypasses.py:161",
+          "All Unicode normalization tests pass",
+          "Test with actual Unicode attack payloads"
+        ]
+      },
+      "implementation_guidance": "import unicodedata; normalized = unicodedata.normalize('NFKC', path)",
+      "test_strategy": "Test Unicode equivalents of dangerous characters, test all normalization forms",
+      "success_metrics": [
+        "5 previously skipped tests now passing",
+        "Zero Unicode normalization bypasses",
+        "Handles all Unicode planes correctly"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "FileAccessPolicy"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/test-review-20260201-011820.md#security-vulnerabilities"
+      ],
+      "notes": "SECURITY CRITICAL - Unicode bypass attacks well-documented"
+    },
+    {
+      "id": "test-crit-foreign-keys-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "Enable SQLite foreign key constraints to prevent orphaned records",
+      "priority": "CRITICAL",
+      "effort_hours": 2.0,
+      "issues_addressed": 1,
+      "module": "Observability - Database",
+      "files_to_create": [],
+      "files_to_modify": [
+        {
+          "path": "src/observability/database.py",
+          "description": "Enable PRAGMA foreign_keys = ON for all connections"
+        },
+        {
+          "path": "tests/test_observability/test_distributed_tracking.py",
+          "description": "Unskip test at line 1020"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Foreign keys enforced in all database connections",
+          "Cannot create child record with non-existent parent",
+          "Deleting parent with children raises constraint error",
+          "Connection pooling preserves foreign key setting"
+        ],
+        "testing": [
+          "Unskip test_foreign_key_constraint_enforcement at line 1020",
+          "Test passes with real foreign key enforcement",
+          "Add tests for cascade delete behavior"
+        ]
+      },
+      "implementation_guidance": "conn.execute('PRAGMA foreign_keys = ON') immediately after connection creation",
+      "test_strategy": "Test with multi-process scenarios, verify enforcement across connection pool",
+      "success_metrics": [
+        "Foreign key test unskipped and passing",
+        "Zero orphaned records in integration tests",
+        "All database operations respect referential integrity"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "DatabaseManager",
+          "ObservabilityTracker"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/test-review-20260201-011820.md#test_observability",
+        "tests/test_observability/test_distributed_tracking.py:1020"
+      ],
+      "notes": "Critical data integrity issue - currently allows orphaned records"
+    },
+    {
+      "id": "test-crit-env-validator-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "Create security tests for env_var_validator.py (command injection prevention)",
+      "priority": "CRITICAL",
+      "effort_hours": 8.0,
+      "issues_addressed": 1,
+      "module": "Security - Environment Variables",
+      "files_to_create": [
+        {
+          "path": "tests/test_compiler/test_env_var_validator.py",
+          "description": "Comprehensive security tests for environment variable validation"
+        }
+      ],
+      "files_to_modify": [],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Command injection patterns blocked (shell metacharacters)",
+          "Path traversal in environment paths blocked",
+          "SQL injection in DB identifiers blocked",
+          "Valid environment variables accepted"
+        ],
+        "testing": [
+          "Test all shell metacharacters (; && || | $ ` etc)",
+          "Test path traversal patterns (../, absolute paths)",
+          "Test SQL injection patterns",
+          "Test context detection from variable names"
+        ]
+      },
+      "implementation_guidance": "See detailed test examples in reviewer 2 report section",
+      "test_strategy": "Test each validation level (EXECUTABLE, PATH, IDENTIFIER, DATA) independently",
+      "success_metrics": [
+        "100% coverage of env_var_validator.py",
+        "All attack vectors blocked",
+        "Zero false positives on valid inputs"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "EnvVarValidator"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/test-review-20260201-011820.md#test_compiler"
+      ],
+      "notes": "Currently 300 LOC with ZERO test coverage - security critical module"
+    },
+    {
+      "id": "test-crit-async-errors-01",
+      "enabled": true,
+      "review_note": "",
+      "title": "Add async error path tests for LLM providers",
+      "priority": "CRITICAL",
+      "effort_hours": 6.0,
+      "issues_addressed": 10,
+      "module": "Agents - LLM Async",
+      "files_to_create": [],
+      "files_to_modify": [
+        {
+          "path": "tests/test_agents/test_llm_async.py",
+          "description": "Add 10 async error path test cases"
+        }
+      ],
+      "acceptance_criteria": {
+        "core_functionality": [
+          "Async retry logic tested on transient errors",
+          "Circuit breaker opens correctly during async failures",
+          "Connection pool cleanup on async exception",
+          "Proper cleanup when event loop closed"
+        ],
+        "testing": [
+          "test_acomplete_circuit_breaker_opens_async",
+          "test_acomplete_connection_error_during_retry",
+          "test_async_client_cleanup_when_aclose_fails",
+          "test_async_client_cleanup_event_loop_closed"
+        ]
+      },
+      "implementation_guidance": "Use AsyncMock, test with httpx.ConnectError and TimeoutException",
+      "test_strategy": "Test each async error path independently, verify cleanup with resource tracking",
+      "success_metrics": [
+        "10 new async error tests passing",
+        "Zero resource leaks in error scenarios",
+        "Circuit breaker functions correctly with async"
+      ],
+      "dependencies": {
+        "blocked_by": [],
+        "blocks": [],
+        "integrates_with": [
+          "LLMProvider",
+          "CircuitBreaker"
+        ]
+      },
+      "design_references": [
+        ".claude-coord/reports/test-review-20260201-011820.md#test_agents"
+      ],
+      "notes": "Async code paths have different error handling - currently untested"
+    }
+  ]
+}

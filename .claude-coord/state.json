@@ -1,1736 +1,568 @@
 {
   "agents": {
-    "agent-074c04": {
-      "pid": 497746,
-      "registered_at": "2026-02-01 03:14:21",
-      "last_heartbeat": "2026-02-01 03:14:21"
+    "agent-9f3c5a": {
+      "pid": 894039,
+      "registered_at": "2026-02-01 21:15:26",
+      "last_heartbeat": "2026-02-01 21:15:26"
     },
-    "agent-b087c2": {
-      "pid": 498383,
-      "registered_at": "2026-02-01 03:14:26",
-      "last_heartbeat": "2026-02-01 03:14:26"
+    "agent-312b49": {
+      "pid": 895974,
+      "registered_at": "2026-02-01 21:18:29",
+      "last_heartbeat": "2026-02-01 21:18:29"
     },
-    "agent-c4d462": {
-      "pid": 498507,
-      "registered_at": "2026-02-01 03:14:26",
-      "last_heartbeat": "2026-02-01 03:14:26"
-    },
-    "agent-fe06ff": {
-      "pid": 498823,
-      "registered_at": "2026-02-01 03:14:35",
-      "last_heartbeat": "2026-02-01 03:14:35"
-    },
-    "agent-39b8e9": {
-      "pid": 499179,
-      "registered_at": "2026-02-01 03:14:43",
-      "last_heartbeat": "2026-02-01 03:14:43"
-    },
-    "agent-318dc7": {
-      "pid": 499282,
-      "registered_at": "2026-02-01 03:14:43",
-      "last_heartbeat": "2026-02-01 03:14:43"
-    },
-    "agent-073771": {
-      "pid": 499693,
-      "registered_at": "2026-02-01 03:14:53",
-      "last_heartbeat": "2026-02-01 03:14:53"
+    "agent-b2a823": {
+      "pid": 897050,
+      "registered_at": "2026-02-01 21:20:03",
+      "last_heartbeat": "2026-02-01 21:20:03"
     }
   },
   "locks": {
-    "src/safety/secret_detection.py": [
+    "/home/shinelay/meta-autonomous-framework/src/self_improvement/performance_analyzer.py": [
       {
-        "owner": "agent-318dc7",
-        "acquired_at": "2026-02-01 03:15:23"
-      }
-    ],
-    "src/compiler/config_loader.py": [
-      {
-        "owner": "agent-073771",
-        "acquired_at": "2026-02-01 03:15:26"
-      }
-    ],
-    "src/safety/base.py": [
-      {
-        "owner": "agent-fe06ff",
-        "acquired_at": "2026-02-01 03:17:26"
-      }
-    ],
-    "src/safety/circuit_breaker.py": [
-      {
-        "owner": "agent-fe06ff",
-        "acquired_at": "2026-02-01 03:17:26"
-      }
-    ],
-    "src/safety/token_bucket.py": [
-      {
-        "owner": "agent-fe06ff",
-        "acquired_at": "2026-02-01 03:17:26"
-      }
-    ],
-    "src/safety/forbidden_operations.py": [
-      {
-        "owner": "agent-fe06ff",
-        "acquired_at": "2026-02-01 03:17:26"
-      }
-    ],
-    "src/safety/validation.py": [
-      {
-        "owner": "agent-fe06ff",
-        "acquired_at": "2026-02-01 03:17:26"
-      }
-    ],
-    "src/compiler/executors/parallel.py": [
-      {
-        "owner": "agent-073771",
-        "acquired_at": "2026-02-01 03:18:08"
-      }
-    ],
-    "src/compiler/langgraph_state.py": [
-      {
-        "owner": "agent-39b8e9",
-        "acquired_at": "2026-02-01 03:18:43"
+        "owner": "agent-9f3c5a",
+        "acquired_at": "2026-02-01 21:16:31"
       }
     ]
   },
   "tasks": {
-    "test-crit-secret-detection-01": {
-      "subject": "Create test suite for Secret Detection Policy",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-secret-detection-01.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:02:39Z",
-      "completed_at": "2026-01-31T07:22:11Z"
-    },
-    "test-crit-blast-radius-02": {
-      "subject": "Create test suite for Blast Radius Policy",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-blast-radius-02.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:05:09Z",
-      "completed_at": "2026-01-31T07:16:03Z"
-    },
-    "test-crit-security-bypasses-03": {
-      "subject": "Add security bypass tests (path traversal, injection, SSRF)",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-security-bypasses-03.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:38:38Z",
-      "completed_at": "2026-01-31T07:46:14Z"
-    },
-    "test-crit-parallel-executor-04": {
-      "subject": "Create unit tests for parallel executor",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-parallel-executor-04.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:24:47Z",
-      "completed_at": "2026-01-31T07:38:29Z"
-    },
-    "test-crit-e2e-integration-05": {
-      "subject": "Create end-to-end integration test suite",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-e2e-integration-05.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:32:38Z",
-      "completed_at": "2026-01-31T07:44:29Z"
-    },
-    "test-crit-database-failures-06": {
-      "subject": "Add database failure recovery tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-database-failures-06.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:52:02Z",
-      "completed_at": "2026-01-31T08:06:29Z"
-    },
-    "test-crit-distributed-observability-07": {
-      "subject": "Create distributed observability tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-distributed-observability-07.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:42:05Z",
-      "completed_at": "2026-01-31T07:51:41Z"
-    },
-    "test-crit-race-conditions-08": {
-      "subject": "Fix race condition test assertions",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-race-conditions-08.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:21:37Z",
-      "completed_at": "2026-01-31T07:29:20Z"
-    },
-    "test-crit-error-sanitization-09": {
-      "subject": "Integrate error sanitization into error classes",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-error-sanitization-09.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:45:49Z",
-      "completed_at": "2026-01-31T07:51:05Z"
-    },
-    "test-crit-timeout-enforcement-10": {
-      "subject": "Fix timeout test to actually test timeout enforcement",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-crit-timeout-enforcement-10.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:30:03Z",
-      "completed_at": "2026-01-31T07:39:06Z"
-    },
-    "test-high-slow-tests-11": {
-      "subject": "Mark slow tests and optimize CI performance",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-slow-tests-11.md",
+    "test-med-nospec-1": {
+      "subject": "Medium priority task",
+      "description": "This should work without spec",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:46:46Z",
-      "completed_at": "2026-01-31T07:49:02Z"
+      "created_at": "2026-02-01 04:46:37",
+      "started_at": "2026-02-01 10:40:03",
+      "completed_at": "2026-02-01 10:40:30"
     },
-    "test-high-flaky-tests-12": {
-      "subject": "Fix flaky timing-dependent tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-flaky-tests-12.md",
+    "test-quick-simple-1": {
+      "subject": "Quick urgent fix",
+      "description": "Simple task without spec needed",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T07:58:36Z",
-      "completed_at": "2026-01-31T08:04:02Z"
+      "created_at": "2026-02-01 04:48:22",
+      "started_at": "2026-02-01 10:40:09",
+      "completed_at": "2026-02-01 10:40:25"
     },
-    "test-high-assertions-13": {
-      "subject": "Improve assertion quality in tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-assertions-13.md",
+    "code-med-auto1769926094-impl": {
+      "subject": "Add Google OAuth login",
+      "description": "Add Google OAuth login",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T21:42:29Z",
-      "completed_at": "2026-01-31T21:58:40Z"
+      "created_at": "2026-02-01 06:08:14",
+      "started_at": "2026-02-01 11:12:27",
+      "completed_at": "2026-02-01 11:18:22"
     },
-    "test-high-benchmarks-14": {
-      "subject": "Add performance benchmark suite with tracking",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-benchmarks-14.md",
+    "code-med-auto1769926109-oauth-config": {
+      "subject": "Configure OAuth credentials for Google",
+      "description": "Set up OAuth client ID, secret, and callback URLs for Google",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:05Z",
-      "started_at": "2026-01-31T08:06:04Z",
-      "completed_at": "2026-01-31T21:41:57Z"
+      "created_at": "2026-02-01 06:08:29",
+      "started_at": "2026-02-01 11:08:51",
+      "completed_at": "2026-02-01 11:08:52"
     },
-    "test-high-distributed-rate-limiting-15": {
-      "subject": "Add distributed rate limiting tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-distributed-rate-limiting-15.md",
+    "code-med-auto1769926115-oauth-config": {
+      "subject": "Configure OAuth credentials for Google",
+      "description": "Set up OAuth client ID, secret, and callback URLs for Google",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:06Z",
-      "started_at": "2026-01-31T08:06:37Z",
-      "completed_at": "2026-01-31T08:22:01Z"
+      "created_at": "2026-02-01 06:08:35",
+      "started_at": "2026-02-01 11:09:14",
+      "completed_at": "2026-02-01 11:09:33"
     },
-    "test-high-context-corruption-16": {
-      "subject": "Add context corruption and thread-safety tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-context-corruption-16.md",
+    "code-med-auto1769926140-oauth-config": {
+      "subject": "Configure OAuth credentials for Google",
+      "description": "Set up OAuth client ID, secret, and callback URLs for Google",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:06Z",
-      "started_at": "2026-01-31T21:42:03Z",
-      "completed_at": "2026-01-31T21:44:14Z"
+      "created_at": "2026-02-01 06:09:00",
+      "started_at": "2026-02-01 11:11:19",
+      "completed_at": "2026-02-01 11:11:30"
     },
-    "test-high-circuit-breaker-persistence-17": {
-      "subject": "Add circuit breaker state persistence tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-circuit-breaker-persistence-17.md",
+    "code-med-auto1769926184-oauth-config": {
+      "subject": "Configure OAuth credentials for Google",
+      "description": "Set up OAuth client ID, secret, and callback URLs for Google",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:06Z",
-      "started_at": "2026-01-31T21:58:01Z",
-      "completed_at": "2026-01-31T22:03:42Z"
+      "created_at": "2026-02-01 06:09:44",
+      "started_at": "2026-02-01 11:11:45",
+      "completed_at": "2026-02-01 11:11:46"
     },
-    "test-high-observability-buffer-18": {
-      "subject": "Add ObservabilityBuffer integration test",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-observability-buffer-18.md",
+    "code-med-auto1769926310-oauth-config": {
+      "subject": "Configure OAuth credentials for Google",
+      "description": "Set up OAuth client ID, secret, and callback URLs for Google",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:06Z",
-      "started_at": "2026-01-31T21:45:21Z",
-      "completed_at": "2026-01-31T21:52:35Z"
+      "created_at": "2026-02-01 06:11:50",
+      "started_at": "2026-02-01 11:11:46",
+      "completed_at": "2026-02-01 11:11:46"
     },
-    "test-high-edge-cases-19": {
-      "subject": "Add comprehensive edge case tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-edge-cases-19.md",
+    "code-high-auto1769926310-oauth-service": {
+      "subject": "Implement OAuth service layer for Google",
+      "description": "Create OAuth client wrapper and token management for Google",
+      "activeForm": null,
+      "priority": 1,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 06:11:50",
+      "started_at": "2026-02-01 11:21:53",
+      "completed_at": "2026-02-01 11:34:24"
+    },
+    "code-high-auto1769926310-oauth-routes": {
+      "subject": "Add OAuth endpoints for Google",
+      "description": "Create login, callback, and logout endpoints for Google",
+      "activeForm": null,
+      "priority": 1,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 06:11:50",
+      "started_at": "2026-02-01 11:39:31",
+      "completed_at": "2026-02-01 20:33:35"
+    },
+    "code-med-auto1769926310-oauth-tests": {
+      "subject": "Add OAuth integration tests for Google",
+      "description": "Test OAuth flow end-to-end for Google",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:06Z",
-      "started_at": "2026-01-31T21:52:46Z",
-      "completed_at": "2026-01-31T21:57:36Z"
+      "created_at": "2026-02-01 06:11:50",
+      "started_at": "2026-02-01 20:53:21",
+      "completed_at": "2026-02-01 20:56:22"
     },
-    "test-high-error-handling-20": {
-      "subject": "Add comprehensive error handling tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-high-error-handling-20.md",
+    "code-quick-m5-ollama-setup": {
+      "subject": "Setup Ollama and pull models",
+      "description": "Install Ollama, pull test models (phi3:mini, llama3.1:8b, mistral:7b, qwen2.5:32b)",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:49:06Z",
-      "started_at": "2026-01-31T22:03:56Z",
-      "completed_at": "2026-01-31T22:06:51Z"
+      "created_at": "2026-02-01 10:14:43",
+      "started_at": "2026-02-01 11:07:24",
+      "completed_at": "2026-02-01 11:11:44"
     },
-    "code-crit-01": {
-      "subject": "SQL Injection via Raw Migration Execution",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-01.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T06:56:16Z",
-      "completed_at": "2026-01-31T07:08:00Z"
-    },
-    "code-crit-02": {
-      "subject": "ReDoS Vulnerability in Forbidden Operations",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-02.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T07:05:25Z",
-      "completed_at": "2026-01-31T07:22:10Z"
-    },
-    "code-crit-03": {
-      "subject": "Path Traversal via Rollback Operations",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-03.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T07:08:34Z",
-      "completed_at": "2026-01-31T07:15:58Z"
-    },
-    "code-crit-04": {
-      "subject": "Arbitrary File Deletion in Rollback",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-04.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T07:16:02Z",
-      "completed_at": "2026-01-31T07:16:02Z"
-    },
-    "code-crit-05": {
-      "subject": "Insecure Cache Key Generation",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-05.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T07:17:04Z",
-      "completed_at": "2026-01-31T07:20:12Z"
-    },
-    "code-crit-06": {
-      "subject": "Sensitive Data Exposure in Logs",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-06.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-02-01 02:30:10",
-      "completed_at": "2026-02-01 02:27:05"
-    },
-    "code-crit-07": {
-      "subject": "Command Injection via Environment Variables",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-07.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T07:22:18Z",
-      "completed_at": "2026-01-31T07:35:03Z"
-    },
-    "code-crit-08": {
-      "subject": "SQL Injection Pattern Detection Incomplete",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-08.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T07:35:45Z",
-      "completed_at": "2026-01-31T07:37:02Z"
-    },
-    "code-crit-09": {
-      "subject": "SSRF DNS Timing Attack",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-09.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T07:38:37Z",
-      "completed_at": "2026-01-31T07:50:17Z"
-    },
-    "code-crit-10": {
-      "subject": "AST-based Calculator DoS",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-10.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T07:50:39Z",
-      "completed_at": "2026-01-31T07:55:05Z"
-    },
-    "code-crit-11": {
-      "subject": "Path Traversal via Symlinks",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-11.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-02-01 02:31:17",
-      "completed_at": "2026-02-01 02:31:31"
-    },
-    "code-crit-12": {
-      "subject": "Weak Cryptography in Secrets Module",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-12.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:40Z",
-      "started_at": "2026-01-31T08:06:36Z",
-      "completed_at": "2026-01-31T08:15:28Z"
-    },
-    "code-crit-13": {
-      "subject": "Path Traversal in /tmp Access",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-13.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-01-31T21:42:18Z",
-      "completed_at": "2026-01-31T21:50:19Z"
-    },
-    "code-crit-14": {
-      "subject": "ReDoS in Secret Detection",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-14.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-01-31T21:53:52Z",
-      "completed_at": "2026-01-31T22:00:21Z"
-    },
-    "code-crit-15": {
-      "subject": "Cache Poisoning via Key Injection",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-15.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:34:05",
-      "completed_at": "2026-02-01 02:34:11"
-    },
-    "code-crit-16": {
-      "subject": "Hash Collision Privacy Leak",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-16.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:34:21",
-      "completed_at": "2026-02-01 02:34:28"
-    },
-    "code-crit-17": {
-      "subject": "Circuit Breaker State Race Condition",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-17.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:25:21",
-      "completed_at": "2026-02-01 02:26:09"
-    },
-    "code-crit-18": {
-      "subject": "ReDoS in Prompt Injection Detection",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-18.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:25:26",
-      "completed_at": "2026-02-01 02:26:06"
-    },
-    "code-crit-19": {
-      "subject": "Entropy Calculation DoS",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-19.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:26:13",
-      "completed_at": "2026-02-01 02:26:41"
-    },
-    "code-crit-20": {
-      "subject": "Secret Sanitization Bypass",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-20.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:25:37",
-      "completed_at": "2026-02-01 02:26:54"
-    },
-    "code-crit-21": {
-      "subject": "SQL Injection via Experiment Name",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-crit-21.md",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:26:17",
-      "completed_at": "2026-02-01 02:20:04"
-    },
-    "code-high-01": {
-      "subject": "Connection Leak in SQL Backend",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-01.md",
+    "code-quick-m5-db-schema-custom-metrics": {
+      "subject": "Add custom_metrics table schema",
+      "description": "Create SQL migration for custom_metrics table",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-01-31T08:01:18Z",
-      "completed_at": "2026-01-31T08:04:26Z"
+      "created_at": "2026-02-01 10:14:43",
+      "started_at": "2026-02-01 11:08:31",
+      "completed_at": "2026-02-01 11:12:23"
     },
-    "code-high-02": {
-      "subject": "LLM Client Connection Pool Leak",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-02.md",
+    "code-quick-m5-data-model-config": {
+      "subject": "Create AgentConfig data model",
+      "description": "Python dataclass for agent configuration",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:22:24",
-      "completed_at": "2026-02-01 02:23:47"
+      "created_at": "2026-02-01 10:14:43",
+      "started_at": "2026-02-01 11:15:48",
+      "completed_at": "2026-02-01 11:17:05"
     },
-    "code-high-03": {
-      "subject": "N+1 Query Problem in Service",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-03.md",
+    "code-quick-m5-data-model-execution": {
+      "subject": "Create AgentExecution data model",
+      "description": "Python dataclass for execution tracking (may already exist in M1)",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:22:30",
-      "completed_at": "2026-02-01 02:25:56"
+      "created_at": "2026-02-01 10:14:43",
+      "started_at": "2026-02-01 11:11:31",
+      "completed_at": "2026-02-01 11:11:45"
     },
-    "code-high-04": {
-      "subject": "Unbounded Memory Growth in Performance Tracker",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-04.md",
+    "code-high-m5-metric-collector-interface": {
+      "subject": "Define MetricCollector interface",
+      "description": "Abstract base class for metric collectors",
+      "activeForm": null,
+      "priority": 1,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:19:46",
+      "started_at": "2026-02-01 11:04:41",
+      "completed_at": "2026-02-01 11:08:16"
+    },
+    "code-med-m5-test-dataset": {
+      "subject": "Create product extraction test dataset",
+      "description": "50 product descriptions with ground truth JSON",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:26:20",
-      "completed_at": "2026-02-01 02:27:08"
+      "created_at": "2026-02-01 10:35:09",
+      "started_at": "2026-02-01 11:13:05",
+      "completed_at": "2026-02-01 11:18:51"
     },
-    "code-high-05": {
-      "subject": "Registry Singleton Memory Leak",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-05.md",
+    "code-med-m5-performance-profile-model": {
+      "subject": "Create AgentPerformanceProfile model",
+      "description": "Dataclass for performance profile with metrics aggregation",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:22:37",
-      "completed_at": "2026-02-01 02:24:16"
+      "created_at": "2026-02-01 10:35:09",
+      "started_at": "2026-02-01 11:17:13",
+      "completed_at": "2026-02-01 11:18:47"
     },
-    "code-high-06": {
-      "subject": "Rate Limiter Unbounded Growth",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-06.md",
+    "code-high-m5-strategy-interface": {
+      "subject": "Define ImprovementStrategy interface",
+      "description": "Abstract base class for strategies (Modularity Point #2)",
+      "activeForm": null,
+      "priority": 1,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:09",
+      "started_at": "2026-02-01 11:04:21",
+      "completed_at": "2026-02-01 11:04:24"
+    },
+    "code-med-m5-model-registry": {
+      "subject": "Create ModelRegistry for Ollama models",
+      "description": "Registry of available Ollama models with metadata",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:40:10",
-      "completed_at": "2026-02-01 02:41:01"
+      "created_at": "2026-02-01 10:35:09",
+      "started_at": "2026-02-01 11:18:51",
+      "completed_at": "2026-02-01 11:19:45"
     },
-    "code-high-07": {
-      "subject": "Cache Access Order Never Cleaned",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-07.md",
+    "code-med-m5-improvement-proposal-model": {
+      "subject": "Create ImprovementProposal model",
+      "description": "Dataclass for improvement proposals",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:40:22",
-      "completed_at": "2026-02-01 02:41:08"
+      "created_at": "2026-02-01 10:35:09",
+      "started_at": "2026-02-01 11:21:33",
+      "completed_at": "2026-02-01 11:22:54"
     },
-    "code-high-08": {
-      "subject": "Missing Buffer Flush Error Handling",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-08.md",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": "agent-b087c2",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:14:30",
-      "completed_at": "2026-02-01 03:16:30"
-    },
-    "code-high-09": {
-      "subject": "Unhandled Timezone Inconsistencies",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-09.md",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": "agent-39b8e9",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:14:45",
-      "completed_at": "2026-02-01 03:16:28"
-    },
-    "code-high-10": {
-      "subject": "Silent Exception Swallowing",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-10.md",
+    "code-med-m5-experiment-model": {
+      "subject": "Create Experiment data model",
+      "description": "Dataclass and DB schema for experiments",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:41:04",
-      "completed_at": "2026-02-01 02:42:23"
+      "created_at": "2026-02-01 10:35:09",
+      "started_at": "2026-02-01 11:22:44",
+      "completed_at": "2026-02-01 11:23:37"
     },
-    "code-high-11": {
-      "subject": "Race Condition in Token Bucket",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-11.md",
+    "code-med-m5-statistical-analyzer": {
+      "subject": "Implement StatisticalAnalyzer",
+      "description": "T-test based winner selection",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:41:13",
-      "completed_at": "2026-02-01 02:41:50"
+      "created_at": "2026-02-01 10:35:09",
+      "started_at": "2026-02-01 11:23:01",
+      "completed_at": "2026-02-01 11:26:34"
     },
-    "code-high-12": {
-      "subject": "Missing Input Validation in Policies",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-12.md",
+    "code-med-m5-experiment-db-schema": {
+      "subject": "Add experiment DB schemas",
+      "description": "experiments and experiment_results tables",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:09",
+      "started_at": "2026-02-01 11:25:33",
+      "completed_at": "2026-02-01 11:39:16"
+    },
+    "code-med-m5-deployment-db-schema": {
+      "subject": "Add config_deployments table",
+      "description": "Track deployment history for rollback",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:09",
+      "started_at": "2026-02-01 11:25:41",
+      "completed_at": "2026-02-01 11:27:21"
+    },
+    "code-med-m5-metric-registry": {
+      "subject": "Implement MetricRegistry",
+      "description": "Registry for metric collectors with registration and collection",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 11:17:55",
+      "completed_at": "2026-02-01 11:18:07"
+    },
+    "code-med-m5-extraction-quality-collector": {
+      "subject": "Build ExtractionQualityCollector",
+      "description": "Collector that measures field-level accuracy for structured extraction",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 11:27:26",
+      "completed_at": "2026-02-01 11:31:19"
+    },
+    "code-med-m5-ollama-client": {
+      "subject": "Create OllamaClient wrapper",
+      "description": "Wrapper for Ollama API with generate() method",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 11:28:15",
+      "completed_at": "2026-02-01 11:32:48"
+    },
+    "code-med-m5-product-extractor": {
+      "subject": "Implement ProductExtractorAgent",
+      "description": "Agent that extracts structured product info using Ollama",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 11:33:30",
+      "completed_at": "2026-02-01 11:46:37"
+    },
+    "code-med-m5-execution-tracker-integration": {
+      "subject": "Integrate MetricRegistry into ExecutionTracker",
+      "description": "Update ExecutionTracker to call metric collectors after execution",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 11:31:23",
+      "completed_at": "2026-02-01 11:40:45"
+    },
+    "test-med-m5-phase1-validation": {
+      "subject": "Validate Phase 1 components",
+      "description": "Run agent 50 times, verify quality scores stored in DB",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 11:46:57",
+      "completed_at": "2026-02-01 20:33:19"
+    },
+    "code-high-m5-performance-analyzer": {
+      "subject": "Implement PerformanceAnalyzer (WATCH)",
+      "description": "Core analyzer with SQL-based metric aggregation",
+      "activeForm": null,
+      "priority": 1,
+      "status": "completed",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 20:53:08",
+      "completed_at": "2026-02-01 21:01:30"
+    },
+    "code-med-m5-baseline-storage": {
+      "subject": "Add baseline storage logic",
+      "description": "Store and retrieve baseline performance profiles",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-9f3c5a",
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 21:15:29",
+      "completed_at": "2026-02-01 21:19:10"
+    },
+    "code-med-m5-performance-comparison": {
+      "subject": "Add performance comparison logic",
+      "description": "Compare current vs baseline profiles",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-312b49",
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 21:18:30",
+      "completed_at": "2026-02-01 21:18:30"
+    },
+    "test-med-m5-phase2-validation": {
+      "subject": "Validate Phase 2 components",
+      "description": "Run 100 extractions, analyze performance, create baseline",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-b2a823",
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 21:21:20",
+      "completed_at": "2026-02-01 21:22:25"
+    },
+    "code-med-m5-problem-detection": {
+      "subject": "Implement problem detection logic",
+      "description": "Detect quality_low, cost_too_high, too_slow problems",
       "activeForm": null,
       "priority": 2,
       "status": "in_progress",
-      "owner": "agent-fe06ff",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:14:52",
-      "completed_at": "2026-02-01 02:54:10"
+      "owner": "agent-b2a823",
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 21:22:30",
+      "completed_at": null
     },
-    "code-high-13": {
-      "subject": "Weak Entropy in Checkpoint IDs",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-13.md",
+    "code-med-m5-strategy-registry": {
+      "subject": "Implement StrategyRegistry",
+      "description": "Registry for improvement strategies",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 02:42:26",
-      "completed_at": "2026-02-01 02:44:53"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 11:18:31",
+      "completed_at": "2026-02-01 11:20:59"
     },
-    "code-high-14": {
-      "subject": "Weak Secret Detection Patterns",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-14.md",
-      "activeForm": null,
-      "priority": 2,
-      "status": "in_progress",
-      "owner": "agent-318dc7",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:14:55",
-      "completed_at": "2026-02-01 03:07:59"
-    },
-    "code-high-15": {
-      "subject": "Insufficient Disk Space Check",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-15.md",
+    "code-med-m5-ollama-model-strategy": {
+      "subject": "Implement OllamaModelSelectionStrategy",
+      "description": "Strategy that generates model variant configs",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
-      "owner": "agent-b087c2",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:16:34",
-      "completed_at": "2026-02-01 03:17:59"
-    },
-    "code-high-16": {
-      "subject": "Missing Input Sanitization in Logging",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-high-16.md",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": "agent-39b8e9",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:16:42",
-      "completed_at": "2026-02-01 03:17:57"
-    },
-    "code-medi-01": {
-      "subject": "Duplicate Duration Calculations",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-01.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": "agent-c4d462",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:15:51",
-      "completed_at": "2026-02-01 03:17:01"
-    },
-    "code-medi-02": {
-      "subject": "Duplicate Agent Name Extraction",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-02.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "in_progress",
-      "owner": "agent-b087c2",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:18:02",
-      "completed_at": "2026-02-01 03:08:55"
-    },
-    "code-medi-03": {
-      "subject": "Duplicate Validation Logic",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-03.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": "agent-074c04",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:14:21",
-      "completed_at": "2026-02-01 03:14:58"
-    },
-    "code-medi-04": {
-      "subject": "Magic Numbers Throughout",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-04.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": "agent-c4d462",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:14:26",
-      "completed_at": "2026-02-01 03:15:44"
-    },
-    "code-medi-05": {
-      "subject": "Hardcoded Security Limits",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-05.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": "agent-073771",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:14:56",
-      "completed_at": "2026-02-01 03:17:18"
-    },
-    "code-medi-06": {
-      "subject": "Hardcoded Paths",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-06.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": "agent-074c04",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:15:10",
-      "completed_at": "2026-02-01 03:16:40"
-    },
-    "code-medi-07": {
-      "subject": "Inefficient LRU Eviction",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-07.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "in_progress",
-      "owner": "agent-074c04",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:16:49",
-      "completed_at": null
-    },
-    "code-medi-08": {
-      "subject": "Inefficient String Operations",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-08.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": "agent-c4d462",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:17:13",
-      "completed_at": "2026-02-01 03:18:41"
-    },
-    "code-medi-09": {
-      "subject": "Redundant Dictionary Copying",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-09.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "in_progress",
-      "owner": "agent-073771",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:17:35",
-      "completed_at": null
-    },
-    "code-medi-10": {
-      "subject": "Inefficient State Conversions",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-10.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "in_progress",
-      "owner": "agent-39b8e9",
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": "2026-02-01 03:18:11",
-      "completed_at": null
-    },
-    "code-medi-11": {
-      "subject": "Inconsistent Error Handling",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-11.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
       "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 20:27:23",
+      "completed_at": "2026-02-01 20:30:32"
     },
-    "code-medi-12": {
-      "subject": "Overly Broad Exception Catching",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-12.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:41Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-medi-13": {
-      "subject": "Missing Type Validation",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-13.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-medi-14": {
-      "subject": "Weak Dry-Run Implementation",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-medi-14.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-low-01": {
-      "subject": "Inconsistent Naming Conventions",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-low-01.md",
-      "activeForm": null,
-      "priority": 4,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-low-02": {
-      "subject": "Missing Docstring Examples",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-low-02.md",
-      "activeForm": null,
-      "priority": 4,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-low-03": {
-      "subject": "Incomplete Type Hints",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-low-03.md",
-      "activeForm": null,
-      "priority": 4,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-low-04": {
-      "subject": "Verbose Import Statements",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-low-04.md",
-      "activeForm": null,
-      "priority": 4,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-low-05": {
-      "subject": "Hardcoded File Paths",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-low-05.md",
-      "activeForm": null,
-      "priority": 4,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-low-06": {
-      "subject": "Incomplete TODOs",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-low-06.md",
-      "activeForm": null,
-      "priority": 4,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-low-07": {
-      "subject": "Unused Parameters",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-low-07.md",
-      "activeForm": null,
-      "priority": 4,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "code-low-08": {
-      "subject": "Commented Out Code",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/code-low-08.md",
-      "activeForm": null,
-      "priority": 4,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:52:42Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "docs-crit-import-01": {
-      "subject": "Fix Strategy class names in API documentation",
-      "description": " API documentation uses wrong class names for collaboration strategies. Users copying examples will get ImportError. **Priority:** CRITICAL **Category:** doc-code-mismatch **Impact:** CRITICAL - All s",
+    "code-high-m5-improvement-detector": {
+      "subject": "Implement ImprovementDetector (DETECT)",
+      "description": "Main detector that orchestrates problem detection and strategy invocation",
       "activeForm": null,
       "priority": 1,
-      "status": "completed",
+      "status": "pending",
       "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:04:15Z",
-      "completed_at": "2026-01-31T07:06:31Z"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
     },
-    "docs-crit-import-02": {
-      "subject": "Fix ToolRegistry method names in API documentation",
-      "description": " ToolRegistry API documentation uses wrong method names. All examples will fail. **Priority:** CRITICAL **Category:** doc-code-mismatch **Impact:** CRITICAL - All ToolRegistry examples fail ",
+    "test-med-m5-phase3-validation": {
+      "subject": "Validate Phase 3 components",
+      "description": "Detect quality_low, verify strategy generates 3 variants",
       "activeForm": null,
-      "priority": 1,
-      "status": "completed",
+      "priority": 2,
+      "status": "pending",
       "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:06:43Z",
-      "completed_at": "2026-01-31T07:07:34Z"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
     },
-    "docs-crit-import-03": {
-      "subject": "Replace PolicyViolation with SafetyViolation in security docs",
-      "description": " Security documentation uses PolicyViolation but code uses SafetyViolation. Global find/replace needed. **Priority:** CRITICAL **Category:** doc-code-mismatch **Impact:** CRITICAL - All policy example",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:07:40Z",
-      "completed_at": "2026-01-31T07:08:34Z"
-    },
-    "docs-crit-import-04": {
-      "subject": "Remove ServiceFactory references from security docs",
-      "description": " Documentation references ServiceFactory but class doesn't exist in codebase. **Priority:** CRITICAL **Category:** doc-code-mismatch **Impact:** CRITICAL - Integration examples won't work ",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:08:38Z",
-      "completed_at": "2026-01-31T07:09:57Z"
-    },
-    "docs-crit-import-05": {
-      "subject": "Fix PolicyComposer method names in M4 API docs",
-      "description": " PolicyComposer documentation shows clear() but actual method is clear_policies(). Also documents non-existent set_fail_fast(). **Priority:** CRITICAL **Category:** doc-code-mismatch **Impact:** CRITI",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:10:05Z",
-      "completed_at": "2026-01-31T07:10:58Z"
-    },
-    "docs-crit-link-01": {
-      "subject": "Fix broken internal links in README and QUICK_START",
-      "description": " Multiple broken internal links due to case mismatch and wrong paths. **Priority:** CRITICAL **Category:** broken-links **Impact:** HIGH - Users can't navigate documentation ",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:06:02Z",
-      "completed_at": "2026-01-31T07:13:01Z"
-    },
-    "docs-crit-missing-01": {
-      "subject": "Create LICENSE file",
-      "description": " README.md references LICENSE file but it doesn't exist in project root. **Priority:** CRITICAL **Category:** missing-file **Impact:** CRITICAL - Legal/licensing issue ",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:11:03Z",
-      "completed_at": "2026-01-31T07:11:46Z"
-    },
-    "docs-crit-missing-02": {
-      "subject": "Add ExecutionEngine section to API documentation",
-      "description": " Major M2.5 feature (ExecutionEngine abstraction) not documented in API reference. Users don't know how to swap engines. **Priority:** CRITICAL **Category:** missing-docs **Impact:** CRITICAL - Major ",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:13:19Z",
-      "completed_at": "2026-01-31T07:20:38Z"
-    },
-    "docs-crit-missing-03": {
-      "subject": "Add CheckpointManager to API documentation",
-      "description": " Checkpoint/resume capability not documented. Users don't know framework supports checkpointing. **Priority:** CRITICAL **Category:** missing-docs **Impact:** CRITICAL - Important feature hidden ",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:21:37Z",
-      "completed_at": "2026-01-31T07:29:56Z"
-    },
-    "docs-crit-path-01": {
-      "subject": "Fix wrong file paths in security documentation",
-      "description": " Security docs reference wrong file paths for ApprovalWorkflowPolicy and ResourceLimitPolicy. **Priority:** CRITICAL **Category:** doc-code-mismatch **Impact:** CRITICAL - Users can't find referenced ",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:11:56Z",
-      "completed_at": "2026-01-31T07:12:49Z"
-    },
-    "docs-crit-sig-01": {
-      "subject": "Add missing AgentResponse fields to API docs",
-      "description": " AgentResponse documentation missing important fields like reasoning, tokens, confidence. **Priority:** CRITICAL **Category:** doc-code-mismatch **Impact:** HIGH - Users won't know about important fie",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:30:37Z",
-      "completed_at": "2026-01-31T07:33:25Z"
-    },
-    "docs-crit-sig-02": {
-      "subject": "Remove non-existent RollbackManager methods from docs",
-      "description": " Documentation shows delete_snapshot() and cleanup_old_snapshots() but these methods don't exist. **Priority:** CRITICAL **Category:** doc-code-mismatch **Impact:** CRITICAL - Examples will fail ",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:13:02Z",
-      "completed_at": "2026-01-31T07:14:03Z"
-    },
-    "docs-crit-sig-03": {
-      "subject": "Fix non-existent methods in M4 API docs",
-      "description": " Multiple documented methods don't exist: CircuitBreaker.force_close(), ApprovalRequest.is_resolved(), RollbackResult.partial_success **Priority:** CRITICAL **Category:** doc-code-mismatch **Impact:**",
-      "activeForm": null,
-      "priority": 1,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:14:08Z",
-      "completed_at": "2026-01-31T07:15:21Z"
-    },
-    "docs-high-accuracy-01": {
-      "subject": "Fix Vision document file references",
-      "description": " Vision doc references non-existent file names. **Priority:** HIGH **Category:** broken-links **Impact:** MEDIUM - Broken links ",
+    "code-med-m5-experiment-assignment": {
+      "subject": "Implement variant assignment logic",
+      "description": "Hash-based deterministic assignment",
       "activeForm": null,
       "priority": 2,
       "status": "completed",
       "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:16:21Z",
-      "completed_at": "2026-01-31T07:17:32Z"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": "2026-02-01 20:27:33",
+      "completed_at": "2026-02-01 20:30:03"
     },
-    "docs-high-accuracy-02": {
-      "subject": "Update architecture diagram with M2-M4 components",
-      "description": " Architecture diagram missing ExecutionEngine, SafetyGate, multi-agent components. **Priority:** HIGH **Category:** staleness **Impact:** MEDIUM - Outdated architecture view ",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:34:28Z",
-      "completed_at": "2026-01-31T07:41:40Z"
-    },
-    "docs-high-consistency-01": {
-      "subject": "Sync README milestone status with ROADMAP",
-      "description": " README says M3 is 69% complete but ROADMAP says M4 is complete. **Priority:** HIGH **Category:** consistency **Impact:** HIGH - Confusing project status ",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:48Z",
-      "started_at": "2026-01-31T07:23:11Z",
-      "completed_at": "2026-01-31T07:24:40Z"
-    },
-    "docs-high-consistency-02": {
-      "subject": "Fix M3 completion report self-contradiction",
-      "description": " M3 completion doc says 'COMPLETE' in title but '69%' in content. **Priority:** HIGH **Category:** consistency **Impact:** MEDIUM - Confusing milestone status ",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:49Z",
-      "started_at": "2026-01-31T07:26:29Z",
-      "completed_at": "2026-01-31T07:27:29Z"
-    },
-    "docs-high-consistency-03": {
-      "subject": "Standardize Python version requirement",
-      "description": " Inconsistent Python requirements: 3.9+ vs 3.11+ across different docs. **Priority:** HIGH **Category:** consistency **Impact:** MEDIUM - Users may install wrong version ",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:49Z",
-      "started_at": "2026-01-31T07:17:37Z",
-      "completed_at": "2026-01-31T07:19:11Z"
-    },
-    "docs-high-security-01": {
-      "subject": "Standardize security policy priority numbering",
-      "description": " Priority ranges inconsistent - BlastRadiusPolicy listed as P1 but has P0 priority value. **Priority:** HIGH **Category:** consistency **Impact:** MEDIUM - Confusing priority values ",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:49Z",
-      "started_at": "2026-01-31T07:20:15Z",
-      "completed_at": "2026-01-31T07:21:30Z"
-    },
-    "docs-high-security-02": {
-      "subject": "Add all implemented policies to architecture docs",
-      "description": " RateLimitPolicy and ResourceLimitPolicy missing from architecture diagram. **Priority:** HIGH **Category:** completeness **Impact:** MEDIUM - Users won't know about all policies ",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:49Z",
-      "started_at": "2026-01-31T07:27:33Z",
-      "completed_at": "2026-01-31T07:29:02Z"
-    },
-    "docs-high-testing-01": {
-      "subject": "Correct test review report analysis errors",
-      "description": " Previous test review has incorrect analyses - race condition test is correct, not broken. **Priority:** HIGH **Category:** accuracy **Impact:** MEDIUM - Misleading report ",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:49Z",
-      "started_at": "2026-01-31T07:29:12Z",
-      "completed_at": "2026-01-31T07:30:31Z"
-    },
-    "docs-high-testing-02": {
-      "subject": "Use actual test names in TESTING.md examples",
-      "description": " Documentation uses hypothetical test names that don't exist in codebase. **Priority:** HIGH **Category:** accuracy **Impact:** MEDIUM - Confusing examples ",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:49Z",
-      "started_at": "2026-01-31T07:21:40Z",
-      "completed_at": "2026-01-31T07:22:54Z"
-    },
-    "docs-high-testing-03": {
-      "subject": "Add venv activation to pytest commands in TESTING.md",
-      "description": " Test commands assume pytest is globally installed. **Priority:** HIGH **Category:** completeness **Impact:** MEDIUM - Commands fail for new users ",
-      "activeForm": null,
-      "priority": 2,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:49Z",
-      "started_at": "2026-01-31T07:19:17Z",
-      "completed_at": "2026-01-31T07:20:09Z"
-    },
-    "test-med-split-large-files-01": {
-      "subject": "Split large test files into focused modules",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-split-large-files-01.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": "2026-02-01 00:46:43",
-      "completed_at": null
-    },
-    "test-med-standardize-naming-02": {
-      "subject": "Standardize test naming conventions across all files",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-standardize-naming-02.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": "2026-02-01 00:52:22",
-      "completed_at": null
-    },
-    "test-med-unicode-edge-cases-03": {
-      "subject": "Add comprehensive Unicode edge case tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-unicode-edge-cases-03.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": "2026-02-01 01:08:02",
-      "completed_at": null
-    },
-    "test-med-empty-null-edge-cases-04": {
-      "subject": "Add empty/null/boundary value edge case tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-empty-null-edge-cases-04.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-reduce-over-mocking-05": {
-      "subject": "Replace over-mocked tests with realistic test data",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-reduce-over-mocking-05.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-extract-magic-numbers-06": {
-      "subject": "Extract hard-coded magic numbers to named constants",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-extract-magic-numbers-06.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": "2026-02-01 01:12:30",
-      "completed_at": null
-    },
-    "test-med-consolidate-test-fixtures-07": {
-      "subject": "Consolidate duplicate test fixtures into shared conftest",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-consolidate-test-fixtures-07.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-add-test-docstrings-08": {
-      "subject": "Add comprehensive docstrings to complex tests",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-add-test-docstrings-08.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-session-scoped-fixtures-09": {
-      "subject": "Optimize fixture scoping for performance",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-session-scoped-fixtures-09.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-parameterize-similar-tests-10": {
-      "subject": "Use parameterized tests to reduce duplication",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-parameterize-similar-tests-10.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-add-hypothesis-tests-11": {
-      "subject": "Add property-based tests with Hypothesis",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-add-hypothesis-tests-11.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-complete-assertion-validation-12": {
-      "subject": "Complete partial assertions with full state validation",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-complete-assertion-validation-12.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-add-coverage-reports-13": {
-      "subject": "Add test coverage reporting to CI pipeline",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-add-coverage-reports-13.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-use-path-objects-14": {
-      "subject": "Replace hard-coded string paths with Path objects",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-use-path-objects-14.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-add-test-markers-15": {
-      "subject": "Add comprehensive test markers for organization",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-add-test-markers-15.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-improve-error-messages-16": {
-      "subject": "Improve test failure error messages",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-improve-error-messages-16.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-add-mutation-testing-17": {
-      "subject": "Add mutation testing to verify test effectiveness",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-add-mutation-testing-17.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "test-med-add-type-hints-18": {
-      "subject": "Add type hints to test helper functions",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/test-med-add-type-hints-18.md",
-      "activeForm": null,
-      "priority": 3,
-      "status": "pending",
-      "owner": null,
-      "created_at": "2026-01-31T06:56:52Z",
-      "started_at": null,
-      "completed_at": null
-    },
-    "docs-low-completeness-01": {
-      "subject": "Document conftest.py fixtures",
-      "description": " Test conftest.py files not documented in TESTING.md **Priority:** LOW **Category:** completeness **Impact:** LOW - Developers don't know available fixtures ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:37Z",
-      "started_at": "2026-01-31T07:27:43Z",
-      "completed_at": "2026-01-31T07:28:50Z"
-    },
-    "docs-low-completeness-02": {
-      "subject": "Add test marker documentation to pyproject.toml",
-      "description": " TESTING.md documents markers not in pyproject.toml (integration, security) **Priority:** LOW **Category:** consistency **Impact:** LOW - pytest warnings for undeclared markers ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:37Z",
-      "started_at": "2026-01-31T07:29:05Z",
-      "completed_at": "2026-01-31T07:29:52Z"
-    },
-    "docs-low-completeness-03": {
-      "subject": "Add current coverage metrics to TESTING.md",
-      "description": " TESTING.md sets aspirational goals (>80%) but doesn't show current state **Priority:** LOW **Category:** accuracy **Impact:** LOW - No progress tracking ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:37Z",
-      "started_at": "2026-01-31T07:31:01Z",
-      "completed_at": "2026-01-31T07:31:35Z"
-    },
-    "docs-low-examples-01": {
-      "subject": "Use actual imports in TESTING.md examples",
-      "description": " Examples use hypothetical imports that don't match actual test patterns **Priority:** LOW **Category:** accuracy **Impact:** LOW - Examples don't match reality ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:37Z",
-      "started_at": "2026-01-31T07:31:49Z",
-      "completed_at": "2026-01-31T07:37:20Z"
-    },
-    "docs-low-format-01": {
-      "subject": "Standardize code block indentation to 4 spaces",
-      "description": " Some examples use 2 spaces, some use 4 spaces (code uses 4) **Priority:** LOW **Category:** formatting **Impact:** LOW - Minor formatting inconsistency ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:37Z",
-      "started_at": "2026-01-31T22:04:44Z",
-      "completed_at": "2026-01-31T22:20:37.020696Z"
-    },
-    "docs-low-format-02": {
-      "subject": "Add language tags to all code blocks",
-      "description": " Some code blocks missing language tags (affects syntax highlighting) **Priority:** LOW **Category:** formatting **Impact:** LOW - Missing syntax highlighting ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:37Z",
-      "started_at": "2026-01-31T07:48:08Z",
-      "completed_at": "2026-01-31T07:58:58Z"
-    },
-    "docs-low-format-03": {
-      "subject": "Document emoji usage policy",
-      "description": " README uses emojis, technical specs avoid them - no documented policy **Priority:** LOW **Category:** consistency **Impact:** LOW - Minor style inconsistency ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:37Z",
-      "started_at": "2026-01-31T07:51:57Z",
-      "completed_at": "2026-01-31T07:53:06Z"
-    },
-    "docs-low-organization-01": {
-      "subject": "Add breadcrumb navigation to documentation",
-      "description": " Large documentation set lacks navigation aids **Priority:** LOW **Category:** organization **Impact:** LOW - Harder navigation in large doc set ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T08:00:28Z",
-      "completed_at": "2026-01-31T08:04:10Z"
-    },
-    "docs-low-update-01": {
-      "subject": "Replace GitHub URL placeholder in README",
-      "description": " README has placeholder git clone URL **Priority:** LOW **Category:** completeness **Impact:** LOW - Minor setup confusion ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:26:57Z",
-      "completed_at": "2026-01-31T07:27:31Z"
-    },
-    "docs-low-update-02": {
-      "subject": "Update pytest-xdist install instructions",
-      "description": " TESTING.md shows manual pip install instead of referencing dev dependencies **Priority:** LOW **Category:** accuracy **Impact:** LOW - Minor installation confusion ",
-      "activeForm": null,
-      "priority": 4,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T22:01:46Z",
-      "completed_at": "2026-01-31T22:04:34.808393Z"
-    },
-    "docs-med-api-01": {
-      "subject": "Document observability backend APIs",
-      "description": " Observability backends exist but no detailed API documentation **Priority:** MEDIUM **Category:** completeness **Impact:** MEDIUM - Users can't extend backends ",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:49:34Z",
-      "completed_at": "2026-01-31T07:51:56Z"
-    },
-    "docs-med-api-02": {
-      "subject": "Document LLM failover and circuit breaker features",
-      "description": " LLM reliability features not mentioned in API documentation **Priority:** MEDIUM **Category:** completeness **Impact:** MEDIUM - Advanced features hidden ",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:47:27Z",
-      "completed_at": "2026-01-31T07:49:28Z"
-    },
-    "docs-med-api-03": {
-      "subject": "Document ToolRegistry advanced methods",
-      "description": " ToolRegistry has list_available_tools() and get_registration_report() not documented **Priority:** MEDIUM **Category:** completeness **Impact:** MEDIUM - Debugging features unknown ",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:44:10Z",
-      "completed_at": "2026-01-31T07:47:19Z"
-    },
-    "docs-med-completeness-01": {
-      "subject": "Link Console Visualization Design to implementation",
-      "description": " 1,002-line design document with no implementation status or link to actual code. **Priority:** MEDIUM **Category:** completeness **Impact:** MEDIUM - Users don't know if feature is implemented ",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:45:28Z",
-      "completed_at": "2026-01-31T07:48:11Z"
-    },
-    "docs-med-completeness-02": {
-      "subject": "Create missing Architecture Decision Records (ADRs)",
-      "description": " Major architectural decisions missing ADRs: M3 parallel execution, M4 safety system, observability DB schema, YAML config format **Priority:** MEDIUM **Category:** completeness **Impact:** MEDIUM - H",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:46:02Z",
-      "completed_at": "2026-01-31T08:01:17Z"
-    },
-    "docs-med-completeness-03": {
-      "subject": "Document coordination system tests",
-      "description": " Coordination system has comprehensive bash tests but they're not documented in main TESTING.md **Priority:** MEDIUM **Category:** completeness **Impact:** MEDIUM - Developers don't know about coordin",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T08:04:31Z",
-      "completed_at": "2026-01-31T21:45:07.333285Z"
-    },
-    "docs-med-completeness-04": {
-      "subject": "Update test directory structure documentation",
-      "description": " TESTING.md shows 6 test directories but 16 actually exist (missing 10) **Priority:** MEDIUM **Category:** completeness **Impact:** MEDIUM - Developers don't know where to put tests ",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T21:45:28Z",
-      "completed_at": "2026-01-31T22:01:40.329179Z"
-    },
-    "docs-med-consistency-01": {
-      "subject": "Consolidate duplicate configuration guides",
-      "description": " Two separate configuration guides exist (CONFIGURATION.md and M4_CONFIGURATION_GUIDE.md) which may cause confusion for users. **Priority:** MEDIUM **Category:** organization **Impact:** MEDIUM - User",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:48:55Z",
-      "completed_at": "2026-01-31T07:50:25Z"
-    },
-    "docs-med-consistency-02": {
-      "subject": "Standardize file naming convention",
-      "description": " Documentation files use inconsistent naming: UPPERCASE.md, lowercase.md, Title_Case.md **Priority:** MEDIUM **Category:** organization **Impact:** MEDIUM - Inconsistent navigation and hard to predict",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:53:43Z",
-      "completed_at": "2026-01-31T07:54:56Z"
-    },
-    "docs-med-consistency-03": {
-      "subject": "Add terminology glossary",
-      "description": " Documentation uses terms inconsistently: 'agent' vs 'worker', 'stage' vs 'step', 'safety' vs 'security' **Priority:** MEDIUM **Category:** consistency **Impact:** MEDIUM - Confusing for new users ",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:57:48Z",
-      "completed_at": "2026-01-31T08:00:01Z"
-    },
-    "docs-med-security-01": {
-      "subject": "Add type hints to security documentation examples",
-      "description": " Security docs examples lack type hints while actual code has them **Priority:** MEDIUM **Category:** consistency **Impact:** MEDIUM - Examples don't match codebase patterns ",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:58:55Z",
-      "completed_at": "2026-01-31T08:06:08Z"
-    },
-    "docs-med-security-02": {
-      "subject": "Clarify cache TTL configurations in security docs",
-      "description": " Different cache_ttl values shown: 60, 30, 120 without clarification **Priority:** MEDIUM **Category:** consistency **Impact:** MEDIUM - Confusing configuration values ",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T08:06:28Z",
-      "completed_at": "2026-01-31T08:08:08Z"
-    },
-    "docs-med-security-03": {
-      "subject": "Document all safety exception types",
-      "description": " Security docs show generic Exception handling but don't document actual exception types **Priority:** MEDIUM **Category:** completeness **Impact:** MEDIUM - Developers don't know which exceptions to ",
-      "activeForm": null,
-      "priority": 3,
-      "status": "completed",
-      "owner": null,
-      "created_at": "2026-01-31T07:00:38Z",
-      "started_at": "2026-01-31T07:32:52Z",
-      "completed_at": "2026-01-31T07:44:04Z"
-    },
-    "gap-m3-01-track-collab-event": {
-      "subject": "Implement missing track_collaboration_event() method in ExecutionTracker",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/gap-m3-01-track-collab-event.md",
+    "code-high-m5-experiment-orchestrator": {
+      "subject": "Implement ExperimentOrchestrator (TEST)",
+      "description": "Main orchestrator for A/B testing",
       "activeForm": null,
       "priority": 1,
-      "status": "completed",
+      "status": "pending",
       "owner": null,
-      "created_at": "2026-01-31T07:01:38Z",
-      "started_at": "2026-01-31T07:05:38Z",
-      "completed_at": "2026-01-31T07:18:35Z"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
     },
-    "gap-m3-02-fix-demo-import": {
-      "subject": "Fix broken demo script import in run_multi_agent_workflow.py",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/gap-m3-02-fix-demo-import.md",
+    "test-med-m5-phase4-validation": {
+      "subject": "Validate Phase 4 components",
+      "description": "Run 4-way experiment (200 executions), verify winner selection",
+      "activeForm": null,
+      "priority": 2,
+      "status": "pending",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
+    },
+    "code-high-m5-config-deployer": {
+      "subject": "Implement ConfigDeployer (DEPLOY)",
+      "description": "Deploy winning configs with rollback capability",
       "activeForm": null,
       "priority": 1,
-      "status": "completed",
+      "status": "pending",
       "owner": null,
-      "created_at": "2026-01-31T07:01:44Z",
-      "started_at": "2026-01-31T07:13:46Z",
-      "completed_at": "2026-01-31T07:20:03Z"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
     },
-    "gap-m3-03-quality-gates-retry": {
-      "subject": "Implement quality gates retry logic for stage re-execution",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/gap-m3-03-quality-gates-retry.md",
+    "code-med-m5-rollback-logic": {
+      "subject": "Implement rollback mechanism",
+      "description": "Revert to previous config on regression",
       "activeForm": null,
       "priority": 2,
-      "status": "completed",
+      "status": "pending",
       "owner": null,
-      "created_at": "2026-01-31T07:01:45Z",
-      "started_at": "2026-01-31T07:18:52Z",
-      "completed_at": "2026-01-31T07:28:41Z"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
     },
-    "gap-m3-04-fix-quality-tests": {
-      "subject": "Fix 9 failing quality gates unit tests (location mismatch)",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/gap-m3-04-fix-quality-tests.md",
+    "test-med-m5-phase5-validation": {
+      "subject": "Validate Phase 5 components",
+      "description": "Deploy winner, run 50 extractions, verify improvement sustained",
       "activeForm": null,
       "priority": 2,
-      "status": "completed",
+      "status": "pending",
       "owner": null,
-      "created_at": "2026-01-31T07:01:46Z",
-      "started_at": "2026-01-31T07:20:20Z",
-      "completed_at": "2026-01-31T07:24:00Z"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
     },
-    "gap-m3-05-enable-e2e-tests": {
-      "subject": "Enable 11 skipped E2E integration tests in test_m3_multi_agent.py",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/gap-m3-05-enable-e2e-tests.md",
+    "code-high-m5-self-improvement-loop": {
+      "subject": "Implement M5SelfImprovementLoop",
+      "description": "Main orchestrator integrating all components",
+      "activeForm": null,
+      "priority": 1,
+      "status": "pending",
+      "owner": null,
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
+    },
+    "code-med-m5-cli-commands": {
+      "subject": "Add CLI commands for M5",
+      "description": "analyze, optimize, check-experiments commands",
       "activeForm": null,
       "priority": 2,
-      "status": "completed",
+      "status": "pending",
       "owner": null,
-      "created_at": "2026-01-31T07:01:48Z",
-      "started_at": "2026-01-31T07:24:36Z",
-      "completed_at": "2026-01-31T07:31:05Z"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
     },
-    "gap-m4-01-fix-exp-obs-test": {
-      "subject": "Fix experimentation observability test failure (metric collection)",
-      "description": "Brief description of what needs to be done. See: .claude-coord/task-specs/gap-m4-01-fix-exp-obs-test.md",
+    "test-high-m5-scenario-validation": {
+      "subject": "Run end-to-end scenario test",
+      "description": "Complete 'Find Best Ollama Model' scenario with 26% quality improvement",
       "activeForm": null,
-      "priority": 3,
-      "status": "completed",
+      "priority": 1,
+      "status": "pending",
       "owner": null,
-      "created_at": "2026-01-31T07:01:49Z",
-      "started_at": "2026-01-31T07:29:55Z",
-      "completed_at": "2026-01-31T07:40:40Z"
+      "created_at": "2026-02-01 10:35:32",
+      "started_at": null,
+      "completed_at": null
     }
   }
 }

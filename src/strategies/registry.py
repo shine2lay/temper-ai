@@ -5,9 +5,14 @@ Provides centralized registration and retrieval of:
 - Conflict resolvers (MeritWeighted, HighestConfidence, etc.)
 
 Enables config-based strategy selection and plugin architecture.
+
+RELIABILITY FIX (code-high-05): Added thread-safe reset methods to prevent
+memory leaks in long-running processes. Use reset() for production cleanup,
+reset_for_testing() in test fixtures.
 """
 
-from typing import Dict, Any, Type, List, Optional
+import threading
+from typing import Dict, Any, Type, List, Optional, Set
 from dataclasses import dataclass
 
 from src.strategies.base import CollaborationStrategy
@@ -53,44 +58,70 @@ class ResolverMetadata:
 class StrategyRegistry:
     """Registry for collaboration strategies and conflict resolvers.
 
-    Singleton pattern ensures single source of truth for available strategies.
+    Thread-safe singleton pattern ensures single source of truth.
+    Provides lifecycle management via reset() and clear() methods
+    to prevent memory leaks in long-running processes.
+
+    RELIABILITY FIX (code-high-05): Added reset methods and thread safety
+    to prevent unbounded memory growth from strategy registrations.
 
     Example:
         >>> registry = StrategyRegistry()
         >>> registry.register_strategy("consensus", ConsensusStrategy)
         >>> strategy = registry.get_strategy("consensus")
-        >>> result = strategy.synthesize(outputs, config)
+        >>> StrategyRegistry.reset()  # Clean up custom registrations
     """
 
+    # Class-level lock for thread safety (RLock allows re-entry)
+    _lock: threading.RLock = threading.RLock()
+
+    # Singleton instance and state
     _instance: Optional["StrategyRegistry"] = None
     _strategies: Dict[str, Type[CollaborationStrategy]] = {}
     _resolvers: Dict[str, Type[ConflictResolutionStrategy]] = {}
     _initialized: bool = False
 
+    # Track default registrations for reset() functionality
+    _default_strategies: Set[str] = set()
+    _default_resolvers: Set[str] = set()
+
     def __new__(cls) -> "StrategyRegistry":
-        """Singleton pattern."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
+        """Thread-safe singleton pattern."""
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+            return cls._instance
 
     def __init__(self) -> None:
         """Initialize registry (only once due to singleton)."""
+        # Double-check locking pattern (safe due to RLock)
         if not self._initialized:
-            self._initialize_defaults()
-            StrategyRegistry._initialized = True
+            with self._lock:
+                if not self._initialized:  # Check again inside lock
+                    self._initialize_defaults()
+                    StrategyRegistry._initialized = True
 
     def _initialize_defaults(self) -> None:
-        """Register default strategies and resolvers."""
+        """Register default strategies and resolvers.
+
+        Note: This method is called with lock already held.
+        """
+        # Clear tracking sets (in case re-initializing)
+        self._default_strategies.clear()
+        self._default_resolvers.clear()
+
         # Import here to avoid circular dependencies
         try:
             from src.strategies.consensus import ConsensusStrategy
             self._strategies["consensus"] = ConsensusStrategy
+            self._default_strategies.add("consensus")
         except ImportError:
             pass  # Consensus not yet implemented
 
         try:
             from src.strategies.debate import DebateAndSynthesize
             self._strategies["debate"] = DebateAndSynthesize
+            self._default_strategies.add("debate")
         except ImportError:
             pass  # Debate not yet implemented
 
@@ -108,6 +139,13 @@ class StrategyRegistry:
             self._resolvers["highest_confidence"] = HighestConfidenceResolver
             self._resolvers["random_tiebreaker"] = RandomTiebreakerResolver
             self._resolvers["human_escalation"] = HumanEscalationResolver
+
+            self._default_resolvers.update([
+                "merit_weighted",
+                "highest_confidence",
+                "random_tiebreaker",
+                "human_escalation"
+            ])
         except ImportError:
             pass  # Resolvers not yet implemented
 
@@ -116,7 +154,7 @@ class StrategyRegistry:
         name: str,
         strategy_class: Type[CollaborationStrategy]
     ) -> None:
-        """Register a collaboration strategy.
+        """Register a collaboration strategy (thread-safe).
 
         Args:
             name: Strategy name (e.g., "consensus", "debate")
@@ -129,24 +167,25 @@ class StrategyRegistry:
         if not name or not isinstance(name, str):
             raise ValueError("Strategy name must be non-empty string")
 
-        if name in self._strategies:
-            raise ValueError(f"Strategy '{name}' already registered")
+        with self._lock:
+            if name in self._strategies:
+                raise ValueError(f"Strategy '{name}' already registered")
 
-        # Validate strategy implements interface
-        if not issubclass(strategy_class, CollaborationStrategy):
-            raise TypeError(
-                f"Strategy class must inherit from CollaborationStrategy, "
-                f"got {strategy_class}"
-            )
+            # Validate strategy implements interface
+            if not issubclass(strategy_class, CollaborationStrategy):
+                raise TypeError(
+                    f"Strategy class must inherit from CollaborationStrategy, "
+                    f"got {strategy_class}"
+                )
 
-        self._strategies[name] = strategy_class
+            self._strategies[name] = strategy_class
 
     def get_strategy(
         self,
         name: str,
         **config: Any
     ) -> CollaborationStrategy:
-        """Get strategy instance by name.
+        """Get strategy instance by name (thread-safe read).
 
         Args:
             name: Strategy name
@@ -162,16 +201,17 @@ class StrategyRegistry:
             >>> registry = StrategyRegistry()
             >>> strategy = registry.get_strategy("consensus")
         """
-        if name not in self._strategies:
-            available = ", ".join(self.list_strategy_names())
-            raise ValueError(
-                f"Unknown strategy '{name}'. "
-                f"Available strategies: {available}"
-            )
+        # Read with lock for formal correctness
+        with self._lock:
+            if name not in self._strategies:
+                available = ", ".join(self.list_strategy_names())
+                raise ValueError(
+                    f"Unknown strategy '{name}'. "
+                    f"Available strategies: {available}"
+                )
+            strategy_class = self._strategies[name]
 
-        strategy_class = self._strategies[name]
-
-        # Instantiate with config (strategies can have __init__ params)
+        # Instantiate outside lock (don't hold lock during user code execution)
         try:
             return strategy_class(**config) if config else strategy_class()
         except TypeError as e:
@@ -182,12 +222,13 @@ class StrategyRegistry:
             )
 
     def list_strategy_names(self) -> List[str]:
-        """List all registered strategy names.
+        """List all registered strategy names (thread-safe).
 
         Returns:
             List of strategy names
         """
-        return list(self._strategies.keys())
+        with self._lock:
+            return list(self._strategies.keys())
 
     def list_strategies(self) -> List[StrategyMetadata]:
         """List all registered strategies with metadata.
@@ -228,7 +269,7 @@ class StrategyRegistry:
         name: str,
         resolver_class: Type[ConflictResolutionStrategy]
     ) -> None:
-        """Register a conflict resolver.
+        """Register a conflict resolver (thread-safe).
 
         Args:
             name: Resolver name (e.g., "merit_weighted")
@@ -241,24 +282,25 @@ class StrategyRegistry:
         if not name or not isinstance(name, str):
             raise ValueError("Resolver name must be non-empty string")
 
-        if name in self._resolvers:
-            raise ValueError(f"Resolver '{name}' already registered")
+        with self._lock:
+            if name in self._resolvers:
+                raise ValueError(f"Resolver '{name}' already registered")
 
-        # Validate resolver implements interface
-        if not issubclass(resolver_class, ConflictResolutionStrategy):
-            raise TypeError(
-                f"Resolver class must inherit from ConflictResolutionStrategy, "
-                f"got {resolver_class}"
-            )
+            # Validate resolver implements interface
+            if not issubclass(resolver_class, ConflictResolutionStrategy):
+                raise TypeError(
+                    f"Resolver class must inherit from ConflictResolutionStrategy, "
+                    f"got {resolver_class}"
+                )
 
-        self._resolvers[name] = resolver_class
+            self._resolvers[name] = resolver_class
 
     def get_resolver(
         self,
         name: str,
         **config: Any
     ) -> ConflictResolutionStrategy:
-        """Get resolver instance by name.
+        """Get resolver instance by name (thread-safe read).
 
         Args:
             name: Resolver name
@@ -270,14 +312,14 @@ class StrategyRegistry:
         Raises:
             ValueError: If resolver name not registered
         """
-        if name not in self._resolvers:
-            available = ", ".join(self.list_resolver_names())
-            raise ValueError(
-                f"Unknown resolver '{name}'. "
-                f"Available resolvers: {available}"
-            )
-
-        resolver_class = self._resolvers[name]
+        with self._lock:
+            if name not in self._resolvers:
+                available = ", ".join(self.list_resolver_names())
+                raise ValueError(
+                    f"Unknown resolver '{name}'. "
+                    f"Available resolvers: {available}"
+                )
+            resolver_class = self._resolvers[name]
 
         try:
             return resolver_class(**config) if config else resolver_class()
@@ -288,12 +330,13 @@ class StrategyRegistry:
             )
 
     def list_resolver_names(self) -> List[str]:
-        """List all registered resolver names.
+        """List all registered resolver names (thread-safe).
 
         Returns:
             List of resolver names
         """
-        return list(self._resolvers.keys())
+        with self._lock:
+            return list(self._resolvers.keys())
 
     def list_resolvers(self) -> List[ResolverMetadata]:
         """List all registered resolvers with metadata.
@@ -328,7 +371,7 @@ class StrategyRegistry:
         return metadata_list
 
     def unregister_strategy(self, name: str) -> None:
-        """Unregister a strategy (mainly for testing).
+        """Unregister a strategy (thread-safe).
 
         Args:
             name: Strategy name to remove
@@ -336,14 +379,18 @@ class StrategyRegistry:
         Raises:
             ValueError: If trying to unregister default strategies
         """
-        if name in ["consensus", "debate"]:
-            raise ValueError(f"Cannot unregister default strategy '{name}'")
+        with self._lock:
+            if name in self._default_strategies:
+                raise ValueError(
+                    f"Cannot unregister default strategy '{name}'. "
+                    f"Use reset() or clear() to remove defaults."
+                )
 
-        if name in self._strategies:
-            del self._strategies[name]
+            if name in self._strategies:
+                del self._strategies[name]
 
     def unregister_resolver(self, name: str) -> None:
-        """Unregister a resolver (mainly for testing).
+        """Unregister a resolver (thread-safe).
 
         Args:
             name: Resolver name to remove
@@ -351,11 +398,104 @@ class StrategyRegistry:
         Raises:
             ValueError: If trying to unregister default resolvers
         """
-        if name in ["merit_weighted", "highest_confidence", "random_tiebreaker"]:
-            raise ValueError(f"Cannot unregister default resolver '{name}'")
+        with self._lock:
+            if name in self._default_resolvers:
+                raise ValueError(
+                    f"Cannot unregister default resolver '{name}'. "
+                    f"Use reset() or clear() to remove defaults."
+                )
 
-        if name in self._resolvers:
-            del self._resolvers[name]
+            if name in self._resolvers:
+                del self._resolvers[name]
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset registry to default state (remove custom registrations).
+
+        Removes all custom-registered strategies/resolvers and re-initializes
+        defaults. Useful for:
+        - Cleaning up after plugin unload
+        - Resetting state in long-running processes
+        - Test cleanup (prefer reset_for_testing() in fixtures)
+
+        Thread-safe. Can be called even before registry is instantiated.
+        Preserves singleton instance.
+
+        Example:
+            >>> registry = StrategyRegistry()
+            >>> registry.register_strategy("custom", CustomStrategy)
+            >>> assert "custom" in registry.list_strategy_names()
+            >>> StrategyRegistry.reset()
+            >>> assert "custom" not in registry.list_strategy_names()
+            >>> assert "debate" in registry.list_strategy_names()  # Default preserved
+        """
+        with cls._lock:
+            # Remove custom registrations (keep defaults)
+            custom_strategies = set(cls._strategies.keys()) - cls._default_strategies
+            for name in custom_strategies:
+                del cls._strategies[name]
+
+            custom_resolvers = set(cls._resolvers.keys()) - cls._default_resolvers
+            for name in custom_resolvers:
+                del cls._resolvers[name]
+
+            # Re-initialize defaults in case some were manually deleted
+            if cls._instance is not None:
+                cls._instance._initialize_defaults()
+
+    @classmethod
+    def clear(cls) -> None:
+        """Clear ALL strategies and resolvers (including defaults).
+
+        Complete cleanup. Registry will be empty until next instantiation
+        or explicit re-initialization. Use with caution in production.
+
+        Primarily for:
+        - Testing edge cases (empty registry behavior)
+        - Complete plugin system reset
+        - Memory cleanup before process shutdown
+
+        Thread-safe. Preserves singleton instance but clears all registrations.
+        Next instantiation will re-initialize defaults.
+
+        Example:
+            >>> StrategyRegistry.clear()
+            >>> registry = StrategyRegistry()  # Will re-initialize defaults
+        """
+        with cls._lock:
+            cls._strategies.clear()
+            cls._resolvers.clear()
+            cls._default_strategies.clear()
+            cls._default_resolvers.clear()
+            cls._initialized = False
+
+    @classmethod
+    def reset_for_testing(cls) -> None:
+        """Complete reset including singleton instance (TEST ONLY).
+
+        Destroys singleton instance and clears all registrations.
+        Next instantiation creates fresh registry with defaults.
+
+        WARNING: Only use in test fixtures. NOT for production cleanup.
+        Production code should use reset() or clear() instead.
+
+        Thread-safe.
+
+        Example:
+            >>> # In pytest fixture
+            >>> @pytest.fixture(autouse=True)
+            >>> def reset_registry():
+            >>>     StrategyRegistry.reset_for_testing()
+            >>>     yield
+            >>>     StrategyRegistry.reset_for_testing()
+        """
+        with cls._lock:
+            cls._instance = None
+            cls._strategies.clear()
+            cls._resolvers.clear()
+            cls._default_strategies.clear()
+            cls._default_resolvers.clear()
+            cls._initialized = False
 
 
 # Convenience functions for getting from stage config

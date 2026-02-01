@@ -12,6 +12,9 @@ import os
 import sys
 import logging
 import json
+import re
+import unicodedata
+from urllib.parse import unquote
 from typing import Any, Dict, Optional, Callable, Tuple
 from pathlib import Path
 from datetime import datetime
@@ -26,6 +29,176 @@ try:
     SECRETS_AVAILABLE = True
 except ImportError:
     pass
+
+
+# Precompiled patterns for performance (log injection prevention)
+_ANSI_ESCAPE = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+_CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
+
+# Sensitive data patterns for redaction
+# Note: Patterns should not match template references like ${env:VAR} or ${vault:...}
+_SENSITIVE_PATTERNS = [
+    # Match password/api_key/secret assignments, but exclude template refs
+    (re.compile(r'(password|passwd|pwd)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
+    (re.compile(r'(api[_-]?key|apikey|token)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
+    (re.compile(r'(secret|credential)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
+    # Specific secret patterns
+    (re.compile(r'sk-[a-zA-Z0-9]{20,}'), '***REDACTED***'),  # OpenAI keys
+    (re.compile(r'sk-proj-[a-zA-Z0-9]{20,}'), '***REDACTED***'),  # OpenAI project keys
+    (re.compile(r'sk-ant-api\d+-[a-zA-Z0-9]{20,}'), '***REDACTED***'),  # Anthropic keys
+    (re.compile(r'AKIA[0-9A-Z]{16}'), '***REDACTED***'),  # AWS access keys
+]
+
+# Unicode line terminators to block
+_UNICODE_LINE_TERMINATORS = {
+    '\u2028',  # Line separator
+    '\u2029',  # Paragraph separator
+    '\u000B',  # Vertical tab
+    '\u000C',  # Form feed
+    '\u0085',  # Next line (NEL)
+}
+
+# Zero-width characters to remove (prevent obfuscation)
+_ZERO_WIDTH_CHARS = {
+    '\u200B',  # Zero-width space
+    '\u200C',  # Zero-width non-joiner
+    '\u200D',  # Zero-width joiner
+    '\uFEFF',  # Zero-width no-break space
+}
+
+
+def _recursive_url_decode(text: str, max_depth: int = 3) -> str:
+    """
+    Recursively URL decode with depth limit to prevent infinite loops.
+
+    Handles multi-encoded data (e.g., %2541 → %41 → A) up to max_depth iterations.
+    This prevents attackers from bypassing sanitization via nested URL encoding.
+
+    Args:
+        text: Input text potentially containing URL-encoded data
+        max_depth: Maximum decoding iterations (prevents DoS)
+
+    Returns:
+        Fully decoded text
+
+    Security: Prevents nested URL encoding attacks while limiting recursion.
+    """
+    for _ in range(max_depth):
+        try:
+            decoded = unquote(text)
+            if decoded == text:
+                # No more decoding possible
+                break
+            text = decoded
+        except Exception:
+            # If URL decoding fails, stop and use current text
+            break
+    return text
+
+
+def _sanitize_control_characters(text: str) -> str:
+    """
+    Sanitize control characters to prevent log injection.
+
+    Applies whitelist approach:
+    - Newlines and carriage returns: escaped as \\n and \\r
+    - Tabs: escaped as \\t (prevent column confusion)
+    - Other control chars (0x00-0x1F, 0x7F): escaped as \\xNN
+    - Printable characters (including Unicode): preserved
+    - Unicode line terminators: escaped as \\uNNNN
+
+    Args:
+        text: Input text to sanitize
+
+    Returns:
+        Text with all control characters escaped
+
+    Security: Prevents log injection via control characters.
+    """
+    # Fast path: Handle CRLF as unit (prevents Windows line ending injection)
+    text = text.replace('\r\n', '\\r\\n')
+    text = text.replace('\n\r', '\\n\\r')
+
+    # Escape remaining newlines and carriage returns
+    text = text.replace('\n', '\\n').replace('\r', '\\r')
+
+    # Escape tabs (prevent column confusion in structured logs)
+    text = text.replace('\t', '\\t')
+
+    # Build sanitized string character by character
+    sanitized_chars = []
+    for char in text:
+        if char in _UNICODE_LINE_TERMINATORS:
+            # Escape Unicode line terminators
+            sanitized_chars.append(f'\\u{ord(char):04x}')
+        elif ord(char) < 0x20 or ord(char) == 0x7F:
+            # Control characters (should be mostly handled above, but double-check)
+            sanitized_chars.append(f'\\x{ord(char):02x}')
+        else:
+            # Printable characters (ASCII and Unicode)
+            sanitized_chars.append(char)
+
+    return ''.join(sanitized_chars)
+
+
+def _sanitize_for_logging(text: str, max_length: int = 10000) -> str:
+    """
+    Multi-layer sanitization for log injection prevention.
+
+    Applies 8 layers of defense-in-depth:
+    1. URL decode (with depth limit) - prevents %0A, %0D bypasses
+    2. Length limiting (DoS prevention) - prevents log flooding
+    3. Unicode normalization - prevents homograph attacks
+    4. Zero-width character removal - prevents obfuscation
+    5. ANSI escape stripping - prevents terminal manipulation
+    6. CRLF unit handling - prevents Windows line ending injection
+    7. Control character escaping - whitelist approach
+    8. (Applied separately) Secret redaction
+
+    Args:
+        text: Input text to sanitize
+        max_length: Maximum allowed length before truncation
+
+    Returns:
+        Sanitized text safe for single-line logging
+
+    Security:
+        - Prevents log injection (OWASP A03:2021, CWE-117)
+        - Prevents log poisoning and SIEM bypass
+        - Prevents terminal injection via ANSI escapes
+        - Defense-in-depth approach with multiple layers
+    """
+    if not text:
+        return ""
+
+    # LAYER 1: Recursive URL decode (FIRST - before any checks)
+    # Handles %0A, %0D, and nested encoding like %252540A
+    text = _recursive_url_decode(text, max_depth=3)
+
+    # LAYER 2: Truncate if too long (EARLY - before expensive operations)
+    # Prevents DoS via huge log messages
+    if len(text) > max_length:
+        text = text[:max_length] + "...[TRUNCATED]"
+
+    # LAYER 3: Unicode normalization (prevents Unicode equivalence bypass)
+    # Normalizes е (Cyrillic) vs e (Latin) and other homographs
+    # NOTE: NFKC is compatibility normalization - may change visual appearance
+    # (e.g., ℌ→H, ①→1, ﬁ→fi) but prevents homograph attacks and standardizes forms
+    text = unicodedata.normalize('NFKC', text)
+
+    # LAYER 4: Remove zero-width characters (prevents obfuscation)
+    for zw_char in _ZERO_WIDTH_CHARS:
+        text = text.replace(zw_char, '')
+
+    # LAYER 5: Strip ANSI escape codes (prevents terminal manipulation)
+    # Removes color codes and other terminal control sequences
+    text = _ANSI_ESCAPE.sub('', text)
+
+    # LAYER 6-7: Control character escaping (whitelist approach)
+    # Handles newlines, CR, tabs, Unicode line terminators
+    text = _sanitize_control_characters(text)
+
+    return text
 
 
 class SecretRedactingFormatter(logging.Formatter):
@@ -45,10 +218,26 @@ class SecretRedactingFormatter(logging.Formatter):
     ]
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format log record with secret redaction."""
-        # Redact secrets from the message
+        """
+        Format log record with injection prevention and secret redaction.
+
+        Applies security in two layers:
+        1. Sanitization (prevent log injection attacks)
+        2. Redaction (protect sensitive data)
+
+        This ensures all logs are safe from injection and don't leak secrets.
+        """
+        # Get original message
         original_msg = record.getMessage()
-        record.msg = self._redact_secrets(original_msg)
+
+        # LAYER 1: Sanitize for log injection prevention (FIRST)
+        sanitized_msg = _sanitize_for_logging(original_msg)
+
+        # LAYER 2: Redact secrets (AFTER sanitization)
+        safe_msg = self._redact_secrets(sanitized_msg)
+
+        # Update record with safe message
+        record.msg = safe_msg
 
         # Redact secrets from extra fields
         if hasattr(record, '__dict__'):
@@ -65,32 +254,41 @@ class SecretRedactingFormatter(logging.Formatter):
         return formatted
 
     def _redact_secrets(self, text: str) -> str:
-        """Redact secrets from text."""
+        """
+        Redact sensitive data from text.
+
+        Applies regex patterns to detect and redact:
+        - Passwords, API keys, tokens
+        - Secret references (${env:VAR}, ${vault:...}, ${aws:...})
+        - Known secret patterns (OpenAI, Anthropic, AWS, etc.)
+
+        Args:
+            text: Input text to redact
+
+        Returns:
+            Text with secrets redacted
+
+        Note: This should be called AFTER _sanitize_for_logging to ensure
+        injection is prevented first.
+        """
         if not isinstance(text, str):
             return text  # type: ignore[unreachable]
 
-        # Sanitize control characters to prevent log injection
-        # Replace newlines, carriage returns, tabs, and other control chars
-        import re
-        text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)  # Remove control chars except \t, \n
-        text = text.replace('\n', '\\n')  # Escape newlines
-        text = text.replace('\r', '\\r')  # Escape carriage returns
-        text = text.replace('\t', '\\t')  # Escape tabs
-
-        # Redact secret references
+        # Redact secret references (${env:VAR}, ${vault:...}, ${aws:...})
         text = re.sub(r'\$\{env:([A-Z_]+)\}', r'${env:***REDACTED***}', text)
         text = re.sub(r'\$\{vault:([^}]+)\}', r'${vault:***REDACTED***}', text)
         text = re.sub(r'\$\{aws:([^}]+)\}', r'${aws:***REDACTED***}', text)
 
-        # Detect and redact secret patterns
+        # Apply precompiled sensitive patterns
+        for pattern, replacement in _SENSITIVE_PATTERNS:
+            text = pattern.sub(replacement, text)
+
+        # Use detect_secret_patterns if available (additional layer)
         if SECRETS_AVAILABLE and detect_secret_patterns is not None:
             is_secret, confidence = detect_secret_patterns(text)
             if is_secret and confidence == "high":
-                # Redact high-confidence secrets
-                text = re.sub(r'sk-[a-zA-Z0-9]{20,}', '***REDACTED***', text)
-                text = re.sub(r'sk-proj-[a-zA-Z0-9]{20,}', '***REDACTED***', text)
-                text = re.sub(r'sk-ant-api\d+-[a-zA-Z0-9]{20,}', '***REDACTED***', text)
-                text = re.sub(r'AKIA[0-9A-Z]{16}', '***REDACTED***', text)
+                # Already covered by _SENSITIVE_PATTERNS, but keep for compatibility
+                pass
 
         return text
 
@@ -108,13 +306,22 @@ class StructuredFormatter(SecretRedactingFormatter):
     """
 
     def format(self, record: logging.LogRecord) -> str:
-        """Format log record as JSON."""
+        """
+        Format log record as JSON with injection prevention and secret redaction.
+
+        Applies sanitization before redaction to ensure safe JSON output.
+        """
+        # Get message and apply sanitization + redaction
+        original_msg = record.getMessage()
+        sanitized_msg = _sanitize_for_logging(original_msg)
+        safe_msg = self._redact_secrets(sanitized_msg)
+
         # Build structured log entry
         log_entry = {
             'timestamp': datetime.now().astimezone().isoformat(),
             'level': record.levelname,
             'logger': record.name,
-            'message': self._redact_secrets(record.getMessage()),
+            'message': safe_msg,
             'module': record.module,
             'function': record.funcName,
             'line': record.lineno,

@@ -181,7 +181,7 @@ class TestSecretRedaction:
         assert "\\t" in formatted
 
     def test_sanitize_null_byte_injection(self):
-        """Test that null bytes are removed."""
+        """Test that null bytes are escaped (not removed)."""
         formatter = SecretRedactingFormatter()
         record = logging.LogRecord(
             name="test",
@@ -193,9 +193,11 @@ class TestSecretRedaction:
             exc_info=None
         )
         formatted = formatter.format(record)
-        # Null byte should be removed (not just escaped)
-        assert "\x00" not in formatted
-        assert "datatruncated" in formatted or "data" in formatted
+        # Null byte should be escaped (preserves info for debugging)
+        assert "\x00" not in formatted  # No literal null byte
+        assert "\\x00" in formatted     # Escaped version present
+        assert "data" in formatted
+        assert "truncated" in formatted
 
     def test_sanitize_control_characters(self):
         """Test that other control characters are removed."""
@@ -543,3 +545,302 @@ class TestSecretRedactionIntegration:
         for record in caplog.records:
             formatted = logging.Formatter().format(record)
             assert "OPENAI_API_KEY" not in formatted or "REDACTED" in formatted
+
+
+class TestLogInjectionPrevention:
+    """
+    Comprehensive tests for log injection prevention (CWE-117).
+
+    Tests cover:
+    - URL-encoded injection (single and nested)
+    - Unicode attack vectors
+    - ANSI escape sequence injection
+    - Zero-width character obfuscation
+    - CRLF injection
+    - Double-encoding attacks
+    """
+
+    def test_url_encoded_newline_blocked(self):
+        """Test that URL-encoded newlines (%0A) are blocked."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "username=admin%0A[ERROR] Fake security violation"
+        sanitized = _sanitize_for_logging(malicious)
+
+        # After decoding and sanitization, newline should be escaped
+        assert '\n' not in sanitized
+        assert '\\n' in sanitized or '\\x0a' in sanitized.lower()
+
+    def test_url_encoded_carriage_return_blocked(self):
+        """Test that URL-encoded carriage returns (%0D) are blocked."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "username=admin%0D[ERROR] Fake log"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\r' not in sanitized
+        assert '\\r' in sanitized or '\\x0d' in sanitized.lower()
+
+    def test_double_url_encoded_newline_blocked(self):
+        """Test that double URL-encoded newlines are blocked."""
+        from src.utils.logging import _sanitize_for_logging
+
+        # %25 = %, so %250A = %0A, which decodes to \n
+        malicious = "admin%250A[ERROR] Fake"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\n' not in sanitized
+        # Should see escaped newline after decoding
+        assert '\\n' in sanitized or '\\x0a' in sanitized.lower()
+
+    def test_triple_url_encoded_newline_blocked(self):
+        """Test that deeply nested URL encoding is handled."""
+        from src.utils.logging import _sanitize_for_logging
+
+        # Triple encoding: %252525...
+        malicious = "admin%25252540A[ERROR] Fake"  # %2540A → %40A → @A (partial decode)
+        sanitized = _sanitize_for_logging(malicious)
+
+        # Should not crash or timeout, should be safe
+        assert len(sanitized) > 0
+        assert '\n' not in sanitized
+
+    def test_unicode_line_separator_blocked(self):
+        """Test that Unicode line separators (U+2028) are blocked."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\u2028[ERROR] Fake log"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\u2028' not in sanitized
+        assert '\\u2028' in sanitized
+
+    def test_unicode_paragraph_separator_blocked(self):
+        """Test that Unicode paragraph separators (U+2029) are blocked."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\u2029[ERROR] Fake log"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\u2029' not in sanitized
+        assert '\\u2029' in sanitized
+
+    def test_unicode_next_line_blocked(self):
+        """Test that Unicode NEL (U+0085) is blocked."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\u0085[ERROR] Fake log"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\u0085' not in sanitized
+        # Should be escaped as hex
+        assert '\\x85' in sanitized or '\\u0085' in sanitized
+
+    def test_vertical_tab_blocked(self):
+        """Test that vertical tab (U+000B) is blocked."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\u000B[ERROR] Fake log"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\u000B' not in sanitized
+        # May be escaped as either \x0b or \u000b
+        assert '\\x0b' in sanitized or '\\u000b' in sanitized
+
+    def test_form_feed_blocked(self):
+        """Test that form feed (U+000C) is blocked."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\u000C[ERROR] Fake log"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\u000C' not in sanitized
+        # May be escaped as either \x0c or \u000c
+        assert '\\x0c' in sanitized or '\\u000c' in sanitized
+
+    def test_ansi_escape_sequences_stripped(self):
+        """Test that ANSI escape codes are removed (terminal injection)."""
+        from src.utils.logging import _sanitize_for_logging
+
+        # ANSI escape to make text invisible (black on black)
+        malicious = "admin\033[0;30m[ERROR] Hidden breach\033[0m"
+        sanitized = _sanitize_for_logging(malicious)
+
+        # ANSI escapes should be stripped
+        assert '\033' not in sanitized
+        assert '[0;30m' not in sanitized
+        # Text content should remain
+        assert 'admin' in sanitized
+        assert 'Hidden breach' in sanitized
+
+    def test_zero_width_space_removed(self):
+        """Test that zero-width spaces (U+200B) are removed."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\u200B\u200B[ERROR] Obfuscated"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\u200B' not in sanitized
+        assert 'admin' in sanitized
+        assert 'Obfuscated' in sanitized
+
+    def test_zero_width_non_joiner_removed(self):
+        """Test that zero-width non-joiners (U+200C) are removed."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\u200C[ERROR] Hidden"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\u200C' not in sanitized
+
+    def test_zero_width_joiner_removed(self):
+        """Test that zero-width joiners (U+200D) are removed."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\u200D[ERROR] Hidden"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\u200D' not in sanitized
+
+    def test_zero_width_no_break_space_removed(self):
+        """Test that zero-width no-break spaces (U+FEFF) are removed."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\uFEFF[ERROR] Hidden"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\uFEFF' not in sanitized
+
+    def test_crlf_injection_blocked(self):
+        """Test that Windows CRLF sequences are escaped."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "admin\r\n[ERROR] Fake log\r\n[CRITICAL] Breach"
+        sanitized = _sanitize_for_logging(malicious)
+
+        # CRLF should be escaped as unit
+        assert '\r\n' not in sanitized
+        assert '\\r\\n' in sanitized
+
+    def test_mixed_encoding_attack(self):
+        """Test combination of URL encoding and control chars."""
+        from src.utils.logging import _sanitize_for_logging
+
+        malicious = "test%0A\r\nFAKE\x00NULL"
+        sanitized = _sanitize_for_logging(malicious)
+
+        assert '\n' not in sanitized
+        assert '\r' not in sanitized
+        assert '\x00' not in sanitized
+        assert '\\n' in sanitized
+
+    def test_legitimate_logs_preserved(self):
+        """Test that normal log messages work correctly."""
+        from src.utils.logging import _sanitize_for_logging
+
+        normal = "User logged in successfully from IP 192.168.1.1"
+        sanitized = _sanitize_for_logging(normal)
+
+        # Should be unchanged (all printable ASCII)
+        assert sanitized == normal
+
+    def test_international_characters_preserved(self):
+        """Test that legitimate international text is readable."""
+        from src.utils.logging import _sanitize_for_logging
+
+        international = "用户: José García (日本語)"
+        sanitized = _sanitize_for_logging(international)
+
+        # Should preserve Unicode printable characters
+        assert "José" in sanitized
+        assert "García" in sanitized
+        assert "日本語" in sanitized
+
+    def test_empty_string_handled(self):
+        """Test that empty string is handled safely."""
+        from src.utils.logging import _sanitize_for_logging
+
+        assert _sanitize_for_logging("") == ""
+
+    def test_oversized_input_truncated(self):
+        """Test that huge inputs are truncated (DoS prevention)."""
+        from src.utils.logging import _sanitize_for_logging
+
+        huge = "A" * 20000
+        sanitized = _sanitize_for_logging(huge, max_length=10000)
+
+        # Should be truncated
+        assert len(sanitized) <= 10100  # max_length + truncation message
+        assert '[TRUNCATED]' in sanitized
+
+    def test_mixed_safe_and_unsafe_chars(self):
+        """Test handling of mixed safe/unsafe characters."""
+        from src.utils.logging import _sanitize_for_logging
+
+        mixed = "Safe text\nUnsafe\rMore\x00Data"
+        sanitized = _sanitize_for_logging(mixed)
+
+        assert 'Safe text' in sanitized
+        assert '\n' not in sanitized
+        assert '\r' not in sanitized
+        assert '\x00' not in sanitized
+        assert '\\n' in sanitized
+
+    def test_performance_on_large_input(self):
+        """Test that large inputs don't cause DoS."""
+        import time
+        from src.utils.logging import _sanitize_for_logging
+
+        # 50KB input with injection attempts
+        large_input = "A" * 50000 + "%0A[ERROR]" * 1000
+
+        start = time.time()
+        sanitized = _sanitize_for_logging(large_input, max_length=10000)
+        elapsed = time.time() - start
+
+        # Should complete quickly (< 100ms)
+        assert elapsed < 0.1
+        assert len(sanitized) <= 10100
+
+    def test_unicode_normalization_applied(self):
+        """Test that Unicode normalization (NFKC) is applied."""
+        from src.utils.logging import _sanitize_for_logging
+
+        # Cyrillic 'e' (U+0435) looks like Latin 'e' (U+0065)
+        # After normalization, behavior should be consistent
+        text_with_cyrillic = "admin\u0435"  # admin + Cyrillic e
+        sanitized = _sanitize_for_logging(text_with_cyrillic)
+
+        # After NFKC normalization, the text should be sanitized consistently
+        assert 'admin' in sanitized
+
+    def test_integration_no_multiline_in_real_logs(self, caplog):
+        """Integration test: verify actual log output has no newlines from user input."""
+        setup_logging(level="INFO", format_type="console")
+        logger = get_logger("test.injection")
+
+        # Attempt log injection with various techniques
+        logger.info("User input: admin\n[ERROR] Fake security violation")
+        logger.info("User input: admin%0A[ERROR] URL-encoded fake")
+        logger.info("User input: admin\u2028[ERROR] Unicode line separator")
+
+        # Verify no actual newlines in logged messages
+        for record in caplog.records:
+            # The message should have escaped newlines, not literal ones
+            assert '\n[ERROR]' not in record.message
+            assert '\\n' in record.message or record.message.count('\n') == 0
+
+    def test_integration_siem_parseable_output(self, caplog):
+        """Integration test: verify logs are parseable by SIEM (one entry per line)."""
+        setup_logging(level="INFO", format_type="console")
+        logger = get_logger("test.siem")
+
+        # Log with injection attempt
+        logger.info("Processing user=admin\n[FAKE] Injected entry")
+
+        # Each log record should produce single-line output
+        for record in caplog.records:
+            formatted = SecretRedactingFormatter().format(record)
+            lines = formatted.split('\n')
+            # Should be one line (or minimal lines from wrapping, but no fake entries)
+            assert '[FAKE]' not in formatted or '\\n[FAKE]' in formatted

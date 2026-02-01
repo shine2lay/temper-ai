@@ -97,7 +97,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             trigger_type=trigger_type,
             trigger_data=trigger_data,
             status="running",
-            start_time=start_time,
+            start_time=ensure_utc(start_time),
             optimization_target=optimization_target,
             product_type=product_type,
             environment=environment,
@@ -180,7 +180,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             stage_version=stage_config.get("stage", {}).get("version", "1.0"),
             stage_config_snapshot=stage_config,
             status="running",
-            start_time=start_time,
+            start_time=ensure_utc(start_time),
             input_data=input_data,
             num_agents_executed=0,
             num_agents_succeeded=0,
@@ -273,7 +273,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             agent_version=agent_config.get("agent", {}).get("version", "1.0"),
             agent_config_snapshot=agent_config,
             status="running",
-            start_time=start_time,
+            start_time=ensure_utc(start_time),
             input_data=input_data,
             retry_count=0,
             num_llm_calls=0,
@@ -412,7 +412,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             max_tokens=max_tokens,
             status=status,
             error_message=error_message,
-            start_time=start_time,
+            start_time=ensure_utc(start_time),
             retry_count=0
         )
 
@@ -466,7 +466,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
             return
 
         # Unbuffered mode (immediate commit)
-        end_time = start_time  # Tool calls record start_time, end is calculated
+        start_time_utc = ensure_utc(start_time)
+        end_time = start_time_utc  # Tool calls record start_time, end is calculated
 
         tool_exec = ToolExecution(
             id=tool_execution_id,
@@ -474,7 +475,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             tool_name=tool_name,
             input_params=input_params,
             output_data=output_data,
-            start_time=start_time,
+            start_time=start_time_utc,
             end_time=end_time,
             duration_seconds=duration_seconds,
             status=status,
@@ -512,6 +513,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
         """Track safety violation."""
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
+        else:
+            timestamp = ensure_utc(timestamp)
 
         # Build metadata
         violation_metadata = {
@@ -614,6 +617,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
         # Use current timestamp if not provided
         if timestamp is None:
             timestamp = datetime.now(timezone.utc)
+        else:
+            timestamp = ensure_utc(timestamp)
 
         # Create collaboration event record
         event = CollaborationEvent(
@@ -858,7 +863,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                         max_tokens=call.max_tokens,
                         status=call.status,
                         error_message=call.error_message,
-                        start_time=call.start_time,
+                        start_time=ensure_utc(call.start_time),
                         retry_count=0
                     )
                     for call in llm_calls
@@ -875,8 +880,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
                         tool_name=call.tool_name,
                         input_params=call.input_params,
                         output_data=call.output_data,
-                        start_time=call.start_time,
-                        end_time=call.start_time,  # Tool calls use start_time
+                        start_time=ensure_utc(call.start_time),
+                        end_time=ensure_utc(call.start_time),  # Tool calls use start_time
                         duration_seconds=call.duration_seconds,
                         status=call.status,
                         error_message=call.error_message,

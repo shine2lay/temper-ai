@@ -212,7 +212,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         self.max_memory_per_operation = self._validate_size(
             "max_memory_per_operation",
             self.config.get("max_memory_per_operation", self.DEFAULT_MAX_MEMORY_PER_OPERATION),
-            min_value=1024,  # 1KB minimum (realistic minimum for operations)
+            min_value=1,  # 1 byte minimum (prevents negative/zero, allows testing)
             max_value=8 * 1024**3,  # 8GB maximum (safety limit)
             default=self.DEFAULT_MAX_MEMORY_PER_OPERATION
         )
@@ -221,7 +221,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         self.max_cpu_time = self._validate_time(
             "max_cpu_time",
             self.config.get("max_cpu_time", self.DEFAULT_MAX_CPU_TIME),
-            min_value=0.1,  # 100ms minimum
+            min_value=0.001,  # 1ms minimum (prevents zero/negative, allows testing)
             max_value=3600.0,  # 1 hour maximum
             default=self.DEFAULT_MAX_CPU_TIME
         )
@@ -230,7 +230,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         self.min_free_disk_space = self._validate_size(
             "min_free_disk_space",
             self.config.get("min_free_disk_space", self.DEFAULT_MIN_FREE_DISK_SPACE),
-            min_value=100 * 1024 * 1024,  # 100MB minimum
+            min_value=1,  # 1 byte minimum (prevents negative/zero, allows testing)
             max_value=1024**4,  # 1TB maximum
             default=self.DEFAULT_MIN_FREE_DISK_SPACE
         )

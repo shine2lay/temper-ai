@@ -110,8 +110,35 @@ class RateLimitPolicy(BaseSafetyPolicy):
 
         Args:
             config: Policy configuration (optional)
+
+        Raises:
+            ValueError: If configuration values are invalid
         """
         super().__init__(config or {})
+
+        # Validate configuration parameters
+        per_agent = self.config.get("per_agent", True)
+        if not isinstance(per_agent, bool):
+            raise ValueError(
+                f"per_agent must be boolean, got {type(per_agent).__name__}"
+            )
+        self.per_agent = per_agent
+
+        cooldown_multiplier = self.config.get("cooldown_multiplier", 1.0)
+        if not isinstance(cooldown_multiplier, (int, float)):
+            raise ValueError(
+                f"cooldown_multiplier must be numeric, got {type(cooldown_multiplier).__name__}"
+            )
+        if cooldown_multiplier < 0:
+            raise ValueError(
+                f"cooldown_multiplier must be non-negative, got {cooldown_multiplier}"
+            )
+        if cooldown_multiplier > 100:
+            raise ValueError(
+                f"cooldown_multiplier must be <= 100 (safety limit), got {cooldown_multiplier}. "
+                f"Hint: Values > 100 can create extremely long wait times."
+            )
+        self.cooldown_multiplier = cooldown_multiplier
 
         # Per-agent limits
         self.per_agent_manager = TokenBucketManager()
@@ -121,26 +148,56 @@ class RateLimitPolicy(BaseSafetyPolicy):
         self.global_manager = TokenBucketManager()
         self._load_global_limits(config or {})
 
-        # Configuration
-        self.per_agent = self.config.get("per_agent", True)
-        self.cooldown_multiplier = self.config.get("cooldown_multiplier", 1.0)
-
     def _load_per_agent_limits(self, config: Dict[str, Any]) -> None:
         """Load per-agent rate limits from config.
 
         Args:
             config: Configuration dictionary
+
+        Raises:
+            ValueError: If rate limit configuration is invalid
         """
         # Start with defaults
         limits = self.DEFAULT_LIMITS.copy()
 
         # Override with config
         if "rate_limits" in config:
+            if not isinstance(config["rate_limits"], dict):
+                raise ValueError(
+                    f"rate_limits must be a dictionary, got {type(config['rate_limits']).__name__}"
+                )
+
             for limit_type, limit_config in config["rate_limits"].items():
+                # Validate limit_type is a string
+                if not isinstance(limit_type, str):
+                    raise ValueError(
+                        f"Rate limit type must be string, got {type(limit_type).__name__}"
+                    )
+
                 if isinstance(limit_config, dict):
-                    limits[limit_type] = RateLimit(**limit_config)
+                    # Validate all required fields are present
+                    required_fields = ["max_tokens", "refill_rate"]
+                    for field in required_fields:
+                        if field not in limit_config:
+                            raise ValueError(
+                                f"Rate limit '{limit_type}' missing required field '{field}'"
+                            )
+
+                    # RateLimit.__post_init__ will validate positive values
+                    try:
+                        limits[limit_type] = RateLimit(**limit_config)
+                    except (ValueError, TypeError) as e:
+                        raise ValueError(
+                            f"Invalid rate limit configuration for '{limit_type}': {e}"
+                        ) from e
+
                 elif isinstance(limit_config, RateLimit):
                     limits[limit_type] = limit_config
+                else:
+                    raise ValueError(
+                        f"Rate limit '{limit_type}' must be dict or RateLimit, "
+                        f"got {type(limit_config).__name__}"
+                    )
 
         # Register limits with manager
         for limit_type, rate_limit in limits.items():
@@ -151,17 +208,51 @@ class RateLimitPolicy(BaseSafetyPolicy):
 
         Args:
             config: Configuration dictionary
+
+        Raises:
+            ValueError: If global rate limit configuration is invalid
         """
         # Start with defaults
         limits = self.DEFAULT_GLOBAL_LIMITS.copy()
 
         # Override with config
         if "global_limits" in config:
+            if not isinstance(config["global_limits"], dict):
+                raise ValueError(
+                    f"global_limits must be a dictionary, got {type(config['global_limits']).__name__}"
+                )
+
             for limit_type, limit_config in config["global_limits"].items():
+                # Validate limit_type is a string
+                if not isinstance(limit_type, str):
+                    raise ValueError(
+                        f"Global rate limit type must be string, got {type(limit_type).__name__}"
+                    )
+
                 if isinstance(limit_config, dict):
-                    limits[limit_type] = RateLimit(**limit_config)
+                    # Validate all required fields are present
+                    required_fields = ["max_tokens", "refill_rate"]
+                    for field in required_fields:
+                        if field not in limit_config:
+                            raise ValueError(
+                                f"Global rate limit '{limit_type}' missing required field '{field}'"
+                            )
+
+                    # RateLimit.__post_init__ will validate positive values
+                    try:
+                        limits[limit_type] = RateLimit(**limit_config)
+                    except (ValueError, TypeError) as e:
+                        raise ValueError(
+                            f"Invalid global rate limit configuration for '{limit_type}': {e}"
+                        ) from e
+
                 elif isinstance(limit_config, RateLimit):
                     limits[limit_type] = limit_config
+                else:
+                    raise ValueError(
+                        f"Global rate limit '{limit_type}' must be dict or RateLimit, "
+                        f"got {type(limit_config).__name__}"
+                    )
 
         # Register limits with manager
         for limit_type, rate_limit in limits.items():

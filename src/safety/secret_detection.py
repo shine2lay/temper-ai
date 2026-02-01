@@ -40,22 +40,31 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
     """
 
     # Common secret patterns (regex)
+    # SECURITY: Patterns have upper bounds {min,max} to prevent ReDoS attacks
     SECRET_PATTERNS = {
+        # Specific patterns (high confidence - vendor-specific formats)
         "aws_access_key": r"AKIA[0-9A-Z]{16}",
         "aws_secret_key": r"aws(.{0,20})?['\"][0-9a-zA-Z/+]{40}['\"]",
         "github_token": r"gh[pousr]_[0-9a-zA-Z]{36}",
-        "generic_api_key": r"(api[_-]?key|apikey)['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-]{20,})['\"]?",
-        "generic_secret": r"(secret|password|passwd|pwd)['\"]?\s*[:=]\s*['\"]?([^'\"\s]{8,})['\"]?",
         "jwt_token": r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+",
         "private_key": r"-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----",
         "google_api_key": r"AIza[0-9A-Za-z\\-_]{35}",
         "slack_token": r"xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,32}",
         "stripe_key": r"(sk|pk)_(test|live)_[0-9a-zA-Z]{24,}",
-        "connection_string": r"(mongodb|postgres|mysql|redis)://[^'\"\s]+"
+        "connection_string": r"(mongodb|postgres|mysql|redis)://[^'\"\s]+",
+
+        # Generic patterns (lower confidence - require entropy filtering)
+        # IMPROVED: Added upper bounds {20,500} to prevent ReDoS
+        # NOTE: These patterns are filtered by entropy (>3.5) to reduce false positives
+        "generic_api_key": r"(api[_-]?key|apikey)['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-+/]{20,500})['\"]?",
+        # IMPROVED: Increased minimum from 8 to 12 chars, added upper bound
+        "generic_secret": r"(secret|password|passwd|pwd)['\"]?\s*[:=]\s*['\"]?([^\s]{12,500})['\"]?",
     }
 
-    # Test/example secrets to allow
+    # Test/example secrets to allow (case-insensitive matching)
+    # IMPROVED: Expanded to reduce false positives from documentation and test code
     TEST_SECRETS = [
+        # Original test indicators
         "test",
         "example",
         "demo",
@@ -63,7 +72,38 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
         "changeme",
         "password123",
         "dummy",
-        "fake"
+        "fake",
+
+        # Template/documentation indicators
+        "sample",
+        "template",
+        "mock",
+        "stub",
+        "fixture",
+        "your_",
+        "_here",
+        "todo",
+        "fixme",
+
+        # Development indicators
+        "dev",
+        "local",
+        "localhost",
+
+        # Weak/generic passwords (common defaults)
+        "admin",
+        "root",
+        "user",
+        "guest",
+        "password",
+        "secret",
+
+        # Pattern indicators (repeated/sequential characters)
+        "xxxxxxxx",
+        "aaaaaaaa",
+        "11111111",
+        "abcdefgh",
+        "12345678"
     ]
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -77,6 +117,8 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
         # Configuration
         self.enabled_patterns = self.config.get("enabled_patterns", list(self.SECRET_PATTERNS.keys()))
         self.entropy_threshold = self.config.get("entropy_threshold", 4.5)
+        # SECURITY: Minimum entropy for generic patterns to reduce false positives
+        self.entropy_threshold_generic = self.config.get("entropy_threshold_generic", 3.5)
         self.excluded_paths = self.config.get("excluded_paths", [])
         self.allow_test_secrets = self.config.get("allow_test_secrets", True)
 
@@ -272,6 +314,14 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
 
                 # Calculate entropy
                 entropy = self._calculate_entropy(secret_value)
+
+                # SECURITY FIX (code-high-14): Filter generic patterns by entropy
+                # Generic patterns have high false positive rates without entropy filtering
+                # Skip low-entropy matches that are likely variable names, templates, or documentation
+                if pattern_name in ["generic_api_key", "generic_secret"]:
+                    if entropy < self.entropy_threshold_generic:
+                        # Low entropy suggests non-random text (e.g., "your-api-key-here", "password_reset")
+                        continue
 
                 # Determine severity based on pattern and entropy
                 if pattern_name in ["private_key", "aws_secret_key"]:

@@ -223,7 +223,7 @@ class Database:
                 """
                 UPDATE tasks
                 SET status = 'in_progress', owner = ?, started_at = CURRENT_TIMESTAMP
-                WHERE id = ? AND status = 'pending'
+                WHERE id = ? AND status = 'pending' AND completed_at IS NULL
                 """,
                 (agent_id, task_id)
             )
@@ -232,7 +232,7 @@ class Database:
             if cursor.rowcount == 0:
                 raise ValueError(
                     f"Cannot claim task {task_id}: either task doesn't exist, "
-                    f"is not pending, or is already claimed"
+                    f"is not pending, or is already claimed/completed"
                 )
 
             # Update task timing
@@ -279,6 +279,7 @@ class Database:
             """
             SELECT * FROM tasks
             WHERE status = 'pending'
+              AND completed_at IS NULL
             ORDER BY priority ASC, created_at ASC
             LIMIT ?
             """,

@@ -141,6 +141,11 @@ def verify_database_invariants(request, db):
         yield
         return
 
+    # Skip for tests that intentionally create corruption (marked with @pytest.mark.skip_invariants)
+    if request.node.get_closest_marker('skip_invariants'):
+        yield
+        return
+
     yield  # Run the test
 
     # After test completes, verify invariants

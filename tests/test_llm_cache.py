@@ -217,6 +217,109 @@ class TestInMemoryCache:
         assert stats['max_size'] == 5
         assert stats['evictions'] == 0
 
+    def test_expired_cleanup_prevents_memory_leak(self):
+        """
+        Test that expired entries are cleaned up from _access_order dict.
+
+        REGRESSION TEST for code-high-07: Cache Access Order Never Cleaned
+        Ensures that expired entries don't accumulate in _access_order causing memory leak.
+        """
+        cache = InMemoryCache(max_size=10)
+
+        # Add entries with short TTL
+        cache.set("expired1", "value1", ttl=1)
+        cache.set("expired2", "value2", ttl=1)
+        cache.set("expired3", "value3", ttl=1)
+        cache.set("persistent", "value4")  # No TTL
+
+        # Verify all entries exist initially
+        assert cache.exists("expired1")
+        assert cache.exists("expired2")
+        assert cache.exists("expired3")
+        assert cache.exists("persistent")
+
+        # Check internal state
+        assert len(cache._cache) == 4
+        assert len(cache._access_order) == 4
+
+        # Wait for TTL expiration
+        time.sleep(1.1)
+
+        # Accessing expired entries should remove them from both dicts
+        assert cache.get("expired1") is None
+        assert len(cache._cache) == 3  # expired1 removed
+        assert len(cache._access_order) == 3  # CRITICAL: access_order also cleaned
+
+        # But expired2 and expired3 are NOT accessed, so they stay in _access_order
+        # This is the memory leak scenario - expired but never accessed
+        assert "expired2" in cache._cache  # Still in cache
+        assert "expired3" in cache._cache  # Still in cache
+        assert "expired2" in cache._access_order  # Still tracked
+        assert "expired3" in cache._access_order  # Still tracked
+
+        # Now trigger cleanup via get_stats()
+        stats = cache.get_stats(cleanup_expired=True)
+
+        # Verify cleanup happened
+        assert stats['expired_cleaned'] == 2  # expired2 and expired3 cleaned
+        assert len(cache._cache) == 1  # Only persistent remains
+        assert len(cache._access_order) == 1  # CRITICAL: access_order also cleaned
+        assert "expired2" not in cache._access_order
+        assert "expired3" not in cache._access_order
+        assert cache.exists("persistent")
+
+    def test_expired_cleanup_during_eviction(self):
+        """
+        Test that cleanup happens automatically during LRU eviction.
+
+        REGRESSION TEST for code-high-07: Ensures expired entries are cleaned
+        before evicting valid entries.
+        """
+        cache = InMemoryCache(max_size=3)
+
+        # Fill cache with all expiring entries
+        cache.set("expired1", "value1", ttl=1)
+        cache.set("expired2", "value2", ttl=1)
+        cache.set("expired3", "value3", ttl=1)
+
+        assert len(cache._cache) == 3
+
+        # Wait for expiration
+        time.sleep(1.1)
+
+        # Add new entry - should trigger cleanup of all expired entries
+        # instead of evicting. No valid entries to evict, so cleanup frees space.
+        cache.set("new_entry", "value4")
+
+        # Only new entry should exist
+        assert cache.exists("new_entry")
+        assert not cache.exists("expired1")
+        assert not cache.exists("expired2")
+        assert not cache.exists("expired3")
+
+        # CRITICAL: access_order should only have 1 active entry
+        assert len(cache._cache) == 1
+        assert len(cache._access_order) == 1
+        assert "expired1" not in cache._access_order
+        assert "expired2" not in cache._access_order
+        assert "expired3" not in cache._access_order
+        assert "new_entry" in cache._access_order
+
+    def test_no_cleanup_when_disabled(self):
+        """Test that cleanup can be disabled in get_stats()."""
+        cache = InMemoryCache(max_size=10)
+
+        cache.set("expired", "value", ttl=1)
+        time.sleep(1.1)
+
+        # Get stats without cleanup
+        stats = cache.get_stats(cleanup_expired=False)
+
+        # Should not have cleaned anything
+        assert stats['expired_cleaned'] == 0
+        # Expired entry still in cache (not accessed)
+        assert "expired" in cache._cache
+
 
 @pytest.mark.skipif(not REDIS_AVAILABLE, reason="redis package not installed")
 class TestRedisCache:

@@ -152,8 +152,45 @@ class InMemoryCache(CacheBackend):
         """Check if key exists and is not expired."""
         return self.get(key) is not None
 
+    def _cleanup_expired(self) -> int:
+        """
+        Clean up expired entries from cache and access_order.
+
+        RELIABILITY FIX (code-high-07): Prevents memory leak where expired entries
+        accumulate in _access_order dict when never accessed again.
+
+        Returns:
+            Number of expired entries removed
+        """
+        if not self._cache:
+            return 0
+
+        current_time = time.time()
+        expired_keys = []
+
+        # Find all expired keys
+        for key, (_, expires_at) in self._cache.items():
+            if expires_at is not None and current_time > expires_at:
+                expired_keys.append(key)
+
+        # Remove expired entries from both dicts
+        for key in expired_keys:
+            del self._cache[key]
+            # CRITICAL: Also remove from _access_order to prevent memory leak
+            if key in self._access_order:
+                del self._access_order[key]
+
+        if expired_keys:
+            logger.debug(f"Cleaned up {len(expired_keys)} expired cache entries")
+
+        return len(expired_keys)
+
     def _evict_lru(self) -> None:
         """Evict least recently used entry."""
+        # RELIABILITY FIX (code-high-07): Clean up expired entries first
+        # to avoid evicting valid entries when expired ones exist
+        self._cleanup_expired()
+
         if not self._access_order:
             return
 
@@ -167,13 +204,27 @@ class InMemoryCache(CacheBackend):
 
         logger.debug(f"Evicted LRU entry: {lru_key} (total evictions: {self._evictions})")
 
-    def get_stats(self) -> Dict[str, Any]:
-        """Get cache statistics."""
+    def get_stats(self, cleanup_expired: bool = True) -> Dict[str, Any]:
+        """
+        Get cache statistics.
+
+        Args:
+            cleanup_expired: If True, clean up expired entries before reporting stats
+
+        Returns:
+            Dictionary with cache statistics including size, evictions, and cleanup count
+        """
         with self._lock:
+            expired_cleaned = 0
+            if cleanup_expired:
+                # RELIABILITY FIX (code-high-07): Opportunistic cleanup during stats collection
+                expired_cleaned = self._cleanup_expired()
+
             return {
                 'size': len(self._cache),
                 'max_size': self._max_size,
-                'evictions': self._evictions
+                'evictions': self._evictions,
+                'expired_cleaned': expired_cleaned
             }
 
 

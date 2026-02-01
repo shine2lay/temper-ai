@@ -68,7 +68,8 @@ class ExecutionTracker:
     def __init__(
         self,
         backend: Optional[ObservabilityBackend] = None,
-        sanitization_config: Optional[SanitizationConfig] = None
+        sanitization_config: Optional[SanitizationConfig] = None,
+        metric_registry: Optional['MetricRegistry'] = None
     ):
         """
         Initialize execution tracker with sanitization support.
@@ -76,6 +77,8 @@ class ExecutionTracker:
         Args:
             backend: Observability backend to use. If None, defaults to SQLObservabilityBackend.
             sanitization_config: Configuration for data sanitization. If None, uses secure defaults.
+            metric_registry: Optional MetricRegistry for collecting metrics after agent execution.
+                            If provided, metrics will be automatically collected and stored for each agent.
         """
         self.context = ExecutionContext()
 
@@ -89,6 +92,63 @@ class ExecutionTracker:
 
         # Initialize sanitizer with provided or default config
         self.sanitizer = DataSanitizer(sanitization_config)
+
+        # Store metric registry for automatic metric collection
+        self.metric_registry = metric_registry
+
+    def _collect_agent_metrics(self, agent_id: str) -> None:
+        """
+        Collect metrics for agent execution using registered collectors.
+
+        This method is called automatically after successful agent execution
+        if a MetricRegistry was provided during tracker initialization.
+
+        Args:
+            agent_id: ID of the agent execution to collect metrics for
+
+        Note:
+            - Metric collection errors are logged but don't fail the agent execution
+            - Requires active session with SQL backend for metric collection
+            - Metrics are currently logged but not yet persisted (TODO)
+        """
+        if self.metric_registry is None:
+            return
+
+        try:
+            # Get current session for execution lookup
+            session = self._session_stack[-1] if self._session_stack else None
+
+            # Fetch agent execution object from backend (SQL backend only)
+            if hasattr(session, 'exec') and session is not None:
+                from sqlmodel import select
+                from src.observability.models import AgentExecution
+                statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+                execution = session.exec(statement).first()
+
+                if execution:
+                    # Collect all applicable metrics
+                    metrics = self.metric_registry.collect_all(execution)
+
+                    # Store metrics in extra_metadata
+                    if metrics:
+                        logger.info(
+                            f"Collected {len(metrics)} metrics for agent {agent_id}: "
+                            f"{', '.join(f'{k}={v:.3f}' for k, v in metrics.items())}"
+                        )
+                        # TODO: Store metrics in execution metadata
+                        # This requires backend support for updating extra_metadata
+                        # For now, metrics are collected and logged for validation
+                else:
+                    logger.debug(f"Agent execution {agent_id} not found for metric collection")
+            else:
+                logger.debug("No SQL session available for metric collection (expected for non-SQL backends)")
+
+        except Exception as e:
+            # Log but don't fail agent execution for metric collection errors
+            logger.warning(
+                f"Failed to collect metrics for agent {agent_id}: {e}",
+                exc_info=True
+            )
 
     @contextmanager
     def track_workflow(
@@ -449,13 +509,18 @@ class ExecutionTracker:
             try:
                 yield agent_id
 
-                # Success
+                # Success - mark as completed first, then collect metrics
                 end_time = utcnow()
+
                 self.backend.track_agent_end(
                     agent_id=agent_id,
                     end_time=end_time,
                     status="completed"
                 )
+
+                # Collect metrics after execution is marked as completed
+                # This ensures collectors see the final execution state
+                self._collect_agent_metrics(agent_id)
 
             except Exception as e:
                 # Failure
@@ -487,13 +552,18 @@ class ExecutionTracker:
                 try:
                     yield agent_id
 
-                    # Success
+                    # Success - mark as completed first, then collect metrics
                     end_time = utcnow()
+
                     self.backend.track_agent_end(
                         agent_id=agent_id,
                         end_time=end_time,
                         status="completed"
                     )
+
+                    # Collect metrics after execution is marked as completed
+                    # This ensures collectors see the final execution state
+                    self._collect_agent_metrics(agent_id)
 
                 except Exception as e:
                     # Failure

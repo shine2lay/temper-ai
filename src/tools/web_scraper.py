@@ -8,6 +8,7 @@ import httpx
 import ipaddress
 import socket
 import urllib.parse
+import threading
 from typing import Dict, Any, Optional, Tuple, Type, Union, List
 from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field, field_validator, HttpUrl
@@ -36,16 +37,143 @@ BLOCKED_NETWORKS: List[Union[ipaddress.IPv4Network, ipaddress.IPv6Network]] = [
     ipaddress.IPv6Network("::ffff:0:0/96"),   # RFC 4291: IPv4-mapped IPv6
 ]
 
+# DNS Security Configuration
+DNS_RESOLUTION_TIMEOUT_SECONDS = 2.0  # Prevents DNS timing attacks and DoS
+DNS_CACHE_TTL_SECONDS = 300  # 5 minutes - prevents DNS rebinding attacks
+DNS_CACHE_MAX_SIZE = 1000  # Limit cache size to prevent memory exhaustion
 
-def validate_url_safety(url: str) -> Tuple[bool, Optional[str]]:
+
+class DNSCache:
+    """
+    Thread-safe DNS cache to prevent DNS rebinding attacks.
+
+    Caches validated DNS resolutions with TTL to prevent attackers from
+    changing DNS responses between validation and actual HTTP request.
+
+    Security Features:
+    - TTL expiration prevents stale entries
+    - Size limit prevents memory exhaustion
+    - Thread-safe for concurrent access
+    - Only caches validated (safe) resolutions
+    """
+
+    def __init__(self, ttl: int = DNS_CACHE_TTL_SECONDS, max_size: int = DNS_CACHE_MAX_SIZE):
+        """Initialize DNS cache with TTL and size limit."""
+        self._cache: Dict[str, Tuple[List[Tuple], float]] = {}
+        self._lock = threading.Lock()
+        self._ttl = ttl
+        self._max_size = max_size
+
+    def get(self, hostname: str) -> Optional[List[Tuple]]:
+        """
+        Get cached DNS resolution if not expired.
+
+        Args:
+            hostname: Hostname to look up
+
+        Returns:
+            List of address info tuples if cached and valid, None otherwise
+        """
+        with self._lock:
+            if hostname not in self._cache:
+                return None
+
+            addr_info, timestamp = self._cache[hostname]
+
+            # Check if entry has expired
+            if time.time() - timestamp > self._ttl:
+                del self._cache[hostname]
+                return None
+
+            return addr_info
+
+    def set(self, hostname: str, addr_info: List[Tuple]) -> None:
+        """
+        Cache DNS resolution result.
+
+        Args:
+            hostname: Hostname to cache
+            addr_info: Address info tuples from getaddrinfo
+        """
+        with self._lock:
+            # Enforce max cache size (simple LRU - remove oldest)
+            if len(self._cache) >= self._max_size and hostname not in self._cache:
+                # Remove oldest entry (first key)
+                oldest_key = next(iter(self._cache))
+                del self._cache[oldest_key]
+
+            self._cache[hostname] = (addr_info, time.time())
+
+    def clear(self) -> None:
+        """Clear all cached entries."""
+        with self._lock:
+            self._cache.clear()
+
+
+# Global DNS cache instance
+_dns_cache = DNSCache()
+
+
+def resolve_hostname_with_timeout(hostname: str, timeout: float = DNS_RESOLUTION_TIMEOUT_SECONDS) -> List[Tuple]:
+    """
+    Resolve hostname with timeout to prevent DNS timing attacks.
+
+    Uses threading to implement timeout since socket.getaddrinfo doesn't
+    support timeout parameter directly.
+
+    Args:
+        hostname: Hostname to resolve
+        timeout: DNS resolution timeout in seconds
+
+    Returns:
+        List of address info tuples from socket.getaddrinfo
+
+    Raises:
+        socket.gaierror: DNS resolution failed
+        TimeoutError: DNS resolution timed out
+    """
+    result = []
+    exception = None
+
+    def resolve():
+        """Thread target for DNS resolution."""
+        nonlocal result, exception
+        try:
+            result[:] = socket.getaddrinfo(hostname, None)
+        except Exception as e:
+            exception = e
+
+    # Start resolution thread
+    thread = threading.Thread(target=resolve, daemon=True)
+    thread.start()
+
+    # Wait for thread with timeout
+    thread.join(timeout=timeout)
+
+    # Check if thread is still alive (timeout occurred)
+    if thread.is_alive():
+        raise TimeoutError(f"DNS resolution for {hostname} timed out after {timeout}s (possible timing attack)")
+
+    # Check if exception occurred during resolution
+    if exception is not None:
+        raise exception
+
+    return result
+
+
+def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optional[str]]:
     """
     Validate URL doesn't target internal resources (SSRF protection).
 
-    NOTE: This function performs DNS resolution to check resolved IPs,
-    which may trigger network calls and be subject to DNS timing.
+    Security Features:
+    - DNS resolution with timeout (prevents timing attacks and DoS)
+    - DNS caching with TTL (prevents DNS rebinding attacks)
+    - Validates all resolved IPs (handles round-robin DNS)
+    - Blocks private networks, localhost, cloud metadata endpoints
 
     Args:
         url: URL to validate
+        use_cache: Whether to use DNS cache (default: True)
 
     Returns:
         Tuple of (is_valid, error_message)
@@ -78,34 +206,65 @@ def validate_url_safety(url: str) -> Tuple[bool, Optional[str]]:
             # Not an IP address, continue with DNS resolution
             pass
 
-        # Resolve hostname and check all resolved IPs (supports both IPv4 and IPv6)
-        try:
-            addr_info = socket.getaddrinfo(hostname, None)
+        # Check DNS cache first (prevents DNS rebinding attacks)
+        addr_info = None
+        if use_cache:
+            addr_info = _dns_cache.get(hostname)
 
-            # Check all resolved IPs (a hostname can have multiple A/AAAA records)
+        # If not cached, perform DNS resolution with timeout
+        if addr_info is None:
+            try:
+                addr_info = resolve_hostname_with_timeout(
+                    hostname,
+                    timeout=DNS_RESOLUTION_TIMEOUT_SECONDS
+                )
+            except TimeoutError as e:
+                # DNS timeout likely indicates timing attack or slow DNS
+                return False, f"DNS resolution timeout (possible attack): {str(e)}"
+            except socket.gaierror as e:
+                return False, f"Cannot resolve hostname: {e}"
+            except Exception as e:
+                return False, f"DNS resolution error: {str(e)}"
+
+            # Validate all resolved IPs before caching
             for family, _, _, _, sockaddr in addr_info:
                 ip_str = sockaddr[0]
-                ip = ipaddress.ip_address(ip_str)
+                try:
+                    ip = ipaddress.ip_address(ip_str)
 
-                # Check against blocked networks
-                for network in BLOCKED_NETWORKS:
-                    if ip in network:
-                        return False, f"Access to private network {network} is forbidden (SSRF protection)"
+                    # Check against blocked networks
+                    for network in BLOCKED_NETWORKS:
+                        if ip in network:
+                            # Don't cache invalid resolutions
+                            return False, f"Access to private network {network} is forbidden (SSRF protection)"
+
+                except ValueError as e:
+                    return False, f"Invalid IP address: {e}"
+
+            # Cache validated resolution (only safe resolutions are cached)
+            if use_cache:
+                _dns_cache.set(hostname, addr_info)
 
             return True, None
 
-        except socket.gaierror as e:
-            return False, f"Cannot resolve hostname: {e}"
-        except ValueError as e:
-            return False, f"Invalid IP address: {e}"
+        else:
+            # Using cached resolution - already validated as safe
+            return True, None
 
     except Exception as e:
         # Log unexpected errors for debugging (don't expose to user)
-        return False, f"URL validation failed"
+        return False, "URL validation failed"
 
 
 class RateLimiter:
-    """Simple rate limiter for web requests."""
+    """
+    Simple rate limiter for web requests with automatic memory management.
+
+    Automatically cleans up expired request timestamps to prevent unbounded
+    memory growth in long-running applications.
+
+    Note: Not thread-safe. Use separate instances for concurrent access.
+    """
 
     def __init__(self, max_requests: int, time_window: int):
         """
@@ -119,23 +278,27 @@ class RateLimiter:
         self.time_window = time_window
         self.requests: list[float] = []
 
-    def can_proceed(self) -> bool:
-        """Check if request can proceed without exceeding rate limit."""
+    def _cleanup_expired_requests(self) -> None:
+        """Remove requests outside the time window to prevent memory leak."""
         now = time.time()
-
-        # Remove requests outside time window
         self.requests = [req_time for req_time in self.requests
                         if now - req_time < self.time_window]
 
+    def can_proceed(self) -> bool:
+        """Check if request can proceed without exceeding rate limit."""
+        self._cleanup_expired_requests()
         return len(self.requests) < self.max_requests
 
     def record_request(self) -> None:
         """Record a new request."""
+        self._cleanup_expired_requests()
         self.requests.append(time.time())
 
     def wait_time(self) -> float:
         """Get seconds to wait before next request is allowed."""
-        if self.can_proceed():
+        self._cleanup_expired_requests()
+
+        if len(self.requests) < self.max_requests:
             return 0.0
 
         # Find oldest request

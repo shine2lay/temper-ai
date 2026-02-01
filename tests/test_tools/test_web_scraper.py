@@ -58,6 +58,24 @@ class TestRateLimiter:
         wait_time = limiter.wait_time()
         assert 0 < wait_time <= 60
 
+    def test_prevents_unbounded_memory_growth(self):
+        """Test that old requests are cleaned up to prevent memory leak."""
+        limiter = RateLimiter(max_requests=10, time_window=1)  # 1 second window
+
+        # Record many requests
+        for _ in range(100):
+            limiter.record_request()
+            time.sleep(0.01)  # Small delay
+
+        # Wait for window to expire
+        time.sleep(1.1)
+
+        # Record one more request - should clean up old entries
+        limiter.record_request()
+
+        # Should only have recent request, not all 101
+        assert len(limiter.requests) == 1
+
 
 class TestWebScraperMetadata:
     """Test web scraper metadata."""

@@ -496,13 +496,14 @@ class ApprovalRequest:
     action: Dict[str, Any]               # Action requiring approval
     reason: str                          # Reason for request
     context: Dict[str, Any]              # Additional context
+    violations: List[SafetyViolation]    # Violations that triggered request
     status: ApprovalStatus               # Current status
-    required_approvers: int              # Number of approvals needed
-    approvers: List[str]                 # List of approvers
-    rejection_reason: Optional[str]      # Rejection reason if rejected
     created_at: datetime                 # When request was created
     expires_at: Optional[datetime]       # Expiration time
-    resolved_at: Optional[datetime]      # When resolved
+    required_approvers: int              # Number of approvals needed
+    approvers: List[str]                 # List of users who approved
+    rejecters: List[str]                 # List of users who rejected
+    decision_reason: Optional[str]       # Reason for approval/rejection
     metadata: Dict[str, Any]             # Custom metadata
 ```
 

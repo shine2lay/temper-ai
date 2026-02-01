@@ -20,18 +20,75 @@
 │  │  - Fast local communication       │  │
 │  │  - No network overhead            │  │
 │  └───────────────────────────────────┘  │
-│                                         │
-│  ┌───────────────────────────────────┐  │
-│  │  HTTP API (Optional)              │  │
-│  │  http://localhost:8765            │  │
-│  │  - Remote agent support           │  │
-│  │  - Web dashboard                  │  │
-│  └───────────────────────────────────┘  │
 └─────────────────────────────────────────┘
+
+**Current:** Unix socket only (single machine)
+**Future:** HTTP API planned for multi-machine (M5+)
          │                    │
          ▼                    ▼
    [coordination.db]    [PID file]
 ```
+
+## Database Schema
+
+The coordination service uses **SQLite** with **15 core tables** plus observability and audit tables.
+
+### Core Tables
+
+| Table | Purpose |
+|-------|---------|
+| `agents` | Active agent sessions with heartbeat tracking |
+| `tasks` | Task specifications, status, and ownership |
+| `task_dependencies` | Dependency graph (blocks/blockedBy relationships) |
+| `locks` | File locking state per agent |
+| `schema_version` | Database migration tracking |
+
+### Observability Tables
+
+| Table | Purpose |
+|-------|---------|
+| `velocity_events` | Task completion events for velocity tracking |
+| `metrics_snapshots` | Periodic metric snapshots |
+| `task_timing` | Time spent in each task state |
+| `task_file_activity` | File operations per task |
+| `file_lock_stats` | Lock contention metrics |
+| `performance_traces` | Operation performance profiling |
+
+### Audit Tables
+
+| Table | Purpose |
+|-------|---------|
+| `audit_log` | All operations with correlation IDs |
+| `event_log` | State change events with before/after snapshots |
+| `error_snapshots` | Error context for debugging |
+
+### Auto-generated
+
+| Table | Purpose |
+|-------|---------|
+| `sqlite_sequence` | Auto-increment tracking (SQLite internal) |
+
+**Total:** 15 application tables + 1 SQLite internal
+
+### Schema Access
+
+To view the full schema:
+```bash
+sqlite3 .claude-coord/coordination.db ".schema"
+```
+
+To export schema to file:
+```bash
+sqlite3 .claude-coord/coordination.db ".schema" > schema.sql
+```
+
+### Key Features
+
+- **ACID Transactions:** All operations wrapped in transactions
+- **Foreign Keys:** Enforced relationships (ON DELETE CASCADE for locks)
+- **Indexes:** Optimized for common queries (status, owner, timestamp)
+- **WAL Mode:** Write-Ahead Logging for crash recovery
+- **Check Constraints:** Data validation at DB level
 
 ## Daemon Lifecycle
 
@@ -144,17 +201,22 @@ def call_service(command, **kwargs):
 result = call_service("task_add", task_id="my-task", subject="Fix bug")
 ```
 
-### HTTP API (Optional - For remote access)
+### HTTP API (Future Enhancement - M5+)
 
+**Status:** Not yet implemented. Currently Unix socket only.
+
+**Planned for M5:**
 ```python
-# Start with HTTP enabled
+# Future: Start with HTTP enabled
 coord-service start --http --port 8765
 
-# Client can use REST API
+# Future: Client can use REST API
 curl http://localhost:8765/tasks
 curl -X POST http://localhost:8765/tasks \
   -d '{"id": "my-task", "subject": "Fix bug"}'
 ```
+
+**Current workaround:** All agents must run on same machine and use Unix socket.
 
 ## Process Management
 

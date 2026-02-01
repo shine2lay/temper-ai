@@ -41,39 +41,39 @@ Each instance gets a unique agent ID and can coordinate via file locks.
 
 ```bash
 # Lock a file before editing
-.claude-coord/claude-coord.sh lock $CLAUDE_AGENT_ID src/api/auth.py
+coord lock $CLAUDE_AGENT_ID src/api/auth.py
 
 # Lock multiple files (all or nothing)
-.claude-coord/claude-coord.sh lock-all $CLAUDE_AGENT_ID src/api/auth.py src/models/user.py
+coord lock-all $CLAUDE_AGENT_ID src/api/auth.py src/models/user.py
 
 # Release a specific lock
-.claude-coord/claude-coord.sh unlock $CLAUDE_AGENT_ID src/api/auth.py
+coord unlock $CLAUDE_AGENT_ID src/api/auth.py
 
 # Release all your locks
-.claude-coord/claude-coord.sh unlock-all $CLAUDE_AGENT_ID
+coord unlock-all $CLAUDE_AGENT_ID
 
 # See what you have locked
-.claude-coord/claude-coord.sh my-locks $CLAUDE_AGENT_ID
+coord my-locks $CLAUDE_AGENT_ID
 
 # See all agents and locks
-.claude-coord/claude-coord.sh status
+coord status
 ```
 
 ### Task Coordination (Optional)
 
 ```bash
-# Add shared tasks
-.claude-coord/claude-coord.sh task-add task-1 "Implement OAuth login"
-.claude-coord/claude-coord.sh task-add task-2 "Add payment integration"
+# Add shared tasks (task-create: <id> <subject> <description>)
+coord task-create task-1 "OAuth Login" "Implement OAuth login functionality"
+coord task-create task-2 "Payment Integration" "Add payment integration with Stripe"
 
 # Claim a task
-.claude-coord/claude-coord.sh task-claim $CLAUDE_AGENT_ID task-1
+coord task-claim $CLAUDE_AGENT_ID task-1
 
 # Complete a task
-.claude-coord/claude-coord.sh task-complete $CLAUDE_AGENT_ID task-1
+coord task-complete $CLAUDE_AGENT_ID task-1
 
 # List pending tasks
-.claude-coord/claude-coord.sh task-list
+coord task-list
 ```
 
 ### Task Dependencies
@@ -136,6 +136,64 @@ coord task-complete $CLAUDE_AGENT_ID task-1
 
 # Now task-2 becomes available automatically
 coord task-list  # Shows task-2 but not task-3
+```
+
+### Convenience Commands
+
+The coordination system provides several convenience commands to streamline common workflows:
+
+**Task Discovery:**
+```bash
+# Search tasks by prefix
+coord task-search test-med-      # Finds all tasks starting with "test-med-"
+
+# Filter tasks by prefix and/or status
+coord task-filter --prefix test- --status pending --limit 10
+coord task-filter --status in_progress
+
+# Get next available task for agent (auto-filters by blockedBy)
+coord task-next $CLAUDE_AGENT_ID
+```
+
+**Workflow Shortcuts:**
+```bash
+# Claim and mark in-progress in one step
+coord task-work $CLAUDE_AGENT_ID task-123
+
+# Complete task and unlock files in one step
+coord task-done $CLAUDE_AGENT_ID task-123
+
+# Release task without completing (unclaim)
+coord task-release $CLAUDE_AGENT_ID task-123
+```
+
+**Import/Export:**
+```bash
+# Export all tasks to JSON
+coord export --output backup.json
+
+# Import tasks from JSON
+coord import tasks.json
+```
+
+**Example Workflow Using Convenience Commands:**
+```bash
+# Find available tasks
+coord task-filter --prefix code-high- --status pending
+
+# Claim next available task
+TASK=$(coord task-next $CLAUDE_AGENT_ID | jq -r '.task_id')
+
+# Start work (auto-claims and marks in-progress)
+coord task-work $CLAUDE_AGENT_ID $TASK
+
+# Lock files
+coord lock $CLAUDE_AGENT_ID src/api/auth.py
+
+# ... do work ...
+
+# Complete task (auto-unlocks and marks completed)
+coord task-done $CLAUDE_AGENT_ID $TASK
 ```
 
 ## Enforcement (Defense in Depth)

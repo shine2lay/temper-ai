@@ -370,16 +370,34 @@ Tests must cover:
 
 ## Action Items
 
-- [ ] Add invariant checks to all existing database tests
-- [ ] Update "wrong owner" tests to expect ValueError
-- [ ] Add timestamp integrity validation to all tests
-- [ ] Create NULL owner test scenarios
-- [ ] Add autouse fixture for invariant verification
-- [ ] Refactor concurrency tests to check invariants
-- [ ] Add chaos testing for corruption detection
-- [ ] Document testing philosophy (fail fast)
-- [ ] Add pre-commit hook to run corruption checks
-- [ ] Set up CI invariant monitoring
+**Status Last Updated:** 2026-02-01
+
+- [x] Add invariant checks to all existing database tests *(Completed: 2026-01-28)*
+- [x] Update "wrong owner" tests to expect ValueError *(Completed: 2026-01-28)*
+- [x] Add timestamp integrity validation to all tests *(Completed: 2026-01-29)*
+- [x] Create NULL owner test scenarios *(Completed: 2026-01-29)*
+- [x] Add autouse fixture for invariant verification *(Completed: 2026-01-30)*
+- [x] Refactor concurrency tests to check invariants *(Completed: 2026-01-30)*
+- [ ] Add chaos testing for corruption detection *(In Progress - M5)*
+- [x] Document testing philosophy (fail fast) *(Completed: M4 docs)*
+- [ ] Add pre-commit hook to run corruption checks *(Planned - M5)*
+- [x] Set up CI invariant monitoring *(Completed: 2026-01-31)*
+
+**Critical Database Bugs Status:**
+- ✅ Database corruption bugs: **FIXED** (2026-01-28 through 2026-01-30)
+- ✅ Concurrent access issues: **RESOLVED** with SQLite WAL mode
+- ✅ Orphaned locks: **FIXED** with heartbeat cleanup
+- ✅ Task state invariants: **IMPLEMENTED** and validated
+
+**Test Coverage Verification:**
+```bash
+# Verify corruption tests exist and pass
+pytest tests/test_compiler/test_checkpoint.py -v
+pytest tests/integration/test_checkpoint_resume.py -v
+
+# Check database integrity
+sqlite3 .claude-coord/coordination.db "PRAGMA integrity_check;"
+```
 
 ## Conclusion
 

@@ -67,6 +67,7 @@ llm-providers = [
     "anthropic>=0.8",
 ]
 
+# TODO: Replace 'yourusername' with actual GitHub username/organization
 [project.urls]
 Homepage = "https://github.com/yourusername/meta-autonomous-framework"
 Documentation = "https://github.com/yourusername/meta-autonomous-framework/docs"

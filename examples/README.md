@@ -265,10 +265,82 @@ Available models:
 
 **Problem:** SQLite database is locked by another process.
 
-**Solution:**
-- Close other connections to the database
-- Use `--db` to specify a different database path
-- For production, use PostgreSQL (M4)
+**Diagnosis:**
+```bash
+# Check which process has the database open
+lsof .claude-coord/coordination.db
+
+# Or on systems without lsof
+fuser .claude-coord/coordination.db
+```
+
+**Solutions:**
+
+1. **Kill the locking process:**
+```bash
+# Find process ID
+PID=$(lsof -t .claude-coord/coordination.db)
+
+# Kill gracefully
+kill $PID
+
+# Force kill if needed
+kill -9 $PID
+```
+
+2. **Use different database path:**
+```bash
+# Specify custom database location
+export COORD_DB_PATH=/tmp/my-coordination.db
+coord register $CLAUDE_AGENT_ID $$
+```
+
+3. **Enable WAL mode (recommended):**
+```bash
+# SQLite WAL mode allows concurrent reads
+sqlite3 .claude-coord/coordination.db "PRAGMA journal_mode=WAL;"
+```
+
+4. **For production, use PostgreSQL:**
+```bash
+# Set PostgreSQL connection
+export OBSERVABILITY_BACKEND=postgres
+export POSTGRES_URL=postgresql://user:pass@localhost/dbname
+```
+
+### Test paths
+
+**Problem:** Tests can't find modules or fixtures.
+
+**Specific examples:**
+```bash
+# Run tests from project root (not from tests/ directory)
+cd /home/shinelay/meta-autonomous-framework
+pytest tests/test_agents/
+
+# Run specific test file
+pytest tests/test_compiler/test_workflow_executor.py
+
+# Run specific test
+pytest tests/test_agents/test_standard_agent.py::test_agent_creation
+
+# Run with verbose output to see import errors
+pytest -vv tests/
+```
+
+### Database path clarification
+
+**Project database locations:**
+```bash
+# Coordination database (multi-agent)
+.claude-coord/coordination.db
+
+# Observability database (metrics, traces)
+observability.db  # Or configured via OBSERVABILITY_BACKEND
+
+# Test databases (temporary)
+tests/test_data/*.db
+```
 
 ---
 

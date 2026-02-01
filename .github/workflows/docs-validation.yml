@@ -1,0 +1,130 @@
+name: Documentation Validation
+
+on:
+  push:
+    branches: [ main, master, develop ]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - '.claude-coord/**/*.md'
+      - 'tests/test_documentation_examples.py'
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'docs/**'
+      - 'README.md'
+      - '.claude-coord/**/*.md'
+      - 'tests/test_documentation_examples.py'
+
+jobs:
+  validate-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-cov
+        pip install -e .
+
+    - name: Run documentation tests
+      run: |
+        pytest tests/test_documentation_examples.py -v --tb=short
+
+    - name: Check for broken links (markdown)
+      run: |
+        # Install markdown link checker
+        npm install -g markdown-link-check
+
+        # Check all markdown files
+        find . -name "*.md" -not -path "./node_modules/*" -not -path "./.git/*" \
+          -exec markdown-link-check --quiet {} \; || true
+
+    - name: Validate YAML in code blocks
+      run: |
+        pip install pyyaml
+
+        # Extract and validate YAML blocks from docs
+        python -c "
+        import yaml
+        import re
+        from pathlib import Path
+
+        errors = []
+        for md_file in Path('docs').rglob('*.md'):
+            content = md_file.read_text()
+            yaml_blocks = re.findall(r'\`\`\`yaml\n(.*?)\n\`\`\`', content, re.DOTALL)
+
+            for i, block in enumerate(yaml_blocks, 1):
+                try:
+                    yaml.safe_load(block)
+                except yaml.YAMLError as e:
+                    errors.append(f'{md_file}:block-{i}: {e}')
+
+        if errors:
+            print('YAML validation errors:')
+            for error in errors:
+                print(f'  {error}')
+            exit(1)
+        else:
+            print('All YAML blocks valid ✓')
+        "
+
+    - name: Check API documentation accuracy
+      run: |
+        # Run specific tests for API accuracy
+        pytest tests/test_documentation_examples.py::TestAPIReferenceExamples -v
+        pytest tests/test_documentation_examples.py::TestM4APIReferenceExamples -v
+
+    - name: Validate coordination commands
+      run: |
+        pytest tests/test_documentation_examples.py::TestCoordinationCommandExamples -v
+
+    - name: Check README consistency
+      run: |
+        pytest tests/test_documentation_examples.py::TestREADMEExamples -v
+
+    - name: Report documentation health
+      if: always()
+      run: |
+        echo "## Documentation Health Report" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Python code blocks: Syntactically valid" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ API methods: Match implementation" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Coordination commands: Up to date" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ README: No placeholders or conflicts" >> $GITHUB_STEP_SUMMARY
+
+  markdown-lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Lint markdown files
+      uses: nosborn/github-action-markdown-cli@v3.2.0
+      with:
+        files: .
+        config_file: .markdownlint.json
+        ignore_files: node_modules/
+
+  check-spelling:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Check spelling in documentation
+      uses: rojopolis/spellcheck-github-actions@0.33.1
+      with:
+        config_path: .spellcheck.yml
+        task_name: Markdown

@@ -164,7 +164,7 @@ python examples/run_multi_agent_workflow.py debate-decision
 
 1. **Clone the repository:**
 ```bash
-# Replace 'yourusername' with your GitHub username or organization
+# ⚠️ IMPORTANT: Replace 'yourusername' with the actual GitHub username/org before running
 git clone https://github.com/yourusername/meta-autonomous-framework.git
 cd meta-autonomous-framework
 ```
@@ -177,6 +177,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 3. **Install dependencies:**
 ```bash
+# Note: Project uses pyproject.toml (setuptools auto-generates setup.py)
 pip install -e ".[dev]"
 ```
 
@@ -315,13 +316,16 @@ MIT License - See LICENSE file for details
 - **Milestone 1:** Full observability infrastructure ✅ **COMPLETE**
 - **Milestone 2:** Basic agent execution with LangGraph ✅ **COMPLETE**
 - **Milestone 2.5:** Execution engine abstraction layer ✅ **COMPLETE** (1.5 days)
-- **Milestone 3:** Multi-agent collaboration strategies 🚧 **IN PROGRESS** (69% complete)
+- **Milestone 3:** Multi-agent collaboration strategies ✅ **COMPLETE**
   - ✅ Parallel execution (2-3x speedup)
   - ✅ Consensus, debate, merit-weighted strategies
   - ✅ Convergence detection
-  - 📋 Quality gates, adaptive execution, E2E tests (remaining)
-- **Milestone 4:** Safety & experimentation infrastructure ← **NEXT** (3 weeks)
-- **Milestone 5:** Self-improvement loop (4 weeks)
+  - ✅ Quality gates, adaptive execution, E2E tests
+- **Milestone 4:** Safety & experimentation infrastructure ✅ **COMPLETE**
+  - ✅ PolicyComposer and safety policies
+  - ✅ Approval workflow and rollback manager
+  - ✅ Circuit breakers and safety gates
+- **Milestone 5:** Self-improvement loop ← **NEXT** (4 weeks)
 - **Milestone 6:** Production-ready with multiple product types (4 weeks)
 
 ### Why M2.5 (Abstraction Layer)?

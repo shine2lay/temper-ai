@@ -1156,6 +1156,8 @@ Checkpoint and resume support for long-running workflows, enabling recovery from
 
 High-level checkpoint management for workflows.
 
+**Note:** Use `src.compiler.checkpoint_manager.CheckpointManager` (current implementation). The class in `src.compiler.checkpoint` is deprecated and maintained only for backward compatibility with existing tests.
+
 ```python
 from src.compiler.checkpoint_manager import (
     CheckpointManager,
@@ -1625,6 +1627,105 @@ class CustomHook(ExecutionHook):
 tracker = ExecutionTracker(hooks=[CustomHook()])
 set_tracker(tracker)
 ```
+
+---
+
+### ObservabilityBuffer
+
+**Module:** `src.observability.buffer`
+
+**Description:** Batches observability operations to reduce database queries and improve performance.
+
+**Key Features:**
+- Buffers LLM calls, tool calls, and metric updates
+- Automatic flush based on size or time interval
+- Thread-safe for concurrent access
+- Retry logic with dead-letter queue for failed operations
+- Reduces N+1 query problem (100 calls: 200 queries → 2-4 queries)
+
+```python
+from src.observability.buffer import ObservabilityBuffer
+
+# Create buffer with custom settings
+buffer = ObservabilityBuffer(
+    flush_size=100,        # Flush after 100 items
+    flush_interval=1.0,    # Or flush every 1 second
+    auto_flush=True,       # Enable background flushing
+    max_retries=3,         # Retry failed operations 3 times
+    enable_dlq=True        # Enable dead-letter queue
+)
+
+# Buffer operations (batched automatically)
+buffer.buffer_llm_call(llm_call_data)
+buffer.buffer_tool_call(tool_call_data)
+buffer.update_agent_metrics(agent_id, metrics)
+
+# Manual flush (optional - happens automatically)
+buffer.flush()
+
+# Graceful shutdown
+buffer.stop()
+```
+
+**Constructor Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `flush_size` | int | 100 | Flush when buffer reaches this many items |
+| `flush_interval` | float | 1.0 | Flush every N seconds (if auto_flush enabled) |
+| `auto_flush` | bool | True | Enable automatic background flushing |
+| `max_retries` | int | 3 | Maximum retry attempts before dead-letter queue |
+| `enable_dlq` | bool | True | Enable dead-letter queue for permanently failed items |
+
+**Methods:**
+
+- `buffer_llm_call(llm_call: BufferedLLMCall)` - Add LLM call to buffer
+- `buffer_tool_call(tool_call: BufferedToolCall)` - Add tool call to buffer
+- `update_agent_metrics(agent_id: str, metrics: Dict)` - Update agent metrics
+- `flush()` - Manually flush all buffered data
+- `stop()` - Stop background flush thread and flush remaining data
+- `set_flush_callback(callback: Callable)` - Set callback for flush operations
+- `set_dlq_callback(callback: Callable)` - Set callback for dead-letter queue items
+
+**Performance Impact:**
+
+Without buffering:
+```
+100 LLM calls = 200 database queries
+(1 INSERT + 1 UPDATE per call)
+```
+
+With buffering:
+```
+100 LLM calls = 2-4 database queries
+(1 batch INSERT, 1 batch UPDATE)
+```
+
+**Thread Safety:**
+
+All public methods are thread-safe using `threading.Lock`. Safe to use from multiple threads concurrently.
+
+**Example with Backend Integration:**
+
+```python
+from src.observability.buffer import ObservabilityBuffer
+from src.observability.postgres_backend import PostgresBackend
+
+# Create backend
+backend = PostgresBackend(connection_string="postgresql://...")
+
+# Create buffer
+buffer = ObservabilityBuffer(flush_size=50, flush_interval=2.0)
+
+# Wire buffer to backend
+buffer.set_flush_callback(backend.batch_insert)
+
+# Now all buffered operations automatically flush to backend
+buffer.buffer_llm_call(...)
+buffer.buffer_tool_call(...)
+```
+
+---
 
 ### Observability Backends
 
@@ -2395,7 +2496,7 @@ class Calculator(BaseTool):
 
 # Create agent with tool
 registry = ToolRegistry(auto_discover=False)
-registry.register_tool(Calculator())
+registry.register(Calculator())
 
 config = AgentConfigInner(
     name="calculator_agent",

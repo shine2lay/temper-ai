@@ -1,71 +1,77 @@
-# Change Log Archive
+# Changes Archive
 
-This directory contains archived change logs organized by milestone and category.
+This directory contains archived change proposals, task reports, and implementation plans from completed milestones.
 
----
+## Purpose
 
-## Archive Structure
+Historical record of:
+- Completed change proposals
+- Implemented test additions
+- Resolved code quality issues
+- Finished documentation updates
 
-| Category | Files | Description |
-|----------|-------|-------------|
-| [Milestone 1](./milestone-1/) | 3 | Core Agent System |
-| [Milestone 2](./milestone-2/) | 8 | Workflow Orchestration |
-| [Milestone 2.5](./milestone-2.5/) | 5 | Execution Engine Abstraction |
-| [Milestone 3](./milestone-3/) | 12 | Multi-Agent Collaboration |
-| [Milestone 4](./milestone-4/) | 1 | Safety & Governance System (in progress) |
-| [Code Quality](./code-quality/) | 28 | Bug fixes, refactoring, optimizations |
-| [Testing](./testing/) | 9 | Test suites and test infrastructure |
-| [Documentation](./documentation/) | 16 | Documentation guides and updates |
+## Organization
 
-**Total:** 82 archived change logs
+### Root Level
 
----
+Numbered change files (e.g., `0104-test-boundary-values.md`):
+- **Naming:** `MMDD-description.md` where MMDD is month-day
+- **Date Range:** January 2026
+- **Topics:** Test implementations, database improvements, collaboration strategies
 
-## Archive Policy
+### Subdirectories
 
-Change logs are archived when:
-- Milestone is complete
-- Task is fully implemented and tested
-- Related work is merged and deployed
-- Log is older than 30 days (for completed work)
+#### `code-quality/`
+Archived code quality improvements and refactoring proposals.
 
----
+**Date Range:** January 2026
+**Contents:** Code review findings, refactoring plans
 
-## Finding Logs
+#### `documentation/`
+Archived documentation updates and improvements.
 
-### By Milestone
-- **M1** tasks: `./milestone-1/`
-- **M2** tasks: `./milestone-2/`
-- **M2.5** tasks: `./milestone-2.5/`
-- **M3** tasks: `./milestone-3/`
-- **M4** tasks: `./milestone-4/`
+**Date Range:** January 2026
+**Contents:** Doc fixes, API documentation updates
 
-### By Category
-- **Code quality** (cq-*): `./code-quality/`
-- **Testing** (test-*): `./testing/`
-- **Documentation** (doc-*): `./documentation/`
+## File Naming Convention
 
-### Search Example
-
-```bash
-# Find all security-related changes
-grep -r "security\|SSRF\|injection" changes/archive/
-
-# Find specific task
-find changes/archive/ -name "*<task-id>*"
-
-# List all M3 changes
-ls changes/archive/milestone-3/
+```
+MMDD-category-description.md
 ```
 
+**Examples:**
+- `0104-test-boundary-values.md` - Test improvements from Jan 4
+- `0105-test-state-transitions.md` - State transition tests from Jan 5
+- `0107-test-collaboration-strategies.md` - Collaboration tests from Jan 7
+
+## When Files Are Archived
+
+Changes are moved here when:
+1. ✅ Implementation complete
+2. ✅ Tests passing
+3. ✅ Code merged to main
+4. ✅ Milestone completed
+
+## Accessing Archived Changes
+
+```bash
+# View all archived changes
+ls -lt changes/archive/
+
+# Search for specific topic
+grep -r "database" changes/archive/
+
+# View specific change
+cat changes/archive/0106-test-database-failures.md
+```
+
+## Retention Policy
+
+- **Keep:** All completed milestone changes
+- **Purpose:** Historical reference, lessons learned
+- **Review:** Annually for relevance
+
 ---
 
-## Related Documentation
-
-- **Milestone Reports**: `/docs/milestones/`
-- **Current Change Logs**: `/changes/` (active work)
-- **Project Roadmap**: `/docs/ROADMAP.md`
-
----
-
-Last updated: 2026-01-27
+**Archive Created:** January 2026
+**Last Updated:** 2026-02-01

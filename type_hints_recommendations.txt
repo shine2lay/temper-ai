@@ -1,1 +1,0 @@
-To get the most out of type hints in Python, consider using static code analysis tools like mypy and incorporating this feature into your development workflow.

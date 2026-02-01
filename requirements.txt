@@ -1,3 +1,14 @@
+# Meta-Autonomous Framework - Pinned Dependencies
+#
+# This file contains tested/locked versions for reproducible builds.
+# Canonical dependency definitions are in pyproject.toml.
+#
+# Installation:
+#   pip install -e .              # Install from pyproject.toml (flexible versions)
+#   pip install -r requirements.txt  # Install exact tested versions (locked)
+#
+# To regenerate: pip freeze > requirements.txt
+
 # Core framework dependencies
 pydantic>=2.12.5
 sqlmodel>=0.0.31

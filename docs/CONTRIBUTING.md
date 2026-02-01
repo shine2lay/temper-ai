@@ -72,7 +72,7 @@ pytest
 
 # Check code style
 black src/ tests/
-flake8 src/ tests/
+ruff check src/ tests/
 ```
 
 ### 4. Commit and Push
@@ -193,12 +193,13 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 
 3. **Install in development mode:**
 ```bash
+# Note: Project uses pyproject.toml (setuptools auto-generates setup.py from it)
 pip install -e ".[dev]"
 ```
 
 This installs:
 - Core dependencies
-- Development tools (pytest, black, flake8)
+- Development tools (pytest, black, ruff)
 - Documentation tools (sphinx, mkdocs)
 
 4. **Install pre-commit hooks (optional):**
@@ -250,22 +251,27 @@ target-version = ['py311']
 
 ### Linting
 
-We use **flake8** for linting:
+We use **ruff** for linting (modern, faster replacement for flake8):
 
 ```bash
 # Lint code
-flake8 src/ tests/
+ruff check src/ tests/
 
-# With specific rules
-flake8 --max-line-length=100 src/
+# Auto-fix issues where possible
+ruff check --fix src/ tests/
+
+# Check specific rules
+ruff check --select E,F,W src/
 ```
 
-**Configuration:** `.flake8`
-```ini
-[flake8]
-max-line-length = 100
-exclude = .git,__pycache__,venv
-ignore = E203,W503
+**Configuration:** `pyproject.toml` under `[tool.ruff]`
+```toml
+[tool.ruff]
+line-length = 100
+exclude = [".git", "__pycache__", "venv"]
+
+# Note: Project migrated from flake8 to ruff in M4
+# Ruff provides faster linting and built-in formatting
 ```
 
 ### Type Hints
@@ -415,7 +421,7 @@ def test_with_fixture(sample_config):
 - [ ] New tests added for new functionality
 - [ ] Documentation updated
 - [ ] Code formatted (`black`)
-- [ ] Linting passes (`flake8`)
+- [ ] Linting passes (`ruff check`)
 - [ ] Commit messages are descriptive
 
 ### Creating the PR
@@ -779,7 +785,7 @@ pytest tests/test_relevant_module.py -v
 black src/ tests/
 
 # 5. Check linting
-flake8 src/ tests/
+ruff check src/ tests/
 
 # 6. Run full test suite
 pytest --cov=src tests/

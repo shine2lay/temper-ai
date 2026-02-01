@@ -13,7 +13,10 @@ Design Principles:
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any
+from pathlib import Path
 import logging
+import json
+import uuid
 from sqlmodel import Session, select, func
 from sqlalchemy import case, and_
 
@@ -62,14 +65,21 @@ class PerformanceAnalyzer:
         - Fail fast (invalid inputs raise immediately)
     """
 
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, baseline_storage_path: Optional[Path] = None):
         """
         Initialize analyzer with database session.
 
         Args:
             session: SQLModel session for database queries
+            baseline_storage_path: Optional path for baseline storage (default: .baselines/)
         """
         self.session = session
+
+        # Set up baseline storage directory
+        if baseline_storage_path is None:
+            baseline_storage_path = Path(".baselines")
+        self.baseline_storage_path = Path(baseline_storage_path)
+        self.baseline_storage_path.mkdir(parents=True, exist_ok=True)
 
     def analyze_agent_performance(
         self,
@@ -259,6 +269,8 @@ class PerformanceAnalyzer:
         """
         Get historical baseline performance for comparison.
 
+        First checks for a stored baseline, then falls back to calculating from data.
+
         Args:
             agent_name: Name of agent
             window_days: Days to use for baseline (default 30)
@@ -273,6 +285,18 @@ class PerformanceAnalyzer:
             ...     delta = current.get_metric("success_rate", "mean") - baseline.get_metric("success_rate", "mean")
             ...     print(f"Success rate change: {delta:+.2%}")
         """
+        # First, try to retrieve stored baseline
+        stored_baseline = self.retrieve_baseline(agent_name)
+        if stored_baseline is not None:
+            logger.info(
+                f"Retrieved stored baseline for {agent_name}: "
+                f"{stored_baseline.total_executions} executions, "
+                f"window {stored_baseline.window_start} to {stored_baseline.window_end}"
+            )
+            return stored_baseline
+
+        # Fallback: Calculate baseline from data if no stored baseline exists
+        logger.info(f"No stored baseline found for {agent_name}, calculating from data")
         try:
             return self.analyze_agent_performance(
                 agent_name,
@@ -285,6 +309,169 @@ class PerformanceAnalyzer:
                 f"window_days={window_days}"
             )
             return None
+
+    def store_baseline(
+        self,
+        agent_name: str,
+        profile: Optional[AgentPerformanceProfile] = None,
+        window_days: int = 30
+    ) -> AgentPerformanceProfile:
+        """
+        Store a baseline performance profile for future comparisons.
+
+        If profile is not provided, calculates a new baseline from recent data.
+
+        Args:
+            agent_name: Name of agent
+            profile: Optional pre-calculated profile to store
+            window_days: Days to use if calculating new baseline (default 30)
+
+        Returns:
+            The stored AgentPerformanceProfile
+
+        Raises:
+            InsufficientDataError: If insufficient data to create baseline
+            IOError: If storage fails
+
+        Example:
+            >>> # Calculate and store baseline
+            >>> profile = analyzer.analyze_agent_performance("my_agent", window_hours=720)
+            >>> analyzer.store_baseline("my_agent", profile)
+
+            >>> # Or let it calculate automatically
+            >>> analyzer.store_baseline("my_agent", window_days=30)
+        """
+        # If no profile provided, calculate one
+        if profile is None:
+            logger.info(f"Calculating baseline for {agent_name} using {window_days} days")
+            profile = self.analyze_agent_performance(
+                agent_name,
+                window_hours=window_days * 24,
+                min_executions=50  # Higher threshold for baseline
+            )
+
+        # Generate profile ID if not present
+        if profile.profile_id is None:
+            profile.profile_id = str(uuid.uuid4())
+
+        # Ensure agent_name matches
+        if profile.agent_name != agent_name:
+            raise ValueError(
+                f"Profile agent_name '{profile.agent_name}' does not match "
+                f"provided agent_name '{agent_name}'"
+            )
+
+        # Store to file system
+        baseline_file = self.baseline_storage_path / f"{agent_name}_baseline.json"
+        try:
+            with open(baseline_file, 'w') as f:
+                json.dump(profile.to_dict(), f, indent=2)
+
+            logger.info(
+                f"Stored baseline for {agent_name}: "
+                f"{profile.total_executions} executions, "
+                f"window {profile.window_start} to {profile.window_end}"
+            )
+
+            return profile
+
+        except Exception as e:
+            logger.error(f"Failed to store baseline for {agent_name}: {e}")
+            raise IOError(f"Baseline storage failed: {e}") from e
+
+    def retrieve_baseline(
+        self,
+        agent_name: str
+    ) -> Optional[AgentPerformanceProfile]:
+        """
+        Retrieve a stored baseline performance profile.
+
+        Args:
+            agent_name: Name of agent
+
+        Returns:
+            AgentPerformanceProfile if baseline exists, None otherwise
+
+        Example:
+            >>> baseline = analyzer.retrieve_baseline("my_agent")
+            >>> if baseline:
+            ...     print(f"Baseline from {baseline.window_start}")
+        """
+        baseline_file = self.baseline_storage_path / f"{agent_name}_baseline.json"
+
+        if not baseline_file.exists():
+            logger.debug(f"No stored baseline found for {agent_name}")
+            return None
+
+        try:
+            with open(baseline_file, 'r') as f:
+                data = json.load(f)
+
+            profile = AgentPerformanceProfile.from_dict(data)
+
+            logger.debug(
+                f"Retrieved baseline for {agent_name}: "
+                f"{profile.total_executions} executions"
+            )
+
+            return profile
+
+        except Exception as e:
+            logger.warning(f"Failed to retrieve baseline for {agent_name}: {e}")
+            return None
+
+    def delete_baseline(
+        self,
+        agent_name: str
+    ) -> bool:
+        """
+        Delete a stored baseline for an agent.
+
+        Args:
+            agent_name: Name of agent
+
+        Returns:
+            True if baseline was deleted, False if it didn't exist
+
+        Example:
+            >>> analyzer.delete_baseline("my_agent")
+            True
+        """
+        baseline_file = self.baseline_storage_path / f"{agent_name}_baseline.json"
+
+        if not baseline_file.exists():
+            logger.debug(f"No baseline to delete for {agent_name}")
+            return False
+
+        try:
+            baseline_file.unlink()
+            logger.info(f"Deleted baseline for {agent_name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to delete baseline for {agent_name}: {e}")
+            raise IOError(f"Baseline deletion failed: {e}") from e
+
+    def list_baselines(self) -> List[str]:
+        """
+        List all agent names with stored baselines.
+
+        Returns:
+            List of agent names
+
+        Example:
+            >>> agents_with_baselines = analyzer.list_baselines()
+            >>> print(f"Found {len(agents_with_baselines)} baselines")
+        """
+        baselines = []
+
+        for baseline_file in self.baseline_storage_path.glob("*_baseline.json"):
+            # Extract agent name from filename (remove "_baseline.json")
+            agent_name = baseline_file.stem.replace("_baseline", "")
+            baselines.append(agent_name)
+
+        logger.debug(f"Found {len(baselines)} stored baselines")
+        return sorted(baselines)
 
     def analyze_all_agents(
         self,

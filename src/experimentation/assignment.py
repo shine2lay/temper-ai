@@ -175,8 +175,9 @@ class HashAssignment(AssignmentStrategy):
         if context and "hash_key" in context:
             hash_input = str(context["hash_key"])
 
-        # Compute hash
-        hash_value = int(hashlib.md5(hash_input.encode()).hexdigest(), 16)
+        # Compute hash using SHA-256 (FIPS 140-2 approved, collision-resistant)
+        # Security: Replaced MD5 (broken, collision vulnerable) with SHA-256
+        hash_value = int(hashlib.sha256(hash_input.encode()).hexdigest(), 16)
 
         # Map hash to variant based on traffic allocation
         variant_id = self._hash_to_variant(hash_value, variants)

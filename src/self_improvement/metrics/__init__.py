@@ -42,6 +42,9 @@ from src.self_improvement.metrics.collector import (
     ExecutionProtocol,
 )
 from src.self_improvement.metrics.types import MetricType, MetricValue
+from src.self_improvement.metrics.extraction_quality import (
+    ExtractionQualityCollector,
+)
 
 __all__ = [
     "MetricCollector",
@@ -49,4 +52,5 @@ __all__ = [
     "ExecutionProtocol",
     "MetricType",
     "MetricValue",
+    "ExtractionQualityCollector",
 ]

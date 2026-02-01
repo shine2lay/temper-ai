@@ -4,9 +4,15 @@ Experiment service for A/B testing and experimentation.
 Main API for creating, managing, and analyzing experiments.
 """
 
+import os
+import re
+import secrets
+import time
+import unicodedata
 import uuid
 from datetime import datetime
 from typing import Dict, List, Any, Optional
+from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session, select
 
 from src.core.service import Service
@@ -29,6 +35,85 @@ from src.utils.logging import get_logger
 
 
 logger = get_logger(__name__)
+
+
+def validate_experiment_name(name: str) -> str:
+    """
+    Validate and sanitize experiment name.
+
+    Security requirements:
+    - Alphanumeric, underscore, hyphen only
+    - 1-50 characters
+    - No Unicode tricks (homograph attacks)
+    - Normalized form (NFKC)
+
+    Args:
+        name: Raw experiment name
+
+    Returns:
+        Validated and normalized name
+
+    Raises:
+        ValueError: If name violates security policy
+
+    Example:
+        >>> validate_experiment_name("test_experiment_v2")
+        'test_experiment_v2'
+        >>> validate_experiment_name("test'; DROP TABLE--")
+        Traceback (most recent call last):
+        ValueError: Experiment name must contain only alphanumeric...
+    """
+    # 1. Length check (before expensive operations)
+    if not name or len(name) > 50:
+        raise ValueError("Experiment name must be 1-50 characters")
+
+    # 2. Normalize Unicode (prevent homograph attacks)
+    # NFKC = Compatibility Decomposition + Canonical Composition
+    normalized = unicodedata.normalize('NFKC', name)
+
+    # 3. Character set validation
+    if not re.match(r'^[a-zA-Z0-9_-]+$', normalized):
+        raise ValueError(
+            "Experiment name must contain only alphanumeric characters, "
+            "underscores, and hyphens (a-zA-Z0-9_-)"
+        )
+
+    # 4. Must start with letter (prevent issues with tooling)
+    if not normalized[0].isalpha():
+        raise ValueError("Experiment name must start with a letter")
+
+    # 5. No consecutive special characters (aesthetic + prevents parsing issues)
+    if re.search(r'[-_]{2,}', normalized):
+        raise ValueError("Experiment name cannot contain consecutive hyphens or underscores")
+
+    return normalized
+
+
+def validate_variant_name(name: str) -> str:
+    """
+    Validate variant name (same rules as experiment name but shorter).
+
+    Args:
+        name: Raw variant name
+
+    Returns:
+        Validated and normalized name
+
+    Raises:
+        ValueError: If name violates security policy
+    """
+    if not name or len(name) > 30:
+        raise ValueError("Variant name must be 1-30 characters")
+
+    normalized = unicodedata.normalize('NFKC', name)
+
+    if not re.match(r'^[a-zA-Z0-9_-]+$', normalized):
+        raise ValueError(
+            "Variant name must contain only alphanumeric characters, "
+            "underscores, and hyphens"
+        )
+
+    return normalized
 
 
 class ExperimentService(Service):
@@ -117,9 +202,55 @@ class ExperimentService(Service):
         Raises:
             ValueError: If experiment configuration is invalid
         """
+        # SECURITY: Timing attack mitigation - add random delay (10-50ms)
+        # Only in production, not in tests
+        if not os.getenv('TESTING'):
+            delay = secrets.randbelow(40) / 1000.0 + 0.01  # 10-50ms
+            time.sleep(delay)
+
+        # SECURITY: Validate experiment name
+        # Note: ORM already prevents SQL injection via parameterization.
+        # This validation prevents timing attacks, homograph attacks, and malicious naming patterns.
+        try:
+            name = validate_experiment_name(name)
+        except ValueError as e:
+            logger.warning(
+                f"Invalid experiment name rejected: {name[:100]}",
+                extra={
+                    "security_event": "INPUT_VALIDATION_FAILED",
+                    "input_name": name[:100],
+                    "input_length": len(name),
+                    "user": kwargs.get("created_by"),
+                    "error": str(e)
+                }
+            )
+            raise
+
         # Validate inputs
         if not variants or len(variants) < 2:
             raise ValueError("Experiment must have at least 2 variants")
+
+        # SECURITY: Validate ALL variant names first (atomic operation)
+        # This ensures we don't partially mutate the variants list on error
+        validated_variants = []
+        for variant_config in variants:
+            try:
+                validated_name = validate_variant_name(variant_config["name"])
+                validated_variants.append({**variant_config, "name": validated_name})
+            except ValueError as e:
+                logger.warning(
+                    f"Invalid variant name rejected: {variant_config.get('name', '')[:30]}",
+                    extra={
+                        "security_event": "INPUT_VALIDATION_FAILED",
+                        "variant_name": variant_config.get("name", "")[:30],
+                        "experiment_name": name,
+                        "error": str(e)
+                    }
+                )
+                raise
+
+        # Use validated variants for processing
+        variants = validated_variants
 
         # Calculate traffic allocation
         traffic_allocation = {
@@ -171,11 +302,27 @@ class ExperimentService(Service):
             variant_models.append(variant)
 
         # Save to database
-        with get_session() as session:
-            session.add(experiment)
-            for variant in variant_models:
-                session.add(variant)
-            session.commit()
+        try:
+            with get_session() as session:
+                session.add(experiment)
+                for variant in variant_models:
+                    session.add(variant)
+                session.commit()
+        except IntegrityError as e:
+            # SECURITY: Don't reveal which constraint failed (timing attack mitigation)
+            logger.warning(
+                f"Experiment creation failed due to constraint violation",
+                extra={
+                    "security_event": "DATABASE_CONSTRAINT_VIOLATION",
+                    "experiment_name": name,
+                    "user": kwargs.get("created_by"),
+                    "error_type": type(e).__name__
+                }
+            )
+            raise ValueError(
+                "Experiment creation failed. "
+                "This may be due to a duplicate name or other constraint violation."
+            )
 
         logger.info(f"Created experiment: {name} (ID: {experiment_id})")
         return experiment_id

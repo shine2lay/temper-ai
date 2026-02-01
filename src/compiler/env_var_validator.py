@@ -13,6 +13,8 @@ SECURITY PRINCIPLES:
 """
 
 import re
+import os
+from pathlib import Path
 from typing import Dict, Pattern, Optional, Tuple
 from dataclasses import dataclass
 from enum import Enum
@@ -116,11 +118,13 @@ class EnvVarValidator:
         ValidationLevel.PATH: ValidationRule(
             level=ValidationLevel.PATH,
             # Path-safe characters (traversal checked separately)
-            pattern=re.compile(r'^[A-Za-z0-9_./: -]+$'),
+            # Includes backslash for Windows paths (double backslash in raw string)
+            pattern=re.compile(r'^[A-Za-z0-9_./:\\ -]+$'),
             message="Path variables must contain only path-safe characters.",
             examples=[
-                "/etc/config",       # Valid
-                "./configs/agents",  # Valid
+                "/etc/config",       # Valid (Unix)
+                "./configs/agents",  # Valid (Unix)
+                "data\\config.yml",  # Valid (Windows)
                 "../../../passwd",   # BLOCKED (traversal check)
                 "/tmp; rm -rf /",    # BLOCKED (semicolon)
             ]
@@ -245,6 +249,89 @@ class EnvVarValidator:
         # This is safer than UNRESTRICTED
         return ValidationLevel.DATA
 
+    def _validate_path_traversal(
+        self,
+        path_value: str,
+        base_dir: Optional[str] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Validate path for traversal attempts (cross-platform).
+
+        Handles:
+        - Path normalization (. and ..)
+        - Symlink resolution
+        - Windows drive letters
+        - UNC paths (\\\\server\\share)
+        - Mixed separators (/ and \\)
+
+        Args:
+            path_value: Path to validate
+            base_dir: Optional base directory to check containment
+
+        Returns:
+            (is_valid, error_message) - error_message is None if valid
+        """
+        try:
+            # Check for Windows absolute paths BEFORE normalization
+            original_path = str(path_value)
+            is_unc = original_path.startswith('\\\\') or original_path.startswith('//')
+            is_windows_absolute = (
+                len(original_path) >= 3 and
+                original_path[0].isalpha() and
+                original_path[1] == ':' and
+                original_path[2] in ('\\', '/')
+            )
+
+            # Normalize path separators (convert backslash to forward slash)
+            # This ensures cross-platform handling of Windows-style paths on Unix
+            path_str = original_path.replace('\\', '/')
+
+            # Normalize and resolve the path (handles .., symlinks, etc.)
+            # Try with strict=True first (checks existence), fall back if path doesn't exist yet
+            try:
+                target = Path(path_str).resolve(strict=True)
+            except (FileNotFoundError, RuntimeError, OSError):
+                # Path doesn't exist yet (OK for validation), use non-strict resolve
+                target = Path(path_str).resolve()
+
+            # If base_dir provided, check containment and absolute path restrictions
+            if base_dir:
+                base = Path(base_dir).resolve()
+
+                # Reject Windows absolute paths (C:\, D:\, etc.)
+                if is_windows_absolute:
+                    return False, (
+                        f"Absolute Windows path not allowed: {path_value}"
+                    )
+
+                # Reject UNC paths if base is not UNC
+                base_is_unc = str(base_dir).startswith('\\\\') or str(base_dir).startswith('//')
+                if is_unc and not base_is_unc:
+                    return False, "UNC path not allowed when base is not UNC"
+
+                # Check if target is within base directory
+                try:
+                    target.relative_to(base)
+                except ValueError:
+                    return False, (
+                        f"Path escapes base directory: {path_value} "
+                        f"is not within {base_dir}"
+                    )
+
+                # Check for drive letter mismatch (Windows or when path has drive)
+                if base.drive or target.drive:
+                    if base.drive != target.drive:
+                        return False, (
+                            f"Path on different drive: {target.drive} vs {base.drive}"
+                        )
+
+            # Note: resolve() handles .. patterns, so no additional check needed
+            # The containment check above (relative_to) catches any escapes
+            return True, None
+
+        except (ValueError, OSError) as e:
+            return False, f"Invalid path: {e}"
+
     def validate(
         self,
         var_name: str,
@@ -288,11 +375,13 @@ class EnvVarValidator:
         #    This provides better error messages than generic pattern failures
 
         if validation_level == ValidationLevel.PATH:
-            # Check for path traversal (both Unix and Windows style)
-            if '../' in value or '..\\' in value:
+            # Check for path traversal using robust cross-platform validation
+            # Use current working directory as base to prevent absolute path access
+            is_safe, error_msg = self._validate_path_traversal(value, base_dir=os.getcwd())
+            if not is_safe:
                 return False, (
-                    f"Environment variable '{var_name}' contains path "
-                    f"traversal pattern"
+                    f"Environment variable '{var_name}' failed path validation: "
+                    f"{error_msg}"
                 )
 
         elif validation_level == ValidationLevel.EXECUTABLE:

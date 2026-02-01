@@ -18,6 +18,7 @@ Reference:
 - OWASP Top 10 2021
 - CWE-77 (Command Injection), CWE-22 (Path Traversal), CWE-89 (SQL Injection)
 """
+import os
 import pytest
 from src.compiler.env_var_validator import (
     EnvVarValidator,
@@ -131,7 +132,7 @@ class TestEnvVarValidatorPathLevel:
         for var_name, attack_value in attack_vectors:
             is_valid, error = validator.validate(var_name, attack_value)
             assert not is_valid, f"Path traversal should be blocked: {var_name}={attack_value}"
-            assert "traversal" in error.lower(), f"Error should mention traversal: {error}"
+            assert ("traversal" in error.lower() or "escapes" in error.lower()), f"Error should mention traversal or escaping: {error}"
 
     def test_path_traversal_windows_blocked(self):
         """Windows-style path traversal must be blocked."""
@@ -535,7 +536,7 @@ class TestEnvVarValidatorErrorMessages:
 
         is_valid, error = validator.validate("DATA_PATH", "../../../etc/passwd")
         assert not is_valid
-        assert "traversal" in error.lower(), f"Error should mention path traversal: {error}"
+        assert ("traversal" in error.lower() or "escapes" in error.lower()), f"Error should mention path traversal or escaping: {error}"
 
 
 # ============================================================================
@@ -572,3 +573,182 @@ class TestEnvVarValidatorPerformance:
 
         # Should complete quickly (<0.1s) even with pathological input
         assert elapsed < 0.1, f"Pathological input took {elapsed:.2f}s (potential backtracking)"
+
+
+class TestWindowsPathTraversal:
+    """Tests for Windows-specific path traversal vulnerabilities (task code-high-windows-path-19)."""
+
+    def test_complex_windows_path_traversal_blocked(self):
+        """Test complex Windows path traversal patterns."""
+        import os
+        validator = EnvVarValidator()
+
+        # These should all be blocked regardless of OS
+        attack_vectors = [
+            ("DATA_PATH", "..\\..\\etc\\passwd"),
+            ("CONFIG_DIR", "C:\\projects\\..\\..\\etc\\passwd"),
+            ("FILE_PATH", "data\\..\\..\\..\\..\\windows\\system32"),
+            ("LOG_PATH", "..\\..\\..\\..\\..\\root\\.ssh\\id_rsa"),
+        ]
+
+        for var_name, attack_value in attack_vectors:
+            is_valid, error = validator.validate(var_name, attack_value)
+            assert not is_valid, f"Complex Windows traversal should be blocked: {var_name}={attack_value}"
+            assert error is not None, "Error message should be provided"
+
+    @pytest.mark.skipif(os.name != 'nt', reason="Windows-specific test")
+    def test_windows_unc_path_detection(self):
+        """Test UNC path detection on Windows."""
+        validator = EnvVarValidator()
+
+        # UNC paths should be detected
+        unc_paths = [
+            "\\\\server\\share\\file.txt",
+            "\\\\192.168.1.1\\share\\data",
+        ]
+
+        for path in unc_paths:
+            is_valid, error = validator.validate("DATA_PATH", path)
+            # UNC paths are blocked by pattern validation (contains \\)
+            assert not is_valid, f"UNC path should be blocked: {path}"
+
+    @pytest.mark.skipif(os.name != 'nt', reason="Windows-specific test")
+    def test_windows_drive_letter_traversal(self):
+        """Test drive letter changes are handled correctly."""
+        validator = EnvVarValidator()
+
+        # Different drive letters
+        paths = [
+            "D:\\other\\path",
+            "E:\\data\\file.txt",
+        ]
+
+        for path in paths:
+            # These are absolute paths, which are blocked by the pattern
+            is_valid, error = validator.validate("DATA_PATH", path)
+            assert not is_valid, f"Different drive should be blocked: {path}"
+
+    def test_mixed_separator_traversal_blocked(self):
+        """Test mixed path separators (Unix and Windows) are blocked."""
+        validator = EnvVarValidator()
+
+        attack_vectors = [
+            ("DATA_PATH", "../data\\..\\etc/passwd"),
+            ("CONFIG_DIR", "data/../../windows\\system32"),
+            ("FILE_PATH", "..\\../etc/shadow"),
+        ]
+
+        for var_name, attack_value in attack_vectors:
+            is_valid, error = validator.validate(var_name, attack_value)
+            assert not is_valid, f"Mixed separator traversal should be blocked: {var_name}={attack_value}"
+
+    def test_normalized_paths_are_safe(self):
+        """Test that safe normalized paths are allowed."""
+        validator = EnvVarValidator()
+
+        safe_paths = [
+            ("DATA_PATH", "data/config.yml"),
+            ("CONFIG_DIR", "logs"),
+            ("FILE_PATH", "output/results.txt"),
+            ("LOG_PATH", "tmp/temp.log"),
+        ]
+
+        for var_name, safe_value in safe_paths:
+            is_valid, error = validator.validate(var_name, safe_value)
+            assert is_valid, f"Safe path should be allowed: {var_name}={safe_value}, error: {error}"
+
+    def test_path_with_dots_but_safe(self):
+        """Test paths containing dots in filenames are allowed."""
+        validator = EnvVarValidator()
+
+        safe_paths = [
+            ("DATA_PATH", "config.v2.yml"),
+            ("FILE_PATH", "output.2024.01.01.log"),
+            ("LOG_PATH", "data/file.with.many.dots.txt"),
+        ]
+
+        for var_name, safe_value in safe_paths:
+            is_valid, error = validator.validate(var_name, safe_value)
+            assert is_valid, f"Safe path with dots should be allowed: {var_name}={safe_value}, error: {error}"
+
+    def test_path_starting_with_dot_blocked(self):
+        """Test paths starting with .. are blocked."""
+        validator = EnvVarValidator()
+
+        attack_vectors = [
+            ("DATA_PATH", ".."),
+            ("CONFIG_DIR", "../"),
+            ("FILE_PATH", "..\\"),
+            ("LOG_PATH", "../config"),
+        ]
+
+        for var_name, attack_value in attack_vectors:
+            is_valid, error = validator.validate(var_name, attack_value)
+            assert not is_valid, f"Path starting with .. should be blocked: {var_name}={attack_value}"
+
+    def test_deeply_nested_traversal_blocked(self):
+        """Test deeply nested path traversal is blocked."""
+        validator = EnvVarValidator()
+
+        # Very deep traversal
+        deep_traversal = "/.." * 20 + "/etc/passwd"
+        is_valid, error = validator.validate("DATA_PATH", deep_traversal)
+        assert not is_valid, "Deeply nested traversal should be blocked"
+
+        # Windows style
+        deep_windows = "\\.." * 20 + "\\windows\\system32"
+        is_valid, error = validator.validate("DATA_PATH", deep_windows)
+        assert not is_valid, "Deeply nested Windows traversal should be blocked"
+
+    def test_absolute_paths_rejected_without_base_dir(self):
+        """Absolute paths should be rejected as they escape base directory."""
+        validator = EnvVarValidator()
+
+        # Unix absolute paths
+        is_valid, error = validator.validate("DATA_PATH", "/etc/passwd")
+        assert not is_valid, "Absolute Unix path should be rejected"
+        assert "escapes base" in error.lower(), f"Error should mention escaping: {error}"
+
+        # Windows absolute paths
+        is_valid, error = validator.validate("CONFIG_DIR", "C:\\Windows\\System32")
+        assert not is_valid, "Absolute Windows path should be rejected"
+
+    def test_windows_backslash_paths_allowed(self):
+        """Windows paths with backslashes should be valid."""
+        validator = EnvVarValidator()
+
+        # Valid Windows-style relative paths
+        windows_paths = [
+            "data\\config.yml",
+            "logs\\app.log",
+            "output\\results\\data.json",
+        ]
+
+        for path in windows_paths:
+            is_valid, error = validator.validate("DATA_PATH", path)
+            assert is_valid, f"Windows-style path should be valid: {path}, error: {error}"
+
+    def test_base_directory_containment(self):
+        """Test paths are properly validated against base directory."""
+        import tempfile
+        validator = EnvVarValidator()
+
+        # Create temp directory for testing
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Monkey-patch os.getcwd to return our temp dir
+            original_getcwd = os.getcwd
+            os.getcwd = lambda: tmpdir
+
+            try:
+                # Should allow - relative path within base
+                is_valid, error = validator.validate("DATA_PATH", "data/config.yml")
+                assert is_valid, f"Relative path within base should be allowed, error: {error}"
+
+                # Should block - tries to escape
+                is_valid, error = validator.validate("DATA_PATH", "../etc/passwd")
+                assert not is_valid, "Path escaping base should be blocked"
+                assert "escapes" in error.lower(), f"Error should mention escaping: {error}"
+
+            finally:
+                # Restore original getcwd
+                os.getcwd = original_getcwd

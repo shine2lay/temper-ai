@@ -7,6 +7,16 @@ from .data_models import (
     ExperimentResult,
     utcnow,
 )
+from .experiment_orchestrator import (
+    ExperimentOrchestrator,
+    VariantAssignment,
+    ExperimentStatus,
+    WinnerResult,
+    ExperimentError,
+    ExperimentNotFoundError,
+    ExperimentNotCompleteError,
+    InvalidVariantError,
+)
 
 __all__ = [
     "AgentPerformanceProfile",
@@ -14,4 +24,12 @@ __all__ = [
     "Experiment",
     "ExperimentResult",
     "utcnow",
+    "ExperimentOrchestrator",
+    "VariantAssignment",
+    "ExperimentStatus",
+    "WinnerResult",
+    "ExperimentError",
+    "ExperimentNotFoundError",
+    "ExperimentNotCompleteError",
+    "InvalidVariantError",
 ]

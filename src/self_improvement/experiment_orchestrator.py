@@ -1,0 +1,944 @@
+"""
+Experiment orchestrator for M5 self-improvement A/B testing.
+
+Coordinates experiment creation, variant assignment, result collection,
+and statistical analysis to determine winning agent configurations.
+"""
+import hashlib
+import json
+import logging
+import re
+import uuid
+from dataclasses import dataclass, field
+from typing import Optional, Dict, Any, List
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+from src.self_improvement.data_models import (
+    Experiment,
+    ExperimentResult,
+    AgentConfig,
+    utcnow
+)
+from src.self_improvement.statistical_analyzer import (
+    StatisticalAnalyzer,
+    VariantResults,
+    ExperimentAnalysis,
+    ComparisonResult
+)
+
+logger = logging.getLogger(__name__)
+
+
+# ========== Custom Exceptions ==========
+
+class ExperimentError(Exception):
+    """Base exception for experiment-related errors."""
+    pass
+
+
+class ExperimentNotFoundError(ExperimentError):
+    """Raised when experiment ID doesn't exist."""
+    pass
+
+
+class ExperimentNotCompleteError(ExperimentError):
+    """Raised when trying to analyze incomplete experiment."""
+    pass
+
+
+class InvalidVariantError(ExperimentError):
+    """Raised when variant_id is invalid for experiment."""
+    pass
+
+
+# ========== Supporting Data Classes ==========
+
+@dataclass
+class VariantAssignment:
+    """Assignment of execution to experiment variant."""
+    experiment_id: str
+    execution_id: str
+    variant_id: str  # "control", "variant_0", "variant_1", etc.
+    config: AgentConfig
+    assigned_at: Any = field(default_factory=utcnow)
+
+
+@dataclass
+class ExperimentStatus:
+    """Experiment progress status."""
+    experiment_id: str
+    status: str  # "running", "completed", "failed"
+    is_complete: bool
+    can_analyze: bool
+    sample_counts: Dict[str, int]  # variant_id → count
+    progress: float  # 0.0 to 1.0
+    started_at: Any
+    duration_minutes: float
+
+
+@dataclass
+class WinnerResult:
+    """Experiment winner analysis result."""
+    experiment_id: str
+    variant_id: str
+    winning_config: AgentConfig
+
+    # Performance improvements
+    quality_improvement: float  # Percentage vs control
+    speed_improvement: float
+    cost_improvement: float
+    composite_score: float
+
+    # Statistical confidence
+    is_statistically_significant: bool
+    p_value: float
+    confidence: float
+
+    # Recommendation
+    recommendation: str
+
+    # Full analysis
+    analysis: ExperimentAnalysis
+
+
+# ========== Main Orchestrator ==========
+
+class ExperimentOrchestrator:
+    """
+    M5 Experiment orchestrator for A/B testing agent configurations.
+
+    Coordinates experiment creation, variant assignment, result collection,
+    and winner determination for M5 self-improvement loop.
+
+    Example:
+        >>> orchestrator = ExperimentOrchestrator(session)
+        >>>
+        >>> # Create experiment from proposal
+        >>> experiment = orchestrator.create_experiment(
+        ...     agent_name="product_extractor",
+        ...     control_config=baseline_config,
+        ...     variant_configs=[variant1, variant2]
+        ... )
+        >>>
+        >>> # During execution: assign variant
+        >>> assignment = orchestrator.assign_variant(
+        ...     experiment.id,
+        ...     execution_id="exec-123"
+        ... )
+        >>> config = assignment.config
+        >>>
+        >>> # After execution: record results
+        >>> orchestrator.record_result(
+        ...     experiment.id,
+        ...     assignment.variant_id,
+        ...     "exec-123",
+        ...     quality_score=0.85,
+        ...     speed_seconds=42.5,
+        ...     cost_usd=0.02
+        ... )
+        >>>
+        >>> # Check if experiment complete
+        >>> status = orchestrator.get_experiment_progress(experiment.id)
+        >>> if status["is_complete"]:
+        ...     winner = orchestrator.get_winner(experiment.id)
+        ...     if winner:
+        ...         print(f"Winner: {winner.variant_id}")
+    """
+
+    # Validation patterns for input sanitization
+    EXPERIMENT_ID_PATTERN = re.compile(r'^exp-[\w-]+-[0-9a-f]{8}$')
+    VARIANT_ID_PATTERN = re.compile(r'^(control|variant_\d+)$')
+
+    def __init__(
+        self,
+        session: Session,
+        statistical_analyzer: Optional[StatisticalAnalyzer] = None,
+        target_executions_per_variant: int = 50,
+    ):
+        """
+        Initialize experiment orchestrator.
+
+        Args:
+            session: SQLAlchemy database session
+            statistical_analyzer: Analyzer for statistical tests (creates default if None)
+            target_executions_per_variant: Default sample size per variant (default: 50)
+        """
+        self.session = session
+        self.statistical_analyzer = statistical_analyzer or StatisticalAnalyzer(
+            significance_level=0.05,
+            quality_weight=0.7,
+            speed_weight=0.2,
+            cost_weight=0.1
+        )
+        self.target_executions_per_variant = target_executions_per_variant
+
+    # ========== Input Validation ==========
+
+    def _validate_experiment_id(self, experiment_id: str) -> None:
+        """
+        Validate experiment ID format to prevent injection and DOS attacks.
+
+        Args:
+            experiment_id: Experiment identifier to validate
+
+        Raises:
+            ValueError: If experiment_id is invalid
+        """
+        if not experiment_id:
+            raise ValueError("experiment_id cannot be empty")
+
+        if len(experiment_id) > 100:  # Reasonable limit for DOS prevention
+            raise ValueError(
+                f"experiment_id too long: {len(experiment_id)} chars (max 100)"
+            )
+
+        if not self.EXPERIMENT_ID_PATTERN.match(experiment_id):
+            raise ValueError(
+                f"Invalid experiment_id format: {experiment_id!r}. "
+                f"Expected: exp-{{agent_name}}-{{8-char-hex}}"
+            )
+
+    def _validate_variant_id(self, variant_id: str) -> None:
+        """
+        Validate variant ID format.
+
+        Args:
+            variant_id: Variant identifier to validate
+
+        Raises:
+            ValueError: If variant_id is invalid
+        """
+        if not variant_id:
+            raise ValueError("variant_id cannot be empty")
+
+        if not self.VARIANT_ID_PATTERN.match(variant_id):
+            raise ValueError(
+                f"Invalid variant_id format: {variant_id!r}. "
+                f"Expected: 'control' or 'variant_N'"
+            )
+
+    # ========== Experiment Creation ==========
+
+    def create_experiment(
+        self,
+        agent_name: str,
+        control_config: AgentConfig,
+        variant_configs: List[AgentConfig],
+        proposal_id: Optional[str] = None,
+        target_executions_per_variant: Optional[int] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None
+    ) -> Experiment:
+        """
+        Create new A/B/C/D experiment for M5 self-improvement.
+
+        Creates experiment with control + N variants, sets up equal traffic split,
+        and stores in database for tracking.
+
+        Args:
+            agent_name: Name of agent being optimized
+            control_config: Baseline configuration (current production config)
+            variant_configs: List of variant configurations to test (1-3 variants)
+            proposal_id: ID of improvement proposal that triggered this experiment
+            target_executions_per_variant: Sample size per variant (defaults to orchestrator default)
+            extra_metadata: Additional metadata to store
+
+        Returns:
+            Experiment: Created experiment with all variants configured
+
+        Raises:
+            ValueError: If variant_configs is empty or exceeds 3 variants
+            ValueError: If configs have mismatched agent_name
+        """
+        # Validation
+        if not variant_configs:
+            raise ValueError("Must provide at least one variant configuration")
+        if len(variant_configs) > 3:
+            raise ValueError(f"Maximum 3 variants allowed, got {len(variant_configs)}")
+
+        # Validate all configs have same agent_name
+        all_configs = [control_config] + variant_configs
+        agent_names = {cfg.agent_name for cfg in all_configs}
+        if len(agent_names) > 1:
+            raise ValueError(
+                f"All configs must have same agent_name. Got: {agent_names}"
+            )
+
+        # Generate experiment ID
+        experiment_id = f"exp-{agent_name}-{uuid.uuid4().hex[:8]}"
+
+        # Set target
+        target = target_executions_per_variant or self.target_executions_per_variant
+
+        # Create experiment
+        experiment = Experiment(
+            id=experiment_id,
+            agent_name=agent_name,
+            status="running",
+            control_config=control_config,
+            variant_configs=variant_configs,
+            proposal_id=proposal_id,
+            extra_metadata=extra_metadata or {}
+        )
+
+        # Store in database
+        self._store_experiment(experiment, target)
+
+        logger.info(
+            f"Created experiment {experiment_id} for {agent_name} "
+            f"with {len(variant_configs)} variants, target={target} per variant"
+        )
+
+        return experiment
+
+    def _store_experiment(self, experiment: Experiment, target: int) -> None:
+        """Store experiment in database."""
+        query = text("""
+            INSERT INTO m5_experiments (
+                id, agent_name, status, control_config, variant_configs,
+                proposal_id, target_samples_per_variant,
+                created_at, extra_metadata
+            ) VALUES (
+                :id, :agent_name, :status, :control_config, :variant_configs,
+                :proposal_id, :target,
+                :created_at, :extra_metadata
+            )
+        """)
+
+        self.session.execute(query, {
+            "id": experiment.id,
+            "agent_name": experiment.agent_name,
+            "status": experiment.status,
+            "control_config": json.dumps(experiment.control_config.to_dict()),
+            "variant_configs": json.dumps([v.to_dict() for v in experiment.variant_configs]),
+            "proposal_id": experiment.proposal_id,
+            "target": target,
+            "created_at": experiment.created_at.isoformat(),
+            "extra_metadata": json.dumps(experiment.extra_metadata)
+        })
+        self.session.commit()
+
+    # ========== Experiment Retrieval ==========
+
+    def get_experiment(self, experiment_id: str) -> Experiment:
+        """
+        Get experiment by ID.
+
+        Args:
+            experiment_id: Experiment identifier
+
+        Returns:
+            Experiment: Experiment object
+
+        Raises:
+            ExperimentNotFoundError: If experiment doesn't exist
+        """
+        self._validate_experiment_id(experiment_id)
+
+        query = text("SELECT * FROM m5_experiments WHERE id = :id")
+        result = self.session.execute(query, {"id": experiment_id}).fetchone()
+
+        if not result:
+            raise ExperimentNotFoundError(f"Experiment not found: {experiment_id}")
+
+        return Experiment(
+            id=result.id,
+            agent_name=result.agent_name,
+            status=result.status,
+            control_config=AgentConfig.from_dict(json.loads(result.control_config)),
+            variant_configs=[
+                AgentConfig.from_dict(v)
+                for v in json.loads(result.variant_configs)
+            ],
+            proposal_id=result.proposal_id,
+            created_at=result.created_at,
+            completed_at=result.completed_at,
+            extra_metadata=json.loads(result.extra_metadata) if result.extra_metadata else {}
+        )
+
+    def list_active_experiments(self, agent_name: Optional[str] = None) -> List[Experiment]:
+        """
+        List active (running) experiments.
+
+        Args:
+            agent_name: Optional filter by agent
+
+        Returns:
+            List of running experiments
+        """
+        if agent_name:
+            query = text(
+                "SELECT * FROM m5_experiments "
+                "WHERE status = 'running' AND agent_name = :agent_name"
+            )
+            results = self.session.execute(query, {"agent_name": agent_name}).fetchall()
+        else:
+            query = text("SELECT * FROM m5_experiments WHERE status = 'running'")
+            results = self.session.execute(query).fetchall()
+
+        experiments = []
+        for row in results:
+            experiments.append(Experiment(
+                id=row.id,
+                agent_name=row.agent_name,
+                status=row.status,
+                control_config=AgentConfig.from_dict(json.loads(row.control_config)),
+                variant_configs=[
+                    AgentConfig.from_dict(v)
+                    for v in json.loads(row.variant_configs)
+                ],
+                proposal_id=row.proposal_id,
+                created_at=row.created_at,
+                completed_at=row.completed_at,
+                extra_metadata=json.loads(row.extra_metadata) if row.extra_metadata else {}
+            ))
+
+        return experiments
+
+    # ========== Variant Assignment ==========
+
+    def assign_variant(
+        self,
+        experiment_id: str,
+        execution_id: str,
+        context: Optional[Dict[str, Any]] = None
+    ) -> VariantAssignment:
+        """
+        Assign execution to a variant using hash-based deterministic assignment.
+
+        Uses SHA-256 hashing to ensure:
+        - Same execution_id always gets same variant
+        - Reproducible experiments
+        - Balanced traffic across variants
+
+        Args:
+            experiment_id: Experiment identifier
+            execution_id: Unique execution identifier (used for hashing)
+            context: Optional context for assignment (e.g., {"user_id": "123"})
+
+        Returns:
+            VariantAssignment: Assignment with variant_id and config
+
+        Raises:
+            ExperimentNotFoundError: If experiment not found
+            ValueError: If experiment is not in "running" status
+        """
+        self._validate_experiment_id(experiment_id)
+
+        # Load experiment
+        experiment = self.get_experiment(experiment_id)
+
+        # Validate experiment is running
+        if experiment.status != "running":
+            raise ValueError(
+                f"Cannot assign variant: experiment {experiment_id} "
+                f"has status '{experiment.status}', expected 'running'"
+            )
+
+        # Determine hash input (prefer context hash_key if provided)
+        hash_input = execution_id
+        if context and "hash_key" in context:
+            hash_input = str(context["hash_key"])
+
+        # Hash-based assignment
+        variant_id = self._hash_to_variant(hash_input, experiment.get_variant_count())
+
+        # Get config for variant
+        config = self.get_variant_config(experiment_id, variant_id)
+
+        # Create assignment
+        assignment = VariantAssignment(
+            experiment_id=experiment_id,
+            execution_id=execution_id,
+            variant_id=variant_id,
+            config=config
+        )
+
+        logger.debug(
+            f"Assigned execution {execution_id} to {variant_id} "
+            f"in experiment {experiment_id}"
+        )
+
+        return assignment
+
+    def _hash_to_variant(self, hash_input: str, num_variants: int) -> str:
+        """
+        Map hash input to variant ID using consistent hashing.
+
+        Args:
+            hash_input: String to hash
+            num_variants: Total number of variants (including control)
+
+        Returns:
+            variant_id: "control", "variant_0", "variant_1", etc.
+        """
+        # Compute SHA-256 hash
+        hash_value = hashlib.sha256(hash_input.encode()).hexdigest()
+        hash_int = int(hash_value[:8], 16)
+
+        # Map to variant index (equal distribution)
+        variant_index = hash_int % num_variants
+
+        if variant_index == 0:
+            return "control"
+        else:
+            return f"variant_{variant_index - 1}"
+
+    def get_variant_config(self, experiment_id: str, variant_id: str) -> AgentConfig:
+        """
+        Get configuration for a specific variant.
+
+        Args:
+            experiment_id: Experiment identifier
+            variant_id: Variant identifier ("control", "variant_0", etc.)
+
+        Returns:
+            AgentConfig: Configuration for the variant
+
+        Raises:
+            ExperimentNotFoundError: If experiment not found
+            InvalidVariantError: If variant_id invalid for this experiment
+        """
+        self._validate_experiment_id(experiment_id)
+        self._validate_variant_id(variant_id)
+
+        experiment = self.get_experiment(experiment_id)
+
+        if variant_id == "control":
+            return experiment.control_config
+        elif variant_id.startswith("variant_"):
+            try:
+                variant_index = int(variant_id.split("_")[1])
+                return experiment.variant_configs[variant_index]
+            except (IndexError, ValueError):
+                raise InvalidVariantError(
+                    f"Invalid variant_id '{variant_id}' for experiment {experiment_id}. "
+                    f"Valid variants: control, variant_0..variant_{len(experiment.variant_configs) - 1}"
+                )
+        else:
+            raise InvalidVariantError(
+                f"Invalid variant_id format: '{variant_id}'. "
+                f"Expected 'control' or 'variant_N'"
+            )
+
+    # ========== Result Recording ==========
+
+    def record_result(
+        self,
+        experiment_id: str,
+        variant_id: str,
+        execution_id: str,
+        quality_score: Optional[float] = None,
+        speed_seconds: Optional[float] = None,
+        cost_usd: Optional[float] = None,
+        success: Optional[bool] = None,
+        extra_metrics: Optional[Dict[str, float]] = None
+    ) -> None:
+        """
+        Record experiment execution result.
+
+        Stores metrics for this execution. Results are aggregated by variant
+        for statistical analysis.
+
+        Args:
+            experiment_id: Experiment identifier
+            variant_id: Variant that was used
+            execution_id: Unique execution identifier
+            quality_score: Quality metric (0-1 scale, higher better)
+            speed_seconds: Duration in seconds (lower better)
+            cost_usd: Cost in USD (lower better)
+            success: Whether execution succeeded
+            extra_metrics: Additional metrics to track
+
+        Raises:
+            ExperimentNotFoundError: If experiment not found
+            InvalidVariantError: If variant_id invalid for this experiment
+        """
+        self._validate_experiment_id(experiment_id)
+        self._validate_variant_id(variant_id)
+
+        # Validate experiment and variant exist
+        experiment = self.get_experiment(experiment_id)
+
+        # Validate variant_id
+        valid_variants = ["control"] + [f"variant_{i}" for i in range(len(experiment.variant_configs))]
+        if variant_id not in valid_variants:
+            raise InvalidVariantError(
+                f"Invalid variant_id '{variant_id}' for experiment {experiment_id}. "
+                f"Valid variants: {valid_variants}"
+            )
+
+        # Create result
+        result_id = f"result-{uuid.uuid4().hex[:12]}"
+        result = ExperimentResult(
+            id=result_id,
+            experiment_id=experiment_id,
+            variant_id=variant_id,
+            execution_id=execution_id,
+            quality_score=quality_score,
+            speed_seconds=speed_seconds,
+            cost_usd=cost_usd,
+            success=success,
+            extra_metrics=extra_metrics or {}
+        )
+
+        # Store in database
+        self._store_result(result)
+
+        logger.debug(
+            f"Recorded result for {execution_id} ({variant_id}) "
+            f"in experiment {experiment_id}: quality={quality_score}, "
+            f"speed={speed_seconds}s, cost=${cost_usd}"
+        )
+
+    def _store_result(self, result: ExperimentResult) -> None:
+        """Store experiment result in database."""
+        query = text("""
+            INSERT INTO m5_experiment_results (
+                id, experiment_id, variant_id, execution_id,
+                quality_score, speed_seconds, cost_usd, success,
+                recorded_at, extra_metrics
+            ) VALUES (
+                :id, :experiment_id, :variant_id, :execution_id,
+                :quality_score, :speed_seconds, :cost_usd, :success,
+                :recorded_at, :extra_metrics
+            )
+        """)
+
+        self.session.execute(query, {
+            "id": result.id,
+            "experiment_id": result.experiment_id,
+            "variant_id": result.variant_id,
+            "execution_id": result.execution_id,
+            "quality_score": result.quality_score,
+            "speed_seconds": result.speed_seconds,
+            "cost_usd": result.cost_usd,
+            "success": result.success,
+            "recorded_at": result.recorded_at.isoformat(),
+            "extra_metrics": json.dumps(result.extra_metrics)
+        })
+        self.session.commit()
+
+    # ========== Experiment Status ==========
+
+    def is_experiment_complete(self, experiment_id: str) -> bool:
+        """
+        Check if experiment has collected enough data for analysis.
+
+        Experiment is complete when ALL variants have reached target sample size.
+
+        Args:
+            experiment_id: Experiment identifier
+
+        Returns:
+            bool: True if all variants have sufficient samples
+        """
+        self._validate_experiment_id(experiment_id)
+        progress = self.get_experiment_progress(experiment_id)
+        return progress["is_complete"]
+
+    def get_experiment_progress(self, experiment_id: str) -> Dict[str, Any]:
+        """
+        Get current progress for each variant in experiment.
+
+        Args:
+            experiment_id: Experiment identifier
+
+        Returns:
+            Dict with progress information
+        """
+        self._validate_experiment_id(experiment_id)
+
+        # Get experiment and target
+        experiment = self.get_experiment(experiment_id)
+        target_query = text(
+            "SELECT target_samples_per_variant FROM m5_experiments WHERE id = :id"
+        )
+        target = self.session.execute(target_query, {"id": experiment_id}).scalar()
+
+        # Get sample counts per variant
+        count_query = text("""
+            SELECT variant_id, COUNT(*) as count
+            FROM m5_experiment_results
+            WHERE experiment_id = :experiment_id
+            GROUP BY variant_id
+        """)
+        results = self.session.execute(count_query, {"experiment_id": experiment_id}).fetchall()
+
+        # Build variant progress
+        variant_progress = {}
+        expected_variants = ["control"] + [f"variant_{i}" for i in range(len(experiment.variant_configs))]
+
+        for variant_id in expected_variants:
+            count = 0
+            for row in results:
+                if row.variant_id == variant_id:
+                    count = row.count
+                    break
+
+            variant_progress[variant_id] = {
+                "collected": count,
+                "target": target,
+                "pct": (count / target * 100) if target > 0 else 0
+            }
+
+        # Check if complete (all variants reached target)
+        is_complete = all(vp["collected"] >= target for vp in variant_progress.values())
+
+        # Calculate totals
+        total_collected = sum(vp["collected"] for vp in variant_progress.values())
+        total_target = target * len(expected_variants)
+
+        return {
+            "experiment_id": experiment_id,
+            "status": experiment.status,
+            "target_per_variant": target,
+            "variants": variant_progress,
+            "total_collected": total_collected,
+            "total_target": total_target,
+            "is_complete": is_complete,
+            "can_analyze": is_complete
+        }
+
+    def get_experiment_results(self, experiment_id: str) -> List[ExperimentResult]:
+        """
+        Get all results for experiment.
+
+        Args:
+            experiment_id: Experiment ID
+
+        Returns:
+            List of all execution results
+        """
+        self._validate_experiment_id(experiment_id)
+
+        query = text(
+            "SELECT * FROM m5_experiment_results WHERE experiment_id = :experiment_id"
+        )
+        results = self.session.execute(query, {"experiment_id": experiment_id}).fetchall()
+
+        return [
+            ExperimentResult(
+                id=row.id,
+                experiment_id=row.experiment_id,
+                variant_id=row.variant_id,
+                execution_id=row.execution_id,
+                quality_score=row.quality_score,
+                speed_seconds=row.speed_seconds,
+                cost_usd=row.cost_usd,
+                success=row.success,
+                recorded_at=row.recorded_at,
+                extra_metrics=json.loads(row.extra_metrics) if row.extra_metrics else {}
+            )
+            for row in results
+        ]
+
+    # ========== Winner Determination ==========
+
+    def get_winner(self, experiment_id: str, force: bool = False) -> Optional[WinnerResult]:
+        """
+        Analyze experiment and determine winner.
+
+        Runs statistical analysis comparing variants to control:
+        1. Check minimum sample size reached (unless force=True)
+        2. Run StatisticalAnalyzer
+        3. Apply M5 winner criteria (quality + composite score)
+        4. Return winner or None
+
+        Args:
+            experiment_id: Experiment to analyze
+            force: If True, analyze even if experiment not complete
+
+        Returns:
+            WinnerResult with winning config and analysis, or None if no winner
+
+        Raises:
+            ExperimentNotFoundError: If experiment not found
+            ExperimentNotCompleteError: If not complete and force=False
+        """
+        self._validate_experiment_id(experiment_id)
+
+        # Check completion
+        if not force and not self.is_experiment_complete(experiment_id):
+            raise ExperimentNotCompleteError(
+                f"Experiment {experiment_id} not yet complete. "
+                f"Use force=True to analyze anyway."
+            )
+
+        # Run analysis
+        analysis = self.analyze_experiment(experiment_id)
+
+        # Check for winner
+        if not analysis.winner:
+            return None
+
+        # Get winning config
+        winner_config = self.get_variant_config(experiment_id, analysis.winner.variant_id)
+
+        # Create WinnerResult
+        winner_result = WinnerResult(
+            experiment_id=experiment_id,
+            variant_id=analysis.winner.variant_id,
+            winning_config=winner_config,
+            quality_improvement=analysis.winner.quality_improvement,
+            speed_improvement=analysis.winner.speed_improvement,
+            cost_improvement=analysis.winner.cost_improvement,
+            composite_score=analysis.winner.composite_score,
+            is_statistically_significant=analysis.winner.quality_significant,
+            p_value=analysis.winner.quality_p_value,
+            confidence=analysis.confidence_level,
+            recommendation=analysis.winner.recommendation,
+            analysis=analysis
+        )
+
+        logger.info(
+            f"Winner for experiment {experiment_id}: {winner_result.variant_id} "
+            f"(quality: +{winner_result.quality_improvement:.1f}%, "
+            f"composite: +{winner_result.composite_score:.1f}%)"
+        )
+
+        return winner_result
+
+    def analyze_experiment(self, experiment_id: str) -> ExperimentAnalysis:
+        """
+        Analyze experiment results using statistical tests.
+
+        Args:
+            experiment_id: Experiment identifier
+
+        Returns:
+            ExperimentAnalysis: Full analysis with comparisons and winner
+        """
+        self._validate_experiment_id(experiment_id)
+
+        experiment = self.get_experiment(experiment_id)
+        results = self.get_experiment_results(experiment_id)
+
+        # Aggregate results per variant
+        control_results = self._aggregate_variant_results("control", results)
+        variant_results_list = [
+            self._aggregate_variant_results(f"variant_{i}", results)
+            for i in range(len(experiment.variant_configs))
+        ]
+
+        # Run statistical analysis
+        analysis = self.statistical_analyzer.analyze_experiment(
+            control=control_results,
+            variants=variant_results_list,
+            experiment_id=experiment_id
+        )
+
+        return analysis
+
+    def _aggregate_variant_results(
+        self,
+        variant_id: str,
+        results: List[ExperimentResult]
+    ) -> VariantResults:
+        """Aggregate results for a specific variant."""
+        variant_results = [r for r in results if r.variant_id == variant_id]
+
+        quality_scores = [r.quality_score for r in variant_results if r.quality_score is not None]
+        speed_scores = [r.speed_seconds for r in variant_results if r.speed_seconds is not None]
+        cost_scores = [r.cost_usd for r in variant_results if r.cost_usd is not None]
+
+        return VariantResults(
+            variant_id=variant_id,
+            variant_name=variant_id,
+            sample_size=len(variant_results),
+            quality_scores=quality_scores,
+            speed_scores=speed_scores,
+            cost_scores=cost_scores
+        )
+
+    # ========== Experiment Completion ==========
+
+    def complete_experiment(
+        self,
+        experiment_id: str,
+        winner_variant_id: Optional[str] = None
+    ) -> None:
+        """
+        Mark experiment as completed.
+
+        Args:
+            experiment_id: Experiment to complete
+            winner_variant_id: Optional winner to record
+        """
+        self._validate_experiment_id(experiment_id)
+        if winner_variant_id is not None:
+            self._validate_variant_id(winner_variant_id)
+
+        query = text("""
+            UPDATE m5_experiments
+            SET status = 'completed',
+                completed_at = :completed_at,
+                winner_variant_id = :winner_variant_id
+            WHERE id = :id
+        """)
+
+        self.session.execute(query, {
+            "id": experiment_id,
+            "completed_at": utcnow().isoformat(),
+            "winner_variant_id": winner_variant_id
+        })
+        self.session.commit()
+
+        logger.info(f"Completed experiment {experiment_id}, winner: {winner_variant_id}")
+
+    def stop_experiment(self, experiment_id: str, reason: str = "manual_stop") -> None:
+        """
+        Stop experiment early (before completion).
+
+        Updates experiment status to "stopped" to prevent new assignments.
+
+        Args:
+            experiment_id: Experiment identifier
+            reason: Reason for stopping
+        """
+        self._validate_experiment_id(experiment_id)
+
+        # Load current experiment to get metadata (database-agnostic approach)
+        experiment = self.get_experiment(experiment_id)
+
+        # Update metadata in Python (safe, no SQL injection)
+        updated_metadata = experiment.extra_metadata.copy()
+        updated_metadata["stop_reason"] = reason
+
+        # Store with parameterized query (database-agnostic)
+        query = text("""
+            UPDATE m5_experiments
+            SET status = 'stopped',
+                completed_at = :completed_at,
+                extra_metadata = :extra_metadata
+            WHERE id = :id
+        """)
+
+        self.session.execute(query, {
+            "id": experiment_id,
+            "completed_at": utcnow().isoformat(),
+            "extra_metadata": json.dumps(updated_metadata)
+        })
+        self.session.commit()
+
+        logger.info(f"Stopped experiment {experiment_id}, reason: {reason}")
+
+    def get_winning_config(self, experiment_id: str) -> Optional[AgentConfig]:
+        """
+        Get winning configuration after experiment completes.
+
+        Returns None if experiment not complete or no winner determined.
+
+        Args:
+            experiment_id: Experiment identifier
+
+        Returns:
+            AgentConfig: Winning configuration, or None if no winner
+        """
+        self._validate_experiment_id(experiment_id)
+
+        try:
+            winner = self.get_winner(experiment_id, force=True)
+            return winner.winning_config if winner else None
+        except ExperimentNotCompleteError:
+            return None

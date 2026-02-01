@@ -12,6 +12,8 @@ Provides:
 import hashlib
 import json
 import time
+import os
+import warnings
 from typing import Any, Dict, Optional, Tuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
@@ -249,14 +251,22 @@ class RedisCache(CacheBackend):
         """
         Initialize Redis cache.
 
+        SECURITY FIX (code-crit-redis-password-07): Redis password is loaded from
+        REDIS_PASSWORD environment variable to prevent credential exposure in logs,
+        stack traces, and process listings.
+
         Args:
             host: Redis host
             port: Redis port
             db: Redis database number
-            password: Redis password (optional)
+            password: (DEPRECATED) Redis password - use REDIS_PASSWORD env var instead
+
+        Environment Variables:
+            REDIS_PASSWORD: Redis authentication password (required for authenticated Redis)
 
         Raises:
             ImportError: If redis package not installed
+            ValueError: If Redis authentication fails
             ConnectionError: If cannot connect to Redis
         """
         try:
@@ -267,20 +277,43 @@ class RedisCache(CacheBackend):
                 "Install with: pip install redis"
             )
 
-        self._client = redis.Redis(
-            host=host,
-            port=port,
-            db=db,
-            password=password,
-            decode_responses=True  # Return strings not bytes
-        )
+        # Handle deprecated password parameter
+        if password is not None:
+            warnings.warn(
+                "Passing password to RedisCache() is deprecated and insecure. "
+                "Use REDIS_PASSWORD environment variable instead.",
+                DeprecationWarning,
+                stacklevel=2
+            )
+            logger.warning("Redis password passed as parameter (deprecated, use REDIS_PASSWORD env var)")
+            redis_password = password
+        else:
+            # Load from environment (secure approach)
+            redis_password = os.getenv('REDIS_PASSWORD')
 
-        # Test connection
+        # Create Redis connection
         try:
+            self._client = redis.Redis(
+                host=host,
+                port=port,
+                db=db,
+                password=redis_password,  # May be None for local dev
+                decode_responses=True,  # Return strings not bytes
+                socket_connect_timeout=5,
+                socket_timeout=5,
+            )
+
+            # Test connection
             self._client.ping()
             logger.info(f"Connected to Redis at {host}:{port} (db={db})")
+
+        except redis.AuthenticationError:
+            raise ValueError(
+                "Redis authentication failed. Set REDIS_PASSWORD environment variable "
+                "or ensure Redis doesn't require authentication."
+            )
         except redis.ConnectionError as e:
-            raise ConnectionError(f"Failed to connect to Redis: {e}")
+            raise ConnectionError(f"Failed to connect to Redis at {host}:{port}: {e}")
 
     def get(self, key: str) -> Optional[str]:
         """Get value from Redis."""
@@ -326,6 +359,23 @@ class RedisCache(CacheBackend):
         except Exception as e:
             logger.error(f"Redis exists error: {e}")
             return False
+
+    def __repr__(self) -> str:
+        """
+        Safe repr that doesn't expose credentials.
+
+        SECURITY FIX (code-crit-redis-password-07): Prevent password exposure
+        in logs, error messages, and debugging output.
+        """
+        try:
+            connected = self._client.ping() if self._client else False
+        except Exception:
+            connected = False
+        return f"RedisCache(connected={connected})"
+
+    def __str__(self) -> str:
+        """Safe string representation (delegates to __repr__)."""
+        return self.__repr__()
 
 
 class LLMCache:

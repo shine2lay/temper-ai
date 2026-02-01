@@ -1466,9 +1466,10 @@ class TestTOCTOURaceCondition:
         limiter = RateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
 
         # Make 5 requests as "admin"
-        for _ in range(5):
-            allowed, _ = limiter.check_and_record_rate_limit("admin")
-            assert allowed
+        for i in range(5):
+            allowed, reason = limiter.check_and_record_rate_limit("admin")
+            assert allowed, f"Request {i+1}/5 should be allowed within limit"
+            assert reason is None, f"No error reason should be provided when allowed"
 
         # Try bypass with case variation
         allowed, _ = limiter.check_and_record_rate_limit("Admin")
@@ -1489,18 +1490,22 @@ class TestTOCTOURaceCondition:
         limiter = RateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
 
         # Entity 1: Use full limit
-        for _ in range(5):
-            allowed, _ = limiter.check_and_record_rate_limit("user1")
-            assert allowed
+        for i in range(5):
+            allowed, reason = limiter.check_and_record_rate_limit("user1")
+            assert allowed, f"user1 request {i+1}/5 should be allowed"
+            assert reason is None, "No error when within limit"
 
         # Entity 1: Should be blocked
-        allowed, _ = limiter.check_and_record_rate_limit("user1")
-        assert not allowed
+        allowed, reason = limiter.check_and_record_rate_limit("user1")
+        assert not allowed, "user1 should be blocked after exceeding limit (5/5)"
+        assert reason is not None, "Error reason must be provided when blocked"
+        assert "limit exceeded" in reason.lower(), f"Error should mention rate limit, got: {reason}"
 
         # Entity 2: Should still be allowed (independent limit)
-        for _ in range(5):
-            allowed, _ = limiter.check_and_record_rate_limit("user2")
-            assert allowed
+        for i in range(5):
+            allowed, reason = limiter.check_and_record_rate_limit("user2")
+            assert allowed, f"user2 request {i+1}/5 should be allowed (independent from user1)"
+            assert reason is None, "No error when within limit"
 
     def test_empty_entity_id_rejected(self):
         """
@@ -1510,13 +1515,15 @@ class TestTOCTOURaceCondition:
 
         # Test empty string
         allowed, reason = limiter.check_and_record_rate_limit("")
-        assert not allowed
-        assert "Invalid entity ID" in reason
+        assert not allowed, "Empty entity ID should be rejected"
+        assert reason is not None, "Error reason must be provided for invalid entity ID"
+        assert "Invalid entity ID" in reason, f"Error should mention invalid ID, got: {reason}"
 
         # Test whitespace only
         allowed, reason = limiter.check_and_record_rate_limit("   ")
-        assert not allowed
-        assert "Invalid entity ID" in reason
+        assert not allowed, "Whitespace-only entity ID should be rejected"
+        assert reason is not None, "Error reason must be provided for invalid entity ID"
+        assert "Invalid entity ID" in reason, f"Error should mention invalid ID, got: {reason}"
 
     def test_redis_unavailable_fails_closed(self):
         """
@@ -1528,10 +1535,13 @@ class TestTOCTOURaceCondition:
             fallback_mode='fail_closed'
         )
 
-        # Should deny all requests
+        # Should deny all requests (fail-closed for security)
         allowed, reason = limiter.check_and_record_rate_limit("test_user")
-        assert not allowed
-        assert "unavailable" in reason.lower()
+        assert not allowed, "Requests should be denied when Redis unavailable (fail-closed)"
+        assert reason is not None, "Error reason must be provided explaining unavailability"
+        assert "unavailable" in reason.lower(), f"Error should mention unavailability, got: {reason}"
+        assert "safe" in reason.lower() or "failing" in reason.lower(), \
+            f"Error should indicate fail-safe behavior, got: {reason}"
 
     def test_redis_unavailable_in_memory_fallback(self):
         """
@@ -1545,13 +1555,16 @@ class TestTOCTOURaceCondition:
         )
 
         # Should use in-memory fallback
-        for _ in range(5):
-            allowed, _ = limiter.check_and_record_rate_limit("test_user")
-            assert allowed, "In-memory fallback should allow requests"
+        for i in range(5):
+            allowed, reason = limiter.check_and_record_rate_limit("test_user")
+            assert allowed, f"In-memory fallback should allow request {i+1}/5"
+            assert reason is None, "No error when within limit"
 
         # 6th request should be blocked
-        allowed, _ = limiter.check_and_record_rate_limit("test_user")
-        assert not allowed, "In-memory fallback should enforce limit"
+        allowed, reason = limiter.check_and_record_rate_limit("test_user")
+        assert not allowed, "In-memory fallback should enforce limit (6th request)"
+        assert reason is not None, "Error reason must be provided when limit exceeded"
+        assert "limit exceeded" in reason.lower(), f"Error should mention rate limit, got: {reason}"
 
     def test_concurrent_hour_limit(self):
         """

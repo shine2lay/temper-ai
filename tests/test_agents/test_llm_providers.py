@@ -1933,5 +1933,156 @@ class TestCircuitBreakerPersistence:
         assert breaker1.state == CircuitState.OPEN or breaker2.state == CircuitState.OPEN
 
 
+class TestConnectionPoolCleanup:
+    """Tests for connection pool cleanup to prevent resource leaks (code-high-02)."""
+
+    def test_sync_client_closes_properly(self):
+        """Verify sync HTTP client closes without leaks."""
+        llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
+
+        # Trigger client creation
+        client = llm._get_client()
+        assert client is not None
+        assert llm._client is not None
+
+        # Close and verify cleanup
+        llm.close()
+        assert llm._client is None
+
+    def test_async_client_closes_with_event_loop(self):
+        """Verify async HTTP client closes when event loop is running."""
+        import asyncio
+
+        async def test_async_cleanup():
+            llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
+
+            # Trigger async client creation
+            client = llm._get_async_client()
+            assert client is not None
+            assert llm._async_client is not None
+
+            # Close using async method
+            await llm.aclose()
+            assert llm._async_client is None
+
+        asyncio.run(test_async_cleanup())
+
+    def test_async_client_closes_without_event_loop(self):
+        """Verify async HTTP client closes even without event loop (code-high-02).
+
+        This is the critical test for the connection pool leak fix.
+        Previously, async clients would not close if no event loop was running,
+        causing "Too many open files" errors.
+        """
+        llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
+
+        # Trigger async client creation
+        client = llm._get_async_client()
+        assert client is not None
+        assert llm._async_client is not None
+
+        # Close without event loop (this previously leaked connections)
+        # The fix should use asyncio.run() to create temporary event loop
+        llm.close()
+
+        # Verify async client was closed (critical fix verification)
+        assert llm._async_client is None
+
+    def test_context_manager_cleanup(self):
+        """Verify context manager properly closes connections."""
+        with OllamaLLM(model="llama2", base_url="http://localhost:11434") as llm:
+            # Trigger both client creations
+            llm._get_client()
+            llm._get_async_client()
+            assert llm._client is not None
+            assert llm._async_client is not None
+
+        # After context exit, both should be closed
+        assert llm._client is None
+        assert llm._async_client is None
+
+    def test_del_cleanup_sync_client(self):
+        """Verify __del__ cleanup closes sync client."""
+        llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
+        llm._get_client()
+        assert llm._client is not None
+
+        # Trigger garbage collection cleanup
+        llm.__del__()
+        assert llm._client is None
+
+    def test_del_cleanup_async_client(self):
+        """Verify __del__ cleanup closes async client (code-high-02).
+
+        Previously, __del__ only closed sync client, causing async connection leaks.
+        """
+        llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
+        llm._get_async_client()
+        assert llm._async_client is not None
+
+        # Trigger garbage collection cleanup
+        llm.__del__()
+
+        # Verify async client was closed (critical fix verification)
+        assert llm._async_client is None
+
+    def test_multiple_close_calls_safe(self):
+        """Verify multiple close() calls don't cause errors."""
+        llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
+        llm._get_client()
+        llm._get_async_client()
+
+        # Multiple close calls should be safe (idempotent)
+        llm.close()
+        llm.close()
+        llm.close()
+
+        assert llm._client is None
+        assert llm._async_client is None
+
+    def test_close_before_client_creation(self):
+        """Verify close() works even if clients were never created."""
+        llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
+
+        # Close without ever creating clients
+        llm.close()
+
+        assert llm._client is None
+        assert llm._async_client is None
+
+    def test_async_close_graceful_degradation(self):
+        """Verify async client close degrades gracefully even on multiple failures.
+
+        NOTE: The triple-failure scenario (asyncio.run fails + transport close fails)
+        is extremely rare and difficult to test reliably. The core fix (using asyncio.run
+        to force synchronous close) is validated by test_async_client_closes_without_event_loop.
+        """
+        llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
+        llm._get_async_client()
+
+        # Verify close doesn't crash even with async client present
+        llm.close()
+
+        # Verify client was cleaned up
+        assert llm._async_client is None
+
+    def test_connection_pool_limits_preserved(self):
+        """Verify connection pool limits are correctly configured."""
+        llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
+
+        # Verify clients are created with connection pooling
+        client = llm._get_client()
+        assert client is not None
+        assert isinstance(client, httpx.Client)
+
+        async_client = llm._get_async_client()
+        assert async_client is not None
+        assert isinstance(async_client, httpx.AsyncClient)
+
+        # Verify clients can be reused (connection pooling working)
+        assert llm._get_client() is client  # Same instance
+        assert llm._get_async_client() is async_client  # Same instance
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

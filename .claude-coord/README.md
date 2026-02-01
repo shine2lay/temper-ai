@@ -76,6 +76,68 @@ Each instance gets a unique agent ID and can coordinate via file locks.
 .claude-coord/claude-coord.sh task-list
 ```
 
+### Task Dependencies
+
+The coordination system supports task dependencies to ensure tasks are completed in the correct order.
+
+```bash
+# Create task with dependencies (recommended)
+coord task-create task-2 "User authentication" "Implement OAuth" --depends-on task-1
+
+# Create task with multiple dependencies
+coord task-create task-3 "Final integration" "Merge all features" --depends-on "task-1,task-2"
+
+# Add dependency to existing task
+coord task-add-dep task-2 task-1
+
+# View dependencies for a task
+coord task-deps task-2
+# Output:
+#   Task: task-2
+#   Depends on (1):
+#     - task-1
+#   Blocks (1):
+#     - task-3
+
+# Remove a dependency
+coord task-remove-dep task-2 task-1
+
+# View all blocked tasks (pending but waiting on dependencies)
+coord task-blocked
+
+# List all tasks (available + blocked)
+coord task-list --all
+```
+
+**Key Features:**
+- **Automatic blocking**: Tasks with incomplete dependencies won't appear in `task-list` (they're not available to claim)
+- **Circular dependency prevention**: System detects and prevents circular dependencies
+- **Automatic unblocking**: When a task completes, tasks depending on it automatically become available
+- **Multiple dependencies**: A task can depend on multiple other tasks (all must complete)
+
+**Example Workflow:**
+```bash
+# Create tasks with dependencies
+coord task-create task-1 "Setup database schema" "Create initial tables"
+coord task-create task-2 "Add user model" "User table and ORM"
+coord task-create task-3 "Implement auth" "OAuth + JWT"
+
+# Set up dependency chain: task-3 depends on task-2, task-2 depends on task-1
+coord task-add-dep task-2 task-1
+coord task-add-dep task-3 task-2
+
+# List available tasks (only task-1 will show since others are blocked)
+coord task-list
+
+# Complete task-1
+coord task-claim $CLAUDE_AGENT_ID task-1
+# ... do work ...
+coord task-complete $CLAUDE_AGENT_ID task-1
+
+# Now task-2 becomes available automatically
+coord task-list  # Shows task-2 but not task-3
+```
+
 ## Enforcement (Defense in Depth)
 
 The system uses multiple Claude Code hooks for comprehensive protection:
@@ -128,17 +190,29 @@ Done, unlock-all
 
 ## Troubleshooting
 
-**Stale locks from dead agents:**
-The system automatically cleans up locks from agents that haven't sent a heartbeat in 5 minutes or whose PID no longer exists.
+**Stale agents and locks:**
+IMPORTANT: Automatic agent cleanup is DISABLED to prevent tasks from being reset when agents exit normally.
+You must manually cleanup stale agents when needed.
 
-**Force cleanup:**
+**Manual cleanup:**
 ```bash
-# Check status to see who's holding locks
-.claude-coord/claude-coord.sh status
+# Check for stale agents (dry-run first to see what would be cleaned)
+coord cleanup-stale-agents --dry-run
 
-# If an agent is truly dead, manually unregister
-.claude-coord/claude-coord.sh unregister <agent-id>
+# Actually cleanup stale agents (only removes agents whose processes are dead)
+coord cleanup-stale-agents
+
+# Check status to see current agents
+coord status
+
+# If an agent is truly dead and cleanup-stale-agents doesn't catch it, manually unregister
+coord unregister <agent-id>
 ```
+
+**What gets cleaned:**
+- Agents whose process (PID) is no longer running
+- Agents with no heartbeat in 5+ minutes AND dead process
+- Does NOT cleanup agents with running processes (even without heartbeat)
 
 **Hooks not working:**
 Make sure `.claude/settings.local.json` has all hooks configured:

@@ -32,14 +32,17 @@ class BackgroundTasks:
         """Start all background tasks."""
         self.running = True
 
-        # Start dead agent cleanup (every 60s)
-        cleanup_thread = threading.Thread(
-            target=self._run_periodic,
-            args=(self._cleanup_dead_agents, 60),
-            daemon=True
-        )
-        cleanup_thread.start()
-        self.threads.append(cleanup_thread)
+        # NOTE: Automatic dead agent cleanup DISABLED to prevent in-progress tasks from being reset
+        # when agents exit normally. Use 'coord unregister <agent-id>' for manual cleanup.
+        #
+        # # Start dead agent cleanup (every 60s)
+        # cleanup_thread = threading.Thread(
+        #     target=self._run_periodic,
+        #     args=(self._cleanup_dead_agents, 60),
+        #     daemon=True
+        # )
+        # cleanup_thread.start()
+        # self.threads.append(cleanup_thread)
 
         # Start metrics aggregation (every 60s)
         metrics_thread = threading.Thread(

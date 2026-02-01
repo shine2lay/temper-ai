@@ -126,29 +126,84 @@ class OperationHandler:
 
         return {"status": "ok"}
 
+    def op_cleanup_stale_agents(self, params: Dict) -> Dict:
+        """Manually cleanup stale agents (process not running)."""
+        dry_run = params.get('dry_run', False)
+        timeout = params.get('timeout', 300)  # 5 minutes default
+
+        # Get stale agents
+        stale_agents = self.db.get_stale_agents(timeout)
+
+        cleaned = []
+        for agent_id in stale_agents:
+            try:
+                # Check if process is still running
+                agent = self.db.query_one(
+                    "SELECT pid FROM agents WHERE id = ?",
+                    (agent_id,)
+                )
+
+                if agent:
+                    pid = agent['pid']
+                    try:
+                        # Send signal 0 to check if process exists
+                        os.kill(pid, 0)
+                        # Process is running, don't cleanup
+                        continue
+                    except OSError:
+                        # Process is not running, cleanup
+                        if not dry_run:
+                            self.db.unregister_agent(agent_id)
+                        cleaned.append(agent_id)
+
+            except Exception as e:
+                print(f"Error checking agent {agent_id}: {e}")
+
+        return {
+            "status": "ok",
+            "cleaned": cleaned,
+            "dry_run": dry_run
+        }
+
     # Task operations
     def op_task_create(self, params: Dict) -> Dict:
-        """Create a new task."""
+        """Create a new task with optional dependencies."""
         task_id = params['task_id']
         subject = params['subject']
         description = params['description']
-        priority = params.get('priority', 3)
         active_form = params.get('active_form')
         spec_path = params.get('spec_path')
         metadata = params.get('metadata', {})
+        depends_on = params.get('depends_on', [])
+
+        # Auto-derive priority from task ID category if not provided
+        if 'priority' in params:
+            priority = params['priority']
+        else:
+            priority = self.validator.derive_priority_from_task_id(task_id)
 
         # Validate task creation
         self.validator.validate_task_create(
             task_id, subject, description, priority, spec_path
         )
 
-        # Create task
+        # Validate dependencies exist
+        if depends_on:
+            for dep_id in depends_on:
+                if not self.db.task_exists(dep_id):
+                    raise ValueError(f"Dependency task {dep_id} not found")
+
+        # Create task with dependencies
         self.db.create_task(
             task_id, subject, description, priority,
-            active_form, spec_path, metadata
+            active_form, spec_path, metadata, depends_on
         )
 
-        return {"status": "created", "task_id": task_id}
+        result = {"status": "created", "task_id": task_id}
+        if depends_on:
+            result["depends_on"] = depends_on
+
+        return result
 
     def op_task_claim(self, params: Dict) -> Dict:
         """Claim a task."""
@@ -190,6 +245,62 @@ class OperationHandler:
         tasks = self.db.get_available_tasks(limit)
 
         return {"tasks": tasks}
+
+    def op_task_add_dependency(self, params: Dict) -> Dict:
+        """Add a task dependency."""
+        task_id = params['task_id']
+        depends_on = params['depends_on']
+
+        # Validate both tasks exist
+        if not self.db.task_exists(task_id):
+            raise ValueError(f"Task {task_id} not found")
+        if not self.db.task_exists(depends_on):
+            raise ValueError(f"Task {depends_on} not found")
+
+        # Add dependency
+        self.db.add_dependency(task_id, depends_on)
+
+        return {
+            "status": "dependency_added",
+            "task_id": task_id,
+            "depends_on": depends_on
+        }
+
+    def op_task_remove_dependency(self, params: Dict) -> Dict:
+        """Remove a task dependency."""
+        task_id = params['task_id']
+        depends_on = params['depends_on']
+
+        # Remove dependency
+        self.db.remove_dependency(task_id, depends_on)
+
+        return {
+            "status": "dependency_removed",
+            "task_id": task_id,
+            "depends_on": depends_on
+        }
+
+    def op_task_dependencies(self, params: Dict) -> Dict:
+        """Get task dependencies."""
+        task_id = params['task_id']
+
+        if not self.db.task_exists(task_id):
+            raise ValueError(f"Task {task_id} not found")
+
+        dependencies = self.db.get_task_dependencies(task_id)
+        dependents = self.db.get_task_dependents(task_id)
+
+        return {
+            "task_id": task_id,
+            "depends_on": dependencies,
+            "blocks": dependents
+        }
+
+    def op_task_blocked(self, params: Dict) -> Dict:
+        """Get all blocked tasks."""
+        blocked = self.db.get_blocked_tasks()
+
+        return {"tasks": blocked}
 
     # Lock operations
     def op_lock_acquire(self, params: Dict) -> Dict:
@@ -352,6 +463,46 @@ class OperationHandler:
         return {
             "timing": dict(timing),
             "files": [dict(row) for row in files]
+        }
+
+    def op_repair_tasks(self, params: Dict) -> Dict:
+        """Repair corrupted tasks (have completed_at but wrong status)."""
+        dry_run = params.get('dry_run', False)
+
+        # Find corrupted tasks
+        corrupted_tasks = self.db.query(
+            """
+            SELECT id, status, completed_at
+            FROM tasks
+            WHERE completed_at IS NOT NULL AND status != 'completed'
+            """
+        )
+
+        repaired = []
+        for task in corrupted_tasks:
+            task_id = task['id']
+            repaired.append(task_id)
+
+            if not dry_run:
+                # Fix the task status
+                self.db.execute(
+                    "UPDATE tasks SET status = 'completed' WHERE id = ?",
+                    (task_id,)
+                )
+
+                # Log repair event
+                self.db.execute(
+                    """
+                    INSERT INTO event_log (event_type, entity_type, entity_id, triggered_by, reason)
+                    VALUES ('task_repair', 'task', ?, 'system', 'Fixed corrupted status')
+                    """,
+                    (task_id,)
+                )
+
+        return {
+            "status": "ok",
+            "repaired": repaired,
+            "dry_run": dry_run
         }
 
     def op_export_json(self, params: Dict) -> Dict:

@@ -23,8 +23,10 @@ def main():
         print("\nCommands:", file=sys.stderr)
         print("  register <agent-id> <pid>", file=sys.stderr)
         print("  unregister <agent-id>", file=sys.stderr)
+        print("  cleanup-stale-agents [--dry-run]  # Manually cleanup dead agents", file=sys.stderr)
         print("  heartbeat <agent-id>", file=sys.stderr)
-        print("  task-create <task-id> <subject> <description> --priority <1-5>", file=sys.stderr)
+        print("  task-create <task-id> <subject> <description> [--depends-on <task1,task2,...>]", file=sys.stderr)
+        print("              Note: Priority auto-derived from category (crit=0, high=1, med=2, low=3)", file=sys.stderr)
         print("  task-claim <agent-id> <task-id>", file=sys.stderr)
         print("  task-complete <agent-id> <task-id>", file=sys.stderr)
         print("  task-get <task-id>", file=sys.stderr)
@@ -35,6 +37,10 @@ def main():
         print("  task-work <agent-id> <task-id>", file=sys.stderr)
         print("  task-done <agent-id> <task-id>", file=sys.stderr)
         print("  task-release <agent-id> <task-id>", file=sys.stderr)
+        print("  task-add-dep <task-id> <depends-on>", file=sys.stderr)
+        print("  task-remove-dep <task-id> <depends-on>", file=sys.stderr)
+        print("  task-deps <task-id>", file=sys.stderr)
+        print("  task-blocked", file=sys.stderr)
         print("  lock <agent-id> <file-path>", file=sys.stderr)
         print("  unlock <agent-id> <file-path>", file=sys.stderr)
         print("  lock-all <agent-id> <file1> <file2> ...", file=sys.stderr)
@@ -44,6 +50,7 @@ def main():
         print("  velocity [--period '1 hour']", file=sys.stderr)
         print("  file-hotspots [--limit N]", file=sys.stderr)
         print("  task-timing <task-id>", file=sys.stderr)
+        print("  repair-tasks [--dry-run]  # Fix corrupted tasks (completed_at but wrong status)", file=sys.stderr)
         print("  export [--output PATH]", file=sys.stderr)
         print("  import <json-path>", file=sys.stderr)
         sys.exit(1)
@@ -133,6 +140,16 @@ def main():
             result = client.call('unregister', {'agent_id': agent_id})
             print(f"✓ Unregistered {agent_id}")
 
+        elif command == 'cleanup-stale-agents':
+            dry_run = '--dry-run' in args
+            result = client.call('cleanup_stale_agents', {'dry_run': dry_run})
+
+            if result.get('cleaned'):
+                for agent_id in result['cleaned']:
+                    print(f"{'Would cleanup' if dry_run else 'Cleaned up'}: {agent_id}")
+            else:
+                print("No stale agents found")
+
         elif command == 'heartbeat':
             agent_id = args[0]
             result = client.call('heartbeat', {'agent_id': agent_id})
@@ -141,20 +158,46 @@ def main():
         elif command == 'task-create':
             task_id, subject = args[0], args[1]
             description = args[2] if len(args) > 2 else ""
-            priority = 3
+            depends_on = []
+            priority = None
+            spec_path = None
 
             # Parse optional flags
             if '--priority' in args:
                 priority_idx = args.index('--priority')
                 priority = int(args[priority_idx + 1])
 
-            result = client.call('task_create', {
+            if '--depends-on' in args:
+                depends_idx = args.index('--depends-on')
+                depends_str = args[depends_idx + 1]
+                depends_on = [dep.strip() for dep in depends_str.split(',')]
+
+            if '--spec-path' in args:
+                spec_idx = args.index('--spec-path')
+                spec_path = args[spec_idx + 1]
+
+            params = {
                 'task_id': task_id,
                 'subject': subject,
-                'description': description,
-                'priority': priority
-            })
-            print(f"✓ Created task {task_id}")
+                'description': description
+            }
+
+            # Only include priority if explicitly provided
+            if priority is not None:
+                params['priority'] = priority
+
+            if depends_on:
+                params['depends_on'] = depends_on
+
+            if spec_path:
+                params['spec_path'] = spec_path
+
+            result = client.call('task_create', params)
+
+            if depends_on:
+                print(f"✓ Created task {task_id} (depends on: {', '.join(depends_on)})")
+            else:
+                print(f"✓ Created task {task_id}")
 
         elif command == 'task-claim':
             agent_id, task_id = args[0], args[1]
@@ -169,17 +212,64 @@ def main():
         elif command == 'task-get':
             task_id = args[0]
             result = client.call('task_get', {'task_id': task_id})
-            print(json.dumps(result['task'], indent=2))
+            task = result['task']
+
+            # Print task details
+            print(f"Task: {task['id']}")
+            print(f"Subject: {task['subject']}")
+            print(f"Description: {task['description']}")
+            print(f"Status: {task['status']}")
+            print(f"Priority: {task['priority']}")
+            print(f"Owner: {task['owner'] or '(none)'}")
+
+            if task.get('created_at'):
+                print(f"Created: {task['created_at']}")
+            if task.get('started_at'):
+                print(f"Started: {task['started_at']}")
+            if task.get('completed_at'):
+                print(f"Completed: {task['completed_at']}")
+
+            # Print dependencies
+            if task.get('depends_on'):
+                print(f"\nDepends on ({len(task['depends_on'])}):")
+                for dep in task['depends_on']:
+                    print(f"  - {dep}")
+            else:
+                print("\nDepends on: (none)")
+
+            if task.get('blocks'):
+                print(f"\nBlocks ({len(task['blocks'])}):")
+                for blocker in task['blocks']:
+                    print(f"  - {blocker}")
+            else:
+                print("\nBlocks: (none)")
 
         elif command == 'task-list':
             limit = 10
+            show_all = False
+
             if '--limit' in args:
                 limit_idx = args.index('--limit')
                 limit = int(args[limit_idx + 1])
 
+            if '--all' in args or '-a' in args:
+                show_all = True
+
             result = client.call('task_list', {'limit': limit})
+
+            if show_all:
+                # Also show blocked tasks
+                blocked_result = client.call('task_blocked', {})
+                print("Available tasks:")
+
             for task in result['tasks']:
-                print(f"{task['id']}: {task['subject']} [{task['status']}]")
+                print(f"  {task['id']}: {task['subject']} [{task['status']}]")
+
+            if show_all and blocked_result['tasks']:
+                print(f"\nBlocked tasks:")
+                for task in blocked_result['tasks']:
+                    blocked_count = task.get('blocked_by_count', 0)
+                    print(f"  {task['id']}: {task['subject']} [blocked by {blocked_count}]")
 
         elif command == 'lock':
             agent_id, file_path = args[0], args[1]
@@ -262,6 +352,17 @@ def main():
                 print("\n  Files:")
                 for file in result['files']:
                     print(f"    {file['file_path']}: {file['lock_duration_secs']}s")
+
+        elif command == 'repair-tasks':
+            dry_run = '--dry-run' in args
+            result = client.call('repair_tasks', {'dry_run': dry_run})
+
+            if result.get('repaired'):
+                print(f"\n{'Would repair' if dry_run else 'Repaired'} {len(result['repaired'])} corrupted tasks:")
+                for task_id in result['repaired']:
+                    print(f"  - {task_id}")
+            else:
+                print("✓ No corrupted tasks found")
 
         elif command == 'export':
             output_path = '.claude-coord/state.json'
@@ -413,6 +514,53 @@ def main():
                 print(f"✓ Unlocked {lock['file_path']}")
             if not locks['locks']:
                 print("No locks to release")
+
+        elif command == 'task-add-dep':
+            task_id, depends_on = args[0], args[1]
+            result = client.call('task_add_dependency', {
+                'task_id': task_id,
+                'depends_on': depends_on
+            })
+            print(f"✓ Added dependency: {task_id} depends on {depends_on}")
+
+        elif command == 'task-remove-dep':
+            task_id, depends_on = args[0], args[1]
+            result = client.call('task_remove_dependency', {
+                'task_id': task_id,
+                'depends_on': depends_on
+            })
+            print(f"✓ Removed dependency: {task_id} no longer depends on {depends_on}")
+
+        elif command == 'task-deps':
+            task_id = args[0]
+            result = client.call('task_dependencies', {'task_id': task_id})
+
+            print(f"Task: {task_id}")
+
+            if result['depends_on']:
+                print(f"\nDepends on ({len(result['depends_on'])}):")
+                for dep in result['depends_on']:
+                    print(f"  - {dep}")
+            else:
+                print("\nDepends on: (none)")
+
+            if result['blocks']:
+                print(f"\nBlocks ({len(result['blocks'])}):")
+                for blocker in result['blocks']:
+                    print(f"  - {blocker}")
+            else:
+                print("\nBlocks: (none)")
+
+        elif command == 'task-blocked':
+            result = client.call('task_blocked', {})
+
+            if result['tasks']:
+                print(f"Blocked tasks ({len(result['tasks'])}):")
+                for task in result['tasks']:
+                    blocked_count = task.get('blocked_by_count', 0)
+                    print(f"  {task['id']}: {task['subject']} (blocked by {blocked_count} tasks)")
+            else:
+                print("No blocked tasks")
 
         else:
             print(f"Unknown command: {command}", file=sys.stderr)

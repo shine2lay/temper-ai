@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     subject TEXT NOT NULL,
     description TEXT NOT NULL,
     active_form TEXT,
-    priority INTEGER NOT NULL DEFAULT 3,
+    priority INTEGER NOT NULL DEFAULT 2,
     status TEXT NOT NULL DEFAULT 'pending',  -- pending, in_progress, completed, deleted
     owner TEXT,  -- agent_id
     spec_path TEXT,  -- Path to task spec file
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 
     FOREIGN KEY (owner) REFERENCES agents(id) ON DELETE SET NULL,
     CHECK (status IN ('pending', 'in_progress', 'completed', 'deleted')),
-    CHECK (priority BETWEEN 1 AND 5)
+    CHECK (priority BETWEEN 0 AND 3)
 );
 
 CREATE INDEX IF NOT EXISTS idx_task_status ON tasks(status);
@@ -241,6 +241,25 @@ CREATE TABLE IF NOT EXISTS error_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_error_timestamp ON error_snapshots(timestamp DESC);
 CREATE INDEX IF NOT EXISTS idx_error_code ON error_snapshots(error_code);
+
+-- Config deployments: Track configuration changes for rollback
+CREATE TABLE IF NOT EXISTS config_deployments (
+    id TEXT PRIMARY KEY,
+    agent_name TEXT NOT NULL,
+    previous_config TEXT NOT NULL,  -- JSON
+    new_config TEXT NOT NULL,  -- JSON
+    experiment_id TEXT,  -- Optional link to experiment that triggered this
+    deployed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    deployed_by TEXT,  -- Agent ID or user that triggered deployment
+    rollback_at TIMESTAMP,
+    rollback_reason TEXT,
+
+    FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_deployment_agent ON config_deployments(agent_name);
+CREATE INDEX IF NOT EXISTS idx_deployment_time ON config_deployments(deployed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_deployment_experiment ON config_deployments(experiment_id);
 
 -- Schema version tracking
 CREATE TABLE IF NOT EXISTS schema_version (

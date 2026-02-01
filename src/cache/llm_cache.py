@@ -24,6 +24,14 @@ from src.cache.constants import DEFAULT_CACHE_SIZE, DEFAULT_TTL_SECONDS
 
 logger = get_logger(__name__)
 
+# Import redis at module level for exception handling
+try:
+    import redis  # type: ignore[import-not-found]
+    REDIS_AVAILABLE = True
+except ImportError:
+    redis = None  # type: ignore
+    REDIS_AVAILABLE = False
+
 
 @dataclass
 class CacheStats:
@@ -269,9 +277,7 @@ class RedisCache(CacheBackend):
             ValueError: If Redis authentication fails
             ConnectionError: If cannot connect to Redis
         """
-        try:
-            import redis  # type: ignore[import-not-found]
-        except ImportError:
+        if not REDIS_AVAILABLE:
             raise ImportError(
                 "Redis backend requires 'redis' package. "
                 "Install with: pip install redis"
@@ -320,9 +326,11 @@ class RedisCache(CacheBackend):
         try:
             value = self._client.get(key)
             return value if value is not None else None
-        except Exception as e:
+        except redis.RedisError as e:
+            # Specific exception for Redis operations
             logger.error(f"Redis get error: {e}")
             return None
+        # KeyboardInterrupt and SystemExit propagate automatically
 
     def set(self, key: str, value: str, ttl: Optional[int] = None) -> bool:
         """Set value in Redis with optional TTL."""
@@ -332,17 +340,21 @@ class RedisCache(CacheBackend):
             else:
                 self._client.set(key, value)
             return True
-        except Exception as e:
+        except redis.RedisError as e:
+            # Specific exception for Redis operations
             logger.error(f"Redis set error: {e}")
             return False
+        # KeyboardInterrupt and SystemExit propagate automatically
 
     def delete(self, key: str) -> bool:
         """Delete key from Redis."""
         try:
             return bool(self._client.delete(key))
-        except Exception as e:
+        except redis.RedisError as e:
+            # Specific exception for Redis operations
             logger.error(f"Redis delete error: {e}")
             return False
+        # KeyboardInterrupt and SystemExit propagate automatically
 
     def clear(self, pattern: str = "*", dry_run: bool = False, batch_size: int = 100) -> int:
         """
@@ -408,17 +420,21 @@ class RedisCache(CacheBackend):
 
             return deleted_count
 
-        except Exception as e:
+        except redis.RedisError as e:
+            # Specific exception for Redis operations
             logger.error(f"Redis clear error: {e}")
             return 0
+        # KeyboardInterrupt and SystemExit propagate automatically
 
     def exists(self, key: str) -> bool:
         """Check if key exists in Redis."""
         try:
             return bool(self._client.exists(key))
-        except Exception as e:
+        except redis.RedisError as e:
+            # Specific exception for Redis operations
             logger.error(f"Redis exists error: {e}")
             return False
+        # KeyboardInterrupt and SystemExit propagate automatically
 
     def __repr__(self) -> str:
         """
@@ -429,8 +445,15 @@ class RedisCache(CacheBackend):
         """
         try:
             connected = self._client.ping() if self._client else False
-        except Exception:
+        except redis.RedisError:
+            # Redis connection errors when checking status
             connected = False
+        except Exception:
+            # Unexpected errors (e.g., attribute errors if _client malformed)
+            # Log for debugging but don't crash repr
+            logger.debug(f"Unexpected error in RedisCache.__repr__")
+            connected = False
+        # KeyboardInterrupt and SystemExit propagate automatically
         return f"RedisCache(connected={connected})"
 
     def __str__(self) -> str:
@@ -663,6 +686,8 @@ class LLMCache:
             return value
 
         except Exception as e:
+            # Catches backend-specific exceptions but allows KeyboardInterrupt
+            # and SystemExit to propagate
             with self._stats_lock:
                 self.stats.errors += 1
             logger.error(f"Cache get error: {e}")
@@ -697,6 +722,8 @@ class LLMCache:
             return success
 
         except Exception as e:
+            # Catches backend-specific exceptions but allows KeyboardInterrupt
+            # and SystemExit to propagate
             with self._stats_lock:
                 self.stats.errors += 1
             logger.error(f"Cache set error: {e}")

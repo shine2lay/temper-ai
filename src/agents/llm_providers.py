@@ -8,6 +8,7 @@ import httpx
 import json
 import time
 import asyncio
+import threading
 import logging
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, AsyncIterator, Union, Tuple, Type, Literal
@@ -157,6 +158,11 @@ class BaseLLM(ABC):
         self._client: Optional[httpx.Client] = None
         self._async_client: Optional[httpx.AsyncClient] = None
 
+        # Cleanup coordination (prevents race conditions)
+        self._closed = False
+        self._sync_cleanup_lock = threading.Lock()
+        self._async_cleanup_lock: Optional[asyncio.Lock] = None  # Lazy init (needs event loop)
+
         # Optional caching
         self._cache: Optional[LLMCache] = None
         if enable_cache:
@@ -232,91 +238,77 @@ class BaseLLM(ABC):
     def close(self) -> None:
         """Close HTTPx clients (sync and async) and release resources.
 
-        RELIABILITY FIX (code-high-02): Force synchronous close of async client
-        to prevent connection pool leaks when no event loop is running.
-        """
-        if self._client is not None:
-            self._client.close()
-            self._client = None
+        RELIABILITY FIX (code-crit-async-race-04): Thread-safe idempotent cleanup
+        to prevent race conditions. Uses existing event loop or creates new one.
 
-        # RELIABILITY FIX: Force synchronous close of async client
-        # Previous code only closed async client if event loop was running,
-        # causing connection pool leaks in non-async contexts
-        if self._async_client is not None:
+        Note: Prefer async context manager (`async with`) over manual close().
+        """
+        with self._sync_cleanup_lock:
+            if self._closed:
+                return  # Idempotent - already closed
+
             try:
+                # Check if event loop is running
                 loop = asyncio.get_running_loop()
-                # Event loop running - use async cleanup
-                loop.create_task(self._async_client.aclose())
-                self._async_client = None
+                raise RuntimeError(
+                    "Cannot call sync close() from async context. "
+                    "Use await aclose() instead to prevent event loop conflicts."
+                )
             except RuntimeError:
-                # No event loop running - force synchronous close
-                # This prevents "Too many open files" errors
-                try:
-                    # Use asyncio.run() to execute async close in new event loop
-                    asyncio.run(self._async_client.aclose())
-                    self._async_client = None
-                except Exception as e:
-                    # Last resort - try httpx internal sync close
-                    # This may emit warnings but prevents connection leak
-                    try:
-                        # Access internal transport and close it synchronously
-                        if hasattr(self._async_client, '_transport'):
-                            transport = getattr(self._async_client, '_transport', None)
-                            if transport and hasattr(transport, 'close'):
-                                transport.close()
-                        self._async_client = None
-                    except Exception:
-                        # Log failure but don't crash - connections will leak
-                        # but at least we tried
-                        logger.warning(
-                            f"Failed to close async HTTP client: {e}. "
-                            f"Connections may leak. Use aclose() in async context."
-                        )
-                        pass
+                # No running loop - safe to create new one
+                asyncio.run(self.aclose())
 
     async def aclose(self) -> None:
-        """Async close for HTTPx clients and release resources."""
-        if self._client is not None:
-            self._client.close()
-            self._client = None
-        if self._async_client is not None:
-            await self._async_client.aclose()
-            self._async_client = None
+        """Async close for HTTPx clients and release resources.
+
+        RELIABILITY FIX (code-crit-async-race-04): Thread-safe idempotent cleanup
+        to prevent race conditions and connection leaks under concurrent usage.
+        """
+        # Lazy init async lock (can't create in __init__ without event loop)
+        if self._async_cleanup_lock is None:
+            self._async_cleanup_lock = asyncio.Lock()
+
+        async with self._async_cleanup_lock:
+            if self._closed:
+                return  # Idempotent - already closed
+
+            try:
+                if self._client is not None:
+                    self._client.close()
+                if self._async_client is not None:
+                    await self._async_client.aclose()
+            except Exception as e:
+                logger.error(f"Error during async cleanup: {e}", exc_info=True)
+            finally:
+                self._client = None
+                self._async_client = None
+                self._closed = True
 
     def __del__(self) -> None:
-        """Cleanup HTTPx clients on garbage collection.
+        """Warn about improper cleanup - DO NOT attempt cleanup in finalizer.
 
-        RELIABILITY FIX (code-high-02): Close both sync and async clients
-        to prevent connection pool leaks during garbage collection.
+        RELIABILITY FIX (code-crit-async-race-04): Minimal finalizer to prevent
+        deadlocks and crashes during garbage collection. Attempting async cleanup
+        in __del__ is dangerous because:
+        - Event loop may be shut down
+        - Other objects may already be finalized
+        - Can cause crashes worse than leaks
+
+        Best practice: Use context managers (async with / with) for guaranteed cleanup.
         """
-        # Safety net - close sync client if not already closed
-        try:
-            if self._client is not None:
-                self._client.close()
-                self._client = None
-        except Exception:
-            # Ignore errors during cleanup
-            pass
+        if not hasattr(self, '_closed'):
+            return  # Initialization failed, nothing to warn about
 
-        # RELIABILITY FIX: Also close async client during cleanup
-        # Previous code only closed sync client, causing async connection leaks
-        try:
-            if self._async_client is not None:
-                # Attempt to close async client in finalizer
-                # This is best-effort - may not work in all contexts
-                try:
-                    # Try to run async close in new event loop
-                    asyncio.run(self._async_client.aclose())
-                except Exception:
-                    # If async close fails, try internal sync close
-                    if hasattr(self._async_client, '_transport'):
-                        transport = getattr(self._async_client, '_transport', None)
-                        if transport and hasattr(transport, 'close'):
-                            transport.close()
-                self._async_client = None
-        except Exception:
-            # Silence all errors in __del__ - don't crash during cleanup
-            pass
+        if not self._closed and (self._client is not None or self._async_client is not None):
+            import warnings
+            warnings.warn(
+                f"{self.__class__.__name__} was not properly closed. "
+                f"Use 'async with' or 'with' context manager to avoid resource leaks. "
+                f"Leaked clients will be reclaimed by OS on process exit.",
+                ResourceWarning,
+                stacklevel=2
+            )
+        # DO NOT attempt cleanup - let OS reclaim resources on process exit
 
     def __enter__(self) -> "BaseLLM":
         """Context manager entry."""

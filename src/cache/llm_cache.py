@@ -16,6 +16,7 @@ from typing import Any, Dict, Optional, Tuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from threading import Lock
+from collections import OrderedDict
 from src.utils.logging import get_logger
 from src.cache.constants import DEFAULT_CACHE_SIZE, DEFAULT_TTL_SECONDS
 
@@ -93,7 +94,9 @@ class InMemoryCache(CacheBackend):
             max_size: Maximum number of entries before eviction
         """
         self._cache: Dict[str, Tuple[str, Optional[float]]] = {}
-        self._access_order: Dict[str, float] = {}  # Track access time for LRU
+        # PERFORMANCE FIX (code-medi-07): Use OrderedDict for O(1) LRU eviction
+        # OrderedDict maintains insertion order, allowing efficient LRU tracking
+        self._access_order: OrderedDict = OrderedDict()  # Track access order for LRU
         self._max_size = max_size
         self._lock = Lock()
         self._evictions = 0
@@ -115,8 +118,9 @@ class InMemoryCache(CacheBackend):
                 del self._access_order[key]
                 return None
 
-            # Update access time for LRU
-            self._access_order[key] = time.time()
+            # PERFORMANCE FIX (code-medi-07): Move to end for O(1) LRU tracking
+            # OrderedDict.move_to_end() is O(1), marking this as most recently used
+            self._access_order.move_to_end(key)
             return value
 
     def set(self, key: str, value: str, ttl: Optional[int] = None) -> bool:
@@ -130,7 +134,11 @@ class InMemoryCache(CacheBackend):
                 self._evict_lru()
 
             self._cache[key] = (value, expires_at)
-            self._access_order[key] = time.time()
+            # PERFORMANCE FIX (code-medi-07): Use OrderedDict for O(1) LRU
+            # Setting/updating key in OrderedDict places it at the end (most recent)
+            self._access_order[key] = True  # Value doesn't matter, only order
+            # If key already exists, move it to end (most recently used)
+            self._access_order.move_to_end(key)
             return True
 
     def delete(self, key: str) -> bool:
@@ -195,12 +203,13 @@ class InMemoryCache(CacheBackend):
         if not self._access_order:
             return
 
-        # Find least recently accessed key
-        lru_key = min(self._access_order, key=self._access_order.get)  # type: ignore
+        # PERFORMANCE FIX (code-medi-07): O(1) LRU eviction with OrderedDict
+        # First item in OrderedDict is least recently used (oldest)
+        # This is O(1) instead of O(n) min() scan over all keys
+        lru_key, _ = self._access_order.popitem(last=False)  # Remove first (oldest) item
 
-        # Remove it
+        # Remove from cache
         del self._cache[lru_key]
-        del self._access_order[lru_key]
         self._evictions += 1
 
         logger.debug(f"Evicted LRU entry: {lru_key} (total evictions: {self._evictions})")

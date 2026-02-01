@@ -130,6 +130,112 @@ class TestSecretRedaction:
         assert "Processing user request for data" in formatted
         assert "***REDACTED***" not in formatted
 
+    def test_sanitize_newline_injection(self):
+        """Test that newline characters are escaped to prevent log injection."""
+        formatter = SecretRedactingFormatter()
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="User input: Hello\nFAKE LOG ENTRY",
+            args=(),
+            exc_info=None
+        )
+        formatted = formatter.format(record)
+        # Newline should be escaped
+        assert "\\n" in formatted
+        assert "\nFAKE LOG ENTRY" not in formatted
+
+    def test_sanitize_carriage_return_injection(self):
+        """Test that carriage return characters are escaped."""
+        formatter = SecretRedactingFormatter()
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="User input: data\rINJECTED",
+            args=(),
+            exc_info=None
+        )
+        formatted = formatter.format(record)
+        # Carriage return should be escaped
+        assert "\\r" in formatted
+        assert "\rINJECTED" not in formatted
+
+    def test_sanitize_tab_injection(self):
+        """Test that tab characters are escaped."""
+        formatter = SecretRedactingFormatter()
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="User input: col1\tcol2\tinjected",
+            args=(),
+            exc_info=None
+        )
+        formatted = formatter.format(record)
+        # Tab should be escaped
+        assert "\\t" in formatted
+
+    def test_sanitize_null_byte_injection(self):
+        """Test that null bytes are removed."""
+        formatter = SecretRedactingFormatter()
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="User input: data\x00truncated",
+            args=(),
+            exc_info=None
+        )
+        formatted = formatter.format(record)
+        # Null byte should be removed (not just escaped)
+        assert "\x00" not in formatted
+        assert "datatruncated" in formatted or "data" in formatted
+
+    def test_sanitize_control_characters(self):
+        """Test that other control characters are removed."""
+        formatter = SecretRedactingFormatter()
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg="User input: \x01\x02\x03dangerous\x07\x08",
+            args=(),
+            exc_info=None
+        )
+        formatted = formatter.format(record)
+        # Control characters should be removed
+        assert "\x01" not in formatted
+        assert "\x02" not in formatted
+        assert "\x07" not in formatted
+        assert "dangerous" in formatted
+
+    def test_multiline_log_injection_attack(self):
+        """Test protection against multiline log injection attack."""
+        formatter = SecretRedactingFormatter()
+        # Simulates attacker trying to inject fake log entry
+        malicious_input = "normal input\n[ERROR] Security breach detected\n[CRITICAL] System compromised"
+        record = logging.LogRecord(
+            name="test",
+            level=logging.INFO,
+            pathname="",
+            lineno=0,
+            msg=f"Processing user data: {malicious_input}",
+            args=(),
+            exc_info=None
+        )
+        formatted = formatter.format(record)
+        # Newlines should be escaped, preventing fake log entries
+        assert "\\n" in formatted
+        assert "\n[ERROR]" not in formatted
+        assert "\n[CRITICAL]" not in formatted
+
 
 class TestStructuredFormatter:
     """Tests for JSON structured logging."""

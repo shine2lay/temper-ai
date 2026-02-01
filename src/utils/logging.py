@@ -69,8 +69,15 @@ class SecretRedactingFormatter(logging.Formatter):
         if not isinstance(text, str):
             return text  # type: ignore[unreachable]
 
-        # Redact secret references
+        # Sanitize control characters to prevent log injection
+        # Replace newlines, carriage returns, tabs, and other control chars
         import re
+        text = re.sub(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', '', text)  # Remove control chars except \t, \n
+        text = text.replace('\n', '\\n')  # Escape newlines
+        text = text.replace('\r', '\\r')  # Escape carriage returns
+        text = text.replace('\t', '\\t')  # Escape tabs
+
+        # Redact secret references
         text = re.sub(r'\$\{env:([A-Z_]+)\}', r'${env:***REDACTED***}', text)
         text = re.sub(r'\$\{vault:([^}]+)\}', r'${vault:***REDACTED***}', text)
         text = re.sub(r'\$\{aws:([^}]+)\}', r'${aws:***REDACTED***}', text)

@@ -415,11 +415,11 @@
       "description": "Detect quality_low, cost_too_high, too_slow problems",
       "activeForm": null,
       "priority": 2,
-      "status": "in_progress",
+      "status": "completed",
       "owner": "agent-b2a823",
       "created_at": "2026-02-01 10:35:32",
       "started_at": "2026-02-01 21:22:30",
-      "completed_at": null
+      "completed_at": "2026-02-01 21:31:23"
     },
     "code-med-m5-strategy-registry": {
       "subject": "Implement StrategyRegistry",
@@ -448,10 +448,10 @@
       "description": "Main detector that orchestrates problem detection and strategy invocation",
       "activeForm": null,
       "priority": 1,
-      "status": "pending",
-      "owner": null,
+      "status": "in_progress",
+      "owner": "agent-b2a823",
       "created_at": "2026-02-01 10:35:32",
-      "started_at": null,
+      "started_at": "2026-02-01 21:32:41",
       "completed_at": null
     },
     "test-med-m5-phase3-validation": {

@@ -240,7 +240,13 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         Raises:
             ValueError: If configuration parameters are invalid
         """
-        super().__init__(config or {})
+        # Extract and validate custom_forbidden_patterns BEFORE calling super().__init__()
+        # because base class rejects nested dicts for security
+        config = config or {}
+        custom_patterns_raw = config.pop("custom_forbidden_patterns", {})
+
+        # Call super().__init__() with config that no longer has nested dict
+        super().__init__(config)
 
         # SECURITY (code-high-12): Validate all configuration inputs
         # Prevents type confusion and ReDoS attacks via malformed patterns
@@ -277,7 +283,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         )
 
         # Validate custom forbidden patterns (dict of name -> pattern)
-        custom_patterns_raw = self.config.get("custom_forbidden_patterns", {})
+        # Already extracted before super().__init__() to avoid base class nested dict rejection
         if not isinstance(custom_patterns_raw, dict):
             raise ValueError(
                 f"custom_forbidden_patterns must be a dict, got {type(custom_patterns_raw).__name__}"
@@ -395,11 +401,13 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             })
 
         # Add custom patterns
-        for name, info in self.custom_forbidden_patterns.items():
+        # FIX (code-high-pattern-mismatch-17): info is a string, not a dict
+        # self.custom_forbidden_patterns is Dict[str, str] (validated in __init__)
+        for name, pattern_str in self.custom_forbidden_patterns.items():
             patterns[f"custom_{name}"] = {
-                "regex": re.compile(info["pattern"], re.IGNORECASE),
-                "message": info.get("message", f"Custom forbidden pattern: {name}"),
-                "severity": info.get("severity", ViolationSeverity.HIGH),
+                "regex": re.compile(pattern_str, re.IGNORECASE),
+                "message": f"Custom forbidden pattern: {name}",
+                "severity": ViolationSeverity.HIGH,
                 "category": "custom"
             }
 

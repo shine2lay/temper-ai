@@ -120,3 +120,35 @@ class TestCorruptionDefense:
         assert corrupted[0]['id'] == 'corrupted-task'
         assert corrupted[0]['status'] == 'pending'
         assert corrupted[0]['completed_at'] is not None
+
+    def test_status_reports_corruption(self, db):
+        """Status operation should report corrupted tasks as warnings."""
+        from coord_service.operations import OperationHandler
+
+        # Create corrupted task
+        db.create_task('corrupted-task', 'Corrupted task', 'Description')
+        db.execute(
+            "UPDATE tasks SET completed_at = CURRENT_TIMESTAMP WHERE id = 'corrupted-task'"
+        )
+
+        handler = OperationHandler(db)
+        status = handler.execute('status', {})
+
+        # Should have warnings
+        assert 'warnings' in status
+        assert status['warnings']['corrupted_tasks'] == 1
+        assert 'corrupted-task' in status['warnings']['sample_ids']
+        assert 'completed_at set but status' in status['warnings']['message']
+
+    def test_status_no_warnings_when_clean(self, db):
+        """Status operation should not show warnings when no corruption."""
+        from coord_service.operations import OperationHandler
+
+        # Create normal task
+        db.create_task('normal-task', 'Normal task', 'Description')
+
+        handler = OperationHandler(db)
+        status = handler.execute('status', {})
+
+        # Should NOT have warnings
+        assert 'warnings' not in status

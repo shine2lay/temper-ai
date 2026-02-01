@@ -211,6 +211,17 @@ def main():
             print(f"  Completed: {result['tasks']['completed']}")
             print(f"Locks: {result['locks']}")
 
+            # Show corruption warnings if present
+            if 'warnings' in result:
+                warnings = result['warnings']
+                print(f"\n⚠️  WARNINGS:")
+                if 'corrupted_tasks' in warnings:
+                    print(f"  Corrupted Tasks: {warnings['corrupted_tasks']}")
+                    print(f"  {warnings['message']}")
+                    if warnings.get('sample_ids'):
+                        print(f"  Sample IDs: {', '.join(warnings['sample_ids'])}")
+                    print(f"  Action: Run corruption cleanup or investigate cause")
+
         elif command == 'velocity':
             period = '1 hour'
             if '--period' in args:

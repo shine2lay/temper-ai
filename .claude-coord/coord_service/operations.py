@@ -236,7 +236,18 @@ class OperationHandler:
         completed = self.db.query("SELECT COUNT(*) as count FROM tasks WHERE status='completed'")[0]['count']
         locks = self.db.query("SELECT COUNT(*) as count FROM locks")[0]['count']
 
-        return {
+        # Check for data corruption (tasks with completed_at but wrong status)
+        corrupted_tasks = self.db.query(
+            """
+            SELECT id, status, completed_at
+            FROM tasks
+            WHERE completed_at IS NOT NULL AND status != 'completed'
+            ORDER BY completed_at DESC
+            LIMIT 10
+            """
+        )
+
+        result = {
             "status": "running",
             "agents": agents,
             "tasks": {
@@ -246,6 +257,16 @@ class OperationHandler:
             },
             "locks": locks
         }
+
+        # Add corruption warning if found
+        if corrupted_tasks:
+            result["warnings"] = {
+                "corrupted_tasks": len(corrupted_tasks),
+                "message": f"Found {len(corrupted_tasks)} corrupted tasks (completed_at set but status != 'completed')",
+                "sample_ids": [t['id'] for t in corrupted_tasks[:5]]
+            }
+
+        return result
 
     def op_velocity(self, params: Dict) -> Dict:
         """Get velocity metrics."""

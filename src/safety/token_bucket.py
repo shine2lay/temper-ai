@@ -119,6 +119,11 @@ class RateLimit:
             raise ValueError(
                 f"refill_period must be numeric, got {type(self.refill_period).__name__}"
             )
+        # SECURITY: Check for NaN/Inf to prevent bypass and undefined behavior
+        if math.isnan(self.refill_period) or math.isinf(self.refill_period):
+            raise ValueError(
+                f"refill_period must be a finite number, got {self.refill_period}"
+            )
         if self.refill_period <= 0:
             raise ValueError(
                 f"refill_period must be positive, got {self.refill_period}"

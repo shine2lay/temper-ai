@@ -72,8 +72,9 @@ class BaseSafetyPolicy(SafetyPolicy):
                 f"config exceeds maximum size of 100 keys, got {len(config)}"
             )
 
-        # SECURITY: Validate all keys are strings (prevent injection)
-        for key in config.keys():
+        # SECURITY: Validate all keys and values (prevent injection and DoS)
+        for key, value in config.items():
+            # Validate key
             if not isinstance(key, str):
                 raise ValueError(
                     f"config keys must be strings, got {type(key).__name__}: {key}"
@@ -82,6 +83,29 @@ class BaseSafetyPolicy(SafetyPolicy):
                 raise ValueError(
                     f"config key exceeds 100 characters: {key[:20]}..."
                 )
+
+            # SECURITY: Validate value type (prevent nested objects causing DoS)
+            if isinstance(value, dict):
+                raise ValueError(
+                    f"config values must be primitives (str/int/float/bool/list), "
+                    f"got nested dict for key '{key}'"
+                )
+
+            # SECURITY: Validate collection sizes
+            if isinstance(value, (list, tuple, set)):
+                if len(value) > 1000:
+                    raise ValueError(
+                        f"config list/tuple/set must have <= 1000 items, "
+                        f"got {len(value)} for key '{key}'"
+                    )
+
+            # SECURITY: Validate string lengths
+            if isinstance(value, str):
+                if len(value) > 10_000:
+                    raise ValueError(
+                        f"config string must be <= 10,000 chars, "
+                        f"got {len(value)} for key '{key}'"
+                    )
 
         # Store validated config
         self.config = config

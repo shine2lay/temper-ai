@@ -12,8 +12,46 @@ an average rate limit over time.
 """
 import time
 import threading
-from typing import Optional, Dict, Any, Tuple
+import functools
+from typing import Optional, Dict, Any, Tuple, Callable
 from dataclasses import dataclass
+
+
+def requires_lock(method: Callable) -> Callable:
+    """Decorator to enforce that a method is called with the instance lock held.
+
+    Raises:
+        RuntimeError: If the method is called without holding self.lock
+
+    Example:
+        >>> class MyClass:
+        ...     def __init__(self):
+        ...         self.lock = threading.Lock()
+        ...
+        ...     @requires_lock
+        ...     def _internal_method(self):
+        ...         # This method requires lock to be held
+        ...         pass
+        ...
+        ...     def public_method(self):
+        ...         with self.lock:
+        ...             self._internal_method()  # OK
+        ...         self._internal_method()  # RuntimeError!
+    """
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        # Check if lock is held by attempting to acquire it with blocking=False
+        # If we can acquire it, that means it wasn't held - this is an error!
+        if self.lock.acquire(blocking=False):
+            # We acquired the lock, which means it wasn't held - bad!
+            self.lock.release()
+            raise RuntimeError(
+                f"{method.__name__}() must be called with self.lock held. "
+                f"This is a thread-safety violation."
+            )
+        # Lock is held (acquire failed), proceed with method call
+        return method(self, *args, **kwargs)
+    return wrapper
 
 
 @dataclass
@@ -147,11 +185,15 @@ class TokenBucket:
             self._refill()
             return self.tokens >= tokens
 
+    @requires_lock
     def _refill(self) -> None:
         """Refill tokens based on elapsed time.
 
         Called internally before token operations.
-        Not thread-safe (must be called with lock held).
+        MUST be called with self.lock held (enforced by @requires_lock decorator).
+
+        Raises:
+            RuntimeError: If called without holding self.lock
         """
         now = time.time()
         elapsed = now - self.last_refill

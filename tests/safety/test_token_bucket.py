@@ -317,6 +317,46 @@ class TestTokenBucketThreadSafety:
         # Some should succeed after refill
         assert len(successes) > 0
 
+    def test_refill_requires_lock(self):
+        """Test that _refill() enforces lock requirement (code-high-11).
+
+        This test verifies the fix for the race condition where _refill()
+        could be called without holding the lock. The @requires_lock decorator
+        should raise RuntimeError if called without the lock.
+        """
+        limit = RateLimit(max_tokens=10, refill_rate=1.0, refill_period=1.0)
+        bucket = TokenBucket(limit)
+
+        # Calling _refill() without lock should raise RuntimeError
+        with pytest.raises(RuntimeError, match="must be called with self.lock held"):
+            bucket._refill()
+
+        # Calling _refill() WITH lock should work fine
+        with bucket.lock:
+            bucket._refill()  # Should not raise
+
+        # Verify the lock check is thread-safe itself
+        # Multiple threads trying to call _refill() without lock should all fail
+        errors = []
+        lock = threading.Lock()
+
+        def try_refill_without_lock():
+            try:
+                bucket._refill()
+            except RuntimeError as e:
+                with lock:
+                    errors.append(str(e))
+
+        threads = [threading.Thread(target=try_refill_without_lock) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # All threads should have gotten RuntimeError
+        assert len(errors) == 10
+        assert all("must be called with self.lock held" in err for err in errors)
+
 
 class TestTokenBucketManager:
     """Tests for TokenBucketManager."""

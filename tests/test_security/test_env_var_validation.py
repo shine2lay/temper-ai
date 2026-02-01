@@ -354,8 +354,9 @@ class TestUnrestrictedContextPermissions:
         validator = EnvVarValidator()
 
         is_valid, error = validator.validate("USER_PROMPT", "Safe text\x00malicious")
-        assert not is_valid
-        assert "null byte" in error.lower()
+        assert not is_valid, "Null byte injection should be blocked in user prompts"
+        assert error is not None, "Error message must be provided for security violations"
+        assert "null byte" in error.lower(), f"Error message should mention null byte, got: {error}"
 
 
 class TestSecurityEdgeCases:
@@ -385,8 +386,11 @@ class TestSecurityEdgeCases:
         long_value = "A" * (10 * 1024 + 1)
         is_valid, error = validator.validate("SOME_VAR", long_value)
 
-        assert not is_valid
-        assert "too long" in error.lower()
+        assert not is_valid, f"Value exceeding 10KB limit should be blocked (length={len(long_value)})"
+        assert error is not None, "Error message must be provided for length violations"
+        assert "too long" in error.lower(), f"Error should mention length limit, got: {error}"
+        # Validate error doesn't leak the long value
+        assert long_value not in error, "Error message should not leak potentially sensitive long values"
 
     def test_empty_values_allowed(self):
         """Test empty values are allowed (not a security issue)."""
@@ -395,7 +399,12 @@ class TestSecurityEdgeCases:
         is_valid, error = validator.validate("API_KEY", "")
         # Empty values should fail pattern validation for most contexts
         # This is correct behavior - empty credentials are invalid
-        assert not is_valid
+        assert not is_valid, "Empty API_KEY should be rejected (empty credentials are invalid)"
+        assert error is not None, "Error message must explain why empty value is invalid"
+        assert "invalid" in error.lower() or "failed validation" in error.lower(), \
+            f"Error should indicate validation failure, got: {error}"
+        # Verify error mentions the variable name for better debugging
+        assert "API_KEY" in error, f"Error should mention variable name for context, got: {error}"
 
     @pytest.mark.parametrize("var_name,bypass_attempt", [
         # Command substitution variants
@@ -514,13 +523,22 @@ class TestRegressionDefense:
         validator = EnvVarValidator()
 
         is_valid, error = validator.validate("CONFIG_PATH", "../../../etc/passwd")
-        assert not is_valid
-        assert "traversal" in error.lower()
+        assert not is_valid, "Path traversal attack (../) should be blocked"
+        assert error is not None, "Error message must be provided for path violations"
+        assert "escapes" in error.lower() or "traversal" in error.lower(), \
+            f"Error should mention path escape/traversal, got: {error}"
+        assert "base directory" in error.lower(), \
+            f"Error should mention base directory containment, got: {error}"
+        # Validate security context is clear
+        assert "CONFIG_PATH" in error, "Error should mention variable name for context"
 
     def test_sql_injection_validation_preserved(self):
         """Test existing SQL injection validation is preserved."""
         validator = EnvVarValidator()
 
         is_valid, error = validator.validate("DB_TABLE", "users'; DROP TABLE users;--")
-        assert not is_valid
-        assert "sql injection" in error.lower()
+        assert not is_valid, "SQL injection attack should be blocked"
+        assert error is not None, "Error message must be provided for SQL injection violations"
+        assert "sql injection" in error.lower(), f"Error should mention SQL injection, got: {error}"
+        # Validate error doesn't leak the malicious SQL
+        assert "DROP TABLE" not in error, "Error should not echo malicious SQL payload"

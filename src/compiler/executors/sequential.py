@@ -7,6 +7,7 @@ from typing import Dict, Any, Optional, cast
 import uuid
 
 from src.compiler.executors.base import StageExecutor
+from src.compiler.utils import extract_agent_name
 from src.agents.agent_factory import AgentFactory
 from src.agents.base_agent import ExecutionContext
 from src.utils.config_helpers import get_nested_value, sanitize_config_for_display
@@ -233,16 +234,12 @@ class SequentialStageExecutor(StageExecutor):
     def _extract_agent_name(self, agent_ref: Any) -> str:
         """Extract agent name from various agent reference formats.
 
+        Delegates to shared utility function to avoid code duplication.
+
         Args:
             agent_ref: Agent reference (dict, str, or Pydantic model)
 
         Returns:
             Agent name
         """
-        if isinstance(agent_ref, str):
-            return agent_ref
-        elif isinstance(agent_ref, dict):
-            return agent_ref.get("name") or agent_ref.get("agent_name") or str(agent_ref)
-        else:
-            # Pydantic model or object with attributes
-            return getattr(agent_ref, 'name', None) or getattr(agent_ref, 'agent_name', None) or str(agent_ref)
+        return extract_agent_name(agent_ref)

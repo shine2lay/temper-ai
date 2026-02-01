@@ -6,6 +6,7 @@ loading and executor delegation.
 from typing import Dict, Any, Callable, Optional, cast
 from src.compiler.langgraph_state import LangGraphWorkflowState
 from src.compiler.config_loader import ConfigLoader
+from src.compiler.utils import extract_agent_name
 from src.tools.registry import ToolRegistry
 
 
@@ -227,10 +228,7 @@ class NodeBuilder:
     def extract_agent_name(self, agent_ref: Any) -> str:
         """Extract agent name from various agent reference formats.
 
-        Handles different ways agents can be referenced:
-        - String: "analyzer"
-        - Dict: {"name": "analyzer"}
-        - Pydantic: agent.name
+        Delegates to shared utility function to avoid code duplication.
 
         Args:
             agent_ref: Agent reference (dict, str, or Pydantic model)
@@ -242,10 +240,4 @@ class NodeBuilder:
             >>> name = builder.extract_agent_name("analyzer")  # "analyzer"
             >>> name = builder.extract_agent_name({"agent_name": "analyzer"})  # "analyzer"
         """
-        if isinstance(agent_ref, str):
-            return agent_ref
-        elif isinstance(agent_ref, dict):
-            return agent_ref.get("name") or agent_ref.get("agent_name") or str(agent_ref)
-        else:
-            # Pydantic model or object with attributes
-            return getattr(agent_ref, 'name', None) or getattr(agent_ref, 'agent_name', None) or str(agent_ref)
+        return extract_agent_name(agent_ref)

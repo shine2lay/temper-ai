@@ -11,6 +11,67 @@ from src.utils.logging import get_logger
 # Module logger
 logger = get_logger(__name__)
 
+# Lazy-loaded sanitizer for violation context
+_sanitizer = None
+
+def _get_sanitizer():
+    """Get or create DataSanitizer instance (lazy loading)."""
+    global _sanitizer
+    if _sanitizer is None:
+        from src.observability.sanitization import DataSanitizer
+        _sanitizer = DataSanitizer()
+    return _sanitizer
+
+def _sanitize_violation_context(context: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """
+    Sanitize violation context to prevent sensitive data exposure in logs.
+
+    SECURITY: Prevents secrets, PII, and credentials from being logged when
+    violations are detected. Uses the same sanitization as observability layer.
+
+    Args:
+        context: Violation context dictionary (may contain sensitive data)
+
+    Returns:
+        Sanitized context safe for logging, or None if input was None, or {} if empty dict
+    """
+    if context is None:
+        return None
+    if not context:  # Empty dict
+        return {}
+
+    sanitizer = _get_sanitizer()
+
+    # Recursively sanitize dictionary values
+    def sanitize_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(data, dict):
+            return data
+
+        result = {}
+        for key, value in data.items():
+            if isinstance(value, dict):
+                result[key] = sanitize_dict(value)
+            elif isinstance(value, list):
+                # Sanitize list elements recursively
+                sanitized_list = []
+                for v in value:
+                    if isinstance(v, dict):
+                        sanitized_list.append(sanitize_dict(v))
+                    elif isinstance(v, str):
+                        sanitized = sanitizer.sanitize_text(v, context="config")
+                        sanitized_list.append(sanitized.sanitized_text)
+                    else:
+                        sanitized_list.append(v)
+                result[key] = sanitized_list
+            elif isinstance(value, str):
+                sanitized = sanitizer.sanitize_text(value, context="config")
+                result[key] = sanitized.sanitized_text
+            else:
+                result[key] = value
+        return result
+
+    return sanitize_dict(context)
+
 
 class Service(ABC):
     """Abstract base class for all framework services.
@@ -231,12 +292,16 @@ class SafetyServiceMixin:
                 ViolationSeverity.CRITICAL: logger.critical,
             }.get(violation.severity, logger.warning)
 
+            # SECURITY: Sanitize context before logging to prevent exposure of
+            # detected secrets, PII, or credentials in application logs
+            sanitized_context = _sanitize_violation_context(violation.context)
+
             log_level(
                 f"Safety violation: {violation.message}",
                 extra={
                     'severity': violation.severity.name,
                     'policy': violation.policy_name,
-                    'context': violation.context
+                    'context': sanitized_context
                 }
             )
 

@@ -257,19 +257,37 @@ def validate_rollback_path(
 
         # Additional security checks
         # Check for dangerous system directories (even if technically allowed)
-        dangerous_patterns = [
-            "/etc/",
-            "/sys/",
-            "/proc/",
-            "/dev/",
-            "/boot/",
+        # SECURITY FIX (code-high-path-bypass-16): Use proper path containment check
+        # instead of startswith() to prevent bypasses like /etc_backup/ or /etch/
+        dangerous_dirs = [
+            "/etc",
+            "/sys",
+            "/proc",
+            "/dev",
+            "/boot",
             "C:\\Windows\\System32",
             "C:\\Windows\\SysWOW64",
         ]
 
-        for dangerous in dangerous_patterns:
-            if real_path.startswith(dangerous):
-                return False, f"Access to system directory denied: {dangerous}"
+        for dangerous_dir in dangerous_dirs:
+            try:
+                # Normalize dangerous directory
+                dangerous_real = os.path.realpath(os.path.abspath(dangerous_dir))
+
+                # Check if real_path is within dangerous_real using os.path.commonpath
+                # This prevents bypasses like /etc_backup/ or /etch/ that pass startswith()
+                try:
+                    common = os.path.commonpath([real_path, dangerous_real])
+                    # If common path equals the dangerous directory, file is inside it
+                    if common == dangerous_real:
+                        return False, f"Access to system directory denied: {dangerous_dir}"
+                except ValueError:
+                    # Paths are on different drives (Windows) - not in dangerous dir
+                    continue
+
+            except (OSError, ValueError):
+                # If we can't resolve dangerous dir, skip it
+                continue
 
         # Path is valid
         return True, None

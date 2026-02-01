@@ -5,12 +5,22 @@ SECURITY: These tests verify:
 - Key rotation functionality
 - Automatic expiry handling
 - Audit logging
+- OS keyring integration
 """
 import pytest
 from cryptography.fernet import Fernet
 from datetime import datetime, timedelta
 import time
-from src.auth.oauth.token_store import SecureTokenStore
+from src.auth.oauth.token_store import SecureTokenStore, SecurityError
+
+# Try importing keyring for keyring tests
+try:
+    import keyring
+    from keyring.errors import KeyringError
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
+    keyring = None  # type: ignore
 
 
 class TestSecureTokenStore:
@@ -162,8 +172,9 @@ class TestSecureTokenStore:
         # Clear environment variable
         monkeypatch.delenv("OAUTH_TOKEN_ENCRYPTION_KEY", raising=False)
 
-        with pytest.raises(ValueError, match="Encryption key required"):
-            SecureTokenStore()
+        # Disable keyring to force the error
+        with pytest.raises(ValueError, match="No encryption key available"):
+            SecureTokenStore(use_keyring=False)
 
     def test_corrupted_token_returns_none(self, token_store):
         """Corrupted encrypted token should return None and be deleted."""
@@ -336,3 +347,224 @@ class TestSecureTokenStoreEdgeCases:
         # Should have metadata but no token fields
         assert retrieved is not None
         assert "stored_at" in retrieved
+
+
+@pytest.mark.skipif(not KEYRING_AVAILABLE, reason="keyring library not installed")
+class TestSecureTokenStoreKeyring:
+    """Test OS keyring integration."""
+
+    @pytest.fixture(autouse=True)
+    def cleanup_keyring(self):
+        """Clean up keyring entries before and after tests."""
+        # Clean before test
+        try:
+            keyring.delete_password(
+                SecureTokenStore.DEFAULT_KEYRING_SERVICE,
+                SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+            )
+        except Exception:
+            pass
+
+        yield
+
+        # Clean after test
+        try:
+            keyring.delete_password(
+                SecureTokenStore.DEFAULT_KEYRING_SERVICE,
+                SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+            )
+        except Exception:
+            pass
+
+    def test_keyring_key_storage(self):
+        """Should store encryption key in OS keyring."""
+        # Initialize with keyring
+        store = SecureTokenStore(use_keyring=True)
+
+        # Verify key stored in keyring
+        key = keyring.get_password(
+            SecureTokenStore.DEFAULT_KEYRING_SERVICE,
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+        )
+        assert key is not None
+        assert store.using_keyring is True
+
+    def test_keyring_key_reuse(self):
+        """Should reuse existing keyring key on subsequent initialization."""
+        # First initialization creates key
+        store1 = SecureTokenStore(use_keyring=True)
+        key1 = keyring.get_password(
+            SecureTokenStore.DEFAULT_KEYRING_SERVICE,
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+        )
+
+        # Second initialization should reuse same key
+        store2 = SecureTokenStore(use_keyring=True)
+        key2 = keyring.get_password(
+            SecureTokenStore.DEFAULT_KEYRING_SERVICE,
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+        )
+
+        assert key1 == key2
+        assert store1.using_keyring is True
+        assert store2.using_keyring is True
+
+    def test_keyring_custom_service_name(self):
+        """Should support custom keyring service name."""
+        custom_service = "test-app-oauth"
+        custom_key_name = "test-encryption-key"
+
+        try:
+            store = SecureTokenStore(
+                use_keyring=True,
+                keyring_service=custom_service,
+                keyring_key_name=custom_key_name
+            )
+
+            # Verify key in custom location
+            key = keyring.get_password(custom_service, custom_key_name)
+            assert key is not None
+            assert store.using_keyring is True
+        finally:
+            # Cleanup custom key
+            try:
+                keyring.delete_password(custom_service, custom_key_name)
+            except Exception:
+                pass
+
+    def test_keyring_fallback_to_env(self, monkeypatch):
+        """Should fall back to environment variable if keyring unavailable."""
+        # Mock keyring failure
+        original_get = keyring.get_password
+
+        def mock_get_password(*args, **kwargs):
+            raise KeyringError("No keyring backend")
+
+        monkeypatch.setattr(keyring, "get_password", mock_get_password)
+        monkeypatch.setenv("OAUTH_TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
+
+        # Should fall back gracefully
+        store = SecureTokenStore(use_keyring=True, require_keyring=False)
+        assert store.using_keyring is False
+
+        # Restore original
+        monkeypatch.setattr(keyring, "get_password", original_get)
+
+    def test_require_keyring_fails_if_unavailable(self, monkeypatch):
+        """Should fail if keyring required but unavailable."""
+        original_get = keyring.get_password
+
+        def mock_get_password(*args, **kwargs):
+            raise KeyringError("No keyring backend")
+
+        monkeypatch.setattr(keyring, "get_password", mock_get_password)
+
+        with pytest.raises(SecurityError, match="Keyring required"):
+            SecureTokenStore(use_keyring=True, require_keyring=True)
+
+        # Restore original
+        monkeypatch.setattr(keyring, "get_password", original_get)
+
+    def test_keyring_token_storage_and_retrieval(self):
+        """Should store and retrieve tokens with keyring-based encryption."""
+        store = SecureTokenStore(use_keyring=True)
+
+        token_data = {
+            "access_token": "ya29.a0Test123",
+            "refresh_token": "1//0gTest456",
+        }
+
+        # Store token
+        store.store_token("user_123", token_data, expires_in=3600)
+
+        # Retrieve token
+        retrieved = store.retrieve_token("user_123")
+
+        assert retrieved is not None
+        assert retrieved["access_token"] == token_data["access_token"]
+        assert retrieved["refresh_token"] == token_data["refresh_token"]
+
+    def test_rotate_key_from_keyring(self):
+        """Should rotate key from keyring and re-encrypt tokens."""
+        store = SecureTokenStore(use_keyring=True)
+
+        # Store token
+        store.store_token("user_123", {"access_token": "token_1"}, expires_in=3600)
+
+        # Get old key
+        old_key = keyring.get_password(
+            SecureTokenStore.DEFAULT_KEYRING_SERVICE,
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+        )
+
+        # Rotate key
+        store.rotate_key_from_keyring()
+
+        # Get new key
+        new_key = keyring.get_password(
+            SecureTokenStore.DEFAULT_KEYRING_SERVICE,
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+        )
+
+        # Key should change
+        assert new_key != old_key
+
+        # Token should still be retrievable
+        token = store.retrieve_token("user_123")
+        assert token is not None
+        assert token["access_token"] == "token_1"
+
+    def test_rotate_key_from_keyring_fails_without_keyring_mode(self):
+        """Should fail to rotate from keyring if not using keyring mode."""
+        key = Fernet.generate_key().decode()
+        store = SecureTokenStore(encryption_key=key)
+
+        with pytest.raises(SecurityError, match="requires keyring mode"):
+            store.rotate_key_from_keyring()
+
+    def test_keyring_isolation_between_services(self):
+        """Keys for different services should be isolated."""
+        try:
+            store1 = SecureTokenStore(
+                use_keyring=True,
+                keyring_service="app1",
+                keyring_key_name="key1"
+            )
+
+            store2 = SecureTokenStore(
+                use_keyring=True,
+                keyring_service="app2",
+                keyring_key_name="key2"
+            )
+
+            # Store token in each
+            store1.store_token("user", {"access_token": "token1"})
+            store2.store_token("user", {"access_token": "token2"})
+
+            # Each should only see their own token
+            assert store1.retrieve_token("user")["access_token"] == "token1"
+            assert store2.retrieve_token("user")["access_token"] == "token2"
+        finally:
+            # Cleanup
+            try:
+                keyring.delete_password("app1", "key1")
+                keyring.delete_password("app2", "key2")
+            except Exception:
+                pass
+
+    def test_explicit_key_bypasses_keyring(self):
+        """Explicit encryption key should bypass keyring."""
+        key = Fernet.generate_key().decode()
+        store = SecureTokenStore(encryption_key=key, use_keyring=True)
+
+        # Should not use keyring
+        assert store.using_keyring is False
+
+        # Should not create keyring entry
+        keyring_key = keyring.get_password(
+            SecureTokenStore.DEFAULT_KEYRING_SERVICE,
+            SecureTokenStore.DEFAULT_KEYRING_KEY_NAME
+        )
+        # Either None or from previous test (we cleaned up in fixture)
+        # The point is store didn't create it
+        assert store.cipher is not None

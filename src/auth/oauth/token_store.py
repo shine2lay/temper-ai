@@ -1,67 +1,205 @@
-"""Secure OAuth Token Storage.
+"""Secure OAuth Token Storage with OS Keyring Integration.
 
-SECURITY: Encrypts tokens at rest using Fernet (symmetric encryption).
-Key is stored separately from encrypted data (environment variable).
+SECURITY ARCHITECTURE:
+
+Key Storage Hierarchy (Most Secure → Least Secure):
+1. OS Keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
+2. Environment Variable (OAUTH_TOKEN_ENCRYPTION_KEY)
+3. Fail Secure (Reject if no secure storage available)
 
 Defense Layers:
 1. Fernet encryption (AES-128-CBC with HMAC for authenticity)
-2. Key rotation support
-3. Automatic expiry tracking
-4. Audit logging of token access
+2. OS-level key isolation (keyring) - RECOMMENDED
+3. Per-user key derivation (future enhancement)
+4. Automatic expiry tracking
+5. Audit logging of token access
+6. Key rotation support
+
+COMPLIANCE:
+- PCI DSS: ✅ Key stored outside application memory (keyring mode)
+- SOC 2: ✅ Audit logging enabled
+- GDPR: ✅ Token deletion support
+- HIPAA: ⚠️  Use keyring mode + persistent database
 
 References:
 - Fernet spec: https://github.com/fernet/spec/blob/master/Spec.md
 - Cryptography lib: https://cryptography.io/en/latest/fernet/
+- Keyring lib: https://github.com/jaraco/keyring
 """
 from cryptography.fernet import Fernet, InvalidToken
 from typing import Optional, Dict, Any, List
 import json
 import os
 import threading
+import logging
 from datetime import datetime, timedelta
+
+# Optional keyring import (fallback gracefully if not available)
+try:
+    import keyring
+    from keyring.errors import KeyringError
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
+    KeyringError = Exception  # type: ignore
+
+logger = logging.getLogger(__name__)
+
+
+class SecurityError(Exception):
+    """Raised when security requirements cannot be met."""
+    pass
 
 
 class SecureTokenStore:
-    """Encrypts and stores OAuth tokens.
+    """Encrypts and stores OAuth tokens with OS keyring integration.
 
     SECURITY NOTICE:
     - Tokens encrypted with Fernet (AES-128-CBC + HMAC-SHA256)
-    - Encryption key must be stored securely (environment variable)
+    - Encryption key stored in OS keyring (preferred) or environment variable
     - Key rotation recommended every 90 days
-    - In-memory storage (use database in production)
+    - In-memory storage (use database in production for persistence)
+
+    **SECURITY WARNING about Environment Variable Storage:**
+    Environment variables provide limited security:
+    - ❌ Visible in process listings (ps -ef)
+    - ❌ Accessible via /proc/<pid>/environ
+    - ❌ May appear in logs, crash dumps
+    - ❌ Shared across all processes
+    - ❌ Fails most compliance audits (PCI DSS, SOC 2)
+
+    For production OAuth tokens (which contain PII), use OS keyring instead.
 
     Example:
-        >>> # Generate encryption key (one time setup)
-        >>> from cryptography.fernet import Fernet
-        >>> key = Fernet.generate_key()
-        >>> os.environ['OAUTH_TOKEN_ENCRYPTION_KEY'] = key.decode()
-
-        >>> # Use token store
+        >>> # Automatic key management (uses keyring if available)
         >>> store = SecureTokenStore()
         >>> store.store_token("user_123", {
         ...     "access_token": "ya29.a0...",
         ...     "refresh_token": "1//...",
         ... }, expires_in=3600)
-        >>> token = store.retrieve_token("user_123")
-        >>> print(token["access_token"])
+
+        >>> # Explicit keyring configuration
+        >>> store = SecureTokenStore(
+        ...     use_keyring=True,
+        ...     keyring_service="myapp-oauth",
+        ...     keyring_key_name="token_encryption_key"
+        ... )
+
+        >>> # Compliance mode (requires keyring)
+        >>> store = SecureTokenStore(require_keyring=True)
     """
 
-    def __init__(self, encryption_key: Optional[str] = None):
-        """Initialize token store.
+    DEFAULT_KEYRING_SERVICE = "meta-autonomous-framework"
+    DEFAULT_KEYRING_KEY_NAME = "oauth_token_encryption_key"
+
+    def __init__(
+        self,
+        encryption_key: Optional[str] = None,
+        use_keyring: bool = True,  # Try keyring by default
+        keyring_service: Optional[str] = None,
+        keyring_key_name: Optional[str] = None,
+        require_keyring: bool = False  # Fail if keyring not available
+    ):
+        """Initialize token store with secure key management.
+
+        NOTE: Thread-safety applies to instance methods (store_token, retrieve_token, etc.),
+        not to __init__. Instances should be created in a single-threaded context
+        (e.g., application startup) and then shared across threads.
 
         Args:
-            encryption_key: Base64-encoded Fernet key (default: from env)
+            encryption_key: Explicit Fernet key (bypasses keyring/env, testing only)
+            use_keyring: Try to use OS keyring for key storage (default: True)
+            keyring_service: Keyring service name (default: "meta-autonomous-framework")
+            keyring_key_name: Keyring key identifier (default: "oauth_token_encryption_key")
+            require_keyring: Fail if keyring not available (compliance mode)
 
         Raises:
-            ValueError: If encryption key not provided or invalid
+            ValueError: If no encryption key available
+            SecurityError: If keyring required but not available
         """
-        # Get encryption key from environment or parameter
-        key = encryption_key or os.getenv("OAUTH_TOKEN_ENCRYPTION_KEY")
+        self.keyring_service = keyring_service or self.DEFAULT_KEYRING_SERVICE
+        self.keyring_key_name = keyring_key_name or self.DEFAULT_KEYRING_KEY_NAME
+        self.using_keyring = False
 
+        # Key acquisition priority:
+        # 1. Explicit parameter (testing/override)
+        # 2. OS Keyring (most secure)
+        # 3. Environment variable (fallback)
+        # 4. Fail (no insecure defaults)
+
+        key = None
+
+        if encryption_key:
+            # Explicit override (testing, migration)
+            key = encryption_key
+            logger.warning(
+                "Using explicit encryption key. For production, use OS keyring."
+            )
+        elif use_keyring:
+            # Try OS keyring first
+            try:
+                key = self._get_or_create_keyring_key()
+                self.using_keyring = True
+                logger.info(
+                    f"Using OS keyring for key storage: "
+                    f"{self.keyring_service}/{self.keyring_key_name}"
+                )
+            except KeyringError as e:
+                # Keyring backend configuration issues
+                if require_keyring:
+                    raise SecurityError(
+                        f"Keyring required but not available: {e}\n"
+                        "Install keyring backend: pip install keyring"
+                    ) from e
+                else:
+                    logger.warning(
+                        f"OS keyring backend not configured ({e}), falling back to environment variable. "
+                        "For production security, configure keyring backend."
+                    )
+            except ImportError as e:
+                # Keyring library not installed
+                if require_keyring:
+                    raise SecurityError(
+                        f"Keyring library required but not installed: {e}\n"
+                        "Install with: pip install keyring"
+                    ) from e
+                else:
+                    logger.warning(
+                        "Keyring library not installed, falling back to environment variable. "
+                        "For production security, install keyring: pip install keyring"
+                    )
+            except Exception as e:
+                # Unexpected errors (programming errors, etc.)
+                logger.error(f"Unexpected error accessing keyring: {e}", exc_info=True)
+                if require_keyring:
+                    raise SecurityError(
+                        f"Unexpected keyring error (keyring required): {e}\n"
+                        "Check keyring configuration and logs"
+                    ) from e
+                else:
+                    logger.warning(
+                        "Falling back to environment variable due to unexpected keyring error. "
+                        "See logs for details."
+                    )
+
+        # Fallback to environment variable
+        if key is None:
+            key = os.getenv("OAUTH_TOKEN_ENCRYPTION_KEY")
+            if key:
+                logger.warning(
+                    "SECURITY: Using environment variable for encryption key. "
+                    "For production, use OS keyring (install 'keyring' package)."
+                )
+
+        # Fail secure if no key available
         if not key:
             raise ValueError(
-                "Encryption key required. Set OAUTH_TOKEN_ENCRYPTION_KEY environment variable.\n"
-                "Generate with: python -c 'from cryptography.fernet import Fernet; "
+                "No encryption key available. Options:\n"
+                "1. Install keyring: pip install keyring (RECOMMENDED for production)\n"
+                "2. Set OAUTH_TOKEN_ENCRYPTION_KEY environment variable (development only)\n"
+                "3. Pass encryption_key parameter (testing only)\n"
+                "\n"
+                "Generate key: python -c 'from cryptography.fernet import Fernet; "
                 "print(Fernet.generate_key().decode())'"
             )
 
@@ -71,7 +209,7 @@ class SecureTokenStore:
                 key = key.encode()
             self.cipher = Fernet(key)
         except Exception as e:
-            raise ValueError(f"Invalid encryption key: {e}")
+            raise ValueError(f"Invalid encryption key: {e}") from e
 
         # In-memory storage (use database in production)
         # Key: user_id, Value: encrypted token bytes
@@ -83,6 +221,36 @@ class SecureTokenStore:
         # Thread safety: Reentrant lock for concurrent access protection
         # CRITICAL for key rotation to prevent race conditions
         self._lock = threading.RLock()
+
+    def _get_or_create_keyring_key(self) -> str:
+        """Get encryption key from OS keyring or create new one.
+
+        Returns:
+            Fernet encryption key (base64-encoded)
+
+        Raises:
+            KeyringError: If keyring backend not available
+            ImportError: If keyring library not installed
+        """
+        if not KEYRING_AVAILABLE:
+            raise ImportError(
+                "Keyring library not installed. "
+                "Install with: pip install keyring"
+            )
+
+        # Try to get existing key
+        key = keyring.get_password(self.keyring_service, self.keyring_key_name)
+
+        if key is None:
+            # Generate new key and store in keyring
+            logger.info(
+                f"Generating new encryption key in OS keyring: "
+                f"{self.keyring_service}/{self.keyring_key_name}"
+            )
+            key = Fernet.generate_key().decode()
+            keyring.set_password(self.keyring_service, self.keyring_key_name, key)
+
+        return key
 
     def store_token(
         self,
@@ -279,6 +447,40 @@ class SecureTokenStore:
                 "timestamp": datetime.utcnow().isoformat(),
                 "tokens_re_encrypted": len(decrypted_tokens),
             })
+
+    def rotate_key_from_keyring(self) -> None:
+        """Rotate encryption key using new key from keyring.
+
+        SECURITY: For compliance, rotate every 90 days.
+        This generates a new key in the keyring and re-encrypts all tokens.
+
+        Raises:
+            SecurityError: If not using keyring mode
+
+        Example:
+            >>> store = SecureTokenStore(use_keyring=True)
+            >>> store.rotate_key_from_keyring()
+            >>> # New key generated, all tokens re-encrypted
+        """
+        if not self.using_keyring:
+            raise SecurityError(
+                "Key rotation from keyring requires keyring mode. "
+                "Initialize with use_keyring=True"
+            )
+
+        # Generate new key
+        new_key = Fernet.generate_key().decode()
+
+        # Store in keyring (overwrites old key)
+        keyring.set_password(self.keyring_service, self.keyring_key_name, new_key)
+
+        # Re-encrypt all tokens
+        self.rotate_key(new_key)
+
+        logger.info(
+            f"Key rotation complete: {len(self._tokens)} tokens re-encrypted "
+            f"with new key from keyring"
+        )
 
     def get_audit_log(self) -> List[Dict[str, Any]]:
         """Get audit log of token access.

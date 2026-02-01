@@ -212,26 +212,13 @@ class RollbackAPI:
                     f"Rollback warnings for {snapshot_id}: {warnings}"
                 )
 
-        # Dry run mode
+        # Execute rollback (with dry_run support)
         if dry_run:
-            return RollbackResult(
-                success=True,
-                snapshot_id=snapshot_id,
-                status=RollbackStatus.COMPLETED,
-                reverted_items=list(snapshot.file_snapshots.keys()),
-                failed_items=[],
-                errors=[],
-                metadata={
-                    "dry_run": True,
-                    "operator": operator,
-                    "reason": reason
-                },
-                completed_at=datetime.now(UTC)
-            )
+            logger.info(f"Dry-run manual rollback {snapshot_id} by {operator}: {reason}")
+        else:
+            logger.info(f"Executing manual rollback {snapshot_id} by {operator}: {reason}")
 
-        # Execute rollback
-        logger.info(f"Executing manual rollback {snapshot_id} by {operator}: {reason}")
-        result = self.manager.execute_rollback(snapshot_id)
+        result = self.manager.execute_rollback(snapshot_id, dry_run=dry_run)
 
         # Add operator/reason to metadata
         result.metadata.update({

@@ -427,6 +427,34 @@ class TestRollbackManager:
         assert test_file.read_text() == "original"
         assert len(manager.get_history()) == 1
 
+    def test_execute_rollback_dry_run(self, tmp_path):
+        """Test dry-run mode prevents actual rollback execution."""
+        test_file = tmp_path / "test.txt"
+        test_file.write_text("original")
+
+        manager = RollbackManager()
+        snapshot = manager.create_snapshot(
+            action={"path": str(test_file)},
+            context={}
+        )
+
+        # Modify file
+        test_file.write_text("modified")
+
+        # Dry-run rollback
+        result = manager.execute_rollback(snapshot.id, dry_run=True)
+
+        # Should return success with dry_run metadata
+        assert result.success is True
+        assert result.metadata["dry_run"] is True
+        assert result.status == RollbackStatus.COMPLETED
+
+        # File should remain unchanged
+        assert test_file.read_text() == "modified"
+
+        # History should not be updated in dry-run mode
+        assert len(manager.get_history()) == 0
+
     def test_execute_rollback_nonexistent_snapshot(self):
         """Test rollback with nonexistent snapshot."""
         manager = RollbackManager()
@@ -846,7 +874,10 @@ class TestPathTraversalSecurity:
             )
 
             manager = RollbackManager()
-            result = manager.execute_rollback(snapshot)
+            # Add snapshot to manager's internal storage
+            manager._snapshots[snapshot.id] = snapshot
+
+            result = manager.execute_rollback(snapshot.id)
 
             # Rollback should fail or skip the malicious file
             assert "../../etc/passwd" not in result.reverted_items
@@ -865,7 +896,10 @@ class TestPathTraversalSecurity:
         )
 
         manager = RollbackManager()
-        result = manager.execute_rollback(snapshot)
+        # Add snapshot to manager's internal storage
+        manager._snapshots[snapshot.id] = snapshot
+
+        result = manager.execute_rollback(snapshot.id)
 
         # Should not delete /etc/passwd
         assert "/etc/passwd" not in result.reverted_items

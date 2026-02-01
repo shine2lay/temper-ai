@@ -712,13 +712,15 @@ class RollbackManager:
     def execute_rollback(
         self,
         snapshot_id: str,
-        strategy_name: Optional[str] = None
+        strategy_name: Optional[str] = None,
+        dry_run: bool = False
     ) -> RollbackResult:
         """Execute rollback for a snapshot.
 
         Args:
             snapshot_id: ID of snapshot to rollback
             strategy_name: Specific strategy to use (infers if None)
+            dry_run: If True, validate but don't execute (default: False)
 
         Returns:
             RollbackResult with operation outcome
@@ -730,6 +732,19 @@ class RollbackManager:
         snapshot = self._snapshots.get(snapshot_id)
         if not snapshot:
             raise ValueError(f"Snapshot {snapshot_id} not found")
+
+        # Dry run mode: return mock result without executing
+        if dry_run:
+            return RollbackResult(
+                success=True,
+                snapshot_id=snapshot_id,
+                status=RollbackStatus.COMPLETED,
+                reverted_items=list(snapshot.file_snapshots.keys()),
+                failed_items=[],
+                errors=[],
+                metadata={"dry_run": True},
+                completed_at=datetime.now(UTC)
+            )
 
         # Select strategy
         if strategy_name and strategy_name in self._strategies:

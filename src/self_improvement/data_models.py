@@ -210,3 +210,155 @@ class AgentConfig:
             retry=data.get("retry", {}),
             extra_metadata=data.get("extra_metadata", {}),
         )
+
+
+@dataclass
+class Experiment:
+    """
+    Experiment data model for A/B/C/D testing configurations.
+
+    Represents a running or completed experiment that tests multiple configuration
+    variants against a control to find optimal agent settings.
+
+    Used by:
+    - ExperimentOrchestrator to create and manage experiments
+    - StatisticalAnalyzer to analyze results and pick winners
+    - ExperimentAssignment to route executions to variants
+    """
+
+    # Identity
+    id: str
+    agent_name: str
+
+    # Status
+    status: str  # 'running', 'completed', 'failed'
+
+    # Configuration being tested
+    control_config: AgentConfig
+    variant_configs: List[AgentConfig]
+
+    # Metadata
+    proposal_id: Optional[str] = None
+    created_at: datetime = field(default_factory=utcnow)
+    completed_at: Optional[datetime] = None
+    extra_metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def get_all_configs(self) -> Dict[str, AgentConfig]:
+        """
+        Get all configurations (control + variants) as a dictionary.
+
+        Returns:
+            Dict mapping variant_id to config:
+            {
+                "control": <AgentConfig>,
+                "variant_0": <AgentConfig>,
+                "variant_1": <AgentConfig>,
+                ...
+            }
+        """
+        configs = {"control": self.control_config}
+        for i, variant in enumerate(self.variant_configs):
+            configs[f"variant_{i}"] = variant
+        return configs
+
+    def get_variant_count(self) -> int:
+        """Get total number of variants (including control)."""
+        return 1 + len(self.variant_configs)
+
+    def is_running(self) -> bool:
+        """Check if experiment is still running."""
+        return self.status == "running"
+
+    def is_completed(self) -> bool:
+        """Check if experiment has completed."""
+        return self.status == "completed"
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for database storage."""
+        return {
+            "id": self.id,
+            "agent_name": self.agent_name,
+            "status": self.status,
+            "control_config": self.control_config.to_dict(),
+            "variant_configs": [v.to_dict() for v in self.variant_configs],
+            "proposal_id": self.proposal_id,
+            "created_at": self.created_at.isoformat(),
+            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "extra_metadata": self.extra_metadata,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Experiment":
+        """Load from dictionary (e.g., from database)."""
+        return cls(
+            id=data["id"],
+            agent_name=data["agent_name"],
+            status=data["status"],
+            control_config=AgentConfig.from_dict(data["control_config"]),
+            variant_configs=[AgentConfig.from_dict(v) for v in data.get("variant_configs", [])],
+            proposal_id=data.get("proposal_id"),
+            created_at=datetime.fromisoformat(data["created_at"]),
+            completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
+            extra_metadata=data.get("extra_metadata", {}),
+        )
+
+
+@dataclass
+class ExperimentResult:
+    """
+    Single execution result within an experiment.
+
+    Records the outcome of one agent execution during an experiment,
+    tracking which variant was used and the performance metrics achieved.
+
+    Used by:
+    - StatisticalAnalyzer to compare variant performance
+    - ExperimentOrchestrator to track completion progress
+    """
+
+    # Identity
+    id: str
+    experiment_id: str
+    variant_id: str  # 'control', 'variant_0', 'variant_1', etc.
+    execution_id: str
+
+    # Metrics
+    quality_score: Optional[float] = None
+    speed_seconds: Optional[float] = None
+    cost_usd: Optional[float] = None
+    success: Optional[bool] = None
+
+    # Metadata
+    recorded_at: datetime = field(default_factory=utcnow)
+    extra_metrics: Dict[str, float] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for database storage."""
+        return {
+            "id": self.id,
+            "experiment_id": self.experiment_id,
+            "variant_id": self.variant_id,
+            "execution_id": self.execution_id,
+            "quality_score": self.quality_score,
+            "speed_seconds": self.speed_seconds,
+            "cost_usd": self.cost_usd,
+            "success": self.success,
+            "recorded_at": self.recorded_at.isoformat(),
+            "extra_metrics": self.extra_metrics,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ExperimentResult":
+        """Load from dictionary (e.g., from database)."""
+        return cls(
+            id=data["id"],
+            experiment_id=data["experiment_id"],
+            variant_id=data["variant_id"],
+            execution_id=data["execution_id"],
+            quality_score=data.get("quality_score"),
+            speed_seconds=data.get("speed_seconds"),
+            cost_usd=data.get("cost_usd"),
+            success=data.get("success"),
+            recorded_at=datetime.fromisoformat(data["recorded_at"]),
+            extra_metrics=data.get("extra_metrics", {}),
+        )

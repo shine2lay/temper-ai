@@ -1,3 +1,17 @@
 """M5 Self-Improvement System."""
 
-__all__ = []
+from .data_models import (
+    AgentPerformanceProfile,
+    AgentConfig,
+    Experiment,
+    ExperimentResult,
+    utcnow,
+)
+
+__all__ = [
+    "AgentPerformanceProfile",
+    "AgentConfig",
+    "Experiment",
+    "ExperimentResult",
+    "utcnow",
+]

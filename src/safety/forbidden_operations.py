@@ -19,10 +19,11 @@ Reference: CLAUDE.md file operation rules
 import re
 from typing import Dict, Any, List, Optional, Set
 from src.safety.base import BaseSafetyPolicy
+from src.safety.validation import ValidationMixin
 from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
 
 
-class ForbiddenOperationsPolicy(BaseSafetyPolicy):
+class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
     """Detects forbidden bash operations and dangerous patterns.
 
     Configuration options:
@@ -235,17 +236,111 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy):
 
         Args:
             config: Policy configuration (optional)
+
+        Raises:
+            ValueError: If configuration parameters are invalid
         """
         super().__init__(config or {})
 
-        # Configuration
-        self.check_file_writes = self.config.get("check_file_writes", True)
-        self.check_dangerous_commands = self.config.get("check_dangerous_commands", True)
-        self.check_injection_patterns = self.config.get("check_injection_patterns", True)
-        self.check_security_sensitive = self.config.get("check_security_sensitive", True)
-        self.allow_read_only = self.config.get("allow_read_only", True)
-        self.custom_forbidden_patterns = self.config.get("custom_forbidden_patterns", {})
-        self.whitelist_commands = set(self.config.get("whitelist_commands", []))
+        # SECURITY (code-high-12): Validate all configuration inputs
+        # Prevents type confusion and ReDoS attacks via malformed patterns
+
+        # Validate boolean configuration flags
+        self.check_file_writes = self._validate_boolean(
+            self.config.get("check_file_writes", True),
+            "check_file_writes",
+            default=True
+        )
+
+        self.check_dangerous_commands = self._validate_boolean(
+            self.config.get("check_dangerous_commands", True),
+            "check_dangerous_commands",
+            default=True
+        )
+
+        self.check_injection_patterns = self._validate_boolean(
+            self.config.get("check_injection_patterns", True),
+            "check_injection_patterns",
+            default=True
+        )
+
+        self.check_security_sensitive = self._validate_boolean(
+            self.config.get("check_security_sensitive", True),
+            "check_security_sensitive",
+            default=True
+        )
+
+        self.allow_read_only = self._validate_boolean(
+            self.config.get("allow_read_only", True),
+            "allow_read_only",
+            default=True
+        )
+
+        # Validate custom forbidden patterns (dict of name -> pattern)
+        custom_patterns_raw = self.config.get("custom_forbidden_patterns", {})
+        if not isinstance(custom_patterns_raw, dict):
+            raise ValueError(
+                f"custom_forbidden_patterns must be a dict, got {type(custom_patterns_raw).__name__}"
+            )
+
+        self.custom_forbidden_patterns: Dict[str, str] = {}
+        for name, pattern in custom_patterns_raw.items():
+            if not isinstance(name, str):
+                raise ValueError(
+                    f"custom_forbidden_patterns keys must be strings, got {type(name).__name__}"
+                )
+            if not isinstance(pattern, str):
+                raise ValueError(
+                    f"custom_forbidden_patterns['{name}'] must be a string, got {type(pattern).__name__}"
+                )
+            if len(pattern) > 500:
+                raise ValueError(
+                    f"custom_forbidden_patterns['{name}'] must be <= 500 characters, got {len(pattern)}"
+                )
+
+            # SECURITY: Validate regex pattern doesn't have ReDoS vulnerability
+            # The _validate_regex_pattern method tests with adversarial inputs
+            try:
+                self._validate_regex_pattern(
+                    pattern,
+                    f"custom_forbidden_patterns['{name}']",
+                    max_length=500,
+                    test_timeout=0.1
+                )
+                self.custom_forbidden_patterns[name] = pattern
+            except ValueError as e:
+                raise ValueError(f"Invalid regex in custom_forbidden_patterns['{name}']: {e}")
+
+        if len(self.custom_forbidden_patterns) > 100:
+            raise ValueError(
+                f"custom_forbidden_patterns must have <= 100 patterns, got {len(self.custom_forbidden_patterns)}"
+            )
+
+        # Validate whitelist commands (list of strings)
+        whitelist_raw = self.config.get("whitelist_commands", [])
+        if not isinstance(whitelist_raw, list):
+            raise ValueError(
+                f"whitelist_commands must be a list of strings, got {type(whitelist_raw).__name__}"
+            )
+
+        whitelist_validated: List[str] = []
+        for cmd in whitelist_raw:
+            if not isinstance(cmd, str):
+                raise ValueError(
+                    f"whitelist_commands items must be strings, got {type(cmd).__name__}"
+                )
+            if len(cmd) > 200:
+                raise ValueError(
+                    f"whitelist_commands items must be <= 200 characters, got {len(cmd)}"
+                )
+            whitelist_validated.append(cmd)
+
+        if len(whitelist_validated) > 1000:
+            raise ValueError(
+                f"whitelist_commands must have <= 1000 items, got {len(whitelist_validated)}"
+            )
+
+        self.whitelist_commands = set(whitelist_validated)
 
         # Compile all patterns
         self.compiled_patterns = self._compile_all_patterns()

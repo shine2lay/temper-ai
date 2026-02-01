@@ -14,10 +14,11 @@ import re
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Set
 from src.safety.base import BaseSafetyPolicy
+from src.safety.validation import ValidationMixin
 from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
 
 
-class FileAccessPolicy(BaseSafetyPolicy):
+class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
     """Enforces file and directory access restrictions.
 
     Configuration options:
@@ -112,31 +113,147 @@ class FileAccessPolicy(BaseSafetyPolicy):
 
         Args:
             config: Policy configuration (optional)
+
+        Raises:
+            ValueError: If configuration parameters are invalid
         """
         super().__init__(config or {})
 
-        # Access control mode
-        self.allowed_paths: List[str] = self.config.get("allowed_paths", [])
-        self.denied_paths: List[str] = self.config.get("denied_paths", [])
+        # SECURITY (code-high-12): Validate all configuration inputs
+        # Prevents type confusion and security bypass via malformed config
 
-        # Security settings
-        self.allow_parent_traversal = self.config.get("allow_parent_traversal", False)
-        self.allow_symlinks = self.config.get("allow_symlinks", False)
-        self.allow_absolute_paths = self.config.get("allow_absolute_paths", True)
-        self.case_sensitive = self.config.get("case_sensitive", True)
+        # Validate path lists (allowed/denied paths)
+        allowed_paths_raw = self.config.get("allowed_paths", [])
+        if not isinstance(allowed_paths_raw, list):
+            raise ValueError(
+                f"allowed_paths must be a list of strings, got {type(allowed_paths_raw).__name__}"
+            )
 
-        # Forbidden patterns
-        self.forbidden_extensions: Set[str] = set(
-            self.config.get("forbidden_extensions", [])
-        ) | self.DEFAULT_FORBIDDEN_EXTENSIONS
+        self.allowed_paths: List[str] = []
+        for path in allowed_paths_raw:
+            if not isinstance(path, str):
+                raise ValueError(f"allowed_paths items must be strings, got {type(path).__name__}")
+            if len(path) > 500:
+                raise ValueError(f"allowed_paths items must be <= 500 characters, got {len(path)}")
+            self.allowed_paths.append(path)
 
-        self.forbidden_directories: Set[str] = set(
-            self.config.get("forbidden_directories", [])
-        ) | self.DEFAULT_FORBIDDEN_DIRS
+        if len(self.allowed_paths) > 1000:
+            raise ValueError(f"allowed_paths must have <= 1000 items, got {len(self.allowed_paths)}")
 
-        self.forbidden_files: Set[str] = set(
-            self.config.get("forbidden_files", [])
-        ) | self.DEFAULT_FORBIDDEN_FILES
+        denied_paths_raw = self.config.get("denied_paths", [])
+        if not isinstance(denied_paths_raw, list):
+            raise ValueError(
+                f"denied_paths must be a list of strings, got {type(denied_paths_raw).__name__}"
+            )
+
+        self.denied_paths: List[str] = []
+        for path in denied_paths_raw:
+            if not isinstance(path, str):
+                raise ValueError(f"denied_paths items must be strings, got {type(path).__name__}")
+            if len(path) > 500:
+                raise ValueError(f"denied_paths items must be <= 500 characters, got {len(path)}")
+            self.denied_paths.append(path)
+
+        if len(self.denied_paths) > 1000:
+            raise ValueError(f"denied_paths must have <= 1000 items, got {len(self.denied_paths)}")
+
+        # Validate security settings (booleans)
+        # CRITICAL: Prevents type confusion attacks like allow_parent_traversal="false" -> True
+        self.allow_parent_traversal = self._validate_boolean(
+            self.config.get("allow_parent_traversal", False),
+            "allow_parent_traversal",
+            default=False
+        )
+
+        self.allow_symlinks = self._validate_boolean(
+            self.config.get("allow_symlinks", False),
+            "allow_symlinks",
+            default=False
+        )
+
+        self.allow_absolute_paths = self._validate_boolean(
+            self.config.get("allow_absolute_paths", True),
+            "allow_absolute_paths",
+            default=True
+        )
+
+        self.case_sensitive = self._validate_boolean(
+            self.config.get("case_sensitive", True),
+            "case_sensitive",
+            default=True
+        )
+
+        # Validate forbidden patterns (lists of strings)
+        forbidden_ext_raw = self.config.get("forbidden_extensions", [])
+        if not isinstance(forbidden_ext_raw, list):
+            raise ValueError(
+                f"forbidden_extensions must be a list of strings, got {type(forbidden_ext_raw).__name__}"
+            )
+
+        forbidden_ext_validated: List[str] = []
+        for ext in forbidden_ext_raw:
+            if not isinstance(ext, str):
+                raise ValueError(f"forbidden_extensions items must be strings, got {type(ext).__name__}")
+            if len(ext) > 20:
+                raise ValueError(f"forbidden_extensions items must be <= 20 characters, got {len(ext)}")
+            if not ext.startswith('.'):
+                ext = '.' + ext  # Auto-add dot prefix
+            forbidden_ext_validated.append(ext.lower())
+
+        if len(forbidden_ext_validated) > 100:
+            raise ValueError(
+                f"forbidden_extensions must have <= 100 items, got {len(forbidden_ext_validated)}"
+            )
+
+        self.forbidden_extensions: Set[str] = set(forbidden_ext_validated) | self.DEFAULT_FORBIDDEN_EXTENSIONS
+
+        # Validate forbidden directories
+        forbidden_dirs_raw = self.config.get("forbidden_directories", [])
+        if not isinstance(forbidden_dirs_raw, list):
+            raise ValueError(
+                f"forbidden_directories must be a list of strings, got {type(forbidden_dirs_raw).__name__}"
+            )
+
+        forbidden_dirs_validated: List[str] = []
+        for dir_path in forbidden_dirs_raw:
+            if not isinstance(dir_path, str):
+                raise ValueError(
+                    f"forbidden_directories items must be strings, got {type(dir_path).__name__}"
+                )
+            if len(dir_path) > 500:
+                raise ValueError(
+                    f"forbidden_directories items must be <= 500 characters, got {len(dir_path)}"
+                )
+            forbidden_dirs_validated.append(dir_path)
+
+        if len(forbidden_dirs_validated) > 1000:
+            raise ValueError(
+                f"forbidden_directories must have <= 1000 items, got {len(forbidden_dirs_validated)}"
+            )
+
+        self.forbidden_directories: Set[str] = set(forbidden_dirs_validated) | self.DEFAULT_FORBIDDEN_DIRS
+
+        # Validate forbidden files
+        forbidden_files_raw = self.config.get("forbidden_files", [])
+        if not isinstance(forbidden_files_raw, list):
+            raise ValueError(
+                f"forbidden_files must be a list of strings, got {type(forbidden_files_raw).__name__}"
+            )
+
+        forbidden_files_validated: List[str] = []
+        for file_name in forbidden_files_raw:
+            if not isinstance(file_name, str):
+                raise ValueError(f"forbidden_files items must be strings, got {type(file_name).__name__}")
+            if len(file_name) > 255:
+                raise ValueError(f"forbidden_files items must be <= 255 characters, got {len(file_name)}")
+            forbidden_files_validated.append(file_name)
+
+        if len(forbidden_files_validated) > 1000:
+            raise ValueError(
+                f"forbidden_files must have <= 1000 items, got {len(forbidden_files_validated)}"
+            )
+
+        self.forbidden_files: Set[str] = set(forbidden_files_validated) | self.DEFAULT_FORBIDDEN_FILES
 
         # Mode detection
         self.mode = "allowlist" if self.allowed_paths else "denylist"

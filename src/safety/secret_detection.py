@@ -10,33 +10,94 @@ Common patterns detected:
 - Passwords and credentials
 - Private keys and certificates
 - Database connection strings
+
+Security Features:
+- Entropy-based filtering for generic patterns (reduces false positives)
+- ReDoS prevention via upper-bounded quantifiers
+- Expanded test secret allowlist (sample, template, mock, etc.)
+- Function call detection (filters get_secret(), etc.)
+- Configurable sensitivity (entropy_threshold, entropy_threshold_generic)
+
+False Positive Reduction:
+- Low-entropy strings filtered (e.g., "aaaaaaa", "your-api-key-here")
+- Documentation placeholders filtered (e.g., "your-", "-here", "todo")
+- Function calls filtered (e.g., "get_api_key()", "load_from_environment()")
+- Test/demo keywords filtered (e.g., "test", "example", "demo", "mock")
+
+Integration with External Libraries:
+To integrate with external secret scanning libraries (e.g., detect-secrets,
+truffleHog, gitleaks), consider:
+1. Subclass SecretDetectionPolicy and override _validate_impl()
+2. Call external scanner via subprocess or API
+3. Merge violations from both sources (deduplicate by violation_id)
+4. Example:
+    class EnhancedSecretDetectionPolicy(SecretDetectionPolicy):
+        def _validate_impl(self, action, context):
+            # Run built-in detection
+            result = super()._validate_impl(action, context)
+            # Run external scanner (e.g., detect-secrets)
+            external_violations = self._run_external_scanner(action)
+            # Merge and deduplicate
+            all_violations = result.violations + external_violations
+            return ValidationResult(valid=len(all_violations) == 0, violations=all_violations)
 """
 import re
 import hashlib
 from typing import Dict, Any, List, Optional
 from src.safety.base import BaseSafetyPolicy
+from src.safety.validation import ValidationMixin
 from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
 
 
-class SecretDetectionPolicy(BaseSafetyPolicy):
+class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
     """Detects secrets in code, config, and data.
 
     Configuration options:
-        enabled_patterns: List of pattern types to check (default: all)
-        entropy_threshold: Minimum entropy for flagging (default: 4.5)
-        excluded_paths: File paths to exclude from scanning
+        enabled_patterns: List of pattern types to check (default: all 11 patterns)
+        entropy_threshold: Minimum entropy for HIGH severity flagging (default: 4.5)
+            - Applies to all patterns to determine severity
+            - Range: 0.0 to 8.0 (Shannon entropy bits per character)
+            - Higher = stricter (fewer false positives, may miss some secrets)
+        entropy_threshold_generic: Minimum entropy for generic patterns (default: 3.5)
+            - Filters generic_api_key and generic_secret patterns
+            - Must be >= this to be considered a potential secret
+            - Range: 0.0 to 8.0
+            - Lower = more sensitive (more detections, more false positives)
+        excluded_paths: File paths to exclude from scanning (default: [])
         allow_test_secrets: Whether to allow obvious test secrets (default: True)
+            - Filters test/demo/example/mock/placeholder keywords
+            - Set to False for strict scanning (e.g., pre-commit hooks)
+
+    Pattern Types:
+        Specific patterns (always checked, no entropy filter):
+        - aws_access_key, aws_secret_key, github_token, google_api_key
+        - jwt_token, private_key, slack_token, stripe_key, connection_string
+
+        Generic patterns (filtered by entropy_threshold_generic):
+        - generic_api_key, generic_secret
 
     Example:
-        >>> config = {
-        ...     "enabled_patterns": ["api_key", "password"],
-        ...     "entropy_threshold": 5.0
-        ... }
-        >>> policy = SecretDetectionPolicy(config)
+        >>> # Default configuration (balanced - good for development)
+        >>> policy = SecretDetectionPolicy()
         >>> result = policy.validate(
         ...     action={"content": "api_key=sk_live_abc123xyz"},
         ...     context={}
         ... )
+
+        >>> # Strict configuration (for pre-commit hooks)
+        >>> config = {
+        ...     "allow_test_secrets": False,
+        ...     "entropy_threshold_generic": 3.0,  # More sensitive
+        ...     "excluded_paths": [".git/", "node_modules/", "venv/"]
+        ... }
+        >>> strict_policy = SecretDetectionPolicy(config)
+
+        >>> # Specific patterns only (reduce false positives)
+        >>> config = {
+        ...     "enabled_patterns": ["aws_access_key", "github_token", "private_key"],
+        ...     "entropy_threshold": 5.0  # Stricter severity threshold
+        ... }
+        >>> specific_policy = SecretDetectionPolicy(config)
     """
 
     # Common secret patterns (regex)
@@ -126,16 +187,82 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
 
         Args:
             config: Policy configuration (optional)
+
+        Raises:
+            ValueError: If configuration parameters are invalid
         """
         super().__init__(config or {})
 
-        # Configuration
-        self.enabled_patterns = self.config.get("enabled_patterns", list(self.SECRET_PATTERNS.keys()))
-        self.entropy_threshold = self.config.get("entropy_threshold", 4.5)
+        # SECURITY (code-high-12): Validate all configuration inputs
+        # Prevents type confusion, negative values, and extreme values
+
+        # Validate enabled_patterns (list of strings)
+        enabled_patterns_raw = self.config.get("enabled_patterns", list(self.SECRET_PATTERNS.keys()))
+        if not isinstance(enabled_patterns_raw, list):
+            # Convert single string to list for convenience
+            if isinstance(enabled_patterns_raw, str):
+                enabled_patterns_raw = [enabled_patterns_raw]
+            else:
+                raise ValueError(
+                    f"enabled_patterns must be a list of strings, got {type(enabled_patterns_raw).__name__}"
+                )
+
+        # Validate each pattern name exists
+        valid_patterns = set(self.SECRET_PATTERNS.keys())
+        self.enabled_patterns = []
+        for pattern in enabled_patterns_raw:
+            if not isinstance(pattern, str):
+                raise ValueError(f"enabled_patterns items must be strings, got {type(pattern).__name__}")
+            if pattern not in valid_patterns:
+                raise ValueError(
+                    f"Unknown pattern '{pattern}'. Valid patterns: {', '.join(sorted(valid_patterns))}"
+                )
+            self.enabled_patterns.append(pattern)
+
+        if not self.enabled_patterns:
+            raise ValueError("enabled_patterns cannot be empty. At least one pattern must be enabled.")
+
+        # Validate entropy thresholds (float, 0.0 to 8.0)
+        # Shannon entropy for bytes is max 8.0 bits per character
+        self.entropy_threshold = self._validate_float_range(
+            self.config.get("entropy_threshold", 4.5),
+            "entropy_threshold",
+            min_value=0.0,
+            max_value=8.0
+        )
+
         # SECURITY: Minimum entropy for generic patterns to reduce false positives
-        self.entropy_threshold_generic = self.config.get("entropy_threshold_generic", 3.5)
-        self.excluded_paths = self.config.get("excluded_paths", [])
-        self.allow_test_secrets = self.config.get("allow_test_secrets", True)
+        self.entropy_threshold_generic = self._validate_float_range(
+            self.config.get("entropy_threshold_generic", 3.5),
+            "entropy_threshold_generic",
+            min_value=0.0,
+            max_value=8.0
+        )
+
+        # Validate excluded_paths (list of strings)
+        excluded_paths_raw = self.config.get("excluded_paths", [])
+        if not isinstance(excluded_paths_raw, list):
+            raise ValueError(
+                f"excluded_paths must be a list of strings, got {type(excluded_paths_raw).__name__}"
+            )
+
+        self.excluded_paths = []
+        for path in excluded_paths_raw:
+            if not isinstance(path, str):
+                raise ValueError(f"excluded_paths items must be strings, got {type(path).__name__}")
+            if len(path) > 500:
+                raise ValueError(f"excluded_paths items must be <= 500 characters, got {len(path)}")
+            self.excluded_paths.append(path)
+
+        if len(self.excluded_paths) > 1000:
+            raise ValueError(f"excluded_paths must have <= 1000 items, got {len(self.excluded_paths)}")
+
+        # Validate allow_test_secrets (boolean)
+        self.allow_test_secrets = self._validate_boolean(
+            self.config.get("allow_test_secrets", True),
+            "allow_test_secrets",
+            default=True
+        )
 
         # SECURITY: Session-scoped secret key for HMAC-based violation IDs
         # Provides deduplication (same secret = same ID) without rainbow table risk
@@ -273,6 +400,51 @@ class SecretDetectionPolicy(BaseSafetyPolicy):
             'a1b2c3d4e5f6g7h8'  # First 16 chars of SHA256
         """
         return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
+
+    def get_detection_summary(self) -> Dict[str, Any]:
+        """Get summary of detection configuration and capabilities.
+
+        Useful for debugging, logging, and understanding what will be detected.
+
+        Returns:
+            Dictionary with configuration summary
+
+        Example:
+            >>> policy = SecretDetectionPolicy()
+            >>> summary = policy.get_detection_summary()
+            >>> print(summary)
+            {
+                'enabled_patterns': ['aws_access_key', 'github_token', ...],
+                'entropy_threshold': 4.5,
+                'entropy_threshold_generic': 3.5,
+                'allow_test_secrets': True,
+                'excluded_paths': [],
+                'pattern_count': 11,
+                'specific_patterns': ['aws_access_key', ...],
+                'generic_patterns': ['generic_api_key', 'generic_secret']
+            }
+        """
+        specific_patterns = [
+            name for name in self.enabled_patterns
+            if name not in ["generic_api_key", "generic_secret"]
+        ]
+        generic_patterns = [
+            name for name in self.enabled_patterns
+            if name in ["generic_api_key", "generic_secret"]
+        ]
+
+        return {
+            "enabled_patterns": self.enabled_patterns,
+            "entropy_threshold": self.entropy_threshold,
+            "entropy_threshold_generic": self.entropy_threshold_generic,
+            "allow_test_secrets": self.allow_test_secrets,
+            "excluded_paths": self.excluded_paths,
+            "pattern_count": len(self.enabled_patterns),
+            "specific_patterns": specific_patterns,
+            "generic_patterns": generic_patterns,
+            "test_secret_keywords": len(self.TEST_SECRET_KEYWORDS),
+            "test_secret_patterns": len(self.TEST_SECRET_PATTERNS)
+        }
 
     def _sanitize_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Sanitize execution context to prevent re-exposure of detected secrets.

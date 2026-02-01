@@ -36,22 +36,14 @@ from src.utils.exceptions import (
 # Import context-aware environment variable validator
 from src.compiler.env_var_validator import EnvVarValidator
 
-# Maximum config file size (10MB) to prevent memory exhaustion from malicious configs
-MAX_CONFIG_SIZE = 10 * 1024 * 1024
+# Import security limits from shared configuration
+from src.compiler.security_limits import CONFIG_SECURITY
 
-# Maximum environment variable value length (10KB) to prevent DoS attacks
-# Rationale: Most legitimate env vars are <1KB. 10KB allows for large JWTs/keys
-# while preventing memory exhaustion from ${VAR} expansion attacks
-MAX_ENV_VAR_SIZE = 10 * 1024
-
-# Maximum YAML nesting depth to prevent stack overflow and YAML bombs
-# Rationale: Legitimate configs rarely exceed 20 levels. 50 provides safety margin.
-MAX_YAML_NESTING_DEPTH = 50
-
-# Maximum number of YAML nodes to prevent billion laughs attacks
-# Rationale: Most configs have <1000 nodes. 100,000 allows large configs while
-# preventing exponential expansion attacks (billion laughs can create billions of nodes)
-MAX_YAML_NODES = 100_000
+# Security limit constants (imported from security_limits.py for consistency)
+MAX_CONFIG_SIZE = CONFIG_SECURITY.MAX_CONFIG_SIZE
+MAX_ENV_VAR_SIZE = CONFIG_SECURITY.MAX_ENV_VAR_SIZE
+MAX_YAML_NESTING_DEPTH = CONFIG_SECURITY.MAX_YAML_NESTING_DEPTH
+MAX_YAML_NODES = CONFIG_SECURITY.MAX_YAML_NODES
 
 
 __all__ = [

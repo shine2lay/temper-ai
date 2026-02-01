@@ -94,6 +94,10 @@ class CircuitBreaker:
         self.storage = storage
         self.lock = threading.Lock()
 
+        # Semaphore to prevent thundering herd in HALF_OPEN state
+        # Only allow 1 test execution at a time in HALF_OPEN
+        self._half_open_semaphore = threading.Semaphore(1)
+
         # Try to load persisted state if storage provided
         if self.storage:
             self._load_state()
@@ -107,6 +111,9 @@ class CircuitBreaker:
     def call(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """
         Execute function through circuit breaker.
+
+        SECURITY FIX: Uses state reservation pattern to prevent race conditions
+        where state could change between check and execution.
 
         Args:
             func: Function to execute
@@ -126,7 +133,49 @@ class CircuitBreaker:
             >>> print(result)
             'success'
         """
-        # Check if circuit is open
+        # Atomically check and reserve execution permission
+        # This prevents race conditions where state changes between check and execution
+        reserved_state = self._reserve_execution()
+
+        if reserved_state is None:
+            # Circuit is OPEN and timeout not elapsed
+            raise CircuitBreakerError(
+                f"Circuit breaker OPEN for {self.name}. "
+                f"Retry after {self._time_until_retry():.0f}s"
+            )
+
+        # Execute function WITHOUT lock
+        # At this point we have atomically reserved permission to execute
+        try:
+            result = func(*args, **kwargs)
+            # Pass reserved state to handle state changes during execution
+            self._on_success(reserved_state)
+            return result
+        except Exception as e:
+            # Pass reserved state to handle state changes during execution
+            self._on_failure(e, reserved_state)
+            raise
+
+    def _reserve_execution(self) -> Optional[CircuitState]:
+        """
+        Atomically check if execution is allowed and reserve permission.
+
+        Thread-safety: This method is atomic - state cannot change between
+        check and return. The returned state acts as a "ticket" for execution.
+
+        For HALF_OPEN state, enforces single concurrent test execution using
+        semaphore to prevent thundering herd attacks.
+
+        Returns:
+            CircuitState at time of reservation if allowed, None if blocked
+
+        Example:
+            >>> breaker = CircuitBreaker("provider")
+            >>> state = breaker._reserve_execution()
+            >>> if state:
+            ...     # Execute protected function
+            ...     result = func()
+        """
         with self.lock:
             if self.state == CircuitState.OPEN:
                 if self._should_attempt_reset():
@@ -135,60 +184,105 @@ class CircuitBreaker:
                     self.success_count = 0
                     if self.storage:
                         self._save_state()
+                    # State is now HALF_OPEN, continue to semaphore check
                 else:
-                    # Circuit still open, fast-fail
-                    raise CircuitBreakerError(
-                        f"Circuit breaker OPEN for {self.name}. "
-                        f"Retry after {self._time_until_retry():.0f}s"
-                    )
+                    # Circuit still open, deny execution
+                    return None
 
-        # Execute function
+            current_state = self.state
+
+        # For HALF_OPEN state, enforce single concurrent test execution
+        # This prevents thundering herd: only 1 thread tests at a time
+        if current_state == CircuitState.HALF_OPEN:
+            # Non-blocking acquire - fast-fail if another thread is testing
+            if not self._half_open_semaphore.acquire(blocking=False):
+                # Another thread is already testing recovery
+                # Fast-fail to prevent overwhelming provider
+                raise CircuitBreakerError(
+                    f"Circuit breaker for {self.name} is testing recovery. "
+                    f"Retry in 1-2 seconds."
+                )
+
+        # Circuit is CLOSED or HALF_OPEN (with semaphore acquired)
+        return current_state
+
+    def _on_success(self, reserved_state: Optional[CircuitState] = None) -> None:
+        """
+        Handle successful call.
+
+        Args:
+            reserved_state: State that was reserved for this execution.
+                          Used to detect state changes during execution.
+
+        Example:
+            >>> breaker._on_success(CircuitState.HALF_OPEN)
+        """
         try:
-            result = func(*args, **kwargs)
-            self._on_success()
-            return result
-        except Exception as e:
-            self._on_failure(e)
-            raise
+            with self.lock:
+                # Reset failure count on success
+                self.failure_count = 0
 
-    def _on_success(self) -> None:
-        """Handle successful call."""
-        with self.lock:
-            # Reset failure count
-            self.failure_count = 0
+                # If half-open, count successes toward closing
+                if self.state == CircuitState.HALF_OPEN:
+                    self.success_count += 1
+                    if self.success_count >= self.config.success_threshold:
+                        # Provider recovered, close circuit
+                        self.state = CircuitState.CLOSED
+                        self.success_count = 0
+                elif reserved_state == CircuitState.HALF_OPEN and self.state == CircuitState.OPEN:
+                    # Circuit was re-opened by another thread during our execution
+                    # Our success is ignored (conservative approach for safety)
+                    pass
 
-            # If half-open, count successes toward closing
-            if self.state == CircuitState.HALF_OPEN:
-                self.success_count += 1
-                if self.success_count >= self.config.success_threshold:
-                    # Provider recovered, close circuit
-                    self.state = CircuitState.CLOSED
-                    self.success_count = 0
+                # Persist state if storage available
+                if self.storage:
+                    self._save_state()
+        finally:
+            # Release semaphore if we were in HALF_OPEN state
+            if reserved_state == CircuitState.HALF_OPEN:
+                self._half_open_semaphore.release()
 
-            # Persist state if storage available
-            if self.storage:
-                self._save_state()
+    def _on_failure(self, error: Exception, reserved_state: Optional[CircuitState] = None) -> None:
+        """
+        Handle failed call.
 
-    def _on_failure(self, error: Exception) -> None:
-        """Handle failed call."""
-        # Only count certain errors
+        Args:
+            error: Exception that caused the failure
+            reserved_state: State that was reserved for this execution
+
+        Example:
+            >>> breaker._on_failure(TimeoutError(), CircuitState.HALF_OPEN)
+        """
+        # Only count certain errors (network/server errors)
         if not self._should_count_failure(error):
+            # Still need to release semaphore if we were in HALF_OPEN
+            if reserved_state == CircuitState.HALF_OPEN:
+                self._half_open_semaphore.release()
             return
 
-        with self.lock:
-            self.failure_count += 1
-            self.last_failure_time = time.time()
+        try:
+            with self.lock:
+                self.failure_count += 1
+                self.last_failure_time = time.time()
 
-            # If half-open and fails, immediately re-open
-            if self.state == CircuitState.HALF_OPEN:
-                self.state = CircuitState.OPEN
-            # If closed and hit threshold, open circuit
-            elif self.failure_count >= self.config.failure_threshold:
-                self.state = CircuitState.OPEN
+                # If half-open and fails, immediately re-open
+                if self.state == CircuitState.HALF_OPEN:
+                    self.state = CircuitState.OPEN
+                # If we reserved HALF_OPEN but current state changed, still re-open
+                elif reserved_state == CircuitState.HALF_OPEN and self.state != CircuitState.HALF_OPEN:
+                    # Circuit was modified by another thread, but we failed during test
+                    self.state = CircuitState.OPEN
+                # If closed and hit threshold, open circuit
+                elif self.failure_count >= self.config.failure_threshold:
+                    self.state = CircuitState.OPEN
 
-            # Persist state if storage available
-            if self.storage:
-                self._save_state()
+                # Persist state if storage available
+                if self.storage:
+                    self._save_state()
+        finally:
+            # Release semaphore if we were in HALF_OPEN state
+            if reserved_state == CircuitState.HALF_OPEN:
+                self._half_open_semaphore.release()
 
     def _should_count_failure(self, error: Exception) -> bool:
         """

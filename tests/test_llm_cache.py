@@ -45,13 +45,15 @@ class TestCacheKeyGeneration:
             model="gpt-4",
             prompt="Hello world",
             temperature=0.7,
-            max_tokens=2048
+            max_tokens=2048,
+            tenant_id="test_tenant"
         )
         key2 = cache.generate_key(
             model="gpt-4",
             prompt="Hello world",
             temperature=0.7,
-            max_tokens=2048
+            max_tokens=2048,
+            tenant_id="test_tenant"
         )
 
         assert key1 == key2
@@ -60,8 +62,8 @@ class TestCacheKeyGeneration:
         """Test that different prompts produce different keys."""
         cache = LLMCache()
 
-        key1 = cache.generate_key(model="gpt-4", prompt="Hello")
-        key2 = cache.generate_key(model="gpt-4", prompt="Goodbye")
+        key1 = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
+        key2 = cache.generate_key(model="gpt-4", prompt="Goodbye", tenant_id="test")
 
         assert key1 != key2
 
@@ -69,8 +71,8 @@ class TestCacheKeyGeneration:
         """Test that different temperatures produce different keys."""
         cache = LLMCache()
 
-        key1 = cache.generate_key(model="gpt-4", prompt="Hello", temperature=0.7)
-        key2 = cache.generate_key(model="gpt-4", prompt="Hello", temperature=0.9)
+        key1 = cache.generate_key(model="gpt-4", prompt="Hello", temperature=0.7, tenant_id="test")
+        key2 = cache.generate_key(model="gpt-4", prompt="Hello", temperature=0.9, tenant_id="test")
 
         assert key1 != key2
 
@@ -78,8 +80,8 @@ class TestCacheKeyGeneration:
         """Test that different models produce different keys."""
         cache = LLMCache()
 
-        key1 = cache.generate_key(model="gpt-4", prompt="Hello")
-        key2 = cache.generate_key(model="gpt-3.5-turbo", prompt="Hello")
+        key1 = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
+        key2 = cache.generate_key(model="gpt-3.5-turbo", prompt="Hello", tenant_id="test")
 
         assert key1 != key2
 
@@ -87,8 +89,8 @@ class TestCacheKeyGeneration:
         """Test that additional kwargs are included in key."""
         cache = LLMCache()
 
-        key1 = cache.generate_key(model="gpt-4", prompt="Hello", top_p=0.9)
-        key2 = cache.generate_key(model="gpt-4", prompt="Hello", top_p=0.95)
+        key1 = cache.generate_key(model="gpt-4", prompt="Hello", top_p=0.9, tenant_id="test")
+        key2 = cache.generate_key(model="gpt-4", prompt="Hello", top_p=0.95, tenant_id="test")
 
         assert key1 != key2
 
@@ -96,7 +98,7 @@ class TestCacheKeyGeneration:
         """Test that key is a valid SHA-256 hex string."""
         cache = LLMCache()
 
-        key = cache.generate_key(model="gpt-4", prompt="Hello")
+        key = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
 
         # Should be 64 characters (256 bits / 4 bits per hex char)
         assert len(key) == 64
@@ -307,7 +309,7 @@ class TestLLMCache:
         """Test cache hit with memory backend."""
         cache = LLMCache(backend="memory", ttl=None)
 
-        key = cache.generate_key(model="gpt-4", prompt="Hello")
+        key = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
         cache.set(key, "Hello! How can I help?")
 
         result = cache.get(key)
@@ -320,7 +322,7 @@ class TestLLMCache:
         """Test cache miss with memory backend."""
         cache = LLMCache(backend="memory")
 
-        key = cache.generate_key(model="gpt-4", prompt="Hello")
+        key = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
         result = cache.get(key)
 
         assert result is None
@@ -331,7 +333,7 @@ class TestLLMCache:
         """Test TTL expiration in LLMCache."""
         cache = LLMCache(backend="memory", ttl=1)
 
-        key = cache.generate_key(model="gpt-4", prompt="Hello")
+        key = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
         cache.set(key, "Response")
 
         # Should be cached
@@ -347,8 +349,8 @@ class TestLLMCache:
         """Test cache statistics tracking."""
         cache = LLMCache(backend="memory")
 
-        key1 = cache.generate_key(model="gpt-4", prompt="Hello")
-        key2 = cache.generate_key(model="gpt-4", prompt="Goodbye")
+        key1 = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
+        key2 = cache.generate_key(model="gpt-4", prompt="Goodbye", tenant_id="test")
 
         # Miss
         cache.get(key1)
@@ -373,7 +375,7 @@ class TestLLMCache:
         """Test resetting cache statistics."""
         cache = LLMCache(backend="memory")
 
-        key = cache.generate_key(model="gpt-4", prompt="Hello")
+        key = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
         cache.get(key)
 
         assert cache.stats.misses == 1
@@ -410,7 +412,7 @@ class TestLLMCache:
         """Test checking if key exists in cache."""
         cache = LLMCache(backend="memory")
 
-        key = cache.generate_key(model="gpt-4", prompt="Hello")
+        key = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
 
         assert not cache.exists(key)
 
@@ -422,7 +424,7 @@ class TestLLMCache:
         """Test deleting from cache."""
         cache = LLMCache(backend="memory")
 
-        key = cache.generate_key(model="gpt-4", prompt="Hello")
+        key = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
         cache.set(key, "Response")
 
         assert cache.exists(key)
@@ -435,8 +437,8 @@ class TestLLMCache:
         """Test clearing entire cache."""
         cache = LLMCache(backend="memory")
 
-        key1 = cache.generate_key(model="gpt-4", prompt="Hello")
-        key2 = cache.generate_key(model="gpt-4", prompt="Goodbye")
+        key1 = cache.generate_key(model="gpt-4", prompt="Hello", tenant_id="test")
+        key2 = cache.generate_key(model="gpt-4", prompt="Goodbye", tenant_id="test")
 
         cache.set(key1, "Response 1")
         cache.set(key2, "Response 2")
@@ -488,7 +490,8 @@ class TestCacheIntegration:
             model="gpt-4",
             prompt="What is the capital of France?",
             temperature=0.7,
-            max_tokens=100
+            max_tokens=100,
+            tenant_id="test"
         )
 
         result1 = cache.get(key1)
@@ -507,7 +510,8 @@ class TestCacheIntegration:
             model="gpt-4",
             prompt="What is the capital of Germany?",
             temperature=0.7,
-            max_tokens=100
+            max_tokens=100,
+            tenant_id="test"
         )
 
         result3 = cache.get(key2)
@@ -528,7 +532,8 @@ class TestCacheIntegration:
                 key = cache.generate_key(
                     model=f"model-{thread_id}",
                     prompt=f"prompt-{i}",
-                    temperature=0.7
+                    temperature=0.7,
+                    tenant_id=f"tenant-{thread_id}"
                 )
                 cache.set(key, f"response-{thread_id}-{i}")
                 result = cache.get(key)
@@ -550,7 +555,7 @@ class TestCacheIntegration:
 
         # Prompt with special characters
         special_prompt = "Hello! How are you? 你好 🌍 \n\t\r"
-        key = cache.generate_key(model="gpt-4", prompt=special_prompt)
+        key = cache.generate_key(model="gpt-4", prompt=special_prompt, tenant_id="test")
 
         cache.set(key, "Response to special prompt")
         result = cache.get(key)
@@ -561,7 +566,7 @@ class TestCacheIntegration:
         """Test caching large responses."""
         cache = LLMCache(backend="memory")
 
-        key = cache.generate_key(model="gpt-4", prompt="Write a long essay")
+        key = cache.generate_key(model="gpt-4", prompt="Write a long essay", tenant_id="test")
 
         # Large response (10KB)
         large_response = "A" * 10240
@@ -571,3 +576,225 @@ class TestCacheIntegration:
 
         assert result == large_response
         assert len(result) == 10240
+
+
+class TestMultiTenantCacheSecurity:
+    """Security tests for multi-tenant cache isolation.
+
+    These tests verify that the cache properly isolates data between different
+    users and tenants, preventing cross-tenant data leakage vulnerabilities.
+    """
+
+    def test_different_tenants_different_cache_keys(self):
+        """Test that different tenants get different cache keys for identical prompts."""
+        cache = LLMCache()
+
+        key_tenant_a = cache.generate_key(
+            model="gpt-4",
+            prompt="Hello world",  # IDENTICAL prompt
+            temperature=0.7,
+            tenant_id="tenant_a",
+            user_id="user_123"
+        )
+
+        key_tenant_b = cache.generate_key(
+            model="gpt-4",
+            prompt="Hello world",  # IDENTICAL prompt
+            temperature=0.7,
+            tenant_id="tenant_b",  # DIFFERENT tenant
+            user_id="user_123"
+        )
+
+        # SECURITY: Different tenants must have different keys
+        assert key_tenant_a != key_tenant_b
+
+    def test_different_users_same_tenant_different_keys(self):
+        """Test that different users in same tenant get different keys."""
+        cache = LLMCache()
+
+        key_user_a = cache.generate_key(
+            model="gpt-4",
+            prompt="Hello",
+            tenant_id="acme_corp",
+            user_id="user_1"
+        )
+
+        key_user_b = cache.generate_key(
+            model="gpt-4",
+            prompt="Hello",  # IDENTICAL prompt
+            tenant_id="acme_corp",  # SAME tenant
+            user_id="user_2"  # DIFFERENT user
+        )
+
+        # SECURITY: Different users must have different keys
+        assert key_user_a != key_user_b
+
+    def test_cache_isolation_no_cross_tenant_leakage(self):
+        """Test that cached data does not leak between tenants."""
+        cache = LLMCache()
+
+        # Tenant A caches sensitive data
+        key_a = cache.generate_key(
+            model="gpt-4",
+            prompt="Summarize patient data",
+            tenant_id="hospital_a",
+            user_id="doctor_1"
+        )
+        cache.set(key_a, "SENSITIVE: Patient John Doe, SSN 123-45-6789")
+
+        # Tenant B queries with identical prompt
+        key_b = cache.generate_key(
+            model="gpt-4",
+            prompt="Summarize patient data",  # IDENTICAL
+            tenant_id="hospital_b",  # DIFFERENT tenant
+            user_id="doctor_2"
+        )
+        cached_b = cache.get(key_b)
+
+        # SECURITY: Tenant B should NOT get Tenant A's data
+        assert cached_b is None  # Cache MISS (correct)
+
+    def test_missing_user_context_raises_error(self):
+        """Test that missing user/tenant context raises security error."""
+        cache = LLMCache()
+
+        with pytest.raises(ValueError, match="requires user_id or tenant_id for security"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="Hello",
+                temperature=0.7
+                # Missing user_id and tenant_id
+            )
+
+    def test_session_isolation(self):
+        """Test that different sessions get different cache keys."""
+        cache = LLMCache()
+
+        key_session_1 = cache.generate_key(
+            model="gpt-4",
+            prompt="Continue conversation",
+            tenant_id="acme",
+            user_id="user_1",
+            session_id="session_abc"
+        )
+
+        key_session_2 = cache.generate_key(
+            model="gpt-4",
+            prompt="Continue conversation",  # IDENTICAL
+            tenant_id="acme",
+            user_id="user_1",
+            session_id="session_xyz"  # DIFFERENT session
+        )
+
+        # SECURITY: Different sessions must have different keys
+        assert key_session_1 != key_session_2
+
+    def test_tenant_id_only_sufficient(self):
+        """Test that tenant_id alone is sufficient for cache isolation."""
+        cache = LLMCache()
+
+        # Should not raise error with only tenant_id
+        key = cache.generate_key(
+            model="gpt-4",
+            prompt="Test",
+            tenant_id="tenant_a"
+            # No user_id - should still work
+        )
+
+        assert key is not None
+        assert len(key) == 64  # SHA-256 hex
+
+    def test_user_id_only_sufficient(self):
+        """Test that user_id alone is sufficient for cache isolation."""
+        cache = LLMCache()
+
+        # Should not raise error with only user_id
+        key = cache.generate_key(
+            model="gpt-4",
+            prompt="Test",
+            user_id="user_123"
+            # No tenant_id - should still work
+        )
+
+        assert key is not None
+        assert len(key) == 64  # SHA-256 hex
+
+    def test_same_user_tenant_session_same_key(self):
+        """Test that identical context produces identical keys (idempotent)."""
+        cache = LLMCache()
+
+        key1 = cache.generate_key(
+            model="gpt-4",
+            prompt="Hello",
+            temperature=0.7,
+            tenant_id="acme",
+            user_id="user_1",
+            session_id="session_abc"
+        )
+
+        key2 = cache.generate_key(
+            model="gpt-4",
+            prompt="Hello",
+            temperature=0.7,
+            tenant_id="acme",
+            user_id="user_1",
+            session_id="session_abc"
+        )
+
+        # Idempotent: Same context = same key
+        assert key1 == key2
+
+    def test_security_context_in_hash(self):
+        """Test that security context is actually included in hash."""
+        cache = LLMCache()
+
+        # Generate key with security context
+        key_with_context = cache.generate_key(
+            model="gpt-4",
+            prompt="Test",
+            tenant_id="acme",
+            user_id="user_1"
+        )
+
+        # Try to generate hash without security context (should fail)
+        with pytest.raises(ValueError, match="requires user_id or tenant_id"):
+            cache.generate_key(
+                model="gpt-4",
+                prompt="Test"
+                # Missing tenant_id and user_id
+            )
+
+    def test_multi_tenant_workflow_integration(self):
+        """Integration test: Multi-tenant workflow with proper isolation."""
+        cache = LLMCache()
+
+        # Scenario: Three companies using shared LLM service
+        tenants = ["company_a", "company_b", "company_c"]
+        prompt = "Generate quarterly report"
+
+        keys = []
+        for tenant in tenants:
+            key = cache.generate_key(
+                model="gpt-4",
+                prompt=prompt,
+                tenant_id=tenant,
+                user_id=f"user_{tenant}"
+            )
+            keys.append(key)
+
+            # Cache company-specific data
+            cache.set(key, f"Confidential data for {tenant}")
+
+        # Verify all keys are different
+        assert len(set(keys)) == 3  # All unique
+
+        # Verify each tenant gets only their own data
+        for i, tenant in enumerate(tenants):
+            key = keys[i]
+            cached_data = cache.get(key)
+            assert cached_data == f"Confidential data for {tenant}"
+            assert tenant in cached_data  # Contains tenant name
+            # Should not contain other tenants' names
+            for other_tenant in tenants:
+                if other_tenant != tenant:
+                    assert other_tenant not in cached_data

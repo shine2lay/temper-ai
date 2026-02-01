@@ -24,6 +24,9 @@ except ImportError:
 
 from src.utils.error_handling import retry_with_backoff, RetryStrategy
 
+# Import execution context for cache isolation
+from src.agents.base_agent import ExecutionContext
+
 # Import enhanced exceptions with execution context
 from src.utils.exceptions import (
     LLMError,
@@ -403,15 +406,24 @@ class BaseLLM(ABC):
         """
         pass
 
-    def complete(self, prompt: str, **kwargs: Any) -> LLMResponse:
+    def complete(
+        self,
+        prompt: str,
+        context: Optional[ExecutionContext] = None,
+        **kwargs: Any
+    ) -> LLMResponse:
         """
         Generate completion for prompt.
 
         If caching is enabled, checks cache first before making API call.
         Uses circuit breaker to prevent cascading failures.
 
+        SECURITY: For multi-tenant applications, MUST provide ExecutionContext
+        with user_id or tenant_id to ensure proper cache isolation.
+
         Args:
             prompt: Input prompt
+            context: Execution context with user/tenant/session for cache isolation
             **kwargs: Provider-specific overrides (temperature, max_tokens, etc.)
 
         Returns:
@@ -423,17 +435,26 @@ class BaseLLM(ABC):
             LLMRateLimitError: On rate limiting
             LLMAuthenticationError: On auth errors
             CircuitBreakerError: If circuit breaker is open
+            ValueError: If caching enabled but no user/tenant context provided
         """
         # Check cache if enabled
         cache_key = None
         if self._cache is not None:
-            # Generate cache key from request parameters
+            # SECURITY: Extract user context for cache isolation
+            user_id = context.user_id if context else None
+            tenant_id = context.metadata.get('tenant_id') if context and context.metadata else None
+            session_id = context.session_id if context else None
+
+            # Generate cache key with security context
             cache_key = self._cache.generate_key(
                 model=self.model,
                 prompt=prompt,
                 temperature=kwargs.get('temperature', self.temperature),
                 max_tokens=kwargs.get('max_tokens', self.max_tokens),
                 top_p=kwargs.get('top_p', self.top_p),
+                user_id=user_id,
+                tenant_id=tenant_id,
+                session_id=session_id,
                 **kwargs
             )
 
@@ -513,15 +534,24 @@ class BaseLLM(ABC):
         # Execute through circuit breaker for resilience
         return self._circuit_breaker.call(_make_api_call)
 
-    async def acomplete(self, prompt: str, **kwargs: Any) -> LLMResponse:
+    async def acomplete(
+        self,
+        prompt: str,
+        context: Optional[ExecutionContext] = None,
+        **kwargs: Any
+    ) -> LLMResponse:
         """
         Async version: Generate completion for prompt.
 
         If caching is enabled, checks cache first before making API call.
         Uses circuit breaker to prevent cascading failures.
 
+        SECURITY: For multi-tenant applications, MUST provide ExecutionContext
+        with user_id or tenant_id to ensure proper cache isolation.
+
         Args:
             prompt: Input prompt
+            context: Execution context with user/tenant/session for cache isolation
             **kwargs: Provider-specific overrides (temperature, max_tokens, etc.)
 
         Returns:
@@ -533,17 +563,26 @@ class BaseLLM(ABC):
             LLMRateLimitError: On rate limiting
             LLMAuthenticationError: On auth errors
             CircuitBreakerError: If circuit breaker is open
+            ValueError: If caching enabled but no user/tenant context provided
         """
         # Check cache if enabled (cache is synchronous, so this is fine)
         cache_key = None
         if self._cache is not None:
-            # Generate cache key from request parameters
+            # SECURITY: Extract user context for cache isolation
+            user_id = context.user_id if context else None
+            tenant_id = context.metadata.get('tenant_id') if context and context.metadata else None
+            session_id = context.session_id if context else None
+
+            # Generate cache key with security context
             cache_key = self._cache.generate_key(
                 model=self.model,
                 prompt=prompt,
                 temperature=kwargs.get('temperature', self.temperature),
                 max_tokens=kwargs.get('max_tokens', self.max_tokens),
                 top_p=kwargs.get('top_p', self.top_p),
+                user_id=user_id,
+                tenant_id=tenant_id,
+                session_id=session_id,
                 **kwargs
             )
 

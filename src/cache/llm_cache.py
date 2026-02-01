@@ -333,31 +333,54 @@ class LLMCache:
         prompt: str,
         temperature: float = 0.7,
         max_tokens: int = 2048,
+        user_id: Optional[str] = None,
+        tenant_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         **kwargs: Any
     ) -> str:
         """
-        Generate cache key based on request parameters.
+        Generate cache key with mandatory user/tenant isolation.
 
-        Uses SHA-256 hash of canonicalized request parameters
-        to ensure identical requests have identical keys.
+        SECURITY: This method requires user_id OR tenant_id to prevent
+        cross-tenant data leakage. Without isolation, identical prompts
+        from different users/tenants would share cache entries, causing
+        privacy violations and compliance breaches (HIPAA, GDPR, SOC 2).
+
+        Uses SHA-256 hash of canonicalized request parameters including
+        security context to ensure proper isolation.
 
         Args:
             model: Model name
             prompt: Prompt text
             temperature: Temperature parameter
             max_tokens: Max tokens parameter
+            user_id: User identifier (REQUIRED for user-level caching)
+            tenant_id: Tenant identifier (REQUIRED for tenant-level caching)
+            session_id: Session identifier (optional, for session-level caching)
             **kwargs: Additional parameters to include in key
 
         Returns:
-            Cache key (hex string)
+            Cache key (hex string) with user/tenant isolation
+
+        Raises:
+            ValueError: If neither user_id nor tenant_id provided
 
         Example:
             >>> cache = LLMCache()
-            >>> key1 = cache.generate_key("gpt-4", "Hello", temperature=0.7)
-            >>> key2 = cache.generate_key("gpt-4", "Hello", temperature=0.7)
-            >>> key1 == key2  # Same params = same key
+            >>> # Different tenants get different keys
+            >>> key1 = cache.generate_key("gpt-4", "Hello", tenant_id="tenant_a")
+            >>> key2 = cache.generate_key("gpt-4", "Hello", tenant_id="tenant_b")
+            >>> key1 != key2  # Different tenants = different keys
             True
         """
+        # SECURITY: Enforce user/tenant context to prevent cross-tenant data leakage
+        if not user_id and not tenant_id:
+            raise ValueError(
+                "Cache key generation requires user_id or tenant_id for security. "
+                "Multi-tenant caching without isolation is a privacy violation. "
+                "See: HIPAA 164.312(a)(1), GDPR Article 32, SOC 2 CC6.6"
+            )
+
         # Build canonical request dict
         request = {
             'model': model,
@@ -367,14 +390,34 @@ class LLMCache:
             **kwargs
         }
 
-        # Sort keys for consistent hashing
-        canonical = json.dumps(request, sort_keys=True)
+        # SECURITY: Add user context to separate namespace (prevents collision)
+        security_context = {}
+        if tenant_id:
+            security_context['tenant_id'] = tenant_id
+        if user_id:
+            security_context['user_id'] = user_id
+        if session_id:
+            security_context['session_id'] = session_id
+
+        # Combine request and security context
+        canonical = json.dumps({
+            'request': request,
+            'security_context': security_context
+        }, sort_keys=True)
 
         # Hash with SHA-256
         hash_obj = hashlib.sha256(canonical.encode('utf-8'))
         cache_key = hash_obj.hexdigest()
 
-        logger.debug(f"Generated cache key: {cache_key[:16]}... for model={model}")
+        logger.debug(
+            f"Generated cache key with isolation: {cache_key[:16]}...",
+            extra={
+                'model': model,
+                'tenant_id': tenant_id,
+                'user_id': user_id,
+                'has_session': bool(session_id)
+            }
+        )
         return cache_key
 
     def get(self, key: str) -> Optional[str]:

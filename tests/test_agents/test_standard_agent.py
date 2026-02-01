@@ -1,12 +1,56 @@
 """Tests for StandardAgent."""
 import pytest
 from unittest.mock import Mock, patch, MagicMock
-from src.agents.standard_agent import StandardAgent
+from src.agents.standard_agent import StandardAgent, validate_input_data
 from src.agents.base_agent import AgentResponse, ExecutionContext
 from src.agents.llm_providers import LLMResponse, LLMError
 from src.tools.base import ToolResult
 
 
+# Tests for validate_input_data() helper function
+def test_validate_input_data_accepts_valid_dict():
+    """Test that validate_input_data() accepts valid dictionary."""
+    # Should not raise
+    validate_input_data({"key": "value"})
+
+
+def test_validate_input_data_rejects_none():
+    """Test that validate_input_data() rejects None."""
+    with pytest.raises(ValueError) as exc_info:
+        validate_input_data(None)  # type: ignore
+
+    assert "input_data cannot be None" in str(exc_info.value)
+
+
+def test_validate_input_data_rejects_non_dict():
+    """Test that validate_input_data() rejects non-dictionary input."""
+    with pytest.raises(TypeError) as exc_info:
+        validate_input_data("not a dict")  # type: ignore
+
+    assert "input_data must be a dictionary" in str(exc_info.value)
+    assert "got str" in str(exc_info.value)
+
+
+def test_validate_input_data_accepts_valid_context():
+    """Test that validate_input_data() accepts valid ExecutionContext."""
+    context = ExecutionContext(
+        workflow_id="wf_123",
+        stage_id="stage_123",
+        agent_id="agent_123"
+    )
+    # Should not raise
+    validate_input_data({"key": "value"}, context)
+
+
+def test_validate_input_data_rejects_invalid_context():
+    """Test that validate_input_data() rejects invalid context."""
+    with pytest.raises(TypeError) as exc_info:
+        validate_input_data({"key": "value"}, context="not a context")  # type: ignore
+
+    assert "context must be an ExecutionContext" in str(exc_info.value)
+
+
+# Tests for StandardAgent class
 def test_standard_agent_initialization(minimal_agent_config):
     """Test StandardAgent initialization."""
     with patch('src.agents.standard_agent.ToolRegistry'):

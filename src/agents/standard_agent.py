@@ -61,6 +61,43 @@ from src.tools.registry import ToolRegistry
 from src.tools.base import BaseTool, ToolResult
 
 
+def validate_input_data(
+    input_data: Any,
+    context: Optional[ExecutionContext] = None
+) -> None:
+    """Validate input_data and context parameters.
+
+    Centralized validation to ensure DRY principle across agent methods.
+
+    Args:
+        input_data: Input data dictionary to validate
+        context: Optional execution context to validate
+
+    Raises:
+        ValueError: If input_data is None
+        TypeError: If input_data is not a dictionary or context is invalid
+
+    Example:
+        >>> validate_input_data({"key": "value"})  # OK
+        >>> validate_input_data(None)  # Raises ValueError
+        >>> validate_input_data("string")  # Raises TypeError
+    """
+    # Validate input_data early for clear error messages
+    if input_data is None:
+        raise ValueError("input_data cannot be None")
+
+    if not isinstance(input_data, dict):
+        raise TypeError(
+            f"input_data must be a dictionary, got {type(input_data).__name__}"
+        )
+
+    # Validate context if provided
+    if context is not None and not isinstance(context, ExecutionContext):
+        raise TypeError(
+            f"context must be an ExecutionContext instance, got {type(context).__name__}"
+        )
+
+
 class StandardAgent(BaseAgent):
     """Standard agent with LLM and tool execution loop.
 
@@ -267,20 +304,8 @@ class StandardAgent(BaseAgent):
             ValueError: If input_data is invalid
             TypeError: If input_data is not a dictionary
         """
-        # Validate input_data early for clear error messages
-        if input_data is None:
-            raise ValueError("input_data cannot be None")
-
-        if not isinstance(input_data, dict):
-            raise TypeError(
-                f"input_data must be a dictionary, got {type(input_data).__name__}"
-            )
-
-        # Validate context if provided
-        if context is not None and not isinstance(context, ExecutionContext):
-            raise TypeError(
-                f"context must be an ExecutionContext instance, got {type(context).__name__}"
-            )
+        # Validate input_data and context using centralized helper
+        validate_input_data(input_data, context)
 
         start_time = time.time()
         tool_calls_made: list[dict[str, Any]] = []
@@ -572,20 +597,8 @@ class StandardAgent(BaseAgent):
             ValueError: If input_data is invalid or missing required fields
             TypeError: If input_data is not a dictionary
         """
-        # Validate input_data
-        if input_data is None:
-            raise ValueError("input_data cannot be None")
-
-        if not isinstance(input_data, dict):
-            raise TypeError(
-                f"input_data must be a dictionary, got {type(input_data).__name__}"
-            )
-
-        # Validate context if provided
-        if context is not None and not isinstance(context, ExecutionContext):
-            raise TypeError(
-                f"context must be an ExecutionContext instance, got {type(context).__name__}"
-            )
+        # Validate input_data and context using centralized helper
+        validate_input_data(input_data, context)
 
         # Get template from config
         prompt_config = self.config.agent.prompt

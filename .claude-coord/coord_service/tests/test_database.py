@@ -394,16 +394,21 @@ class TestTaskOperations:
         assert timing['claimed_at'] is not None
 
     def test_claim_task_already_claimed(self, db):
-        """Claiming already claimed task should not update."""
+        """Claiming already claimed task should raise ValueError."""
         db.register_agent('agent1', 11111)
         db.register_agent('agent2', 22222)
         db.create_task('test-task', 'Subject', 'Description')
 
         db.claim_task('test-task', 'agent1')
-        db.claim_task('test-task', 'agent2')  # Should not update
 
+        # Attempting to claim again should raise error
+        with pytest.raises(ValueError, match="Cannot claim task"):
+            db.claim_task('test-task', 'agent2')
+
+        # Verify state unchanged
         task = db.get_task('test-task')
-        assert task['owner'] == 'agent1'  # Still agent1
+        assert task['owner'] == 'agent1'
+        assert task['status'] == 'in_progress'
 
     def test_complete_task(self, db):
         """Complete task updates status and timestamp."""
@@ -432,16 +437,67 @@ class TestTaskOperations:
         assert timing['completed_at'] is not None
 
     def test_complete_task_wrong_owner(self, db):
-        """Completing task with wrong owner should not update."""
+        """Completing task with wrong owner should raise ValueError."""
         db.register_agent('agent1', 11111)
         db.register_agent('agent2', 22222)
         db.create_task('test-task', 'Subject', 'Description')
         db.claim_task('test-task', 'agent1')
 
-        db.complete_task('test-task', 'agent2')  # Wrong owner
+        # Attempting to complete with wrong owner should raise error
+        with pytest.raises(ValueError, match="Cannot complete task"):
+            db.complete_task('test-task', 'agent2')
 
+        # Verify state unchanged and no timestamp corruption
         task = db.get_task('test-task')
-        assert task['status'] == 'in_progress'  # Still in progress
+        assert task['status'] == 'in_progress'
+        assert task['owner'] == 'agent1'
+        assert task['completed_at'] is None  # Critical: timestamp not corrupted
+
+    def test_complete_task_null_owner(self, db):
+        """Completing task with NULL owner should raise ValueError."""
+        db.register_agent('test-agent', 12345)
+        db.create_task('test-task', 'Subject', 'Description')
+
+        # Task has no owner (pending state)
+        with pytest.raises(ValueError, match="Cannot complete task"):
+            db.complete_task('test-task', 'test-agent')
+
+        # Verify state unchanged
+        task = db.get_task('test-task')
+        assert task['status'] == 'pending'
+        assert task['owner'] is None
+        assert task['completed_at'] is None
+
+    def test_complete_task_nonexistent(self, db):
+        """Completing non-existent task should raise ValueError."""
+        db.register_agent('test-agent', 12345)
+
+        with pytest.raises(ValueError, match="Cannot complete task"):
+            db.complete_task('nonexistent-task', 'test-agent')
+
+    def test_claim_completed_task(self, db):
+        """Claiming completed task should raise ValueError."""
+        db.register_agent('agent1', 11111)
+        db.register_agent('agent2', 22222)
+        db.create_task('test-task', 'Subject', 'Description')
+        db.claim_task('test-task', 'agent1')
+        db.complete_task('test-task', 'agent1')
+
+        # Attempting to claim completed task should fail
+        with pytest.raises(ValueError, match="Cannot claim task"):
+            db.claim_task('test-task', 'agent2')
+
+        # Verify state unchanged
+        task = db.get_task('test-task')
+        assert task['status'] == 'completed'
+        assert task['owner'] == 'agent1'
+
+    def test_claim_nonexistent_task(self, db):
+        """Claiming non-existent task should raise ValueError."""
+        db.register_agent('test-agent', 12345)
+
+        with pytest.raises(ValueError, match="Cannot claim task"):
+            db.claim_task('nonexistent-task', 'test-agent')
 
     def test_get_available_tasks(self, db):
         """Get available tasks returns pending tasks in priority order."""
@@ -1045,3 +1101,160 @@ class TestEdgeCases:
 
         assert len(tasks) == 100
         assert elapsed < 0.1  # Should complete in <100ms
+
+
+class TestDatabaseInvariants:
+    """
+    Test database invariants and constraints.
+
+    These tests explicitly verify that the database maintains consistency
+    even under edge cases and error conditions. Critical for preventing
+    corruption bugs like the completed_at issue.
+    """
+
+    def test_no_completed_at_without_completed_status(self, db):
+        """Verify no tasks can have completed_at without status='completed'."""
+        # Create and complete task normally
+        db.register_agent('agent1', 11111)
+        db.create_task('task1', 'Subject', 'Description')
+        db.claim_task('task1', 'agent1')
+        db.complete_task('task1', 'agent1')
+
+        # Try various failure modes that used to cause corruption
+        db.create_task('task2', 'Subject', 'Description')
+        db.claim_task('task2', 'agent1')
+
+        # Wrong owner - should not set completed_at
+        with pytest.raises(ValueError):
+            db.complete_task('task2', 'wrong-agent')
+
+        # Verify invariant: No tasks with completed_at but wrong status
+        corrupted = db.query(
+            "SELECT * FROM tasks WHERE completed_at IS NOT NULL AND status != 'completed'"
+        )
+        assert len(corrupted) == 0, f"Found corrupted tasks: {corrupted}"
+
+    def test_no_in_progress_without_owner(self, db):
+        """Verify no tasks can be in_progress without an owner."""
+        db.register_agent('agent1', 11111)
+        db.create_task('task1', 'Subject', 'Description')
+        db.claim_task('task1', 'agent1')
+
+        # Verify invariant
+        orphaned = db.query(
+            "SELECT * FROM tasks WHERE status = 'in_progress' AND owner IS NULL"
+        )
+        assert len(orphaned) == 0
+
+    def test_completed_tasks_have_completed_at(self, db):
+        """Verify completed tasks always have completed_at timestamp."""
+        db.register_agent('agent1', 11111)
+        db.create_task('task1', 'Subject', 'Description')
+        db.claim_task('task1', 'agent1')
+        db.complete_task('task1', 'agent1')
+
+        # Verify completed task has timestamp
+        task = db.get_task('task1')
+        assert task['status'] == 'completed'
+        assert task['completed_at'] is not None
+
+        # Verify no completed tasks lack timestamp
+        incomplete = db.query(
+            "SELECT * FROM tasks WHERE status = 'completed' AND completed_at IS NULL"
+        )
+        assert len(incomplete) == 0
+
+    def test_in_progress_tasks_have_started_at(self, db):
+        """Verify in_progress tasks always have started_at timestamp."""
+        db.register_agent('agent1', 11111)
+        db.create_task('task1', 'Subject', 'Description')
+        db.claim_task('task1', 'agent1')
+
+        # Verify in_progress task has timestamp
+        task = db.get_task('task1')
+        assert task['status'] == 'in_progress'
+        assert task['started_at'] is not None
+
+        # Verify no in_progress tasks lack timestamp
+        unstarted = db.query(
+            "SELECT * FROM tasks WHERE status = 'in_progress' AND started_at IS NULL"
+        )
+        assert len(unstarted) == 0
+
+    def test_invariants_after_failed_operations(self, db):
+        """Verify invariants maintained even after failed operations."""
+        db.register_agent('agent1', 11111)
+        db.register_agent('agent2', 22222)
+        db.create_task('task1', 'Subject', 'Description')
+        db.claim_task('task1', 'agent1')
+
+        # Try several operations that should fail
+        with pytest.raises(ValueError):
+            db.claim_task('task1', 'agent2')  # Already claimed
+
+        with pytest.raises(ValueError):
+            db.complete_task('task1', 'agent2')  # Wrong owner
+
+        with pytest.raises(ValueError):
+            db.complete_task('task-nonexistent', 'agent1')  # Doesn't exist
+
+        # Verify ALL invariants still hold
+        corrupted = db.query(
+            "SELECT * FROM tasks WHERE completed_at IS NOT NULL AND status != 'completed'"
+        )
+        assert len(corrupted) == 0
+
+        orphaned = db.query(
+            "SELECT * FROM tasks WHERE status = 'in_progress' AND owner IS NULL"
+        )
+        assert len(orphaned) == 0
+
+    def test_invariants_after_agent_unregister(self, db):
+        """Verify invariants maintained when agent unregisters."""
+        db.register_agent('agent1', 11111)
+        db.create_task('task1', 'Subject', 'Description')
+        db.create_task('task2', 'Subject', 'Description')
+
+        db.claim_task('task1', 'agent1')
+        db.complete_task('task1', 'agent1')
+        db.claim_task('task2', 'agent1')
+
+        # Unregister agent - task2 should be released
+        db.unregister_agent('agent1')
+
+        # task2 should be released to pending
+        task2 = db.get_task('task2')
+        assert task2['status'] == 'pending'
+        assert task2['owner'] is None
+
+        # Verify invariants
+        orphaned = db.query(
+            "SELECT * FROM tasks WHERE status = 'in_progress' AND owner IS NULL"
+        )
+        assert len(orphaned) == 0
+
+    def test_timestamp_consistency(self, db):
+        """Verify timestamp consistency across task lifecycle."""
+        db.register_agent('agent1', 11111)
+        db.create_task('task1', 'Subject', 'Description')
+
+        # Initially no timestamps
+        task = db.get_task('task1')
+        assert task['started_at'] is None
+        assert task['completed_at'] is None
+
+        # After claim, started_at set
+        db.claim_task('task1', 'agent1')
+        task = db.get_task('task1')
+        assert task['started_at'] is not None
+        assert task['completed_at'] is None
+
+        # After complete, completed_at set
+        db.complete_task('task1', 'agent1')
+        task = db.get_task('task1')
+        assert task['started_at'] is not None
+        assert task['completed_at'] is not None
+
+        # completed_at should be >= started_at
+        # (Use string comparison since they're ISO timestamps)
+        assert task['completed_at'] >= task['started_at']

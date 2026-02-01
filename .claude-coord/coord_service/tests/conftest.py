@@ -118,3 +118,65 @@ Example task for testing.
 Test the implementation thoroughly.
 """)
     return spec_path
+
+
+@pytest.fixture(autouse=True)
+def verify_database_invariants(request, db):
+    """
+    Automatically verify database invariants after each test.
+
+    This fixture runs after every test to ensure no corruption was introduced.
+    Critical for preventing regression of the completed_at corruption bug.
+    """
+    # Skip for tests that don't use the db fixture
+    if 'db' not in request.fixturenames:
+        yield
+        return
+
+    yield  # Run the test
+
+    # After test completes, verify invariants
+    try:
+        # Invariant 1: No task should have completed_at without status='completed'
+        corrupted = db.query(
+            "SELECT id, status, completed_at FROM tasks "
+            "WHERE completed_at IS NOT NULL AND status != 'completed'"
+        )
+        assert len(corrupted) == 0, (
+            f"Found {len(corrupted)} tasks with completed_at but wrong status: "
+            f"{[r['id'] for r in corrupted]}"
+        )
+
+        # Invariant 2: No task should have status='in_progress' without owner
+        orphaned = db.query(
+            "SELECT id, status, owner FROM tasks "
+            "WHERE status = 'in_progress' AND owner IS NULL"
+        )
+        assert len(orphaned) == 0, (
+            f"Found {len(orphaned)} in_progress tasks without owner: "
+            f"{[r['id'] for r in orphaned]}"
+        )
+
+        # Invariant 3: Completed tasks must have completed_at
+        incomplete_completed = db.query(
+            "SELECT id, status, completed_at FROM tasks "
+            "WHERE status = 'completed' AND completed_at IS NULL"
+        )
+        assert len(incomplete_completed) == 0, (
+            f"Found {len(incomplete_completed)} completed tasks without completed_at: "
+            f"{[r['id'] for r in incomplete_completed]}"
+        )
+
+        # Invariant 4: In-progress tasks must have started_at
+        unstartedprogress = db.query(
+            "SELECT id, status, started_at FROM tasks "
+            "WHERE status = 'in_progress' AND started_at IS NULL"
+        )
+        assert len(unstartedprogress) == 0, (
+            f"Found {len(unstartedprogress)} in_progress tasks without started_at: "
+            f"{[r['id'] for r in unstartedprogress]}"
+        )
+
+    except Exception as e:
+        # Make invariant violations very visible
+        pytest.fail(f"DATABASE INVARIANT VIOLATION: {e}")

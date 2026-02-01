@@ -71,39 +71,183 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         "file_write", "write", "write_file", "save", "create"
     }
 
+    def _validate_size(
+        self,
+        name: str,
+        value: Any,
+        min_value: int,
+        max_value: int,
+        default: int
+    ) -> int:
+        """Validate size parameter (bytes).
+
+        Args:
+            name: Parameter name
+            value: Value to validate
+            min_value: Minimum allowed value
+            max_value: Maximum allowed value
+            default: Default value
+
+        Returns:
+            Validated value
+
+        Raises:
+            ValueError: If value is invalid
+        """
+        if not isinstance(value, (int, float)):
+            raise ValueError(
+                f"{name} must be numeric, got {type(value).__name__}"
+            )
+
+        value = int(value)
+
+        if value < min_value:
+            raise ValueError(
+                f"{name} must be >= {min_value} bytes ({self._format_bytes(min_value)}), "
+                f"got {value} ({self._format_bytes(value)})"
+            )
+
+        if value > max_value:
+            raise ValueError(
+                f"{name} must be <= {max_value} bytes ({self._format_bytes(max_value)}), "
+                f"got {value} ({self._format_bytes(value)})"
+            )
+
+        return value
+
+    def _validate_time(
+        self,
+        name: str,
+        value: Any,
+        min_value: float,
+        max_value: float,
+        default: float
+    ) -> float:
+        """Validate time parameter (seconds).
+
+        Args:
+            name: Parameter name
+            value: Value to validate
+            min_value: Minimum allowed value
+            max_value: Maximum allowed value
+            default: Default value
+
+        Returns:
+            Validated value
+
+        Raises:
+            ValueError: If value is invalid
+        """
+        if not isinstance(value, (int, float)):
+            raise ValueError(
+                f"{name} must be numeric, got {type(value).__name__}"
+            )
+
+        value = float(value)
+
+        if value < min_value:
+            raise ValueError(
+                f"{name} must be >= {min_value} seconds, got {value}"
+            )
+
+        if value > max_value:
+            raise ValueError(
+                f"{name} must be <= {max_value} seconds, got {value}"
+            )
+
+        return value
+
+    def _validate_bool(
+        self,
+        name: str,
+        value: Any
+    ) -> bool:
+        """Validate boolean parameter.
+
+        Args:
+            name: Parameter name
+            value: Value to validate
+
+        Returns:
+            Validated value
+
+        Raises:
+            ValueError: If value is invalid
+        """
+        if not isinstance(value, bool):
+            raise ValueError(
+                f"{name} must be boolean, got {type(value).__name__}"
+            )
+
+        return value
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize resource limit policy.
 
         Args:
             config: Policy configuration (optional)
+
+        Raises:
+            ValueError: If configuration values are invalid
         """
         super().__init__(config or {})
 
-        # File size limits
-        self.max_file_size_read = self.config.get(
-            "max_file_size_read", self.DEFAULT_MAX_FILE_SIZE_READ
-        )
-        self.max_file_size_write = self.config.get(
-            "max_file_size_write", self.DEFAULT_MAX_FILE_SIZE_WRITE
-        )
-
-        # Memory and CPU limits
-        self.max_memory_per_operation = self.config.get(
-            "max_memory_per_operation", self.DEFAULT_MAX_MEMORY_PER_OPERATION
-        )
-        self.max_cpu_time = self.config.get(
-            "max_cpu_time", self.DEFAULT_MAX_CPU_TIME
+        # Validate and set file size limits
+        self.max_file_size_read = self._validate_size(
+            "max_file_size_read",
+            self.config.get("max_file_size_read", self.DEFAULT_MAX_FILE_SIZE_READ),
+            min_value=1,  # 1 byte minimum (prevents negative/zero)
+            max_value=10 * 1024**3,  # 10GB maximum (safety limit)
+            default=self.DEFAULT_MAX_FILE_SIZE_READ
         )
 
-        # Disk space limits
-        self.min_free_disk_space = self.config.get(
-            "min_free_disk_space", self.DEFAULT_MIN_FREE_DISK_SPACE
+        self.max_file_size_write = self._validate_size(
+            "max_file_size_write",
+            self.config.get("max_file_size_write", self.DEFAULT_MAX_FILE_SIZE_WRITE),
+            min_value=1,  # 1 byte minimum (prevents negative/zero)
+            max_value=1024**3,  # 1GB maximum (safety limit)
+            default=self.DEFAULT_MAX_FILE_SIZE_WRITE
         )
 
-        # Tracking flags
-        self.track_memory = self.config.get("track_memory", True)
-        self.track_cpu = self.config.get("track_cpu", True)
-        self.track_disk = self.config.get("track_disk", True)
+        self.max_memory_per_operation = self._validate_size(
+            "max_memory_per_operation",
+            self.config.get("max_memory_per_operation", self.DEFAULT_MAX_MEMORY_PER_OPERATION),
+            min_value=1024,  # 1KB minimum (realistic minimum for operations)
+            max_value=8 * 1024**3,  # 8GB maximum (safety limit)
+            default=self.DEFAULT_MAX_MEMORY_PER_OPERATION
+        )
+
+        # Validate CPU time
+        self.max_cpu_time = self._validate_time(
+            "max_cpu_time",
+            self.config.get("max_cpu_time", self.DEFAULT_MAX_CPU_TIME),
+            min_value=0.1,  # 100ms minimum
+            max_value=3600.0,  # 1 hour maximum
+            default=self.DEFAULT_MAX_CPU_TIME
+        )
+
+        # Validate disk space
+        self.min_free_disk_space = self._validate_size(
+            "min_free_disk_space",
+            self.config.get("min_free_disk_space", self.DEFAULT_MIN_FREE_DISK_SPACE),
+            min_value=100 * 1024 * 1024,  # 100MB minimum
+            max_value=1024**4,  # 1TB maximum
+            default=self.DEFAULT_MIN_FREE_DISK_SPACE
+        )
+
+        # Validate tracking flags
+        self.track_memory = self._validate_bool(
+            "track_memory",
+            self.config.get("track_memory", True)
+        )
+        self.track_cpu = self._validate_bool(
+            "track_cpu",
+            self.config.get("track_cpu", True)
+        )
+        self.track_disk = self._validate_bool(
+            "track_disk",
+            self.config.get("track_disk", True)
+        )
 
         # Operation tracking for memory/CPU monitoring
         self._operation_start_times: Dict[str, float] = {}
@@ -245,7 +389,10 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         file_path: str,
         context: Dict[str, Any]
     ) -> Optional[SafetyViolation]:
-        """Check if sufficient disk space is available.
+        """Check if sufficient disk space is available with safety margin.
+
+        Includes 20% safety margin to prevent TOCTOU race conditions where
+        disk space is consumed between check and write operations.
 
         Args:
             file_path: Path where file will be written
@@ -267,18 +414,28 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             disk_usage = psutil.disk_usage(str(path_obj))
             free_space = disk_usage.free
 
-            if free_space < self.min_free_disk_space:
+            # Apply 20% safety margin to prevent TOCTOU race conditions
+            # This accounts for:
+            # - Other processes writing to disk between check and write
+            # - File system metadata overhead
+            # - Buffer space needed for atomic writes
+            SAFETY_MARGIN = 1.2
+            required_space_with_margin = int(self.min_free_disk_space * SAFETY_MARGIN)
+
+            if free_space < required_space_with_margin:
                 return SafetyViolation(
                     policy_name=self.name,
                     severity=ViolationSeverity.CRITICAL,
-                    message=f"Insufficient disk space: {self._format_bytes(free_space)} < {self._format_bytes(self.min_free_disk_space)} required",
+                    message=f"Insufficient disk space: {self._format_bytes(free_space)} < {self._format_bytes(required_space_with_margin)} required (includes 20% safety margin)",
                     action="file_write",
                     context=context,
                     remediation_hint="Free up disk space or reduce min_free_disk_space requirement",
                     metadata={
                         "file_path": file_path,
                         "free_space": free_space,
-                        "required_space": self.min_free_disk_space,
+                        "required_space_base": self.min_free_disk_space,
+                        "required_space_with_margin": required_space_with_margin,
+                        "safety_margin_percent": 20,
                         "total_space": disk_usage.total,
                         "used_space": disk_usage.used,
                         "disk_usage_percent": disk_usage.percent

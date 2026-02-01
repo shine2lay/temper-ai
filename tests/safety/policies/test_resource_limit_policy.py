@@ -277,6 +277,50 @@ class TestDiskSpaceLimits:
         # Should be valid even with impossibly high limit (tracking disabled)
         assert result.valid
 
+    @patch('psutil.disk_usage')
+    def test_disk_space_safety_margin(self, mock_disk_usage):
+        """Test that 20% safety margin is applied to prevent TOCTOU race conditions.
+
+        The safety margin accounts for:
+        - Other processes writing to disk between check and write
+        - File system metadata overhead
+        - Buffer space needed for atomic writes
+
+        Example scenario:
+        - Required: 1GB (base)
+        - With 20% margin: 1.2GB
+        - Free space: 1.1GB
+        - Result: BLOCKED (1.1GB < 1.2GB) despite being above base requirement
+        """
+        # Mock disk usage: free space is above base requirement but below margin
+        mock_usage = Mock()
+        mock_usage.total = 10 * 1024 * 1024 * 1024  # 10GB
+        mock_usage.used = 8.9 * 1024 * 1024 * 1024  # 8.9GB
+        mock_usage.free = 1.1 * 1024 * 1024 * 1024  # 1.1GB free
+        mock_usage.percent = 89.0
+        mock_disk_usage.return_value = mock_usage
+
+        config = {
+            "min_free_disk_space": 1024 * 1024 * 1024  # 1GB base requirement
+        }
+        policy = ResourceLimitPolicy(config)
+
+        result = policy.validate(
+            action={"operation": "file_write", "path": "/tmp/test.txt"},
+            context={"agent_id": "agent-123"}
+        )
+
+        # Should be blocked: 1.1GB free < 1.2GB required (with 20% margin)
+        assert not result.valid
+        assert len(result.violations) == 1
+        violation = result.violations[0]
+        assert violation.severity == ViolationSeverity.CRITICAL
+        assert "20% safety margin" in violation.message
+        assert violation.metadata["safety_margin_percent"] == 20
+        assert violation.metadata["required_space_base"] == 1024 * 1024 * 1024
+        # Required with margin = 1GB * 1.2 = 1.2GB
+        assert violation.metadata["required_space_with_margin"] == int(1024 * 1024 * 1024 * 1.2)
+
 
 class TestMemoryMonitoring:
     """Tests for memory usage monitoring."""

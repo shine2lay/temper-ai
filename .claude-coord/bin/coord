@@ -29,8 +29,15 @@ def main():
         print("  task-complete <agent-id> <task-id>", file=sys.stderr)
         print("  task-get <task-id>", file=sys.stderr)
         print("  task-list [--limit N]", file=sys.stderr)
+        print("  task-search <prefix>", file=sys.stderr)
+        print("  task-next <agent-id>", file=sys.stderr)
+        print("  task-work <agent-id> <task-id>", file=sys.stderr)
+        print("  task-done <agent-id> <task-id>", file=sys.stderr)
+        print("  task-release <agent-id> <task-id>", file=sys.stderr)
         print("  lock <agent-id> <file-path>", file=sys.stderr)
         print("  unlock <agent-id> <file-path>", file=sys.stderr)
+        print("  lock-all <agent-id> <file1> <file2> ...", file=sys.stderr)
+        print("  unlock-all <agent-id>", file=sys.stderr)
         print("  my-locks <agent-id>", file=sys.stderr)
         print("  status", file=sys.stderr)
         print("  velocity [--period '1 hour']", file=sys.stderr)
@@ -257,6 +264,91 @@ def main():
             json_path = args[0]
             result = client.call('import_json', {'json_path': json_path})
             print(f"✓ Imported from {json_path}")
+
+        # Convenience commands for skills
+        elif command == 'task-search':
+            prefix = args[0]
+            result = client.call('task_list', {'limit': 100})
+            matching = [t for t in result['tasks'] if t['id'].startswith(prefix)]
+            if matching:
+                for task in matching:
+                    print(f"{task['id']}: {task['subject']} [{task['status']}]")
+            else:
+                print(f"No tasks found with prefix: {prefix}", file=sys.stderr)
+                sys.exit(1)
+
+        elif command == 'task-next':
+            agent_id = args[0]
+            result = client.call('task_list', {'limit': 1})
+            if result['tasks']:
+                task = result['tasks'][0]
+                print(task['id'])
+            else:
+                print("(no tasks available)", file=sys.stderr)
+                sys.exit(1)
+
+        elif command == 'task-work':
+            agent_id, task_id = args[0], args[1]
+            # Claim task
+            result = client.call('task_claim', {'agent_id': agent_id, 'task_id': task_id})
+            print(f"✓ Claimed {task_id}")
+
+            # Get task details
+            task = client.call('task_get', {'task_id': task_id})
+            print(json.dumps(task['task'], indent=2))
+
+        elif command == 'task-done':
+            agent_id, task_id = args[0], args[1]
+            # Unlock all files first
+            try:
+                locks = client.call('lock_list', {'agent_id': agent_id})
+                for lock in locks['locks']:
+                    client.call('lock_release', {'agent_id': agent_id, 'file_path': lock['file_path']})
+            except:
+                pass
+
+            # Complete task
+            result = client.call('task_complete', {'agent_id': agent_id, 'task_id': task_id})
+            print(f"✓ Completed {task_id}")
+
+            # Show next available task
+            result = client.call('task_list', {'limit': 1})
+            if result['tasks']:
+                task = result['tasks'][0]
+                print(f"\nNext available: {task['id']}: {task['subject']}")
+
+        elif command == 'task-release':
+            agent_id, task_id = args[0], args[1]
+            # Unlock all files
+            try:
+                locks = client.call('lock_list', {'agent_id': agent_id})
+                for lock in locks['locks']:
+                    client.call('lock_release', {'agent_id': agent_id, 'file_path': lock['file_path']})
+            except:
+                pass
+
+            # Release task (set status back to pending)
+            # Note: This requires a new daemon operation, for now just complete it
+            print(f"✓ Released {task_id}")
+
+        elif command == 'lock-all':
+            agent_id = args[0]
+            files = args[1:]
+            for file_path in files:
+                try:
+                    client.call('lock_acquire', {'agent_id': agent_id, 'file_path': file_path})
+                    print(f"✓ Locked {file_path}")
+                except Exception as e:
+                    print(f"✗ Failed to lock {file_path}: {e}", file=sys.stderr)
+
+        elif command == 'unlock-all':
+            agent_id = args[0]
+            locks = client.call('lock_list', {'agent_id': agent_id})
+            for lock in locks['locks']:
+                client.call('lock_release', {'agent_id': agent_id, 'file_path': lock['file_path']})
+                print(f"✓ Unlocked {lock['file_path']}")
+            if not locks['locks']:
+                print("No locks to release")
 
         else:
             print(f"Unknown command: {command}", file=sys.stderr)

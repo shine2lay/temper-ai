@@ -11,6 +11,8 @@ import re
 import time
 import math
 import hashlib
+import os
+import unicodedata
 from typing import Dict, List, Tuple, Optional, Any, DefaultDict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -19,6 +21,88 @@ from threading import Lock
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Try to import Redis (optional dependency)
+try:
+    import redis
+    REDIS_AVAILABLE = True
+except ImportError:
+    REDIS_AVAILABLE = False
+    logger.warning("Redis not available, using in-memory rate limiting only")
+
+
+# Lua script for atomic rate limit check (prevents TOCTOU race condition)
+# Combined version checks all limits (minute, hour, burst) in a single atomic operation
+RATE_LIMIT_LUA_SCRIPT = """
+-- Atomically check all rate limits (minute, hour, burst) in single operation
+-- This prevents partial rollback issues and reduces Redis roundtrips
+local minute_key = KEYS[1]
+local hour_key = KEYS[2]
+local burst_key = KEYS[3]
+
+local minute_limit = tonumber(ARGV[1])
+local hour_limit = tonumber(ARGV[2])
+local burst_limit = tonumber(ARGV[3])
+
+-- Get current counts (default 0)
+local minute_count = tonumber(redis.call('GET', minute_key)) or 0
+local hour_count = tonumber(redis.call('GET', hour_key)) or 0
+local burst_count = tonumber(redis.call('GET', burst_key)) or 0
+
+-- Check ALL limits BEFORE incrementing (prevents partial success)
+-- If limit=100, allows requests when current=0..99, blocks when current=100
+if minute_count >= minute_limit then
+    return {0, 'minute'}  -- Rate limited by minute
+end
+
+if hour_count >= hour_limit then
+    return {0, 'hour'}  -- Rate limited by hour
+end
+
+if burst_count >= burst_limit then
+    return {0, 'burst'}  -- Rate limited by burst
+end
+
+-- All checks passed - increment ALL counters atomically
+redis.call('INCR', minute_key)
+redis.call('EXPIRE', minute_key, 60)
+redis.call('INCR', hour_key)
+redis.call('EXPIRE', hour_key, 3600)
+redis.call('INCR', burst_key)
+redis.call('EXPIRE', burst_key, 5)
+
+return {1, 'allowed'}  -- Success
+"""
+
+
+def normalize_entity_id(entity_id: str) -> str:
+    """
+    Normalize entity ID to prevent bypass attacks.
+
+    Security: Prevents case/Unicode/whitespace bypass attempts.
+
+    Args:
+        entity_id: Raw entity identifier
+
+    Returns:
+        Normalized entity ID
+
+    Examples:
+        normalize_entity_id("Admin") -> "admin"
+        normalize_entity_id("admin\\u200B") -> "admin"  # Zero-width space removed
+        normalize_entity_id("аdmin") -> "аdmin"  # Cyrillic preserved after NFC
+    """
+    if not entity_id:
+        return ""
+
+    # Lowercase + Unicode NFC normalization + strip whitespace
+    normalized = unicodedata.normalize('NFC', entity_id.lower().strip())
+
+    # Remove zero-width characters (bypass attempt)
+    for zwc in ['\u200B', '\u200C', '\u200D', '\uFEFF']:
+        normalized = normalized.replace(zwc, '')
+
+    return normalized
 
 
 @dataclass
@@ -408,7 +492,9 @@ class RateLimiter:
         self,
         max_calls_per_minute: int = 60,
         max_calls_per_hour: int = 1000,
-        burst_size: int = 10
+        burst_size: int = 10,
+        redis_url: Optional[str] = None,
+        fallback_mode: str = 'in_memory'
     ):
         """
         Initialize rate limiter.
@@ -417,10 +503,13 @@ class RateLimiter:
             max_calls_per_minute: Maximum calls per minute per entity
             max_calls_per_hour: Maximum calls per hour per entity
             burst_size: Maximum burst size (consecutive calls)
+            redis_url: Redis connection URL (default: from REDIS_URL env var)
+            fallback_mode: 'fail_closed' (deny all) or 'in_memory' (local fallback)
         """
         self.max_calls_per_minute = max_calls_per_minute
         self.max_calls_per_hour = max_calls_per_hour
         self.burst_size = burst_size
+        self.fallback_mode = fallback_mode
 
         # Track call history per entity (agent_id or workflow_id)
         self.call_history: Dict[str, List[float]] = defaultdict(list)
@@ -431,16 +520,211 @@ class RateLimiter:
         # Thread safety lock
         self._lock = Lock()
 
-    def check_rate_limit(self, entity_id: str) -> Tuple[bool, Optional[str]]:
+        # Initialize Redis connection (optional)
+        self._redis = None
+        self._rate_limit_script = None
+        self._redis_available = False
+
+        if REDIS_AVAILABLE:
+            redis_url = redis_url or os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+
+            try:
+                self._redis = redis.from_url(
+                    redis_url,
+                    decode_responses=True,
+                    socket_connect_timeout=1,
+                    socket_timeout=2
+                )
+                # Test connection
+                self._redis.ping()
+                # Register Lua script
+                self._rate_limit_script = self._redis.register_script(RATE_LIMIT_LUA_SCRIPT)
+                self._redis_available = True
+                logger.info("Redis rate limiting enabled", extra={'redis_url': redis_url})
+
+            except Exception as e:
+                logger.warning(
+                    f"Redis unavailable, using {fallback_mode} mode: {e}",
+                    extra={'redis_url': redis_url}
+                )
+                self._redis = None
+                self._redis_available = False
+
+    def check_and_record_rate_limit(self, entity_id: str) -> Tuple[bool, Optional[str]]:
         """
-        Check if entity is within rate limits (thread-safe).
+        ATOMIC: Check and record rate limit in a single operation.
+
+        This method fixes the TOCTOU race condition by combining check and record
+        into a single atomic operation using Redis Lua scripts (distributed) or
+        thread-safe in-memory operations (fallback).
+
+        SECURITY FIX: Prevents concurrent threads from bypassing rate limits by
+        checking and recording in separate operations.
 
         Args:
             entity_id: Agent ID or workflow ID
 
         Returns:
             Tuple of (allowed, reason_if_blocked)
+
+        Note:
+            This is the recommended method to use. The separate check_rate_limit()
+            and record_call() methods are deprecated due to TOCTOU vulnerability.
         """
+        # Normalize entity ID (prevent bypass attacks)
+        normalized_id = normalize_entity_id(entity_id)
+
+        if not normalized_id:
+            logger.warning("Empty entity_id after normalization", extra={'raw_entity_id': entity_id})
+            return False, "Invalid entity ID"
+
+        # Try Redis (primary - distributed, atomic)
+        if self._redis_available and self._rate_limit_script:
+            try:
+                return self._check_redis_atomic(normalized_id)
+
+            except Exception as e:
+                logger.error(
+                    f"Redis rate limit failed: {e}",
+                    exc_info=True,
+                    extra={'entity_id': normalized_id}
+                )
+                # Fall through to fallback
+
+        # Fallback mode
+        if self.fallback_mode == 'fail_closed':
+            logger.warning(
+                f"Rate limiting unavailable, denying: {normalized_id}",
+                extra={'entity_id': normalized_id}
+            )
+            return False, "Rate limiting unavailable (failing safe)"
+
+        elif self.fallback_mode == 'in_memory':
+            logger.debug(
+                f"Using in-memory fallback for: {normalized_id}",
+                extra={'entity_id': normalized_id}
+            )
+            return self._check_local_atomic(normalized_id)
+
+        else:
+            # Unknown mode, fail closed
+            logger.error(
+                f"Invalid fallback mode: {self.fallback_mode}",
+                extra={'fallback_mode': self.fallback_mode}
+            )
+            return False, "Invalid fallback mode"
+
+    def _check_redis_atomic(self, entity_id: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check rate limit using Redis Lua script (atomic operation).
+
+        This uses a combined Lua script that checks all limits (minute, hour, burst)
+        in a single atomic operation, eliminating the need for rollback logic.
+
+        Args:
+            entity_id: Normalized entity ID
+
+        Returns:
+            Tuple of (allowed, reason_if_blocked)
+        """
+        minute_key = f"rate_limit:{entity_id}:minute"
+        hour_key = f"rate_limit:{entity_id}:hour"
+        burst_key = f"rate_limit:{entity_id}:burst"
+
+        # Single atomic check of all limits
+        result = self._rate_limit_script(
+            keys=[minute_key, hour_key, burst_key],
+            args=[self.max_calls_per_minute, self.max_calls_per_hour, self.burst_size]
+        )
+
+        allowed = result[0]
+        reason = result[1]
+
+        if allowed == 0:
+            # Build detailed error message based on which limit was hit
+            limit_messages = {
+                'minute': f"Rate limit exceeded: {self.max_calls_per_minute} calls/minute",
+                'hour': f"Rate limit exceeded: {self.max_calls_per_hour} calls/hour",
+                'burst': f"Burst limit exceeded: {self.burst_size} calls in 5 seconds"
+            }
+
+            logger.warning(
+                f"Rate limit exceeded ({reason}): {entity_id}",
+                extra={
+                    'entity_id': entity_id,
+                    'limit_type': reason
+                }
+            )
+
+            return False, limit_messages.get(reason, f"Rate limit exceeded: {reason}")
+
+        return True, None
+
+    def _check_local_atomic(self, entity_id: str) -> Tuple[bool, Optional[str]]:
+        """
+        Fallback: In-memory rate limiting (thread-safe, NOT distributed).
+
+        This combines check and record into a single operation within the lock,
+        preventing TOCTOU race conditions within a single process.
+
+        Args:
+            entity_id: Normalized entity ID
+
+        Returns:
+            Tuple of (allowed, reason_if_blocked)
+        """
+        with self._lock:
+            now = time.time()
+
+            # Clean up old entries
+            self._cleanup_old_entries(entity_id, now)
+
+            # Check minute limit
+            minute_ago = now - 60
+            recent_calls = [t for t in self.call_history[entity_id] if t > minute_ago]
+            if len(recent_calls) >= self.max_calls_per_minute:
+                return False, f"Rate limit exceeded: {self.max_calls_per_minute} calls/minute"
+
+            # Check hour limit
+            hour_ago = now - 3600
+            hourly_calls = [t for t in self.call_history[entity_id] if t > hour_ago]
+            if len(hourly_calls) >= self.max_calls_per_hour:
+                return False, f"Rate limit exceeded: {self.max_calls_per_hour} calls/hour"
+
+            # Check burst limit
+            burst_window = now - 5  # 5 second burst window
+            burst_calls = [t for t in self.call_history[entity_id] if t > burst_window]
+            if len(burst_calls) >= self.burst_size:
+                return False, f"Burst limit exceeded: {self.burst_size} calls in 5 seconds"
+
+            # ATOMIC: Record the call immediately after checks pass
+            self.call_history[entity_id].append(now)
+
+            return True, None
+
+    def check_rate_limit(self, entity_id: str) -> Tuple[bool, Optional[str]]:
+        """
+        Check if entity is within rate limits (thread-safe).
+
+        DEPRECATED: This method is vulnerable to TOCTOU race conditions when used
+        with record_call(). Use check_and_record_rate_limit() instead.
+
+        Args:
+            entity_id: Agent ID or workflow ID
+
+        Returns:
+            Tuple of (allowed, reason_if_blocked)
+
+        Warning:
+            Using this method with record_call() in separate operations allows
+            concurrent threads to bypass rate limits. Always use the atomic
+            check_and_record_rate_limit() method instead.
+        """
+        logger.warning(
+            "DEPRECATED: check_rate_limit() is vulnerable to TOCTOU. "
+            "Use check_and_record_rate_limit() instead.",
+            extra={'entity_id': entity_id}
+        )
         with self._lock:
             now = time.time()
 
@@ -471,9 +755,22 @@ class RateLimiter:
         """
         Record a successful call (thread-safe).
 
+        DEPRECATED: This method is vulnerable to TOCTOU race conditions when used
+        with check_rate_limit(). Use check_and_record_rate_limit() instead.
+
         Args:
             entity_id: Agent ID or workflow ID
+
+        Warning:
+            Using this method with check_rate_limit() in separate operations allows
+            concurrent threads to bypass rate limits. Always use the atomic
+            check_and_record_rate_limit() method instead.
         """
+        logger.warning(
+            "DEPRECATED: record_call() is vulnerable to TOCTOU. "
+            "Use check_and_record_rate_limit() instead.",
+            extra={'entity_id': entity_id}
+        )
         with self._lock:
             now = time.time()
             self.call_history[entity_id].append(now)

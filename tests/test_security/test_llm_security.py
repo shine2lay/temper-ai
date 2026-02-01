@@ -1338,3 +1338,331 @@ Integration Points:
 - Ready for use in LLM provider wrappers
 - Can be added to agent execution pipeline
 """
+
+
+class TestTOCTOURaceCondition:
+    """
+    Test suite for TOCTOU (Time-Of-Check-Time-Of-Use) race condition fix.
+
+    Security Issue: CWE-362 - Concurrent Execution using Shared Resource with
+    Improper Synchronization ('Race Condition')
+
+    The vulnerability occurs when check_rate_limit() and record_call() are called
+    separately, allowing multiple threads to check the limit (all see "OK"), then
+    all record usage, bypassing the rate limit.
+
+    Fix: check_and_record_rate_limit() combines check and record into a single
+    atomic operation using Redis Lua scripts (distributed) or thread locks (local).
+    """
+
+    def test_concurrent_requests_with_old_api_vulnerable(self):
+        """
+        SECURITY TEST: Verify old API (check + record separate) is vulnerable to TOCTOU.
+
+        This test demonstrates the vulnerability in the old approach.
+        """
+        import threading
+
+        # Use high burst size to avoid hitting burst limit
+        limiter = RateLimiter(
+            max_calls_per_minute=100,
+            burst_size=200  # Higher than test threads to not interfere
+        )
+
+        successes = []
+        lock = threading.Lock()
+
+        def make_request():
+            # OLD API (VULNERABLE): Check and record are separate
+            allowed, _ = limiter.check_rate_limit("test_user")
+            if allowed:
+                with lock:
+                    successes.append(1)
+                # Gap here allows race condition
+                limiter.record_call("test_user")
+
+        # Launch 200 concurrent threads
+        threads = [threading.Thread(target=make_request) for _ in range(200)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # OLD API: Expected to fail (allow > 100 requests)
+        # This demonstrates the TOCTOU vulnerability
+        assert len(successes) > 100, \
+            f"TOCTOU vulnerability not demonstrated: only {len(successes)} succeeded"
+
+        print(f"VULNERABILITY CONFIRMED: {len(successes)} requests succeeded (limit was 100)")
+
+    def test_concurrent_requests_with_new_api_secure(self):
+        """
+        SECURITY TEST: Verify new atomic API prevents TOCTOU bypass.
+
+        Attack: 200 concurrent threads try to bypass 100 req/min limit
+        Expected: At most 100 succeed (no bypass)
+        """
+        import threading
+
+        # Use high burst size to avoid hitting burst limit
+        limiter = RateLimiter(
+            max_calls_per_minute=100,
+            burst_size=200,  # Higher than test threads to not interfere
+            fallback_mode='in_memory'
+        )
+
+        successes = []
+        lock = threading.Lock()
+
+        def make_request():
+            # NEW API (SECURE): Atomic check and record
+            allowed, _ = limiter.check_and_record_rate_limit("test_user")
+            if allowed:
+                with lock:
+                    successes.append(1)
+
+        # Launch 200 concurrent threads
+        threads = [threading.Thread(target=make_request) for _ in range(200)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # SECURITY REQUIREMENT: No more than limit should succeed
+        assert len(successes) <= 100, \
+            f"TOCTOU bypass detected: {len(successes)} > 100"
+
+        # CORRECTNESS: Should be close to the limit (allow tolerance for threading)
+        # Note: Exactly 100 is hard to guarantee due to threading timing
+        assert len(successes) >= 90, \
+            f"Rate limiter too strict: {len(successes)} < 90"
+
+        print(f"SECURITY CONFIRMED: {len(successes)} requests succeeded (limit was 100)")
+
+    def test_exact_limit_enforcement_no_off_by_one(self):
+        """
+        SECURITY TEST: Verify limit is enforced exactly (no off-by-one error).
+        """
+        limiter = RateLimiter(max_calls_per_minute=10, fallback_mode='in_memory')
+
+        # Make exactly 10 requests
+        for i in range(10):
+            allowed, _ = limiter.check_and_record_rate_limit("test_user")
+            assert allowed, f"Request {i+1}/10 should succeed"
+
+        # 11th request should FAIL
+        allowed, reason = limiter.check_and_record_rate_limit("test_user")
+        assert not allowed, "Request 11/10 should be blocked"
+        assert "Rate limit exceeded" in reason
+
+    def test_entity_id_normalization_prevents_bypass(self):
+        """
+        SECURITY TEST: Verify entity ID normalization prevents Unicode/case bypass.
+        """
+        limiter = RateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
+
+        # Make 5 requests as "admin"
+        for _ in range(5):
+            allowed, _ = limiter.check_and_record_rate_limit("admin")
+            assert allowed
+
+        # Try bypass with case variation
+        allowed, _ = limiter.check_and_record_rate_limit("Admin")
+        assert not allowed, "Case variation should not bypass limit"
+
+        # Try bypass with zero-width space
+        allowed, _ = limiter.check_and_record_rate_limit("admin\u200B")
+        assert not allowed, "Zero-width space should not bypass limit"
+
+        # Try bypass with whitespace
+        allowed, _ = limiter.check_and_record_rate_limit(" admin ")
+        assert not allowed, "Whitespace should not bypass limit"
+
+    def test_multiple_entities_tracked_independently(self):
+        """
+        SECURITY TEST: Verify different entities have independent rate limits.
+        """
+        limiter = RateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
+
+        # Entity 1: Use full limit
+        for _ in range(5):
+            allowed, _ = limiter.check_and_record_rate_limit("user1")
+            assert allowed
+
+        # Entity 1: Should be blocked
+        allowed, _ = limiter.check_and_record_rate_limit("user1")
+        assert not allowed
+
+        # Entity 2: Should still be allowed (independent limit)
+        for _ in range(5):
+            allowed, _ = limiter.check_and_record_rate_limit("user2")
+            assert allowed
+
+    def test_empty_entity_id_rejected(self):
+        """
+        SECURITY TEST: Verify empty entity IDs are rejected.
+        """
+        limiter = RateLimiter(fallback_mode='in_memory')
+
+        # Test empty string
+        allowed, reason = limiter.check_and_record_rate_limit("")
+        assert not allowed
+        assert "Invalid entity ID" in reason
+
+        # Test whitespace only
+        allowed, reason = limiter.check_and_record_rate_limit("   ")
+        assert not allowed
+        assert "Invalid entity ID" in reason
+
+    def test_redis_unavailable_fails_closed(self):
+        """
+        SECURITY TEST: Verify rate limiter fails closed when Redis is unavailable.
+        """
+        # Create limiter with invalid Redis URL
+        limiter = RateLimiter(
+            redis_url="redis://invalid-host:9999",
+            fallback_mode='fail_closed'
+        )
+
+        # Should deny all requests
+        allowed, reason = limiter.check_and_record_rate_limit("test_user")
+        assert not allowed
+        assert "unavailable" in reason.lower()
+
+    def test_redis_unavailable_in_memory_fallback(self):
+        """
+        SECURITY TEST: Verify in-memory fallback works when Redis is unavailable.
+        """
+        # Create limiter with invalid Redis URL
+        limiter = RateLimiter(
+            max_calls_per_minute=5,
+            redis_url="redis://invalid-host:9999",
+            fallback_mode='in_memory'
+        )
+
+        # Should use in-memory fallback
+        for _ in range(5):
+            allowed, _ = limiter.check_and_record_rate_limit("test_user")
+            assert allowed, "In-memory fallback should allow requests"
+
+        # 6th request should be blocked
+        allowed, _ = limiter.check_and_record_rate_limit("test_user")
+        assert not allowed, "In-memory fallback should enforce limit"
+
+    def test_concurrent_hour_limit(self):
+        """
+        SECURITY TEST: Verify hour limit is enforced under concurrency.
+        """
+        import threading
+
+        limiter = RateLimiter(
+            max_calls_per_minute=1000,  # High minute limit
+            max_calls_per_hour=100,     # Low hour limit
+            fallback_mode='in_memory'
+        )
+
+        successes = []
+        lock = threading.Lock()
+
+        def make_request():
+            allowed, _ = limiter.check_and_record_rate_limit("test_user")
+            if allowed:
+                with lock:
+                    successes.append(1)
+
+        # Launch 200 concurrent threads
+        threads = [threading.Thread(target=make_request) for _ in range(200)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # Should not exceed hour limit
+        assert len(successes) <= 100, \
+            f"Hour limit bypassed: {len(successes)} > 100"
+
+    def test_concurrent_burst_limit(self):
+        """
+        SECURITY TEST: Verify burst limit is enforced under concurrency.
+        """
+        import threading
+
+        limiter = RateLimiter(
+            max_calls_per_minute=1000,  # High minute limit
+            burst_size=10,              # Low burst limit
+            fallback_mode='in_memory'
+        )
+
+        successes = []
+        lock = threading.Lock()
+
+        def make_request():
+            allowed, _ = limiter.check_and_record_rate_limit("test_user")
+            if allowed:
+                with lock:
+                    successes.append(1)
+
+        # Launch 50 concurrent threads (all within 5 second window)
+        threads = [threading.Thread(target=make_request) for _ in range(50)]
+
+        for t in threads:
+            t.start()
+
+        for t in threads:
+            t.join()
+
+        # Should not exceed burst limit
+        assert len(successes) <= 10, \
+            f"Burst limit bypassed: {len(successes)} > 10"
+
+    def test_normalization_preserves_valid_unicode(self):
+        """
+        TEST: Verify normalization preserves legitimate Unicode characters.
+        """
+        limiter = RateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
+
+        # Use legitimate Unicode entity ID
+        entity_id = "用户123"  # Chinese characters + numbers
+
+        # Make 5 requests
+        for _ in range(5):
+            allowed, _ = limiter.check_and_record_rate_limit(entity_id)
+            assert allowed
+
+        # 6th request should be blocked
+        allowed, _ = limiter.check_and_record_rate_limit(entity_id)
+        assert not allowed
+
+    def test_deprecation_warnings_logged(self, caplog):
+        """
+        TEST: Verify deprecation warnings are logged for old API usage.
+        """
+        import logging
+
+        limiter = RateLimiter(fallback_mode='in_memory')
+
+        # Test check_rate_limit deprecation
+        with caplog.at_level(logging.WARNING):
+            limiter.check_rate_limit("test_user")
+
+        # Verify deprecation warning was logged
+        assert any("DEPRECATED" in record.message and "TOCTOU" in record.message
+                   for record in caplog.records), \
+            "Deprecation warning should be logged for check_rate_limit()"
+
+        # Clear previous logs
+        caplog.clear()
+
+        # Test record_call deprecation
+        with caplog.at_level(logging.WARNING):
+            limiter.record_call("test_user")
+
+        assert any("DEPRECATED" in record.message and "TOCTOU" in record.message
+                   for record in caplog.records), \
+            "Deprecation warning should be logged for record_call()"

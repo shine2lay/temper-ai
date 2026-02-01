@@ -686,9 +686,59 @@ class Database:
         os.rename(tmp_path, output_path)
 
     def import_from_json(self, json_path: str):
-        """Import state from JSON file."""
+        """
+        Import state from JSON file with validation.
+
+        SECURITY FIX (code-crit-unsafe-deserial-09): Added type validation
+        and data sanitization to prevent corruption from malformed JSON.
+
+        Args:
+            json_path: Path to JSON file to import
+
+        Raises:
+            ValueError: If JSON structure or data types are invalid
+        """
         with open(json_path) as f:
             state = json.load(f)
+
+        # Validate top-level structure
+        if not isinstance(state, dict):
+            raise ValueError("JSON must be a dictionary")
+
+        # Validate agents structure
+        agents_data = state.get("agents", {})
+        if not isinstance(agents_data, dict):
+            raise ValueError("'agents' must be a dictionary")
+
+        for agent_id, agent_data in agents_data.items():
+            if not isinstance(agent_id, str):
+                raise ValueError(f"Agent ID must be string, got {type(agent_id).__name__}")
+            if not isinstance(agent_data, dict):
+                raise ValueError(f"Agent data must be dict, got {type(agent_data).__name__}")
+            if 'pid' not in agent_data:
+                raise ValueError(f"Agent {agent_id} missing required field 'pid'")
+            if not isinstance(agent_data['pid'], int) or agent_data['pid'] <= 0:
+                raise ValueError(f"Agent {agent_id} pid must be positive integer")
+
+        # Validate tasks structure
+        tasks_data = state.get("tasks", {})
+        if not isinstance(tasks_data, dict):
+            raise ValueError("'tasks' must be a dictionary")
+
+        for task_id, task_data in tasks_data.items():
+            if not isinstance(task_id, str):
+                raise ValueError(f"Task ID must be string, got {type(task_id).__name__}")
+            if not isinstance(task_data, dict):
+                raise ValueError(f"Task data must be dict, got {type(task_data).__name__}")
+            if 'subject' not in task_data:
+                raise ValueError(f"Task {task_id} missing required field 'subject'")
+            if 'description' not in task_data:
+                raise ValueError(f"Task {task_id} missing required field 'description'")
+
+        # Validate locks structure
+        locks_data = state.get("locks", {})
+        if not isinstance(locks_data, dict):
+            raise ValueError("'locks' must be a dictionary")
 
         with self.transaction() as conn:
             # Import agents

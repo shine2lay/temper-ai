@@ -54,6 +54,62 @@ def main():
         print("Error: Not in a coordination-enabled project", file=sys.stderr)
         sys.exit(1)
 
+    # Auto-start daemon if not running
+    def ensure_daemon_running():
+        """Check if daemon is running, start it if not."""
+        import hashlib
+        import subprocess
+        import time
+
+        # Calculate socket path (same as server does)
+        project_hash = hashlib.sha256(project_root.encode()).hexdigest()[:8]
+        socket_path = f"/tmp/coord-{project_hash}.sock"
+
+        # Check if socket exists and is accessible
+        if os.path.exists(socket_path):
+            try:
+                # Try to connect
+                test_client = CoordinationClient(project_root, timeout=1)
+                test_client.call('status', {})
+                return  # Daemon is running
+            except:
+                # Socket exists but daemon not responding, clean up
+                try:
+                    os.unlink(socket_path)
+                except:
+                    pass
+
+        # Start daemon
+        print("Starting coordination daemon...", file=sys.stderr)
+        daemon_log = '/tmp/coord-daemon.log'
+        coord_dir = os.path.join(project_root, '.claude-coord')
+
+        # Start daemon process using python -m
+        subprocess.Popen(
+            [sys.executable, '-u', '-m', 'coord_service.daemon', 'start', '--project-root', project_root],
+            stdout=open(daemon_log, 'a'),
+            stderr=subprocess.STDOUT,
+            cwd=coord_dir,
+            start_new_session=True
+        )
+
+        # Wait for daemon to be ready (up to 5 seconds)
+        for i in range(50):
+            time.sleep(0.1)
+            if os.path.exists(socket_path):
+                try:
+                    test_client = CoordinationClient(project_root, timeout=1)
+                    test_client.call('status', {})
+                    print("✓ Daemon started", file=sys.stderr)
+                    return
+                except:
+                    pass
+
+        print("Error: Failed to start daemon. Check /tmp/coord-daemon.log", file=sys.stderr)
+        sys.exit(1)
+
+    ensure_daemon_running()
+
     # Create client
     client = CoordinationClient(project_root, timeout=10)
 

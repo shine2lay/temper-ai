@@ -207,10 +207,11 @@ def main():
     parser = argparse.ArgumentParser(description='Coordination daemon')
     parser.add_argument('command', choices=['start', 'stop', 'restart', 'status'])
     parser.add_argument('--foreground', action='store_true', help='Run in foreground')
+    parser.add_argument('--project-root', help='Project root directory')
 
     args = parser.parse_args()
 
-    daemon = CoordinationDaemon()
+    daemon = CoordinationDaemon(project_root=args.project_root)
 
     if args.command == 'start':
         daemon.start(daemonize=not args.foreground)

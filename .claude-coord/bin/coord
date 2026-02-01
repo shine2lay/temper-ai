@@ -1,0 +1,220 @@
+#!/usr/bin/env python3
+"""
+Coordination CLI - Daemon Client Wrapper
+
+Provides command-line interface to coordination daemon.
+Compatible with claude-coord.sh command syntax.
+"""
+
+import sys
+import os
+import json
+from pathlib import Path
+
+# Add coord_service to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from coord_service.client import CoordinationClient
+
+
+def main():
+    if len(sys.argv) < 2:
+        print("Usage: coord <command> [args...]", file=sys.stderr)
+        print("\nCommands:", file=sys.stderr)
+        print("  register <agent-id> <pid>", file=sys.stderr)
+        print("  unregister <agent-id>", file=sys.stderr)
+        print("  heartbeat <agent-id>", file=sys.stderr)
+        print("  task-create <task-id> <subject> <description> --priority <1-5>", file=sys.stderr)
+        print("  task-claim <agent-id> <task-id>", file=sys.stderr)
+        print("  task-complete <agent-id> <task-id>", file=sys.stderr)
+        print("  task-get <task-id>", file=sys.stderr)
+        print("  task-list [--limit N]", file=sys.stderr)
+        print("  lock <agent-id> <file-path>", file=sys.stderr)
+        print("  unlock <agent-id> <file-path>", file=sys.stderr)
+        print("  my-locks <agent-id>", file=sys.stderr)
+        print("  status", file=sys.stderr)
+        print("  velocity [--period '1 hour']", file=sys.stderr)
+        print("  file-hotspots [--limit N]", file=sys.stderr)
+        print("  task-timing <task-id>", file=sys.stderr)
+        print("  export [--output PATH]", file=sys.stderr)
+        print("  import <json-path>", file=sys.stderr)
+        sys.exit(1)
+
+    command = sys.argv[1]
+    args = sys.argv[2:]
+
+    # Get project root (where .claude-coord is)
+    project_root = os.getcwd()
+    while project_root != '/':
+        if os.path.exists(os.path.join(project_root, '.claude-coord')):
+            break
+        project_root = os.path.dirname(project_root)
+
+    if not os.path.exists(os.path.join(project_root, '.claude-coord')):
+        print("Error: Not in a coordination-enabled project", file=sys.stderr)
+        sys.exit(1)
+
+    # Create client
+    client = CoordinationClient(project_root, timeout=10)
+
+    try:
+        # Dispatch commands
+        if command == 'register':
+            agent_id, pid = args[0], int(args[1])
+            result = client.call('register', {'agent_id': agent_id, 'pid': pid})
+            print(f"✓ Registered {agent_id}")
+
+        elif command == 'unregister':
+            agent_id = args[0]
+            result = client.call('unregister', {'agent_id': agent_id})
+            print(f"✓ Unregistered {agent_id}")
+
+        elif command == 'heartbeat':
+            agent_id = args[0]
+            result = client.call('heartbeat', {'agent_id': agent_id})
+            print(f"✓ Heartbeat from {agent_id}")
+
+        elif command == 'task-create':
+            task_id, subject = args[0], args[1]
+            description = args[2] if len(args) > 2 else ""
+            priority = 3
+
+            # Parse optional flags
+            if '--priority' in args:
+                priority_idx = args.index('--priority')
+                priority = int(args[priority_idx + 1])
+
+            result = client.call('task_create', {
+                'task_id': task_id,
+                'subject': subject,
+                'description': description,
+                'priority': priority
+            })
+            print(f"✓ Created task {task_id}")
+
+        elif command == 'task-claim':
+            agent_id, task_id = args[0], args[1]
+            result = client.call('task_claim', {'agent_id': agent_id, 'task_id': task_id})
+            print(f"✓ Claimed {task_id}")
+
+        elif command == 'task-complete':
+            agent_id, task_id = args[0], args[1]
+            result = client.call('task_complete', {'agent_id': agent_id, 'task_id': task_id})
+            print(f"✓ Completed {task_id}")
+
+        elif command == 'task-get':
+            task_id = args[0]
+            result = client.call('task_get', {'task_id': task_id})
+            print(json.dumps(result['task'], indent=2))
+
+        elif command == 'task-list':
+            limit = 10
+            if '--limit' in args:
+                limit_idx = args.index('--limit')
+                limit = int(args[limit_idx + 1])
+
+            result = client.call('task_list', {'limit': limit})
+            for task in result['tasks']:
+                print(f"{task['id']}: {task['subject']} [{task['status']}]")
+
+        elif command == 'lock':
+            agent_id, file_path = args[0], args[1]
+            result = client.call('lock_acquire', {'agent_id': agent_id, 'file_path': file_path})
+            print(f"✓ Locked {file_path}")
+
+        elif command == 'unlock':
+            agent_id, file_path = args[0], args[1]
+            result = client.call('lock_release', {'agent_id': agent_id, 'file_path': file_path})
+            print(f"✓ Unlocked {file_path}")
+
+        elif command == 'my-locks':
+            agent_id = args[0]
+            result = client.call('lock_list', {'agent_id': agent_id})
+            if result['locks']:
+                print("My locks:")
+                for lock in result['locks']:
+                    print(f"  {lock['file_path']}")
+            else:
+                print("No locks held")
+
+        elif command == 'status':
+            result = client.call('status', {})
+            print(f"Status: {result['status']}")
+            print(f"Agents: {result['agents']}")
+            print(f"Tasks:")
+            print(f"  Pending: {result['tasks']['pending']}")
+            print(f"  In Progress: {result['tasks']['in_progress']}")
+            print(f"  Completed: {result['tasks']['completed']}")
+            print(f"Locks: {result['locks']}")
+
+        elif command == 'velocity':
+            period = '1 hour'
+            if '--period' in args:
+                period_idx = args.index('--period')
+                period = args[period_idx + 1]
+
+            result = client.call('velocity', {'period': period})
+            print(f"Velocity (last {period}):")
+            print(f"  Completed: {result['completed_tasks']} tasks")
+            print(f"  Throughput: {result['tasks_per_hour']} tasks/hour")
+            print(f"  Avg Duration: {result['avg_duration_mins']} minutes")
+
+        elif command == 'file-hotspots':
+            limit = 10
+            if '--limit' in args:
+                limit_idx = args.index('--limit')
+                limit = int(args[limit_idx + 1])
+
+            result = client.call('file_hotspots', {'limit': limit})
+            print("File Lock Hotspots:")
+            for hotspot in result['hotspots']:
+                print(f"  {hotspot['file_path']}: {hotspot['lock_count']} locks "
+                      f"(avg {hotspot['avg_duration_mins']} min, {hotspot['contention_count']} contentions)")
+
+        elif command == 'task-timing':
+            task_id = args[0]
+            result = client.call('task_timing', {'task_id': task_id})
+            timing = result['timing']
+            print(f"Task Timing: {task_id}")
+            print(f"  Wait Time: {timing.get('wait_time_seconds', 0)}s")
+            print(f"  Work Time: {timing.get('work_time_seconds', 0)}s")
+            print(f"  Active Time: {timing.get('active_time_seconds', 0)}s")
+            print(f"  Idle Time: {timing.get('idle_time_seconds', 0)}s")
+            print(f"  Files Locked: {timing.get('files_locked', 0)}")
+            print(f"  Files Modified: {timing.get('files_modified', 0)}")
+
+            if result['files']:
+                print("\n  Files:")
+                for file in result['files']:
+                    print(f"    {file['file_path']}: {file['lock_duration_secs']}s")
+
+        elif command == 'export':
+            output_path = '.claude-coord/state.json'
+            if '--output' in args:
+                output_idx = args.index('--output')
+                output_path = args[output_idx + 1]
+
+            result = client.call('export_json', {'output_path': output_path})
+            print(f"✓ Exported to {output_path}")
+
+        elif command == 'import':
+            json_path = args[0]
+            result = client.call('import_json', {'json_path': json_path})
+            print(f"✓ Imported from {json_path}")
+
+        else:
+            print(f"Unknown command: {command}", file=sys.stderr)
+            sys.exit(1)
+
+    except RuntimeError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()

@@ -44,20 +44,63 @@ class PathSafetyValidator:
     MAX_PATH_LENGTH = 4096  # Typical Linux limit
     MAX_COMPONENT_LENGTH = 255  # Typical filename length limit
 
+    @staticmethod
+    def _get_windows_system_paths() -> List[str]:
+        """Get Windows system paths dynamically using environment variables.
+
+        This handles cases where Windows is installed on drives other than C:
+        (e.g., D:, E:, etc.) by reading the actual system root from environment.
+
+        Returns:
+            List of Windows system paths if on Windows, empty list otherwise
+        """
+        if os.name != 'nt':  # Not Windows
+            return []
+
+        paths = []
+
+        # Get actual Windows directory (e.g., "C:\Windows", "D:\Windows", etc.)
+        system_root = os.environ.get('SystemRoot')
+        if system_root:
+            paths.append(system_root)
+
+        # Get Program Files directories
+        program_files = os.environ.get('ProgramFiles')
+        if program_files:
+            paths.append(program_files)
+
+        # Get Program Files (x86) on 64-bit systems
+        program_files_x86 = os.environ.get('ProgramFiles(x86)')
+        if program_files_x86:
+            paths.append(program_files_x86)
+
+        return paths
+
     # System paths that should never be accessible
-    FORBIDDEN_PATHS = [
-        "/etc",
-        "/sys",
-        "/proc",
-        "/dev",
-        "/boot",
-        "/root",
-        "/var/log",
-        "C:\\Windows",
-        "C:\\Program Files",
-        "/usr/bin",
-        "/usr/sbin",
-    ]
+    # Built dynamically to handle Windows installs on different drives
+    @classmethod
+    def _get_forbidden_paths(cls) -> List[str]:
+        """Get list of forbidden paths, including dynamic Windows paths."""
+        forbidden = [
+            # Unix/Linux system paths
+            "/etc",
+            "/sys",
+            "/proc",
+            "/dev",
+            "/boot",
+            "/root",
+            "/var/log",
+            "/usr/bin",
+            "/usr/sbin",
+        ]
+
+        # Add Windows system paths dynamically
+        forbidden.extend(cls._get_windows_system_paths())
+
+        return forbidden
+
+    # Cache forbidden paths (computed once per class, not per instance)
+    FORBIDDEN_PATHS = None  # Will be populated on first access
 
     # Forbidden directories within project (safety systems, configs)
     FORBIDDEN_PROJECT_DIRS = [
@@ -83,6 +126,10 @@ class PathSafetyValidator:
                                  (replaces unsafe /tmp access)
         """
         self.allowed_root = Path(allowed_root or Path.cwd()).resolve()
+
+        # Populate FORBIDDEN_PATHS on first access (class-level caching)
+        if PathSafetyValidator.FORBIDDEN_PATHS is None:
+            PathSafetyValidator.FORBIDDEN_PATHS = self._get_forbidden_paths()
 
         # Build full forbidden list
         self.forbidden = self.FORBIDDEN_PATHS.copy()

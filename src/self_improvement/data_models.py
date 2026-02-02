@@ -362,3 +362,67 @@ class ExperimentResult:
             recorded_at=datetime.fromisoformat(data["recorded_at"]),
             extra_metrics=data.get("extra_metrics", {}),
         )
+
+
+@dataclass
+class ConfigDeployment:
+    """
+    Configuration deployment record for tracking rollback history.
+
+    Records each configuration change made to an agent, storing both the
+    previous and new configurations to enable rollback if needed.
+
+    Used by:
+    - ConfigDeployer to track deployment history
+    - Rollback mechanism to revert to previous configurations
+    """
+
+    # Identity
+    id: str
+    agent_name: str
+
+    # Configurations
+    previous_config: AgentConfig
+    new_config: AgentConfig
+
+    # Deployment metadata
+    experiment_id: Optional[str] = None
+    deployed_at: datetime = field(default_factory=utcnow)
+    deployed_by: str = "m5_system"
+
+    # Rollback tracking
+    rollback_at: Optional[datetime] = None
+    rollback_reason: Optional[str] = None
+
+    def is_rolled_back(self) -> bool:
+        """Check if this deployment has been rolled back."""
+        return self.rollback_at is not None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for database storage."""
+        return {
+            "id": self.id,
+            "agent_name": self.agent_name,
+            "previous_config": self.previous_config.to_dict(),
+            "new_config": self.new_config.to_dict(),
+            "experiment_id": self.experiment_id,
+            "deployed_at": self.deployed_at.isoformat(),
+            "deployed_by": self.deployed_by,
+            "rollback_at": self.rollback_at.isoformat() if self.rollback_at else None,
+            "rollback_reason": self.rollback_reason,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ConfigDeployment":
+        """Load from dictionary (e.g., from database)."""
+        return cls(
+            id=data["id"],
+            agent_name=data["agent_name"],
+            previous_config=AgentConfig.from_dict(data["previous_config"]),
+            new_config=AgentConfig.from_dict(data["new_config"]),
+            experiment_id=data.get("experiment_id"),
+            deployed_at=datetime.fromisoformat(data["deployed_at"]),
+            deployed_by=data.get("deployed_by", "m5_system"),
+            rollback_at=datetime.fromisoformat(data["rollback_at"]) if data.get("rollback_at") else None,
+            rollback_reason=data.get("rollback_reason"),
+        )

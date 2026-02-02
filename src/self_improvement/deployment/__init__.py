@@ -5,5 +5,9 @@ Provides safe deployment of winning configurations with rollback capability.
 """
 
 from src.self_improvement.deployment.deployer import ConfigDeployer
+from src.self_improvement.deployment.rollback_monitor import (
+    RollbackMonitor,
+    RegressionThresholds,
+)
 
-__all__ = ["ConfigDeployer"]
+__all__ = ["ConfigDeployer", "RollbackMonitor", "RegressionThresholds"]

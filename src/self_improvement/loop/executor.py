@@ -269,31 +269,30 @@ class LoopExecutor:
         Returns:
             DetectionResult
         """
-        logger.info(f"Phase 1 (DETECT): Analyzing {agent_name} for problems")
+        logger.info(f"Phase 1 (DETECT): Analyzing {agent_name} for improvements")
 
-        # Use ImprovementDetector to check for problems
-        problems = self.improvement_detector.detect_problems(
+        # Use ImprovementDetector to check for improvement opportunities
+        improvements = self.improvement_detector.detect_improvements(
             agent_name=agent_name,
             window_hours=self.config.detection_window_hours,
-            min_executions=self.config.min_executions_for_detection,
         )
 
-        has_problem = len(problems) > 0
+        has_problem = len(improvements) > 0
 
         if has_problem:
-            problem = problems[0]  # Use first problem
+            improvement = improvements[0]  # Use first improvement
             logger.info(
-                f"Problem detected for {agent_name}: {problem.get('type', 'unknown')}"
+                f"Improvement opportunity detected for {agent_name}: {improvement.strategy_name}"
             )
             return DetectionResult(
                 has_problem=True,
-                problem_type=problem.get("type"),
-                improvement_opportunity=problem.get("description"),
-                baseline_metrics=problem.get("baseline_metrics"),
-                current_metrics=problem.get("current_metrics"),
+                problem_type="improvement_opportunity",
+                improvement_opportunity=improvement.strategy_name,
+                baseline_metrics=None,  # Not available in this API
+                current_metrics=None,
             )
         else:
-            logger.info(f"No problems detected for {agent_name}")
+            logger.info(f"No improvement opportunities detected for {agent_name}")
             return DetectionResult(has_problem=False)
 
     def _execute_phase_2_analyze(self, agent_name: str) -> AnalysisResult:

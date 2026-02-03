@@ -392,15 +392,6 @@ class TestSanitizeConfigForDisplay:
 class TestResolveConfigPath:
     """Test config path resolution."""
 
-    def test_resolve_absolute_path(self, tmp_path):
-        """Test resolving absolute path."""
-        config_file = tmp_path / "config.yaml"
-        config_file.write_text("test")
-
-        result = resolve_config_path(str(config_file))
-
-        assert result == config_file.resolve()
-
     def test_resolve_relative_path(self, tmp_path):
         """Test resolving relative path."""
         config_root = tmp_path / "configs"
@@ -412,6 +403,18 @@ class TestResolveConfigPath:
 
         assert result == config_file.resolve()
 
+    def test_resolve_nested_relative_path(self, tmp_path):
+        """Test resolving nested relative path within config_root."""
+        config_root = tmp_path / "configs"
+        subdir = config_root / "agents"
+        subdir.mkdir(parents=True)
+        config_file = subdir / "test.yaml"
+        config_file.write_text("test")
+
+        result = resolve_config_path("agents/test.yaml", config_root=config_root)
+
+        assert result == config_file.resolve()
+
     def test_resolve_nonexistent_path_raises_error(self, tmp_path):
         """Test that non-existent path raises FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
@@ -419,10 +422,8 @@ class TestResolveConfigPath:
 
     def test_resolve_default_config_root(self, tmp_path, monkeypatch):
         """Test using default config root (cwd/configs)."""
-        # Change to temp directory
         monkeypatch.chdir(tmp_path)
 
-        # Create configs directory
         config_root = tmp_path / "configs"
         config_root.mkdir()
         config_file = config_root / "test.yaml"
@@ -431,6 +432,56 @@ class TestResolveConfigPath:
         result = resolve_config_path("test.yaml")
 
         assert result == config_file.resolve()
+
+    def test_reject_absolute_path(self, tmp_path):
+        """Absolute paths must be rejected."""
+        config_file = tmp_path / "config.yaml"
+        config_file.write_text("test")
+
+        with pytest.raises(ValueError, match="absolute"):
+            resolve_config_path(str(config_file), config_root=tmp_path)
+
+    def test_reject_traversal_with_dotdot(self, tmp_path):
+        """Directory traversal with .. must be rejected."""
+        config_root = tmp_path / "configs"
+        config_root.mkdir()
+
+        with pytest.raises(ValueError, match="\\.\\."):
+            resolve_config_path("../../etc/passwd", config_root=config_root)
+
+    def test_reject_traversal_single_dotdot(self, tmp_path):
+        """Even a single .. component must be rejected."""
+        config_root = tmp_path / "configs"
+        config_root.mkdir()
+
+        with pytest.raises(ValueError, match="\\.\\."):
+            resolve_config_path("../secret.yaml", config_root=config_root)
+
+    def test_reject_null_bytes(self, tmp_path):
+        """Null bytes in paths must be rejected."""
+        with pytest.raises(ValueError, match="null"):
+            resolve_config_path("config\x00.yaml", config_root=tmp_path)
+
+    def test_reject_symlink_escape(self, tmp_path):
+        """Symlinks pointing outside config_root must be rejected."""
+        config_root = tmp_path / "configs"
+        config_root.mkdir()
+
+        # Create target outside config_root
+        outside = tmp_path / "outside.yaml"
+        outside.write_text("secret config")
+
+        # Create symlink inside config_root pointing outside
+        symlink = config_root / "evil.yaml"
+        symlink.symlink_to(outside)
+
+        with pytest.raises(ValueError, match="escapes"):
+            resolve_config_path("evil.yaml", config_root=config_root)
+
+    def test_reject_absolute_etc_passwd(self):
+        """Classic /etc/passwd path must be rejected."""
+        with pytest.raises(ValueError, match="absolute"):
+            resolve_config_path("/etc/passwd")
 
 
 class TestEdgeCases:

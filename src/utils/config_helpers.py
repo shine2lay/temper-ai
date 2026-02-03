@@ -263,31 +263,55 @@ def resolve_config_path(
     config_root: Optional[Path] = None
 ) -> Path:
     """
-    Resolve configuration file path.
+    Resolve configuration file path with security validation.
 
     Args:
-        path: Config file path (absolute or relative)
+        path: Config file path (must be relative to config_root)
         config_root: Root directory for relative paths
 
     Returns:
-        Resolved absolute Path
+        Resolved absolute Path (guaranteed within config_root)
 
     Raises:
+        ValueError: If path is absolute or attempts directory traversal
         FileNotFoundError: If path does not exist
     """
     if config_root is None:
         config_root = Path.cwd() / "configs"
 
+    config_root_resolved = config_root.resolve()
+
+    # Reject null bytes (path injection)
+    if '\x00' in path:
+        raise ValueError("Config path contains null bytes")
+
     path_obj = Path(path)
 
-    # If absolute, use as-is
+    # Reject absolute paths — config paths must be relative to config_root
     if path_obj.is_absolute():
-        resolved = path_obj
-    else:
-        # Relative to config_root
-        resolved = config_root / path_obj
+        raise ValueError(
+            f"Config path must be relative to config_root, "
+            f"got absolute path: {path}"
+        )
+
+    # Reject explicit traversal components
+    if ".." in path_obj.parts:
+        raise ValueError(
+            f"Config path must not contain '..': {path}"
+        )
+
+    # Resolve relative to config_root
+    resolved = (config_root_resolved / path_obj).resolve()
+
+    # Verify resolved path stays within config_root (catches symlink escapes)
+    try:
+        resolved.relative_to(config_root_resolved)
+    except ValueError:
+        raise ValueError(
+            f"Config path escapes config_root: {path}"
+        )
 
     if not resolved.exists():
         raise FileNotFoundError(f"Config file not found: {resolved}")
 
-    return resolved.resolve()
+    return resolved

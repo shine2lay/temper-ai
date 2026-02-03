@@ -2,6 +2,7 @@
 
 Handles session creation, validation, and cleanup with security best practices.
 """
+import asyncio
 import secrets
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
@@ -49,6 +50,7 @@ class SessionStore:
     def __init__(self):
         """Initialize session store."""
         self._sessions: Dict[str, Session] = {}
+        self._lock = asyncio.Lock()
 
     async def create_session(
         self,
@@ -87,8 +89,9 @@ class SessionStore:
             user_agent=user_agent,
         )
 
-        # Store session
-        self._sessions[session_id] = session
+        # Store session atomically
+        async with self._lock:
+            self._sessions[session_id] = session
 
         logger.info(
             f"Session created: session_id={session_id[:16]}..., "
@@ -106,19 +109,20 @@ class SessionStore:
         Returns:
             Session if found and not expired, None otherwise
         """
-        session = self._sessions.get(session_id)
+        async with self._lock:
+            session = self._sessions.get(session_id)
 
-        if not session:
-            return None
+            if not session:
+                return None
 
-        # Check expiration
-        if session.is_expired():
-            # Clean up expired session
-            await self.delete_session(session_id)
-            logger.info(f"Expired session removed: {session_id[:16]}...")
-            return None
+            # Check expiration
+            if session.is_expired():
+                # Clean up expired session inline (already holding lock)
+                del self._sessions[session_id]
+                logger.info(f"Expired session removed: {session_id[:16]}...")
+                return None
 
-        return session
+            return session
 
     async def delete_session(self, session_id: str) -> bool:
         """Delete session by ID.
@@ -129,26 +133,28 @@ class SessionStore:
         Returns:
             True if session was deleted, False if not found
         """
-        if session_id in self._sessions:
-            del self._sessions[session_id]
-            logger.info(f"Session deleted: {session_id[:16]}...")
-            return True
-        return False
+        async with self._lock:
+            if session_id in self._sessions:
+                del self._sessions[session_id]
+                logger.info(f"Session deleted: {session_id[:16]}...")
+                return True
+            return False
 
     async def cleanup_expired(self):
         """Remove all expired sessions."""
-        now = datetime.utcnow()
-        expired_ids = [
-            sid
-            for sid, session in self._sessions.items()
-            if session.expires_at and now > session.expires_at
-        ]
+        async with self._lock:
+            now = datetime.utcnow()
+            expired_ids = [
+                sid
+                for sid, session in self._sessions.items()
+                if session.expires_at and now > session.expires_at
+            ]
 
-        for session_id in expired_ids:
-            del self._sessions[session_id]
+            for session_id in expired_ids:
+                del self._sessions[session_id]
 
-        if expired_ids:
-            logger.info(f"Cleaned up {len(expired_ids)} expired sessions")
+            if expired_ids:
+                logger.info(f"Cleaned up {len(expired_ids)} expired sessions")
 
 
 class UserStore:
@@ -169,6 +175,7 @@ class UserStore:
         self._users: Dict[str, User] = {}  # user_id -> User
         self._emails: Dict[str, str] = {}  # email -> user_id
         self._oauth_subjects: Dict[str, str] = {}  # (provider, subject) -> user_id
+        self._lock = asyncio.Lock()
 
     async def get_user_by_id(self, user_id: str) -> Optional[User]:
         """Get user by ID.
@@ -190,10 +197,11 @@ class UserStore:
         Returns:
             User if found, None otherwise
         """
-        user_id = self._emails.get(email)
-        if not user_id:
-            return None
-        return self._users.get(user_id)
+        async with self._lock:
+            user_id = self._emails.get(email)
+            if not user_id:
+                return None
+            return self._users.get(user_id)
 
     async def get_user_by_oauth(self, provider: str, oauth_subject: str) -> Optional[User]:
         """Get user by OAuth provider and subject ID.
@@ -205,11 +213,12 @@ class UserStore:
         Returns:
             User if found, None otherwise
         """
-        key = f"{provider}:{oauth_subject}"
-        user_id = self._oauth_subjects.get(key)
-        if not user_id:
-            return None
-        return self._users.get(user_id)
+        async with self._lock:
+            key = f"{provider}:{oauth_subject}"
+            user_id = self._oauth_subjects.get(key)
+            if not user_id:
+                return None
+            return self._users.get(user_id)
 
     async def create_or_update_user(
         self,
@@ -236,43 +245,45 @@ class UserStore:
         Returns:
             Created or updated user
         """
-        # Check if user exists by email
-        existing_user = await self.get_user_by_email(email)
+        async with self._lock:
+            # Check if user exists by email (inline lookup, already holding lock)
+            existing_user_id = self._emails.get(email)
+            existing_user = self._users.get(existing_user_id) if existing_user_id else None
 
-        if existing_user:
-            # Update existing user
-            existing_user.name = name
-            existing_user.picture = picture or existing_user.picture
-            existing_user.oauth_provider = provider
-            existing_user.oauth_subject = oauth_subject
-            existing_user.updated_at = datetime.utcnow()
-            existing_user.last_login = datetime.utcnow()
+            if existing_user:
+                # Update existing user
+                existing_user.name = name
+                existing_user.picture = picture or existing_user.picture
+                existing_user.oauth_provider = provider
+                existing_user.oauth_subject = oauth_subject
+                existing_user.updated_at = datetime.utcnow()
+                existing_user.last_login = datetime.utcnow()
 
-            # Update OAuth subject mapping
+                # Update OAuth subject mapping
+                oauth_key = f"{provider}:{oauth_subject}"
+                self._oauth_subjects[oauth_key] = existing_user.user_id
+
+                logger.info(f"User updated: {existing_user.user_id}")
+                return existing_user
+
+            # Create new user
+            user = User(
+                user_id=user_id,
+                email=email,
+                name=name,
+                picture=picture,
+                oauth_provider=provider,
+                oauth_subject=oauth_subject,
+                created_at=datetime.utcnow(),
+                updated_at=datetime.utcnow(),
+                last_login=datetime.utcnow(),
+            )
+
+            # Store user and all indexes atomically
+            self._users[user_id] = user
+            self._emails[email] = user_id
             oauth_key = f"{provider}:{oauth_subject}"
-            self._oauth_subjects[oauth_key] = existing_user.user_id
+            self._oauth_subjects[oauth_key] = user_id
 
-            logger.info(f"User updated: {existing_user.user_id}")
-            return existing_user
-
-        # Create new user
-        user = User(
-            user_id=user_id,
-            email=email,
-            name=name,
-            picture=picture,
-            oauth_provider=provider,
-            oauth_subject=oauth_subject,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
-            last_login=datetime.utcnow(),
-        )
-
-        # Store user
-        self._users[user_id] = user
-        self._emails[email] = user_id
-        oauth_key = f"{provider}:{oauth_subject}"
-        self._oauth_subjects[oauth_key] = user_id
-
-        logger.info(f"User created: {user_id}")
-        return user
+            logger.info(f"User created: {user_id}")
+            return user

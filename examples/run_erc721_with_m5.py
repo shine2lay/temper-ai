@@ -284,7 +284,16 @@ def main():
         if breakdown:
             for metric, data in breakdown.items():
                 if isinstance(data, dict):
-                    print(f"    {metric}: {data.get('score', 'N/A')}")
+                    score = data.get("score", "N/A")
+                    print(f"    {metric}: {score}")
+                    details = data.get("details", {})
+                    if isinstance(details, dict):
+                        if "stdout" in details and details["stdout"]:
+                            print(f"      stdout: {details['stdout']}")
+                        if "stderr" in details and details["stderr"]:
+                            print(f"      stderr: {details['stderr']}")
+                        if "passing" in details:
+                            print(f"      passing: {details['passing']}, failing: {details['failing']}")
 
     # Compare first vs last
     if len(all_results) >= 2:

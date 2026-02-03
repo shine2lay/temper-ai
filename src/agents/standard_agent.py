@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 # XML tag constants for parsing LLM responses
 TOOL_CALL_TAG = "tool_call"
 ANSWER_TAG = "answer"
-REASONING_TAGS = ["reasoning", "thinking", "thought"]
+REASONING_TAGS = ["reasoning", "thinking", "think", "thought"]
 
 # Pre-compiled regex patterns for performance (compiled once at module load)
 TOOL_CALL_PATTERN = re.compile(rf'<{TOOL_CALL_TAG}>(.*?)</{TOOL_CALL_TAG}>', re.DOTALL)
@@ -375,9 +375,13 @@ class StandardAgent(BaseAgent):
         Returns:
             Dict with iteration results and state updates
         """
-        # Call LLM
+        # Call LLM — pass native tool definitions for providers that support it
         try:
-            llm_response = self.llm.complete(prompt)
+            llm_kwargs: Dict[str, Any] = {}
+            native_tools = self._get_native_tool_definitions()
+            if native_tools:
+                llm_kwargs["tools"] = native_tools
+            llm_response = self.llm.complete(prompt, **llm_kwargs)
         except LLMError as e:
             # LLM call failed
             return {
@@ -490,7 +494,7 @@ class StandardAgent(BaseAgent):
             )
 
         tool_name = tool_call.get("name")
-        tool_params = tool_call.get("parameters", {})
+        tool_params = tool_call.get("parameters", tool_call.get("arguments", {}))
 
         # Validate tool_name is a string
         if not isinstance(tool_name, str):
@@ -619,11 +623,14 @@ class StandardAgent(BaseAgent):
         else:
             raise ValueError("No prompt template or inline prompt configured")
 
-        # Add tool schemas to prompt (for function calling)
-        # Use cached tool schemas for performance
-        tools_section = self._get_cached_tool_schemas()
-        if tools_section:
-            template += tools_section
+        # Add tool schemas to prompt (for function calling).
+        # Skip text-based schemas when the LLM provider supports native tool
+        # definitions (e.g., Ollama /api/chat with tools parameter), since the
+        # schemas are passed structurally in the API request instead.
+        if not self._get_native_tool_definitions():
+            tools_section = self._get_cached_tool_schemas()
+            if tools_section:
+                template += tools_section
 
         return template
 
@@ -662,6 +669,39 @@ class StandardAgent(BaseAgent):
         self._tool_registry_version = current_version
 
         return tools_section
+
+    def _get_native_tool_definitions(self) -> Optional[List[Dict[str, Any]]]:
+        """Build native tool definitions for providers that support them.
+
+        Converts framework tool schemas to the OpenAI-compatible format used
+        by Ollama's /api/chat endpoint.
+
+        Returns:
+            List of tool dicts in OpenAI format, or None if no tools.
+        """
+        from src.agents.llm_providers import OllamaLLM
+
+        # Only provide native tool defs for Ollama (which supports /api/chat tools)
+        if not isinstance(self.llm, OllamaLLM):
+            return None
+
+        tools_dict = self.tool_registry.get_all_tools()
+        if not tools_dict:
+            return None
+
+        native_tools = []
+        for tool in tools_dict.values():
+            schema = tool.get_parameters_schema()
+            native_tools.append({
+                "type": "function",
+                "function": {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "parameters": schema,
+                },
+            })
+
+        return native_tools if native_tools else None
 
     def _parse_tool_calls(self, llm_response: str) -> List[Dict[str, Any]]:
         """Parse tool calls from LLM response.

@@ -195,8 +195,31 @@ def run_agent_with_input(
     config_dict = yaml.safe_load(rendered_yaml)
     config = SchemaAgentConfig(**config_dict)
 
+    # Log the prompt being sent to the LLM
+    agent_inner = config.agent
+    prompt_text = agent_inner.prompt.inline if hasattr(agent_inner.prompt, "inline") and agent_inner.prompt.inline else str(agent_inner.prompt)
+    logger.info(f"--- LLM PROMPT ({config_path}) ---")
+    logger.info(f"Model: {agent_inner.inference.provider}:{agent_inner.inference.model}")
+    logger.info(f"Temperature: {agent_inner.inference.temperature}")
+    logger.info(f"{prompt_text[:3000]}")
+    logger.info(f"--- END PROMPT ---")
+
     agent = StandardAgent(config)
     response = agent.execute(input_data)
+
+    # Log the LLM response
+    logger.info(f"--- LLM RESPONSE ({config_path}) ---")
+    logger.info(f"Output:\n{(response.output or '')[:3000]}")
+    if response.reasoning:
+        logger.info(f"Reasoning: {response.reasoning[:1000]}")
+    if response.tool_calls:
+        logger.info(f"Tool calls ({len(response.tool_calls)}):")
+        for tc in response.tool_calls:
+            logger.info(f"  {tc}")
+    if response.error:
+        logger.info(f"Error: {response.error}")
+    logger.info(f"Tokens: {response.tokens}, Latency: {response.latency_seconds:.1f}s")
+    logger.info(f"--- END RESPONSE ---")
 
     return {
         "output": response.output,
@@ -593,6 +616,27 @@ def run_workflow(
         logger.info(f"Quality Score: {quality.total_score:.2f}")
         for metric, data in quality.breakdown.items():
             logger.info(f"  {metric}: {data['score']:.2f}")
+            details = data.get("details", {})
+            if isinstance(details, dict):
+                # Show stdout/stderr for command-based metrics
+                if "stdout" in details and details["stdout"]:
+                    logger.info(f"    stdout: {details['stdout']}")
+                if "stderr" in details and details["stderr"]:
+                    logger.info(f"    stderr: {details['stderr']}")
+                # Show found/missing for structure check
+                if "found" in details:
+                    logger.info(f"    found: {details['found']}")
+                if "missing" in details:
+                    logger.info(f"    missing: {details['missing']}")
+                # Show code quality checks
+                for key, val in details.items():
+                    if key not in ("stdout", "stderr", "exit_code", "found", "missing", "passing", "failing"):
+                        logger.info(f"    {key}: {val}")
+                # Show test counts
+                if "passing" in details:
+                    logger.info(f"    passing: {details['passing']}, failing: {details['failing']}")
+            elif isinstance(details, str):
+                logger.info(f"    {details}")
     except Exception as e:
         logger.error(f"Quality scoring failed: {e}")
         results["quality_score"] = 0.0

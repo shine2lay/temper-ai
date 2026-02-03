@@ -448,10 +448,10 @@ class RedisCache(CacheBackend):
         except redis.RedisError:
             # Redis connection errors when checking status
             connected = False
-        except Exception:
-            # Unexpected errors (e.g., attribute errors if _client malformed)
-            # Log for debugging but don't crash repr
-            logger.debug(f"Unexpected error in RedisCache.__repr__")
+        except (AttributeError, TypeError) as e:
+            # AttributeError: _client malformed or missing methods
+            # TypeError: unexpected return type from ping()
+            logger.debug(f"Unexpected error in RedisCache.__repr__: {e}")
             connected = False
         # KeyboardInterrupt and SystemExit propagate automatically
         return f"RedisCache(connected={connected})"
@@ -696,12 +696,13 @@ class LLMCache:
 
             return value
 
-        except Exception as e:
-            # Catches backend-specific exceptions but allows KeyboardInterrupt
-            # and SystemExit to propagate
+        except (OSError, RuntimeError, ValueError) as e:
+            # OSError: network/IO errors from Redis or filesystem backends
+            # RuntimeError: threading errors (e.g., lock acquisition)
+            # ValueError: serialization/deserialization errors
             with self._stats_lock:
                 self.stats.errors += 1
-            logger.error(f"Cache get error: {e}")
+            logger.error(f"Cache get error for key '{key[:16]}...': {e}")
             return None
 
     def set(self, key: str, value: str) -> bool:
@@ -732,12 +733,13 @@ class LLMCache:
 
             return success
 
-        except Exception as e:
-            # Catches backend-specific exceptions but allows KeyboardInterrupt
-            # and SystemExit to propagate
+        except (OSError, RuntimeError, ValueError) as e:
+            # OSError: network/IO errors from Redis or filesystem backends
+            # RuntimeError: threading errors (e.g., lock acquisition)
+            # ValueError: serialization/deserialization errors
             with self._stats_lock:
                 self.stats.errors += 1
-            logger.error(f"Cache set error: {e}")
+            logger.error(f"Cache set error for key '{key[:16]}...': {e}")
             return False
 
     def delete(self, key: str) -> bool:

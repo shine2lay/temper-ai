@@ -472,3 +472,120 @@ class TestCustomTracker:
                 workflow_name="test"
             ).first()
             assert wf is not None
+
+
+class TestParameterInspection:
+    """Verify decorators only inject into actual parameters, not local variables.
+
+    The decorators use inspect.signature() to determine if a function
+    accepts the injected parameter. Local variables with the same name
+    should NOT be overwritten.
+    """
+
+    def test_workflow_injects_when_parameter(self, db):
+        """workflow_id is injected when it's a function parameter."""
+        received = {}
+
+        @track_workflow("test")
+        def run(config, workflow_id=None):
+            received["workflow_id"] = workflow_id
+
+        run({})
+        assert received["workflow_id"] is not None
+
+    def test_workflow_skips_when_local_variable(self, db):
+        """workflow_id local variable is NOT overwritten by injection."""
+        received = {}
+
+        @track_workflow("test")
+        def run(config):
+            workflow_id = "my_local_value"  # noqa: F841
+            received["workflow_id"] = workflow_id
+
+        run({})
+        assert received["workflow_id"] == "my_local_value"
+
+    def test_workflow_no_parameter_no_error(self, db):
+        """No workflow_id parameter or local — no error, no injection."""
+        @track_workflow("test")
+        def run(config):
+            return "ok"
+
+        assert run({}) == "ok"
+
+    def test_stage_injects_when_parameter(self, db):
+        """stage_id is injected when it's a function parameter."""
+        received = {}
+        tracker = get_tracker()
+
+        # Create a real workflow so FK constraint is satisfied
+        with tracker.track_workflow("parent_wf", {}) as wf_id:
+            @track_stage("test")
+            def run(config, workflow_id=None, stage_id=None):
+                received["stage_id"] = stage_id
+
+            run({}, workflow_id=wf_id)
+
+        assert received["stage_id"] is not None
+
+    def test_stage_skips_when_local_variable(self, db):
+        """stage_id local variable is NOT overwritten by injection."""
+        received = {}
+        tracker = get_tracker()
+
+        with tracker.track_workflow("parent_wf", {}) as wf_id:
+            @track_stage("test")
+            def run(config, workflow_id=None):
+                stage_id = "my_local_stage"  # noqa: F841
+                received["stage_id"] = stage_id
+
+            run({}, workflow_id=wf_id)
+
+        assert received["stage_id"] == "my_local_stage"
+
+    def test_agent_injects_when_parameter(self, db):
+        """agent_id is injected when it's a function parameter."""
+        received = {}
+        tracker = get_tracker()
+
+        with tracker.track_workflow("parent_wf", {}) as wf_id:
+            with tracker.track_stage("parent_st", {}, wf_id) as st_id:
+                @track_agent("test")
+                def run(config, stage_id=None, agent_id=None):
+                    received["agent_id"] = agent_id
+
+                run({}, stage_id=st_id)
+
+        assert received["agent_id"] is not None
+
+    def test_agent_skips_when_local_variable(self, db):
+        """agent_id local variable is NOT overwritten by injection."""
+        received = {}
+        tracker = get_tracker()
+
+        with tracker.track_workflow("parent_wf", {}) as wf_id:
+            with tracker.track_stage("parent_st", {}, wf_id) as st_id:
+                @track_agent("test")
+                def run(config, stage_id=None):
+                    agent_id = "my_local_agent"  # noqa: F841
+                    received["agent_id"] = agent_id
+
+                run({}, stage_id=st_id)
+
+        assert received["agent_id"] == "my_local_agent"
+
+    def test_workflow_no_injection_for_kwargs_only(self, db):
+        """Function with only **kwargs does not get workflow_id injected.
+
+        inspect.signature() correctly identifies **kwargs as VAR_KEYWORD,
+        not as a named 'workflow_id' parameter.
+        """
+        received = {}
+
+        @track_workflow("test")
+        def run(config, **kwargs):
+            received["kwargs"] = kwargs
+
+        run({})
+        # **kwargs parameter does not match 'workflow_id' in signature
+        assert "workflow_id" not in received["kwargs"]

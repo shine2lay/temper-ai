@@ -4,6 +4,7 @@ Observability hooks for automatic execution tracking.
 Provides decorators and utilities for hooking into agent execution
 and automatically tracking to the observability database.
 """
+import inspect
 from functools import wraps
 from typing import Callable, Optional, Dict, Any, cast
 from src.observability.tracker import ExecutionTracker
@@ -76,8 +77,8 @@ def track_workflow(
 
             tracker = get_tracker()
             with tracker.track_workflow(name, config) as workflow_id:
-                # Inject workflow_id into kwargs if function accepts it
-                if 'workflow_id' in func.__code__.co_varnames:
+                # Inject workflow_id into kwargs if function accepts it as a parameter
+                if 'workflow_id' in inspect.signature(func).parameters:
                     kwargs['workflow_id'] = workflow_id
 
                 result = func(*args, **kwargs)
@@ -122,8 +123,8 @@ def track_stage(
 
             tracker = get_tracker()
             with tracker.track_stage(name, config, cast(str, workflow_id)) as stage_id:
-                # Inject stage_id into kwargs if function accepts it
-                if 'stage_id' in func.__code__.co_varnames:
+                # Inject stage_id into kwargs if function accepts it as a parameter
+                if 'stage_id' in inspect.signature(func).parameters:
                     kwargs['stage_id'] = stage_id
 
                 result = func(*args, **kwargs)
@@ -168,8 +169,8 @@ def track_agent(
 
             tracker = get_tracker()
             with tracker.track_agent(name, config, cast(str, stage_id)) as agent_id:
-                # Inject agent_id into kwargs if function accepts it
-                if 'agent_id' in func.__code__.co_varnames:
+                # Inject agent_id into kwargs if function accepts it as a parameter
+                if 'agent_id' in inspect.signature(func).parameters:
                     kwargs['agent_id'] = agent_id
 
                 result = func(*args, **kwargs)

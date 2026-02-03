@@ -47,6 +47,10 @@ SAFE_FUNCTIONS = {
 # Example attack: [[[[[[[[[[1]]]]]]]]]] causes stack overflow
 MAX_NESTING_DEPTH = 10
 
+# Maximum exponent value to prevent CPU/memory exhaustion via ** operator
+# Example attack: 9**9**9**9 causes unbounded computation
+MAX_EXPONENT = 1000
+
 
 class Calculator(BaseTool):
     """
@@ -184,6 +188,15 @@ class Calculator(BaseTool):
 
             left = self._safe_eval(node.left, depth + 1)
             right = self._safe_eval(node.right, depth + 1)
+
+            # Bound exponents to prevent CPU/memory exhaustion (e.g., 9**9**9**9)
+            if op_type is ast.Pow:
+                if isinstance(right, (int, float)) and abs(right) > MAX_EXPONENT:
+                    raise ValueError(
+                        f"Exponent {right} exceeds maximum allowed value of {MAX_EXPONENT}. "
+                        f"This prevents denial-of-service attacks via large exponentiation."
+                    )
+
             op_func = SAFE_OPERATORS[op_type]
 
             return op_func(left, right)  # type: ignore[operator]

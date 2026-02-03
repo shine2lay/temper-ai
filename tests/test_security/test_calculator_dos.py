@@ -302,6 +302,107 @@ class TestCalculatorDepthLimitBoundary:
         assert result.result == 4
 
 
+class TestCalculatorExponentBounding:
+    """Test exponent bounding prevents CPU/memory exhaustion via ** operator."""
+
+    def test_small_exponents_pass(self):
+        """Test small legitimate exponents work normally."""
+        calc = Calculator()
+
+        assert calc.execute(expression="2 ** 10").result == 1024
+        assert calc.execute(expression="10 ** 3").result == 1000
+        assert calc.execute(expression="3 ** 5").result == 243
+
+    def test_boundary_exponent_passes(self):
+        """Test exponent at exactly MAX_EXPONENT (1000) passes."""
+        calc = Calculator()
+
+        result = calc.execute(expression="2 ** 1000")
+        assert result.success
+        assert result.result == 2 ** 1000
+
+    def test_over_boundary_exponent_rejected(self):
+        """Test exponent at MAX_EXPONENT + 1 is rejected."""
+        calc = Calculator()
+
+        result = calc.execute(expression="2 ** 1001")
+        assert not result.success
+        assert "exponent" in result.error.lower()
+        assert "1000" in result.error
+
+    def test_large_single_exponent_rejected(self):
+        """Test very large single exponent is rejected."""
+        calc = Calculator()
+
+        result = calc.execute(expression="10 ** 100000000")
+        assert not result.success
+        assert "exponent" in result.error.lower()
+
+    def test_nested_exponents_rejected(self):
+        """Test nested exponents like 9**9**9 are rejected.
+
+        Python parses 9**9**9 as 9**(9**9) = 9**387420489.
+        The inner 9**9=387420489 is fine, but the outer exponent
+        387420489 exceeds MAX_EXPONENT=1000.
+        """
+        calc = Calculator()
+
+        result = calc.execute(expression="9 ** 9 ** 9")
+        assert not result.success
+        assert "exponent" in result.error.lower()
+
+    def test_negative_large_exponent_rejected(self):
+        """Test large negative exponents are also rejected."""
+        calc = Calculator()
+
+        result = calc.execute(expression="2 ** -1001")
+        assert not result.success
+        assert "exponent" in result.error.lower()
+
+    def test_normal_arithmetic_unaffected(self):
+        """Test that non-exponent arithmetic is completely unaffected."""
+        calc = Calculator()
+
+        assert calc.execute(expression="100 + 200").result == 300
+        assert calc.execute(expression="999 * 999").result == 998001
+        assert calc.execute(expression="1000000 / 3").result == pytest.approx(333333.333, rel=1e-3)
+        assert calc.execute(expression="sqrt(144)").result == 12.0
+
+    def test_zero_exponent_passes(self):
+        """Test zero exponent is allowed."""
+        calc = Calculator()
+
+        result = calc.execute(expression="999 ** 0")
+        assert result.success
+        assert result.result == 1
+
+    def test_exponent_one_passes(self):
+        """Test exponent of 1 is allowed."""
+        calc = Calculator()
+
+        result = calc.execute(expression="42 ** 1")
+        assert result.success
+        assert result.result == 42
+
+    def test_fractional_exponent_passes(self):
+        """Test small fractional exponents work (square root via **)."""
+        calc = Calculator()
+
+        result = calc.execute(expression="16 ** 0.5")
+        assert result.success
+        assert result.result == pytest.approx(4.0)
+
+    def test_error_message_informative(self):
+        """Test error message explains the security limit."""
+        calc = Calculator()
+
+        result = calc.execute(expression="2 ** 9999")
+        assert not result.success
+        assert "exponent" in result.error.lower()
+        assert "1000" in result.error
+        assert "denial-of-service" in result.error.lower()
+
+
 class TestCalculatorSecurityProperties:
     """Test security properties of the depth limiting."""
 

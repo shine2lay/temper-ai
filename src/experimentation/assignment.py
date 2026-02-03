@@ -8,7 +8,7 @@ Provides different strategies for assigning workflow executions to experiment va
 - BanditAssignment: Multi-armed bandit optimization (future)
 """
 
-import random
+import secrets
 import hashlib
 from abc import ABC, abstractmethod
 from typing import Dict, List, Optional, Any
@@ -120,7 +120,9 @@ class RandomAssignment(AssignmentStrategy):
         weights = [v.allocated_traffic for v in variants]
         variant_ids = [v.id for v in variants]
 
-        selected_id = random.choices(variant_ids, weights=weights, k=1)[0]
+        # Use cryptographic PRNG for thread-safety and unpredictability
+        _secure_random = secrets.SystemRandom()
+        selected_id = _secure_random.choices(variant_ids, weights=weights, k=1)[0]
         return selected_id
 
 

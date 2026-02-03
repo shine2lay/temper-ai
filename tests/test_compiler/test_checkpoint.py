@@ -182,18 +182,23 @@ class TestFileCheckpointStorage:
         """Test that checkpoint files are valid JSON."""
         storage.save("wf-test-123", sample_domain_state)
 
-        # Read checkpoint file directly
-        checkpoint_path = Path(storage_dir) / "wf-test-123.checkpoint.json"
-        assert checkpoint_path.exists()
+        # Read checkpoint file directly (new backend uses workflow subdirectory)
+        workflow_dir = Path(storage_dir) / "wf-test-123"
+        assert workflow_dir.exists()
+        checkpoint_files = list(workflow_dir.glob("*.json"))
+        assert len(checkpoint_files) >= 1
+        checkpoint_path = checkpoint_files[0]
 
         with open(checkpoint_path, 'r') as f:
             checkpoint_data = json.load(f)
 
         # Verify it's valid JSON with expected fields
+        # New backend wraps domain state with checkpoint metadata
         assert "workflow_id" in checkpoint_data
-        assert "stage_outputs" in checkpoint_data
-        assert "current_stage" in checkpoint_data
         assert checkpoint_data["workflow_id"] == "wf-test-123"
+        assert "domain_state" in checkpoint_data
+        assert "stage_outputs" in checkpoint_data["domain_state"]
+        assert "current_stage" in checkpoint_data["domain_state"]
 
     def test_sanitize_workflow_id_in_filename(self, storage):
         """Test that workflow IDs with slashes are sanitized."""

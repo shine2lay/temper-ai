@@ -807,3 +807,60 @@ class TestEdgeCases:
         )
 
         assert result.valid
+
+
+class TestPathNormalizationSecurity:
+    """Tests that path normalization resolves .. before forbidden directory checks."""
+
+    def test_traversal_to_forbidden_dir_blocked_with_allow_parent(self):
+        """Paths like /allowed/../etc/passwd must be blocked even when allow_parent_traversal=True.
+
+        The .. component must be resolved by normpath BEFORE the forbidden directory
+        check, so /allowed/../etc/passwd becomes /etc/passwd and is rejected.
+        """
+        config = {
+            "allow_parent_traversal": True,
+            "allowed_paths": ["/allowed/**", "/etc/**"],
+        }
+        policy = FileAccessPolicy(config)
+
+        result = policy.validate(
+            action={"operation": "read", "path": "/allowed/../etc/passwd"},
+            context={}
+        )
+
+        assert not result.valid
+        has_forbidden = any(
+            "forbidden" in v.message.lower()
+            for v in result.violations
+        )
+        assert has_forbidden
+
+    def test_normpath_resolves_dotdot_for_denylist(self):
+        """Normalization must resolve .. so denylist matches work correctly."""
+        config = {
+            "allow_parent_traversal": True,
+            "denied_paths": ["/secrets/**"],
+        }
+        policy = FileAccessPolicy(config)
+
+        result = policy.validate(
+            action={"operation": "read", "path": "/project/../secrets/key.pem"},
+            context={}
+        )
+
+        assert not result.valid
+
+    def test_normal_paths_unaffected_by_normpath(self):
+        """Regular paths without .. should still work after normpath fix."""
+        config = {
+            "allowed_paths": ["/project/**"],
+        }
+        policy = FileAccessPolicy(config)
+
+        result = policy.validate(
+            action={"operation": "read", "path": "/project/src/main.py"},
+            context={}
+        )
+
+        assert result.valid

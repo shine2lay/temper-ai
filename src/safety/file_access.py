@@ -584,7 +584,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         try:
             p = Path(unicode_normalized)
             # Resolve . and .. components (but not symlinks)
-            normalized = str(p)
+            normalized = os.path.normpath(str(p))
 
             # Apply case sensitivity
             if not self.case_sensitive:

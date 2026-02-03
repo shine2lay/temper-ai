@@ -347,9 +347,18 @@ class DecisionOutcome(SQLModel, table=True):
     __tablename__ = "decision_outcomes"
 
     id: str = Field(primary_key=True)
-    agent_execution_id: Optional[str] = Field(default=None, foreign_key="agent_executions.id")
-    stage_execution_id: Optional[str] = Field(default=None, foreign_key="stage_executions.id")
-    workflow_execution_id: Optional[str] = Field(default=None, foreign_key="workflow_executions.id")
+    agent_execution_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String, ForeignKey("agent_executions.id", ondelete="CASCADE"), nullable=True),
+    )
+    stage_execution_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String, ForeignKey("stage_executions.id", ondelete="CASCADE"), nullable=True),
+    )
+    workflow_execution_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String, ForeignKey("workflow_executions.id", ondelete="CASCADE"), nullable=True),
+    )
 
     # Decision info
     decision_type: str = Field(index=True)
@@ -446,8 +455,7 @@ class RollbackSnapshotDB(SQLModel, table=True):
     id: str = Field(primary_key=True)
     workflow_execution_id: Optional[str] = Field(
         default=None,
-        foreign_key="workflow_executions.id",
-        index=True
+        sa_column=Column(String, ForeignKey("workflow_executions.id", ondelete="CASCADE"), index=True, nullable=True),
     )
     checkpoint_id: Optional[str] = None
 
@@ -466,7 +474,9 @@ class RollbackEvent(SQLModel, table=True):
     __tablename__ = "rollback_events"
 
     id: str = Field(primary_key=True)
-    snapshot_id: str = Field(foreign_key="rollback_snapshots.id", index=True)
+    snapshot_id: str = Field(
+        sa_column=Column(String, ForeignKey("rollback_snapshots.id", ondelete="CASCADE"), index=True, nullable=False),
+    )
 
     status: str = Field(index=True)  # completed | partial | failed
     trigger: str = Field(index=True)  # auto | manual | approval_rejection

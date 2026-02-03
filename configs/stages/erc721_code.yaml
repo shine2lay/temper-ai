@@ -1,0 +1,60 @@
+# ERC721 Code Stage
+# Purpose: Write all project files and install dependencies
+
+stage:
+  name: erc721_code
+  description: "Writes ERC721 project files and installs npm dependencies"
+  version: "1.0"
+
+  agents:
+    - erc721_coder
+
+  execution:
+    max_iterations: 1
+    convergence_threshold: 0.9
+    timeout_seconds: 600
+
+  inputs:
+    workspace_path:
+      type: string
+      required: true
+    contract_name:
+      type: string
+      required: false
+      default: "SimpleNFT"
+    token_name:
+      type: string
+      required: false
+      default: "SimpleNFT"
+    token_symbol:
+      type: string
+      required: false
+      default: "SNFT"
+    llm_model:
+      type: string
+      required: false
+      default: "llama3:8b"
+
+  outputs:
+    files_written:
+      type: string
+      description: "List of files created"
+
+  collaboration:
+    strategy: "sequential"
+    max_rounds: 1
+    convergence_threshold: 0.8
+
+  conflict_resolution:
+    strategy: "highest_confidence"
+
+  safety:
+    mode: execute
+    risk_level: medium
+    require_approval: false
+
+  tags:
+    - erc721
+    - code
+  created_by: erc721-workflow
+  created_at: "2026-02-02"

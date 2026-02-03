@@ -230,6 +230,7 @@ class StandardAgent(BaseAgent):
             'WebScraper': 'src.tools.web_scraper.WebScraper',
             'Calculator': 'src.tools.calculator.Calculator',
             'FileWriter': 'src.tools.file_writer.FileWriter',
+            'Bash': 'src.tools.bash.Bash',
         }
 
         for tool_spec in configured_tools:

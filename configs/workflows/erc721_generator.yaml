@@ -1,0 +1,100 @@
+# ERC721 Generator Workflow Configuration
+# Purpose: End-to-end workflow that scaffolds, codes, tests, and fixes an ERC721 project
+
+workflow:
+  name: erc721_generator
+  description: "Generates a minimal ERC721 NFT project with Hardhat, compiles, tests, and fixes errors"
+  version: "1.0"
+  product_type: code_product
+
+  # Workflow stages (executed in order)
+  # scaffold -> code -> test -> fix (conditional, loops back to test, max 3 loops)
+  stages:
+    - name: scaffold
+      stage_ref: configs/stages/erc721_scaffold.yaml
+
+    - name: code
+      stage_ref: configs/stages/erc721_code.yaml
+
+    - name: test
+      stage_ref: configs/stages/erc721_test.yaml
+
+    - name: fix
+      stage_ref: configs/stages/erc721_fix.yaml
+      conditional: true  # Only runs if test stage reports failures
+
+  # Error handling configuration
+  error_handling:
+    on_stage_failure: retry
+    max_stage_retries: 3
+    escalation_policy: "default"
+    enable_rollback: false
+
+  # Workflow inputs
+  inputs:
+    required:
+      - workspace_path
+    optional:
+      - contract_name
+      - token_name
+      - token_symbol
+      - llm_model
+
+  # Workflow outputs
+  outputs:
+    - name: project_spec
+      description: "Project specification from architect"
+      source: scaffold.project_spec
+
+    - name: files_written
+      description: "List of files created by coder"
+      source: code.files_written
+
+    - name: test_results
+      description: "Final test results"
+      source: test.test_results
+
+    - name: fix_results
+      description: "Fix results (if fix stage ran)"
+      source: fix.fix_results
+
+    - name: metadata
+      description: "Workflow execution metadata"
+      fields:
+        - execution_time
+        - stages_completed
+        - fix_iterations
+
+  # Workflow-level safety
+  safety:
+    mode: execute
+    risk_level: medium
+    require_approval: false
+
+  # Execution settings
+  execution:
+    timeout_seconds: 1800  # 30 minute workflow timeout
+    max_stages: 10
+    parallel_execution: false
+
+  # Observability
+  observability:
+    trace_all_decisions: true
+    log_level: INFO
+    metrics_enabled: true
+
+  # Metadata
+  tags:
+    - erc721
+    - solidity
+    - hardhat
+    - code-generation
+    - end-to-end
+
+  use_cases:
+    - "ERC721 NFT project generation"
+    - "Smart contract scaffolding"
+    - "Automated Solidity development"
+
+  created_by: erc721-workflow
+  created_at: "2026-02-02"

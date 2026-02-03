@@ -45,6 +45,11 @@ from src.self_improvement.metrics.types import MetricType, MetricValue
 from src.self_improvement.metrics.extraction_quality import (
     ExtractionQualityCollector,
 )
+from src.self_improvement.metrics.erc721_quality import (
+    ERC721QualityCollector,
+    ERC721QualityScore,
+    score_erc721_workflow,
+)
 
 __all__ = [
     "MetricCollector",
@@ -53,4 +58,7 @@ __all__ = [
     "MetricType",
     "MetricValue",
     "ExtractionQualityCollector",
+    "ERC721QualityCollector",
+    "ERC721QualityScore",
+    "score_erc721_workflow",
 ]

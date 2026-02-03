@@ -1,0 +1,90 @@
+# ERC721 Fixer Agent Configuration
+# Purpose: Reads errors from test stage, fixes files, re-compiles and re-tests
+
+agent:
+  name: erc721_fixer
+  description: "Fixes compilation/test errors in ERC721 project"
+  version: "1.0"
+
+  prompt:
+    inline: |
+      You are an expert Solidity debugger. An ERC721 Hardhat project has errors that need fixing.
+
+      Workspace path: {{ workspace_path }}
+      Contract name: {{ contract_name | default("SimpleNFT") }}
+
+      Previous test results:
+      {{ stage_outputs.test | default("No test output available") }}
+
+      You have access to FileWriter and Bash tools.
+
+      INSTRUCTIONS:
+      1. Analyze the error messages from the previous test run.
+      2. Determine which file(s) need to be fixed.
+      3. Use FileWriter to rewrite the fixed file(s).
+      4. Use Bash to recompile: npx hardhat compile
+      5. Use Bash to retest: npx hardhat test
+
+      Common fixes:
+      - If imports fail: check @openzeppelin/contracts paths
+      - If constructor errors: OpenZeppelin v5 Ownable needs (msg.sender) in constructor
+      - If test assertion fails: check ethers v6 API (use getSigners, getContractFactory, waitForDeployment)
+      - If mint reverts: ensure onlyOwner modifier and test calls from owner
+
+      To write a fixed file, use this format:
+      <tool_call>
+      {"name": "FileWriter", "parameters": {"file_path": "{{ workspace_path }}/PATH_TO_FILE", "content": "FIXED_CONTENT", "overwrite": true}}
+      </tool_call>
+
+      To run a command:
+      <tool_call>
+      {"name": "Bash", "parameters": {"command": "COMMAND", "working_directory": "{{ workspace_path }}"}}
+      </tool_call>
+
+      After fixing, report results in <answer> tags:
+      <answer>
+      {
+        "fixed_files": ["list of files fixed"],
+        "compilation": {"success": true/false, "errors": ""},
+        "tests": {"success": true/false, "passing": NUMBER, "failing": NUMBER, "errors": ""}
+      }
+      </answer>
+
+  inference:
+    provider: ollama
+    model: "{{ llm_model | default('llama3:8b') }}"
+    base_url: http://localhost:11434
+    temperature: 0.2
+    max_tokens: 4096
+    top_p: 0.9
+    timeout_seconds: 120
+    max_retries: 3
+    retry_delay_seconds: 2
+
+  tools:
+    - FileWriter
+    - Bash
+
+  safety:
+    mode: execute
+    require_approval_for_tools: []
+    max_tool_calls_per_execution: 20
+    max_execution_time_seconds: 600
+    risk_level: medium
+
+  memory:
+    enabled: false
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3
+
+  metadata:
+    tags:
+      - erc721
+      - fixer
+      - solidity
+    owner: erc721-workflow
+    created: "2026-02-02"

@@ -1,0 +1,94 @@
+# ERC721 Coder Agent Configuration
+# Purpose: Writes all project files and runs npm install
+
+agent:
+  name: erc721_coder
+  description: "Writes ERC721 Hardhat project files and installs dependencies"
+  version: "1.0"
+
+  prompt:
+    inline: |
+      You are an expert Solidity developer. You must write files for an ERC721 NFT project.
+
+      Workspace path: {{ workspace_path }}
+      Contract name: {{ contract_name | default("SimpleNFT") }}
+      Token name: {{ token_name | default("SimpleNFT") }}
+      Token symbol: {{ token_symbol | default("SNFT") }}
+
+      You have access to two tools: FileWriter and Bash.
+
+      STEP 1: Write package.json
+      Use FileWriter to create {{ workspace_path }}/package.json with this EXACT content:
+      <tool_call>
+      {"name": "FileWriter", "parameters": {"file_path": "{{ workspace_path }}/package.json", "content": "{\n  \"name\": \"erc721-project\",\n  \"version\": \"1.0.0\",\n  \"description\": \"Minimal ERC721 NFT project\",\n  \"scripts\": {\n    \"compile\": \"npx hardhat compile\",\n    \"test\": \"npx hardhat test\",\n    \"deploy\": \"npx hardhat run scripts/deploy.js\"\n  },\n  \"devDependencies\": {\n    \"hardhat\": \"^2.19.0\",\n    \"@nomicfoundation/hardhat-toolbox\": \"^4.0.0\"\n  },\n  \"dependencies\": {\n    \"@openzeppelin/contracts\": \"^5.0.0\"\n  }\n}", "overwrite": true, "create_dirs": true}}
+      </tool_call>
+
+      STEP 2: Write hardhat.config.js
+      <tool_call>
+      {"name": "FileWriter", "parameters": {"file_path": "{{ workspace_path }}/hardhat.config.js", "content": "require(\"@nomicfoundation/hardhat-toolbox\");\n\n/** @type import('hardhat/config').HardhatUserConfig */\nmodule.exports = {\n  solidity: \"0.8.20\",\n};", "overwrite": true, "create_dirs": true}}
+      </tool_call>
+
+      STEP 3: Write the Solidity contract
+      <tool_call>
+      {"name": "FileWriter", "parameters": {"file_path": "{{ workspace_path }}/contracts/{{ contract_name | default('SimpleNFT') }}.sol", "content": "// SPDX-License-Identifier: MIT\npragma solidity ^0.8.20;\n\nimport \"@openzeppelin/contracts/token/ERC721/ERC721.sol\";\nimport \"@openzeppelin/contracts/access/Ownable.sol\";\n\ncontract {{ contract_name | default('SimpleNFT') }} is ERC721, Ownable {\n    uint256 private _nextTokenId;\n\n    constructor() ERC721(\"{{ token_name | default('SimpleNFT') }}\", \"{{ token_symbol | default('SNFT') }}\") Ownable(msg.sender) {\n        _nextTokenId = 1;\n    }\n\n    function mint(address to) public onlyOwner returns (uint256) {\n        uint256 tokenId = _nextTokenId;\n        _nextTokenId++;\n        _mint(to, tokenId);\n        return tokenId;\n    }\n}", "overwrite": true, "create_dirs": true}}
+      </tool_call>
+
+      STEP 4: Write the test file
+      <tool_call>
+      {"name": "FileWriter", "parameters": {"file_path": "{{ workspace_path }}/test/{{ contract_name | default('SimpleNFT') }}.test.js", "content": "const { expect } = require(\"chai\");\nconst { ethers } = require(\"hardhat\");\n\ndescribe(\"{{ contract_name | default('SimpleNFT') }}\", function () {\n  let contract;\n  let owner;\n  let addr1;\n  let addr2;\n\n  beforeEach(async function () {\n    [owner, addr1, addr2] = await ethers.getSigners();\n    const Factory = await ethers.getContractFactory(\"{{ contract_name | default('SimpleNFT') }}\");\n    contract = await Factory.deploy();\n    await contract.waitForDeployment();\n  });\n\n  describe(\"Deployment\", function () {\n    it(\"Should set the correct name and symbol\", async function () {\n      expect(await contract.name()).to.equal(\"{{ token_name | default('SimpleNFT') }}\");\n      expect(await contract.symbol()).to.equal(\"{{ token_symbol | default('SNFT') }}\");\n    });\n\n    it(\"Should set the deployer as owner\", async function () {\n      expect(await contract.owner()).to.equal(owner.address);\n    });\n  });\n\n  describe(\"Minting\", function () {\n    it(\"Should mint a token to an address\", async function () {\n      await contract.mint(addr1.address);\n      expect(await contract.ownerOf(1)).to.equal(addr1.address);\n      expect(await contract.balanceOf(addr1.address)).to.equal(1);\n    });\n\n    it(\"Should increment token IDs\", async function () {\n      await contract.mint(addr1.address);\n      await contract.mint(addr2.address);\n      expect(await contract.ownerOf(1)).to.equal(addr1.address);\n      expect(await contract.ownerOf(2)).to.equal(addr2.address);\n    });\n\n    it(\"Should only allow owner to mint\", async function () {\n      await expect(\n        contract.connect(addr1).mint(addr1.address)\n      ).to.be.revertedWithCustomError(contract, \"OwnableUnauthorizedAccount\");\n    });\n  });\n\n  describe(\"Transfer\", function () {\n    it(\"Should transfer tokens between accounts\", async function () {\n      await contract.mint(addr1.address);\n      await contract.connect(addr1).transferFrom(addr1.address, addr2.address, 1);\n      expect(await contract.ownerOf(1)).to.equal(addr2.address);\n    });\n  });\n});", "overwrite": true, "create_dirs": true}}
+      </tool_call>
+
+      STEP 5: Write the deploy script
+      <tool_call>
+      {"name": "FileWriter", "parameters": {"file_path": "{{ workspace_path }}/scripts/deploy.js", "content": "const { ethers } = require(\"hardhat\");\n\nasync function main() {\n  const [deployer] = await ethers.getSigners();\n  console.log(\"Deploying with account:\", deployer.address);\n\n  const Factory = await ethers.getContractFactory(\"{{ contract_name | default('SimpleNFT') }}\");\n  const contract = await Factory.deploy();\n  await contract.waitForDeployment();\n\n  const address = await contract.getAddress();\n  console.log(\"{{ contract_name | default('SimpleNFT') }} deployed to:\", address);\n\n  // Mint a test token\n  const tx = await contract.mint(deployer.address);\n  await tx.wait();\n  console.log(\"Minted token #1 to:\", deployer.address);\n  console.log(\"Owner of token #1:\", await contract.ownerOf(1));\n}\n\nmain()\n  .then(() => process.exit(0))\n  .catch((error) => {\n    console.error(error);\n    process.exit(1);\n  });", "overwrite": true, "create_dirs": true}}
+      </tool_call>
+
+      STEP 6: Run npm install
+      <tool_call>
+      {"name": "Bash", "parameters": {"command": "npm install", "working_directory": "{{ workspace_path }}", "timeout": 300}}
+      </tool_call>
+
+      After all steps complete, provide your final response in <answer> tags:
+      <answer>
+      All files written and dependencies installed successfully.
+      Files created: package.json, hardhat.config.js, contracts/{{ contract_name | default('SimpleNFT') }}.sol, test/{{ contract_name | default('SimpleNFT') }}.test.js, scripts/deploy.js
+      </answer>
+
+  inference:
+    provider: ollama
+    model: "{{ llm_model | default('llama3:8b') }}"
+    base_url: http://localhost:11434
+    temperature: 0.2
+    max_tokens: 4096
+    top_p: 0.9
+    timeout_seconds: 120
+    max_retries: 3
+    retry_delay_seconds: 2
+
+  tools:
+    - FileWriter
+    - Bash
+
+  safety:
+    mode: execute
+    require_approval_for_tools: []
+    max_tool_calls_per_execution: 20
+    max_execution_time_seconds: 600
+    risk_level: medium
+
+  memory:
+    enabled: false
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3
+
+  metadata:
+    tags:
+      - erc721
+      - coder
+      - solidity
+    owner: erc721-workflow
+    created: "2026-02-02"

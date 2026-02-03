@@ -1,0 +1,467 @@
+"""
+ERC721 workflow quality scorer for M5 self-improvement system.
+
+Scores a workflow run output (0.0 - 1.0) based on:
+- Project structure (20%): Required files exist
+- Compilation (30%): npx hardhat compile exit code == 0
+- Tests pass (30%): npx hardhat test exit code == 0
+- Code quality (10%): Static checks on Solidity source
+- Deployment (10%): Deploy script runs successfully
+"""
+import logging
+import subprocess
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, Optional, Any
+
+from src.self_improvement.metrics.collector import MetricCollector, ExecutionProtocol
+from src.self_improvement.metrics.types import MetricType
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ERC721QualityScore:
+    """Quality score breakdown for an ERC721 workflow run.
+
+    Attributes:
+        total_score: Weighted total score from 0.0 to 1.0
+        breakdown: Individual metric scores and details
+    """
+    total_score: float
+    breakdown: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        self.total_score = max(0.0, min(1.0, self.total_score))
+
+
+# Weight configuration for scoring
+WEIGHTS = {
+    "project_structure": 0.20,
+    "compilation": 0.30,
+    "tests_pass": 0.30,
+    "code_quality": 0.10,
+    "deployment": 0.10,
+}
+
+# Required project files (relative to workspace)
+REQUIRED_FILES = [
+    "package.json",
+    "hardhat.config.js",
+]
+
+# Files that should exist under directories
+REQUIRED_PATTERNS = {
+    "contracts": ".sol",
+    "test": ".test.js",
+}
+
+
+def score_project_structure(workspace: Path, contract_name: str = "SimpleNFT") -> Dict[str, Any]:
+    """Score project structure by checking file existence.
+
+    Args:
+        workspace: Path to the workspace directory
+        contract_name: Name of the contract
+
+    Returns:
+        Dict with 'score' (0.0-1.0) and 'details'
+    """
+    if not workspace.exists():
+        return {"score": 0.0, "details": "Workspace directory does not exist"}
+
+    found = []
+    missing = []
+
+    # Check required root files
+    for fname in REQUIRED_FILES:
+        if (workspace / fname).exists():
+            found.append(fname)
+        else:
+            missing.append(fname)
+
+    # Check contract file
+    contract_path = workspace / "contracts" / f"{contract_name}.sol"
+    if contract_path.exists():
+        found.append(f"contracts/{contract_name}.sol")
+    else:
+        # Check for any .sol file
+        sol_files = list((workspace / "contracts").glob("*.sol")) if (workspace / "contracts").exists() else []
+        if sol_files:
+            found.append(f"contracts/{sol_files[0].name}")
+        else:
+            missing.append(f"contracts/{contract_name}.sol")
+
+    # Check test file
+    test_path = workspace / "test" / f"{contract_name}.test.js"
+    if test_path.exists():
+        found.append(f"test/{contract_name}.test.js")
+    else:
+        test_files = list((workspace / "test").glob("*.test.js")) if (workspace / "test").exists() else []
+        if test_files:
+            found.append(f"test/{test_files[0].name}")
+        else:
+            missing.append(f"test/{contract_name}.test.js")
+
+    # Check deploy script
+    if (workspace / "scripts" / "deploy.js").exists():
+        found.append("scripts/deploy.js")
+    else:
+        missing.append("scripts/deploy.js")
+
+    # Check node_modules
+    if (workspace / "node_modules").exists():
+        found.append("node_modules/")
+    else:
+        missing.append("node_modules/")
+
+    total_expected = len(REQUIRED_FILES) + 4  # root files + contract + test + deploy + node_modules
+    score = len(found) / total_expected if total_expected > 0 else 0.0
+
+    return {
+        "score": min(1.0, score),
+        "details": {
+            "found": found,
+            "missing": missing,
+        },
+    }
+
+
+def score_compilation(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
+    """Score compilation by running npx hardhat compile.
+
+    Args:
+        workspace: Path to the workspace directory
+        timeout: Timeout in seconds
+
+    Returns:
+        Dict with 'score' (0.0 or 1.0) and 'details'
+    """
+    if not workspace.exists() or not (workspace / "hardhat.config.js").exists():
+        return {"score": 0.0, "details": "No hardhat.config.js found"}
+
+    try:
+        result = subprocess.run(
+            ["npx", "hardhat", "compile"],
+            cwd=str(workspace),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+        )
+
+        if result.returncode == 0:
+            return {
+                "score": 1.0,
+                "details": {"stdout": result.stdout[:500], "exit_code": 0},
+            }
+        else:
+            return {
+                "score": 0.0,
+                "details": {
+                    "stdout": result.stdout[:500],
+                    "stderr": result.stderr[:500],
+                    "exit_code": result.returncode,
+                },
+            }
+    except subprocess.TimeoutExpired:
+        return {"score": 0.0, "details": "Compilation timed out"}
+    except FileNotFoundError:
+        return {"score": 0.0, "details": "npx not found"}
+    except Exception as e:
+        return {"score": 0.0, "details": f"Error: {e}"}
+
+
+def score_tests(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
+    """Score tests by running npx hardhat test.
+
+    Args:
+        workspace: Path to the workspace directory
+        timeout: Timeout in seconds
+
+    Returns:
+        Dict with 'score' (0.0-1.0) and 'details'
+    """
+    if not workspace.exists() or not (workspace / "hardhat.config.js").exists():
+        return {"score": 0.0, "details": "No hardhat.config.js found"}
+
+    try:
+        result = subprocess.run(
+            ["npx", "hardhat", "test"],
+            cwd=str(workspace),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+        )
+
+        stdout = result.stdout
+        passing = 0
+        failing = 0
+
+        # Parse test output for passing/failing counts
+        for line in stdout.split("\n"):
+            line_stripped = line.strip()
+            if "passing" in line_stripped.lower():
+                try:
+                    passing = int(line_stripped.split()[0])
+                except (ValueError, IndexError):
+                    pass
+            if "failing" in line_stripped.lower():
+                try:
+                    failing = int(line_stripped.split()[0])
+                except (ValueError, IndexError):
+                    pass
+
+        if result.returncode == 0:
+            score = 1.0
+        elif passing > 0 and failing > 0:
+            score = passing / (passing + failing)
+        else:
+            score = 0.0
+
+        return {
+            "score": score,
+            "details": {
+                "passing": passing,
+                "failing": failing,
+                "exit_code": result.returncode,
+                "stdout": stdout[:500],
+                "stderr": result.stderr[:500],
+            },
+        }
+    except subprocess.TimeoutExpired:
+        return {"score": 0.0, "details": "Tests timed out"}
+    except FileNotFoundError:
+        return {"score": 0.0, "details": "npx not found"}
+    except Exception as e:
+        return {"score": 0.0, "details": f"Error: {e}"}
+
+
+def score_code_quality(workspace: Path, contract_name: str = "SimpleNFT") -> Dict[str, Any]:
+    """Score code quality with static checks on Solidity source.
+
+    Checks:
+    - Imports OpenZeppelin ERC721
+    - Has mint function
+    - Has constructor
+    - Has SPDX license identifier
+
+    Args:
+        workspace: Path to the workspace directory
+        contract_name: Name of the contract
+
+    Returns:
+        Dict with 'score' (0.0-1.0) and 'details'
+    """
+    contract_path = workspace / "contracts" / f"{contract_name}.sol"
+    if not contract_path.exists():
+        # Try any .sol file
+        contracts_dir = workspace / "contracts"
+        if contracts_dir.exists():
+            sol_files = list(contracts_dir.glob("*.sol"))
+            if sol_files:
+                contract_path = sol_files[0]
+            else:
+                return {"score": 0.0, "details": "No .sol files found"}
+        else:
+            return {"score": 0.0, "details": "No contracts/ directory"}
+
+    try:
+        content = contract_path.read_text(encoding="utf-8")
+    except Exception as e:
+        return {"score": 0.0, "details": f"Cannot read contract: {e}"}
+
+    checks = {
+        "imports_erc721": "ERC721" in content,
+        "has_mint": "function mint" in content or "function safeMint" in content,
+        "has_constructor": "constructor" in content,
+        "has_spdx": "SPDX-License-Identifier" in content,
+        "has_pragma": "pragma solidity" in content,
+        "imports_ownable": "Ownable" in content,
+    }
+
+    passed = sum(1 for v in checks.values() if v)
+    score = passed / len(checks)
+
+    return {
+        "score": score,
+        "details": checks,
+    }
+
+
+def score_deployment(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
+    """Score deployment by running the deploy script on local hardhat node.
+
+    Args:
+        workspace: Path to the workspace directory
+        timeout: Timeout in seconds
+
+    Returns:
+        Dict with 'score' (0.0 or 1.0) and 'details'
+    """
+    if not workspace.exists() or not (workspace / "scripts" / "deploy.js").exists():
+        return {"score": 0.0, "details": "No deploy script found"}
+
+    try:
+        result = subprocess.run(
+            ["npx", "hardhat", "run", "scripts/deploy.js"],
+            cwd=str(workspace),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            shell=False,
+        )
+
+        if result.returncode == 0:
+            return {
+                "score": 1.0,
+                "details": {"stdout": result.stdout[:500], "exit_code": 0},
+            }
+        else:
+            return {
+                "score": 0.0,
+                "details": {
+                    "stdout": result.stdout[:500],
+                    "stderr": result.stderr[:500],
+                    "exit_code": result.returncode,
+                },
+            }
+    except subprocess.TimeoutExpired:
+        return {"score": 0.0, "details": "Deployment timed out"}
+    except FileNotFoundError:
+        return {"score": 0.0, "details": "npx not found"}
+    except Exception as e:
+        return {"score": 0.0, "details": f"Error: {e}"}
+
+
+def score_erc721_workflow(
+    workspace_path: str,
+    contract_name: str = "SimpleNFT",
+    run_commands: bool = True,
+    timeout: int = 120,
+) -> ERC721QualityScore:
+    """Score a complete ERC721 workflow run.
+
+    Args:
+        workspace_path: Path to the workspace directory
+        contract_name: Name of the contract
+        run_commands: Whether to run compile/test/deploy commands
+        timeout: Timeout for each command
+
+    Returns:
+        ERC721QualityScore with total_score and breakdown
+    """
+    workspace = Path(workspace_path)
+    breakdown = {}
+
+    # 1. Project structure (20%)
+    structure = score_project_structure(workspace, contract_name)
+    breakdown["project_structure"] = structure
+
+    # 2. Compilation (30%)
+    if run_commands:
+        compilation = score_compilation(workspace, timeout)
+    else:
+        compilation = {"score": 0.0, "details": "Skipped (run_commands=False)"}
+    breakdown["compilation"] = compilation
+
+    # 3. Tests (30%)
+    if run_commands and compilation["score"] > 0:
+        tests = score_tests(workspace, timeout)
+    else:
+        tests = {"score": 0.0, "details": "Skipped (compilation failed or commands disabled)"}
+    breakdown["tests_pass"] = tests
+
+    # 4. Code quality (10%)
+    quality = score_code_quality(workspace, contract_name)
+    breakdown["code_quality"] = quality
+
+    # 5. Deployment (10%)
+    if run_commands and compilation["score"] > 0:
+        deployment = score_deployment(workspace, timeout)
+    else:
+        deployment = {"score": 0.0, "details": "Skipped (compilation failed or commands disabled)"}
+    breakdown["deployment"] = deployment
+
+    # Calculate weighted total
+    total = sum(
+        breakdown[metric]["score"] * weight
+        for metric, weight in WEIGHTS.items()
+    )
+
+    return ERC721QualityScore(total_score=total, breakdown=breakdown)
+
+
+class ERC721QualityCollector(MetricCollector):
+    """Metric collector for ERC721 workflow quality.
+
+    Integrates with the M5 metric registry system to track
+    ERC721 generation quality over time.
+    """
+
+    def __init__(self, workspace_root: Optional[str] = None):
+        """Initialize collector.
+
+        Args:
+            workspace_root: Base workspace directory path
+        """
+        self._workspace_root = workspace_root
+
+    @property
+    def metric_name(self) -> str:
+        return "erc721_quality"
+
+    @property
+    def metric_type(self) -> MetricType:
+        return MetricType.CUSTOM
+
+    def collect(self, execution: ExecutionProtocol) -> Optional[float]:
+        """Collect quality score from an execution.
+
+        Looks for workspace_path in execution metadata or uses default.
+
+        Args:
+            execution: Execution object
+
+        Returns:
+            Quality score (0.0-1.0) or None
+        """
+        # Try to get workspace path from execution metadata
+        workspace_path = None
+        if hasattr(execution, "metadata") and isinstance(execution.metadata, dict):
+            workspace_path = execution.metadata.get("workspace_path")
+        if not workspace_path and self._workspace_root:
+            workspace_path = self._workspace_root
+
+        if not workspace_path:
+            logger.warning("No workspace_path available for ERC721 quality scoring")
+            return None
+
+        contract_name = "SimpleNFT"
+        if hasattr(execution, "metadata") and isinstance(execution.metadata, dict):
+            contract_name = execution.metadata.get("contract_name", "SimpleNFT")
+
+        try:
+            result = score_erc721_workflow(
+                workspace_path=workspace_path,
+                contract_name=contract_name,
+                run_commands=True,
+            )
+            return result.total_score
+        except Exception as e:
+            logger.error(f"Failed to score ERC721 quality: {e}")
+            return None
+
+    def is_applicable(self, execution: ExecutionProtocol) -> bool:
+        """Check if this metric applies to the execution.
+
+        Args:
+            execution: Execution object
+
+        Returns:
+            True if execution is an ERC721 workflow run
+        """
+        if hasattr(execution, "metadata") and isinstance(execution.metadata, dict):
+            return execution.metadata.get("workflow_type") == "erc721_generator"
+        return False

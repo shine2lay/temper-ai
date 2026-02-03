@@ -17,6 +17,7 @@ from src.tools.executor import (
     ToolExecutor,
     ToolExecutionError,
 )
+from src.tools.bash import Bash
 
 __all__ = [
     # Base classes
@@ -30,4 +31,6 @@ __all__ = [
     # Executor
     "ToolExecutor",
     "ToolExecutionError",
+    # Tools
+    "Bash",
 ]

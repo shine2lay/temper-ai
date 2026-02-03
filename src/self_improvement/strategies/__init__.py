@@ -3,6 +3,7 @@
 from .strategy import ImprovementStrategy, AgentConfig, LearnedPattern
 from .registry import StrategyRegistry
 from .ollama_model_strategy import OllamaModelSelectionStrategy
+from .erc721_strategy import ERC721WorkflowStrategy
 
 __all__ = [
     "ImprovementStrategy",
@@ -10,4 +11,5 @@ __all__ = [
     "LearnedPattern",
     "StrategyRegistry",
     "OllamaModelSelectionStrategy",
+    "ERC721WorkflowStrategy",
 ]

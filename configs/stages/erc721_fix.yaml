@@ -1,0 +1,55 @@
+# ERC721 Fix Stage
+# Purpose: Fix errors found during testing, recompile, retest
+
+stage:
+  name: erc721_fix
+  description: "Fixes compilation/test errors and re-verifies"
+  version: "1.0"
+
+  agents:
+    - erc721_fixer
+
+  execution:
+    max_iterations: 1
+    convergence_threshold: 0.9
+    timeout_seconds: 600
+
+  inputs:
+    workspace_path:
+      type: string
+      required: true
+    contract_name:
+      type: string
+      required: false
+      default: "SimpleNFT"
+    llm_model:
+      type: string
+      required: false
+      default: "llama3:8b"
+    stage_outputs:
+      type: object
+      required: false
+
+  outputs:
+    fix_results:
+      type: string
+      description: "JSON with fixed files and updated test results"
+
+  collaboration:
+    strategy: "sequential"
+    max_rounds: 1
+    convergence_threshold: 0.8
+
+  conflict_resolution:
+    strategy: "highest_confidence"
+
+  safety:
+    mode: execute
+    risk_level: medium
+    require_approval: false
+
+  tags:
+    - erc721
+    - fix
+  created_by: erc721-workflow
+  created_at: "2026-02-02"

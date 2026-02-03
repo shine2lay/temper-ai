@@ -5,6 +5,7 @@ Provides resilient LLM access by automatically switching to backup providers
 when the primary provider fails due to transient errors.
 """
 import logging
+import threading
 from typing import List, Optional, Any
 from dataclasses import dataclass
 
@@ -76,6 +77,7 @@ class FailoverProvider:
 
         self.providers = providers
         self.config = config or FailoverConfig()
+        self._state_lock = threading.Lock()
         self.last_successful_index = 0
         self.backup_success_count = 0
 
@@ -103,15 +105,16 @@ class FailoverProvider:
         """
         errors = []
 
-        # Determine starting index
-        if self.config.sticky_session and self.backup_success_count < self.config.retry_primary_after:
-            start_index = self.last_successful_index
-            logger.debug(f"Using sticky session, starting at provider {start_index}")
-        else:
-            start_index = 0
-            if self.backup_success_count >= self.config.retry_primary_after:
-                logger.info(f"Retrying primary provider after {self.backup_success_count} backup successes")
-                self.backup_success_count = 0
+        # Determine starting index (read state under lock)
+        with self._state_lock:
+            if self.config.sticky_session and self.backup_success_count < self.config.retry_primary_after:
+                start_index = self.last_successful_index
+                logger.debug(f"Using sticky session, starting at provider {start_index}")
+            else:
+                start_index = 0
+                if self.backup_success_count >= self.config.retry_primary_after:
+                    logger.info(f"Retrying primary provider after {self.backup_success_count} backup successes")
+                    self.backup_success_count = 0
 
         # Try each provider
         for attempt in range(len(self.providers)):
@@ -120,22 +123,21 @@ class FailoverProvider:
 
             try:
                 logger.info(f"Attempting provider [{index}]: {provider.model}")
+                # LLM call outside lock to avoid blocking other threads
                 result = provider.complete(prompt, **kwargs)
 
-                # Success - update state
-                if index != self.last_successful_index:
-                    logger.info(
-                        f"Failover successful: switched from provider {self.last_successful_index} "
-                        f"to provider {index} ({provider.model})"
-                    )
-
-                self.last_successful_index = index
-
-                # Track backup successes for primary retry
-                if index != 0:
-                    self.backup_success_count += 1
-                else:
-                    self.backup_success_count = 0
+                # Success - update state atomically
+                with self._state_lock:
+                    if index != self.last_successful_index:
+                        logger.info(
+                            f"Failover successful: switched from provider {self.last_successful_index} "
+                            f"to provider {index} ({provider.model})"
+                        )
+                    self.last_successful_index = index
+                    if index != 0:
+                        self.backup_success_count += 1
+                    else:
+                        self.backup_success_count = 0
 
                 logger.info(f"Success with provider [{index}]: {provider.model}")
                 return result
@@ -175,15 +177,16 @@ class FailoverProvider:
         """
         errors = []
 
-        # Determine starting index
-        if self.config.sticky_session and self.backup_success_count < self.config.retry_primary_after:
-            start_index = self.last_successful_index
-            logger.debug(f"Using sticky session, starting at provider {start_index}")
-        else:
-            start_index = 0
-            if self.backup_success_count >= self.config.retry_primary_after:
-                logger.info(f"Retrying primary provider after {self.backup_success_count} backup successes")
-                self.backup_success_count = 0
+        # Determine starting index (read state under lock)
+        with self._state_lock:
+            if self.config.sticky_session and self.backup_success_count < self.config.retry_primary_after:
+                start_index = self.last_successful_index
+                logger.debug(f"Using sticky session, starting at provider {start_index}")
+            else:
+                start_index = 0
+                if self.backup_success_count >= self.config.retry_primary_after:
+                    logger.info(f"Retrying primary provider after {self.backup_success_count} backup successes")
+                    self.backup_success_count = 0
 
         # Try each provider
         for attempt in range(len(self.providers)):
@@ -192,22 +195,21 @@ class FailoverProvider:
 
             try:
                 logger.info(f"Attempting provider [{index}]: {provider.model}")
+                # LLM call outside lock to avoid blocking other threads
                 result = await provider.acomplete(prompt, **kwargs)
 
-                # Success - update state
-                if index != self.last_successful_index:
-                    logger.info(
-                        f"Failover successful: switched from provider {self.last_successful_index} "
-                        f"to provider {index} ({provider.model})"
-                    )
-
-                self.last_successful_index = index
-
-                # Track backup successes for primary retry
-                if index != 0:
-                    self.backup_success_count += 1
-                else:
-                    self.backup_success_count = 0
+                # Success - update state atomically
+                with self._state_lock:
+                    if index != self.last_successful_index:
+                        logger.info(
+                            f"Failover successful: switched from provider {self.last_successful_index} "
+                            f"to provider {index} ({provider.model})"
+                        )
+                    self.last_successful_index = index
+                    if index != 0:
+                        self.backup_success_count += 1
+                    else:
+                        self.backup_success_count = 0
 
                 logger.info(f"Success with provider [{index}]: {provider.model}")
                 return result
@@ -271,18 +273,23 @@ class FailoverProvider:
         return True
 
     def reset(self) -> None:
-        """Reset failover state to prefer primary provider."""
-        self.last_successful_index = 0
-        self.backup_success_count = 0
+        """Reset failover state to prefer primary provider (thread-safe)."""
+        with self._state_lock:
+            self.last_successful_index = 0
+            self.backup_success_count = 0
         logger.info("Reset failover state to primary provider")
 
     @property
     def model(self) -> str:
-        """Return current provider's model name."""
-        return self.providers[self.last_successful_index].model
+        """Return current provider's model name (thread-safe)."""
+        with self._state_lock:
+            index = self.last_successful_index
+        return self.providers[index].model
 
     @property
     def provider_name(self) -> str:
-        """Return current provider's name."""
-        provider = self.providers[self.last_successful_index]
+        """Return current provider's name (thread-safe)."""
+        with self._state_lock:
+            index = self.last_successful_index
+        provider = self.providers[index]
         return getattr(provider, 'provider', provider.__class__.__name__)

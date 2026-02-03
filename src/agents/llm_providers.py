@@ -493,6 +493,9 @@ class BaseLLM(ABC):
             session_id = context.session_id if context else None
 
             # Generate cache key with security context
+            # Filter already-extracted keys from kwargs to prevent duplicate keyword args
+            _extracted_keys = {'temperature', 'max_tokens', 'top_p'}
+            _remaining_kwargs = {k: v for k, v in kwargs.items() if k not in _extracted_keys}
             cache_key = self._cache.generate_key(
                 model=self.model,
                 prompt=prompt,
@@ -502,7 +505,7 @@ class BaseLLM(ABC):
                 user_id=user_id,
                 tenant_id=tenant_id,
                 session_id=session_id,
-                **kwargs
+                **_remaining_kwargs
             )
 
             # Try to get from cache
@@ -621,6 +624,9 @@ class BaseLLM(ABC):
             session_id = context.session_id if context else None
 
             # Generate cache key with security context
+            # Filter already-extracted keys from kwargs to prevent duplicate keyword args
+            _extracted_keys = {'temperature', 'max_tokens', 'top_p'}
+            _remaining_kwargs = {k: v for k, v in kwargs.items() if k not in _extracted_keys}
             cache_key = self._cache.generate_key(
                 model=self.model,
                 prompt=prompt,
@@ -630,7 +636,7 @@ class BaseLLM(ABC):
                 user_id=user_id,
                 tenant_id=tenant_id,
                 session_id=session_id,
-                **kwargs
+                **_remaining_kwargs
             )
 
             # Try to get from cache

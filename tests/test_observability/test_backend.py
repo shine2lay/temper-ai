@@ -244,3 +244,184 @@ class TestBackendWorkflowExecution:
             assert "safety_violations" in agent.extra_metadata
             assert len(agent.extra_metadata["safety_violations"]) == 1
             assert agent.extra_metadata["safety_violations"][0]["severity"] == "HIGH"
+
+
+class TestCascadeDelete:
+    """Test cascade deletion removes all child records when parent is deleted."""
+
+    def test_delete_workflow_cascades_to_all_children(self, db):
+        """Deleting a workflow removes all stages, agents, llm_calls, tool_executions."""
+        from src.observability.database import get_session
+        from src.observability.models import (
+            WorkflowExecution, StageExecution, AgentExecution,
+            LLMCall, ToolExecution
+        )
+        from sqlmodel import select, func, delete
+
+        now = datetime.now(timezone.utc)
+
+        # Insert records directly via session to avoid standalone session issues
+        with get_session() as session:
+            wf = WorkflowExecution(
+                id="wf-cascade-1", workflow_name="cascade_test",
+                workflow_config_snapshot={"version": "1.0"},
+                start_time=now, status="running",
+                total_llm_calls=0, total_tool_calls=0,
+                total_tokens=0, total_cost_usd=0.0,
+            )
+            session.add(wf)
+            session.commit()
+
+            st = StageExecution(
+                id="st-cascade-1", workflow_execution_id="wf-cascade-1",
+                stage_name="test_stage", stage_config_snapshot={"stage": {"version": "1.0"}},
+                start_time=now, status="running",
+            )
+            session.add(st)
+            session.commit()
+
+            ag = AgentExecution(
+                id="ag-cascade-1", stage_execution_id="st-cascade-1",
+                agent_name="test_agent", agent_config_snapshot={"agent": {"version": "1.0"}},
+                start_time=now, status="running",
+            )
+            session.add(ag)
+            session.commit()
+
+            llm = LLMCall(
+                id="llm-cascade-1", agent_execution_id="ag-cascade-1",
+                provider="test", model="test-model",
+                prompt="hello", response="world",
+                prompt_tokens=5, completion_tokens=5, total_tokens=10,
+                latency_ms=100, estimated_cost_usd=0.001,
+                start_time=now, status="success",
+            )
+            session.add(llm)
+            session.commit()
+
+            tool = ToolExecution(
+                id="tool-cascade-1", agent_execution_id="ag-cascade-1",
+                tool_name="calculator",
+                input_params={"expression": "2+2"},
+                output_data={"result": 4},
+                start_time=now, duration_seconds=0.01, status="success",
+            )
+            session.add(tool)
+            session.commit()
+
+        # Verify all records exist
+        with get_session() as session:
+            assert session.exec(select(func.count(WorkflowExecution.id)).where(
+                WorkflowExecution.id == "wf-cascade-1")).first() == 1
+            assert session.exec(select(func.count(StageExecution.id)).where(
+                StageExecution.workflow_execution_id == "wf-cascade-1")).first() == 1
+            assert session.exec(select(func.count(AgentExecution.id)).where(
+                AgentExecution.stage_execution_id == "st-cascade-1")).first() == 1
+            assert session.exec(select(func.count(LLMCall.id)).where(
+                LLMCall.agent_execution_id == "ag-cascade-1")).first() == 1
+            assert session.exec(select(func.count(ToolExecution.id)).where(
+                ToolExecution.agent_execution_id == "ag-cascade-1")).first() == 1
+
+        # Delete workflow via raw SQL DELETE (same as cleanup_old_records)
+        with get_session() as session:
+            session.exec(
+                delete(WorkflowExecution).where(WorkflowExecution.id == "wf-cascade-1")
+            )
+            session.commit()
+
+        # Verify ALL child records are gone (no orphans)
+        with get_session() as session:
+            assert session.exec(select(func.count(WorkflowExecution.id)).where(
+                WorkflowExecution.id == "wf-cascade-1")).first() == 0
+            assert session.exec(select(func.count(StageExecution.id)).where(
+                StageExecution.id == "st-cascade-1")).first() == 0
+            assert session.exec(select(func.count(AgentExecution.id)).where(
+                AgentExecution.id == "ag-cascade-1")).first() == 0
+            assert session.exec(select(func.count(LLMCall.id)).where(
+                LLMCall.id == "llm-cascade-1")).first() == 0
+            assert session.exec(select(func.count(ToolExecution.id)).where(
+                ToolExecution.id == "tool-cascade-1")).first() == 0
+
+    def test_delete_stage_does_not_cascade_up(self, db):
+        """Deleting a stage should NOT delete its parent workflow."""
+        backend = SQLObservabilityBackend(buffer=False)
+        now = datetime.now(timezone.utc)
+
+        with backend.get_session_context() as session:
+            backend.track_workflow_start(
+                workflow_id="wf-up-1",
+                workflow_name="cascade_up_test",
+                workflow_config={"version": "1.0"},
+                start_time=now,
+            )
+
+        backend.track_stage_start(
+            stage_id="st-up-1",
+            workflow_id="wf-up-1",
+            stage_name="test_stage",
+            stage_config={"stage": {"version": "1.0"}},
+            start_time=now,
+        )
+
+        from src.observability.database import get_session
+        from src.observability.models import WorkflowExecution, StageExecution
+        from sqlmodel import select, func, delete
+
+        # Delete stage
+        with get_session() as session:
+            session.exec(delete(StageExecution).where(StageExecution.id == "st-up-1"))
+            session.commit()
+
+        # Workflow should still exist
+        with get_session() as session:
+            assert session.exec(select(func.count(WorkflowExecution.id)).where(
+                WorkflowExecution.id == "wf-up-1")).first() == 1
+            # But stage should be gone
+            assert session.exec(select(func.count(StageExecution.id)).where(
+                StageExecution.id == "st-up-1")).first() == 0
+
+    def test_cleanup_old_records_no_orphans(self, db):
+        """cleanup_old_records deletes workflows and all nested records."""
+        from datetime import timedelta
+        backend = SQLObservabilityBackend(buffer=False)
+        old_time = datetime.now(timezone.utc) - timedelta(days=100)
+
+        # Create old workflow with children
+        with backend.get_session_context() as session:
+            backend.track_workflow_start(
+                workflow_id="wf-old-1",
+                workflow_name="old_workflow",
+                workflow_config={"version": "1.0"},
+                start_time=old_time,
+            )
+
+        backend.track_stage_start(
+            stage_id="st-old-1",
+            workflow_id="wf-old-1",
+            stage_name="old_stage",
+            stage_config={"stage": {"version": "1.0"}},
+            start_time=old_time,
+        )
+
+        backend.track_agent_start(
+            agent_id="ag-old-1",
+            stage_id="st-old-1",
+            agent_name="old_agent",
+            agent_config={"agent": {"version": "1.0"}},
+            start_time=old_time,
+        )
+
+        # Run cleanup with 30-day retention
+        counts = backend.cleanup_old_records(retention_days=30)
+        assert counts["workflows"] == 1
+
+        # Verify no orphans remain
+        from src.observability.database import get_session
+        from src.observability.models import StageExecution, AgentExecution
+        from sqlmodel import select, func
+
+        with get_session() as session:
+            assert session.exec(select(func.count(StageExecution.id)).where(
+                StageExecution.id == "st-old-1")).first() == 0
+            assert session.exec(select(func.count(AgentExecution.id)).where(
+                AgentExecution.id == "ag-old-1")).first() == 0

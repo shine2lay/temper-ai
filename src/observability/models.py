@@ -7,7 +7,7 @@ and learning/merit systems.
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
 from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import Index, JSON
+from sqlalchemy import Index, JSON, ForeignKey, String
 
 
 def utcnow() -> datetime:
@@ -58,7 +58,10 @@ class WorkflowExecution(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
     # Relationships
-    stages: List["StageExecution"] = Relationship(back_populates="workflow")
+    stages: List["StageExecution"] = Relationship(
+        back_populates="workflow",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
 
 class StageExecution(SQLModel, table=True):
@@ -67,7 +70,9 @@ class StageExecution(SQLModel, table=True):
     __tablename__ = "stage_executions"
 
     id: str = Field(primary_key=True)
-    workflow_execution_id: str = Field(foreign_key="workflow_executions.id", index=True)
+    workflow_execution_id: str = Field(
+        sa_column=Column(String, ForeignKey("workflow_executions.id", ondelete="CASCADE"), index=True)
+    )
 
     # Identity
     stage_name: str = Field(index=True)
@@ -98,8 +103,14 @@ class StageExecution(SQLModel, table=True):
 
     # Relationships
     workflow: WorkflowExecution = Relationship(back_populates="stages")
-    agents: List["AgentExecution"] = Relationship(back_populates="stage")
-    collaboration_events: List["CollaborationEvent"] = Relationship(back_populates="stage")
+    agents: List["AgentExecution"] = Relationship(
+        back_populates="stage",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    collaboration_events: List["CollaborationEvent"] = Relationship(
+        back_populates="stage",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
 
 class AgentExecution(SQLModel, table=True):
@@ -108,7 +119,9 @@ class AgentExecution(SQLModel, table=True):
     __tablename__ = "agent_executions"
 
     id: str = Field(primary_key=True)
-    stage_execution_id: str = Field(foreign_key="stage_executions.id", index=True)
+    stage_execution_id: str = Field(
+        sa_column=Column(String, ForeignKey("stage_executions.id", ondelete="CASCADE"), index=True)
+    )
 
     # Identity
     agent_name: str = Field(index=True)
@@ -159,8 +172,14 @@ class AgentExecution(SQLModel, table=True):
 
     # Relationships
     stage: StageExecution = Relationship(back_populates="agents")
-    llm_calls: List["LLMCall"] = Relationship(back_populates="agent")
-    tool_executions: List["ToolExecution"] = Relationship(back_populates="agent")
+    llm_calls: List["LLMCall"] = Relationship(
+        back_populates="agent",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
+    tool_executions: List["ToolExecution"] = Relationship(
+        back_populates="agent",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+    )
 
 
 class LLMCall(SQLModel, table=True):
@@ -169,7 +188,9 @@ class LLMCall(SQLModel, table=True):
     __tablename__ = "llm_calls"
 
     id: str = Field(primary_key=True)
-    agent_execution_id: str = Field(foreign_key="agent_executions.id", index=True)
+    agent_execution_id: str = Field(
+        sa_column=Column(String, ForeignKey("agent_executions.id", ondelete="CASCADE"), index=True)
+    )
 
     # Provider info
     provider: str = Field(index=True)
@@ -219,7 +240,9 @@ class ToolExecution(SQLModel, table=True):
     __tablename__ = "tool_executions"
 
     id: str = Field(primary_key=True)
-    agent_execution_id: str = Field(foreign_key="agent_executions.id", index=True)
+    agent_execution_id: str = Field(
+        sa_column=Column(String, ForeignKey("agent_executions.id", ondelete="CASCADE"), index=True)
+    )
 
     # Tool info
     tool_name: str = Field(index=True)
@@ -258,7 +281,9 @@ class CollaborationEvent(SQLModel, table=True):
     __tablename__ = "collaboration_events"
 
     id: str = Field(primary_key=True)
-    stage_execution_id: str = Field(foreign_key="stage_executions.id", index=True)
+    stage_execution_id: str = Field(
+        sa_column=Column(String, ForeignKey("stage_executions.id", ondelete="CASCADE"), index=True)
+    )
 
     # Event type
     event_type: str = Field(index=True)  # vote | conflict | resolution | consensus | debate_round

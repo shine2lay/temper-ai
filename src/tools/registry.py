@@ -11,7 +11,7 @@ from pathlib import Path
 from src.tools.base import BaseTool
 
 # Import enhanced exceptions
-from src.utils.exceptions import ToolRegistryError, ToolNotFoundError, ExecutionContext
+from src.utils.exceptions import ToolRegistryError, ToolNotFoundError
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ from langgraph.graph import StateGraph, START, END
 from src.compiler.executors.base import StageExecutor
 from src.compiler.utils import extract_agent_name
 from src.agents.agent_factory import AgentFactory
-from src.agents.base_agent import ExecutionContext
+from src.core.context import ExecutionContext
 from src.utils.config_helpers import get_nested_value
 from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError
 

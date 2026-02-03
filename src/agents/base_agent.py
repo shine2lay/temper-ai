@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
 
 from src.compiler.schemas import AgentConfig
+from src.core.context import ExecutionContext  # canonical definition; re-exported here
 
 
 @dataclass
@@ -83,28 +84,6 @@ class AgentResponse:
 
         # Clamp to valid range
         return max(0.0, min(1.0, confidence))
-
-
-@dataclass
-class ExecutionContext:
-    """Context for agent execution.
-
-    Provides environment and tracking information for the agent during execution.
-
-    Attributes:
-        workflow_id: ID of the workflow execution
-        stage_id: ID of the stage execution
-        agent_id: ID of the agent execution
-        session_id: Optional session ID for multi-turn conversations
-        user_id: Optional user ID for user-specific context
-        metadata: Additional context metadata
-    """
-    workflow_id: Optional[str] = None
-    stage_id: Optional[str] = None
-    agent_id: Optional[str] = None
-    session_id: Optional[str] = None
-    user_id: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 class BaseAgent(ABC):

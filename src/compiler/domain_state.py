@@ -300,7 +300,7 @@ class WorkflowDomainState:
 
 
 @dataclass
-class ExecutionContext:
+class InfrastructureContext:
     """Infrastructure components for workflow execution.
 
     Contains ONLY non-serializable infrastructure objects that are
@@ -326,17 +326,10 @@ class ExecutionContext:
         >>> from src.compiler.config_loader import ConfigLoader
         >>>
         >>> # Create infrastructure
-        >>> context = ExecutionContext(
+        >>> context = InfrastructureContext(
         ...     tracker=ExecutionTracker(),
         ...     tool_registry=ToolRegistry(),
         ...     config_loader=ConfigLoader()
-        ... )
-        >>>
-        >>> # On resume: recreate, don't deserialize
-        >>> context = ExecutionContext(
-        ...     tracker=ExecutionTracker(),  # Fresh instance
-        ...     tool_registry=ToolRegistry(),  # Fresh instance
-        ...     config_loader=ConfigLoader()  # Fresh instance
         ... )
     """
 
@@ -358,7 +351,11 @@ class ExecutionContext:
         if self.visualizer:
             components.append("visualizer")
 
-        return f"ExecutionContext(components=[{', '.join(components)}])"
+        return f"InfrastructureContext(components=[{', '.join(components)}])"
+
+
+# Backward-compatible alias
+ExecutionContext = InfrastructureContext
 
 
 def create_initial_domain_state(**kwargs: Any) -> WorkflowDomainState:

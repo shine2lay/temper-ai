@@ -13,6 +13,8 @@ import traceback
 from datetime import datetime, timezone
 import re
 
+from src.core.context import ExecutionContext  # canonical definition; re-exported here
+
 
 def sanitize_error_message(message: str) -> str:
     """Sanitize sensitive data from error messages.
@@ -176,56 +178,6 @@ class ErrorCode(str, Enum):
 
     # Unknown/Generic (9999)
     UNKNOWN_ERROR = "UNKNOWN_ERROR"
-
-
-class ExecutionContext:
-    """Execution context for error tracking.
-
-    Captures information about where an error occurred in the execution flow.
-
-    Attributes:
-        workflow_id: ID of the workflow being executed
-        stage_id: ID of the current stage
-        agent_id: ID of the current agent
-        tool_name: Name of the tool being executed
-        metadata: Additional contextual information
-    """
-
-    def __init__(
-        self,
-        workflow_id: Optional[str] = None,
-        stage_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        tool_name: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
-    ):
-        self.workflow_id = workflow_id
-        self.stage_id = stage_id
-        self.agent_id = agent_id
-        self.tool_name = tool_name
-        self.metadata = metadata or {}
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert context to dictionary."""
-        return {
-            "workflow_id": self.workflow_id,
-            "stage_id": self.stage_id,
-            "agent_id": self.agent_id,
-            "tool_name": self.tool_name,
-            "metadata": self.metadata
-        }
-
-    def __repr__(self) -> str:
-        parts = []
-        if self.workflow_id:
-            parts.append(f"workflow={self.workflow_id}")
-        if self.stage_id:
-            parts.append(f"stage={self.stage_id}")
-        if self.agent_id:
-            parts.append(f"agent={self.agent_id}")
-        if self.tool_name:
-            parts.append(f"tool={self.tool_name}")
-        return f"ExecutionContext({', '.join(parts)})"
 
 
 class BaseError(Exception):

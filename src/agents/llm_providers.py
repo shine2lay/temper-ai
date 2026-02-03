@@ -26,16 +26,15 @@ except ImportError:
 
 from src.utils.error_handling import retry_with_backoff, RetryStrategy
 
-# Import execution context for cache isolation
-from src.agents.base_agent import ExecutionContext
+# Import canonical execution context for cache isolation
+from src.core.context import ExecutionContext
 
-# Import enhanced exceptions with execution context
+# Import enhanced exceptions
 from src.utils.exceptions import (
     LLMError,
     LLMTimeoutError,
     LLMRateLimitError,
     LLMAuthenticationError,
-    ExecutionContext
 )
 
 # Import circuit breaker for resilience
@@ -756,6 +755,7 @@ class OllamaLLM(BaseLLM):
                     "temperature": kwargs.get("temperature", self.temperature),
                     "top_p": kwargs.get("top_p", self.top_p),
                     "num_predict": kwargs.get("max_tokens", self.max_tokens),
+                    "num_ctx": kwargs.get("max_tokens", self.max_tokens) + 4096,
                 },
                 "tools": tools,
                 "stream": False,

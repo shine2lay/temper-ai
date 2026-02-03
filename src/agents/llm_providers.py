@@ -247,15 +247,16 @@ class BaseLLM(ABC):
                 return  # Idempotent - already closed
 
             try:
-                # Check if event loop is running
-                loop = asyncio.get_running_loop()
+                asyncio.get_running_loop()
+            except RuntimeError:
+                # No running loop - safe to create new one
+                asyncio.run(self.aclose())
+            else:
+                # Event loop is running - sync close would deadlock
                 raise RuntimeError(
                     "Cannot call sync close() from async context. "
                     "Use await aclose() instead to prevent event loop conflicts."
                 )
-            except RuntimeError:
-                # No running loop - safe to create new one
-                asyncio.run(self.aclose())
 
     async def aclose(self) -> None:
         """Async close for HTTPx clients and release resources.

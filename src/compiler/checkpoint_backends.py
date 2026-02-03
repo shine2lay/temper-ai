@@ -26,9 +26,13 @@ from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, cast
 from pathlib import Path
 import json
+import logging
+import re
 import secrets
 import time
 from datetime import datetime, UTC
+
+logger = logging.getLogger(__name__)
 
 from src.compiler.domain_state import WorkflowDomainState
 
@@ -192,11 +196,55 @@ class FileCheckpointBackend(CheckpointBackend):
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self._counter = 0  # Counter for unique IDs within same millisecond
 
+    @staticmethod
+    def _sanitize_id(id_value: str, id_type: str = "identifier") -> str:
+        """Sanitize an ID to prevent path traversal attacks.
+
+        Args:
+            id_value: The ID to sanitize (workflow_id or checkpoint_id)
+            id_type: Label for error messages
+
+        Returns:
+            Sanitized ID containing only [A-Za-z0-9_-]
+
+        Raises:
+            ValueError: If ID is empty, contains null bytes, exceeds length,
+                        or has no valid characters after sanitization
+        """
+        if not id_value or not isinstance(id_value, str):
+            raise ValueError(f"{id_type} must be a non-empty string")
+        if '\x00' in id_value:
+            raise ValueError(f"{id_type} contains null bytes")
+        if len(id_value) > 255:
+            raise ValueError(f"{id_type} exceeds maximum length of 255 characters")
+        sanitized = re.sub(r'[^A-Za-z0-9_-]', '_', id_value)
+        if not sanitized:
+            raise ValueError(f"{id_type} contains no valid characters after sanitization")
+        return sanitized
+
+    def _verify_path_containment(self, resolved_path: Path) -> None:
+        """Verify that a resolved path stays within checkpoint_dir.
+
+        Raises:
+            ValueError: If resolved_path escapes the checkpoint directory
+        """
+        resolved_parent = self.checkpoint_dir.resolve()
+        try:
+            resolved_path.relative_to(resolved_parent)
+        except ValueError:
+            raise ValueError(
+                f"Path traversal detected: {resolved_path} is outside "
+                f"allowed directory {resolved_parent}"
+            )
+
     def _get_workflow_dir(self, workflow_id: str) -> Path:
-        """Get checkpoint directory for a workflow."""
-        workflow_dir = self.checkpoint_dir / workflow_id
-        workflow_dir.mkdir(parents=True, exist_ok=True)
-        return workflow_dir
+        """Get checkpoint directory for a workflow with path traversal protection."""
+        safe_id = self._sanitize_id(workflow_id, "workflow_id")
+        workflow_dir = self.checkpoint_dir / safe_id
+        resolved = workflow_dir.resolve(strict=False)
+        self._verify_path_containment(resolved)
+        resolved.mkdir(parents=True, exist_ok=True)
+        return resolved
 
     def _generate_checkpoint_id(self) -> str:
         """Generate a unique checkpoint ID with cryptographic randomness.
@@ -214,8 +262,13 @@ class FileCheckpointBackend(CheckpointBackend):
         return f"cp-{timestamp}-{self._counter}-{random_suffix}"
 
     def _get_checkpoint_path(self, workflow_id: str, checkpoint_id: str) -> Path:
-        """Get file path for a checkpoint."""
-        return self._get_workflow_dir(workflow_id) / f"{checkpoint_id}.json"
+        """Get file path for a checkpoint with path traversal protection."""
+        workflow_dir = self._get_workflow_dir(workflow_id)
+        safe_cp_id = self._sanitize_id(checkpoint_id, "checkpoint_id")
+        checkpoint_path = workflow_dir / f"{safe_cp_id}.json"
+        resolved = checkpoint_path.resolve(strict=False)
+        self._verify_path_containment(resolved)
+        return resolved
 
     def save_checkpoint(
         self,

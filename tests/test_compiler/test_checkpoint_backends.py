@@ -296,6 +296,94 @@ class TestFileCheckpointBackend:
         val2 = int(suffix2, 16)
         assert abs(val1 - val2) > 1, "Random values must not be sequential"
 
+    # --- Path Traversal Security Tests ---
+
+    def test_workflow_id_traversal_blocked(self, temp_dir, backend, sample_domain_state):
+        """Path traversal via workflow_id must be sanitized and contained."""
+        cp_id = backend.save_checkpoint("../../tmp/evil", sample_domain_state)
+        # Verify all created files stay inside checkpoint_dir
+        resolved_base = Path(temp_dir).resolve()
+        for f in Path(temp_dir).rglob("*.json"):
+            assert str(f.resolve()).startswith(str(resolved_base))
+        loaded = backend.load_checkpoint("../../tmp/evil", cp_id)
+        assert loaded.workflow_id == sample_domain_state.workflow_id
+
+    def test_checkpoint_id_traversal_blocked(self, temp_dir, backend, sample_domain_state):
+        """Path traversal via checkpoint_id must be sanitized and contained."""
+        cp_id = backend.save_checkpoint(
+            "wf-test-123", sample_domain_state,
+            checkpoint_id="../../etc/passwd"
+        )
+        # Verify all created files stay inside checkpoint_dir
+        resolved_base = Path(temp_dir).resolve()
+        for f in Path(temp_dir).rglob("*.json"):
+            assert str(f.resolve()).startswith(str(resolved_base))
+        loaded = backend.load_checkpoint("wf-test-123", cp_id)
+        assert loaded.workflow_id == sample_domain_state.workflow_id
+
+    def test_null_byte_in_workflow_id(self, backend, sample_domain_state):
+        """Null bytes in workflow_id must be rejected."""
+        with pytest.raises(ValueError, match="null bytes"):
+            backend.save_checkpoint("wf\x00evil", sample_domain_state)
+
+    def test_null_byte_in_checkpoint_id(self, backend, sample_domain_state):
+        """Null bytes in checkpoint_id must be rejected."""
+        with pytest.raises(ValueError, match="null bytes"):
+            backend.save_checkpoint(
+                "wf-test-123", sample_domain_state,
+                checkpoint_id="cp\x00evil"
+            )
+
+    def test_empty_workflow_id(self, backend, sample_domain_state):
+        """Empty workflow_id must be rejected."""
+        with pytest.raises(ValueError, match="non-empty string"):
+            backend.save_checkpoint("", sample_domain_state)
+
+    def test_empty_checkpoint_id(self, backend, sample_domain_state):
+        """Empty checkpoint_id must be rejected."""
+        with pytest.raises(ValueError, match="non-empty string"):
+            backend.save_checkpoint(
+                "wf-test-123", sample_domain_state,
+                checkpoint_id=""
+            )
+
+    def test_long_workflow_id(self, backend, sample_domain_state):
+        """Workflow IDs exceeding 255 chars must be rejected."""
+        with pytest.raises(ValueError, match="maximum length"):
+            backend.save_checkpoint("a" * 256, sample_domain_state)
+
+    def test_sanitization_replaces_special_chars(self, temp_dir, backend, sample_domain_state):
+        """Special characters in IDs are replaced with underscores."""
+        cp_id = backend.save_checkpoint("wf/test@123", sample_domain_state)
+        # Verify sanitized directory name
+        sanitized_dir = Path(temp_dir).resolve() / "wf_test_123"
+        assert sanitized_dir.exists(), f"Expected sanitized dir {sanitized_dir}"
+        loaded = backend.load_checkpoint("wf/test@123", cp_id)
+        assert loaded.workflow_id == sample_domain_state.workflow_id
+
+    def test_valid_workflow_ids_accepted(self, backend, sample_domain_state):
+        """Valid workflow IDs with allowed characters pass through."""
+        for wf_id in ["wf-123", "test_workflow", "ABC-def-456", "simple"]:
+            cp_id = backend.save_checkpoint(wf_id, sample_domain_state)
+            loaded = backend.load_checkpoint(wf_id, cp_id)
+            assert loaded.workflow_id == sample_domain_state.workflow_id
+
+    def test_resolved_path_stays_in_checkpoint_dir(self, temp_dir, sample_domain_state):
+        """Resolved paths must stay within the checkpoint directory."""
+        backend = FileCheckpointBackend(checkpoint_dir=temp_dir)
+        cp_id = backend.save_checkpoint("../../escape", sample_domain_state)
+        # The file must be inside temp_dir, not outside it
+        workflow_dir = Path(temp_dir).resolve() / "______escape"
+        assert workflow_dir.exists()
+        checkpoint_files = list(workflow_dir.glob("*.json"))
+        assert len(checkpoint_files) == 1
+
+    def test_sanitize_id_static_method(self):
+        """_sanitize_id works correctly as a standalone method."""
+        assert FileCheckpointBackend._sanitize_id("hello-world_123", "test") == "hello-world_123"
+        assert FileCheckpointBackend._sanitize_id("../evil", "test") == "___evil"
+        assert FileCheckpointBackend._sanitize_id("a/b/c", "test") == "a_b_c"
+
 
 # Redis backend tests require a running Redis instance
 # These are skipped by default and can be run with: pytest -m redis

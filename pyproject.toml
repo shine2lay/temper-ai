@@ -30,6 +30,7 @@ dependencies = [
     "alembic>=1.13",
 
     # Console UI
+    "click>=8.0",
     "rich>=13.0",
 
     # HTTP & Web
@@ -74,7 +75,7 @@ Documentation = "https://github.com/yourusername/meta-autonomous-framework/docs"
 Repository = "https://github.com/yourusername/meta-autonomous-framework"
 
 [project.scripts]
-meta-autonomous = "src.cli.main:main"
+maf = "src.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

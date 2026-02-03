@@ -13,6 +13,7 @@ import sys
 import logging
 import json
 import re
+import functools
 import unicodedata
 from urllib.parse import unquote
 from typing import Any, Dict, Optional, Callable, Tuple
@@ -544,12 +545,29 @@ def log_function_call(logger: logging.Logger, level: int = logging.DEBUG) -> Cal
         ... def process_data(data):
         ...     return len(data)
     """
+    # Parameter names that indicate sensitive values
+    _sensitive_names = frozenset({
+        "password", "passwd", "secret", "token", "api_key", "apikey",
+        "credentials", "auth", "authorization", "private_key", "encryption_key",
+    })
+
+    def _redact_value(name: str, value: Any) -> Any:
+        """Redact value if parameter name suggests it is sensitive."""
+        if name.lower() in _sensitive_names:
+            return "***"
+        return value
+
+    def _safe_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        return {k: _redact_value(k, v) for k, v in kwargs.items()}
+
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        @functools.wraps(func)
         def wrapper(*func_args: Any, **func_kwargs: Any) -> Any:
-            logger.log(level, f"Entering {func.__name__} with args={func_args}, kwargs={func_kwargs}")
+            safe_kw = _safe_kwargs(func_kwargs)
+            logger.log(level, f"Entering {func.__name__} with args={func_args}, kwargs={safe_kw}")
             try:
                 result = func(*func_args, **func_kwargs)
-                logger.log(level, f"Exiting {func.__name__} with result={result}")
+                logger.log(level, f"Exiting {func.__name__}")
                 return result
             except Exception as e:
                 logger.error(f"Exception in {func.__name__}: {e}", exc_info=True)

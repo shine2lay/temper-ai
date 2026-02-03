@@ -69,6 +69,7 @@ class ApprovalRequest:
     id: str = field(default_factory=lambda: str(uuid4()))
     action: Dict[str, Any] = field(default_factory=dict)
     reason: str = ""
+    requester: Optional[str] = None
     context: Dict[str, Any] = field(default_factory=dict)
     violations: List[SafetyViolation] = field(default_factory=list)
     status: ApprovalStatus = ApprovalStatus.PENDING
@@ -162,6 +163,7 @@ class ApprovalWorkflow:
         default_timeout_minutes: int = 60,
         auto_reject_on_timeout: bool = True,
         max_requests: int = MAX_REQUESTS,
+        authorized_approvers: Optional[List[str]] = None,
     ):
         """Initialize approval workflow.
 
@@ -169,10 +171,17 @@ class ApprovalWorkflow:
             default_timeout_minutes: Default timeout for approval requests
             auto_reject_on_timeout: Automatically reject expired requests
             max_requests: Maximum stored requests before oldest are evicted
+            authorized_approvers: List of authorized approver identifiers.
+                If None, no authorization checks are performed (backward compat).
+                If set, only listed approvers can approve/reject, and
+                self-approval (requester == approver) is blocked.
         """
         self.default_timeout_minutes = default_timeout_minutes
         self.auto_reject_on_timeout = auto_reject_on_timeout
         self._max_requests = max_requests
+        self._authorized_approvers: Optional[frozenset[str]] = (
+            frozenset(authorized_approvers) if authorized_approvers is not None else None
+        )
         self._requests: Dict[str, ApprovalRequest] = {}
         self._on_approved_callbacks: List[Callable[[ApprovalRequest], None]] = []
         self._on_rejected_callbacks: List[Callable[[ApprovalRequest], None]] = []
@@ -185,7 +194,8 @@ class ApprovalWorkflow:
         violations: Optional[List[SafetyViolation]] = None,
         required_approvers: int = 1,
         timeout_minutes: Optional[int] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        requester: Optional[str] = None,
     ) -> ApprovalRequest:
         """Create a new approval request.
 
@@ -197,6 +207,8 @@ class ApprovalWorkflow:
             required_approvers: Number of approvals needed (default: 1)
             timeout_minutes: Custom timeout (uses default if None)
             metadata: Additional request metadata
+            requester: Identity of the agent/user requesting approval.
+                Used for self-approval prevention when authorized_approvers is set.
 
         Returns:
             ApprovalRequest object
@@ -215,6 +227,7 @@ class ApprovalWorkflow:
         request = ApprovalRequest(
             action=action,
             reason=reason,
+            requester=requester,
             context=context or {},
             violations=violations or [],
             expires_at=expires_at,
@@ -245,6 +258,33 @@ class ApprovalWorkflow:
         for rid in completed_ids[:to_remove]:
             del self._requests[rid]
 
+    def _check_approver_authorized(self, approver: str, request: ApprovalRequest) -> Optional[str]:
+        """Validate that the approver is authorized and not self-approving.
+
+        Args:
+            approver: Identity of the approver
+            request: The approval request
+
+        Returns:
+            None if authorized, or an error message string if not.
+        """
+        if self._authorized_approvers is None:
+            return None
+
+        # Self-approval check: requester cannot approve their own request
+        if request.requester and approver == request.requester:
+            return (
+                f"Self-approval denied: '{approver}' cannot approve their own request"
+            )
+
+        # Authorization check
+        if approver not in self._authorized_approvers:
+            return (
+                f"Unauthorized approver: '{approver}' is not in the authorized approvers list"
+            )
+
+        return None
+
     def approve(
         self,
         request_id: str,
@@ -261,6 +301,9 @@ class ApprovalWorkflow:
         Returns:
             True if approval was accepted, False if request not found/not pending
 
+        Raises:
+            PermissionError: If approver is not authorized or is self-approving
+
         Example:
             >>> workflow.approve("req-123", approver="alice", reason="Looks good")
         """
@@ -276,6 +319,11 @@ class ApprovalWorkflow:
         # Can only approve pending requests
         if not request.is_pending():
             return False
+
+        # Authorization check
+        error = self._check_approver_authorized(approver, request)
+        if error:
+            raise PermissionError(error)
 
         # Add approver (avoid duplicates)
         if approver not in request.approvers:
@@ -305,6 +353,9 @@ class ApprovalWorkflow:
         Returns:
             True if rejection was accepted, False if request not found/not pending
 
+        Raises:
+            PermissionError: If rejecter is not authorized
+
         Example:
             >>> workflow.reject("req-123", rejecter="bob", reason="Too risky")
         """
@@ -315,6 +366,14 @@ class ApprovalWorkflow:
         # Can only reject pending requests
         if not request.is_pending():
             return False
+
+        # Authorization check (self-rejection is allowed — rejecting your own
+        # request is not a security risk, unlike self-approval)
+        if self._authorized_approvers is not None:
+            if rejecter not in self._authorized_approvers:
+                raise PermissionError(
+                    f"Unauthorized rejecter: '{rejecter}' is not in the authorized approvers list"
+                )
 
         # Add rejecter
         if rejecter not in request.rejecters:

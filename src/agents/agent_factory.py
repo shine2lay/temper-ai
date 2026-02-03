@@ -6,6 +6,7 @@ the 'type' field in agent config to concrete agent implementations.
 This supports the "radical modularity" vision by allowing multiple agent types
 (standard, debate, human, custom) to be used interchangeably.
 """
+import threading
 from typing import Dict, Type
 
 from src.agents.base_agent import BaseAgent
@@ -23,6 +24,8 @@ class AgentFactory:
     - "standard": StandardAgent with LLM + tool execution loop
     - More types can be added in M3+ (debate, human, custom, etc.)
     """
+
+    _lock = threading.Lock()
 
     # Map of agent type strings to implementation classes
     _agent_types: Dict[str, Type[BaseAgent]] = {
@@ -54,14 +57,14 @@ class AgentFactory:
         # Get agent type from config (defaults to "standard")
         agent_type = getattr(config.agent, "type", "standard")
 
-        if agent_type not in cls._agent_types:
-            raise ValueError(
-                f"Unknown agent type: '{agent_type}'. "
-                f"Supported types: {list(cls._agent_types.keys())}"
-            )
+        with cls._lock:
+            if agent_type not in cls._agent_types:
+                raise ValueError(
+                    f"Unknown agent type: '{agent_type}'. "
+                    f"Supported types: {list(cls._agent_types.keys())}"
+                )
+            agent_class = cls._agent_types[agent_type]
 
-        # Get agent class and instantiate
-        agent_class = cls._agent_types[agent_type]
         return agent_class(config)
 
     @classmethod
@@ -82,15 +85,15 @@ class AgentFactory:
             ...     pass
             >>> AgentFactory.register_type("my_custom", MyCustomAgent)
         """
-        if type_name in cls._agent_types:
-            raise ValueError(f"Agent type '{type_name}' is already registered")
-
         if not issubclass(agent_class, BaseAgent):
             raise ValueError(
                 f"Agent class must inherit from BaseAgent, got {agent_class.__name__}"
             )
 
-        cls._agent_types[type_name] = agent_class
+        with cls._lock:
+            if type_name in cls._agent_types:
+                raise ValueError(f"Agent type '{type_name}' is already registered")
+            cls._agent_types[type_name] = agent_class
 
     @classmethod
     def list_types(cls) -> Dict[str, Type[BaseAgent]]:
@@ -99,4 +102,13 @@ class AgentFactory:
         Returns:
             Dict mapping type names to agent classes
         """
-        return cls._agent_types.copy()
+        with cls._lock:
+            return cls._agent_types.copy()
+
+    @classmethod
+    def reset_for_testing(cls) -> None:
+        """Reset agent types to defaults for testing."""
+        with cls._lock:
+            cls._agent_types = {
+                "standard": StandardAgent,
+            }

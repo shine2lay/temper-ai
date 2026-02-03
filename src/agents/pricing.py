@@ -340,19 +340,21 @@ class PricingManager:
     def reset_for_testing(cls) -> None:
         """Reset singleton for testing.
 
-        Similar to StrategyRegistry.reset_for_testing().
+        Clears both the class singleton and the _initialized flag so
+        __init__ will run again on next instantiation.
         Should only be used in test code.
         """
         with cls._lock:
+            if cls._instance is not None and hasattr(cls._instance, '_initialized'):
+                del cls._instance._initialized
             cls._instance = None
-
-
-# Global singleton instance getter
-_pricing_manager: Optional[PricingManager] = None
 
 
 def get_pricing_manager(config_path: str = "config/model_pricing.yaml") -> PricingManager:
     """Get global pricing manager instance.
+
+    Routes through PricingManager.__new__ singleton, so there is only
+    one path for instance creation (no dual-singleton inconsistency).
 
     Args:
         config_path: Path to pricing config (only used on first call)
@@ -364,7 +366,4 @@ def get_pricing_manager(config_path: str = "config/model_pricing.yaml") -> Prici
         >>> pricing = get_pricing_manager()
         >>> cost = pricing.get_cost("claude-3-opus", 100000, 50000)
     """
-    global _pricing_manager
-    if _pricing_manager is None:
-        _pricing_manager = PricingManager(config_path)
-    return _pricing_manager
+    return PricingManager(config_path)

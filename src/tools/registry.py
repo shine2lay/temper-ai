@@ -6,6 +6,7 @@ import importlib
 import inspect
 import pkgutil
 import logging
+import threading
 from pathlib import Path
 
 from src.tools.base import BaseTool
@@ -37,6 +38,7 @@ COMMON_ERROR_SUGGESTIONS = {
 # Global cache for discovered tools (populated on first auto-discovery)
 _DISCOVERED_TOOLS_CACHE: Optional[Dict[str, BaseTool]] = None
 _GLOBAL_REGISTRY: Optional['ToolRegistry'] = None
+_GLOBAL_LOCK = threading.Lock()
 
 
 class ToolRegistry:
@@ -60,6 +62,7 @@ class ToolRegistry:
         """
         # Changed to support multiple versions: name -> version -> tool
         self._tools: Dict[str, Dict[str, BaseTool]] = {}
+        self._lock = threading.Lock()
 
         if auto_discover:
             self.auto_discover()
@@ -83,18 +86,20 @@ class ToolRegistry:
         metadata = tool.get_metadata()
         version = metadata.version or "1.0.0"  # Default version if not specified
 
-        # Initialize tool name dict if not exists
-        if tool.name not in self._tools:
-            self._tools[tool.name] = {}
+        with self._lock:
+            # Initialize tool name dict if not exists
+            if tool.name not in self._tools:
+                self._tools[tool.name] = {}
 
-        # Check if this version already exists
-        if version in self._tools[tool.name] and not allow_override:
-            raise ToolRegistryError(
-                f"Tool '{tool.name}' version '{version}' is already registered. "
-                f"Use allow_override=True to replace it."
-            )
+            # Check if this version already exists (atomic with registration)
+            if version in self._tools[tool.name] and not allow_override:
+                raise ToolRegistryError(
+                    f"Tool '{tool.name}' version '{version}' is already registered. "
+                    f"Use allow_override=True to replace it."
+                )
 
-        self._tools[tool.name][version] = tool
+            self._tools[tool.name][version] = tool
+
         logger.debug(f"Registered tool: {tool.name} v{version}")
 
     def register_multiple(self, tools: List[BaseTool]) -> None:
@@ -118,23 +123,24 @@ class ToolRegistry:
         Raises:
             ToolRegistryError: If tool not found
         """
-        if tool_name not in self._tools:
-            raise ToolRegistryError(f"Tool '{tool_name}' not found")
+        with self._lock:
+            if tool_name not in self._tools:
+                raise ToolRegistryError(f"Tool '{tool_name}' not found")
 
-        if version is None:
-            # Unregister all versions
-            del self._tools[tool_name]
-        else:
-            # Unregister specific version
-            if version not in self._tools[tool_name]:
-                raise ToolRegistryError(
-                    f"Tool '{tool_name}' version '{version}' not found"
-                )
-            del self._tools[tool_name][version]
-
-            # Remove tool entry if no versions left
-            if not self._tools[tool_name]:
+            if version is None:
+                # Unregister all versions
                 del self._tools[tool_name]
+            else:
+                # Unregister specific version
+                if version not in self._tools[tool_name]:
+                    raise ToolRegistryError(
+                        f"Tool '{tool_name}' version '{version}' not found"
+                    )
+                del self._tools[tool_name][version]
+
+                # Remove tool entry if no versions left
+                if not self._tools[tool_name]:
+                    del self._tools[tool_name]
 
     def get(self, name: str, version: Optional[str] = None) -> Optional[BaseTool]:
         """
@@ -745,7 +751,8 @@ class ToolRegistry:
 
     def clear(self) -> None:
         """Clear all registered tools."""
-        self._tools.clear()
+        with self._lock:
+            self._tools.clear()
 
     def __len__(self) -> int:
         """Return number of registered tool instances (counting all versions)."""
@@ -783,9 +790,10 @@ def get_global_registry() -> ToolRegistry:
     """
     global _GLOBAL_REGISTRY
 
-    if _GLOBAL_REGISTRY is None:
-        _GLOBAL_REGISTRY = ToolRegistry(auto_discover=False)
-        _GLOBAL_REGISTRY.auto_discover(use_cache=True)
+    with _GLOBAL_LOCK:
+        if _GLOBAL_REGISTRY is None:
+            _GLOBAL_REGISTRY = ToolRegistry(auto_discover=False)
+            _GLOBAL_REGISTRY.auto_discover(use_cache=True)
 
     return _GLOBAL_REGISTRY
 
@@ -798,5 +806,6 @@ def clear_global_cache() -> None:
     Next call to get_global_registry() will re-discover tools.
     """
     global _DISCOVERED_TOOLS_CACHE, _GLOBAL_REGISTRY
-    _DISCOVERED_TOOLS_CACHE = None
-    _GLOBAL_REGISTRY = None
+    with _GLOBAL_LOCK:
+        _DISCOVERED_TOOLS_CACHE = None
+        _GLOBAL_REGISTRY = None

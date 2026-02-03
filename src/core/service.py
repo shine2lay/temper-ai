@@ -3,6 +3,7 @@
 This module provides base service classes and mixins for the framework,
 including safety service integration for policy enforcement.
 """
+import threading
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 from src.safety import SafetyPolicy, ValidationResult
@@ -13,13 +14,16 @@ logger = get_logger(__name__)
 
 # Lazy-loaded sanitizer for violation context
 _sanitizer = None
+_sanitizer_lock = threading.Lock()
 
 def _get_sanitizer():
-    """Get or create DataSanitizer instance (lazy loading)."""
+    """Get or create DataSanitizer instance (lazy loading, thread-safe)."""
     global _sanitizer
     if _sanitizer is None:
-        from src.observability.sanitization import DataSanitizer
-        _sanitizer = DataSanitizer()
+        with _sanitizer_lock:
+            if _sanitizer is None:
+                from src.observability.sanitization import DataSanitizer
+                _sanitizer = DataSanitizer()
     return _sanitizer
 
 def _sanitize_violation_context(context: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:

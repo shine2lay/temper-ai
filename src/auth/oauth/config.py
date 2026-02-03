@@ -67,6 +67,11 @@ class OAuthProviderConfig(BaseModel):
         description="Custom token endpoint (optional, uses provider default)"
     )
 
+    revocation_endpoint: Optional[str] = Field(
+        default=None,
+        description="Token revocation endpoint per RFC 7009 (optional, uses provider default)"
+    )
+
     # Additional provider-specific configuration
     extra_params: Dict[str, Any] = Field(
         default_factory=dict,
@@ -133,6 +138,8 @@ class OAuthProviderConfig(BaseModel):
             )
         if self.token_endpoint:
             resolved_data['token_endpoint'] = resolve_value(self.token_endpoint)
+        if self.revocation_endpoint:
+            resolved_data['revocation_endpoint'] = resolve_value(self.revocation_endpoint)
 
         return OAuthProviderConfig(**resolved_data)
 
@@ -308,16 +315,19 @@ PROVIDER_DEFAULTS = {
     'google': {
         'authorization_endpoint': 'https://accounts.google.com/o/oauth2/v2/auth',
         'token_endpoint': 'https://oauth2.googleapis.com/token',
+        'revocation_endpoint': 'https://oauth2.googleapis.com/revoke',
         'userinfo_endpoint': 'https://www.googleapis.com/oauth2/v2/userinfo',
     },
     'github': {
         'authorization_endpoint': 'https://github.com/login/oauth/authorize',
         'token_endpoint': 'https://github.com/login/oauth/access_token',
+        # GitHub does not support RFC 7009 token revocation via API
         'userinfo_endpoint': 'https://api.github.com/user',
     },
     'microsoft': {
         'authorization_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
         'token_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        'revocation_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/logout',
         'userinfo_endpoint': 'https://graph.microsoft.com/v1.0/me',
     },
 }
@@ -339,6 +349,7 @@ def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, str]:
 
     auth_endpoint = config.authorization_endpoint or defaults.get('authorization_endpoint')
     token_endpoint = config.token_endpoint or defaults.get('token_endpoint')
+    revocation_endpoint = config.revocation_endpoint or defaults.get('revocation_endpoint')
     userinfo_endpoint = defaults.get('userinfo_endpoint')
 
     if not auth_endpoint or not token_endpoint:
@@ -351,5 +362,6 @@ def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, str]:
     return {
         'authorization_endpoint': auth_endpoint,
         'token_endpoint': token_endpoint,
+        'revocation_endpoint': revocation_endpoint,
         'userinfo_endpoint': userinfo_endpoint,
     }

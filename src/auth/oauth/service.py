@@ -572,34 +572,92 @@ class OAuthService:
                 provider=provider
             ) from e
 
-    def revoke_tokens(self, user_id: str) -> bool:
+    async def revoke_tokens(self, user_id: str) -> bool:
         """Revoke and delete user's OAuth tokens.
+
+        Attempts provider-level revocation (RFC 7009) before deleting
+        tokens locally. Provider revocation is best-effort: if it fails,
+        local deletion still proceeds.
 
         Args:
             user_id: User identifier
 
         Returns:
-            True if tokens were deleted
+            True if tokens were deleted locally
         """
-        deleted = self.token_store.delete_token(user_id)
+        tokens = self.token_store.retrieve_token(user_id)
+        if not tokens:
+            logger.info(f"No tokens to revoke for user={user_id}")
+            return False
 
+        # Attempt provider-level revocation (best-effort)
+        provider = tokens.get('provider')
+        if provider:
+            try:
+                await self._revoke_at_provider(provider, tokens)
+            except Exception as e:
+                logger.warning(
+                    f"Provider revocation failed (continuing with local deletion): "
+                    f"provider={provider}, user={user_id}, error={e}"
+                )
+
+        deleted = self.token_store.delete_token(user_id)
         if deleted:
             logger.info(f"Revoked OAuth tokens for user={user_id}")
 
         return deleted
 
-    def cleanup_expired_states(self):
-        """Clean up expired state tokens (call periodically)."""
-        now = datetime.utcnow()
-        expired_states = [
-            state for state, data in self._state_store.items()
-            if now > data['expires_at']
-        ]
+    async def _revoke_at_provider(
+        self, provider: str, tokens: Dict[str, Any]
+    ) -> bool:
+        """Revoke token at OAuth provider per RFC 7009.
 
-        for state in expired_states:
-            del self._state_store[state]
+        Best-effort: returns False on failure, does not raise.
+        """
+        try:
+            provider_config = self.config.get_provider_config(provider)
+        except Exception:
+            return False
 
-        if expired_states:
-            logger.debug(
-                f"Cleaned up {len(expired_states)} expired OAuth state tokens"
+        endpoints = get_provider_endpoints(provider_config)
+        revocation_endpoint = endpoints.get('revocation_endpoint')
+        if not revocation_endpoint:
+            return False
+
+        token_to_revoke = tokens.get('refresh_token') or tokens.get('access_token')
+        if not token_to_revoke:
+            return False
+
+        client = await self._get_http_client()
+        try:
+            response = await client.post(
+                revocation_endpoint,
+                data={
+                    'token': token_to_revoke,
+                    'client_id': provider_config.client_id,
+                    'client_secret': provider_config.client_secret,
+                },
+                timeout=10.0,
             )
+            if response.status_code == 200:
+                logger.info(f"Token revoked at provider: {provider}")
+                return True
+            logger.warning(
+                f"Provider revocation returned {response.status_code}: {provider}"
+            )
+        except httpx.HTTPError as e:
+            logger.warning(f"Provider revocation HTTP error: {provider}: {e}")
+        return False
+
+    async def cleanup_expired_states(self) -> int:
+        """Clean up expired OAuth state tokens.
+
+        Delegates to the StateStore's cleanup_expired() method.
+
+        Returns:
+            Number of states cleaned up
+        """
+        count = await self._state_store.cleanup_expired()
+        if count > 0:
+            logger.debug(f"Cleaned up {count} expired OAuth state tokens")
+        return count

@@ -10,18 +10,24 @@ Tests cover:
 - User account linking
 - Security headers
 - Error handling
+- Token revocation (provider-level and local)
+- Expired state cleanup
 """
+import asyncio
 import pytest
+import httpx
 from datetime import datetime
 from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch
+from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import secrets
 
 from src.auth.routes import OAuthRouteHandlers
 from src.auth.models import User, Session
 from src.auth.session import SessionStore, UserStore
 from src.auth.oauth.service import OAuthService, OAuthError, OAuthStateError
-from src.auth.oauth.config import OAuthConfig
+from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig
+from src.auth.oauth.state_store import InMemoryStateStore
+from src.auth.oauth.token_store import SecureTokenStore
 
 
 # Test Fixtures
@@ -591,3 +597,147 @@ async def test_session_expiration(session_store):
     # Session should be expired and return None when retrieved
     retrieved = await session_store.get_session(session.session_id)
     assert retrieved is None or retrieved.is_expired()
+
+
+# Token Revocation Tests
+
+
+def _make_mock_config():
+    """Create a mock OAuthConfig that bypasses Pydantic validation."""
+    config = MagicMock()
+    provider_config = MagicMock(spec=OAuthProviderConfig)
+    provider_config.client_id = "test_client_id"
+    provider_config.client_secret = "test_client_secret"
+    provider_config.provider = "google"
+    provider_config.revocation_endpoint = None
+    config.get_provider_config.return_value = provider_config
+    return config
+
+
+def test_revoke_tokens_is_async():
+    """revoke_tokens must be awaitable (async) and delete tokens."""
+    async def _test():
+        mock_config = _make_mock_config()
+        state_store = InMemoryStateStore()
+        token_store = Mock(spec=SecureTokenStore)
+        token_store.retrieve_token.return_value = {
+            'access_token': 'test_token',
+            'provider': 'google',
+        }
+        token_store.delete_token.return_value = True
+
+        service = OAuthService(
+            config=mock_config,
+            token_store=token_store,
+            state_store=state_store,
+        )
+
+        with patch.object(service, '_get_http_client') as mock_client:
+            mock_response = MagicMock()
+            mock_response.status_code = 200
+            async_client = AsyncMock()
+            async_client.post.return_value = mock_response
+            mock_client.return_value = async_client
+
+            result = await service.revoke_tokens("user_123")
+
+        assert result is True
+        token_store.delete_token.assert_called_once_with("user_123")
+
+    asyncio.run(_test())
+
+
+def test_revoke_tokens_no_tokens():
+    """revoke_tokens returns False when user has no tokens."""
+    async def _test():
+        mock_config = _make_mock_config()
+        state_store = InMemoryStateStore()
+        token_store = Mock(spec=SecureTokenStore)
+        token_store.retrieve_token.return_value = None
+
+        service = OAuthService(
+            config=mock_config,
+            token_store=token_store,
+            state_store=state_store,
+        )
+
+        result = await service.revoke_tokens("user_123")
+        assert result is False
+
+    asyncio.run(_test())
+
+
+def test_revoke_tokens_provider_failure_still_deletes_locally():
+    """If provider revocation fails, local tokens are still deleted."""
+    async def _test():
+        mock_config = _make_mock_config()
+        state_store = InMemoryStateStore()
+        token_store = Mock(spec=SecureTokenStore)
+        token_store.retrieve_token.return_value = {
+            'access_token': 'test_token',
+            'provider': 'google',
+        }
+        token_store.delete_token.return_value = True
+
+        service = OAuthService(
+            config=mock_config,
+            token_store=token_store,
+            state_store=state_store,
+        )
+
+        with patch.object(service, '_get_http_client') as mock_client:
+            async_client = AsyncMock()
+            async_client.post.side_effect = httpx.HTTPError("Connection refused")
+            mock_client.return_value = async_client
+
+            result = await service.revoke_tokens("user_123")
+
+        assert result is True
+        token_store.delete_token.assert_called_once_with("user_123")
+
+    asyncio.run(_test())
+
+
+# Expired State Cleanup Tests
+
+
+def test_cleanup_expired_states_uses_state_store():
+    """cleanup_expired_states delegates to StateStore.cleanup_expired()."""
+    async def _test():
+        mock_config = _make_mock_config()
+        state_store = AsyncMock()
+        state_store.cleanup_expired.return_value = 3
+        token_store = Mock(spec=SecureTokenStore)
+
+        service = OAuthService(
+            config=mock_config,
+            token_store=token_store,
+            state_store=state_store,
+        )
+
+        result = await service.cleanup_expired_states()
+
+        assert result == 3
+        state_store.cleanup_expired.assert_called_once()
+
+    asyncio.run(_test())
+
+
+def test_cleanup_expired_states_no_error():
+    """cleanup_expired_states does not raise AttributeError."""
+    async def _test():
+        mock_config = _make_mock_config()
+        state_store = InMemoryStateStore()
+        token_store = Mock(spec=SecureTokenStore)
+
+        service = OAuthService(
+            config=mock_config,
+            token_store=token_store,
+            state_store=state_store,
+        )
+
+        # Should NOT raise AttributeError (old code called .items())
+        result = await service.cleanup_expired_states()
+        assert result == 0
+
+    asyncio.run(_test())

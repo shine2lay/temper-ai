@@ -737,10 +737,10 @@ class OllamaLLM(BaseLLM):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._use_chat_api = False  # Set per-request based on tools kwarg
+        self._thread_local = threading.local()
 
     def _get_endpoint(self) -> str:
-        if self._use_chat_api:
+        if getattr(self._thread_local, 'use_chat_api', False):
             return "/api/chat"
         return "/api/generate"
 
@@ -752,7 +752,7 @@ class OllamaLLM(BaseLLM):
     def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
         tools = kwargs.get("tools")
         if tools:
-            self._use_chat_api = True
+            self._thread_local.use_chat_api = True
             request = {
                 "model": self.model,
                 "messages": [
@@ -769,7 +769,7 @@ class OllamaLLM(BaseLLM):
             }
             return request
         else:
-            self._use_chat_api = False
+            self._thread_local.use_chat_api = False
             return {
                 "model": self.model,
                 "prompt": prompt,
@@ -780,7 +780,7 @@ class OllamaLLM(BaseLLM):
             }
 
     def _parse_response(self, response: Dict[str, Any], latency_ms: int) -> LLMResponse:
-        if self._use_chat_api:
+        if getattr(self._thread_local, 'use_chat_api', False):
             # Parse /api/chat response
             message = response.get("message", {})
             content = message.get("content", "")

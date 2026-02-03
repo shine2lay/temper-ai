@@ -11,6 +11,7 @@ Supports multiple rate limiting strategies:
 - Sliding window: Rolling time window for smoother limits
 - Token bucket: Burst allowance with refill rate
 """
+import threading
 import time
 from typing import Dict, Any, List, Optional
 from collections import defaultdict
@@ -71,6 +72,7 @@ class RateLimiterPolicy(BaseSafetyPolicy):
 
         # State tracking: {(operation, entity): [(timestamp, ...)]}
         self._operation_history: Dict[tuple[str, str], List[float]] = defaultdict(list)
+        self._history_lock = threading.Lock()
 
     @property
     def name(self) -> str:
@@ -227,50 +229,51 @@ class RateLimiterPolicy(BaseSafetyPolicy):
         entity_key = self._get_entity_key(context)
         history_key = (operation, entity_key)
 
-        # Get operation history
-        history = self._operation_history[history_key]
-        now = time.time()
+        # Atomic check-and-mutate under lock to prevent race conditions
+        with self._history_lock:
+            history = self._operation_history[history_key]
+            now = time.time()
 
-        # Check each limit type
-        if "max_per_second" in operation_limits:
-            violation = self._check_limit(
-                history,
-                operation_limits["max_per_second"],
-                1.0,
-                operation
-            )
-            if violation:
-                violations.append(violation)
+            # Check each limit type
+            if "max_per_second" in operation_limits:
+                violation = self._check_limit(
+                    history,
+                    operation_limits["max_per_second"],
+                    1.0,
+                    operation
+                )
+                if violation:
+                    violations.append(violation)
 
-        if "max_per_minute" in operation_limits:
-            violation = self._check_limit(
-                history,
-                operation_limits["max_per_minute"],
-                60.0,
-                operation
-            )
-            if violation:
-                violations.append(violation)
+            if "max_per_minute" in operation_limits:
+                violation = self._check_limit(
+                    history,
+                    operation_limits["max_per_minute"],
+                    60.0,
+                    operation
+                )
+                if violation:
+                    violations.append(violation)
 
-        if "max_per_hour" in operation_limits:
-            violation = self._check_limit(
-                history,
-                operation_limits["max_per_hour"],
-                3600.0,
-                operation
-            )
-            if violation:
-                violations.append(violation)
+            if "max_per_hour" in operation_limits:
+                violation = self._check_limit(
+                    history,
+                    operation_limits["max_per_hour"],
+                    3600.0,
+                    operation
+                )
+                if violation:
+                    violations.append(violation)
 
-        # If no violations, record this operation
-        if not violations:
-            history.append(now)
-            # Keep only recent history to prevent memory growth
-            max_history_age = max(3600.0, max(
-                v for k, v in operation_limits.items()
-                if k.startswith("max_per_")
-            ) if any(k.startswith("max_per_") for k in operation_limits) else 3600.0)
-            self._operation_history[history_key] = self._clean_old_records(history, max_history_age * 2)
+            # If no violations, record this operation
+            if not violations:
+                history.append(now)
+                # Keep only recent history to prevent memory growth
+                max_history_age = max(3600.0, max(
+                    v for k, v in operation_limits.items()
+                    if k.startswith("max_per_")
+                ) if any(k.startswith("max_per_") for k in operation_limits) else 3600.0)
+                self._operation_history[history_key] = self._clean_old_records(history, max_history_age * 2)
 
         # Determine validity (invalid if any HIGH or CRITICAL violations)
         valid = not any(
@@ -291,21 +294,18 @@ class RateLimiterPolicy(BaseSafetyPolicy):
             operation: Specific operation to reset (None = all)
             entity: Specific entity to reset (None = all)
         """
-        if operation is None and entity is None:
-            # Reset all
-            self._operation_history.clear()
-        elif operation and entity:
-            # Reset specific operation for specific entity
-            key = (operation, entity)
-            if key in self._operation_history:
-                del self._operation_history[key]
-        elif operation:
-            # Reset specific operation for all entities
-            keys_to_delete = [k for k in self._operation_history.keys() if k[0] == operation]
-            for key in keys_to_delete:
-                del self._operation_history[key]
-        elif entity:
-            # Reset all operations for specific entity
-            keys_to_delete = [k for k in self._operation_history.keys() if k[1] == entity]
-            for key in keys_to_delete:
-                del self._operation_history[key]
+        with self._history_lock:
+            if operation is None and entity is None:
+                self._operation_history.clear()
+            elif operation and entity:
+                key = (operation, entity)
+                if key in self._operation_history:
+                    del self._operation_history[key]
+            elif operation:
+                keys_to_delete = [k for k in self._operation_history.keys() if k[0] == operation]
+                for key in keys_to_delete:
+                    del self._operation_history[key]
+            elif entity:
+                keys_to_delete = [k for k in self._operation_history.keys() if k[1] == entity]
+                for key in keys_to_delete:
+                    del self._operation_history[key]

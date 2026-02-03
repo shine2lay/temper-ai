@@ -714,8 +714,7 @@ class BaseLLM(ABC):
             raise LLMError(f"Failed after {self.max_retries} attempts")
 
         # Execute through circuit breaker for resilience
-        # Note: Circuit breaker call is synchronous, wrapping async function
-        return await _make_async_api_call()
+        return await self._circuit_breaker.async_call(_make_async_api_call)
 
     def _handle_error_response(self, response: httpx.Response) -> None:
         """Handle HTTP error responses.

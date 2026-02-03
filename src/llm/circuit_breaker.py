@@ -156,6 +156,40 @@ class CircuitBreaker:
             self._on_failure(e, reserved_state)
             raise
 
+    async def async_call(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+        """
+        Execute async function through circuit breaker.
+
+        Same state management as call(), but awaits the async function.
+
+        Args:
+            func: Async function to execute
+            *args: Positional arguments for func
+            **kwargs: Keyword arguments for func
+
+        Returns:
+            Result from func
+
+        Raises:
+            CircuitBreakerError: If circuit is open
+            Any exception raised by func
+        """
+        reserved_state = self._reserve_execution()
+
+        if reserved_state is None:
+            raise CircuitBreakerError(
+                f"Circuit breaker OPEN for {self.name}. "
+                f"Retry after {self._time_until_retry():.0f}s"
+            )
+
+        try:
+            result = await func(*args, **kwargs)
+            self._on_success(reserved_state)
+            return result
+        except Exception as e:
+            self._on_failure(e, reserved_state)
+            raise
+
     def _reserve_execution(self) -> Optional[CircuitState]:
         """
         Atomically check if execution is allowed and reserve permission.

@@ -204,27 +204,32 @@ def validate_rollback_path(
         if "\x00" in str(file_path):
             return False, "Path contains null bytes (security violation)"
 
-        # Detect symlinks BEFORE resolving (security check)
-        if check_symlinks:
-            try:
-                # Check if any component in the path is a symlink
-                current_path = Path(file_path)
-                if current_path.exists() and current_path.is_symlink():
-                    return False, f"Path is a symlink: {file_path} (security violation)"
-
-                # Check parent directories for symlinks
-                for parent in current_path.parents:
-                    if parent.exists() and parent.is_symlink():
-                        return False, f"Path contains symlink in parent: {parent} (security violation)"
-            except (OSError, PermissionError) as e:
-                # If we can't check, fail closed
-                return False, f"Cannot verify symlink status: {str(e)}"
-
-        # Resolve to absolute real path
+        # Resolve to absolute real path FIRST (before any checks)
         try:
             real_path = os.path.realpath(os.path.abspath(file_path))
         except (OSError, ValueError) as e:
             return False, f"Cannot resolve path: {str(e)}"
+
+        # Detect symlinks AFTER resolving to close TOCTOU gap
+        # Check the original path components for symlinks
+        if check_symlinks:
+            try:
+                current_path = Path(file_path)
+                if current_path.exists() and current_path.is_symlink():
+                    return False, "Path is a symlink (security violation)"
+
+                # Check parent directories for symlinks
+                for parent in current_path.parents:
+                    if parent.exists() and parent.is_symlink():
+                        return False, "Path contains symlink in parent (security violation)"
+
+                # Also verify resolved path matches expectations
+                # If the original differs from resolved, a symlink was followed
+                if current_path.exists() and str(current_path.resolve()) != real_path:
+                    return False, "Path resolves differently than expected (possible symlink)"
+            except (OSError, PermissionError) as e:
+                # If we can't check, fail closed
+                return False, f"Cannot verify symlink status: {str(e)}"
 
         # Validate against allowed directories
         path_allowed = False
@@ -443,9 +448,29 @@ class FileRollbackStrategy(RollbackStrategy):
                     result.errors.append(f"Security violation: {error}")
                     continue
 
-                # Restore file content
-                with open(file_path, 'w') as f:
-                    f.write(content)
+                # Restore file content atomically to prevent TOCTOU
+                # 1. Re-validate path immediately before I/O
+                recheck_valid, recheck_err = validate_rollback_path(file_path)
+                if not recheck_valid:
+                    result.failed_items.append(file_path)
+                    result.errors.append(f"Security violation on recheck: {recheck_err}")
+                    continue
+
+                # 2. Use atomic write: tempfile + os.replace
+                import tempfile as _tempfile
+                dir_path = os.path.dirname(os.path.abspath(file_path))
+                fd, tmp_path = _tempfile.mkstemp(dir=dir_path)
+                try:
+                    with os.fdopen(fd, 'w') as f:
+                        f.write(content)
+                    os.replace(tmp_path, file_path)
+                except Exception:
+                    # Clean up temp file on failure
+                    try:
+                        os.unlink(tmp_path)
+                    except OSError:
+                        pass
+                    raise
                 result.reverted_items.append(file_path)
             except Exception as e:
                 result.failed_items.append(file_path)

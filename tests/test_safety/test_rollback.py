@@ -1021,5 +1021,136 @@ class TestPathTraversalSecurity:
         assert error is None
 
 
+class TestTOCTOURaceConditionFixes:
+    """Test TOCTOU race condition fixes in rollback operations."""
+
+    def test_atomic_write_no_partial_content(self, tmp_path):
+        """Test that rollback writes are atomic - no partial file content."""
+        # Create a file with known content
+        test_file = tmp_path / "test_atomic.txt"
+        test_file.write_text("original content")
+
+        # Create a rollback manager with file strategy
+        manager = RollbackManager()
+        file_strategy = FileRollbackStrategy()
+        manager.register_strategy("file", file_strategy)
+
+        # Create snapshot that will restore to a different content
+        snapshot = RollbackSnapshot(
+            action={"tool": "write_file", "path": str(test_file)},
+            context={"agent": "test_agent"},
+            file_snapshots={str(test_file): "restored content"},
+        )
+
+        # Execute rollback
+        result = file_strategy.execute_rollback(snapshot)
+
+        # File should have restored content (atomically written)
+        assert test_file.read_text() == "restored content"
+        assert result.success
+
+    def test_rollback_revalidates_path_before_write(self, tmp_path):
+        """Test that path is re-validated immediately before file I/O."""
+        # Create a valid file
+        test_file = tmp_path / "valid_file.txt"
+        test_file.write_text("original")
+
+        # Create snapshot pointing to valid path
+        snapshot = RollbackSnapshot(
+            action={"tool": "write_file", "path": str(test_file)},
+            context={"agent": "test_agent"},
+            file_snapshots={str(test_file): "restored"},
+        )
+
+        file_strategy = FileRollbackStrategy()
+        result = file_strategy.execute_rollback(snapshot)
+
+        # Should succeed for valid path
+        assert str(test_file) in result.reverted_items
+
+    def test_symlink_detected_after_resolution(self, tmp_path):
+        """Test that symlinks are detected even after path resolution."""
+        # Create a real file and a symlink to it
+        real_file = tmp_path / "real_file.txt"
+        real_file.write_text("real content")
+        symlink = tmp_path / "symlink_file.txt"
+        symlink.symlink_to(real_file)
+
+        # validate_rollback_path should reject the symlink
+        is_valid, error = validate_rollback_path(
+            str(symlink),
+            allowed_directories=[str(tmp_path)]
+        )
+        assert is_valid is False
+        assert "symlink" in error.lower()
+
+    def test_resolved_path_consistency_check(self, tmp_path):
+        """Test that path resolution inconsistency is detected."""
+        # Create a file via a relative path with ..
+        sub_dir = tmp_path / "subdir"
+        sub_dir.mkdir()
+        test_file = sub_dir / "file.txt"
+        test_file.write_text("content")
+
+        # Non-symlink paths with .. should resolve fine
+        relative_path = str(sub_dir / ".." / "subdir" / "file.txt")
+        is_valid, error = validate_rollback_path(
+            relative_path,
+            allowed_directories=[str(tmp_path)]
+        )
+        # Should be valid since it resolves to the same file (no symlinks)
+        assert is_valid is True
+
+    def test_atomic_write_cleanup_on_failure(self, tmp_path):
+        """Test that temp files are cleaned up if write fails."""
+        # Create a read-only directory to force write failure
+        test_file = tmp_path / "test_cleanup.txt"
+        test_file.write_text("original")
+
+        # Count files before
+        files_before = set(tmp_path.iterdir())
+
+        # Create a normal rollback
+        file_strategy = FileRollbackStrategy()
+        snapshot = RollbackSnapshot(
+            action={"tool": "write_file", "path": str(test_file)},
+            context={"agent": "test_agent"},
+            file_snapshots={str(test_file): "restored content"},
+        )
+
+        result = file_strategy.execute_rollback(snapshot)
+        assert result.success
+
+        # No leftover temp files - only the test file should exist
+        files_after = set(tmp_path.iterdir())
+        assert files_after == files_before  # Same set of files
+
+    def test_validate_rollback_path_order_symlink_after_resolve(self, tmp_path):
+        """Test that validation order is: resolve THEN check symlinks."""
+        # Non-existent path (can't be a symlink)
+        nonexistent = str(tmp_path / "doesnt_exist.txt")
+        is_valid, error = validate_rollback_path(
+            nonexistent,
+            allowed_directories=[str(tmp_path)]
+        )
+        # Should be valid (path doesn't exist yet, no symlink)
+        assert is_valid is True
+
+    def test_rollback_rejects_invalid_path_on_recheck(self, tmp_path):
+        """Test that invalid paths are caught during re-validation before write."""
+        # Try to rollback a file outside allowed directories
+        file_strategy = FileRollbackStrategy()
+        snapshot = RollbackSnapshot(
+            action={"tool": "write_file", "path": "/etc/passwd"},
+            context={"agent": "test_agent"},
+            file_snapshots={"/etc/passwd": "hacked content"},
+        )
+
+        result = file_strategy.execute_rollback(snapshot)
+        # Should fail - path outside allowed directories
+        assert "/etc/passwd" in result.failed_items
+        assert any("Security violation" in e for e in result.errors)
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

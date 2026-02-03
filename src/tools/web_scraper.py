@@ -42,6 +42,9 @@ DNS_RESOLUTION_TIMEOUT_SECONDS = 2.0  # Prevents DNS timing attacks and DoS
 DNS_CACHE_TTL_SECONDS = 300  # 5 minutes - prevents DNS rebinding attacks
 DNS_CACHE_MAX_SIZE = 1000  # Limit cache size to prevent memory exhaustion
 
+# SSRF Redirect Protection
+MAX_REDIRECTS = 5  # Maximum number of redirects to follow
+
 
 class DNSCache:
     """
@@ -497,9 +500,33 @@ class WebScraper(BaseTool):
             # Record request for rate limiting
             self.rate_limiter.record_request()
 
-            # Fetch URL
-            with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-                response = client.get(url, headers=headers)
+            # Fetch URL with SSRF-safe redirect handling
+            # SECURITY: follow_redirects=False so we can validate each redirect
+            # target against SSRF checks before following it
+            with httpx.Client(timeout=timeout, follow_redirects=False) as client:
+                current_url = url
+                for _redirect_hop in range(MAX_REDIRECTS + 1):
+                    response = client.get(current_url, headers=headers)
+
+                    if response.is_redirect:
+                        redirect_url = str(response.next_request.url) if response.next_request else None
+                        if redirect_url is None:
+                            break
+                        # Validate redirect target against SSRF checks
+                        is_safe, safety_error = validate_url_safety(redirect_url)
+                        if not is_safe:
+                            return ToolResult(
+                                success=False,
+                                error=f"Redirect to unsafe URL blocked (SSRF protection): {safety_error}"
+                            )
+                        current_url = redirect_url
+                        continue
+                    break
+                else:
+                    return ToolResult(
+                        success=False,
+                        error=f"Too many redirects (max {MAX_REDIRECTS})"
+                    )
 
                 # Check status code
                 response.raise_for_status()

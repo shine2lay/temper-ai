@@ -116,6 +116,7 @@ class TestBasicFetching:
         # Mock successful response
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "<html><body><p>Hello, world!</p></body></html>"
         mock_response.content = mock_response.text.encode()
         mock_response.headers = {"content-type": "text/html"}
@@ -133,6 +134,7 @@ class TestBasicFetching:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "Test content"
         mock_response.content = b"Test content"
         mock_response.headers = {}
@@ -151,6 +153,7 @@ class TestBasicFetching:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "Test"
         mock_response.content = b"Test"
         mock_response.headers = {}
@@ -189,6 +192,7 @@ class TestTextExtraction:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = html
         mock_response.content = html.encode()
         mock_response.headers = {"content-type": "text/html"}
@@ -221,6 +225,7 @@ class TestTextExtraction:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = html
         mock_response.content = html.encode()
         mock_response.headers = {}
@@ -241,6 +246,7 @@ class TestTextExtraction:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = html
         mock_response.content = html.encode()
         mock_response.headers = {}
@@ -299,6 +305,7 @@ class TestErrorHandling:
 
         mock_response = Mock()
         mock_response.status_code = 404
+        mock_response.is_redirect = False
         mock_response.reason_phrase = "Not Found"
         mock_httpx_client.get.return_value = mock_response
         mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
@@ -356,6 +363,7 @@ class TestRateLimiting:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "Test"
         mock_response.content = b"Test"
         mock_response.headers = {}
@@ -399,6 +407,7 @@ class TestContentSizeLimit:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.content = large_content
         mock_response.text = large_content.decode()
         mock_response.headers = {}
@@ -418,6 +427,7 @@ class TestContentSizeLimit:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = content
         mock_response.content = content.encode()
         mock_response.headers = {}
@@ -437,6 +447,7 @@ class TestMetadata:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "Test"
         mock_response.content = b"Test"
         mock_response.headers = {"content-type": "text/html"}
@@ -456,6 +467,7 @@ class TestMetadata:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "Test"
         mock_response.content = b"Test"
         mock_response.headers = {}
@@ -489,6 +501,7 @@ class TestURLValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "Test"
         mock_response.content = b"Test"
         mock_response.headers = {}
@@ -504,6 +517,7 @@ class TestURLValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "Test"
         mock_response.content = b"Test"
         mock_response.headers = {}
@@ -680,6 +694,7 @@ class TestSSRFProtection:
 
             mock_response = Mock()
             mock_response.status_code = 200
+            mock_response.is_redirect = False
             mock_response.text = "Public content"
             mock_response.content = b"Public content"
             mock_response.headers = {"content-type": "text/html"}
@@ -813,6 +828,7 @@ class TestSSRFProtection:
 
             mock_response = Mock()
             mock_response.status_code = 200
+            mock_response.is_redirect = False
             mock_response.text = "Public content"
             mock_response.content = b"Public content"
             mock_response.headers = {"content-type": "text/html"}
@@ -822,6 +838,131 @@ class TestSSRFProtection:
 
             # Should not be blocked
             assert result.success is True
+
+
+class TestSSRFRedirectProtection:
+    """Test SSRF protection on HTTP redirects."""
+
+    @patch('src.tools.web_scraper.socket.getaddrinfo')
+    def test_blocks_redirect_to_metadata_service(self, mock_getaddrinfo, mock_httpx_client):
+        """Redirect to cloud metadata endpoint is blocked."""
+        scraper = WebScraper()
+
+        # Initial URL resolves to public IP
+        mock_getaddrinfo.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+        ]
+
+        # First request returns redirect to metadata service
+        redirect_response = Mock()
+        redirect_response.status_code = 302
+        redirect_response.is_redirect = True
+        redirect_response.next_request = Mock()
+        redirect_response.next_request.url = "http://169.254.169.254/latest/meta-data"
+
+        mock_httpx_client.get.return_value = redirect_response
+
+        result = scraper.execute(url="http://safe.example.com")
+
+        assert result.success is False
+        assert "ssrf" in result.error.lower() or "unsafe" in result.error.lower()
+
+    @patch('src.tools.web_scraper.socket.getaddrinfo')
+    def test_blocks_redirect_to_localhost(self, mock_getaddrinfo, mock_httpx_client):
+        """Redirect to localhost is blocked."""
+        scraper = WebScraper()
+
+        mock_getaddrinfo.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+        ]
+
+        redirect_response = Mock()
+        redirect_response.status_code = 301
+        redirect_response.is_redirect = True
+        redirect_response.next_request = Mock()
+        redirect_response.next_request.url = "http://127.0.0.1:6379/"
+
+        mock_httpx_client.get.return_value = redirect_response
+
+        result = scraper.execute(url="http://safe.example.com")
+
+        assert result.success is False
+        assert "ssrf" in result.error.lower() or "forbidden" in result.error.lower()
+
+    @patch('src.tools.web_scraper.socket.getaddrinfo')
+    def test_blocks_redirect_to_private_network(self, mock_getaddrinfo, mock_httpx_client):
+        """Redirect to private IP is blocked."""
+        scraper = WebScraper()
+
+        mock_getaddrinfo.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+        ]
+
+        redirect_response = Mock()
+        redirect_response.status_code = 302
+        redirect_response.is_redirect = True
+        redirect_response.next_request = Mock()
+        redirect_response.next_request.url = "http://10.0.0.1/admin"
+
+        mock_httpx_client.get.return_value = redirect_response
+
+        result = scraper.execute(url="http://safe.example.com")
+
+        assert result.success is False
+        assert "ssrf" in result.error.lower() or "forbidden" in result.error.lower()
+
+    @patch('src.tools.web_scraper.socket.getaddrinfo')
+    def test_allows_safe_redirect(self, mock_getaddrinfo, mock_httpx_client):
+        """Redirect to another public URL is allowed."""
+        scraper = WebScraper()
+
+        mock_getaddrinfo.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+        ]
+
+        # First request redirects
+        redirect_response = Mock()
+        redirect_response.status_code = 301
+        redirect_response.is_redirect = True
+        redirect_response.next_request = Mock()
+        redirect_response.next_request.url = "https://example.com/page"
+
+        # Second request succeeds
+        final_response = Mock()
+        final_response.status_code = 200
+        final_response.is_redirect = False
+        final_response.text = "<html>Content</html>"
+        final_response.content = b"<html>Content</html>"
+        final_response.headers = {"content-type": "text/html"}
+
+        mock_httpx_client.get.side_effect = [redirect_response, final_response]
+
+        result = scraper.execute(url="http://example.com")
+
+        assert result.success is True
+
+    @patch('src.tools.web_scraper.socket.getaddrinfo')
+    def test_blocks_too_many_redirects(self, mock_getaddrinfo, mock_httpx_client):
+        """Excessive redirects are blocked."""
+        scraper = WebScraper()
+
+        mock_getaddrinfo.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+        ]
+
+        # Create infinite redirect loop
+        redirect_response = Mock()
+        redirect_response.status_code = 302
+        redirect_response.is_redirect = True
+        redirect_response.next_request = Mock()
+        redirect_response.next_request.url = "http://example.com/loop"
+
+        mock_httpx_client.get.return_value = redirect_response
+
+        result = scraper.execute(url="http://example.com/start")
+
+        assert result.success is False
+        assert "redirect" in result.error.lower()
 
 
 class TestContentTypeValidation:
@@ -839,6 +980,7 @@ class TestContentTypeValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.content = b"PDF binary content"
         mock_response.headers = {"content-type": "application/pdf"}
         mock_httpx_client.get.return_value = mock_response
@@ -860,6 +1002,7 @@ class TestContentTypeValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.content = b"Image binary content"
         mock_response.headers = {"content-type": "image/jpeg"}
         mock_httpx_client.get.return_value = mock_response
@@ -880,6 +1023,7 @@ class TestContentTypeValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.content = b"Video binary content"
         mock_response.headers = {"content-type": "video/mp4"}
         mock_httpx_client.get.return_value = mock_response
@@ -900,6 +1044,7 @@ class TestContentTypeValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "<html><body>Test</body></html>"
         mock_response.content = b"<html><body>Test</body></html>"
         mock_response.headers = {"content-type": "text/html"}
@@ -920,6 +1065,7 @@ class TestContentTypeValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "<html><body>Test</body></html>"
         mock_response.content = b"<html><body>Test</body></html>"
         mock_response.headers = {"content-type": "text/html; charset=utf-8"}
@@ -940,6 +1086,7 @@ class TestContentTypeValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "Plain text content"
         mock_response.content = b"Plain text content"
         mock_response.headers = {"content-type": "text/plain"}
@@ -960,6 +1107,7 @@ class TestContentTypeValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.text = "<?xml version='1.0'?><root>Test</root>"
         mock_response.content = b"<?xml version='1.0'?><root>Test</root>"
         mock_response.headers = {"content-type": "text/xml"}
@@ -980,6 +1128,7 @@ class TestContentTypeValidation:
 
         mock_response = Mock()
         mock_response.status_code = 200
+        mock_response.is_redirect = False
         mock_response.content = b"Binary application content"
         mock_response.headers = {"content-type": "application/octet-stream"}
         mock_httpx_client.get.return_value = mock_response

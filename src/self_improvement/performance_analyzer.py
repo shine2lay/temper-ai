@@ -16,6 +16,8 @@ from typing import Optional, List, Dict, Any
 from pathlib import Path
 import logging
 import json
+import os
+import re
 import uuid
 from sqlmodel import Session, select, func
 from sqlalchemy import case, and_
@@ -65,6 +67,9 @@ class PerformanceAnalyzer:
         - Fail fast (invalid inputs raise immediately)
     """
 
+    # Allowlist: starts with letter, alphanumerics/hyphens/underscores, max 64 chars
+    _AGENT_NAME_PATTERN = re.compile(r'^[a-zA-Z][a-zA-Z0-9_-]{0,63}$')
+
     def __init__(self, session: Session, baseline_storage_path: Optional[Path] = None):
         """
         Initialize analyzer with database session.
@@ -78,8 +83,50 @@ class PerformanceAnalyzer:
         # Set up baseline storage directory
         if baseline_storage_path is None:
             baseline_storage_path = Path(".baselines")
-        self.baseline_storage_path = Path(baseline_storage_path)
+        raw_path = Path(baseline_storage_path)
+        # Reject symlinked storage directories to prevent escape attacks
+        if raw_path.exists() and raw_path.is_symlink():
+            raise ValueError("Baseline storage path must not be a symlink")
+        self.baseline_storage_path = raw_path.resolve()
         self.baseline_storage_path.mkdir(parents=True, exist_ok=True)
+
+    def _validate_baseline_path(self, agent_name: str) -> Path:
+        """
+        Validate agent_name and return a safe path within baseline storage.
+
+        Args:
+            agent_name: Name of agent to validate
+
+        Returns:
+            Resolved Path guaranteed to be within baseline_storage_path
+
+        Raises:
+            ValueError: If agent_name is invalid or path escapes storage directory
+        """
+        if not isinstance(agent_name, str):
+            raise ValueError("Invalid agent name")
+
+        if not self._AGENT_NAME_PATTERN.match(agent_name):
+            raise ValueError(
+                "Invalid agent name: must start with a letter, "
+                "contain only alphanumerics, hyphens, or underscores, "
+                "and be at most 64 characters"
+            )
+
+        baseline_file = self.baseline_storage_path / f"{agent_name}_baseline.json"
+        resolved = baseline_file.resolve()
+
+        # Containment check: ensure resolved path is within storage directory
+        try:
+            resolved.relative_to(self.baseline_storage_path)
+        except ValueError:
+            raise ValueError("Invalid agent name: path escape detected")
+
+        # Reject symlinks pointing outside storage
+        if baseline_file.is_symlink():
+            raise ValueError("Invalid agent name: symlink detected")
+
+        return resolved
 
     def analyze_agent_performance(
         self,
@@ -361,10 +408,15 @@ class PerformanceAnalyzer:
                 f"provided agent_name '{agent_name}'"
             )
 
-        # Store to file system
-        baseline_file = self.baseline_storage_path / f"{agent_name}_baseline.json"
+        # Store to file system (validated path)
+        baseline_file = self._validate_baseline_path(agent_name)
         try:
-            with open(baseline_file, 'w') as f:
+            # Use O_NOFOLLOW to prevent TOCTOU symlink attacks at write time
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            if hasattr(os, 'O_NOFOLLOW'):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(str(baseline_file), flags, 0o644)
+            with os.fdopen(fd, 'w') as f:
                 json.dump(profile.to_dict(), f, indent=2)
 
             logger.info(
@@ -375,6 +427,8 @@ class PerformanceAnalyzer:
 
             return profile
 
+        except ValueError:
+            raise
         except Exception as e:
             logger.error(f"Failed to store baseline for {agent_name}: {e}")
             raise IOError(f"Baseline storage failed: {e}") from e
@@ -397,14 +451,19 @@ class PerformanceAnalyzer:
             >>> if baseline:
             ...     print(f"Baseline from {baseline.window_start}")
         """
-        baseline_file = self.baseline_storage_path / f"{agent_name}_baseline.json"
+        baseline_file = self._validate_baseline_path(agent_name)
 
         if not baseline_file.exists():
             logger.debug(f"No stored baseline found for {agent_name}")
             return None
 
         try:
-            with open(baseline_file, 'r') as f:
+            # Use O_NOFOLLOW to prevent TOCTOU symlink attacks at read time
+            flags = os.O_RDONLY
+            if hasattr(os, 'O_NOFOLLOW'):
+                flags |= os.O_NOFOLLOW
+            fd = os.open(str(baseline_file), flags)
+            with os.fdopen(fd, 'r') as f:
                 data = json.load(f)
 
             profile = AgentPerformanceProfile.from_dict(data)
@@ -416,6 +475,8 @@ class PerformanceAnalyzer:
 
             return profile
 
+        except ValueError:
+            raise
         except Exception as e:
             logger.warning(f"Failed to retrieve baseline for {agent_name}: {e}")
             return None
@@ -437,17 +498,22 @@ class PerformanceAnalyzer:
             >>> analyzer.delete_baseline("my_agent")
             True
         """
-        baseline_file = self.baseline_storage_path / f"{agent_name}_baseline.json"
+        baseline_file = self._validate_baseline_path(agent_name)
 
         if not baseline_file.exists():
             logger.debug(f"No baseline to delete for {agent_name}")
             return False
 
         try:
+            # Re-check symlink immediately before delete to reduce TOCTOU window
+            if baseline_file.is_symlink():
+                raise ValueError("Invalid agent name: symlink detected")
             baseline_file.unlink()
             logger.info(f"Deleted baseline for {agent_name}")
             return True
 
+        except ValueError:
+            raise
         except Exception as e:
             logger.error(f"Failed to delete baseline for {agent_name}: {e}")
             raise IOError(f"Baseline deletion failed: {e}") from e
@@ -468,7 +534,9 @@ class PerformanceAnalyzer:
         for baseline_file in self.baseline_storage_path.glob("*_baseline.json"):
             # Extract agent name from filename (remove "_baseline.json")
             agent_name = baseline_file.stem.replace("_baseline", "")
-            baselines.append(agent_name)
+            # Only include names that pass validation
+            if self._AGENT_NAME_PATTERN.match(agent_name):
+                baselines.append(agent_name)
 
         logger.debug(f"Found {len(baselines)} stored baselines")
         return sorted(baselines)

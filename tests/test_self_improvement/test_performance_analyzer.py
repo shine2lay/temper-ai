@@ -432,3 +432,150 @@ class TestPerformanceAnalyzerIntegration:
         assert baseline is not None
         assert current is not None
         assert current.get_metric("duration_seconds", "mean") < baseline.get_metric("duration_seconds", "mean")
+
+
+class TestPathTraversalProtection:
+    """Test path traversal prevention in baseline storage methods."""
+
+    def test_valid_agent_names_accepted(self, session, tmp_path):
+        """Test that valid agent names pass validation."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+        valid_names = [
+            "agent1",
+            "myAgent",
+            "code_review_agent",
+            "test-agent-v2",
+            "A",
+            "a" * 64,  # Max length
+        ]
+        for name in valid_names:
+            path = analyzer._validate_baseline_path(name)
+            assert path.name == f"{name}_baseline.json"
+
+    def test_path_traversal_payloads_rejected(self, session, tmp_path):
+        """Test that path traversal payloads are rejected."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+        traversal_payloads = [
+            "../../etc/passwd",
+            "../../../tmp/evil",
+            "..\\..\\windows\\system32",
+            "./../../backdoor",
+            "agent/../../../secret",
+            "/etc/passwd",
+            "agent/../../etc/shadow",
+        ]
+        for payload in traversal_payloads:
+            with pytest.raises(ValueError):
+                analyzer._validate_baseline_path(payload)
+
+    def test_invalid_agent_name_formats(self, session, tmp_path):
+        """Test that invalid formats are rejected."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+        invalid_names = [
+            "",               # empty
+            "1agent",         # starts with number
+            "-agent",         # starts with hyphen
+            "_agent",         # starts with underscore
+            ".hidden",        # starts with dot
+            "agent name",     # contains space
+            "agent@host",     # special character
+            "agent;rm -rf",   # injection attempt
+            "a" * 65,         # too long (65 chars)
+        ]
+        for name in invalid_names:
+            with pytest.raises(ValueError):
+                analyzer._validate_baseline_path(name)
+
+    def test_non_string_agent_name_rejected(self, session, tmp_path):
+        """Test that non-string agent names are rejected."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+        for bad_input in [None, 123, [], {}]:
+            with pytest.raises(ValueError, match="Invalid agent name"):
+                analyzer._validate_baseline_path(bad_input)
+
+    def test_store_baseline_validates_name(self, session, tmp_path):
+        """Test that store_baseline rejects traversal payloads."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+        profile = AgentPerformanceProfile(
+            agent_name="../../etc/passwd",
+            window_start=datetime.now(timezone.utc) - timedelta(hours=1),
+            window_end=datetime.now(timezone.utc),
+            total_executions=10,
+            metrics={"success_rate": {"mean": 1.0}},
+        )
+        with pytest.raises(ValueError):
+            analyzer.store_baseline("../../etc/passwd", profile)
+
+    def test_retrieve_baseline_validates_name(self, session, tmp_path):
+        """Test that retrieve_baseline rejects traversal payloads."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+        with pytest.raises(ValueError):
+            analyzer.retrieve_baseline("../../etc/passwd")
+
+    def test_delete_baseline_validates_name(self, session, tmp_path):
+        """Test that delete_baseline rejects traversal payloads."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+        with pytest.raises(ValueError):
+            analyzer.delete_baseline("../../etc/passwd")
+
+    def test_list_baselines_filters_invalid_names(self, session, tmp_path):
+        """Test that list_baselines only returns valid agent names."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+
+        # Create files with valid and invalid names
+        (tmp_path / "validAgent_baseline.json").write_text("{}")
+        (tmp_path / "another-valid_baseline.json").write_text("{}")
+        (tmp_path / "../../evil_baseline.json").write_text("{}")  # Won't actually traverse
+        (tmp_path / "1invalid_baseline.json").write_text("{}")
+
+        baselines = analyzer.list_baselines()
+        assert "validAgent" in baselines
+        assert "another-valid" in baselines
+        # Invalid names should be filtered out
+        assert "1invalid" not in baselines
+
+    def test_symlink_rejected(self, session, tmp_path):
+        """Test that symlinked baseline files are rejected."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+
+        # Create a symlink inside the baseline directory
+        target = tmp_path / "real_file.json"
+        target.write_text("{}")
+        symlink = tmp_path / "evilAgent_baseline.json"
+        symlink.symlink_to(target)
+
+        with pytest.raises(ValueError, match="symlink detected"):
+            analyzer._validate_baseline_path("evilAgent")
+
+    def test_unicode_path_separators_rejected(self, session, tmp_path):
+        """Test that Unicode path separators and lookalikes are rejected."""
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path)
+        unicode_payloads = [
+            "agent\uff0fetc",          # Full-width solidus U+FF0F
+            "agent\u2215etc",          # Division slash U+2215
+            "agent\u2044etc",          # Fraction slash U+2044
+            "agent\u00f7etc",          # Division sign
+            "agent\u0000etc",          # Null byte
+            "agent\nname",             # Newline
+            "agent\ttab",              # Tab
+        ]
+        for payload in unicode_payloads:
+            with pytest.raises(ValueError):
+                analyzer._validate_baseline_path(payload)
+
+    def test_storage_path_symlink_rejected(self, session, tmp_path):
+        """Test that symlinked storage directory is rejected."""
+        real_dir = tmp_path / "real_baselines"
+        real_dir.mkdir()
+        symlink_dir = tmp_path / "symlinked_baselines"
+        symlink_dir.symlink_to(real_dir)
+
+        with pytest.raises(ValueError, match="must not be a symlink"):
+            PerformanceAnalyzer(session, baseline_storage_path=symlink_dir)
+
+    def test_baseline_storage_path_resolved(self, session, tmp_path):
+        """Test that baseline_storage_path is resolved on init."""
+        # Use a relative-looking path
+        analyzer = PerformanceAnalyzer(session, baseline_storage_path=tmp_path / "sub" / ".." / "actual")
+        expected = (tmp_path / "sub" / ".." / "actual").resolve()
+        assert analyzer.baseline_storage_path == expected

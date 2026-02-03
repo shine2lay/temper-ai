@@ -10,6 +10,7 @@ import secrets
 import time
 import unicodedata
 import uuid
+from collections import OrderedDict
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from sqlalchemy.exc import IntegrityError
@@ -148,13 +149,24 @@ class ExperimentService(Service):
         """Service name for registration."""
         return "experiment_service"
 
-    def __init__(self) -> None:
+    # Maximum cached experiments to prevent unbounded memory growth
+    MAX_CACHE_SIZE = 1000
+
+    def __init__(self, max_cache_size: int = MAX_CACHE_SIZE) -> None:
         """Initialize experiment service."""
         self._assigner = VariantAssigner()
         self._config_manager = ConfigManager()
         self._analyzer = StatisticalAnalyzer()
-        self._experiment_cache: Dict[str, Experiment] = {}
+        self._max_cache_size = max_cache_size
+        self._experiment_cache: OrderedDict[str, Experiment] = OrderedDict()
         logger.info("ExperimentService initialized")
+
+    def _cache_put(self, key: str, value: "Experiment") -> None:
+        """Add to cache with LRU eviction when max size exceeded."""
+        self._experiment_cache[key] = value
+        self._experiment_cache.move_to_end(key)
+        while len(self._experiment_cache) > self._max_cache_size:
+            self._experiment_cache.popitem(last=False)
 
     def initialize(self) -> None:
         """Initialize service resources."""
@@ -337,7 +349,7 @@ class ExperimentService(Service):
         with get_session() as session:
             experiment = session.get(Experiment, experiment_id)
             if experiment:
-                self._experiment_cache[experiment_id] = experiment
+                self._cache_put(experiment_id, experiment)
             return experiment
 
     def list_experiments(

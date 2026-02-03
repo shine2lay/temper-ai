@@ -696,16 +696,29 @@ class RollbackManager:
         >>> result = manager.execute_rollback(snapshot.id)
     """
 
-    def __init__(self, default_strategy: Optional[RollbackStrategy] = None):
+    # Defaults for bounded collections
+    MAX_SNAPSHOTS = 500
+    MAX_HISTORY = 10000
+
+    def __init__(
+        self,
+        default_strategy: Optional[RollbackStrategy] = None,
+        max_snapshots: int = MAX_SNAPSHOTS,
+        max_history: int = MAX_HISTORY,
+    ):
         """Initialize rollback manager.
 
         Args:
             default_strategy: Default strategy if no specific match
+            max_snapshots: Maximum stored snapshots before oldest are evicted
+            max_history: Maximum stored history entries before oldest are evicted
         """
         self.default_strategy = default_strategy or FileRollbackStrategy()
         self._strategies: Dict[str, RollbackStrategy] = {}
         self._snapshots: Dict[str, RollbackSnapshot] = {}
         self._history: List[RollbackResult] = []
+        self._max_snapshots = max_snapshots
+        self._max_history = max_history
         self._on_rollback_callbacks: List[Callable[[RollbackResult], None]] = []
 
     def register_strategy(self, action_type: str, strategy: RollbackStrategy) -> None:
@@ -747,8 +760,12 @@ class RollbackManager:
         # Create snapshot
         snapshot = strategy.create_snapshot(action, context or {})
 
-        # Store snapshot
+        # Store snapshot with eviction of oldest when over limit
         self._snapshots[snapshot.id] = snapshot
+        if len(self._snapshots) > self._max_snapshots:
+            # Remove oldest snapshot (by creation time)
+            oldest_id = min(self._snapshots, key=lambda k: self._snapshots[k].created_at)
+            del self._snapshots[oldest_id]
 
         return snapshot
 
@@ -803,8 +820,10 @@ class RollbackManager:
         # Execute rollback
         result = strategy.execute_rollback(snapshot)
 
-        # Record in history
+        # Record in history with eviction of oldest when over limit
         self._history.append(result)
+        if len(self._history) > self._max_history:
+            self._history = self._history[-self._max_history:]
 
         # Trigger callbacks
         self._trigger_rollback_callbacks(result)

@@ -154,19 +154,25 @@ class ApprovalWorkflow:
         ...     print("Action approved, proceeding...")
     """
 
+    # Maximum stored requests to prevent unbounded memory growth
+    MAX_REQUESTS = 10000
+
     def __init__(
         self,
         default_timeout_minutes: int = 60,
-        auto_reject_on_timeout: bool = True
+        auto_reject_on_timeout: bool = True,
+        max_requests: int = MAX_REQUESTS,
     ):
         """Initialize approval workflow.
 
         Args:
             default_timeout_minutes: Default timeout for approval requests
             auto_reject_on_timeout: Automatically reject expired requests
+            max_requests: Maximum stored requests before oldest are evicted
         """
         self.default_timeout_minutes = default_timeout_minutes
         self.auto_reject_on_timeout = auto_reject_on_timeout
+        self._max_requests = max_requests
         self._requests: Dict[str, ApprovalRequest] = {}
         self._on_approved_callbacks: List[Callable[[ApprovalRequest], None]] = []
         self._on_rejected_callbacks: List[Callable[[ApprovalRequest], None]] = []
@@ -217,7 +223,27 @@ class ApprovalWorkflow:
         )
 
         self._requests[request.id] = request
+
+        # Evict oldest completed requests when over limit
+        if len(self._requests) > self._max_requests:
+            self._evict_oldest_completed()
+
         return request
+
+    def _evict_oldest_completed(self) -> None:
+        """Remove oldest non-pending requests to stay within max_requests limit."""
+        if len(self._requests) <= self._max_requests:
+            return
+        # Prefer evicting completed/rejected/expired over pending
+        completed_ids = [
+            rid for rid, req in self._requests.items()
+            if not req.is_pending()
+        ]
+        # Sort by creation time (oldest first) - request.id contains UUID so use created_at
+        completed_ids.sort(key=lambda rid: self._requests[rid].created_at)
+        to_remove = len(self._requests) - self._max_requests
+        for rid in completed_ids[:to_remove]:
+            del self._requests[rid]
 
     def approve(
         self,

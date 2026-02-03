@@ -382,8 +382,8 @@ class StageConfigInner(BaseModel):
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Dict[str, Any] = Field(default_factory=dict)
     execution: StageExecutionConfig = Field(default_factory=StageExecutionConfig)
-    collaboration: CollaborationConfig
-    conflict_resolution: ConflictResolutionConfig
+    collaboration: Optional[CollaborationConfig] = None
+    conflict_resolution: Optional[ConflictResolutionConfig] = None
     safety: StageSafetyConfig = Field(default_factory=StageSafetyConfig)
     error_handling: StageErrorHandlingConfig = Field(default_factory=StageErrorHandlingConfig)
     quality_gates: QualityGatesConfig = Field(default_factory=QualityGatesConfig)

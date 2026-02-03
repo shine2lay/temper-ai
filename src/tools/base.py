@@ -414,24 +414,35 @@ class ParameterSanitizer:
 
         return str(normalized)
 
+    # Maximum command length to prevent DoS
+    MAX_COMMAND_LENGTH = 1000
+
     @staticmethod
     def sanitize_command(
         command: str,
-        allowed_commands: Optional[list[str]] = None
+        allowed_commands: Optional[list[str]] = None,
+        max_length: Optional[int] = None,
     ) -> str:
         """
         Sanitize command to prevent injection attacks.
 
+        WARNING: This function does NOT make shell=True safe.
+        ALWAYS use subprocess.run(..., shell=False) with argument lists.
+
+        Applies Unicode NFKC normalization to prevent homoglyph bypass attacks
+        before checking for dangerous patterns.
+
         Args:
             command: Command string to sanitize
             allowed_commands: Optional whitelist of allowed command names
+            max_length: Maximum allowed command length
 
         Returns:
-            Sanitized command string
+            Sanitized command string (NFKC-normalized)
 
         Raises:
-            SecurityError: If command contains dangerous characters
-            ValueError: If command is empty
+            SecurityError: If command contains dangerous characters or patterns
+            ValueError: If command is empty or exceeds max length
 
         Examples:
             >>> sanitizer = ParameterSanitizer()
@@ -441,8 +452,24 @@ class ParameterSanitizer:
             >>> sanitizer.sanitize_command("ls; rm -rf /")
             SecurityError: Dangerous character ';' in command
         """
+        import unicodedata
+        import re
+
         if not command:
             raise ValueError("Command cannot be empty")
+
+        # Enforce length limit
+        limit = max_length or ParameterSanitizer.MAX_COMMAND_LENGTH
+        if len(command) > limit:
+            raise ValueError(f"Command too long ({len(command)} > {limit})")
+
+        # Block null bytes before any other processing
+        if '\x00' in command:
+            raise SecurityError("Null byte detected in command")
+
+        # Normalize Unicode to NFKC to prevent homoglyph attacks
+        # (e.g., U+FF1B fullwidth semicolon → ASCII semicolon)
+        normalized = unicodedata.normalize('NFKC', command)
 
         # Block shell metacharacters that enable command injection
         dangerous_chars = [
@@ -458,20 +485,35 @@ class ParameterSanitizer:
         ]
 
         for char in dangerous_chars:
-            if char in command:
+            if char in normalized:
                 raise SecurityError(
-                    f"Dangerous character '{char}' detected in command: {command}"
+                    f"Dangerous character '{char}' detected in command: {normalized}"
+                )
+
+        # Block command substitution and expansion patterns
+        dangerous_patterns = [
+            (r'\$\(', "command substitution $()"),
+            (r'\$\{', "variable expansion ${}"),
+            (r'\{[^}]*,[^}]*\}', "brace expansion"),
+            (r'\{[^}]*\.\.[^}]*\}', "brace range expansion"),
+            (r'\\[xX][0-9a-fA-F]{2}', "hex escape sequence"),
+        ]
+
+        for pattern, description in dangerous_patterns:
+            if re.search(pattern, normalized):
+                raise SecurityError(
+                    f"Dangerous pattern detected ({description}) in command"
                 )
 
         # Whitelist validation
         if allowed_commands is not None:
-            cmd_name = command.split()[0] if command.split() else ""
+            cmd_name = normalized.split()[0] if normalized.split() else ""
             if cmd_name not in allowed_commands:
                 raise SecurityError(
                     f"Command '{cmd_name}' not in allowed list: {allowed_commands}"
                 )
 
-        return command
+        return normalized
 
     @staticmethod
     def validate_string_length(

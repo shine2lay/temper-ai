@@ -294,10 +294,6 @@ class DataSanitizer:
         redactions = []
         sanitized = text
 
-        # Check allowlist first
-        if self._is_allowlisted(text):
-            return sanitized, redactions
-
         # Map PII types to config settings
         pii_config = {
             "email": self.config.redact_emails,

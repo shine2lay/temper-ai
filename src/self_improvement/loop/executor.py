@@ -407,30 +407,41 @@ class LoopExecutor:
         # For MVP, we assume experiment runs in background and check if complete
         # In production, this would poll or wait for completion
 
-        # Analyze results (force analysis even if not enough samples)
-        analysis = self.experiment_orchestrator.analyze_experiment(
+        # Determine winner (force analysis even if not enough samples)
+        winner = self.experiment_orchestrator.get_winner(
             experiment_id=experiment.id,
-            force=True,  # Force analysis for testing
+            force=True,
         )
 
-        winner_variant_id = analysis.get("winner_variant_id")
-        winner_config = None
+        if winner and winner.variant_id != "control":
+            logger.info(
+                f"Experiment {experiment.id} has winner: {winner.variant_id} "
+                f"(improvement: {winner.quality_improvement:.1f}%, "
+                f"confidence: {winner.confidence:.2f})"
+            )
 
-        if winner_variant_id and winner_variant_id != "control":
-            # Get winner config
-            variant_index = int(winner_variant_id.split("_")[1])
-            winner_config = strategy_result.variant_configs[variant_index]
-            logger.info(f"Winner: {winner_variant_id} for {agent_name}")
+            return ExperimentResult(
+                experiment_id=experiment.id,
+                winner_variant_id=winner.variant_id,
+                winner_config=winner.winning_config,
+                statistical_significance=winner.is_statistically_significant,
+                metrics_comparison={
+                    "quality_improvement": winner.quality_improvement,
+                    "speed_improvement": winner.speed_improvement,
+                    "cost_improvement": winner.cost_improvement,
+                    "composite_score": winner.composite_score,
+                },
+            )
         else:
-            logger.info(f"No winner (control best) for {agent_name}")
+            logger.info(f"No winner (control best or inconclusive) for {agent_name}")
 
-        return ExperimentResult(
-            experiment_id=experiment.id,
-            winner_variant_id=winner_variant_id,
-            winner_config=winner_config,
-            statistical_significance=analysis.get("statistical_significance"),
-            metrics_comparison=analysis.get("metrics_comparison"),
-        )
+            return ExperimentResult(
+                experiment_id=experiment.id,
+                winner_variant_id=None,
+                winner_config=None,
+                statistical_significance=None,
+                metrics_comparison=None,
+            )
 
     def _execute_phase_5_deploy(
         self,

@@ -1,9 +1,10 @@
 """Tests for EngineRegistry.
 
 Tests registry pattern, singleton behavior, type validation, configuration parsing,
-and error handling.
+error handling, and thread safety.
 """
 
+import threading
 import pytest
 from src.compiler.engine_registry import EngineRegistry
 from src.compiler.execution_engine import (
@@ -361,3 +362,154 @@ def test_unregister_nonexistent_engine():
 
     # Should not raise error
     registry.unregister_engine("nonexistent")
+
+
+class TestThreadSafety:
+    """Thread safety tests for EngineRegistry."""
+
+    def _make_mock_engine(self, tag: str):
+        """Create a uniquely-named MockExecutionEngine subclass."""
+        return type(
+            f"MockEngine_{tag}",
+            (MockExecutionEngine,),
+            {},
+        )
+
+    def test_singleton_creation_thread_safe(self):
+        """Multiple threads calling EngineRegistry() get the same instance."""
+        instances = []
+        barrier = threading.Barrier(10)
+
+        def get_instance():
+            barrier.wait()
+            instances.append(EngineRegistry())
+
+        threads = [threading.Thread(target=get_instance) for _ in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert len(instances) == 10
+        assert all(inst is instances[0] for inst in instances)
+
+    def test_concurrent_register_unique_names(self):
+        """10 threads each register a unique engine simultaneously."""
+        registry = EngineRegistry()
+        errors = []
+        barrier = threading.Barrier(10)
+
+        # Pre-clean any leftovers
+        for i in range(10):
+            try:
+                registry.unregister_engine(f"thread_eng_{i}")
+            except (ValueError, KeyError):
+                pass
+
+        def register(idx):
+            try:
+                barrier.wait()
+                engine_cls = self._make_mock_engine(f"t{idx}")
+                registry.register_engine(f"thread_eng_{idx}", engine_cls)
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=register, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Unexpected errors: {errors}"
+
+        engines = registry.list_engines()
+        for i in range(10):
+            assert f"thread_eng_{i}" in engines
+
+        # Cleanup
+        for i in range(10):
+            registry.unregister_engine(f"thread_eng_{i}")
+
+    def test_concurrent_reads_during_writes(self):
+        """Concurrent reads don't raise while writes are happening."""
+        registry = EngineRegistry()
+        errors = []
+        barrier = threading.Barrier(20)
+
+        # Pre-clean
+        for i in range(10):
+            try:
+                registry.unregister_engine(f"rw_eng_{i}")
+            except (ValueError, KeyError):
+                pass
+
+        def writer(idx):
+            try:
+                barrier.wait()
+                engine_cls = self._make_mock_engine(f"rw{idx}")
+                registry.register_engine(f"rw_eng_{idx}", engine_cls)
+            except Exception as e:
+                errors.append(("writer", idx, e))
+
+        def reader():
+            try:
+                barrier.wait()
+                for _ in range(50):
+                    registry.list_engines()
+            except Exception as e:
+                errors.append(("reader", e))
+
+        threads = []
+        for i in range(10):
+            threads.append(threading.Thread(target=writer, args=(i,)))
+        for _ in range(10):
+            threads.append(threading.Thread(target=reader))
+
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Unexpected errors: {errors}"
+
+        # Cleanup
+        for i in range(10):
+            try:
+                registry.unregister_engine(f"rw_eng_{i}")
+            except (ValueError, KeyError):
+                pass
+
+    def test_concurrent_get_engine(self):
+        """Multiple threads can get the same engine concurrently."""
+        registry = EngineRegistry()
+        results = []
+        errors = []
+        barrier = threading.Barrier(10)
+
+        # Register a test engine
+        try:
+            registry.unregister_engine("concurrent_get")
+        except (ValueError, KeyError):
+            pass
+        registry.register_engine("concurrent_get", MockExecutionEngine)
+
+        def get(idx):
+            try:
+                barrier.wait()
+                engine = registry.get_engine("concurrent_get")
+                results.append(isinstance(engine, MockExecutionEngine))
+            except Exception as e:
+                errors.append(e)
+
+        threads = [threading.Thread(target=get, args=(i,)) for i in range(10)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Unexpected errors: {errors}"
+        assert all(results)
+        assert len(results) == 10
+
+        # Cleanup
+        registry.unregister_engine("concurrent_get")

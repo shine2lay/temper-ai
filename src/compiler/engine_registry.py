@@ -11,6 +11,7 @@ Design Philosophy:
 - Default fallback - always have "langgraph" engine available
 """
 
+import threading
 from typing import Dict, Any, Type, Optional, List
 from src.compiler.execution_engine import ExecutionEngine
 
@@ -20,6 +21,7 @@ class EngineRegistry:
 
     Provides factory pattern for creating engines by name.
     Enables runtime engine selection and A/B testing.
+    Thread-safe singleton with double-checked locking.
 
     Example:
         >>> registry = EngineRegistry()
@@ -27,14 +29,18 @@ class EngineRegistry:
         >>> engine = registry.get_engine("custom", config_loader=loader)
     """
 
+    _lock: threading.Lock = threading.Lock()
     _instance: Optional["EngineRegistry"] = None
-    _engines: Dict[str, Type[ExecutionEngine]] = {}
 
     def __new__(cls) -> "EngineRegistry":
-        """Singleton pattern - only one registry instance."""
+        """Thread-safe singleton pattern with double-checked locking."""
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialize_default_engines()
+            with cls._lock:
+                if cls._instance is None:
+                    instance = super().__new__(cls)
+                    instance._engines: Dict[str, Type[ExecutionEngine]] = {}
+                    instance._initialize_default_engines()
+                    cls._instance = instance
         return cls._instance
 
     def _initialize_default_engines(self) -> None:
@@ -57,7 +63,7 @@ class EngineRegistry:
         name: str,
         engine_class: Type[ExecutionEngine]
     ) -> None:
-        """Register an execution engine.
+        """Register an execution engine (thread-safe).
 
         Args:
             name: Engine name (e.g., "langgraph", "custom_dynamic")
@@ -70,9 +76,6 @@ class EngineRegistry:
         if not name or not isinstance(name, str):
             raise ValueError("Engine name must be non-empty string")
 
-        if name in self._engines:
-            raise ValueError(f"Engine '{name}' already registered")
-
         # Validate engine implements ExecutionEngine interface
         if not issubclass(engine_class, ExecutionEngine):
             raise TypeError(
@@ -80,14 +83,17 @@ class EngineRegistry:
                 f"got {engine_class}"
             )
 
-        self._engines[name] = engine_class
+        with self._lock:
+            if name in self._engines:
+                raise ValueError(f"Engine '{name}' already registered")
+            self._engines[name] = engine_class
 
     def get_engine(
         self,
         name: str = "langgraph",
         **kwargs: Any
     ) -> ExecutionEngine:
-        """Get engine instance by name.
+        """Get engine instance by name (thread-safe).
 
         Args:
             name: Engine name (default: "langgraph")
@@ -107,18 +113,20 @@ class EngineRegistry:
             ...     config_loader=loader
             ... )
         """
-        if name not in self._engines:
-            available = ", ".join(self.list_engines())
-            raise ValueError(
-                f"Unknown engine '{name}'. "
-                f"Available engines: {available}"
-            )
+        with self._lock:
+            if name not in self._engines:
+                available = ", ".join(self._engines.keys())
+                raise ValueError(
+                    f"Unknown engine '{name}'. "
+                    f"Available engines: {available}"
+                )
+            engine_class = self._engines[name]
 
-        engine_class = self._engines[name]
+        # Instantiate outside lock
         return engine_class(**kwargs)
 
     def list_engines(self) -> List[str]:
-        """List all registered engine names.
+        """List all registered engine names (thread-safe).
 
         Returns:
             List of engine names
@@ -128,7 +136,8 @@ class EngineRegistry:
             >>> registry.list_engines()
             ['langgraph', 'custom_dynamic']
         """
-        return list(self._engines.keys())
+        with self._lock:
+            return list(self._engines.keys())
 
     def get_engine_from_config(
         self,
@@ -177,7 +186,7 @@ class EngineRegistry:
         return self.get_engine(engine_name, **merged_kwargs)
 
     def unregister_engine(self, name: str) -> None:
-        """Unregister an engine (mainly for testing).
+        """Unregister an engine (thread-safe, mainly for testing).
 
         Args:
             name: Engine name to remove
@@ -188,5 +197,6 @@ class EngineRegistry:
         if name == "langgraph":
             raise ValueError("Cannot unregister default 'langgraph' engine")
 
-        if name in self._engines:
-            del self._engines[name]
+        with self._lock:
+            if name in self._engines:
+                del self._engines[name]

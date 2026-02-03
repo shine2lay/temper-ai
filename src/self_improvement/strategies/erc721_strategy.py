@@ -138,8 +138,8 @@ contract MyNFT is ERC721, Ownable {
         """Check if strategy applies to the problem.
 
         Applicable for:
-        - low_quality / quality_low: Code generation produces bad Solidity
-        - high_error_rate: Many compilation/test failures
+        - quality_low: Code generation produces bad Solidity
+        - error_rate_high: Many compilation/test failures
         - inconsistent_output: LLM produces different results each time
 
         Args:
@@ -149,9 +149,8 @@ contract MyNFT is ERC721, Ownable {
             True if strategy can help
         """
         applicable_types = {
-            "low_quality",
             "quality_low",
-            "high_error_rate",
+            "error_rate_high",
             "inconsistent_output",
         }
         return problem_type in applicable_types
@@ -168,9 +167,8 @@ contract MyNFT is ERC721, Ownable {
         problem_type = problem.get("problem_type", problem.get("type", "unknown"))
 
         impact_by_type = {
-            "low_quality": 0.35,
             "quality_low": 0.35,
-            "high_error_rate": 0.30,
+            "error_rate_high": 0.30,
             "inconsistent_output": 0.25,
         }
 

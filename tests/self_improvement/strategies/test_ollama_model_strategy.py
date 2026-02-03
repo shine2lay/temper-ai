@@ -27,21 +27,21 @@ class TestOllamaModelSelectionStrategy:
         """Test strategy has correct name."""
         assert strategy.name == "ollama_model_selection"
 
-    def test_is_applicable_to_low_quality(self, strategy):
+    def test_is_applicable_to_quality_low(self, strategy):
         """Test strategy applies to low quality problems."""
-        assert strategy.is_applicable("low_quality") is True
+        assert strategy.is_applicable("quality_low") is True
 
-    def test_is_applicable_to_high_cost(self, strategy):
+    def test_is_applicable_to_cost_high(self, strategy):
         """Test strategy applies to high cost problems."""
-        assert strategy.is_applicable("high_cost") is True
+        assert strategy.is_applicable("cost_high") is True
 
-    def test_is_applicable_to_slow_response(self, strategy):
+    def test_is_applicable_to_speed_low(self, strategy):
         """Test strategy applies to slow response problems."""
-        assert strategy.is_applicable("slow_response") is True
+        assert strategy.is_applicable("speed_low") is True
 
-    def test_is_applicable_to_high_error_rate(self, strategy):
+    def test_is_applicable_to_error_rate_high(self, strategy):
         """Test strategy applies to high error rate."""
-        assert strategy.is_applicable("high_error_rate") is True
+        assert strategy.is_applicable("error_rate_high") is True
 
     def test_not_applicable_to_unknown_problem(self, strategy):
         """Test strategy doesn't apply to unrelated problems."""
@@ -194,23 +194,23 @@ class TestOllamaModelSelectionStrategy:
             assert variant.caching["enabled"] is True
             assert variant.caching["ttl"] == 3600
 
-    def test_estimate_impact_for_low_quality(self, strategy):
+    def test_estimate_impact_for_quality_low(self, strategy):
         """Test impact estimation for quality problems."""
-        problem = {"type": "low_quality", "current_quality": 0.5}
+        problem = {"type": "quality_low", "current_quality": 0.5}
         impact = strategy.estimate_impact(problem)
 
         assert impact == 0.4  # 40% improvement expected
 
-    def test_estimate_impact_for_high_cost(self, strategy):
+    def test_estimate_impact_for_cost_high(self, strategy):
         """Test impact estimation for cost problems."""
-        problem = {"type": "high_cost", "current_cost_usd": 1.0}
+        problem = {"type": "cost_high", "current_cost_usd": 1.0}
         impact = strategy.estimate_impact(problem)
 
         assert impact == 0.3  # 30% cost reduction expected
 
-    def test_estimate_impact_for_slow_response(self, strategy):
+    def test_estimate_impact_for_speed_low(self, strategy):
         """Test impact estimation for latency problems."""
-        problem = {"type": "slow_response", "avg_latency_ms": 2000}
+        problem = {"type": "speed_low", "avg_latency_ms": 2000}
         impact = strategy.estimate_impact(problem)
 
         assert impact == 0.3  # 30% speed improvement expected
@@ -285,7 +285,7 @@ class TestOllamaModelSelectionStrategy:
         ]
 
         problem_type = strategy._infer_problem_type(patterns)
-        assert problem_type == "low_quality"
+        assert problem_type == "quality_low"
 
     def test_infer_problem_type_from_cost_pattern(self, strategy):
         """Test problem type inference from cost patterns."""
@@ -300,7 +300,7 @@ class TestOllamaModelSelectionStrategy:
         ]
 
         problem_type = strategy._infer_problem_type(patterns)
-        assert problem_type == "high_cost"
+        assert problem_type == "cost_high"
 
     def test_infer_problem_type_from_latency_pattern(self, strategy):
         """Test problem type inference from latency patterns."""
@@ -315,7 +315,7 @@ class TestOllamaModelSelectionStrategy:
         ]
 
         problem_type = strategy._infer_problem_type(patterns)
-        assert problem_type == "slow_response"
+        assert problem_type == "speed_low"
 
     def test_infer_problem_type_defaults_to_balanced(self, strategy):
         """Test problem type defaults to balanced when no patterns."""
@@ -324,7 +324,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_select_candidate_models_for_quality(self, strategy, registry):
         """Test candidate selection prioritizes quality."""
-        candidates = strategy._select_candidate_models("phi3:mini", "low_quality")
+        candidates = strategy._select_candidate_models("phi3:mini", "quality_low")
 
         # Should be sorted by quality (highest first)
         assert len(candidates) > 0
@@ -333,7 +333,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_select_candidate_models_for_speed(self, strategy, registry):
         """Test candidate selection prioritizes speed."""
-        candidates = strategy._select_candidate_models("qwen2.5:32b", "slow_response")
+        candidates = strategy._select_candidate_models("qwen2.5:32b", "speed_low")
 
         # Should be sorted by speed (fastest first)
         assert len(candidates) > 0

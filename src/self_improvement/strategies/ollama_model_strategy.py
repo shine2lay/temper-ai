@@ -21,9 +21,10 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
 
     This strategy generates config variants by substituting different Ollama
     models based on the performance problem:
-    - low_quality: Try larger, higher-quality models
-    - high_cost: Try smaller, faster models (cost proxy: model size)
-    - slow_response: Try faster models
+    - quality_low: Try larger, higher-quality models
+    - cost_high: Try smaller, faster models (cost proxy: model size)
+    - speed_low: Try faster models
+    - error_rate_high: Try more reliable models
 
     Uses ModelRegistry to discover available models and their characteristics.
 
@@ -96,8 +97,9 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
 
         Model selection is applicable to:
         - quality_low: Try higher-quality models
-        - cost_too_high: Try smaller/faster models
-        - too_slow: Try faster models
+        - cost_high: Try smaller/faster models
+        - speed_low: Try faster models
+        - error_rate_high: Try more reliable models
 
         Args:
             problem_type: Type of problem detected (from ProblemType enum)
@@ -107,8 +109,9 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         """
         applicable_types = {
             "quality_low",
-            "cost_too_high",
-            "too_slow",
+            "cost_high",
+            "speed_low",
+            "error_rate_high",
         }
         return problem_type in applicable_types
 
@@ -127,8 +130,9 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         # Model selection has high impact on quality and moderate on speed/cost
         impact_by_type = {
             "quality_low": 0.4,  # 40% quality improvement expected
-            "too_slow": 0.3,  # 30% speed improvement
-            "cost_too_high": 0.3,  # 30% cost reduction
+            "speed_low": 0.3,  # 30% speed improvement
+            "cost_high": 0.3,  # 30% cost reduction
+            "error_rate_high": 0.3,  # 30% error rate reduction
         }
 
         return impact_by_type.get(problem_type, 0.1)
@@ -151,9 +155,9 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
             if "quality" in pattern.pattern_type.lower():
                 return "quality_low"
             elif "cost" in pattern.pattern_type.lower():
-                return "cost_too_high"
+                return "cost_high"
             elif "slow" in pattern.pattern_type.lower() or "latency" in pattern.pattern_type.lower():
-                return "too_slow"
+                return "speed_low"
 
         return "balanced"
 
@@ -181,7 +185,7 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
                 key=lambda m: self._quality_score(m),
                 reverse=True
             )
-        elif problem_type == "cost_too_high" or problem_type == "too_slow":
+        elif problem_type in ("cost_high", "speed_low"):
             # Prioritize faster/smaller models
             candidates.sort(
                 key=lambda m: self._speed_score(m),

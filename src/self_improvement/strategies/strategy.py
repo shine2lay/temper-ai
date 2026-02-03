@@ -28,7 +28,7 @@ Example:
     ...         return variants
     ...
     ...     def is_applicable(self, problem_type: str) -> bool:
-    ...         return problem_type in ["low_quality", "inconsistent_output"]
+    ...         return problem_type in ["quality_low", "inconsistent_output"]
 """
 
 from abc import ABC, abstractmethod
@@ -69,7 +69,7 @@ class LearnedPattern:
     decisions about which variants to generate.
 
     Attributes:
-        pattern_type: Category of pattern (e.g., "slow_response", "hallucination")
+        pattern_type: Category of pattern (e.g., "speed_low", "hallucination")
         description: Human-readable description of the pattern
         support: Number of times this pattern was observed
         confidence: Reliability score from 0 (unreliable) to 1 (highly reliable)
@@ -178,8 +178,8 @@ class ImprovementStrategy(ABC):
         opt-in/opt-out based on their area of expertise.
 
         Args:
-            problem_type: Type of problem detected (e.g., 'high_cost',
-                         'low_quality', 'slow_response', 'high_error_rate')
+            problem_type: Type of problem detected (e.g., 'quality_low',
+                         'cost_high', 'speed_low', 'error_rate_high')
 
         Returns:
             True if this strategy is appropriate for the problem type,
@@ -187,9 +187,9 @@ class ImprovementStrategy(ABC):
 
         Example:
             >>> strategy = PromptTuningStrategy()
-            >>> strategy.is_applicable('low_quality')
+            >>> strategy.is_applicable('quality_low')
             True
-            >>> strategy.is_applicable('high_cost')
+            >>> strategy.is_applicable('cost_high')
             False  # Prompt tuning doesn't directly reduce cost
         """
         pass

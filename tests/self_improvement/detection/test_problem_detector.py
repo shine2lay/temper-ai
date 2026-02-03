@@ -95,7 +95,7 @@ class TestProblemDetector:
         problems = detector.detect_problems(comparison)
 
         assert len(problems) == 1
-        assert problems[0].problem_type == ProblemType.COST_TOO_HIGH
+        assert problems[0].problem_type == ProblemType.COST_HIGH
         assert problems[0].severity == ProblemSeverity.CRITICAL
         assert problems[0].degradation_pct == 0.50
 
@@ -119,7 +119,7 @@ class TestProblemDetector:
         problems = detector.detect_problems(comparison)
 
         assert len(problems) == 1
-        assert problems[0].problem_type == ProblemType.TOO_SLOW
+        assert problems[0].problem_type == ProblemType.SPEED_LOW
         assert problems[0].severity == ProblemSeverity.CRITICAL
         assert problems[0].degradation_pct == 0.80
 

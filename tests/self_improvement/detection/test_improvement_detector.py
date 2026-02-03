@@ -79,8 +79,8 @@ class TestImprovementDetector:
         # Register mock strategies
         strategies = [
             MockStrategy("prompt_tuning", ["quality_low"]),
-            MockStrategy("model_selection", ["quality_low", "cost_too_high"]),
-            MockStrategy("caching", ["cost_too_high", "too_slow"]),
+            MockStrategy("model_selection", ["quality_low", "cost_high"]),
+            MockStrategy("caching", ["cost_high", "speed_low"]),
         ]
 
         registry.get_all_strategies = Mock(return_value=strategies)
@@ -210,7 +210,7 @@ class TestImprovementDetector:
         # Setup mocks
         baseline = self.create_profile(success_rate=0.85)
         current = self.create_profile(success_rate=0.70)
-        problem = self.create_problem(problem_type=ProblemType.TOO_SLOW)  # No strategy for this
+        problem = self.create_problem(problem_type=ProblemType.SPEED_LOW)  # No strategy for this
 
         detector.analyzer = Mock()
         detector.analyzer.get_baseline = Mock(return_value=baseline)

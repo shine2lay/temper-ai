@@ -42,7 +42,7 @@ class MockStrategy(ImprovementStrategy):
         return [variant1, variant2]
 
     def is_applicable(self, problem_type: str) -> bool:
-        return problem_type in ["high_cost", "slow_response"]
+        return problem_type in ["cost_high", "speed_low"]
 
 
 class TestImprovementStrategy:
@@ -67,7 +67,7 @@ class TestImprovementStrategy:
         )
         patterns = [
             LearnedPattern(
-                pattern_type="high_cost",
+                pattern_type="cost_high",
                 description="Costs too high",
                 support=10,
                 confidence=0.9,
@@ -87,14 +87,14 @@ class TestImprovementStrategy:
         """Concrete strategy must implement is_applicable."""
         strategy = MockStrategy()
 
-        assert strategy.is_applicable("high_cost") is True
-        assert strategy.is_applicable("slow_response") is True
-        assert strategy.is_applicable("low_quality") is False
+        assert strategy.is_applicable("cost_high") is True
+        assert strategy.is_applicable("speed_low") is True
+        assert strategy.is_applicable("quality_low") is False
 
     def test_default_estimate_impact(self):
         """Default estimate_impact returns 0.1."""
         strategy = MockStrategy()
-        problem = {"type": "high_cost", "severity": 0.8}
+        problem = {"type": "cost_high", "severity": 0.8}
 
         impact = strategy.estimate_impact(problem)
 

@@ -278,8 +278,8 @@ class TestM5Phase3Validation:
 
         # Verify strategy is applicable to quality problems
         assert strategy.is_applicable("quality_low"), "Should apply to quality_low"
-        assert strategy.is_applicable("cost_too_high"), "Should apply to cost_too_high"
-        assert strategy.is_applicable("too_slow"), "Should apply to too_slow"
+        assert strategy.is_applicable("cost_high"), "Should apply to cost_high"
+        assert strategy.is_applicable("speed_low"), "Should apply to speed_low"
 
         logger.info("✓ Strategy applicability validated")
 

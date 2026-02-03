@@ -15,14 +15,20 @@ class ProblemType(Enum):
     """
     Types of performance problems M5 can detect.
 
+    Naming convention: {metric}_{state}
+    - metric: quality, cost, speed, error_rate
+    - state: low, high
+
     Each problem type maps to specific improvement strategies:
     - QUALITY_LOW: Prompt tuning, parameter adjustment, model selection
-    - COST_TOO_HIGH: Cost reduction, caching, cheaper models
-    - TOO_SLOW: Speed optimization, model selection, token reduction
+    - COST_HIGH: Cost reduction, caching, cheaper models
+    - SPEED_LOW: Speed optimization, model selection, token reduction
+    - ERROR_RATE_HIGH: Error rate reduction, retry tuning, model selection
     """
     QUALITY_LOW = "quality_low"
-    COST_TOO_HIGH = "cost_too_high"
-    TOO_SLOW = "too_slow"
+    COST_HIGH = "cost_high"
+    SPEED_LOW = "speed_low"
+    ERROR_RATE_HIGH = "error_rate_high"
 
 
 class ProblemSeverity(Enum):

@@ -289,7 +289,7 @@ class ProblemDetector:
 
             # Create problem
             problem = PerformanceProblem(
-                problem_type=ProblemType.COST_TOO_HIGH,
+                problem_type=ProblemType.COST_HIGH,
                 severity=severity,
                 agent_name=comparison.agent_name,
                 metric_name=change.metric_name,
@@ -378,7 +378,7 @@ class ProblemDetector:
 
             # Create problem
             problem = PerformanceProblem(
-                problem_type=ProblemType.TOO_SLOW,
+                problem_type=ProblemType.SPEED_LOW,
                 severity=severity,
                 agent_name=comparison.agent_name,
                 metric_name=change.metric_name,

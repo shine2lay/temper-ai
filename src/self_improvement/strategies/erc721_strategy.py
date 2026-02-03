@@ -100,9 +100,9 @@ contract MyNFT is ERC721, Ownable {
         # Reduce by 50%, minimum 0.05
         new_temp = max(0.05, current_temp * 0.5)
         variant_temp.inference["temperature"] = round(new_temp, 2)
-        variant_temp.metadata["strategy"] = self.name
-        variant_temp.metadata["variant_type"] = "lower_temperature"
-        variant_temp.metadata["change"] = f"temperature: {current_temp} -> {new_temp:.2f}"
+        variant_temp.extra_metadata["strategy"] = self.name
+        variant_temp.extra_metadata["variant_type"] = "lower_temperature"
+        variant_temp.extra_metadata["change"] = f"temperature: {current_temp} -> {new_temp:.2f}"
         variants.append(variant_temp)
 
         # Variant 2: Code-specialized model
@@ -116,9 +116,9 @@ contract MyNFT is ERC721, Ownable {
         if code_model:
             variant_model = copy.deepcopy(current_config)
             variant_model.inference["model"] = code_model
-            variant_model.metadata["strategy"] = self.name
-            variant_model.metadata["variant_type"] = "code_model"
-            variant_model.metadata["change"] = f"model: {current_model} -> {code_model}"
+            variant_model.extra_metadata["strategy"] = self.name
+            variant_model.extra_metadata["variant_type"] = "code_model"
+            variant_model.extra_metadata["change"] = f"model: {current_model} -> {code_model}"
             variants.append(variant_model)
 
         # Variant 3: Enhanced prompt with inline Solidity examples
@@ -127,9 +127,9 @@ contract MyNFT is ERC721, Ownable {
         if self.SOLIDITY_EXAMPLE not in current_prompt:
             enhanced = current_prompt + "\n\nREFERENCE EXAMPLE:\n" + self.SOLIDITY_EXAMPLE
             variant_prompt.prompt["inline"] = enhanced
-        variant_prompt.metadata["strategy"] = self.name
-        variant_prompt.metadata["variant_type"] = "enhanced_prompt"
-        variant_prompt.metadata["change"] = "Added inline Solidity reference example"
+        variant_prompt.extra_metadata["strategy"] = self.name
+        variant_prompt.extra_metadata["variant_type"] = "enhanced_prompt"
+        variant_prompt.extra_metadata["change"] = "Added inline Solidity reference example"
         variants.append(variant_prompt)
 
         return variants

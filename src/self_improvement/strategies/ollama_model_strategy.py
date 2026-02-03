@@ -83,10 +83,10 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         for model in candidates[:4]:  # Limit to 4 variants
             variant = copy.deepcopy(current_config)
             variant.inference["model"] = model.name
-            variant.metadata["strategy"] = self.name
-            variant.metadata["model_size"] = model.size
-            variant.metadata["expected_quality"] = model.expected_quality
-            variant.metadata["expected_speed"] = model.expected_speed
+            variant.extra_metadata["strategy"] = self.name
+            variant.extra_metadata["model_size"] = model.size
+            variant.extra_metadata["expected_quality"] = model.expected_quality
+            variant.extra_metadata["expected_speed"] = model.expected_speed
             variants.append(variant)
 
         return variants

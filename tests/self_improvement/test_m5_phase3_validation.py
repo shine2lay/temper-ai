@@ -200,6 +200,7 @@ class TestM5Phase3Validation:
 
         # Create current config
         current_config = AgentConfig(
+            agent_name="test_agent",
             inference={"model": "phi3:mini"},
             prompt={"template": "Extract product information"},
         )
@@ -218,9 +219,9 @@ class TestM5Phase3Validation:
 
         # Verify strategy metadata added
         for variant in variants:
-            assert variant.metadata.get("strategy") == "ollama_model_selection"
-            assert "model_size" in variant.metadata
-            assert "expected_quality" in variant.metadata
+            assert variant.extra_metadata.get("strategy") == "ollama_model_selection"
+            assert "model_size" in variant.extra_metadata
+            assert "expected_quality" in variant.extra_metadata
 
         logger.info("✓ Strategy variant generation validated")
 

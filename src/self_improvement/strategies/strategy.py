@@ -35,27 +35,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict
 from dataclasses import dataclass, field
 
-
-@dataclass
-class AgentConfig:
-    """
-    Configuration for an agent.
-
-    This represents the complete configuration that can be modified
-    by improvement strategies. Each strategy generates variants of
-    this configuration to test different optimization approaches.
-
-    Attributes:
-        inference: Model inference settings (model, temperature, max_tokens, etc.)
-        prompt: Prompt configuration (template, examples, system message, etc.)
-        caching: Caching settings (enabled, ttl, strategy, etc.)
-        metadata: Additional strategy-specific configuration
-    """
-
-    inference: Dict = field(default_factory=dict)
-    prompt: Dict = field(default_factory=dict)
-    caching: Dict = field(default_factory=dict)
-    metadata: Dict = field(default_factory=dict)
+from src.self_improvement.data_models import AgentConfig
 
 
 @dataclass
@@ -155,6 +135,7 @@ class ImprovementStrategy(ABC):
 
         Example:
             >>> current = AgentConfig(
+            ...     agent_name='test',
             ...     inference={'model': 'gpt-4', 'temperature': 0.7},
             ...     prompt={'template': 'default'}
             ... )
@@ -211,7 +192,7 @@ class ImprovementStrategy(ABC):
             Values typically range 0.1-0.5 for realistic strategies.
 
         Example:
-            >>> problem = {'type': 'high_cost', 'current_cost': 100}
+            >>> problem = {'type': 'cost_high', 'current_cost': 100}
             >>> strategy = ModelSelectionStrategy()
             >>> strategy.estimate_impact(problem)
             0.3  # Expects ~30% cost reduction

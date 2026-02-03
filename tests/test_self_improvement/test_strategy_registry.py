@@ -30,8 +30,8 @@ class MockStrategy(ImprovementStrategy):
     ) -> AgentConfig:
         """Propose a config (mock implementation)."""
         return AgentConfig(
+            agent_name=agent_name,
             inference={"mock": "config"},
-            metadata={"agent_name": agent_name},
         )
 
     def generate_variants(
@@ -42,8 +42,9 @@ class MockStrategy(ImprovementStrategy):
         """Generate variants (mock implementation)."""
         return [
             AgentConfig(
+                agent_name=current_config.agent_name,
                 inference={"variant": i},
-                metadata={"variant_id": i},
+                extra_metadata={"variant_id": i},
             )
             for i in range(1, 3)
         ]
@@ -231,5 +232,5 @@ class TestStrategyRegistry:
             baseline_performance={"metric1": 0.5},
         )
 
-        assert config.metadata["agent_name"] == "test_agent"
+        assert config.agent_name == "test_agent"
         assert config.inference == {"mock": "config"}

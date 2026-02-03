@@ -30,11 +30,13 @@ class MockStrategy(ImprovementStrategy):
     ) -> List[AgentConfig]:
         # Generate 2 simple variants
         variant1 = AgentConfig(
+            agent_name=current_config.agent_name,
             inference={"model": "gpt-3.5-turbo"},
             prompt=current_config.prompt,
             caching=current_config.caching,
         )
         variant2 = AgentConfig(
+            agent_name=current_config.agent_name,
             inference={"model": "gpt-4"},
             prompt=current_config.prompt,
             caching=current_config.caching,
@@ -62,6 +64,7 @@ class TestImprovementStrategy:
         """Concrete strategy must implement generate_variants."""
         strategy = MockStrategy()
         current = AgentConfig(
+            agent_name="test_agent",
             inference={"model": "gpt-4", "temperature": 0.7},
             prompt={"template": "default"},
         )
@@ -117,33 +120,36 @@ class TestAgentConfig:
     def test_agent_config_creation(self):
         """Can create AgentConfig with all fields."""
         config = AgentConfig(
+            agent_name="test_agent",
             inference={"model": "gpt-4", "temperature": 0.7},
             prompt={"template": "You are a helpful assistant"},
             caching={"enabled": True, "ttl": 3600},
-            metadata={"version": "1.0"},
+            extra_metadata={"version": "1.0"},
         )
 
+        assert config.agent_name == "test_agent"
         assert config.inference["model"] == "gpt-4"
         assert config.prompt["template"] == "You are a helpful assistant"
         assert config.caching["enabled"] is True
-        assert config.metadata["version"] == "1.0"
+        assert config.extra_metadata["version"] == "1.0"
 
     def test_agent_config_defaults(self):
-        """AgentConfig uses empty dicts as defaults."""
-        config = AgentConfig()
+        """AgentConfig uses factory defaults for dicts."""
+        config = AgentConfig(agent_name="test_agent")
 
-        assert config.inference == {}
-        assert config.prompt == {}
-        assert config.caching == {}
-        assert config.metadata == {}
+        assert config.agent_name == "test_agent"
+        assert isinstance(config.inference, dict)
+        assert isinstance(config.prompt, dict)
+        assert isinstance(config.caching, dict)
+        assert config.extra_metadata == {}
 
     def test_agent_config_partial(self):
         """Can create AgentConfig with partial fields."""
-        config = AgentConfig(inference={"model": "gpt-4"})
+        config = AgentConfig(agent_name="test_agent", inference={"model": "gpt-4"})
 
         assert config.inference == {"model": "gpt-4"}
-        assert config.prompt == {}
-        assert config.caching == {}
+        assert isinstance(config.prompt, dict)
+        assert isinstance(config.caching, dict)
 
 
 class TestLearnedPattern:
@@ -221,7 +227,7 @@ class TestStrategyIntegration:
     def test_strategy_with_empty_patterns(self):
         """Strategy works with empty pattern list (MVP scenario)."""
         strategy = MockStrategy()
-        current = AgentConfig(inference={"model": "gpt-4"})
+        current = AgentConfig(agent_name="test_agent", inference={"model": "gpt-4"})
         patterns = []
 
         variants = strategy.generate_variants(current, patterns)
@@ -232,7 +238,7 @@ class TestStrategyIntegration:
     def test_strategy_with_multiple_patterns(self):
         """Strategy receives multiple learned patterns."""
         strategy = MockStrategy()
-        current = AgentConfig(inference={"model": "gpt-4"})
+        current = AgentConfig(agent_name="test_agent", inference={"model": "gpt-4"})
         patterns = [
             LearnedPattern("cost", "High cost", 20, 0.9, {}),
             LearnedPattern("latency", "Slow", 15, 0.8, {}),

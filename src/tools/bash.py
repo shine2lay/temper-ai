@@ -242,22 +242,40 @@ class Bash(BaseTool):
                     error=f"Cannot create workspace directory: {e}",
                 )
 
-        # Sandbox check: working directory must be within workspace root
+        # Sandbox check: resolved CWD must be within resolved workspace root
+        resolved_workspace = self.workspace_root.resolve()
+        resolved_cwd = cwd.resolve() if cwd != self.workspace_root else resolved_workspace
         try:
-            cwd.relative_to(self.workspace_root)
+            resolved_cwd.relative_to(resolved_workspace)
         except ValueError:
             return ToolResult(
                 success=False,
                 error=(
-                    f"Working directory '{cwd}' is outside the sandbox. "
+                    f"Working directory '{cwd}' resolves outside the sandbox. "
                     f"Must be within '{self.workspace_root}'."
                 ),
             )
 
-        # Create working directory if it doesn't exist
-        if not cwd.exists():
+        # Check command arguments for path traversal
+        for arg in parts[1:]:
+            if arg.startswith("-"):
+                continue  # Skip flags
+            arg_path = (resolved_cwd / arg).resolve() if not Path(arg).is_absolute() else Path(arg).resolve()
             try:
-                cwd.mkdir(parents=True, exist_ok=True)
+                arg_path.relative_to(resolved_workspace)
+            except ValueError:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"Path argument '{arg}' resolves outside the sandbox. "
+                        f"All paths must stay within '{self.workspace_root}'."
+                    ),
+                )
+
+        # Create working directory if it doesn't exist
+        if not resolved_cwd.exists():
+            try:
+                resolved_cwd.mkdir(parents=True, exist_ok=True)
             except OSError as e:
                 return ToolResult(
                     success=False,
@@ -268,7 +286,7 @@ class Bash(BaseTool):
         try:
             result = subprocess.run(
                 parts,
-                cwd=str(cwd),
+                cwd=str(resolved_cwd),
                 capture_output=True,
                 text=True,
                 timeout=timeout,

@@ -386,3 +386,181 @@ class TestEdgeCases:
             timeout="invalid",
         )
         assert result.success is True
+
+
+class TestSymlinkSandboxProtection:
+    """Tests for symlink escape and path traversal protections.
+
+    Verifies that resolved paths (after following symlinks) are checked
+    against the workspace boundary, preventing sandbox escapes via:
+    - Symlinks pointing outside the workspace
+    - Relative path traversal in command arguments
+    - Absolute paths outside the workspace
+    - Legitimate symlinks within the workspace (should be allowed)
+    """
+
+    def test_symlink_cwd_escape_blocked(self, workspace, tmp_path):
+        """Symlink as working directory pointing outside workspace is blocked."""
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        symlink_dir = workspace / "escape_link"
+        symlink_dir.symlink_to(outside_dir)
+
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="ls",
+            working_directory=str(symlink_dir),
+        )
+        assert result.success is False
+        assert "resolves outside the sandbox" in result.error
+
+    def test_symlink_to_etc_blocked(self, workspace):
+        """Symlink pointing to /etc is blocked as working directory."""
+        etc_link = workspace / "etc_link"
+        try:
+            etc_link.symlink_to("/etc")
+        except OSError:
+            pytest.skip("Cannot create symlink to /etc")
+
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="ls",
+            working_directory=str(etc_link),
+        )
+        assert result.success is False
+        assert "resolves outside the sandbox" in result.error
+
+    def test_relative_path_traversal_in_args_blocked(self, workspace):
+        """Relative path traversal (../) in command arguments is blocked."""
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="cat ../../../etc/passwd",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "resolves outside the sandbox" in result.error
+
+    def test_absolute_path_outside_workspace_in_args_blocked(self, workspace):
+        """Absolute path outside workspace in command arguments is blocked."""
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="cat /etc/passwd",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "resolves outside the sandbox" in result.error
+
+    def test_symlink_arg_escape_blocked(self, workspace, tmp_path):
+        """Symlink in command argument resolving outside workspace is blocked."""
+        outside_file = tmp_path / "secret.txt"
+        outside_file.write_text("secret data")
+        symlink_file = workspace / "secret_link.txt"
+        symlink_file.symlink_to(outside_file)
+
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="cat secret_link.txt",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "resolves outside the sandbox" in result.error
+
+    def test_legitimate_symlink_within_workspace_allowed(self, workspace):
+        """Symlink pointing to another location within workspace is allowed."""
+        sub_dir = workspace / "subdir"
+        sub_dir.mkdir()
+        target_file = sub_dir / "data.txt"
+        target_file.write_text("legitimate data")
+        symlink_file = workspace / "data_link.txt"
+        symlink_file.symlink_to(target_file)
+
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="cat data_link.txt",
+            working_directory=str(workspace),
+        )
+        assert result.success is True
+        assert "legitimate data" in result.result
+
+    def test_legitimate_symlink_dir_within_workspace_allowed(self, workspace):
+        """Symlink directory within workspace pointing to workspace subdir is allowed."""
+        real_dir = workspace / "real_subdir"
+        real_dir.mkdir()
+        (real_dir / "file.txt").write_text("content in subdir")
+        link_dir = workspace / "linked_subdir"
+        link_dir.symlink_to(real_dir)
+
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="ls",
+            working_directory=str(link_dir),
+        )
+        assert result.success is True
+        assert "file.txt" in result.result
+
+    def test_nested_symlink_escape_blocked(self, workspace, tmp_path):
+        """Nested symlink chain that ultimately escapes workspace is blocked."""
+        outside_dir = tmp_path / "outside_nested"
+        outside_dir.mkdir()
+        # Create chain: workspace/link1 -> workspace/link2 -> outside
+        link2 = workspace / "link2"
+        link2.symlink_to(outside_dir)
+        link1 = workspace / "link1"
+        link1.symlink_to(link2)
+
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="ls",
+            working_directory=str(link1),
+        )
+        assert result.success is False
+        assert "resolves outside the sandbox" in result.error
+
+    def test_dot_dot_traversal_multiple_levels(self, workspace):
+        """Multiple levels of ../ traversal are blocked."""
+        deep_dir = workspace / "a" / "b" / "c"
+        deep_dir.mkdir(parents=True)
+
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="cat ../../../../etc/hostname",
+            working_directory=str(deep_dir),
+        )
+        assert result.success is False
+        assert "resolves outside the sandbox" in result.error
+
+    def test_normal_operations_still_work(self, workspace):
+        """Regression: normal operations within workspace still function."""
+        sub = workspace / "project"
+        sub.mkdir()
+        (sub / "hello.txt").write_text("hello world")
+
+        tool = Bash(config={"workspace_root": str(workspace)})
+
+        # ls works
+        result = tool.execute(command="ls", working_directory=str(sub))
+        assert result.success is True
+        assert "hello.txt" in result.result
+
+        # cat works with workspace-internal path
+        result = tool.execute(command="cat hello.txt", working_directory=str(sub))
+        assert result.success is True
+        assert "hello world" in result.result
+
+        # pwd works
+        result = tool.execute(command="pwd", working_directory=str(sub))
+        assert result.success is True
+
+        # mkdir works
+        result = tool.execute(command="mkdir newdir", working_directory=str(sub))
+        assert result.success is True
+        assert (sub / "newdir").exists()
+
+    def test_flags_not_treated_as_paths(self, workspace):
+        """Flags (arguments starting with -) are not checked as paths."""
+        tool = Bash(config={"workspace_root": str(workspace)})
+        result = tool.execute(
+            command="ls -la",
+            working_directory=str(workspace),
+        )
+        assert result.success is True

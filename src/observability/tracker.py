@@ -829,9 +829,10 @@ class ExecutionTracker:
         return sanitized
 
     def _get_stack_trace(self) -> str:
-        """Get current exception stack trace."""
+        """Get current exception stack trace, sanitized to remove secrets."""
         import traceback
-        return traceback.format_exc()
+        raw_trace = traceback.format_exc()
+        return self.sanitizer.sanitize_text(raw_trace, context="stack_trace").sanitized_text
 
     def set_agent_output(
         self,

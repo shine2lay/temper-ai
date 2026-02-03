@@ -4,6 +4,7 @@ from typing import Generator, Optional
 from enum import Enum
 import logging
 import threading
+import urllib.parse
 from sqlmodel import SQLModel, create_engine, Session
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
@@ -11,6 +12,33 @@ from sqlalchemy import text, event
 import os
 
 logger = logging.getLogger(__name__)
+
+
+def _mask_database_url(url: Optional[str]) -> str:
+    """Mask password in a database URL for safe logging.
+
+    Replaces the password component with '****' so credentials
+    are not exposed in log output.
+
+    Args:
+        url: Database URL (e.g., postgresql://user:pass@host/db)
+
+    Returns:
+        Masked URL string (e.g., postgresql://user:****@host/db)
+    """
+    if not url:
+        return "<no url>"
+    try:
+        parsed = urllib.parse.urlparse(url)
+        if parsed.password:
+            # Replace password in netloc
+            masked_netloc = parsed.netloc.replace(
+                f":{parsed.password}@", ":****@"
+            )
+            return urllib.parse.urlunparse(parsed._replace(netloc=masked_netloc))
+        return url
+    except Exception:
+        return "<unparseable url>"
 
 
 class IsolationLevel(str, Enum):
@@ -240,7 +268,7 @@ class DatabaseManager:
             except Exception as e:
                 logger.warning(
                     f"Failed to set isolation level {isolation_level.value}: {e}",
-                    extra={"database_url": self.database_url}
+                    extra={"database_url": _mask_database_url(self.database_url)}
                 )
 
         try:
@@ -252,7 +280,7 @@ class DatabaseManager:
                 f"Database session error: {e.__class__.__name__}: {str(e)}",
                 exc_info=True,
                 extra={
-                    "database_url": self.database_url,
+                    "database_url": _mask_database_url(self.database_url),
                     "isolation_level": isolation_level.value if isolation_level else "default"
                 }
             )
@@ -294,11 +322,11 @@ def init_database(database_url: Optional[str] = None) -> DatabaseManager:
         except Exception as e:
             _db_manager = None
             raise ConnectionError(
-                f"Failed to connect to database: {database_url}"
+                f"Failed to connect to database: {_mask_database_url(database_url)}"
             ) from e
 
         _db_manager.create_all_tables()
-        logger.info(f"Database initialized successfully: {database_url}")
+        logger.info(f"Database initialized successfully: {_mask_database_url(database_url)}")
         return _db_manager
 
 

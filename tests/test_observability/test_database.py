@@ -9,6 +9,7 @@ from src.observability.database import (
     get_database,
     get_session,
     _db_manager,
+    _mask_database_url,
 )
 from src.observability.models import WorkflowExecution
 
@@ -920,3 +921,45 @@ class TestDatabaseFailureRecovery:
         with manager.session() as session:
             count = len(session.exec(select(WorkflowExecution)).all())
             assert count == 100
+
+
+class TestMaskDatabaseUrl:
+    """Tests for _mask_database_url credential masking."""
+
+    def test_masks_postgresql_password(self):
+        """Password in PostgreSQL URL is replaced with ****."""
+        url = "postgresql://user:secretpass@localhost:5432/mydb"
+        masked = _mask_database_url(url)
+        assert "secretpass" not in masked
+        assert "user:****@" in masked
+        assert "localhost:5432/mydb" in masked
+
+    def test_masks_password_with_special_chars(self):
+        """Password containing special characters is fully masked."""
+        url = "postgresql://admin:p%40ss%3Dw0rd@host/db"
+        masked = _mask_database_url(url)
+        assert "p%40ss%3Dw0rd" not in masked
+        assert "****@" in masked
+
+    def test_sqlite_url_unchanged(self):
+        """SQLite URLs without password pass through unchanged."""
+        url = "sqlite:///data/test.db"
+        assert _mask_database_url(url) == url
+
+    def test_sqlite_memory_unchanged(self):
+        """SQLite in-memory URL passes through unchanged."""
+        url = "sqlite:///:memory:"
+        assert _mask_database_url(url) == url
+
+    def test_none_url(self):
+        """None URL returns placeholder."""
+        assert _mask_database_url(None) == "<no url>"
+
+    def test_empty_url(self):
+        """Empty string URL returns placeholder."""
+        assert _mask_database_url("") == "<no url>"
+
+    def test_url_without_password(self):
+        """URL with user but no password is unchanged."""
+        url = "postgresql://readonly@host/db"
+        assert _mask_database_url(url) == url

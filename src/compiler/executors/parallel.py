@@ -50,6 +50,9 @@ class ParallelStageExecutor(StageExecutor):
         Creates a nested LangGraph with parallel branches for agents,
         collects outputs, and synthesizes via collaboration strategy.
 
+        Uses an iterative loop for quality gate retries to avoid stack
+        overflow with high max_retries values.
+
         Args:
             stage_name: Stage name
             stage_config: Stage configuration
@@ -89,332 +92,322 @@ class ParallelStageExecutor(StageExecutor):
             errors: Annotated[Dict[str, str], merge_dicts]
             stage_input: Dict[str, Any]
 
-        # Create subgraph for parallel execution
-        subgraph = StateGraph(ParallelStageState)
+        # Iterative retry loop — replaces former recursive self.execute_stage() call.
+        # Stack depth stays constant regardless of max_retries.
+        while True:
+            # Create subgraph for parallel execution
+            subgraph = StateGraph(ParallelStageState)
 
-        # Get agents for this stage
-        if hasattr(stage_config, 'stage'):
-            agents = stage_config.stage.agents
-        else:
-            agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
+            # Get agents for this stage
+            if hasattr(stage_config, 'stage'):
+                agents = stage_config.stage.agents
+            else:
+                agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
 
-        # Add initialization node
-        def init_parallel(s: ParallelStageState) -> Dict[str, Any]:
-            """Initialize parallel state with empty collections."""
-            return {
-                "agent_outputs": {},
-                "agent_statuses": {},
-                "agent_metrics": {},
-                "errors": {},
-                "stage_input": {
-                    **state,
-                    "stage_outputs": state.get("stage_outputs", {})
-                }
-            }
-
-        subgraph.add_node("init", init_parallel)  # type: ignore[call-overload]
-
-        # Create node for each agent
-        for agent_ref in agents:
-            agent_name = self._extract_agent_name(agent_ref)
-
-            # Create agent execution node
-            agent_node = self._create_agent_node(
-                agent_name=agent_name,
-                agent_ref=agent_ref,
-                stage_name=stage_name,
-                state=state,
-                config_loader=config_loader
-            )
-
-            subgraph.add_node(agent_name, agent_node)  # type: ignore[call-overload]
-
-        # Create collection node (waits for all agents)
-        def collect_outputs(s: ParallelStageState) -> Dict[str, Any]:
-            """Collect and validate agent outputs, calculate aggregate metrics."""
-            # Get min_successful_agents from config
-            stage_dict = stage_config if isinstance(stage_config, dict) else {}
-            error_handling = stage_dict.get("error_handling", {})
-            min_successful = error_handling.get("min_successful_agents", 1)
-
-            # Count successful agents
-            agent_statuses = s.get("agent_statuses", {})
-            successful = [
-                name for name, status in agent_statuses.items()
-                if status == "success"
-            ]
-
-            if len(successful) < min_successful:
-                raise RuntimeError(
-                    f"Only {len(successful)}/{len(agents)} agents succeeded. "
-                    f"Minimum required: {min_successful}"
-                )
-
-            # Calculate aggregate metrics
-            agent_metrics = s.get("agent_metrics", {})
-            agent_outputs_dict = s.get("agent_outputs", {})
-
-            total_tokens = 0
-            total_cost = 0.0
-            max_duration = 0.0
-            total_confidence = 0.0
-            num_successful = 0
-
-            for agent_name, metrics in agent_metrics.items():
-                if agent_statuses.get(agent_name) == "success":
-                    total_tokens += metrics.get("tokens", 0)
-                    total_cost += metrics.get("cost_usd", 0.0)
-                    max_duration = max(max_duration, metrics.get("duration_seconds", 0.0))
-
-                    # Get confidence from output
-                    output = agent_outputs_dict.get(agent_name, {})
-                    total_confidence += output.get("confidence", 0.0)
-                    num_successful += 1
-
-            avg_confidence = total_confidence / num_successful if num_successful > 0 else 0.0
-
-            # Store aggregate metrics in a special key
-            return {
-                "agent_outputs": {
-                    "__aggregate_metrics__": {
-                        "total_tokens": total_tokens,
-                        "total_cost_usd": total_cost,
-                        "total_duration_seconds": max_duration,
-                        "avg_confidence": avg_confidence,
-                        "num_agents": len(agents),
-                        "num_successful": num_successful,
-                        "num_failed": len(agents) - num_successful
+            # Add initialization node
+            def init_parallel(s: ParallelStageState) -> Dict[str, Any]:
+                """Initialize parallel state with empty collections."""
+                return {
+                    "agent_outputs": {},
+                    "agent_statuses": {},
+                    "agent_metrics": {},
+                    "errors": {},
+                    "stage_input": {
+                        **state,
+                        "stage_outputs": state.get("stage_outputs", {})
                     }
                 }
-            }
 
-        subgraph.add_node("collect", collect_outputs)  # type: ignore[call-overload]
+            subgraph.add_node("init", init_parallel)  # type: ignore[call-overload]
 
-        # Add edges: init → all agents (parallel) → collect
-        subgraph.add_edge(START, "init")
+            # Create node for each agent
+            for agent_ref in agents:
+                agent_name = self._extract_agent_name(agent_ref)
 
-        for agent_ref in agents:
-            agent_name = self._extract_agent_name(agent_ref)
-            subgraph.add_edge("init", agent_name)  # Parallel branches
-            subgraph.add_edge(agent_name, "collect")  # All → collect
-
-        subgraph.add_edge("collect", END)
-
-        # Set entry point
-        subgraph.set_entry_point("init")
-
-        # Compile and execute subgraph
-        compiled_subgraph = subgraph.compile()
-
-        try:
-            # Execute parallel subgraph with initial state
-            initial_state: Dict[str, Any] = {
-                "agent_outputs": {},
-                "agent_statuses": {},
-                "agent_metrics": {},
-                "errors": {},
-                "stage_input": {}
-            }
-            parallel_result = compiled_subgraph.invoke(initial_state)  # type: ignore[arg-type]
-
-            # Extract agent outputs
-            agent_outputs_dict = parallel_result["agent_outputs"]
-
-            # Extract aggregate metrics (stored with special key)
-            aggregate_metrics = agent_outputs_dict.pop("__aggregate_metrics__", {})
-
-            # Create AgentOutput objects for synthesis
-            from src.strategies.base import AgentOutput
-
-            agent_outputs = []
-            for agent_name, output_data in agent_outputs_dict.items():
-                agent_outputs.append(AgentOutput(
+                # Create agent execution node
+                agent_node = self._create_agent_node(
                     agent_name=agent_name,
-                    decision=output_data.get("output", ""),
-                    reasoning=output_data.get("reasoning", ""),
-                    confidence=output_data.get("confidence", 0.8),
-                    metadata=output_data.get("metadata", {})
-                ))
-
-            # Run synthesis
-            synthesis_result = self._run_synthesis(
-                agent_outputs=agent_outputs,
-                stage_config=stage_config,
-                stage_name=stage_name
-            )
-
-            # Validate quality gates (M3-12)
-            passed, violations = self._validate_quality_gates(
-                synthesis_result=synthesis_result,
-                stage_config=stage_config,
-                stage_name=stage_name,
-                state=state
-            )
-
-            # Reset retry counter if quality gates passed (successful after retry)
-            if passed and "stage_retry_counts" in state and stage_name in state["stage_retry_counts"]:
-                retry_count = state["stage_retry_counts"][stage_name]
-                del state["stage_retry_counts"][stage_name]
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.info(
-                    f"Stage '{stage_name}' passed quality gates after {retry_count} retries"
+                    agent_ref=agent_ref,
+                    stage_name=stage_name,
+                    state=state,
+                    config_loader=config_loader
                 )
 
-            # Handle quality gate failures
-            if not passed:
+                subgraph.add_node(agent_name, agent_node)  # type: ignore[call-overload]
+
+            # Create collection node (waits for all agents)
+            def collect_outputs(s: ParallelStageState) -> Dict[str, Any]:
+                """Collect and validate agent outputs, calculate aggregate metrics."""
+                # Get min_successful_agents from config
                 stage_dict = stage_config if isinstance(stage_config, dict) else {}
-                quality_gates_config = stage_dict.get("quality_gates", {})
-                on_failure = quality_gates_config.get("on_failure", "retry_stage")
+                error_handling = stage_dict.get("error_handling", {})
+                min_successful = error_handling.get("min_successful_agents", 1)
 
-                # Get retry count for observability tracking
-                retry_count = state.get("stage_retry_counts", {}).get(stage_name, 0)
+                # Count successful agents
+                agent_statuses = s.get("agent_statuses", {})
+                successful = [
+                    name for name, status in agent_statuses.items()
+                    if status == "success"
+                ]
 
-                # Track quality gate failure in observability
-                tracker = state.get("tracker")
-                if tracker and hasattr(tracker, 'track_collaboration_event'):
-                    tracker.track_collaboration_event(
-                        event_type="quality_gate_failure",
-                        stage_name=stage_name,
-                        agents=[],
-                        decision=None,
-                        confidence=getattr(synthesis_result, "confidence", 0.0),
-                        metadata={
-                            "violations": violations,
-                            "on_failure_action": on_failure,
-                            "synthesis_method": synthesis_result.method,
-                            "retry_count": retry_count,
-                            "max_retries": quality_gates_config.get("max_retries", 2)
-                        }
-                    )
-
-                # Handle based on on_failure config
-                if on_failure == "escalate":
+                if len(successful) < min_successful:
                     raise RuntimeError(
-                        f"Quality gates failed for stage '{stage_name}': {'; '.join(violations)}"
+                        f"Only {len(successful)}/{len(agents)} agents succeeded. "
+                        f"Minimum required: {min_successful}"
                     )
-                elif on_failure == "proceed_with_warning":
-                    # Log warning but continue
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(
-                        f"Quality gates failed for stage '{stage_name}' but proceeding: {'; '.join(violations)}"
+
+                # Calculate aggregate metrics
+                agent_metrics = s.get("agent_metrics", {})
+                agent_outputs_dict = s.get("agent_outputs", {})
+
+                total_tokens = 0
+                total_cost = 0.0
+                max_duration = 0.0
+                total_confidence = 0.0
+                num_successful = 0
+
+                for agent_name, metrics in agent_metrics.items():
+                    if agent_statuses.get(agent_name) == "success":
+                        total_tokens += metrics.get("tokens", 0)
+                        total_cost += metrics.get("cost_usd", 0.0)
+                        max_duration = max(max_duration, metrics.get("duration_seconds", 0.0))
+
+                        # Get confidence from output
+                        output = agent_outputs_dict.get(agent_name, {})
+                        total_confidence += output.get("confidence", 0.0)
+                        num_successful += 1
+
+                avg_confidence = total_confidence / num_successful if num_successful > 0 else 0.0
+
+                # Store aggregate metrics in a special key
+                return {
+                    "agent_outputs": {
+                        "__aggregate_metrics__": {
+                            "total_tokens": total_tokens,
+                            "total_cost_usd": total_cost,
+                            "total_duration_seconds": max_duration,
+                            "avg_confidence": avg_confidence,
+                            "num_agents": len(agents),
+                            "num_successful": num_successful,
+                            "num_failed": len(agents) - num_successful
+                        }
+                    }
+                }
+
+            subgraph.add_node("collect", collect_outputs)  # type: ignore[call-overload]
+
+            # Add edges: init → all agents (parallel) → collect
+            subgraph.add_edge(START, "init")
+
+            for agent_ref in agents:
+                agent_name = self._extract_agent_name(agent_ref)
+                subgraph.add_edge("init", agent_name)  # Parallel branches
+                subgraph.add_edge(agent_name, "collect")  # All → collect
+
+            subgraph.add_edge("collect", END)
+
+            # Set entry point
+            subgraph.set_entry_point("init")
+
+            # Compile and execute subgraph
+            compiled_subgraph = subgraph.compile()
+
+            try:
+                # Execute parallel subgraph with initial state
+                initial_state: Dict[str, Any] = {
+                    "agent_outputs": {},
+                    "agent_statuses": {},
+                    "agent_metrics": {},
+                    "errors": {},
+                    "stage_input": {}
+                }
+                parallel_result = compiled_subgraph.invoke(initial_state)  # type: ignore[arg-type]
+
+                # Extract agent outputs
+                agent_outputs_dict = parallel_result["agent_outputs"]
+
+                # Extract aggregate metrics (stored with special key)
+                aggregate_metrics = agent_outputs_dict.pop("__aggregate_metrics__", {})
+
+                # Create AgentOutput objects for synthesis
+                from src.strategies.base import AgentOutput
+
+                agent_outputs = []
+                for agent_name, output_data in agent_outputs_dict.items():
+                    agent_outputs.append(AgentOutput(
+                        agent_name=agent_name,
+                        decision=output_data.get("output", ""),
+                        reasoning=output_data.get("reasoning", ""),
+                        confidence=output_data.get("confidence", 0.8),
+                        metadata=output_data.get("metadata", {})
+                    ))
+
+                # Run synthesis
+                synthesis_result = self._run_synthesis(
+                    agent_outputs=agent_outputs,
+                    stage_config=stage_config,
+                    stage_name=stage_name
+                )
+
+                # Validate quality gates (M3-12)
+                passed, violations = self._validate_quality_gates(
+                    synthesis_result=synthesis_result,
+                    stage_config=stage_config,
+                    stage_name=stage_name,
+                    state=state
+                )
+
+                # Reset retry counter if quality gates passed (successful after retry)
+                if passed and "stage_retry_counts" in state and stage_name in state["stage_retry_counts"]:
+                    retry_count = state["stage_retry_counts"][stage_name]
+                    del state["stage_retry_counts"][stage_name]
+                    logger.info(
+                        f"Stage '{stage_name}' passed quality gates after {retry_count} retries"
                     )
-                    # Add warning to metadata
-                    if not hasattr(synthesis_result, "metadata") or synthesis_result.metadata is None:
-                        synthesis_result.metadata = {}
-                    synthesis_result.metadata["quality_gate_warning"] = violations
-                elif on_failure == "retry_stage":
-                    # Get max retries configuration
-                    max_retries = quality_gates_config.get("max_retries", 2)
 
-                    # Initialize retry tracking in state if needed
-                    if "stage_retry_counts" not in state:
-                        state["stage_retry_counts"] = {}
+                # Handle quality gate failures
+                if not passed:
+                    stage_dict = stage_config if isinstance(stage_config, dict) else {}
+                    quality_gates_config = stage_dict.get("quality_gates", {})
+                    on_failure = quality_gates_config.get("on_failure", "retry_stage")
 
-                    # Get current retry count for this stage
-                    retry_count = state["stage_retry_counts"].get(stage_name, 0)
+                    # Get retry count for observability tracking
+                    retry_count = state.get("stage_retry_counts", {}).get(stage_name, 0)
 
-                    # Check if retries exhausted
-                    if retry_count >= max_retries:
-                        # Retries exhausted - escalate
-                        raise RuntimeError(
-                            f"Quality gates failed for stage '{stage_name}' after {retry_count} retries "
-                            f"(max: {max_retries}). Final violations: {'; '.join(violations)}"
-                        )
-
-                    # Increment retry counter
-                    state["stage_retry_counts"][stage_name] = retry_count + 1
-
-                    # Track retry attempt in observability
+                    # Track quality gate failure in observability
+                    tracker = state.get("tracker")
                     if tracker and hasattr(tracker, 'track_collaboration_event'):
                         tracker.track_collaboration_event(
-                            event_type="quality_gate_retry",
+                            event_type="quality_gate_failure",
                             stage_name=stage_name,
                             agents=[],
                             decision=None,
                             confidence=getattr(synthesis_result, "confidence", 0.0),
                             metadata={
                                 "violations": violations,
-                                "retry_attempt": retry_count + 1,
-                                "max_retries": max_retries,
-                                "synthesis_method": synthesis_result.method
+                                "on_failure_action": on_failure,
+                                "synthesis_method": synthesis_result.method,
+                                "retry_count": retry_count,
+                                "max_retries": quality_gates_config.get("max_retries", 2)
                             }
                         )
 
-                    # Log retry attempt
-                    import logging
-                    logger = logging.getLogger(__name__)
-                    logger.warning(
-                        f"Quality gates failed for stage '{stage_name}', retrying "
-                        f"(attempt {retry_count + 2}/{max_retries + 1}). Violations: {'; '.join(violations)}"
-                    )
+                    # Handle based on on_failure config
+                    if on_failure == "escalate":
+                        raise RuntimeError(
+                            f"Quality gates failed for stage '{stage_name}': {'; '.join(violations)}"
+                        )
+                    elif on_failure == "proceed_with_warning":
+                        # Log warning but continue
+                        logger.warning(
+                            f"Quality gates failed for stage '{stage_name}' but proceeding: {'; '.join(violations)}"
+                        )
+                        # Add warning to metadata
+                        if not hasattr(synthesis_result, "metadata") or synthesis_result.metadata is None:
+                            synthesis_result.metadata = {}
+                        synthesis_result.metadata["quality_gate_warning"] = violations
+                    elif on_failure == "retry_stage":
+                        # Get max retries configuration
+                        max_retries = quality_gates_config.get("max_retries", 2)
 
-                    # Recursively retry the stage execution
-                    # This re-runs the entire parallel execution + synthesis + validation
-                    return self.execute_stage(
-                        stage_name=stage_name,
-                        stage_config=stage_config,
-                        state=state,  # State now contains updated retry count
-                        config_loader=config_loader,
-                        tool_registry=tool_registry
-                    )
+                        # Initialize retry tracking in state if needed
+                        if "stage_retry_counts" not in state:
+                            state["stage_retry_counts"] = {}
 
-            # Update state with enhanced multi-agent tracking
-            state["stage_outputs"][stage_name] = {
-                "decision": synthesis_result.decision,
-                "agent_outputs": agent_outputs_dict,
-                "agent_statuses": parallel_result.get("agent_statuses", {}),
-                "agent_metrics": parallel_result.get("agent_metrics", {}),
-                "aggregate_metrics": aggregate_metrics,
-                "synthesis": {
-                    "method": synthesis_result.method,
-                    "confidence": synthesis_result.confidence,
-                    "votes": synthesis_result.votes,
-                    "conflicts": len(synthesis_result.conflicts)
-                }
-            }
-            state["current_stage"] = stage_name
+                        # Get current retry count for this stage
+                        retry_count = state["stage_retry_counts"].get(stage_name, 0)
 
-            # Track synthesis in observability
-            tracker = state.get("tracker")
-            if tracker:
-                # Track collaboration event with agent-level metrics
-                tracker_metadata = {
-                    "method": synthesis_result.method,
-                    "confidence": synthesis_result.confidence,
-                    "votes": synthesis_result.votes,
-                    "num_conflicts": len(synthesis_result.conflicts),
-                    "reasoning": synthesis_result.reasoning,
+                        # Check if retries exhausted
+                        if retry_count >= max_retries:
+                            # Retries exhausted - escalate
+                            raise RuntimeError(
+                                f"Quality gates failed for stage '{stage_name}' after {retry_count} retries "
+                                f"(max: {max_retries}). Final violations: {'; '.join(violations)}"
+                            )
+
+                        # Increment retry counter
+                        state["stage_retry_counts"][stage_name] = retry_count + 1
+
+                        # Track retry attempt in observability
+                        if tracker and hasattr(tracker, 'track_collaboration_event'):
+                            tracker.track_collaboration_event(
+                                event_type="quality_gate_retry",
+                                stage_name=stage_name,
+                                agents=[],
+                                decision=None,
+                                confidence=getattr(synthesis_result, "confidence", 0.0),
+                                metadata={
+                                    "violations": violations,
+                                    "retry_attempt": retry_count + 1,
+                                    "max_retries": max_retries,
+                                    "synthesis_method": synthesis_result.method
+                                }
+                            )
+
+                        # Log retry attempt
+                        logger.warning(
+                            f"Quality gates failed for stage '{stage_name}', retrying "
+                            f"(attempt {retry_count + 2}/{max_retries + 1}). Violations: {'; '.join(violations)}"
+                        )
+
+                        # Iterative retry: continue the while loop instead of recursing
+                        continue
+
+                # Update state with enhanced multi-agent tracking
+                state["stage_outputs"][stage_name] = {
+                    "decision": synthesis_result.decision,
+                    "agent_outputs": agent_outputs_dict,
                     "agent_statuses": parallel_result.get("agent_statuses", {}),
-                    "aggregate_metrics": aggregate_metrics
+                    "agent_metrics": parallel_result.get("agent_metrics", {}),
+                    "aggregate_metrics": aggregate_metrics,
+                    "synthesis": {
+                        "method": synthesis_result.method,
+                        "confidence": synthesis_result.confidence,
+                        "votes": synthesis_result.votes,
+                        "conflicts": len(synthesis_result.conflicts)
+                    }
                 }
-                if hasattr(tracker, 'track_collaboration_event'):
-                    tracker.track_collaboration_event(
-                        event_type="synthesis",
-                        stage_name=stage_name,
-                        agents=list(agent_outputs_dict.keys()),
-                        decision=synthesis_result.decision,
-                        confidence=synthesis_result.confidence,
-                        metadata=tracker_metadata
-                    )
+                state["current_stage"] = stage_name
 
-            return state
+                # Track synthesis in observability
+                tracker = state.get("tracker")
+                if tracker:
+                    # Track collaboration event with agent-level metrics
+                    tracker_metadata = {
+                        "method": synthesis_result.method,
+                        "confidence": synthesis_result.confidence,
+                        "votes": synthesis_result.votes,
+                        "num_conflicts": len(synthesis_result.conflicts),
+                        "reasoning": synthesis_result.reasoning,
+                        "agent_statuses": parallel_result.get("agent_statuses", {}),
+                        "aggregate_metrics": aggregate_metrics
+                    }
+                    if hasattr(tracker, 'track_collaboration_event'):
+                        tracker.track_collaboration_event(
+                            event_type="synthesis",
+                            stage_name=stage_name,
+                            agents=list(agent_outputs_dict.keys()),
+                            decision=synthesis_result.decision,
+                            confidence=synthesis_result.confidence,
+                            metadata=tracker_metadata
+                        )
 
-        except Exception as e:
-            # Handle stage failure
-            stage_dict = stage_config if isinstance(stage_config, dict) else {}
-            error_handling = stage_dict.get("error_handling", {})
-            on_failure = error_handling.get("on_stage_failure", "halt")
-
-            if on_failure == "halt":
-                raise
-            elif on_failure == "skip":
-                # Skip this stage, continue workflow
-                state["stage_outputs"][stage_name] = None
                 return state
-            else:
-                raise
+
+            except Exception as e:
+                # Handle stage failure
+                stage_dict = stage_config if isinstance(stage_config, dict) else {}
+                error_handling = stage_dict.get("error_handling", {})
+                on_failure = error_handling.get("on_stage_failure", "halt")
+
+                if on_failure == "halt":
+                    raise
+                elif on_failure == "skip":
+                    # Skip this stage, continue workflow
+                    state["stage_outputs"][stage_name] = None
+                    return state
+                else:
+                    raise
 
     def supports_stage_type(self, stage_type: str) -> bool:
         """Check if executor supports this stage type.

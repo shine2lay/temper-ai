@@ -488,6 +488,103 @@ class TestErrorHandling:
         assert mock_httpx_client.post.call_count == 3
 
 
+class TestErrorResponseSanitization:
+    """Verify _handle_error_response sanitizes sensitive data."""
+
+    def test_api_key_redacted_in_auth_error(self, mock_httpx_client):
+        """API keys in 401 response bodies are redacted."""
+        llm = OpenAILLM(
+            model="gpt-4",
+            base_url="https://api.openai.com",
+            api_key="sk-test-123",
+        )
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.text = "Invalid API key: sk-proj-abc123def456"
+        mock_httpx_client.post.return_value = mock_response
+
+        with pytest.raises(LLMAuthenticationError) as exc_info:
+            llm.complete("test")
+
+        assert "sk-proj-abc123def456" not in str(exc_info.value)
+        assert "REDACTED" in str(exc_info.value)
+
+    def test_bearer_token_redacted_in_error(self, mock_httpx_client):
+        """Bearer tokens in error responses are redacted."""
+        llm = OllamaLLM(
+            model="llama3.2:3b",
+            base_url="http://localhost:11434",
+            max_retries=1,
+        )
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = "Error: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature"
+        mock_httpx_client.post.return_value = mock_response
+
+        with pytest.raises(LLMError) as exc_info:
+            llm.complete("test")
+
+        assert "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9" not in str(exc_info.value)
+        assert "REDACTED" in str(exc_info.value)
+
+    def test_normal_error_preserved(self, mock_httpx_client):
+        """Normal error responses without sensitive data remain useful."""
+        llm = OllamaLLM(
+            model="llama3.2:3b",
+            base_url="http://localhost:11434",
+            max_retries=1,
+        )
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.text = "Invalid model format: expected string"
+        mock_httpx_client.post.return_value = mock_response
+
+        with pytest.raises(LLMError) as exc_info:
+            llm.complete("test")
+
+        assert "Invalid model format: expected string" in str(exc_info.value)
+        assert "400" in str(exc_info.value)
+
+    def test_long_response_truncated(self, mock_httpx_client):
+        """Response bodies longer than 500 chars are truncated."""
+        llm = OllamaLLM(
+            model="llama3.2:3b",
+            base_url="http://localhost:11434",
+            max_retries=1,
+        )
+        long_text = "x" * 1000
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = long_text
+        mock_httpx_client.post.return_value = mock_response
+
+        with pytest.raises(LLMError) as exc_info:
+            llm.complete("test")
+
+        # Error message should not contain all 1000 chars
+        error_msg = str(exc_info.value)
+        # The prefix "Server error (500): " is ~20 chars, so truncated body = 500
+        assert len(error_msg) <= 600
+
+    def test_rate_limit_error_sanitized(self, mock_httpx_client):
+        """Rate limit errors also get sanitized."""
+        llm = OllamaLLM(
+            model="llama3.2:3b",
+            base_url="http://localhost:11434",
+            max_retries=1,
+        )
+        mock_response = Mock()
+        mock_response.status_code = 429
+        mock_response.text = "Rate limited. Your key: api_key=sk-secret-longkey123"
+        mock_httpx_client.post.return_value = mock_response
+
+        with pytest.raises(LLMRateLimitError) as exc_info:
+            llm.complete("test")
+
+        assert "sk-secret-longkey123" not in str(exc_info.value)
+        assert "REDACTED" in str(exc_info.value)
+
+
 class TestCreateLLMClient:
     """Test LLM client factory function."""
 

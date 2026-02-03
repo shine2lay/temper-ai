@@ -25,6 +25,7 @@ except ImportError:
     LLMCache = None  # type: ignore
 
 from src.utils.error_handling import retry_with_backoff, RetryStrategy
+from src.utils.exceptions import sanitize_error_message
 
 # Import canonical execution context for cache isolation
 from src.core.context import ExecutionContext
@@ -717,15 +718,21 @@ class BaseLLM(ABC):
         return await _make_async_api_call()
 
     def _handle_error_response(self, response: httpx.Response) -> None:
-        """Handle HTTP error responses."""
+        """Handle HTTP error responses.
+
+        Response text is truncated and sanitized to prevent leaking
+        API keys, tokens, or other credentials that may be echoed
+        back in provider error bodies.
+        """
+        safe_text = sanitize_error_message(response.text[:500])
         if response.status_code == 401:
-            raise LLMAuthenticationError(f"Authentication failed: {response.text}")
+            raise LLMAuthenticationError(f"Authentication failed: {safe_text}")
         elif response.status_code == 429:
-            raise LLMRateLimitError(f"Rate limited: {response.text}")
+            raise LLMRateLimitError(f"Rate limited: {safe_text}")
         elif response.status_code >= 500:
-            raise LLMError(f"Server error ({response.status_code}): {response.text}")
+            raise LLMError(f"Server error ({response.status_code}): {safe_text}")
         else:
-            raise LLMError(f"Request failed ({response.status_code}): {response.text}")
+            raise LLMError(f"Request failed ({response.status_code}): {safe_text}")
 
 
 class OllamaLLM(BaseLLM):

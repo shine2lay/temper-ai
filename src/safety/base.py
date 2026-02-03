@@ -140,6 +140,67 @@ class BaseSafetyPolicy(SafetyPolicy):
         """
         return self._child_policies.copy()
 
+    def _init_validation_metadata(self) -> Dict[str, Any]:
+        """Create initial metadata dict for validation. Shared by sync/async."""
+        return {
+            "policy_name": self.name,
+            "policy_version": self.version,
+            "child_policies": [p.name for p in self._child_policies]
+        }
+
+    def _merge_child_result(
+        self,
+        child: SafetyPolicy,
+        child_result: ValidationResult,
+        violations: List[SafetyViolation],
+        metadata: Dict[str, Any],
+    ) -> bool:
+        """Merge a child policy result into the accumulated state.
+
+        Returns True if short-circuiting should occur (CRITICAL violation).
+        Shared by sync and async validation paths.
+        """
+        violations.extend(child_result.violations)
+
+        for key, value in child_result.metadata.items():
+            metadata[f"child_{child.name}_{key}"] = value
+
+        if child_result.has_critical_violations():
+            metadata["short_circuit"] = True
+            metadata["short_circuit_policy"] = child.name
+            return True
+        return False
+
+    def _merge_own_result(
+        self,
+        own_result: ValidationResult,
+        violations: List[SafetyViolation],
+        metadata: Dict[str, Any],
+    ) -> None:
+        """Merge own validation result into accumulated state. Shared by sync/async."""
+        violations.extend(own_result.violations)
+        for key, value in own_result.metadata.items():
+            if key not in metadata:
+                metadata[key] = value
+
+    def _finalize_validation(
+        self,
+        violations: List[SafetyViolation],
+        metadata: Dict[str, Any],
+    ) -> ValidationResult:
+        """Determine validity, report violations, and return result. Shared by sync/async."""
+        valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
+
+        for violation in violations:
+            self.report_violation(violation)
+
+        return ValidationResult(
+            valid=valid,
+            violations=violations,
+            metadata=metadata,
+            policy_name=self.name
+        )
+
     def validate(
         self,
         action: Dict[str, Any],
@@ -171,50 +232,18 @@ class BaseSafetyPolicy(SafetyPolicy):
             ...         print(f"{violation.severity.name}: {violation.message}")
         """
         violations: List[SafetyViolation] = []
-        metadata: Dict[str, Any] = {
-            "policy_name": self.name,
-            "policy_version": self.version,
-            "child_policies": [p.name for p in self._child_policies]
-        }
+        metadata = self._init_validation_metadata()
 
-        # Validate with child policies first (higher priority)
         for child in self._child_policies:
             child_result = child.validate(action, context)
-            violations.extend(child_result.violations)
-
-            # Merge child metadata (prefix keys to avoid conflicts)
-            for key, value in child_result.metadata.items():
-                metadata[f"child_{child.name}_{key}"] = value
-
-            # Short-circuit on CRITICAL violations
-            if child_result.has_critical_violations():
-                metadata["short_circuit"] = True
-                metadata["short_circuit_policy"] = child.name
+            if self._merge_child_result(child, child_result, violations, metadata):
                 break
 
-        # Run own validation logic (unless short-circuited)
         if not metadata.get("short_circuit", False):
             own_result = self._validate_impl(action, context)
-            violations.extend(own_result.violations)
+            self._merge_own_result(own_result, violations, metadata)
 
-            # Merge own metadata
-            for key, value in own_result.metadata.items():
-                if key not in metadata:  # Don't override existing keys
-                    metadata[key] = value
-
-        # Determine validity: no HIGH or CRITICAL violations
-        valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
-
-        # Report violations
-        for violation in violations:
-            self.report_violation(violation)
-
-        return ValidationResult(
-            valid=valid,
-            violations=violations,
-            metadata=metadata,
-            policy_name=self.name
-        )
+        return self._finalize_validation(violations, metadata)
 
     def _validate_impl(
         self,
@@ -277,47 +306,18 @@ class BaseSafetyPolicy(SafetyPolicy):
             ValidationResult
         """
         violations: List[SafetyViolation] = []
-        metadata: Dict[str, Any] = {
-            "policy_name": self.name,
-            "policy_version": self.version,
-            "child_policies": [p.name for p in self._child_policies]
-        }
+        metadata = self._init_validation_metadata()
 
-        # Validate with child policies
         for child in self._child_policies:
             child_result = await child.validate_async(action, context)
-            violations.extend(child_result.violations)
-
-            for key, value in child_result.metadata.items():
-                metadata[f"child_{child.name}_{key}"] = value
-
-            # Short-circuit on CRITICAL
-            if child_result.has_critical_violations():
-                metadata["short_circuit"] = True
-                metadata["short_circuit_policy"] = child.name
+            if self._merge_child_result(child, child_result, violations, metadata):
                 break
 
-        # Run own validation
         if not metadata.get("short_circuit", False):
             own_result = await self._validate_async_impl(action, context)
-            violations.extend(own_result.violations)
+            self._merge_own_result(own_result, violations, metadata)
 
-            for key, value in own_result.metadata.items():
-                if key not in metadata:
-                    metadata[key] = value
-
-        valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
-
-        # Report violations
-        for violation in violations:
-            self.report_violation(violation)
-
-        return ValidationResult(
-            valid=valid,
-            violations=violations,
-            metadata=metadata,
-            policy_name=self.name
-        )
+        return self._finalize_validation(violations, metadata)
 
     async def _validate_async_impl(
         self,

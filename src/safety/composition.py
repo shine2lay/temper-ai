@@ -176,6 +176,85 @@ class PolicyComposer:
         """Sort policies by priority (highest first)."""
         self._policies.sort(key=lambda p: p.priority, reverse=True)
 
+    def _handle_policy_result(
+        self,
+        policy: SafetyPolicy,
+        result: ValidationResult,
+        all_violations: List[SafetyViolation],
+        policy_results: Dict[str, ValidationResult],
+    ) -> None:
+        """Process a successful policy validation result.
+
+        Shared by both sync and async validation paths.
+        """
+        policy_results[policy.name] = result
+
+        if not result.valid:
+            all_violations.extend(result.violations)
+            if self.enable_reporting:
+                for violation in result.violations:
+                    policy.report_violation(violation)
+
+    def _handle_policy_error(
+        self,
+        policy: SafetyPolicy,
+        error: Exception,
+        action: Dict[str, Any],
+        context: Dict[str, Any],
+        all_violations: List[SafetyViolation],
+        policy_results: Dict[str, ValidationResult],
+    ) -> None:
+        """Process a policy evaluation failure as a CRITICAL violation.
+
+        Shared by both sync and async validation paths.
+        """
+        violation = SafetyViolation(
+            policy_name=policy.name,
+            severity=ViolationSeverity.CRITICAL,
+            message=f"Policy evaluation failed: {str(error)}",
+            action=str(action),
+            context=context,
+            remediation_hint="Check policy implementation for errors",
+            metadata={"exception": str(error), "exception_type": type(error).__name__}
+        )
+        all_violations.append(violation)
+
+        failed_result = ValidationResult(
+            valid=False,
+            violations=[violation],
+            policy_name=policy.name,
+            metadata={"error": str(error)}
+        )
+        policy_results[policy.name] = failed_result
+
+        if self.enable_reporting:
+            policy.report_violation(violation)
+
+    def _build_composite_result(
+        self,
+        all_violations: List[SafetyViolation],
+        policy_results: Dict[str, ValidationResult],
+        policies_evaluated: int,
+        policies_skipped: int,
+        execution_order: List[str],
+    ) -> CompositeValidationResult:
+        """Build the final CompositeValidationResult.
+
+        Shared by both sync and async validation paths.
+        """
+        return CompositeValidationResult(
+            valid=len(all_violations) == 0,
+            violations=all_violations,
+            policy_results=policy_results,
+            policies_evaluated=policies_evaluated,
+            policies_skipped=policies_skipped,
+            execution_order=execution_order,
+            metadata={
+                "fail_fast": self.fail_fast,
+                "total_policies": len(self._policies)
+            }
+        )
+
     def validate(
         self,
         action: Dict[str, Any],
@@ -210,67 +289,20 @@ class PolicyComposer:
         for policy in self._policies:
             execution_order.append(policy.name)
 
-            # In fail-fast mode, skip remaining policies if we already have violations
             if self.fail_fast and all_violations:
                 policies_skipped += 1
                 continue
 
-            # Execute policy validation
             try:
                 result = policy.validate(action, context)
                 policies_evaluated += 1
-                policy_results[policy.name] = result
-
-                # Collect violations
-                if not result.valid:
-                    all_violations.extend(result.violations)
-
-                    # Report violations if enabled
-                    if self.enable_reporting:
-                        for violation in result.violations:
-                            policy.report_violation(violation)
-
+                self._handle_policy_result(policy, result, all_violations, policy_results)
             except Exception as e:
-                # Policy evaluation failed - treat as CRITICAL violation
-                violation = SafetyViolation(
-                    policy_name=policy.name,
-                    severity=ViolationSeverity.CRITICAL,
-                    message=f"Policy evaluation failed: {str(e)}",
-                    action=str(action),
-                    context=context,
-                    remediation_hint="Check policy implementation for errors",
-                    metadata={"exception": str(e), "exception_type": type(e).__name__}
-                )
-                all_violations.append(violation)
-
-                # Create failed result
-                failed_result = ValidationResult(
-                    valid=False,
-                    violations=[violation],
-                    policy_name=policy.name,
-                    metadata={"error": str(e)}
-                )
-                policy_results[policy.name] = failed_result
                 policies_evaluated += 1
+                self._handle_policy_error(policy, e, action, context, all_violations, policy_results)
 
-                # Report exception-based violation
-                if self.enable_reporting:
-                    policy.report_violation(violation)
-
-        # Determine overall validity
-        overall_valid = len(all_violations) == 0
-
-        return CompositeValidationResult(
-            valid=overall_valid,
-            violations=all_violations,
-            policy_results=policy_results,
-            policies_evaluated=policies_evaluated,
-            policies_skipped=policies_skipped,
-            execution_order=execution_order,
-            metadata={
-                "fail_fast": self.fail_fast,
-                "total_policies": len(self._policies)
-            }
+        return self._build_composite_result(
+            all_violations, policy_results, policies_evaluated, policies_skipped, execution_order,
         )
 
     async def validate_async(
@@ -302,67 +334,20 @@ class PolicyComposer:
         for policy in self._policies:
             execution_order.append(policy.name)
 
-            # In fail-fast mode, skip remaining policies if we already have violations
             if self.fail_fast and all_violations:
                 policies_skipped += 1
                 continue
 
-            # Execute policy validation (async)
             try:
                 result = await policy.validate_async(action, context)
                 policies_evaluated += 1
-                policy_results[policy.name] = result
-
-                # Collect violations
-                if not result.valid:
-                    all_violations.extend(result.violations)
-
-                    # Report violations if enabled
-                    if self.enable_reporting:
-                        for violation in result.violations:
-                            policy.report_violation(violation)
-
+                self._handle_policy_result(policy, result, all_violations, policy_results)
             except Exception as e:
-                # Policy evaluation failed - treat as CRITICAL violation
-                violation = SafetyViolation(
-                    policy_name=policy.name,
-                    severity=ViolationSeverity.CRITICAL,
-                    message=f"Policy evaluation failed: {str(e)}",
-                    action=str(action),
-                    context=context,
-                    remediation_hint="Check policy implementation for errors",
-                    metadata={"exception": str(e), "exception_type": type(e).__name__}
-                )
-                all_violations.append(violation)
-
-                # Create failed result
-                failed_result = ValidationResult(
-                    valid=False,
-                    violations=[violation],
-                    policy_name=policy.name,
-                    metadata={"error": str(e)}
-                )
-                policy_results[policy.name] = failed_result
                 policies_evaluated += 1
+                self._handle_policy_error(policy, e, action, context, all_violations, policy_results)
 
-                # Report exception-based violation
-                if self.enable_reporting:
-                    policy.report_violation(violation)
-
-        # Determine overall validity
-        overall_valid = len(all_violations) == 0
-
-        return CompositeValidationResult(
-            valid=overall_valid,
-            violations=all_violations,
-            policy_results=policy_results,
-            policies_evaluated=policies_evaluated,
-            policies_skipped=policies_skipped,
-            execution_order=execution_order,
-            metadata={
-                "fail_fast": self.fail_fast,
-                "total_policies": len(self._policies)
-            }
+        return self._build_composite_result(
+            all_violations, policy_results, policies_evaluated, policies_skipped, execution_order,
         )
 
     def clear_policies(self) -> None:

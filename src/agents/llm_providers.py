@@ -454,6 +454,83 @@ class BaseLLM(ABC):
         """
         pass
 
+    def _check_cache(
+        self,
+        prompt: str,
+        context: Optional[ExecutionContext],
+        **kwargs: Any,
+    ) -> Tuple[Optional[str], Optional[LLMResponse]]:
+        """Check cache for a cached response.
+
+        Returns:
+            (cache_key, cached_response) — cached_response is non-None on hit.
+        """
+        if self._cache is None:
+            return None, None
+
+        # SECURITY: Extract user context for cache isolation
+        user_id = context.user_id if context else None
+        tenant_id = context.metadata.get('tenant_id') if context and context.metadata else None
+        session_id = context.session_id if context else None
+
+        # Generate cache key with security context
+        # Filter already-extracted keys from kwargs to prevent duplicate keyword args
+        _extracted_keys = {'temperature', 'max_tokens', 'top_p', 'system_prompt', 'tools'}
+        _remaining_kwargs = {k: v for k, v in kwargs.items() if k not in _extracted_keys}
+        cache_key = self._cache.generate_key(
+            model=self.model,
+            prompt=prompt,
+            temperature=kwargs.get('temperature', self.temperature),
+            max_tokens=kwargs.get('max_tokens', self.max_tokens),
+            top_p=kwargs.get('top_p', self.top_p),
+            user_id=user_id,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            system_prompt=kwargs.get('system_prompt'),
+            tools=kwargs.get('tools'),
+            **_remaining_kwargs
+        )
+
+        # Try to get from cache
+        cached_response = self._cache.get(cache_key)
+        if cached_response:
+            cached_data = json.loads(cached_response)
+            return cache_key, LLMResponse(**cached_data)
+
+        return cache_key, None
+
+    def _cache_response(self, cache_key: Optional[str], llm_response: LLMResponse) -> None:
+        """Store a response in cache if caching is enabled."""
+        if self._cache is not None and cache_key is not None:
+            cache_data = {
+                'content': llm_response.content,
+                'model': llm_response.model,
+                'provider': llm_response.provider,
+                'prompt_tokens': llm_response.prompt_tokens,
+                'completion_tokens': llm_response.completion_tokens,
+                'total_tokens': llm_response.total_tokens,
+                'latency_ms': llm_response.latency_ms,
+                'finish_reason': llm_response.finish_reason,
+            }
+            self._cache.set(cache_key, json.dumps(cache_data))
+
+    def _execute_and_parse(
+        self,
+        response: httpx.Response,
+        start_time: float,
+        cache_key: Optional[str],
+    ) -> LLMResponse:
+        """Handle response, parse, and cache. Shared by sync/async paths."""
+        latency_ms = int((time.time() - start_time) * 1000)
+
+        if response.status_code != 200:
+            self._handle_error_response(response)
+
+        response_data = response.json()
+        llm_response = self._parse_response(response_data, latency_ms)
+        self._cache_response(cache_key, llm_response)
+        return llm_response
+
     def complete(
         self,
         prompt: str,
@@ -485,85 +562,23 @@ class BaseLLM(ABC):
             CircuitBreakerError: If circuit breaker is open
             ValueError: If caching enabled but no user/tenant context provided
         """
-        # Check cache if enabled
-        cache_key = None
-        if self._cache is not None:
-            # SECURITY: Extract user context for cache isolation
-            user_id = context.user_id if context else None
-            tenant_id = context.metadata.get('tenant_id') if context and context.metadata else None
-            session_id = context.session_id if context else None
+        cache_key, cached = self._check_cache(prompt, context, **kwargs)
+        if cached is not None:
+            return cached
 
-            # Generate cache key with security context
-            # Filter already-extracted keys from kwargs to prevent duplicate keyword args
-            _extracted_keys = {'temperature', 'max_tokens', 'top_p', 'system_prompt', 'tools'}
-            _remaining_kwargs = {k: v for k, v in kwargs.items() if k not in _extracted_keys}
-            cache_key = self._cache.generate_key(
-                model=self.model,
-                prompt=prompt,
-                temperature=kwargs.get('temperature', self.temperature),
-                max_tokens=kwargs.get('max_tokens', self.max_tokens),
-                top_p=kwargs.get('top_p', self.top_p),
-                user_id=user_id,
-                tenant_id=tenant_id,
-                session_id=session_id,
-                system_prompt=kwargs.get('system_prompt'),
-                tools=kwargs.get('tools'),
-                **_remaining_kwargs
-            )
-
-            # Try to get from cache
-            cached_response = self._cache.get(cache_key)
-            if cached_response:
-                # Parse cached response back to LLMResponse
-                import json
-                cached_data = json.loads(cached_response)
-                return LLMResponse(**cached_data)
-
-        # Cache miss or caching disabled - make API call through circuit breaker
         def _make_api_call() -> LLMResponse:
-            """Internal function for API call with retry logic."""
             for attempt in range(self.max_retries):
                 try:
                     start_time = time.time()
-
-                    # Build request
                     request_data = self._build_request(prompt, **kwargs)
                     headers = self._get_headers()
                     endpoint = f"{self.base_url}{self._get_endpoint()}"
 
-                    # Make request
                     response = self._get_client().post(
-                        endpoint,
-                        json=request_data,
-                        headers=headers,
+                        endpoint, json=request_data, headers=headers,
                     )
 
-                    latency_ms = int((time.time() - start_time) * 1000)
-
-                    # Handle error responses
-                    if response.status_code != 200:
-                        self._handle_error_response(response)
-
-                    # Parse successful response
-                    response_data = response.json()
-                    llm_response = self._parse_response(response_data, latency_ms)
-
-                    # Cache the response if caching enabled
-                    if self._cache is not None and cache_key is not None:
-                        # Serialize response for caching
-                        cache_data = {
-                            'content': llm_response.content,
-                            'model': llm_response.model,
-                            'provider': llm_response.provider,
-                            'prompt_tokens': llm_response.prompt_tokens,
-                            'completion_tokens': llm_response.completion_tokens,
-                            'total_tokens': llm_response.total_tokens,
-                            'latency_ms': llm_response.latency_ms,
-                            'finish_reason': llm_response.finish_reason,
-                        }
-                        self._cache.set(cache_key, json.dumps(cache_data))
-
-                    return llm_response
+                    return self._execute_and_parse(response, start_time, cache_key)
 
                 except httpx.TimeoutException:
                     if attempt == self.max_retries - 1:
@@ -575,16 +590,13 @@ class BaseLLM(ABC):
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    # Exponential backoff for rate limits
                     time.sleep(self.retry_delay * (2 ** attempt))
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
-                    # Don't retry auth errors
                     raise
 
             raise LLMError(f"Failed after {self.max_retries} attempts")
 
-        # Execute through circuit breaker for resilience
         return self._circuit_breaker.call(_make_api_call)
 
     async def acomplete(
@@ -618,85 +630,23 @@ class BaseLLM(ABC):
             CircuitBreakerError: If circuit breaker is open
             ValueError: If caching enabled but no user/tenant context provided
         """
-        # Check cache if enabled (cache is synchronous, so this is fine)
-        cache_key = None
-        if self._cache is not None:
-            # SECURITY: Extract user context for cache isolation
-            user_id = context.user_id if context else None
-            tenant_id = context.metadata.get('tenant_id') if context and context.metadata else None
-            session_id = context.session_id if context else None
+        cache_key, cached = self._check_cache(prompt, context, **kwargs)
+        if cached is not None:
+            return cached
 
-            # Generate cache key with security context
-            # Filter already-extracted keys from kwargs to prevent duplicate keyword args
-            _extracted_keys = {'temperature', 'max_tokens', 'top_p', 'system_prompt', 'tools'}
-            _remaining_kwargs = {k: v for k, v in kwargs.items() if k not in _extracted_keys}
-            cache_key = self._cache.generate_key(
-                model=self.model,
-                prompt=prompt,
-                temperature=kwargs.get('temperature', self.temperature),
-                max_tokens=kwargs.get('max_tokens', self.max_tokens),
-                top_p=kwargs.get('top_p', self.top_p),
-                user_id=user_id,
-                tenant_id=tenant_id,
-                session_id=session_id,
-                system_prompt=kwargs.get('system_prompt'),
-                tools=kwargs.get('tools'),
-                **_remaining_kwargs
-            )
-
-            # Try to get from cache
-            cached_response = self._cache.get(cache_key)
-            if cached_response:
-                # Parse cached response back to LLMResponse
-                import json
-                cached_data = json.loads(cached_response)
-                return LLMResponse(**cached_data)
-
-        # Cache miss or caching disabled - make API call through circuit breaker
         async def _make_async_api_call() -> LLMResponse:
-            """Internal function for async API call with retry logic."""
             for attempt in range(self.max_retries):
                 try:
                     start_time = time.time()
-
-                    # Build request
                     request_data = self._build_request(prompt, **kwargs)
                     headers = self._get_headers()
                     endpoint = f"{self.base_url}{self._get_endpoint()}"
 
-                    # Make async request
                     response = await self._get_async_client().post(
-                        endpoint,
-                        json=request_data,
-                        headers=headers,
+                        endpoint, json=request_data, headers=headers,
                     )
 
-                    latency_ms = int((time.time() - start_time) * 1000)
-
-                    # Handle error responses
-                    if response.status_code != 200:
-                        self._handle_error_response(response)
-
-                    # Parse successful response
-                    response_data = response.json()
-                    llm_response = self._parse_response(response_data, latency_ms)
-
-                    # Cache the response if caching enabled
-                    if self._cache is not None and cache_key is not None:
-                        # Serialize response for caching
-                        cache_data = {
-                            'content': llm_response.content,
-                            'model': llm_response.model,
-                            'provider': llm_response.provider,
-                            'prompt_tokens': llm_response.prompt_tokens,
-                            'completion_tokens': llm_response.completion_tokens,
-                            'total_tokens': llm_response.total_tokens,
-                            'latency_ms': llm_response.latency_ms,
-                            'finish_reason': llm_response.finish_reason,
-                        }
-                        self._cache.set(cache_key, json.dumps(cache_data))
-
-                    return llm_response
+                    return self._execute_and_parse(response, start_time, cache_key)
 
                 except httpx.TimeoutException:
                     if attempt == self.max_retries - 1:
@@ -708,16 +658,13 @@ class BaseLLM(ABC):
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    # Exponential backoff for rate limits
                     await asyncio.sleep(self.retry_delay * (2 ** attempt))
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
-                    # Don't retry auth errors
                     raise
 
             raise LLMError(f"Failed after {self.max_retries} attempts")
 
-        # Execute through circuit breaker for resilience
         return await self._circuit_breaker.async_call(_make_async_api_call)
 
     def _handle_error_response(self, response: httpx.Response) -> None:

@@ -495,7 +495,7 @@ class BaseLLM(ABC):
 
             # Generate cache key with security context
             # Filter already-extracted keys from kwargs to prevent duplicate keyword args
-            _extracted_keys = {'temperature', 'max_tokens', 'top_p'}
+            _extracted_keys = {'temperature', 'max_tokens', 'top_p', 'system_prompt', 'tools'}
             _remaining_kwargs = {k: v for k, v in kwargs.items() if k not in _extracted_keys}
             cache_key = self._cache.generate_key(
                 model=self.model,
@@ -506,6 +506,8 @@ class BaseLLM(ABC):
                 user_id=user_id,
                 tenant_id=tenant_id,
                 session_id=session_id,
+                system_prompt=kwargs.get('system_prompt'),
+                tools=kwargs.get('tools'),
                 **_remaining_kwargs
             )
 
@@ -626,7 +628,7 @@ class BaseLLM(ABC):
 
             # Generate cache key with security context
             # Filter already-extracted keys from kwargs to prevent duplicate keyword args
-            _extracted_keys = {'temperature', 'max_tokens', 'top_p'}
+            _extracted_keys = {'temperature', 'max_tokens', 'top_p', 'system_prompt', 'tools'}
             _remaining_kwargs = {k: v for k, v in kwargs.items() if k not in _extracted_keys}
             cache_key = self._cache.generate_key(
                 model=self.model,
@@ -637,6 +639,8 @@ class BaseLLM(ABC):
                 user_id=user_id,
                 tenant_id=tenant_id,
                 session_id=session_id,
+                system_prompt=kwargs.get('system_prompt'),
+                tools=kwargs.get('tools'),
                 **_remaining_kwargs
             )
 

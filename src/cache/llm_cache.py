@@ -14,7 +14,7 @@ import json
 import time
 import os
 import warnings
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, asdict
 from threading import Lock
@@ -482,6 +482,7 @@ class LLMCache:
     _RESERVED_PARAMS = frozenset({
         'model', 'prompt', 'temperature', 'max_tokens',
         'user_id', 'tenant_id', 'session_id',
+        'system_prompt', 'tools',  # Explicit parameters to prevent cache collision
         'security_context', 'request'  # Prevent namespace pollution
     })
 
@@ -538,6 +539,8 @@ class LLMCache:
         user_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
         **kwargs: Any
     ) -> str:
         """
@@ -615,6 +618,8 @@ class LLMCache:
             'prompt': prompt,
             'temperature': temperature,
             'max_tokens': max_tokens,
+            'system_prompt': system_prompt or '',
+            'tools': self._normalize_tools(tools) if tools else [],
             **kwargs
         }
 
@@ -658,6 +663,12 @@ class LLMCache:
             }
         )
         return cache_key
+
+    @staticmethod
+    def _normalize_tools(tools: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Normalize tools list for deterministic hashing (sorted by name)."""
+        sorted_tools = sorted(tools, key=lambda t: t.get("name", ""))
+        return [dict(sorted(t.items())) for t in sorted_tools]
 
     def get(self, key: str) -> Optional[str]:
         """

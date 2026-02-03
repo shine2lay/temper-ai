@@ -6,6 +6,8 @@ writing to pluggable observability backends (SQL, Prometheus, S3, etc.).
 """
 import uuid
 import logging
+import threading
+import contextvars
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from typing import Optional, Dict, Any, List, Generator
@@ -80,7 +82,13 @@ class ExecutionTracker:
             metric_registry: Optional MetricRegistry for collecting metrics after agent execution.
                             If provided, metrics will be automatically collected and stored for each agent.
         """
-        self.context = ExecutionContext()
+        # Thread-safe: each thread/async-task gets its own ExecutionContext
+        # Note: no default= so each thread creates its own via the property getter
+        self._context_var: contextvars.ContextVar[ExecutionContext] = contextvars.ContextVar(
+            'execution_context'
+        )
+        # Thread-safe: each thread gets its own session stack
+        self._local = threading.local()
 
         # Use provided backend or default to SQL backend with buffering
         if backend is None:
@@ -90,13 +98,35 @@ class ExecutionTracker:
             backend = SQLObservabilityBackend()
 
         self.backend = backend
-        self._session_stack: List[Any] = []  # Stack of active sessions for nested contexts
 
         # Initialize sanitizer with provided or default config
         self.sanitizer = DataSanitizer(sanitization_config)
 
         # Store metric registry for automatic metric collection
         self.metric_registry = metric_registry
+
+    @property
+    def context(self) -> ExecutionContext:
+        """Per-thread/task ExecutionContext (backward-compatible property)."""
+        ctx = self._context_var.get(None)
+        if ctx is None:
+            ctx = ExecutionContext()
+            self._context_var.set(ctx)
+        return ctx
+
+    @context.setter
+    def context(self, value: ExecutionContext) -> None:
+        """Set the ExecutionContext for the current thread/task."""
+        self._context_var.set(value)
+
+    @property
+    def _session_stack(self) -> List[Any]:
+        """Per-thread session stack (backward-compatible property)."""
+        stack = getattr(self._local, 'session_stack', None)
+        if stack is None:
+            stack = []
+            self._local.session_stack = stack
+        return stack
 
     def _collect_agent_metrics(self, agent_id: str) -> None:
         """

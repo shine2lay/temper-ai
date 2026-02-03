@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from typing import Optional, Dict, Any, List, ContextManager, cast
 from datetime import datetime, timezone, timedelta
 import logging
+import threading
 
 from sqlmodel import select, func, delete
 from sqlalchemy import case, Index
@@ -67,8 +68,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
                    If None, a default buffer will be created to enable buffered mode.
                    Pass buffer=False to explicitly disable buffering.
         """
-        self._session_stack: List[Any] = []  # Stack of active sessions for nested contexts
-        self._standalone_session: Optional[Any] = None  # Standalone session for non-context operations
+        # Thread-safe: each thread gets its own session stack and standalone session
+        self._local = threading.local()
 
         # Create default buffer if none provided (unless explicitly disabled with buffer=False)
         if buffer is None:
@@ -89,6 +90,24 @@ class SQLObservabilityBackend(ObservabilityBackend):
         # Set up flush callback if buffer enabled
         if self._buffer:
             self._buffer.set_flush_callback(self._flush_buffer)
+
+    @property
+    def _session_stack(self) -> List[Any]:
+        """Per-thread session stack (backward-compatible property)."""
+        stack = getattr(self._local, 'session_stack', None)
+        if stack is None:
+            stack = []
+            self._local.session_stack = stack
+        return stack
+
+    @property
+    def _standalone_session(self) -> Optional[Any]:
+        """Per-thread standalone session (backward-compatible property)."""
+        return getattr(self._local, 'standalone_session', None)
+
+    @_standalone_session.setter
+    def _standalone_session(self, value: Optional[Any]) -> None:
+        self._local.standalone_session = value
 
     # ========== Workflow Tracking ==========
 

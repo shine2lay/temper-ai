@@ -3,6 +3,7 @@ Tests for tool executor.
 """
 import time
 import pytest
+from unittest.mock import MagicMock
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.registry import ToolRegistry
 from src.tools.executor import ToolExecutor
@@ -1302,5 +1303,85 @@ class TestRateLimiterConcurrency:
                 f"Phase 3 failed! Window didn't reset. Expected 10 successful, got {successful_p3}. " \
                 f"Race condition in timestamp cleanup?"
 
+        finally:
+            executor.shutdown(wait=True)
+
+
+class TestPolicyFailClosed:
+    """Tests that policy engine errors result in fail-closed behavior."""
+
+    def _make_executor(self, policy_engine=None):
+        """Create executor with a FastTool and optional policy engine."""
+        registry = ToolRegistry()
+        registry.register(FastTool())
+        executor = ToolExecutor(
+            registry,
+            default_timeout=5,
+            policy_engine=policy_engine,
+        )
+        return executor
+
+    def test_policy_exception_denies_execution(self):
+        """When policy engine raises RuntimeError, tool execution must be denied."""
+        policy = MagicMock()
+        policy.validate_action.side_effect = RuntimeError("policy crash")
+
+        executor = self._make_executor(policy_engine=policy)
+        try:
+            result = executor.execute("fast_tool", {"value": "test"})
+
+            assert not result.success
+            assert "Policy validation failed" in result.error
+            assert "policy crash" in result.error
+        finally:
+            executor.shutdown(wait=True)
+
+    def test_policy_passes_allows_execution(self):
+        """When policy engine returns allowed result, tool executes normally."""
+        enforcement = MagicMock()
+        enforcement.allowed = True
+        enforcement.has_blocking_violations.return_value = False
+
+        policy = MagicMock()
+        policy.validate_action.return_value = enforcement
+
+        executor = self._make_executor(policy_engine=policy)
+        try:
+            result = executor.execute("fast_tool", {"value": "test"})
+
+            assert result.success
+            assert result.result == "Processed: test"
+        finally:
+            executor.shutdown(wait=True)
+
+    def test_policy_violation_denies_execution(self):
+        """When policy engine returns violation, tool execution must be denied."""
+        violation = MagicMock()
+        violation.message = "Access denied by security policy"
+        violation.to_dict.return_value = {"message": "Access denied"}
+
+        enforcement = MagicMock()
+        enforcement.allowed = False
+        enforcement.violations = [violation]
+
+        policy = MagicMock()
+        policy.validate_action.return_value = enforcement
+
+        executor = self._make_executor(policy_engine=policy)
+        try:
+            result = executor.execute("fast_tool", {"value": "test"})
+
+            assert not result.success
+            assert "blocked by policy" in result.error
+        finally:
+            executor.shutdown(wait=True)
+
+    def test_no_policy_engine_allows_execution(self):
+        """When no policy engine is configured, tool executes normally."""
+        executor = self._make_executor(policy_engine=None)
+        try:
+            result = executor.execute("fast_tool", {"value": "test"})
+
+            assert result.success
         finally:
             executor.shutdown(wait=True)

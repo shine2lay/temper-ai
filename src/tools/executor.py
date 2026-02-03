@@ -312,8 +312,13 @@ class ToolExecutor:
                             metadata={"approval_request_id": approval_request.id}
                         )
         except Exception as e:
-            logger.error(f"Policy validation error: {e}")
-            # Continue execution if policy check fails (fail-open for non-blocking)
+            logger.error(f"Policy validation error (fail-closed): {e}")
+            return ToolResult(
+                success=False,
+                result=None,
+                error=f"Policy validation failed: {e}",
+                metadata={"policy_error": str(e)}
+            )
 
         # Create snapshot (if rollback enabled and state-modifying tool)
         try:

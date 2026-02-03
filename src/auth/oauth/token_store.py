@@ -26,6 +26,7 @@ References:
 - Cryptography lib: https://cryptography.io/en/latest/fernet/
 - Keyring lib: https://github.com/jaraco/keyring
 """
+from collections import deque
 from cryptography.fernet import Fernet, InvalidToken
 from typing import Optional, Dict, Any, List
 import json
@@ -91,6 +92,7 @@ class SecureTokenStore:
 
     DEFAULT_KEYRING_SERVICE = "meta-autonomous-framework"
     DEFAULT_KEYRING_KEY_NAME = "oauth_token_encryption_key"
+    MAX_ACCESS_LOG_SIZE = 10000
 
     def __init__(
         self,
@@ -98,7 +100,8 @@ class SecureTokenStore:
         use_keyring: bool = True,  # Try keyring by default
         keyring_service: Optional[str] = None,
         keyring_key_name: Optional[str] = None,
-        require_keyring: bool = False  # Fail if keyring not available
+        require_keyring: bool = False,  # Fail if keyring not available
+        max_access_log_size: int = MAX_ACCESS_LOG_SIZE,
     ):
         """Initialize token store with secure key management.
 
@@ -215,8 +218,8 @@ class SecureTokenStore:
         # Key: user_id, Value: encrypted token bytes
         self._tokens: Dict[str, bytes] = {}
 
-        # Audit log (use proper logging in production)
-        self._access_log: List[Dict[str, Any]] = []
+        # Audit log (bounded deque to prevent unbounded memory growth)
+        self._access_log: deque = deque(maxlen=max_access_log_size)
 
         # Thread safety: Reentrant lock for concurrent access protection
         # CRITICAL for key rotation to prevent race conditions
@@ -490,7 +493,7 @@ class SecureTokenStore:
 
         SECURITY: Use for compliance and security monitoring
         """
-        return self._access_log.copy()
+        return list(self._access_log)
 
     def clear_all_tokens(self) -> int:
         """Clear all stored tokens.

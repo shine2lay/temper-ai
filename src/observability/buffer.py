@@ -127,13 +127,17 @@ class ObservabilityBuffer:
         >>> buffer.flush()  # Or flush manually
     """
 
+    # Default timeout for pending IDs before they are considered stale
+    PENDING_ID_TIMEOUT_SECONDS = 300  # 5 minutes
+
     def __init__(
         self,
         flush_size: int = DEFAULT_BUFFER_SIZE,
         flush_interval: float = 1.0,
         auto_flush: bool = True,
         max_retries: int = MAX_RETRY_ATTEMPTS,
-        enable_dlq: bool = True
+        enable_dlq: bool = True,
+        pending_id_timeout: float = PENDING_ID_TIMEOUT_SECONDS,
     ):
         """
         Initialize observability buffer.
@@ -144,12 +148,14 @@ class ObservabilityBuffer:
             auto_flush: Enable automatic background flushing
             max_retries: Maximum retry attempts before moving to dead-letter queue
             enable_dlq: Enable dead-letter queue for permanently failed items
+            pending_id_timeout: Seconds before a pending ID is considered stale (default: 300)
         """
         self.flush_size = flush_size
         self.flush_interval = flush_interval
         self.auto_flush = auto_flush
         self.max_retries = max_retries
         self.enable_dlq = enable_dlq
+        self._pending_id_timeout = pending_id_timeout
 
         # Buffered operations
         self.llm_calls: List[BufferedLLMCall] = []
@@ -158,7 +164,8 @@ class ObservabilityBuffer:
 
         # Retry tracking
         self.retry_queue: List[RetryableItem] = []
-        self._pending_ids: Set[str] = set()  # Items currently in flight for deduplication
+        # Pending IDs with timestamps for stale-entry purge
+        self._pending_ids: Dict[str, float] = {}  # item_id -> timestamp
 
         # Dead-letter queue
         self.dead_letter_queue: List[DeadLetterItem] = []
@@ -291,6 +298,20 @@ class ObservabilityBuffer:
         with self.lock:
             self._flush_unsafe()
 
+    def _purge_stale_pending_ids(self) -> int:
+        """Remove pending IDs older than timeout (assumes lock is held).
+
+        Returns:
+            Number of stale IDs purged.
+        """
+        cutoff = time.time() - self._pending_id_timeout
+        stale = [k for k, ts in self._pending_ids.items() if ts < cutoff]
+        for k in stale:
+            del self._pending_ids[k]
+        if stale:
+            logger.debug(f"Purged {len(stale)} stale pending IDs")
+        return len(stale)
+
     def _should_flush(self) -> bool:
         """Check if buffer should be flushed (assumes lock is held)."""
         # Size-based flush
@@ -306,6 +327,9 @@ class ObservabilityBuffer:
 
     def _flush_unsafe(self) -> None:
         """Flush buffer with retry logic and dead-letter queue (assumes lock is held)."""
+        # Purge stale pending IDs to prevent unbounded growth
+        self._purge_stale_pending_ids()
+
         if not self._flush_callback:
             logger.warning("No flush callback set, skipping flush")
             return
@@ -347,7 +371,7 @@ class ObservabilityBuffer:
 
             # Success - clear retry queue and pending IDs
             for item in items_to_flush:
-                self._pending_ids.discard(item.item_id)
+                self._pending_ids.pop(item.item_id, None)
             self.retry_queue.clear()
 
         except Exception as e:
@@ -372,7 +396,7 @@ class ObservabilityBuffer:
                     item_id=item_id,
                     retry_count=0
                 ))
-                self._pending_ids.add(item_id)
+                self._pending_ids[item_id] = time.time()
 
         # Add new tool calls
         for tool_call in self.tool_calls:
@@ -384,7 +408,7 @@ class ObservabilityBuffer:
                     item_id=item_id,
                     retry_count=0
                 ))
-                self._pending_ids.add(item_id)
+                self._pending_ids[item_id] = time.time()
 
         # Add agent metrics (merge if already in retry queue)
         for agent_id, metrics in self.agent_metrics.items():
@@ -405,7 +429,7 @@ class ObservabilityBuffer:
                     item_id=agent_id,
                     retry_count=0
                 ))
-                self._pending_ids.add(agent_id)
+                self._pending_ids[agent_id] = time.time()
 
         # Add items from retry queue
         retryable_items.extend(self.retry_queue)
@@ -446,7 +470,7 @@ class ObservabilityBuffer:
                 # Move to dead-letter queue
                 self._move_to_dlq(item, now)
                 # Remove from pending IDs
-                self._pending_ids.discard(item.item_id)
+                self._pending_ids.pop(item.item_id, None)
             else:
                 # Re-queue for retry
                 new_retry_queue.append(item)

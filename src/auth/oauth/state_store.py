@@ -76,9 +76,16 @@ class InMemoryStateStore(StateStore):
     Use RedisStateStore for production environments.
     """
 
-    def __init__(self):
-        """Initialize in-memory state storage."""
+    MAX_ENTRIES = 50000
+
+    def __init__(self, max_entries: int = MAX_ENTRIES):
+        """Initialize in-memory state storage.
+
+        Args:
+            max_entries: Maximum number of entries before auto-cleanup (default: 50000)
+        """
         self._store: Dict[str, Dict[str, Any]] = {}
+        self._max_entries = max_entries
         logger.warning(
             "Using InMemoryStateStore - NOT suitable for production! "
             "Use RedisStateStore instead."
@@ -91,6 +98,13 @@ class InMemoryStateStore(StateStore):
         ttl_seconds: int = 600
     ) -> None:
         """Store state data with expiration time."""
+        # Auto-cleanup when 80% full to prevent unbounded memory growth
+        if len(self._store) >= int(self._max_entries * 0.8):
+            await self.cleanup_expired()
+            # If still over limit after cleanup, remove oldest 20%
+            if len(self._store) >= self._max_entries:
+                self._evict_oldest()
+
         data_with_expiry = {
             **data,
             'expires_at': (
@@ -150,6 +164,18 @@ class InMemoryStateStore(StateStore):
             logger.info(f"Cleaned up {len(expired_keys)} expired states")
 
         return len(expired_keys)
+
+    def _evict_oldest(self) -> None:
+        """Evict oldest 20% of entries when store exceeds max_entries."""
+        to_remove = max(1, len(self._store) // 5)
+        # Sort by expires_at to remove the oldest entries first
+        sorted_keys = sorted(
+            self._store.keys(),
+            key=lambda k: self._store[k].get('expires_at', ''),
+        )
+        for key in sorted_keys[:to_remove]:
+            del self._store[key]
+        logger.info(f"Evicted {to_remove} oldest state entries (size limit)")
 
 
 class RedisStateStore(StateStore):

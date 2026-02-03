@@ -313,7 +313,23 @@ class StandardAgent(BaseAgent):
             # Multi-turn tool calling loop
             max_iterations = self.config.agent.safety.max_tool_calls_per_execution
 
+            max_execution_time = self.config.agent.safety.max_execution_time_seconds
+
             for iteration in range(max_iterations):
+                # Enforce max_execution_time_seconds wall-clock limit
+                elapsed = time.time() - start_time
+                if elapsed >= max_execution_time:
+                    return self._build_final_response(
+                        output=llm_response.content if llm_response else "",
+                        reasoning=self._extract_reasoning(llm_response.content) if llm_response else None,
+                        tool_calls=tool_calls_made,
+                        tokens=total_tokens,
+                        cost=total_cost,
+                        start_time=start_time,
+                        error=f"Execution time limit exceeded ({max_execution_time}s)",
+                        metadata={"elapsed_seconds": elapsed, "iteration": iteration}
+                    )
+
                 # Execute single iteration
                 iteration_result = self._execute_iteration(
                     prompt, total_tokens, total_cost, tool_calls_made, start_time
@@ -519,7 +535,40 @@ class StandardAgent(BaseAgent):
                 "success": False
             }
 
-        # Execute tool
+        # Enforce safety config before execution
+        safety = self.config.agent.safety
+
+        # Check require_approval mode: block all tool execution
+        if safety.mode == "require_approval":
+            return {
+                "name": tool_name,
+                "parameters": tool_params,
+                "result": None,
+                "error": f"Tool '{tool_name}' blocked: safety mode is 'require_approval'",
+                "success": False
+            }
+
+        # Check tool-specific approval list (independent of mode)
+        if tool_name in safety.require_approval_for_tools:
+            return {
+                "name": tool_name,
+                "parameters": tool_params,
+                "result": None,
+                "error": f"Tool '{tool_name}' requires approval before execution",
+                "success": False
+            }
+
+        # Check dry_run mode: return simulated result without executing
+        if safety.mode == "dry_run":
+            return {
+                "name": tool_name,
+                "parameters": tool_params,
+                "result": f"[DRY RUN] Tool '{tool_name}' would be executed with parameters: {tool_params}",
+                "error": None,
+                "success": True
+            }
+
+        # Execute tool (mode == "execute")
         try:
             result = tool.execute(**tool_params)
             return {

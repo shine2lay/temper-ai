@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Union
 from functools import lru_cache
 from jinja2 import Template, Environment, FileSystemLoader, TemplateNotFound
-from jinja2.sandbox import SandboxedEnvironment
+from jinja2.sandbox import ImmutableSandboxedEnvironment, SandboxedEnvironment
 
 
 class PromptRenderError(Exception):
@@ -42,6 +42,11 @@ class PromptEngine:
         'You have 1 tools'
     """
 
+    # Allowed types for template variables (defense against SSTI via dangerous objects)
+    ALLOWED_TYPES = (str, int, float, bool, list, dict, tuple, type(None))
+    # Maximum size per variable in bytes (100KB)
+    MAX_VAR_SIZE = 100 * 1024
+
     def __init__(self, templates_dir: Optional[Union[str, Path]] = None, cache_size: int = 128):
         """
         Initialize prompt engine.
@@ -71,19 +76,19 @@ class PromptEngine:
         self._cache_hits = 0
         self._cache_misses = 0
 
-        # Shared sandboxed environment for inline templates
-        # Reuse single environment instance to avoid overhead
-        self._sandbox_env = SandboxedEnvironment(
+        # Shared immutable sandboxed environment for inline templates
+        # ImmutableSandboxedEnvironment prevents attribute modification on objects
+        self._sandbox_env = ImmutableSandboxedEnvironment(
             autoescape=False,
             trim_blocks=True,
             lstrip_blocks=True
         )
 
-        # Set up Jinja2 sandboxed environment if templates_dir exists
-        # Use SandboxedEnvironment to prevent template injection attacks
-        self.jinja_env: Optional[SandboxedEnvironment]
+        # Set up Jinja2 immutable sandboxed environment if templates_dir exists
+        # ImmutableSandboxedEnvironment prevents template injection attacks
+        self.jinja_env: Optional[ImmutableSandboxedEnvironment]
         if self.templates_dir and self.templates_dir.exists():
-            self.jinja_env = SandboxedEnvironment(
+            self.jinja_env = ImmutableSandboxedEnvironment(
                 loader=FileSystemLoader(str(self.templates_dir)),
                 autoescape=False,  # Prompts are not HTML
                 trim_blocks=True,  # Remove first newline after block
@@ -121,6 +126,9 @@ class PromptEngine:
         if variables is None:
             variables = {}
 
+        # Validate variable types and sizes before rendering
+        self._validate_variables(variables)
+
         try:
             # Check cache for compiled template
             jinja_template = self._template_cache.get(template)
@@ -142,6 +150,8 @@ class PromptEngine:
                 self._cache_hits += 1
 
             return jinja_template.render(**variables)
+        except PromptRenderError:
+            raise
         except Exception as e:
             raise PromptRenderError(f"Failed to render template: {e}") from e
 
@@ -170,6 +180,9 @@ class PromptEngine:
         """
         if variables is None:
             variables = {}
+
+        # Validate variable types and sizes before rendering
+        self._validate_variables(variables)
 
         if not self.jinja_env:
             raise PromptRenderError(
@@ -388,6 +401,52 @@ class PromptEngine:
         self._template_cache.clear()
         self._cache_hits = 0
         self._cache_misses = 0
+
+    def _validate_variables(self, variables: Dict[str, Any]) -> None:
+        """
+        Validate template variables for type safety and size limits.
+
+        Prevents SSTI by ensuring only safe primitive types are passed to
+        the template engine. Blocks functions, classes, modules, and other
+        objects that could be used to access Python internals.
+
+        Args:
+            variables: Variables to validate
+
+        Raises:
+            PromptRenderError: If any variable has a disallowed type or exceeds size limit
+        """
+        for key, value in variables.items():
+            self._validate_value(key, value)
+
+    def _validate_value(self, key: str, value: Any, depth: int = 0) -> None:
+        """Recursively validate a single value."""
+        if depth > 20:
+            raise PromptRenderError(
+                f"Variable '{key}' has excessive nesting depth (>20)"
+            )
+
+        if not isinstance(value, self.ALLOWED_TYPES):
+            raise PromptRenderError(
+                f"Variable '{key}' has disallowed type: {type(value).__name__}. "
+                f"Allowed: str, int, float, bool, list, dict, tuple, None"
+            )
+
+        # Check size for string values
+        if isinstance(value, str):
+            size = len(value.encode('utf-8', errors='replace'))
+            if size > self.MAX_VAR_SIZE:
+                raise PromptRenderError(
+                    f"Variable '{key}' exceeds size limit: {size} > {self.MAX_VAR_SIZE}"
+                )
+
+        # Recursively validate nested structures
+        if isinstance(value, dict):
+            for k, v in value.items():
+                self._validate_value(f"{key}.{k}", v, depth + 1)
+        elif isinstance(value, (list, tuple)):
+            for i, item in enumerate(value):
+                self._validate_value(f"{key}[{i}]", item, depth + 1)
 
     def render_agent_prompt(
         self,

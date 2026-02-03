@@ -27,8 +27,10 @@ from typing import Dict, Any, Optional, List, cast
 from pathlib import Path
 import json
 import logging
+import os
 import re
 import secrets
+import tempfile
 import time
 from datetime import datetime, UTC
 
@@ -302,10 +304,28 @@ class FileCheckpointBackend(CheckpointBackend):
             "metadata": metadata or {}
         }
 
-        # Write to file
+        # Atomic write: write to temp file then os.replace() to target path.
+        # os.replace() is atomic on POSIX, preventing partial/corrupted checkpoint
+        # files from concurrent writes or crashes mid-write.
         checkpoint_path = self._get_checkpoint_path(workflow_id, checkpoint_id)
-        with open(checkpoint_path, 'w') as f:
-            json.dump(checkpoint_data, f, indent=2)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=checkpoint_path.parent,
+            suffix='.tmp',
+            prefix='.cp-'
+        )
+        try:
+            with os.fdopen(fd, 'w') as f:
+                json.dump(checkpoint_data, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, checkpoint_path)
+        except BaseException:
+            # Clean up temp file on any failure (including KeyboardInterrupt)
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
         return checkpoint_id
 

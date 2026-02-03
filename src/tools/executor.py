@@ -115,18 +115,29 @@ class ToolExecutor:
                     f"max_concurrent={max_concurrent}, rate_limit={rate_limit}/{rate_window}s, "
                     f"rollback={'enabled' if rollback_manager else 'disabled'}")
 
-    def _check_concurrent_limit(self) -> None:
-        """Check if concurrent execution limit is exceeded.
+    def _acquire_concurrent_slot(self) -> bool:
+        """Atomically check and acquire a concurrent execution slot.
+
+        Combines the former _check_concurrent_limit and _increment_concurrent
+        into a single atomic operation to prevent TOCTOU race conditions.
+
+        Always increments the concurrent count for observability tracking.
+        Only enforces the limit when max_concurrent is configured.
+
+        Returns:
+            True if slot was acquired
 
         Raises:
             RateLimitError: If concurrent limit exceeded
         """
-        if self.max_concurrent is not None:
-            with self._concurrent_lock:
-                if self._concurrent_count >= self.max_concurrent:
-                    raise RateLimitError(
-                        f"Concurrent execution limit reached: {self._concurrent_count}/{self.max_concurrent}"
-                    )
+        with self._concurrent_lock:
+            if self.max_concurrent is not None and self._concurrent_count >= self.max_concurrent:
+                raise RateLimitError(
+                    f"Concurrent execution limit reached: {self._concurrent_count}/{self.max_concurrent}"
+                )
+            self._concurrent_count += 1
+            logger.debug(f"Concurrent executions: {self._concurrent_count}")
+        return True
 
     def _check_rate_limit(self) -> None:
         """Check if rate limit is exceeded.
@@ -155,14 +166,11 @@ class ToolExecutor:
             # Add current execution timestamp
             self._execution_times.append(now)
 
-    def _increment_concurrent(self) -> None:
-        """Increment concurrent execution count."""
-        with self._concurrent_lock:
-            self._concurrent_count += 1
-            logger.debug(f"Concurrent executions: {self._concurrent_count}")
+    def _release_concurrent_slot(self) -> None:
+        """Release a concurrent execution slot.
 
-    def _decrement_concurrent(self) -> None:
-        """Decrement concurrent execution count."""
+        Counterpart to _acquire_concurrent_slot().
+        """
         with self._concurrent_lock:
             self._concurrent_count -= 1
             logger.debug(f"Concurrent executions: {self._concurrent_count}")
@@ -235,9 +243,8 @@ class ToolExecutor:
         snapshot = None
         approval_request = None
 
-        # Check resource limits before execution
+        # Check rate limit before execution
         try:
-            self._check_concurrent_limit()
             self._check_rate_limit()
         except RateLimitError as e:
             return ToolResult(
@@ -335,8 +342,15 @@ class ToolExecutor:
 
         # Execute with timeout
         try:
-            # Increment concurrent count
-            self._increment_concurrent()
+            # Atomically check limit and acquire slot (prevents TOCTOU race)
+            try:
+                self._acquire_concurrent_slot()
+            except RateLimitError as e:
+                return ToolResult(
+                    success=False,
+                    result=None,
+                    error=str(e)
+                )
 
             try:
                 start_time = time.time()
@@ -409,7 +423,7 @@ class ToolExecutor:
 
             finally:
                 # Always decrement concurrent count
-                self._decrement_concurrent()
+                self._release_concurrent_slot()
 
         except Exception as e:
             # Auto-rollback on exception

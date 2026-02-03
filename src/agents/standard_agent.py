@@ -22,6 +22,12 @@ REASONING_TAGS = ["reasoning", "thinking", "think", "thought"]
 # Pre-compiled regex patterns for performance (compiled once at module load)
 TOOL_CALL_PATTERN = re.compile(rf'<{TOOL_CALL_TAG}>(.*?)</{TOOL_CALL_TAG}>', re.DOTALL)
 ANSWER_PATTERN = re.compile(rf'<{ANSWER_TAG}>(.*?)</{ANSWER_TAG}>', re.DOTALL)
+
+# Pattern to match tool_call tags in tool output (for sanitization)
+_TOOL_RESULT_SANITIZE_PATTERN = re.compile(
+    r'<\s*/?\s*' + TOOL_CALL_TAG + r'[^>]*>',
+    re.IGNORECASE,
+)
 REASONING_PATTERNS = {
     tag: re.compile(f'<{tag}>(.*?)</{tag}>', re.DOTALL)
     for tag in REASONING_TAGS
@@ -782,6 +788,28 @@ class StandardAgent(BaseAgent):
 
         return tool_calls
 
+    @staticmethod
+    def _sanitize_tool_output(text: str) -> str:
+        """Escape tool_call tags in tool output to prevent prompt injection.
+
+        Tool results are injected into the prompt and re-parsed by the LLM.
+        If a tool returns text containing <tool_call>...</tool_call>, the
+        parser would treat it as a real tool invocation. This escapes those
+        tags so they are treated as literal text.
+
+        Args:
+            text: Raw tool output string
+
+        Returns:
+            Sanitized string with tool_call tags escaped
+        """
+        if not isinstance(text, str):
+            text = str(text)
+        return _TOOL_RESULT_SANITIZE_PATTERN.sub(
+            lambda m: m.group(0).replace('<', '&lt;').replace('>', '&gt;'),
+            text,
+        )
+
     def _inject_tool_results(
         self,
         original_prompt: str,
@@ -804,9 +832,11 @@ class StandardAgent(BaseAgent):
             results_parts.append(f"\nTool: {result['name']}\n")
             results_parts.append(f"Parameters: {json.dumps(result['parameters'])}\n")
             if result['success']:
-                results_parts.append(f"Result: {result['result']}\n")
+                safe_result = self._sanitize_tool_output(str(result['result']))
+                results_parts.append(f"Result: {safe_result}\n")
             else:
-                results_parts.append(f"Error: {result['error']}\n")
+                safe_error = self._sanitize_tool_output(str(result['error']))
+                results_parts.append(f"Error: {safe_error}\n")
 
         results_text = ''.join(results_parts)
 

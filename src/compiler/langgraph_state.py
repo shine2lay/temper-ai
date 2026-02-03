@@ -156,13 +156,13 @@ class LangGraphWorkflowState:
             >>> # For checkpointing (domain only)
             >>> checkpoint = state.to_dict(exclude_internal=True)
         """
-        # Check cache first
+        # Check cache first - return shallow copy to prevent mutation of cached data
         if exclude_internal:
             if self._dict_cache_exclude_internal is not None:
-                return self._dict_cache_exclude_internal
+                return dict(self._dict_cache_exclude_internal)
         else:
             if self._dict_cache is not None:
-                return self._dict_cache
+                return dict(self._dict_cache)
 
         # Cache miss - compute and cache
         from dataclasses import fields
@@ -193,7 +193,8 @@ class LangGraphWorkflowState:
         else:
             self._dict_cache = state_dict
 
-        return state_dict
+        # Return a shallow copy so callers cannot mutate the cached data
+        return dict(state_dict)
 
     def to_typed_dict(self) -> Dict[str, Any]:
         """Convert to dict for LangGraph compatibility.

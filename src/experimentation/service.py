@@ -14,6 +14,7 @@ from collections import OrderedDict
 from datetime import datetime
 from typing import Dict, List, Any, Optional
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from sqlmodel import Session, select
 
 from src.core.service import Service
@@ -345,10 +346,21 @@ class ExperimentService(Service):
         if experiment_id in self._experiment_cache:
             return self._experiment_cache[experiment_id]
 
-        # Load from database
+        # Load from database with eager relationship loading
         with get_session() as session:
-            experiment = session.get(Experiment, experiment_id)
+            statement = (
+                select(Experiment)
+                .where(Experiment.id == experiment_id)
+                .options(
+                    selectinload(Experiment.variants),
+                    selectinload(Experiment.assignments),
+                    selectinload(Experiment.results),
+                )
+            )
+            experiment = session.exec(statement).first()
             if experiment:
+                # Detach from session so cached object can be used after session closes
+                session.expunge(experiment)
                 self._cache_put(experiment_id, experiment)
             return experiment
 
@@ -381,8 +393,8 @@ class ExperimentService(Service):
             experiment.updated_at = utcnow()
             session.commit()
 
-            # Update cache
-            self._experiment_cache[experiment_id] = experiment
+            # Invalidate cache — next get_experiment() will reload with eager loading
+            self._experiment_cache.pop(experiment_id, None)
 
         logger.info(f"Started experiment: {experiment_id}")
 
@@ -397,8 +409,8 @@ class ExperimentService(Service):
             experiment.updated_at = utcnow()
             session.commit()
 
-            # Update cache
-            self._experiment_cache[experiment_id] = experiment
+            # Invalidate cache — next get_experiment() will reload with eager loading
+            self._experiment_cache.pop(experiment_id, None)
 
         logger.info(f"Paused experiment: {experiment_id}")
 
@@ -420,8 +432,8 @@ class ExperimentService(Service):
                 experiment.winner_variant_id = winner
             session.commit()
 
-            # Update cache
-            self._experiment_cache[experiment_id] = experiment
+            # Invalidate cache — next get_experiment() will reload with eager loading
+            self._experiment_cache.pop(experiment_id, None)
 
         logger.info(f"Stopped experiment: {experiment_id}, winner: {winner}")
 

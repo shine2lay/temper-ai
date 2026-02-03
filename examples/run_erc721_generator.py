@@ -24,6 +24,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import jinja2
+
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -118,6 +120,26 @@ def load_agent_config(config_path: str) -> SchemaAgentConfig:
     return SchemaAgentConfig(**raw)
 
 
+class _SafeDict(dict):
+    """Dict subclass that returns YAML-safe placeholders for missing keys.
+
+    When Jinja2 renders ``{{ stage_outputs.test }}`` inside a YAML config,
+    the value can contain arbitrary LLM text that breaks YAML parsing.
+    This wrapper converts dict values to single-line escaped strings so
+    they survive YAML round-tripping. The real unescaped values are passed
+    to the agent's PromptEngine separately via input_data.
+    """
+
+    def __getattr__(self, name: str) -> str:
+        val = self.get(name, "")
+        # Collapse to single line and escape quotes for YAML safety
+        if isinstance(val, str):
+            safe = val.replace("\n", " ").replace('"', '\\"')[:200]
+        else:
+            safe = str(val).replace("\n", " ")[:200]
+        return safe
+
+
 def run_agent_with_input(
     config_path: str,
     input_data: dict,
@@ -137,15 +159,38 @@ def run_agent_with_input(
         Agent response as dict
     """
     import yaml
-    from jinja2 import Template
 
     config_file = PROJECT_ROOT / config_path
     with open(config_file) as f:
         raw_yaml = f.read()
 
-    # Render Jinja2 template variables in YAML
-    template = Template(raw_yaml)
-    rendered_yaml = template.render(**input_data, llm_model=llm_model)
+    # Only render YAML-level config variables (model name, workspace path).
+    # The prompt inline template is rendered later by the agent's PromptEngine
+    # with full input_data, so we must NOT render prompt variables here —
+    # otherwise LLM output embedded in stage_outputs can break YAML syntax.
+    #
+    # Strategy: replace ONLY the inference.model Jinja2 expression in the raw
+    # YAML, then let the agent's PromptEngine handle prompt-level variables.
+    from jinja2 import Environment, BaseLoader
+
+    env = Environment(loader=BaseLoader(), undefined=jinja2.Undefined)
+    template = env.from_string(raw_yaml)
+
+    # Build a minimal set of variables for YAML-level rendering.
+    # We render everything EXCEPT stage_outputs (which can contain
+    # arbitrary LLM text that breaks YAML). Stage outputs are only
+    # needed inside the prompt, which the agent renders separately.
+    yaml_vars = {
+        "llm_model": llm_model,
+        "workspace_path": input_data.get("workspace_path", ""),
+        "contract_name": input_data.get("contract_name", "SimpleNFT"),
+        "token_name": input_data.get("token_name", "SimpleNFT"),
+        "token_symbol": input_data.get("token_symbol", "SNFT"),
+        # Provide stage_outputs as a safe placeholder for YAML rendering.
+        # The real value is passed through input_data to the prompt engine.
+        "stage_outputs": _SafeDict(input_data.get("stage_outputs", {})),
+    }
+    rendered_yaml = template.render(**yaml_vars)
 
     config_dict = yaml.safe_load(rendered_yaml)
     config = SchemaAgentConfig(**config_dict)

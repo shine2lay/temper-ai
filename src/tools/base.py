@@ -140,6 +140,47 @@ class BaseTool(ABC):
         """
         pass
 
+    def get_result_schema(self) -> Optional[Dict[str, Any]]:
+        """
+        Return JSON schema for tool result (optional).
+
+        Provides the LLM with a contract for what the tool output looks like.
+        This helps the LLM reliably extract information from tool results,
+        especially for tools that return structured data.
+
+        Not required - many tools have simple string results. Override this
+        for tools that return complex structured data.
+
+        Returns:
+            Dict with JSON Schema for result, or None for simple/unstructured results
+
+        Example (WebScraper returning structured data):
+            {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Page title"},
+                    "content": {"type": "string", "description": "Extracted text"},
+                    "links": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "URLs found on page"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "properties": {
+                            "status_code": {"type": "integer"},
+                            "content_type": {"type": "string"}
+                        }
+                    }
+                },
+                "required": ["title", "content"]
+            }
+
+        Example (Calculator returning simple number):
+            Return None (or simple schema like {"type": "number"})
+        """
+        return None
+
     def safe_execute(self, **kwargs: Any) -> ToolResult:
         """
         Execute tool with automatic parameter validation.

@@ -224,11 +224,57 @@ Identified during architecture walkthrough (Section 7: Tool System).
 - Returns validation errors if params invalid
 - All tools now get uniform parameter validation without duplication
 
-## 10. No Tool Output Schema
+## 10. No Tool Output Schema ✅ COMPLETED
+
+**Status:** ✅ Completed
 
 **Problem:** Tools define input schemas (parameters) but not output schemas. The LLM has no contract for what a tool result looks like. It gets raw JSON and has to infer the structure, which makes it harder to reliably extract information from complex tool results.
 
 **Fix:** Add an optional `get_result_schema() -> Dict[str, Any]` method to `BaseTool`. Include the output schema in the tool description passed to the LLM. Not strictly required — many tools have simple string results — but useful for tools that return structured data.
+
+**Implementation:**
+1. Added `get_result_schema()` method to BaseTool:
+   - Optional method (returns None by default)
+   - Returns JSON Schema dict for tool output structure
+   - Comprehensive docstring with examples
+   - Not required for tools with simple results
+
+2. Modified `_get_native_tool_definitions()` in StandardAgent:
+   - Calls `tool.get_result_schema()` for each tool
+   - If schema provided, augments tool description with schema
+   - Format: "description\n\nResult schema: {json schema}"
+   - Helps LLM understand output structure
+
+3. Benefits:
+   - LLM has contract for tool outputs
+   - Better extraction of structured data
+   - More reliable multi-step reasoning with tool results
+   - Optional - no breaking changes for existing tools
+
+4. Example usage (tools can override):
+   ```python
+   def get_result_schema(self) -> Dict[str, Any]:
+       return {
+           "type": "object",
+           "properties": {
+               "title": {"type": "string"},
+               "content": {"type": "string"},
+               "links": {"type": "array", "items": {"type": "string"}}
+           },
+           "required": ["title", "content"]
+       }
+   ```
+
+**Result:**
+- Tools can now specify output schemas
+- LLM receives schema in tool description
+- Better understanding of complex tool results
+- Fully optional and backward compatible
+- Foundation for structured tool outputs
+
+**Relevant Files:**
+- `src/tools/base.py:143-194` — Added get_result_schema() method to BaseTool
+- `src/agents/standard_agent.py:989-1009` — Modified _get_native_tool_definitions() to include result schema
 
 ## 11. Sequential-Only Tool Execution
 

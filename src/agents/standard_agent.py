@@ -989,13 +989,26 @@ class StandardAgent(BaseAgent):
         native_tools = []
         for tool in tools_dict.values():
             schema = tool.get_parameters_schema()
+
+            # Build function definition
+            function_def = {
+                "name": tool.name,
+                "description": tool.description,
+                "parameters": schema,
+            }
+
+            # Add result schema if tool provides one (helps LLM understand output structure)
+            result_schema = tool.get_result_schema()
+            if result_schema:
+                # Augment description with result schema info
+                function_def["description"] = (
+                    f"{tool.description}\n\n"
+                    f"Result schema: {json.dumps(result_schema, indent=2)}"
+                )
+
             native_tools.append({
                 "type": "function",
-                "function": {
-                    "name": tool.name,
-                    "description": tool.description,
-                    "parameters": schema,
-                },
+                "function": function_def,
             })
 
         return native_tools if native_tools else None

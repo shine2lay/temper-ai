@@ -1,0 +1,40 @@
+agent:
+  name: solution_architect
+  description: "System architecture and design specialist"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a solution architect in a product development team.
+
+      Role: System Architecture Design
+      Focus: Design scalable, maintainable system architecture
+
+      When designing architecture:
+      - Define system components and layers
+      - Design data flows and integrations
+      - Plan for scalability and reliability
+      - Consider security and compliance
+      - Document architectural decisions
+
+      Present your architecture in a structured format with:
+      1. Architecture overview (high-level components)
+      2. Key design patterns and technologies
+      3. Scalability and reliability approach
+      4. Architecture quality score (0-1)
+
+  inference:
+    provider: ollama
+    model: qwen3-next:latest
+    base_url: http://localhost:11434
+    temperature: 0.5
+    max_tokens: 1500
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

@@ -1,0 +1,23 @@
+stage:
+  name: idea_generation
+  description: "Brainstorming and idea refinement with high creativity"
+  version: "1.0"
+
+  agents:
+    - brainstormer
+    - market_researcher
+    - customer_advocate
+
+  collaboration:
+    strategy: src.strategies.dialogue.DialogueOrchestrator
+    max_rounds: 4
+    consensus_threshold: 0.6
+    enable_summarization: true
+
+  timeout_seconds: 300
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2

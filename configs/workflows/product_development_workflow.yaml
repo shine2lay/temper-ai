@@ -1,0 +1,54 @@
+workflow:
+  name: product_development_workflow
+  description: "Complete product development workflow from ideation to risk assessment"
+  version: "1.0"
+
+  inputs:
+    required:
+      - product_concept
+      - target_market
+      - business_objectives
+    optional:
+      - budget_range
+      - timeline_constraint
+      - technical_constraints
+
+  stages:
+    - stage_ref: configs/stages/idea_generation.yaml
+      name: idea_generation
+      description: "Brainstorm and refine product ideas"
+
+    - stage_ref: configs/stages/feasibility_analysis.yaml
+      name: feasibility_analysis
+      description: "Evaluate technical and business feasibility"
+      depends_on:
+        - idea_generation
+
+    - stage_ref: configs/stages/implementation_planning.yaml
+      name: implementation_planning
+      description: "Create architecture and project plans"
+      depends_on:
+        - feasibility_analysis
+
+    - stage_ref: configs/stages/risk_assessment.yaml
+      name: risk_assessment
+      description: "Assess security, operations, and compliance risks"
+      depends_on:
+        - implementation_planning
+
+  outputs:
+    primary:
+      - product_recommendation
+      - implementation_roadmap
+      - risk_mitigation_plan
+    secondary:
+      - market_analysis
+      - technical_architecture
+      - financial_projections
+      - compliance_requirements
+
+  error_handling:
+    on_stage_failure: halt
+    max_stage_retries: 2
+    escalation_policy: GracefulDegradation
+    enable_rollback: true

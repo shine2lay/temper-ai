@@ -118,21 +118,83 @@ class SequentialStageExecutor(StageExecutor):
                 error_handling=error_handling_config,
             )
 
-        # Determine the final agent's text output for backward compatibility
-        last_agent_output = ""
-        if agent_outputs:
-            last_key = list(agent_outputs.keys())[-1]
-            last_agent_output = agent_outputs[last_key].get("output", "")
+        # Check if collaboration is configured
+        collaboration_config = None
+        if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'collaboration'):
+            collaboration_config = stage_config.stage.collaboration
+        elif isinstance(stage_config, dict):
+            collaboration_config = get_nested_value(stage_config, 'stage.collaboration')
+
+        # Determine final output
+        final_output = ""
+        synthesis_result = None
+
+        if collaboration_config and len(agent_outputs) > 1:
+            # Run collaboration synthesis
+            try:
+                # Convert agent_outputs dict to list of AgentOutput objects for synthesis
+                from src.strategies.base import AgentOutput
+                agent_output_list = []
+                for agent_name, output_data in agent_outputs.items():
+                    agent_output_list.append(AgentOutput(
+                        agent_name=agent_name,
+                        decision=output_data.get("output", ""),
+                        reasoning=output_data.get("reasoning", ""),
+                        confidence=output_data.get("confidence", 0.8),
+                        metadata=output_data.get("metadata", {})
+                    ))
+
+                # Run synthesis
+                synthesis_result = self._run_synthesis(
+                    agent_output_list,
+                    stage_config,
+                    stage_name
+                )
+
+                # Use synthesized output
+                final_output = synthesis_result.decision
+
+                logger.info(
+                    f"Sequential stage {stage_name} used collaboration synthesis: "
+                    f"{synthesis_result.method} (confidence={synthesis_result.confidence:.2f})"
+                )
+
+            except Exception as e:
+                logger.warning(
+                    f"Collaboration synthesis failed for sequential stage {stage_name}: {e}. "
+                    f"Falling back to last agent output."
+                )
+                # Fall back to last agent output
+                if agent_outputs:
+                    last_key = list(agent_outputs.keys())[-1]
+                    final_output = agent_outputs[last_key].get("output", "")
+        else:
+            # No collaboration - use last agent's output for backward compatibility
+            if agent_outputs:
+                last_key = list(agent_outputs.keys())[-1]
+                final_output = agent_outputs[last_key].get("output", "")
 
         # Store structured stage output in state
         if not isinstance(state.get("stage_outputs"), dict):
             state["stage_outputs"] = {}
-        state["stage_outputs"][stage_name] = {
-            "output": last_agent_output,
+
+        stage_output = {
+            "output": final_output,
             "agent_outputs": agent_outputs,
             "agent_statuses": agent_statuses,
             "agent_metrics": agent_metrics,
         }
+
+        # Include synthesis result if collaboration was used
+        if synthesis_result:
+            stage_output["synthesis_result"] = {
+                "method": synthesis_result.method,
+                "confidence": synthesis_result.confidence,
+                "votes": synthesis_result.votes if hasattr(synthesis_result, "votes") else {},
+                "metadata": synthesis_result.metadata if hasattr(synthesis_result, "metadata") else {}
+            }
+
+        state["stage_outputs"][stage_name] = stage_output
         state["current_stage"] = stage_name
 
         return state
@@ -491,3 +553,59 @@ class SequentialStageExecutor(StageExecutor):
             Agent name
         """
         return extract_agent_name(agent_ref)
+
+    def _run_synthesis(
+        self,
+        agent_outputs: list,
+        stage_config: Any,
+        stage_name: str
+    ) -> Any:
+        """Run collaboration strategy to synthesize agent outputs.
+
+        Args:
+            agent_outputs: List of AgentOutput objects
+            stage_config: Stage configuration
+            stage_name: Stage name
+
+        Returns:
+            SynthesisResult
+
+        Raises:
+            ImportError: If strategy registry not available
+        """
+        try:
+            # Try to import registry
+            from src.strategies.registry import get_strategy_from_config
+
+            # Get strategy from config
+            strategy = get_strategy_from_config(stage_config)
+
+            # Get strategy config
+            stage_dict = stage_config if isinstance(stage_config, dict) else {}
+            collaboration_config = stage_dict.get("collaboration", {}).get("config", {})
+
+            # Synthesize
+            result = strategy.synthesize(agent_outputs, collaboration_config)
+
+            return result
+
+        except ImportError:
+            # Fallback: use simple consensus
+            from src.strategies.base import SynthesisResult, calculate_vote_distribution, extract_majority_decision
+
+            decision = extract_majority_decision(agent_outputs)
+            votes = calculate_vote_distribution(agent_outputs)
+
+            # Calculate simple confidence
+            if decision and votes:
+                confidence = votes.get(str(decision), 0) / len(agent_outputs)
+            else:
+                confidence = 0.5
+
+            return SynthesisResult(
+                decision=decision or "",
+                confidence=confidence,
+                method="fallback_consensus",
+                votes=votes,
+                metadata={"fallback": True}
+            )

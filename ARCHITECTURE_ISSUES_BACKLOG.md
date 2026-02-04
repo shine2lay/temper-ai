@@ -485,11 +485,57 @@ Relevant files:
 - `src/self_improvement/deployment/deployer.py` — ConfigDeployer.get_agent_config() (existing)
 - Coordination database `config_deployments` table (existing)
 
-## 17. Collaboration Only Available in Parallel Mode
+## 17. Collaboration Only Available in Parallel Mode ✅ COMPLETED
+
+**Status:** ✅ Completed
 
 **Problem:** Synthesis strategies (consensus, majority, weighted vote) are only called from the parallel executor. Sequential stages with multiple agents accumulate outputs but have no synthesis step — the last agent's output is used for backward compatibility. There's no way for sequential agents to debate and reach consensus.
 
 **Fix:** Add an optional `collaboration` config to sequential stages. After all agents run, if a collaboration strategy is configured, run synthesis on the accumulated `agent_outputs` (same as parallel does). The sequential executor already has `agent_outputs` in the right format.
+
+**Implementation:**
+1. Modified SequentialStageExecutor.execute_stage():
+   - Checks for collaboration config in stage_config
+   - If collaboration configured and >1 agents, runs synthesis
+   - Converts agent_outputs dict to AgentOutput list for synthesis
+   - Calls _run_synthesis() (same pattern as parallel executor)
+
+2. Added _run_synthesis() method to SequentialStageExecutor:
+   - Uses get_strategy_from_config() to get collaboration strategy
+   - Calls strategy.synthesize() with agent outputs
+   - Fallback to simple consensus if strategy registry unavailable
+   - Returns SynthesisResult with decision, confidence, votes
+
+3. Output handling:
+   - **With collaboration**: Uses synthesized output from strategy
+   - **Without collaboration**: Uses last agent output (backward compatible)
+   - **On synthesis error**: Falls back to last agent output with warning
+
+4. State structure:
+   - Stores synthesis_result in stage_outputs when used
+   - Includes method, confidence, votes, metadata
+   - Maintains backward compatibility for non-collaborative stages
+
+5. Example config:
+   ```yaml
+   stage:
+     type: sequential
+     agents: [agent1, agent2, agent3]
+     collaboration:
+       strategy: consensus  # or majority, debate, weighted
+       config: {min_confidence: 0.7}
+   ```
+
+**Result:**
+- Sequential stages can now use collaboration strategies
+- Same synthesis methods as parallel mode (consensus, majority, debate)
+- Backward compatible - collaboration is optional
+- Synthesis result tracked in observability
+- Sequential agents can debate and reach consensus
+
+**Relevant Files:**
+- `src/compiler/executors/sequential.py:120-200` — Modified execute_stage() to support collaboration
+- `src/compiler/executors/sequential.py:557-620` — Added _run_synthesis() method
 
 ## 18. No Config Validation at Compiler Level ✅ COMPLETED
 

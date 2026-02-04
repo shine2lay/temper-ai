@@ -1,0 +1,100 @@
+# ERC721 Advanced Architect Agent Configuration
+# Purpose: Plans an advanced ERC721 project with multiple OpenZeppelin extensions
+
+agent:
+  name: erc721_advanced_architect
+  description: "Plans advanced ERC721 project with Enumerable, URIStorage, Pausable, mint price, max supply"
+  version: "1.0"
+
+  prompt:
+    inline: |
+      You are an expert Solidity/Hardhat project architect. Plan an ADVANCED ERC721 NFT project.
+
+      Contract name: {{ contract_name | default("AdvancedNFT") }}
+      Token name: {{ token_name | default("AdvancedNFT") }}
+      Token symbol: {{ token_symbol | default("ANFT") }}
+
+      The contract MUST implement ALL of these features:
+      1. ERC721Enumerable - track total supply and token-by-index
+      2. ERC721URIStorage - per-token metadata URIs
+      3. ERC721Pausable - owner can pause/unpause all transfers
+      4. Max supply cap of 1000 tokens
+      5. Public mint with price of 0.01 ETH (payable)
+      6. Owner-only free mint function
+      7. Withdraw function for owner to collect ETH
+      8. Proper constructor with Ownable(msg.sender) for OpenZeppelin v5
+
+      The test file MUST include tests for:
+      - Deployment (name, symbol, owner, zero initial supply)
+      - Paid minting (correct payment, insufficient payment rejection)
+      - Owner free minting
+      - Token ID increment and totalSupply tracking
+      - Pause and unpause
+      - Transfer rejection when paused
+      - Owner withdrawal of ETH
+      - Non-owner withdrawal rejection
+      - Token transfer between accounts
+
+      Technology stack:
+      - Hardhat with ethers.js v6
+      - OpenZeppelin Contracts v5 (@openzeppelin/contracts)
+      - Solidity ^0.8.20
+
+      Output EXACTLY this JSON structure in <answer> tags:
+
+      <answer>
+      {
+        "project_name": "erc721-advanced-project",
+        "features": ["ERC721Enumerable", "ERC721URIStorage", "ERC721Pausable", "MaxSupply", "MintPrice", "Withdraw"],
+        "files": {
+          "package.json": {"description": "Node.js package with hardhat and openzeppelin dependencies"},
+          "hardhat.config.js": {"description": "Hardhat config with solidity 0.8.20"},
+          "contracts/CONTRACT_NAME.sol": {"description": "Advanced ERC721 with all extensions and features"},
+          "test/CONTRACT_NAME.test.js": {"description": "Comprehensive tests for all features (12+ tests)"},
+          "scripts/deploy.js": {"description": "Deployment script with test mint"}
+        },
+        "contract_name": "CONTRACT_NAME",
+        "token_name": "TOKEN_NAME",
+        "token_symbol": "TOKEN_SYMBOL"
+      }
+      </answer>
+
+      Replace CONTRACT_NAME, TOKEN_NAME, TOKEN_SYMBOL with the actual values.
+
+  inference:
+    provider: ollama
+    model: "{{ llm_model | default('llama3:8b') }}"
+    base_url: http://localhost:11434
+    temperature: 0.3
+    max_tokens: 16384
+    top_p: 0.9
+    timeout_seconds: 600
+    max_retries: 1
+    retry_delay_seconds: 2
+
+  tools: []
+
+  safety:
+    mode: execute
+    require_approval_for_tools: []
+    max_tool_calls_per_execution: 1
+    max_execution_time_seconds: 120
+    risk_level: low
+
+  memory:
+    enabled: false
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3
+
+  metadata:
+    tags:
+      - erc721
+      - advanced
+      - architect
+      - solidity
+    owner: erc721-workflow
+    created: "2026-02-02"

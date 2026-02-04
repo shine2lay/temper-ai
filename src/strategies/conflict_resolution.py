@@ -457,6 +457,9 @@ def create_resolver(
         raise ValueError(f"Unsupported resolution method: {method}")
 
 
+# Alias for merit_weighted.py compatibility (ST-01)
+ConflictResolver = ConflictResolutionStrategy
+
 # Enhanced types for merit-weighted resolution (M3)
 
 

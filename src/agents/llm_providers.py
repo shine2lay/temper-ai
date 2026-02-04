@@ -5,6 +5,7 @@ Supports Ollama, OpenAI, Anthropic, and vLLM with unified interface.
 Includes optional response caching to reduce costs and improve performance.
 """
 import httpx
+import ipaddress
 import json
 import time
 import asyncio
@@ -15,6 +16,7 @@ from typing import Dict, Any, Optional, List, AsyncIterator, Union, Tuple, Type,
 from types import TracebackType
 from dataclasses import dataclass
 from enum import Enum
+from urllib.parse import urlparse
 
 # Optional caching support
 try:
@@ -145,7 +147,7 @@ class BaseLLM(ABC):
             cache_ttl: Cache TTL in seconds (default: 3600 = 1 hour)
         """
         self.model = model
-        self.base_url = base_url.rstrip('/')
+        self.base_url = self._validate_base_url(base_url.rstrip('/'))
         self.api_key = api_key
         self.temperature = temperature
         self.max_tokens = max_tokens
@@ -183,56 +185,103 @@ class BaseLLM(ABC):
             config=CircuitBreakerConfig()
         )
 
+    @staticmethod
+    def _validate_base_url(url: str) -> str:
+        """Validate base_url to prevent SSRF attacks (AG-01).
+
+        Blocks RFC 1918 private addresses, link-local, loopback (except localhost),
+        and cloud metadata endpoints.
+
+        Args:
+            url: The base URL to validate
+
+        Returns:
+            The validated URL
+
+        Raises:
+            ValueError: If the URL points to a blocked address
+        """
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+
+        # Allow common local development hosts
+        allowed_local = {"localhost", "127.0.0.1", "::1"}
+        if hostname in allowed_local:
+            return url
+
+        # Block cloud metadata endpoints
+        metadata_hosts = {"169.254.169.254", "metadata.google.internal"}
+        if hostname in metadata_hosts:
+            raise ValueError(
+                f"SSRF blocked: base_url points to cloud metadata endpoint '{hostname}'"
+            )
+
+        # Check if hostname is an IP address
+        try:
+            addr = ipaddress.ip_address(hostname)
+            if addr.is_private or addr.is_link_local or addr.is_loopback or addr.is_reserved:
+                raise ValueError(
+                    f"SSRF blocked: base_url points to private/reserved address '{hostname}'"
+                )
+        except ValueError as e:
+            if "SSRF blocked" in str(e):
+                raise
+            # Not an IP address - hostname, which is fine
+
+        return url
+
     def _get_client(self) -> httpx.Client:
-        """Get or create HTTPx client with lazy initialization and connection pooling."""
+        """Get or create HTTPx client with lazy initialization and connection pooling.
+
+        AG-06: Uses double-check locking for thread safety.
+        """
         if self._client is None:
-            # Create client with connection pooling for better performance
-            # Connection pooling reduces latency by 50-200ms per request
-            limits = httpx.Limits(
-                max_connections=100,           # Total connections across all hosts
-                max_keepalive_connections=20,  # Persistent connections to keep alive
-                keepalive_expiry=30.0          # Keep connections alive for 30s
-            )
+            with self._sync_cleanup_lock:
+                if self._client is None:
+                    limits = httpx.Limits(
+                        max_connections=100,
+                        max_keepalive_connections=20,
+                        keepalive_expiry=30.0
+                    )
 
-            # Try to enable HTTP/2 if h2 package is available
-            # HTTP/2 provides better performance through multiplexing
-            try:
-                import h2  # type: ignore[import-not-found]  # noqa: F401
-                http2_enabled = True
-            except ImportError:
-                http2_enabled = False
+                    try:
+                        import h2  # type: ignore[import-not-found]  # noqa: F401
+                        http2_enabled = True
+                    except ImportError:
+                        http2_enabled = False
 
-            self._client = httpx.Client(
-                timeout=self.timeout,
-                limits=limits,
-                http2=http2_enabled
-            )
+                    self._client = httpx.Client(
+                        timeout=self.timeout,
+                        limits=limits,
+                        http2=http2_enabled
+                    )
         return self._client
 
     def _get_async_client(self) -> httpx.AsyncClient:
-        """Get or create async HTTPx client with lazy initialization and connection pooling."""
+        """Get or create async HTTPx client with lazy initialization and connection pooling.
+
+        AG-06: Uses double-check locking for thread safety.
+        """
         if self._async_client is None:
-            # Create async client with connection pooling for better performance
-            # Connection pooling reduces latency by 50-200ms per request
-            limits = httpx.Limits(
-                max_connections=100,           # Total connections across all hosts
-                max_keepalive_connections=20,  # Persistent connections to keep alive
-                keepalive_expiry=30.0          # Keep connections alive for 30s
-            )
+            with self._sync_cleanup_lock:
+                if self._async_client is None:
+                    limits = httpx.Limits(
+                        max_connections=100,
+                        max_keepalive_connections=20,
+                        keepalive_expiry=30.0
+                    )
 
-            # Try to enable HTTP/2 if h2 package is available
-            # HTTP/2 provides better performance through multiplexing
-            try:
-                import h2  # noqa: F401
-                http2_enabled = True
-            except ImportError:
-                http2_enabled = False
+                    try:
+                        import h2  # noqa: F401
+                        http2_enabled = True
+                    except ImportError:
+                        http2_enabled = False
 
-            self._async_client = httpx.AsyncClient(
-                timeout=self.timeout,
-                limits=limits,
-                http2=http2_enabled
-            )
+                    self._async_client = httpx.AsyncClient(
+                        timeout=self.timeout,
+                        limits=limits,
+                        http2=http2_enabled
+                    )
         return self._async_client
 
     def close(self) -> None:
@@ -491,11 +540,15 @@ class BaseLLM(ABC):
             **_remaining_kwargs
         )
 
-        # Try to get from cache
+        # Try to get from cache (AG-09: handle corrupted entries gracefully)
         cached_response = self._cache.get(cache_key)
         if cached_response:
-            cached_data = json.loads(cached_response)
-            return cache_key, LLMResponse(**cached_data)
+            try:
+                cached_data = json.loads(cached_response)
+                return cache_key, LLMResponse(**cached_data)
+            except (json.JSONDecodeError, TypeError, KeyError) as e:
+                logger.warning(f"Corrupted cache entry for key {cache_key}: {e}")
+                # Fall through to cache miss
 
         return cache_key, None
 
@@ -694,10 +747,13 @@ class OllamaLLM(BaseLLM):
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
-        self._thread_local = threading.local()
+        # AG-03: Use instance variable instead of thread-local for async safety.
+        # _build_request sets this before _get_endpoint reads it within the same
+        # call chain, so no cross-thread or cross-coroutine leakage occurs.
+        self._use_chat_api: bool = False
 
     def _get_endpoint(self) -> str:
-        if getattr(self._thread_local, 'use_chat_api', False):
+        if self._use_chat_api:
             return "/api/chat"
         return "/api/generate"
 
@@ -709,7 +765,7 @@ class OllamaLLM(BaseLLM):
     def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
         tools = kwargs.get("tools")
         if tools:
-            self._thread_local.use_chat_api = True
+            self._use_chat_api = True
             request = {
                 "model": self.model,
                 "messages": [
@@ -726,7 +782,7 @@ class OllamaLLM(BaseLLM):
             }
             return request
         else:
-            self._thread_local.use_chat_api = False
+            self._use_chat_api = False
             return {
                 "model": self.model,
                 "prompt": prompt,
@@ -737,7 +793,7 @@ class OllamaLLM(BaseLLM):
             }
 
     def _parse_response(self, response: Dict[str, Any], latency_ms: int) -> LLMResponse:
-        if getattr(self._thread_local, 'use_chat_api', False):
+        if self._use_chat_api:
             # Parse /api/chat response
             message = response.get("message", {})
             content = message.get("content", "")

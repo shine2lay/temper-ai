@@ -260,6 +260,32 @@ class CollaborationConfig(BaseModel):
     convergence_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     config: Dict[str, Any] = Field(default_factory=dict)
 
+    # Dialogue-specific fields (Phase 1: Dialogue Orchestrator)
+    # All fields optional for backward compatibility
+    max_dialogue_rounds: Optional[int] = Field(
+        default=3,
+        gt=0,
+        description="Maximum number of dialogue rounds"
+    )
+    round_budget_usd: Optional[float] = Field(
+        default=None,
+        gt=0.0,
+        description="Cost budget per dialogue session (USD)"
+    )
+    dialogue_mode: bool = Field(
+        default=False,
+        description="Enable multi-round dialogue (requires DialogueOrchestrator)"
+    )
+    roles: Optional[Dict[str, str]] = Field(
+        default=None,
+        description="Agent role assignments (e.g., {'agent1': 'proposer', 'agent2': 'critic'})"
+    )
+    context_window_rounds: Optional[int] = Field(
+        default=2,
+        gt=0,
+        description="Number of recent rounds to keep in full context"
+    )
+
 
 class ConflictResolutionConfig(BaseModel):
     """Conflict resolution configuration.

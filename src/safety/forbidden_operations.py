@@ -241,8 +241,9 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             ValueError: If configuration parameters are invalid
         """
         # Extract and validate custom_forbidden_patterns BEFORE calling super().__init__()
-        # because base class rejects nested dicts for security
-        config = config or {}
+        # because base class rejects nested dicts for security.
+        # SA-05: Copy config to avoid mutating caller's dict.
+        config = dict(config) if config else {}
         custom_patterns_raw = config.pop("custom_forbidden_patterns", {})
 
         # Call super().__init__() with config that no longer has nested dict

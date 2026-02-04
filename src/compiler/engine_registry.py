@@ -200,3 +200,14 @@ class EngineRegistry:
         with self._lock:
             if name in self._engines:
                 del self._engines[name]
+
+    @classmethod
+    def reset(cls) -> None:
+        """Reset singleton instance (for testing only).
+
+        CO-02: Without this, singleton state leaks between tests causing
+        test pollution. This method is intentionally a classmethod so it
+        can be called without holding a reference to the instance.
+        """
+        with cls._lock:
+            cls._instance = None

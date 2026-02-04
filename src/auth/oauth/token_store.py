@@ -443,6 +443,22 @@ class SecureTokenStore:
                     except (ValueError, TypeError):
                         # Skip tokens with invalid expiry
                         continue
+                else:
+                    # AU-06: Re-encrypt tokens without expires_at (non-expiring tokens)
+                    try:
+                        clean_token = {
+                            k: v for k, v in token_data.items()
+                            if k not in ["stored_at"]
+                        }
+                        token_with_metadata = {
+                            **clean_token,
+                            "stored_at": datetime.utcnow().isoformat(),
+                        }
+                        token_json = json.dumps(token_with_metadata)
+                        encrypted = self.cipher.encrypt(token_json.encode())
+                        self._tokens[user_id] = encrypted
+                    except (ValueError, TypeError):
+                        continue
 
             # Audit log
             self._access_log.append({

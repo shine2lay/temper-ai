@@ -412,16 +412,25 @@ class FileCheckpointBackend(CheckpointBackend):
     def get_latest_checkpoint(self, workflow_id: str) -> Optional[str]:
         """Get the latest checkpoint ID for a workflow.
 
+        CO-05: Uses file modification time to find the latest file, then
+        reads only that single file instead of loading ALL checkpoint files.
+
         Args:
             workflow_id: Unique workflow execution ID
 
         Returns:
             Latest checkpoint ID, or None if no checkpoints exist
         """
-        checkpoints = self.list_checkpoints(workflow_id)
-        if checkpoints:
-            return cast(str, checkpoints[0]["checkpoint_id"])  # First is newest
-        return None
+        workflow_dir = self._get_workflow_dir(workflow_id)
+        checkpoint_files = list(workflow_dir.glob("cp-*.json"))
+        if not checkpoint_files:
+            return None
+        # Use file modification time to find the latest checkpoint
+        latest_file = max(checkpoint_files, key=lambda f: f.stat().st_mtime)
+        # Read only the latest file to extract the canonical checkpoint_id
+        with open(latest_file, 'r') as f:
+            data = json.load(f)
+        return cast(str, data["checkpoint_id"])
 
 
 class RedisCheckpointBackend(CheckpointBackend):
@@ -470,10 +479,16 @@ class RedisCheckpointBackend(CheckpointBackend):
         self.redis_client = redis.from_url(redis_url, decode_responses=True)
         self.ttl = ttl
 
+    @staticmethod
+    def _sanitize_id(value: str) -> str:
+        """Sanitize IDs for use in Redis keys (CO-04)."""
+        import re as _re
+        return _re.sub(r'[^a-zA-Z0-9_\-.]', '_', value)
+
     def _generate_checkpoint_id(self) -> str:
-        """Generate a unique checkpoint ID."""
-        timestamp = int(time.time() * 1000)
-        return f"cp-{timestamp}"
+        """Generate a unique checkpoint ID (CO-07: uuid4 prevents collisions)."""
+        import uuid
+        return f"cp-{uuid.uuid4().hex[:16]}"
 
     def save_checkpoint(
         self,
@@ -507,14 +522,22 @@ class RedisCheckpointBackend(CheckpointBackend):
             "metadata": metadata or {}
         }
 
-        # Save to Redis
-        key = f"checkpoint:{workflow_id}:{checkpoint_id}"
-        self.redis_client.set(key, json.dumps(checkpoint_data), ex=self.ttl)
+        # CO-04: Sanitize IDs for Redis key safety
+        safe_wf = self._sanitize_id(workflow_id)
+        safe_cp = self._sanitize_id(checkpoint_id)
 
-        # Add to index (sorted set by timestamp)
-        index_key = f"checkpoint_index:{workflow_id}"
+        # CO-08: Atomic save using pipeline (SET + ZADD)
+        key = f"checkpoint:{safe_wf}:{safe_cp}"
+        index_key = f"checkpoint_index:{safe_wf}"
         timestamp = time.time()
-        self.redis_client.zadd(index_key, {checkpoint_id: timestamp})
+
+        pipe = self.redis_client.pipeline(transaction=True)
+        pipe.set(key, json.dumps(checkpoint_data), ex=self.ttl)
+        pipe.zadd(index_key, {checkpoint_id: timestamp})
+        # CO-09: Set TTL on the index sorted set so it doesn't leak memory.
+        # Use 2x the checkpoint TTL to ensure index outlives its entries.
+        pipe.expire(index_key, self.ttl * 2)
+        pipe.execute()
 
         return checkpoint_id
 
@@ -543,8 +566,10 @@ class RedisCheckpointBackend(CheckpointBackend):
                     f"No checkpoints found for workflow {workflow_id}"
                 )
 
-        # Load from Redis
-        key = f"checkpoint:{workflow_id}:{checkpoint_id}"
+        # Load from Redis (CO-04: sanitize IDs)
+        safe_wf = self._sanitize_id(workflow_id)
+        safe_cp = self._sanitize_id(checkpoint_id)
+        key = f"checkpoint:{safe_wf}:{safe_cp}"
         data = self.redis_client.get(key)
 
         if data is None:
@@ -564,14 +589,24 @@ class RedisCheckpointBackend(CheckpointBackend):
         Returns:
             List of checkpoint metadata dicts (sorted by created_at desc)
         """
-        index_key = f"checkpoint_index:{workflow_id}"
+        safe_wf = self._sanitize_id(workflow_id)
+        index_key = f"checkpoint_index:{safe_wf}"
         # Get all checkpoint IDs (sorted by score descending)
         checkpoint_ids = self.redis_client.zrevrange(index_key, 0, -1)
 
+        # CO-06: Use pipeline to batch-fetch all checkpoint data in a single
+        # round-trip instead of N+1 individual GET calls.
+        if not checkpoint_ids:
+            return []
+
+        keys = [
+            f"checkpoint:{safe_wf}:{self._sanitize_id(cp_id)}"
+            for cp_id in checkpoint_ids
+        ]
+        results = self.redis_client.mget(keys)
+
         checkpoints = []
-        for cp_id in checkpoint_ids:
-            key = f"checkpoint:{workflow_id}:{cp_id}"
-            data = self.redis_client.get(key)
+        for data in results:
             if data:
                 checkpoint_data = json.loads(data)
                 checkpoints.append({
@@ -593,14 +628,18 @@ class RedisCheckpointBackend(CheckpointBackend):
         Returns:
             True if deleted, False if not found
         """
-        key = f"checkpoint:{workflow_id}:{checkpoint_id}"
-        result = self.redis_client.delete(key)
+        # CO-04: Sanitize IDs; CO-08: Atomic delete
+        safe_wf = self._sanitize_id(workflow_id)
+        safe_cp = self._sanitize_id(checkpoint_id)
+        key = f"checkpoint:{safe_wf}:{safe_cp}"
+        index_key = f"checkpoint_index:{safe_wf}"
 
-        # Remove from index
-        index_key = f"checkpoint_index:{workflow_id}"
-        self.redis_client.zrem(index_key, checkpoint_id)
+        pipe = self.redis_client.pipeline(transaction=True)
+        pipe.delete(key)
+        pipe.zrem(index_key, checkpoint_id)
+        results = pipe.execute()
 
-        return cast(bool, result > 0)
+        return cast(bool, results[0] > 0)
 
     def get_latest_checkpoint(self, workflow_id: str) -> Optional[str]:
         """Get the latest checkpoint ID for a workflow from Redis.
@@ -611,7 +650,7 @@ class RedisCheckpointBackend(CheckpointBackend):
         Returns:
             Latest checkpoint ID, or None if no checkpoints exist
         """
-        index_key = f"checkpoint_index:{workflow_id}"
+        index_key = f"checkpoint_index:{self._sanitize_id(workflow_id)}"
         # Get the highest-scored item (most recent)
         checkpoint_ids = self.redis_client.zrevrange(index_key, 0, 0)
         if checkpoint_ids:

@@ -79,21 +79,22 @@ class TestModelPricing:
 
     def test_negative_price_rejected(self):
         """Test that negative prices are rejected."""
-        with pytest.raises(ValidationError, match="greater than 0"):
+        with pytest.raises(ValidationError, match="greater than or equal to 0"):
             ModelPricing(
                 input_price=-1.0,
                 output_price=2.0,
                 effective_date=date(2026, 1, 1)
             )
 
-    def test_zero_price_rejected(self):
-        """Test that zero prices are rejected."""
-        with pytest.raises(ValidationError, match="greater than 0"):
-            ModelPricing(
-                input_price=0.0,
-                output_price=2.0,
-                effective_date=date(2026, 1, 1)
-            )
+    def test_zero_price_allowed(self):
+        """Test that zero prices are allowed (for local/free models)."""
+        pricing = ModelPricing(
+            input_price=0.0,
+            output_price=0.0,
+            effective_date=date(2026, 1, 1)
+        )
+        assert pricing.input_price == 0.0
+        assert pricing.output_price == 0.0
 
     def test_unreasonably_high_price_rejected(self):
         """Test that unreasonably high prices are rejected."""

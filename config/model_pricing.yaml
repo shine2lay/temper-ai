@@ -1,48 +1,672 @@
 # Model Pricing Configuration
 # Prices in USD per 1M tokens
-# Last updated: 2026-02-01
-# Source: https://anthropic.com/pricing, https://openai.com/pricing
+# Last updated: 2026-02-03
+#
+# Sources:
+#   https://platform.claude.com/docs/en/about-claude/pricing
+#   https://openai.com/api/pricing/
+#   https://ai.google.dev/gemini-api/docs/pricing
+#   https://mistral.ai/pricing
+#   https://api-docs.deepseek.com/quick_start/pricing
+#   https://docs.x.ai/docs/models
+#   https://cohere.com/pricing
+#   https://artificialanalysis.ai/leaderboards/models
+#
+# Note: Local models (Ollama, vLLM) have zero API cost. Entries below
+# are placeholders so cost tracking reports something meaningful when
+# estimating what equivalent cloud API calls would cost.
 
 schema_version: "1.0"
-last_updated: "2026-02-01"
+last_updated: "2026-02-03"
 
-# Model pricing tables
-# Each model specifies input/output price per 1M tokens
 models:
-  claude-3-opus:
-    input_price: 15.00   # USD per 1M input tokens
-    output_price: 75.00  # USD per 1M output tokens
+
+  # ─── Anthropic Claude ───────────────────────────────────────────────
+
+  claude-opus-4.5:
+    input_price: 5.00
+    output_price: 25.00
     effective_date: "2026-01-01"
-    source_url: "https://anthropic.com/pricing"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Most capable Claude model"
+
+  claude-sonnet-4.5:
+    input_price: 3.00
+    output_price: 15.00
+    effective_date: "2026-01-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Balanced intelligence and speed"
+
+  claude-haiku-4.5:
+    input_price: 1.00
+    output_price: 5.00
+    effective_date: "2026-01-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Fastest Claude model"
+
+  claude-opus-4:
+    input_price: 15.00
+    output_price: 75.00
+    effective_date: "2025-06-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Legacy - replaced by Opus 4.5"
+
+  claude-sonnet-4:
+    input_price: 3.00
+    output_price: 15.00
+    effective_date: "2025-06-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Legacy"
+
+  claude-3.7-sonnet:
+    input_price: 3.00
+    output_price: 15.00
+    effective_date: "2025-02-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Legacy"
+
+  claude-3.5-sonnet:
+    input_price: 3.00
+    output_price: 15.00
+    effective_date: "2024-10-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Legacy"
+
+  claude-3.5-haiku:
+    input_price: 0.80
+    output_price: 4.00
+    effective_date: "2024-11-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Legacy"
+
+  claude-3-opus:
+    input_price: 15.00
+    output_price: 75.00
+    effective_date: "2024-03-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Legacy"
 
   claude-3-sonnet:
     input_price: 3.00
     output_price: 15.00
-    effective_date: "2026-01-01"
-    source_url: "https://anthropic.com/pricing"
+    effective_date: "2024-03-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Legacy"
 
   claude-3-haiku:
     input_price: 0.25
     output_price: 1.25
-    effective_date: "2026-01-01"
-    source_url: "https://anthropic.com/pricing"
+    effective_date: "2024-03-01"
+    source_url: "https://platform.claude.com/docs/en/about-claude/pricing"
+    notes: "Legacy - cheapest Claude model"
+
+  # ─── OpenAI GPT ────────────────────────────────────────────────────
+
+  gpt-4o:
+    input_price: 2.50
+    output_price: 10.00
+    effective_date: "2025-01-01"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Flagship multimodal model, 128K context"
+
+  gpt-4o-mini:
+    input_price: 0.15
+    output_price: 0.60
+    effective_date: "2025-01-01"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Budget-friendly, 128K context"
+
+  gpt-4.1:
+    input_price: 2.00
+    output_price: 8.00
+    effective_date: "2025-04-14"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "1M context window"
+
+  gpt-4.1-mini:
+    input_price: 0.40
+    output_price: 1.60
+    effective_date: "2025-04-14"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Budget version of GPT-4.1"
+
+  gpt-4.1-nano:
+    input_price: 0.10
+    output_price: 0.40
+    effective_date: "2025-04-14"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Cheapest GPT-4.1 variant"
 
   gpt-4:
     input_price: 30.00
     output_price: 60.00
-    effective_date: "2026-01-01"
-    source_url: "https://openai.com/pricing"
+    effective_date: "2023-03-01"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Legacy - use GPT-4o or GPT-4.1 instead"
+
+  gpt-4-turbo:
+    input_price: 10.00
+    output_price: 30.00
+    effective_date: "2024-04-01"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Legacy"
 
   gpt-3.5-turbo:
     input_price: 0.50
     output_price: 1.50
+    effective_date: "2024-01-01"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Legacy - deprecated"
+
+  # ─── OpenAI Reasoning (o-series) ────────────────────────────────────
+
+  o1:
+    input_price: 15.00
+    output_price: 60.00
+    effective_date: "2024-12-01"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Reasoning model. Output includes invisible reasoning tokens."
+
+  o3:
+    input_price: 2.00
+    output_price: 8.00
+    effective_date: "2025-06-01"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Reasoning model. Cached input $0.50/MTok."
+
+  o4-mini:
+    input_price: 1.10
+    output_price: 4.40
+    effective_date: "2025-06-01"
+    source_url: "https://openai.com/api/pricing/"
+    notes: "Budget reasoning model"
+
+  # ─── Google Gemini ──────────────────────────────────────────────────
+
+  gemini-3-pro:
+    input_price: 2.00
+    output_price: 12.00
     effective_date: "2026-01-01"
-    source_url: "https://openai.com/pricing"
+    source_url: "https://ai.google.dev/gemini-api/docs/pricing"
+    notes: "Preview. <200K context. >200K doubles to $4/$18."
+
+  gemini-2.5-pro:
+    input_price: 1.25
+    output_price: 10.00
+    effective_date: "2025-06-01"
+    source_url: "https://ai.google.dev/gemini-api/docs/pricing"
+    notes: "<200K context. >200K doubles to $2.50/$20."
+
+  gemini-2.5-flash:
+    input_price: 0.075
+    output_price: 0.30
+    effective_date: "2025-06-01"
+    source_url: "https://ai.google.dev/gemini-api/docs/pricing"
+    notes: "Fast and cheap. Thinking tokens $0.60/MTok."
+
+  gemini-2.5-flash-lite:
+    input_price: 0.10
+    output_price: 0.40
+    effective_date: "2025-06-01"
+    source_url: "https://ai.google.dev/gemini-api/docs/pricing"
+
+  gemini-2.0-flash:
+    input_price: 0.10
+    output_price: 0.40
+    effective_date: "2025-02-01"
+    source_url: "https://ai.google.dev/gemini-api/docs/pricing"
+
+  gemini-2.0-flash-lite:
+    input_price: 0.075
+    output_price: 0.30
+    effective_date: "2025-02-01"
+    source_url: "https://ai.google.dev/gemini-api/docs/pricing"
+    notes: "Cheapest Gemini model"
+
+  # ─── Meta Llama (via API providers) ─────────────────────────────────
+  # Median prices across providers (DeepInfra, Groq, Together, etc.)
+  # Free via Ollama/vLLM for local deployment.
+
+  llama-4-maverick:
+    input_price: 0.22
+    output_price: 0.85
+    effective_date: "2025-04-01"
+    source_url: "https://artificialanalysis.ai/models/llama-4-maverick"
+    notes: "400B MoE (17B active). Median across API providers."
+
+  llama-4-scout:
+    input_price: 0.15
+    output_price: 0.50
+    effective_date: "2025-04-01"
+    source_url: "https://artificialanalysis.ai/models/llama-4-scout"
+    notes: "109B MoE (17B active). 10M context. Median across providers."
+
+  llama-3.3-70b:
+    input_price: 0.20
+    output_price: 0.20
+    effective_date: "2024-12-01"
+    notes: "Median across API providers. Free via Ollama."
+
+  llama-3.1-8b:
+    input_price: 0.05
+    output_price: 0.08
+    effective_date: "2024-07-01"
+    notes: "Small model. Median across API providers. Free via Ollama."
+
+  llama-3.2-3b:
+    input_price: 0.04
+    output_price: 0.06
+    effective_date: "2024-09-01"
+    notes: "Compact model. Used in this project's agent configs. Free via Ollama."
+
+  # ─── Mistral AI ─────────────────────────────────────────────────────
+
+  mistral-large:
+    input_price: 2.00
+    output_price: 6.00
+    effective_date: "2025-06-01"
+    source_url: "https://mistral.ai/pricing"
+    notes: "Flagship Mistral model"
+
+  mistral-medium-3:
+    input_price: 0.40
+    output_price: 2.00
+    effective_date: "2025-05-07"
+    source_url: "https://mistral.ai/pricing"
+    notes: "GPT-4 class at lower cost"
+
+  mistral-small-3.2:
+    input_price: 0.10
+    output_price: 0.30
+    effective_date: "2025-06-01"
+    source_url: "https://mistral.ai/pricing"
+
+  codestral:
+    input_price: 0.30
+    output_price: 0.90
+    effective_date: "2025-06-01"
+    source_url: "https://mistral.ai/pricing"
+    notes: "Code-specialized model"
+
+  mistral-nemo:
+    input_price: 0.02
+    output_price: 0.02
+    effective_date: "2025-01-01"
+    source_url: "https://mistral.ai/pricing"
+    notes: "Cheapest Mistral model"
+
+  # ─── DeepSeek ───────────────────────────────────────────────────────
+
+  deepseek-chat:
+    input_price: 0.27
+    output_price: 1.10
+    effective_date: "2025-09-01"
+    source_url: "https://api-docs.deepseek.com/quick_start/pricing"
+    notes: "V3/V3.1. Cache hit $0.07/MTok input."
+
+  deepseek-reasoner:
+    input_price: 0.55
+    output_price: 1.68
+    effective_date: "2025-09-01"
+    source_url: "https://api-docs.deepseek.com/quick_start/pricing"
+    notes: "R1 reasoning model. Off-peak 75% discount."
+
+  # ─── xAI Grok ───────────────────────────────────────────────────────
+
+  grok-4:
+    input_price: 3.00
+    output_price: 15.00
+    effective_date: "2025-12-01"
+    source_url: "https://docs.x.ai/docs/models"
+    notes: "Flagship Grok model, 256K context"
+
+  grok-4.1-fast:
+    input_price: 0.20
+    output_price: 0.50
+    effective_date: "2026-01-01"
+    source_url: "https://docs.x.ai/docs/models"
+    notes: "Budget model, 2M context window"
+
+  # ─── Cohere ─────────────────────────────────────────────────────────
+
+  command-r-plus:
+    input_price: 2.50
+    output_price: 10.00
+    effective_date: "2024-08-01"
+    source_url: "https://cohere.com/pricing"
+    notes: "128K context"
+
+  command-r:
+    input_price: 0.15
+    output_price: 0.60
+    effective_date: "2024-08-01"
+    source_url: "https://cohere.com/pricing"
+
+  command-a:
+    input_price: 2.50
+    output_price: 10.00
+    effective_date: "2025-03-01"
+    source_url: "https://cohere.com/pricing"
+    notes: "Latest Cohere flagship"
+
+  # ─── Open Source / Ollama Models ─────────────────────────────────────
+  # Local inference has zero API cost. Prices below are the median
+  # cloud API price (DeepInfra, Groq, Together, etc.) for cost
+  # comparison and "what would this cost on a paid API?" reports.
+  # Set all to 0.00 if you only care about actual spend.
+  #
+  # Ollama model names use the format "model:tag" (e.g. "llama3.2:3b").
+  # The PricingManager matches on exact model string, so entries here
+  # should match what your agent configs specify.
+
+  # --- Llama (Meta) ---
+
+  llama4:scout:
+    input_price: 0.15
+    output_price: 0.50
+    effective_date: "2025-04-01"
+    notes: "109B MoE. Cloud-equivalent price. Free via Ollama."
+
+  llama4:maverick:
+    input_price: 0.22
+    output_price: 0.85
+    effective_date: "2025-04-01"
+    notes: "400B MoE. Cloud-equivalent price. Free via Ollama."
+
+  llama3.3:70b:
+    input_price: 0.20
+    output_price: 0.20
+    effective_date: "2024-12-01"
+    notes: "Cloud-equivalent. Free via Ollama."
+
+  llama3.2:3b:
+    input_price: 0.04
+    output_price: 0.06
+    effective_date: "2024-09-01"
+    notes: "Primary model in this project's agent configs. Free via Ollama."
+
+  llama3.2:1b:
+    input_price: 0.03
+    output_price: 0.05
+    effective_date: "2024-09-01"
+    notes: "Smallest Llama. Free via Ollama."
+
+  llama3.1:8b:
+    input_price: 0.05
+    output_price: 0.08
+    effective_date: "2024-07-01"
+    notes: "Free via Ollama."
+
+  llama3.1:70b:
+    input_price: 0.52
+    output_price: 0.75
+    effective_date: "2024-07-01"
+    notes: "Cloud-equivalent. Free via Ollama."
+
+  llama3.1:405b:
+    input_price: 2.00
+    output_price: 2.00
+    effective_date: "2024-07-01"
+    notes: "Largest dense Llama. Cloud-equivalent. Free via Ollama."
+
+  # --- Qwen (Alibaba Cloud) ---
+
+  qwen3:0.6b:
+    input_price: 0.02
+    output_price: 0.03
+    effective_date: "2025-05-01"
+    notes: "Tiny model. Free via Ollama."
+
+  qwen3:1.7b:
+    input_price: 0.03
+    output_price: 0.05
+    effective_date: "2025-05-01"
+    notes: "Free via Ollama."
+
+  qwen3:4b:
+    input_price: 0.04
+    output_price: 0.06
+    effective_date: "2025-05-01"
+    notes: "Rivals Qwen2.5-72B performance. Free via Ollama."
+
+  qwen3:8b:
+    input_price: 0.05
+    output_price: 0.08
+    effective_date: "2025-05-01"
+    notes: "Free via Ollama."
+
+  qwen3:14b:
+    input_price: 0.07
+    output_price: 0.14
+    effective_date: "2025-05-01"
+    notes: "Free via Ollama."
+
+  qwen3:32b:
+    input_price: 0.10
+    output_price: 0.20
+    effective_date: "2025-05-01"
+    notes: "Free via Ollama."
+
+  qwen3:30b-a3b:
+    input_price: 0.05
+    output_price: 0.08
+    effective_date: "2025-05-01"
+    notes: "MoE (3B active). Outcompetes QwQ-32B. Free via Ollama."
+
+  qwen3:235b-a22b:
+    input_price: 0.20
+    output_price: 0.60
+    effective_date: "2025-05-01"
+    notes: "MoE (22B active). Free via Ollama."
+
+  qwen2.5:7b:
+    input_price: 0.05
+    output_price: 0.08
+    effective_date: "2024-09-01"
+    notes: "18T token pretraining, 128K context. Free via Ollama."
+
+  qwen2.5:14b:
+    input_price: 0.07
+    output_price: 0.14
+    effective_date: "2024-09-01"
+    notes: "Free via Ollama."
+
+  qwen2.5:72b:
+    input_price: 0.20
+    output_price: 0.60
+    effective_date: "2024-09-01"
+    notes: "Cloud-equivalent. Free via Ollama."
+
+  qwen2.5-coder:7b:
+    input_price: 0.05
+    output_price: 0.08
+    effective_date: "2024-11-01"
+    notes: "Code-specialized. Free via Ollama."
+
+  qwen2.5-coder:32b:
+    input_price: 0.10
+    output_price: 0.20
+    effective_date: "2024-11-01"
+    notes: "Code-specialized. Free via Ollama."
+
+  # --- DeepSeek (open-weight) ---
+
+  deepseek-r1:7b:
+    input_price: 0.05
+    output_price: 0.08
+    effective_date: "2025-01-01"
+    notes: "Distilled reasoning model. Free via Ollama."
+
+  deepseek-r1:14b:
+    input_price: 0.07
+    output_price: 0.14
+    effective_date: "2025-01-01"
+    notes: "Distilled reasoning. Free via Ollama."
+
+  deepseek-r1:32b:
+    input_price: 0.10
+    output_price: 0.20
+    effective_date: "2025-01-01"
+    notes: "Distilled reasoning. Free via Ollama."
+
+  deepseek-r1:70b:
+    input_price: 0.52
+    output_price: 0.75
+    effective_date: "2025-01-01"
+    notes: "Distilled reasoning. Free via Ollama."
+
+  deepseek-r1:671b:
+    input_price: 0.55
+    output_price: 1.68
+    effective_date: "2025-01-01"
+    notes: "Full R1. 671B MoE (37B active). Free via Ollama."
+
+  deepseek-v3:
+    input_price: 0.27
+    output_price: 1.10
+    effective_date: "2025-01-01"
+    notes: "671B MoE. Free via Ollama."
+
+  # --- Gemma (Google DeepMind) ---
+
+  gemma3:1b:
+    input_price: 0.02
+    output_price: 0.03
+    effective_date: "2025-03-01"
+    notes: "Lightweight. Free via Ollama."
+
+  gemma3:4b:
+    input_price: 0.04
+    output_price: 0.06
+    effective_date: "2025-03-01"
+    notes: "Free via Ollama."
+
+  gemma3:12b:
+    input_price: 0.07
+    output_price: 0.14
+    effective_date: "2025-03-01"
+    notes: "Free via Ollama."
+
+  gemma3:27b:
+    input_price: 0.10
+    output_price: 0.20
+    effective_date: "2025-03-01"
+    notes: "Free via Ollama."
+
+  gemma2:2b:
+    input_price: 0.02
+    output_price: 0.03
+    effective_date: "2024-06-01"
+    notes: "Free via Ollama."
+
+  gemma2:9b:
+    input_price: 0.05
+    output_price: 0.08
+    effective_date: "2024-06-01"
+    notes: "Free via Ollama."
+
+  gemma2:27b:
+    input_price: 0.10
+    output_price: 0.20
+    effective_date: "2024-06-01"
+    notes: "Free via Ollama."
+
+  # --- Phi (Microsoft) ---
+
+  phi4:14b:
+    input_price: 0.07
+    output_price: 0.14
+    effective_date: "2025-01-01"
+    notes: "State-of-the-art small model. Free via Ollama."
+
+  phi4-mini:3.8b:
+    input_price: 0.04
+    output_price: 0.06
+    effective_date: "2025-01-01"
+    notes: "Free via Ollama."
+
+  phi3:3.8b:
+    input_price: 0.03
+    output_price: 0.05
+    effective_date: "2024-04-01"
+    notes: "Free via Ollama."
+
+  phi3:14b:
+    input_price: 0.07
+    output_price: 0.14
+    effective_date: "2024-04-01"
+    notes: "Free via Ollama."
+
+  # --- Mistral (open-weight) ---
+
+  mistral:7b:
+    input_price: 0.04
+    output_price: 0.06
+    effective_date: "2024-01-01"
+    notes: "Free via Ollama."
+
+  mistral-nemo:12b:
+    input_price: 0.07
+    output_price: 0.14
+    effective_date: "2024-07-01"
+    notes: "128K context. Built with NVIDIA. Free via Ollama."
+
+  mixtral:8x7b:
+    input_price: 0.24
+    output_price: 0.24
+    effective_date: "2024-01-01"
+    notes: "MoE. Free via Ollama."
+
+  mixtral:8x22b:
+    input_price: 0.60
+    output_price: 0.60
+    effective_date: "2024-04-01"
+    notes: "MoE. Free via Ollama."
+
+  codestral:22b:
+    input_price: 0.30
+    output_price: 0.90
+    effective_date: "2024-06-01"
+    notes: "Code-specialized. Free via Ollama."
+
+  # --- Cogito ---
+
+  cogito:8b:
+    input_price: 0.05
+    output_price: 0.08
+    effective_date: "2025-04-01"
+    notes: "Hybrid reasoning by Deep Cogito. Free via Ollama."
+
+  cogito:14b:
+    input_price: 0.07
+    output_price: 0.14
+    effective_date: "2025-04-01"
+    notes: "Hybrid reasoning. Free via Ollama."
+
+  cogito:32b:
+    input_price: 0.10
+    output_price: 0.20
+    effective_date: "2025-04-01"
+    notes: "Hybrid reasoning. Free via Ollama."
+
+  cogito:70b:
+    input_price: 0.52
+    output_price: 0.75
+    effective_date: "2025-04-01"
+    notes: "Hybrid reasoning. Free via Ollama."
+
+  # --- GPT-OSS (OpenAI open-weight) ---
+
+  gpt-oss:
+    input_price: 0.10
+    output_price: 0.30
+    effective_date: "2025-06-01"
+    notes: "OpenAI open-weight model. Free via Ollama."
 
 # Fallback pricing for unknown models
 # Used when a model is not found in the models list above
 default:
-  input_price: 3.00    # Average across common models
-  output_price: 15.00  # Average output price
-  effective_date: "2026-01-01"
-  notes: "Fallback pricing for unknown models"
+  input_price: 2.00
+  output_price: 8.00
+  effective_date: "2026-02-03"
+  notes: "Fallback for unknown models. Based on median across current models."

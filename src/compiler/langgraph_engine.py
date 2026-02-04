@@ -327,9 +327,20 @@ class LangGraphExecutionEngine(ExecutionEngine):
             raise NotImplementedError("STREAM mode not supported in M2")
 
         if mode == ExecutionMode.ASYNC:
-            # For ASYNC mode, wrap ainvoke in asyncio.run
-            # Since this method is sync, we need to run the async method
-            return asyncio.run(compiled_workflow.ainvoke(input_data))
+            # For ASYNC mode, run async coroutine from sync context (CO-01)
+            # asyncio.run() crashes inside an already-running event loop
+            # (Jupyter, FastAPI, etc.), so detect and handle that case.
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop and loop.is_running():
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                    future = pool.submit(asyncio.run, compiled_workflow.ainvoke(input_data))
+                    return future.result()
+            else:
+                return asyncio.run(compiled_workflow.ainvoke(input_data))
 
         # SYNC mode (default)
         return compiled_workflow.invoke(input_data)

@@ -170,6 +170,9 @@ class FileWriter(BaseTool):
                     error=f"Parent directory does not exist: {path.parent}. Set create_dirs=true to create it."
                 )
 
+            # TO-06: Check existence before write, not after
+            existed = path.exists()
+
             # Write file
             with open(path, 'w', encoding='utf-8') as f:
                 f.write(content)
@@ -180,7 +183,7 @@ class FileWriter(BaseTool):
                 metadata={
                     "file_path": str(path),
                     "size_bytes": len(content.encode('utf-8')),
-                    "overwritten": path.exists()
+                    "overwritten": existed
                 }
             )
 

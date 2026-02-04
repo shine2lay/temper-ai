@@ -208,8 +208,10 @@ class CircuitBreaker:
     def state(self) -> CircuitBreakerState:
         """Get current circuit breaker state."""
         with self._lock:
-            self._check_state_transition()
-            return self._state
+            pending = self._check_state_transition()
+            current = self._state
+        self._fire_callbacks(pending)
+        return current
 
     def can_execute(self) -> bool:
         """Check if execution is allowed.
@@ -222,6 +224,7 @@ class CircuitBreaker:
 
     def record_success(self) -> None:
         """Record successful execution."""
+        pending = None
         with self._lock:
             self.metrics.total_calls += 1
             self.metrics.successful_calls += 1
@@ -231,9 +234,10 @@ class CircuitBreaker:
 
                 # Enough successes to close circuit
                 if self._success_count >= self.success_threshold:
-                    self._transition_to(CircuitBreakerState.CLOSED)
+                    pending = self._transition_to(CircuitBreakerState.CLOSED)
                     self._failure_count = 0
                     self._success_count = 0
+        self._fire_callbacks(pending)
 
     def record_failure(self, error: Optional[Exception] = None) -> None:
         """Record failed execution.
@@ -241,6 +245,7 @@ class CircuitBreaker:
         Args:
             error: Optional exception that caused failure
         """
+        pending = None
         with self._lock:
             self.metrics.total_calls += 1
             self.metrics.failed_calls += 1
@@ -252,55 +257,73 @@ class CircuitBreaker:
             # Check if we should open circuit
             if self._state == CircuitBreakerState.CLOSED:
                 if self._failure_count >= self.failure_threshold:
-                    self._transition_to(CircuitBreakerState.OPEN)
+                    pending = self._transition_to(CircuitBreakerState.OPEN)
                     self._opened_at = datetime.now(UTC)
                     self._failure_count = 0
 
             elif self._state == CircuitBreakerState.HALF_OPEN:
                 # Any failure in half-open state reopens circuit
-                self._transition_to(CircuitBreakerState.OPEN)
+                pending = self._transition_to(CircuitBreakerState.OPEN)
                 self._opened_at = datetime.now(UTC)
                 self._failure_count = 0
                 self._success_count = 0
+        self._fire_callbacks(pending)
 
     def reset(self) -> None:
         """Manually reset circuit breaker to CLOSED state."""
         with self._lock:
-            self._transition_to(CircuitBreakerState.CLOSED)
+            pending = self._transition_to(CircuitBreakerState.CLOSED)
             self._failure_count = 0
             self._success_count = 0
             self._opened_at = None
+        self._fire_callbacks(pending)
 
     def force_open(self) -> None:
         """Manually force circuit breaker to OPEN state."""
         with self._lock:
-            self._transition_to(CircuitBreakerState.OPEN)
+            pending = self._transition_to(CircuitBreakerState.OPEN)
             self._opened_at = datetime.now(UTC)
+        self._fire_callbacks(pending)
 
-    def _check_state_transition(self) -> None:
-        """Check if state should transition (OPEN -> HALF_OPEN)."""
+    def _check_state_transition(self):
+        """Check if state should transition (OPEN -> HALF_OPEN).
+
+        Must be called while holding self._lock.
+        Returns callback info tuple or None.
+        """
         if self._state == CircuitBreakerState.OPEN:
             if self._opened_at:
                 time_since_open = (datetime.now(UTC) - self._opened_at).total_seconds()
                 if time_since_open >= self.timeout_seconds:
-                    self._transition_to(CircuitBreakerState.HALF_OPEN)
+                    result = self._transition_to(CircuitBreakerState.HALF_OPEN)
                     self._success_count = 0
+                    return result
+        return None
 
-    def _transition_to(self, new_state: CircuitBreakerState) -> None:
-        """Transition to new state and trigger callbacks."""
+    def _transition_to(self, new_state: CircuitBreakerState):
+        """Transition to new state. Must be called while holding self._lock.
+
+        Returns tuple of (old_state, new_state, callbacks) for deferred
+        execution outside the lock, or None if no transition occurred.
+        """
         if self._state != new_state:
             old_state = self._state
             self._state = new_state
             self.metrics.state_changes += 1
             self.metrics.last_state_change_time = datetime.now(UTC)
+            return (old_state, new_state, self._on_state_change_callbacks.copy())
+        return None
 
-            # Trigger callbacks (outside lock to avoid deadlocks)
-            callbacks = self._on_state_change_callbacks.copy()
+    @staticmethod
+    def _fire_callbacks(transition_info) -> None:
+        """Execute state change callbacks outside the lock.
 
-        else:
-            return  # No change
-
-        # Call callbacks outside lock
+        Args:
+            transition_info: Tuple from _transition_to, or None.
+        """
+        if transition_info is None:
+            return
+        old_state, new_state, callbacks = transition_info
         for callback in callbacks:
             try:
                 callback(old_state, new_state)

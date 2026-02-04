@@ -98,6 +98,14 @@ class PolicyRegistry:
 
             self._policy_mappings[policy.name] = action_types_set
 
+    def list_policies(self) -> List[str]:
+        """Get names of all registered policies.
+
+        Returns:
+            Sorted list of policy names
+        """
+        return sorted(self._policy_mappings.keys())
+
     def unregister_policy(self, policy_name: str) -> bool:
         """Remove policy by name.
 

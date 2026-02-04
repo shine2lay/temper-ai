@@ -125,6 +125,13 @@ class StrategyRegistry:
         except ImportError:
             pass  # Debate not yet implemented
 
+        try:
+            from src.strategies.dialogue import DialogueOrchestrator
+            self._strategies["dialogue"] = DialogueOrchestrator
+            self._default_strategies.add("dialogue")
+        except ImportError:
+            pass  # Dialogue orchestrator not yet implemented
+
         # Register default resolvers
         try:
             from src.strategies.conflict_resolution import (
@@ -238,7 +245,10 @@ class StrategyRegistry:
         """
         metadata_list = []
 
-        for name, strategy_class in self._strategies.items():
+        # ST-02: Take snapshot under lock to prevent RuntimeError on dict mutation
+        with self._lock:
+            items = list(self._strategies.items())
+        for name, strategy_class in items:
             # Instantiate to get metadata (safe for stateless strategies)
             try:
                 instance = strategy_class()
@@ -346,7 +356,10 @@ class StrategyRegistry:
         """
         metadata_list = []
 
-        for name, resolver_class in self._resolvers.items():
+        # ST-02: Take snapshot under lock to prevent RuntimeError on dict mutation
+        with self._lock:
+            items = list(self._resolvers.items())
+        for name, resolver_class in items:
             try:
                 instance = resolver_class()
                 capabilities = instance.get_capabilities()

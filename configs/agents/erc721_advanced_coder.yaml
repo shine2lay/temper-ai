@@ -1,0 +1,112 @@
+# ERC721 Advanced Coder Agent Configuration
+# Purpose: Writes an advanced ERC721 project - LLM must generate the code itself
+
+agent:
+  name: erc721_advanced_coder
+  description: "Writes advanced ERC721 project files from requirements (LLM generates code)"
+  version: "1.0"
+
+  prompt:
+    inline: |
+      You are an expert Solidity developer. Write ALL files for an advanced ERC721 NFT project.
+
+      Workspace path: {{ workspace_path }}
+      Contract name: {{ contract_name | default("AdvancedNFT") }}
+      Token name: {{ token_name | default("AdvancedNFT") }}
+      Token symbol: {{ token_symbol | default("ANFT") }}
+
+      You have access to FileWriter and Bash tools.
+
+      REQUIREMENTS - The contract MUST implement ALL of these:
+      1. Inherit from ERC721, ERC721Enumerable, ERC721URIStorage, ERC721Pausable, Ownable
+      2. MAX_SUPPLY constant = 1000
+      3. MINT_PRICE constant = 0.01 ether
+      4. Auto-incrementing token IDs starting from 1
+      5. Public payable mint(address to, string memory uri) - requires MINT_PRICE payment
+      6. Owner-only ownerMint(address to, string memory uri) - free mint
+      7. Owner-only pause() and unpause()
+      8. Owner-only withdraw() to send contract ETH balance to owner
+      9. Proper override resolution for _update, _increaseBalance, tokenURI, supportsInterface
+
+      CRITICAL OpenZeppelin v5 requirements:
+      - Ownable constructor takes (msg.sender) as argument
+      - _update override must include ERC721, ERC721Enumerable, ERC721Pausable
+      - _increaseBalance override must include ERC721, ERC721Enumerable
+      - tokenURI override must include ERC721, ERC721URIStorage
+      - supportsInterface override must include ERC721, ERC721Enumerable, ERC721URIStorage
+
+      TEST REQUIREMENTS - Write 12 tests covering:
+      1. Correct name and symbol after deployment
+      2. Deployer is set as owner
+      3. Total supply starts at zero
+      4. Paid mint works with correct payment and sets tokenURI
+      5. Mint rejects insufficient payment
+      6. Owner can mint for free with ownerMint
+      7. Token IDs increment and totalSupply updates
+      8. Owner can pause and unpause
+      9. Transfers are rejected when paused (revertedWithCustomError "EnforcedPause")
+      10. Owner can withdraw ETH after paid mints
+      11. Non-owner cannot withdraw (revertedWithCustomError "OwnableUnauthorizedAccount")
+      12. Token transfer works between accounts
+
+      Use ethers.js v6 syntax:
+      - ethers.parseEther("0.01") for values
+      - await contract.waitForDeployment()
+      - await contract.getAddress()
+
+      Write these files using FileWriter tool calls:
+      1. {{ workspace_path }}/package.json
+      2. {{ workspace_path }}/hardhat.config.js
+      3. {{ workspace_path }}/contracts/{{ contract_name | default('AdvancedNFT') }}.sol
+      4. {{ workspace_path }}/test/{{ contract_name | default('AdvancedNFT') }}.test.js
+      5. {{ workspace_path }}/scripts/deploy.js
+
+      Then run npm install:
+      <tool_call>
+      {"name": "Bash", "parameters": {"command": "npm install", "working_directory": "{{ workspace_path }}", "timeout": 300}}
+      </tool_call>
+
+      Write the COMPLETE code for each file. Do NOT use placeholders or TODOs.
+      After all steps, provide a summary in <answer> tags.
+
+  inference:
+    provider: ollama
+    model: "{{ llm_model | default('llama3:8b') }}"
+    base_url: http://localhost:11434
+    temperature: 0.3
+    max_tokens: 32768
+    top_p: 0.9
+    timeout_seconds: 1800
+    max_retries: 1
+    retry_delay_seconds: 2
+
+  tools:
+    - FileWriter
+    - name: Bash
+      config:
+        shell_mode: true
+
+  safety:
+    mode: execute
+    require_approval_for_tools: []
+    max_tool_calls_per_execution: 20
+    max_execution_time_seconds: 1800
+    risk_level: medium
+
+  memory:
+    enabled: false
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3
+
+  metadata:
+    tags:
+      - erc721
+      - advanced
+      - coder
+      - solidity
+    owner: erc721-workflow
+    created: "2026-02-02"

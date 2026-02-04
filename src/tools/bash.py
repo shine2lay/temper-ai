@@ -60,9 +60,15 @@ class Bash(BaseTool):
     - Injection prevention: shell metacharacters are rejected
     - No shell=True: commands are split and executed directly
 
+    Shell mode (shell_mode=True):
+    - Allows shell metacharacters (>, ;, |, etc.) for file operations
+    - Uses shell=True so redirections and pipes work
+    - Still enforces workspace sandbox — CWD must be within workspace_root
+    - Intended for LLM agents that need to write files via shell commands
+
     Safety:
     - modifies_state=True enables safety system snapshots
-    - Commands run with shell=False to prevent injection
+    - Commands run with shell=False by default to prevent injection
     - Working directory is validated before execution
     """
 
@@ -76,7 +82,14 @@ class Bash(BaseTool):
                 - allowed_commands: Set of allowed command names (overrides default)
                 - workspace_root: Base directory for sandbox (default: project workspace/)
                 - default_timeout: Default timeout in seconds
+                - shell_mode: If True, allow shell metacharacters and use shell=True.
+                    Still enforces workspace sandbox. (default: False)
         """
+        # Pre-initialize fields that get_metadata() needs before super().__init__
+        # (BaseTool.__init__ calls get_metadata() which references self.shell_mode)
+        cfg = config or {}
+        self.shell_mode = bool(cfg.get("shell_mode", False))
+
         super().__init__(config)
 
         # Configure allowlist
@@ -102,13 +115,23 @@ class Bash(BaseTool):
 
     def get_metadata(self) -> ToolMetadata:
         """Return Bash tool metadata."""
-        return ToolMetadata(
-            name="Bash",
-            description=(
+        if self.shell_mode:
+            desc = (
+                "Executes shell commands in a sandboxed workspace directory. "
+                "Shell mode enabled: redirections (>), pipes (|), and multi-line "
+                "commands are allowed. Working directory must be within workspace/. "
+                "You can use cat, echo, node, npm, npx, or any command to create "
+                "and modify files within the workspace."
+            )
+        else:
+            desc = (
                 "Executes shell commands in a sandboxed workspace directory. "
                 "Only allowed commands (npm, npx, node, hardhat, ls, cat, find, "
                 "mkdir, pwd) can be run. Working directory must be within workspace/."
-            ),
+            )
+        return ToolMetadata(
+            name="Bash",
+            description=desc,
             version="1.0",
             category="system",
             requires_network=True,  # npm install needs network
@@ -118,16 +141,25 @@ class Bash(BaseTool):
 
     def get_parameters_schema(self) -> Dict[str, Any]:
         """Return JSON schema for Bash parameters."""
+        if self.shell_mode:
+            cmd_desc = (
+                "Shell command to execute. Shell mode is enabled: you can use "
+                "redirections (>), pipes (|), semicolons (;), and multi-line "
+                "commands. Use 'cat > file <<EOF' or 'echo content > file' to "
+                "write files. All operations are sandboxed to the workspace."
+            )
+        else:
+            cmd_desc = (
+                "Shell command to execute. Must start with an allowed "
+                "command (npm, npx, node, hardhat, ls, cat, find, mkdir, pwd). "
+                "No shell metacharacters (;|&$`><) allowed."
+            )
         return {
             "type": "object",
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": (
-                        "Shell command to execute. Must start with an allowed "
-                        "command (npm, npx, node, hardhat, ls, cat, find, mkdir, pwd). "
-                        "No shell metacharacters (;|&$`><) allowed."
-                    ),
+                    "description": cmd_desc,
                 },
                 "working_directory": {
                     "type": "string",
@@ -176,50 +208,83 @@ class Bash(BaseTool):
                 error="command must be a non-empty string",
             )
 
-        # Check for shell metacharacters (injection prevention)
-        for char in DANGEROUS_CHARS:
-            if char in command:
+        # --- Shell mode vs strict mode ---
+        if self.shell_mode:
+            # Shell mode: allow metacharacters, use shell=True later.
+            # SECURITY (TO-01): Even in shell mode, validate the base command
+            # against the allowlist. Shell mode only relaxes metacharacter
+            # restrictions, not the command allowlist.
+            try:
+                import shlex as _shlex
+                shell_parts = _shlex.split(command)
+                if shell_parts:
+                    cmd_name = shell_parts[0]
+                    if '/' in cmd_name:
+                        return ToolResult(
+                            success=False,
+                            error=(
+                                f"Command must be a bare name, not a path: '{cmd_name}'. "
+                                f"Allowed commands: {sorted(self.allowed_commands)}"
+                            ),
+                        )
+                    if cmd_name not in self.allowed_commands:
+                        return ToolResult(
+                            success=False,
+                            error=(
+                                f"Command '{cmd_name}' is not in the allowed list. "
+                                f"Allowed commands: {sorted(self.allowed_commands)}"
+                            ),
+                        )
+            except ValueError:
+                pass  # Unparseable - will be caught by shell execution
+            parts = None  # Signal to use shell=True with the raw command string
+        else:
+            # Strict mode: block metacharacters and enforce allowlist
+
+            # Check for shell metacharacters (injection prevention)
+            for char in DANGEROUS_CHARS:
+                if char in command:
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            f"Command contains forbidden character '{repr(char)}'. "
+                            "Shell metacharacters are not allowed for security."
+                        ),
+                    )
+
+            # Parse command into parts
+            try:
+                parts = shlex.split(command)
+            except ValueError as e:
+                return ToolResult(
+                    success=False,
+                    error=f"Invalid command syntax: {e}",
+                )
+
+            if not parts:
+                return ToolResult(
+                    success=False,
+                    error="Command is empty after parsing",
+                )
+
+            # Check allowlist - require bare command names (no paths)
+            cmd_name = parts[0]
+            if "/" in cmd_name or "\\" in cmd_name:
                 return ToolResult(
                     success=False,
                     error=(
-                        f"Command contains forbidden character '{repr(char)}'. "
-                        "Shell metacharacters are not allowed for security."
+                        f"Command must be a bare name, not a path: '{cmd_name}'. "
+                        f"Allowed commands: {sorted(self.allowed_commands)}"
                     ),
                 )
-
-        # Parse command into parts
-        try:
-            parts = shlex.split(command)
-        except ValueError as e:
-            return ToolResult(
-                success=False,
-                error=f"Invalid command syntax: {e}",
-            )
-
-        if not parts:
-            return ToolResult(
-                success=False,
-                error="Command is empty after parsing",
-            )
-
-        # Check allowlist - require bare command names (no paths)
-        cmd_name = parts[0]
-        if "/" in cmd_name or "\\" in cmd_name:
-            return ToolResult(
-                success=False,
-                error=(
-                    f"Command must be a bare name, not a path: '{cmd_name}'. "
-                    f"Allowed commands: {sorted(self.allowed_commands)}"
-                ),
-            )
-        if cmd_name not in self.allowed_commands:
-            return ToolResult(
-                success=False,
-                error=(
-                    f"Command '{cmd_name}' is not in the allowed list. "
-                    f"Allowed commands: {sorted(self.allowed_commands)}"
-                ),
-            )
+            if cmd_name not in self.allowed_commands:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        f"Command '{cmd_name}' is not in the allowed list. "
+                        f"Allowed commands: {sorted(self.allowed_commands)}"
+                    ),
+                )
 
         # --- Validate timeout ---
         if not isinstance(timeout, (int, float)):
@@ -256,21 +321,22 @@ class Bash(BaseTool):
                 ),
             )
 
-        # Check command arguments for path traversal
-        for arg in parts[1:]:
-            if arg.startswith("-"):
-                continue  # Skip flags
-            arg_path = (resolved_cwd / arg).resolve() if not Path(arg).is_absolute() else Path(arg).resolve()
-            try:
-                arg_path.relative_to(resolved_workspace)
-            except ValueError:
-                return ToolResult(
-                    success=False,
-                    error=(
-                        f"Path argument '{arg}' resolves outside the sandbox. "
-                        f"All paths must stay within '{self.workspace_root}'."
-                    ),
-                )
+        # Check command arguments for path traversal (strict mode only)
+        if parts is not None:
+            for arg in parts[1:]:
+                if arg.startswith("-"):
+                    continue  # Skip flags
+                arg_path = (resolved_cwd / arg).resolve() if not Path(arg).is_absolute() else Path(arg).resolve()
+                try:
+                    arg_path.relative_to(resolved_workspace)
+                except ValueError:
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            f"Path argument '{arg}' resolves outside the sandbox. "
+                            f"All paths must stay within '{self.workspace_root}'."
+                        ),
+                    )
 
         # Create working directory if it doesn't exist
         if not resolved_cwd.exists():
@@ -284,13 +350,15 @@ class Bash(BaseTool):
 
         # --- Execute command ---
         try:
+            use_shell = self.shell_mode
+            cmd_arg = command if use_shell else parts
             result = subprocess.run(
-                parts,
+                cmd_arg,
                 cwd=str(resolved_cwd),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                shell=False,  # Never use shell=True
+                shell=use_shell,
                 env=self._get_safe_env(),
             )
 
@@ -333,16 +401,18 @@ class Bash(BaseTool):
             )
 
         except FileNotFoundError:
+            cmd_display = command.split()[0] if use_shell else parts[0]
             return ToolResult(
                 success=False,
-                error=f"Command not found: {parts[0]}",
+                error=f"Command not found: {cmd_display}",
                 metadata={"command": command},
             )
 
         except PermissionError:
+            cmd_display = command.split()[0] if use_shell else parts[0]
             return ToolResult(
                 success=False,
-                error=f"Permission denied executing: {parts[0]}",
+                error=f"Permission denied executing: {cmd_display}",
                 metadata={"command": command},
             )
 

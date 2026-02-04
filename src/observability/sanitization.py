@@ -18,10 +18,13 @@ Example:
 """
 import re
 import hashlib
+import logging
 import hmac
 import os
 from typing import Optional, Dict, Any, List, Tuple
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -116,7 +119,7 @@ class DataSanitizer:
         "openai_key": r'sk-proj-[a-zA-Z0-9]{20,}',
         "anthropic_key": r'sk-ant-api\d+-[a-zA-Z0-9_-]{20,}',
         "aws_access_key": r'AKIA[0-9A-Z]{16}',
-        "aws_secret_key": r'[a-zA-Z0-9+/]{40}',
+        "aws_secret_key": r'(?:aws_secret_access_key|SecretAccessKey|AWS_SECRET)\s*[=:]\s*["\']?([a-zA-Z0-9+/]{40})["\']?',
         "github_token": r'gh[pousr]_[0-9a-zA-Z]{36}',
         "google_api_key": r'AIza[0-9A-Za-z_-]{35}',
         "slack_token": r'xox[baprs]-[0-9a-zA-Z]{10,}',
@@ -145,6 +148,14 @@ class DataSanitizer:
             name: re.compile(pattern, re.IGNORECASE)
             for name, pattern in self.SECRET_PATTERNS.items()
         }
+
+        # Pre-compile allowlist patterns and validate them (OB-02)
+        self._compiled_allowlist: list = []
+        for pattern in self.config.allowlist_patterns:
+            try:
+                self._compiled_allowlist.append(re.compile(pattern))
+            except re.error as e:
+                logger.warning(f"Invalid allowlist regex pattern '{pattern}': {e}")
 
         # SECURITY: Use HMAC key for content hashing to prevent rainbow table attacks
         # Generate or load from environment variable
@@ -339,15 +350,22 @@ class DataSanitizer:
         """
         Check if text matches allowlist patterns.
 
+        Uses pre-compiled patterns from __init__ to avoid ReDoS from
+        user-supplied patterns being compiled and matched on every call (OB-02).
+
         Args:
             text: Text to check
 
         Returns:
             True if text is allowlisted
         """
-        for pattern in self.config.allowlist_patterns:
-            if re.search(pattern, text):
-                return True
+        for compiled in self._compiled_allowlist:
+            try:
+                if compiled.search(text):
+                    return True
+            except (RecursionError, re.error):
+                # Pattern caused excessive backtracking - skip it
+                continue
         return False
 
     def _truncate_text(self, text: str, max_length: int) -> str:

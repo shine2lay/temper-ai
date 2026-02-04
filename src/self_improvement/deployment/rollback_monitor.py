@@ -13,6 +13,7 @@ from src.self_improvement.data_models import (
     AgentPerformanceProfile,
     ConfigDeployment,
 )
+from src.self_improvement.performance_analyzer import InsufficientDataError
 
 logger = logging.getLogger(__name__)
 
@@ -180,11 +181,17 @@ class RollbackMonitor:
         window_end = deployment.deployed_at
         window_start = window_end - timedelta(hours=24)
 
-        return self.performance_analyzer.analyze_agent_performance(
-            agent_name=agent_name,
-            window_start=window_start,
-            window_end=window_end,
-        )
+        # SI-05: Handle InsufficientDataError gracefully instead of letting
+        # it propagate as an unhandled exception.
+        try:
+            return self.performance_analyzer.analyze_agent_performance(
+                agent_name=agent_name,
+                window_start=window_start,
+                window_end=window_end,
+            )
+        except InsufficientDataError:
+            logger.info(f"Insufficient baseline data for {agent_name}")
+            return None
 
     def _get_current_performance(
         self,
@@ -199,11 +206,15 @@ class RollbackMonitor:
         now = datetime.now(timezone.utc)
         window_start = now - timedelta(hours=window_hours)
 
-        return self.performance_analyzer.analyze_agent_performance(
-            agent_name=agent_name,
-            window_start=window_start,
-            window_end=now,
-        )
+        try:
+            return self.performance_analyzer.analyze_agent_performance(
+                agent_name=agent_name,
+                window_start=window_start,
+                window_end=now,
+            )
+        except InsufficientDataError:
+            logger.info(f"Insufficient current data for {agent_name}")
+            return None
 
     def _detect_regression(
         self,

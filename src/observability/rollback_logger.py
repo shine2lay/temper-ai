@@ -18,7 +18,7 @@ from typing import Optional
 from datetime import datetime, UTC
 from uuid import uuid4
 
-from src.observability.database import DatabaseManager
+from src.observability.database import DatabaseManager, get_database
 from src.observability.models import RollbackSnapshotDB, RollbackEvent
 from src.safety.rollback import RollbackSnapshot as SnapshotData, RollbackResult
 from src.utils.logging import get_logger
@@ -41,7 +41,9 @@ def log_rollback_snapshot(
         db_manager: DatabaseManager instance (creates if None)
     """
     if db_manager is None:
-        db_manager = DatabaseManager()
+        # OB-05: Use the initialized singleton instead of creating an
+        # uninitialized DatabaseManager that may lack table setup.
+        db_manager = get_database()
 
     try:
         snapshot_db = RollbackSnapshotDB(
@@ -58,7 +60,8 @@ def log_rollback_snapshot(
 
         with db_manager.session() as session:
             session.add(snapshot_db)
-            session.commit()
+            # OB-04: Let context manager handle commit; explicit commit here
+            # causes double-commit since session().__exit__ also commits.
 
         logger.debug(f"Logged rollback snapshot {snapshot.id} to database")
     except Exception as e:
@@ -82,7 +85,9 @@ def log_rollback_event(
         db_manager: DatabaseManager instance (creates if None)
     """
     if db_manager is None:
-        db_manager = DatabaseManager()
+        # OB-05: Use the initialized singleton instead of creating an
+        # uninitialized DatabaseManager that may lack table setup.
+        db_manager = get_database()
 
     try:
         event = RollbackEvent(
@@ -129,7 +134,9 @@ def get_rollback_events(
         List of RollbackEvent records
     """
     if db_manager is None:
-        db_manager = DatabaseManager()
+        # OB-05: Use the initialized singleton instead of creating an
+        # uninitialized DatabaseManager that may lack table setup.
+        db_manager = get_database()
 
     try:
         with db_manager.session() as session:
@@ -166,7 +173,9 @@ def get_rollback_snapshots(
         List of RollbackSnapshotDB records
     """
     if db_manager is None:
-        db_manager = DatabaseManager()
+        # OB-05: Use the initialized singleton instead of creating an
+        # uninitialized DatabaseManager that may lack table setup.
+        db_manager = get_database()
 
     try:
         with db_manager.session() as session:

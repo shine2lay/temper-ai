@@ -6,6 +6,7 @@ See docs/database/MIGRATION_SYSTEM.md for details.
 """
 from typing import Optional
 import logging
+import os
 import re
 import warnings
 from sqlmodel import SQLModel
@@ -256,6 +257,15 @@ def apply_migration(db_manager: DatabaseManager, migration_sql: str, version: st
         - No cryptographic signature verification
         - Migrations should only come from trusted version control
     """
+    # OB-10: Require explicit opt-in via environment variable.
+    # This prevents accidental use of the deprecated, insecure function.
+    if not os.environ.get("ALLOW_RAW_SQL_MIGRATION"):
+        raise RuntimeError(
+            "apply_migration() is deprecated and disabled by default. "
+            "Set ALLOW_RAW_SQL_MIGRATION=1 to enable (NOT recommended for production). "
+            "Migrate to Alembic instead: docs/database/MIGRATION_SYSTEM.md"
+        )
+
     # Emit deprecation warning
     warnings.warn(
         "apply_migration() is deprecated due to security vulnerabilities. "

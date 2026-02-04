@@ -17,8 +17,11 @@ Architecture:
 
 Supports M2 (sequential) and M3 (parallel, adaptive) execution modes.
 """
+import logging
 from typing import Dict, Any, Optional, Tuple, List
 from langgraph.graph import StateGraph
+
+logger = logging.getLogger(__name__)
 
 from src.compiler.config_loader import ConfigLoader
 from src.compiler.state_manager import StateManager
@@ -31,6 +34,8 @@ from src.compiler.executors import (
     AdaptiveStageExecutor
 )
 from src.tools.registry import ToolRegistry
+from src.tools.executor import ToolExecutor
+from src.safety.factory import create_safety_stack
 
 # Re-export WorkflowExecutor for backward compatibility
 __all__ = ['LangGraphCompiler', 'WorkflowExecutor']
@@ -66,7 +71,10 @@ class LangGraphCompiler:
     def __init__(
         self,
         tool_registry: Optional[ToolRegistry] = None,
-        config_loader: Optional[ConfigLoader] = None
+        config_loader: Optional[ConfigLoader] = None,
+        tool_executor: Optional[ToolExecutor] = None,
+        safety_config_path: Optional[str] = None,
+        safety_environment: Optional[str] = None
     ):
         """Initialize compiler with infrastructure components.
 
@@ -75,14 +83,33 @@ class LangGraphCompiler:
                          (default: creates new ToolRegistry)
             config_loader: Config loader for stage/agent configs
                          (default: creates new ConfigLoader)
+            tool_executor: Tool executor with safety stack
+                         (default: creates via create_safety_stack())
+            safety_config_path: Path to action_policies.yaml
+                              (default: config/safety/action_policies.yaml)
+            safety_environment: Safety environment (dev/staging/production)
+                              (default: from SAFETY_ENV or "development")
 
         Note:
             All other components (state_manager, executors, node_builder,
             stage_compiler) are created automatically with sensible defaults.
+            Safety stack is initialized automatically with ActionPolicyEngine,
+            ApprovalWorkflow, RollbackManager, and ToolExecutor.
         """
         # Infrastructure components (can be injected)
         self.tool_registry = tool_registry or ToolRegistry()
         self.config_loader = config_loader or ConfigLoader()
+
+        # Safety stack initialization
+        # If tool_executor not provided, create it with full safety stack
+        if tool_executor is None:
+            self.tool_executor = create_safety_stack(
+                self.tool_registry,
+                config_path=safety_config_path,
+                environment=safety_environment
+            )
+        else:
+            self.tool_executor = tool_executor
 
         # Build component hierarchy
         self._initialize_components()
@@ -108,11 +135,12 @@ class LangGraphCompiler:
             'adaptive': AdaptiveStageExecutor(),
         }
 
-        # Node builder (depends on config_loader, tool_registry, executors)
+        # Node builder (depends on config_loader, tool_registry, executors, tool_executor)
         self.node_builder = NodeBuilder(
             config_loader=self.config_loader,
             tool_registry=self.tool_registry,
-            executors=self.executors
+            executors=self.executors,
+            tool_executor=self.tool_executor
         )
 
         # Stage compiler (depends on state_manager, node_builder)
@@ -153,9 +181,12 @@ class LangGraphCompiler:
         workflow = self._parse_workflow(workflow_config)
         stages = workflow.get("stages", [])
 
-        # Step 2: Validate
+        # Step 2: Validate workflow structure
         if not stages:
             raise ValueError("Workflow must have at least one stage")
+
+        # Step 3: Validate all stage and agent configs (fail fast)
+        self._validate_all_configs(stages, workflow_config)
 
         # Step 3: Extract stage names (delegate to NodeBuilder)
         stage_names = self._extract_stage_names(stages)
@@ -277,6 +308,82 @@ class LangGraphCompiler:
             Workflow section dict
         """
         return workflow_config.get("workflow", workflow_config)  # type: ignore[no-any-return]
+
+    def _validate_all_configs(self, stages: list, workflow_config: Dict[str, Any]) -> None:  # type: ignore[type-arg]
+        """Validate all stage and agent configs against Pydantic schemas.
+
+        Validates configs at compile time to catch errors early before execution.
+        Collects all validation errors and reports them together.
+
+        Args:
+            stages: List of stage references from workflow
+            workflow_config: Full workflow configuration
+
+        Raises:
+            ValueError: If any configs are invalid, with details of all errors
+
+        Example:
+            >>> self._validate_all_configs(["research", "analysis"], workflow_config)
+        """
+        from src.compiler.schemas import StageConfig, AgentConfig
+        from pydantic import ValidationError
+
+        errors = []
+
+        for stage_ref in stages:
+            stage_name = self.node_builder.extract_stage_name(stage_ref)
+
+            # Load stage config
+            try:
+                stage_config = self.node_builder._load_stage_config(stage_name, workflow_config)
+            except Exception as e:
+                errors.append(f"Stage '{stage_name}': Failed to load config - {e}")
+                continue
+
+            # Validate stage config against Pydantic schema if it's a dict
+            if isinstance(stage_config, dict):
+                try:
+                    # Try to validate as StageConfig
+                    StageConfig(**stage_config)
+                except ValidationError as e:
+                    errors.append(f"Stage '{stage_name}': Invalid config - {e}")
+                except Exception as e:
+                    # Some configs might not fully match schema, log but don't fail
+                    logger.debug(f"Stage '{stage_name}': Config validation skipped - {e}")
+
+            # Get agents from stage config
+            if hasattr(stage_config, 'stage'):
+                agents = stage_config.stage.agents
+            else:
+                from src.compiler.utils import get_nested_value
+                agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
+
+            # Validate each agent config
+            for agent_ref in agents:
+                agent_name = self.node_builder.extract_agent_name(agent_ref)
+
+                try:
+                    agent_config = self.config_loader.load_agent_config(agent_name)
+                except Exception as e:
+                    errors.append(f"Agent '{agent_name}' in stage '{stage_name}': Failed to load config - {e}")
+                    continue
+
+                # Validate agent config against Pydantic schema if it's a dict
+                if isinstance(agent_config, dict):
+                    try:
+                        AgentConfig(**agent_config)
+                    except ValidationError as e:
+                        errors.append(f"Agent '{agent_name}' in stage '{stage_name}': Invalid config - {e}")
+                    except Exception as e:
+                        # Some configs might not fully match schema, log but don't fail
+                        logger.debug(f"Agent '{agent_name}': Config validation skipped - {e}")
+
+        # If any errors, fail fast with all details
+        if errors:
+            error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {err}" for err in errors)
+            raise ValueError(error_msg)
+
+        logger.info(f"Configuration validation passed for {len(stages)} stages")
 
     def _extract_stage_names(self, stages: list) -> list[str]:  # type: ignore[type-arg]
         """Extract stage names from stage references.

@@ -7,6 +7,7 @@ Main API for creating, managing, and analyzing experiments.
 import os
 import re
 import secrets
+import threading
 import time
 import unicodedata
 import uuid
@@ -160,14 +161,16 @@ class ExperimentService(Service):
         self._analyzer = StatisticalAnalyzer()
         self._max_cache_size = max_cache_size
         self._experiment_cache: OrderedDict[str, Experiment] = OrderedDict()
+        self._cache_lock = threading.Lock()  # ST-07: thread safety for cache
         logger.info("ExperimentService initialized")
 
     def _cache_put(self, key: str, value: "Experiment") -> None:
         """Add to cache with LRU eviction when max size exceeded."""
-        self._experiment_cache[key] = value
-        self._experiment_cache.move_to_end(key)
-        while len(self._experiment_cache) > self._max_cache_size:
-            self._experiment_cache.popitem(last=False)
+        with self._cache_lock:
+            self._experiment_cache[key] = value
+            self._experiment_cache.move_to_end(key)
+            while len(self._experiment_cache) > self._max_cache_size:
+                self._experiment_cache.popitem(last=False)
 
     def initialize(self) -> None:
         """Initialize service resources."""
@@ -342,9 +345,10 @@ class ExperimentService(Service):
 
     def get_experiment(self, experiment_id: str) -> Optional[Experiment]:
         """Get experiment by ID."""
-        # Check cache first
-        if experiment_id in self._experiment_cache:
-            return self._experiment_cache[experiment_id]
+        # Check cache first (ST-07: thread-safe access)
+        with self._cache_lock:
+            if experiment_id in self._experiment_cache:
+                return self._experiment_cache[experiment_id]
 
         # Load from database with eager relationship loading
         with get_session() as session:

@@ -186,7 +186,9 @@ class UserStore:
         Returns:
             User if found, None otherwise
         """
-        return self._users.get(user_id)
+        # AU-04: Read under lock to prevent torn reads while writes are in progress.
+        async with self._lock:
+            return self._users.get(user_id)
 
     async def get_user_by_email(self, email: str) -> Optional[User]:
         """Get user by email.

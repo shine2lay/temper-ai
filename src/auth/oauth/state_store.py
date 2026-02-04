@@ -13,6 +13,7 @@ Security Features:
 """
 from typing import Dict, Any, Optional
 from datetime import timedelta, datetime
+import asyncio
 import json
 import logging
 import os
@@ -86,6 +87,7 @@ class InMemoryStateStore(StateStore):
         """
         self._store: Dict[str, Dict[str, Any]] = {}
         self._max_entries = max_entries
+        self._lock = asyncio.Lock()
         logger.warning(
             "Using InMemoryStateStore - NOT suitable for production! "
             "Use RedisStateStore instead."
@@ -98,25 +100,31 @@ class InMemoryStateStore(StateStore):
         ttl_seconds: int = 600
     ) -> None:
         """Store state data with expiration time."""
-        # Auto-cleanup when 80% full to prevent unbounded memory growth
-        if len(self._store) >= int(self._max_entries * 0.8):
-            await self.cleanup_expired()
-            # If still over limit after cleanup, remove oldest 20%
-            if len(self._store) >= self._max_entries:
-                self._evict_oldest()
+        async with self._lock:
+            # Auto-cleanup when 80% full to prevent unbounded memory growth
+            if len(self._store) >= int(self._max_entries * 0.8):
+                await self._cleanup_expired_unlocked()
+                # If still over limit after cleanup, remove oldest 20%
+                if len(self._store) >= self._max_entries:
+                    self._evict_oldest()
 
-        data_with_expiry = {
-            **data,
-            'expires_at': (
-                datetime.utcnow() + timedelta(seconds=ttl_seconds)
-            ).isoformat()
-        }
-        self._store[state] = data_with_expiry
+            data_with_expiry = {
+                **data,
+                'expires_at': (
+                    datetime.utcnow() + timedelta(seconds=ttl_seconds)
+                ).isoformat()
+            }
+            self._store[state] = data_with_expiry
         logger.debug(f"Stored state: {state} (TTL: {ttl_seconds}s)")
 
     async def get_state(self, state: str) -> Optional[Dict[str, Any]]:
-        """Retrieve and delete state data (one-time use)."""
-        data = self._store.get(state)
+        """Retrieve and delete state data (one-time use).
+
+        Uses asyncio.Lock + dict.pop() for atomic get-and-delete to prevent
+        concurrent callbacks from consuming the same state token twice (AU-02).
+        """
+        async with self._lock:
+            data = self._store.pop(state, None)
 
         if data is None:
             return None
@@ -124,11 +132,7 @@ class InMemoryStateStore(StateStore):
         # Check expiration
         expires_at = datetime.fromisoformat(data['expires_at'])
         if datetime.utcnow() > expires_at:
-            del self._store[state]
             return None
-
-        # Delete (one-time use)
-        del self._store[state]
 
         # Remove expires_at before returning
         data_copy = data.copy()
@@ -138,24 +142,23 @@ class InMemoryStateStore(StateStore):
 
     async def delete_state(self, state: str) -> bool:
         """Delete state data."""
-        if state in self._store:
-            del self._store[state]
-            return True
-        return False
+        async with self._lock:
+            if state in self._store:
+                del self._store[state]
+                return True
+            return False
 
-    async def cleanup_expired(self) -> int:
-        """Clean up expired states (manual cleanup for in-memory store).
+    async def _cleanup_expired_unlocked(self) -> int:
+        """Clean up expired states (must be called while holding self._lock).
 
         Returns:
             Number of states cleaned up
         """
         now = datetime.utcnow()
-        expired_keys = []
-
-        for state, data in self._store.items():
-            expires_at = datetime.fromisoformat(data['expires_at'])
-            if now > expires_at:
-                expired_keys.append(state)
+        expired_keys = [
+            state for state, data in self._store.items()
+            if now > datetime.fromisoformat(data['expires_at'])
+        ]
 
         for key in expired_keys:
             del self._store[key]
@@ -164,6 +167,15 @@ class InMemoryStateStore(StateStore):
             logger.info(f"Cleaned up {len(expired_keys)} expired states")
 
         return len(expired_keys)
+
+    async def cleanup_expired(self) -> int:
+        """Clean up expired states (manual cleanup for in-memory store).
+
+        Returns:
+            Number of states cleaned up
+        """
+        async with self._lock:
+            return await self._cleanup_expired_unlocked()
 
     def _evict_oldest(self) -> None:
         """Evict oldest 20% of entries when store exceeds max_entries."""
@@ -311,13 +323,17 @@ class RedisStateStore(StateStore):
 
         key = self._make_key(state)
 
-        # Atomic get-and-delete using pipeline
-        pipeline = self._redis.pipeline()
-        pipeline.get(key)
-        pipeline.delete(key)
-        results = await pipeline.execute()
-
-        value = results[0]
+        # Atomic get-and-delete using Lua script (AU-01)
+        # Pipeline GET+DELETE is NOT atomic - another request could GET between them.
+        # Lua script executes atomically in Redis, preventing state token reuse.
+        lua_script = """
+        local value = redis.call('GET', KEYS[1])
+        if value then
+            redis.call('DEL', KEYS[1])
+        end
+        return value
+        """
+        value = await self._redis.eval(lua_script, 1, key)
 
         if value is None:
             logger.debug(f"State not found or expired: {state}")

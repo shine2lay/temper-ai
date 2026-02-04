@@ -287,18 +287,21 @@ class DebateAndSynthesize(CollaborationStrategy):
         Returns:
             Tuple of (decision, confidence)
         """
-        # Get most common decision
-        decisions = [str(o.decision) for o in final_outputs]
-        vote_counts = Counter(decisions)
+        # ST-03: Get most common decision while preserving the original
+        # decision type. Use str() for grouping but return the actual value.
+        decision_keys = [str(o.decision) for o in final_outputs]
+        vote_counts = Counter(decision_keys)
 
         if not vote_counts:
             # Edge case: no outputs (shouldn't happen with validation)
             return None, 0.0
 
-        decision = vote_counts.most_common(1)[0][0]
+        winning_key = vote_counts.most_common(1)[0][0]
+        # Map back to the original (non-stringified) decision value
+        decision = next(o.decision for o in final_outputs if str(o.decision) == winning_key)
 
         # Calculate confidence components
-        consensus_strength = vote_counts[decision] / len(final_outputs)
+        consensus_strength = vote_counts[winning_key] / len(final_outputs)
 
         if require_unanimous and consensus_strength < 1.0:
             # Penalize non-unanimous results when unanimity required
@@ -308,7 +311,7 @@ class DebateAndSynthesize(CollaborationStrategy):
             convergence_bonus = 0.1 if debate_history.converged else 0.0
 
             # Average confidence of agents supporting this decision
-            supporters = [o for o in final_outputs if str(o.decision) == decision]
+            supporters = [o for o in final_outputs if str(o.decision) == winning_key]
             avg_confidence = sum(o.confidence for o in supporters) / len(supporters)
 
             # Combined confidence (capped at 1.0)

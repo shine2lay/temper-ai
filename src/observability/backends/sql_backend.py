@@ -455,9 +455,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         session = self._get_or_create_session()
         session.add(llm_call)
-        self._commit_and_cleanup(session)
 
-        # Update parent agent metrics
+        # Update parent agent metrics in the same session before commit (OB-01)
         statement = select(AgentExecution).where(AgentExecution.id == agent_id)
         agent = session.exec(statement).first()
         if agent:
@@ -466,7 +465,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
             agent.prompt_tokens = (agent.prompt_tokens or 0) + prompt_tokens
             agent.completion_tokens = (agent.completion_tokens or 0) + completion_tokens
             agent.estimated_cost_usd = (agent.estimated_cost_usd or 0.0) + estimated_cost_usd
-            self._commit_and_cleanup(session)
+
+        self._commit_and_cleanup(session)
 
     # ========== Tool Call Tracking ==========
 
@@ -524,14 +524,14 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         session = self._get_or_create_session()
         session.add(tool_exec)
-        self._commit_and_cleanup(session)
 
-        # Update parent agent metrics
+        # Update parent agent metrics in the same session before commit (OB-01)
         statement = select(AgentExecution).where(AgentExecution.id == agent_id)
         agent = session.exec(statement).first()
         if agent:
             agent.num_tool_calls = (agent.num_tool_calls or 0) + 1
-            self._commit_and_cleanup(session)
+
+        self._commit_and_cleanup(session)
 
     # ========== Safety Tracking ==========
 

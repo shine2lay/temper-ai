@@ -91,9 +91,11 @@ class SequentialTester:
         # Expected effect under alternative hypothesis
         expected_effect = self.mde * np.sign(treatment_mean - control_mean) if treatment_mean != control_mean else self.mde
 
-        # Log likelihood ratio
-        # Simplified calculation for normal distributions
-        llr = observed_effect * (n1 * n2) / (n1 + n2) * expected_effect
+        # ST-06: Corrected SPRT log-likelihood ratio for normal distributions.
+        # LLR = (observed_effect * expected_effect - expected_effect^2 / 2) * n_eff
+        # where n_eff = (n1 * n2) / (n1 + n2)
+        n_eff = (n1 * n2) / (n1 + n2)
+        llr = (observed_effect * expected_effect - (expected_effect ** 2) / 2) * n_eff
 
         # Decision based on SPRT boundaries
         if llr >= self.log_likelihood_upper:

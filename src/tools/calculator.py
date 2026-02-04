@@ -252,10 +252,16 @@ class Calculator(BaseTool):
             raise ValueError(f"{name} is a function and must be called with ()")
 
         elif isinstance(node, ast.List):  # List literal [1, 2, 3]
+            # TO-08: Bound list size to prevent DoS via large literals
+            if len(node.elts) > 1000:
+                raise ValueError(f"List size {len(node.elts)} exceeds maximum of 1000")
             # Increment depth for nested lists (prevents DoS via [[[[...]]]]])
             return [self._safe_eval(item, depth + 1) for item in node.elts]
 
         elif isinstance(node, ast.Tuple):  # Tuple literal (1, 2, 3)
+            # TO-08: Bound tuple size to prevent DoS via large literals
+            if len(node.elts) > 1000:
+                raise ValueError(f"Tuple size {len(node.elts)} exceeds maximum of 1000")
             # Increment depth for nested tuples (prevents DoS via ((((...)))) )
             return tuple(self._safe_eval(item, depth + 1) for item in node.elts)
 

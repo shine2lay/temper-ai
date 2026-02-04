@@ -17,6 +17,7 @@ SECURITY NOTES:
 from typing import Optional, Dict, Any, Tuple
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 import secrets
 import logging
 import uuid
@@ -141,8 +142,10 @@ class OAuthRouteHandlers:
         Returns:
             Set-Cookie header value
         """
+        # AU-08: URL-encode value to prevent cookie injection via special chars
+        safe_value = quote(str(value), safe='')
         return (
-            f"{name}={value}; "
+            f"{name}={safe_value}; "
             f"Path={path}; "
             f"HttpOnly; "
             f"Secure; "
@@ -303,9 +306,10 @@ class OAuthRouteHandlers:
 
             # Get user info from provider
             # SECURITY: Tokens used internally, never exposed
-            # Use temporary ID for first-time user info fetch
+            # AU-03: Use "anonymous" to match the user_id from get_authorization_url
+            # (tokens were stored under this ID by exchange_code_for_tokens)
             user_info = await self.oauth_service.get_user_info(
-                user_id="temp_user",
+                user_id="anonymous",
                 provider=provider,
             )
 

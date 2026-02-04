@@ -39,8 +39,8 @@ class ModelPricing(BaseModel):
         source_url: Optional URL to pricing documentation
         notes: Optional notes about pricing
     """
-    input_price: float = Field(gt=0, description="USD per 1M input tokens")
-    output_price: float = Field(gt=0, description="USD per 1M output tokens")
+    input_price: float = Field(ge=0, description="USD per 1M input tokens")
+    output_price: float = Field(ge=0, description="USD per 1M output tokens")
     effective_date: date
     source_url: Optional[str] = Field(
         None,

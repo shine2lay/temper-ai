@@ -189,11 +189,14 @@ class PolicyComposer:
         """
         policy_results[policy.name] = result
 
-        if not result.valid:
+        # SA-09: Collect all violations regardless of validity.
+        # Valid results can still carry informational/low-severity violations
+        # that should not be silently dropped.
+        if result.violations:
             all_violations.extend(result.violations)
-            if self.enable_reporting:
-                for violation in result.violations:
-                    policy.report_violation(violation)
+        if not result.valid and self.enable_reporting:
+            for violation in result.violations:
+                policy.report_violation(violation)
 
     def _handle_policy_error(
         self,

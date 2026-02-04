@@ -598,17 +598,24 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
     def _has_parent_traversal(self, path: str) -> bool:
         """Check if path contains parent directory traversal.
 
+        SA-08: Check for '..' as a path component, not as a substring.
+        This prevents false positives on filenames like 'my..file.txt'.
+
         Args:
             path: File path
 
         Returns:
-            True if path contains ../
+            True if path contains ../ path traversal
         """
-        # Check for ../ patterns
-        if ".." in path:
-            # Be strict: any occurrence of .. is suspicious
+        import pathlib
+        # Check each path component for '..'
+        parts = pathlib.PurePosixPath(path).parts
+        if '..' in parts:
             return True
-
+        # Also check Windows-style paths
+        parts_win = pathlib.PureWindowsPath(path).parts
+        if '..' in parts_win:
+            return True
         return False
 
     def _is_forbidden_file(self, path: str) -> bool:

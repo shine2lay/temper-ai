@@ -108,6 +108,29 @@ class CircuitBreaker:
             self.success_count = 0
             self.last_failure_time: Optional[float] = None
 
+    def is_open(self) -> bool:
+        """
+        Check if circuit breaker is currently OPEN (failing fast).
+
+        Returns:
+            True if circuit is OPEN and will reject calls, False otherwise
+
+        Example:
+            >>> breaker = CircuitBreaker("provider")
+            >>> if breaker.is_open():
+            ...     print("Provider is unhealthy, skipping")
+        """
+        with self.lock:
+            if self.state == CircuitState.OPEN:
+                # Check if timeout has elapsed for half-open transition
+                if self.last_failure_time is not None:
+                    elapsed = time.time() - self.last_failure_time
+                    if elapsed >= self.config.timeout:
+                        # Would transition to HALF_OPEN on next call
+                        return False
+                return True
+            return False
+
     def call(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """
         Execute function through circuit breaker.

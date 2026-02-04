@@ -266,7 +266,7 @@ class RateLimiter:
     Automatically cleans up expired request timestamps to prevent unbounded
     memory growth in long-running applications.
 
-    Note: Not thread-safe. Use separate instances for concurrent access.
+    TO-05: Thread-safe via internal lock for concurrent access from thread pool.
     """
 
     def __init__(self, max_requests: int, time_window: int):
@@ -280,38 +280,45 @@ class RateLimiter:
         self.max_requests = max_requests
         self.time_window = time_window
         self.requests: list[float] = []
+        self._lock = threading.Lock()
 
     def _cleanup_expired_requests(self) -> None:
-        """Remove requests outside the time window to prevent memory leak."""
+        """Remove requests outside the time window to prevent memory leak.
+
+        Note: Must be called with self._lock held.
+        """
         now = time.time()
         self.requests = [req_time for req_time in self.requests
                         if now - req_time < self.time_window]
 
     def can_proceed(self) -> bool:
         """Check if request can proceed without exceeding rate limit."""
-        self._cleanup_expired_requests()
-        return len(self.requests) < self.max_requests
+        with self._lock:
+            self._cleanup_expired_requests()
+            return len(self.requests) < self.max_requests
 
     def record_request(self) -> None:
         """Record a new request."""
-        self._cleanup_expired_requests()
-        self.requests.append(time.time())
+        with self._lock:
+            self._cleanup_expired_requests()
+            self.requests.append(time.time())
 
     def wait_time(self) -> float:
         """Get seconds to wait before next request is allowed."""
-        self._cleanup_expired_requests()
+        with self._lock:
+            self._cleanup_expired_requests()
 
-        if len(self.requests) < self.max_requests:
-            return 0.0
+            if len(self.requests) < self.max_requests:
+                return 0.0
 
-        # Find oldest request
-        if not self.requests:
-            return 0.0
+            # Find oldest request
+            if not self.requests:
+                return 0.0
 
-        oldest = min(self.requests)
-        time_since_oldest = time.time() - oldest
+            oldest = min(self.requests)
+            time_since_oldest = time.time() - oldest
 
-        return max(0.0, self.time_window - time_since_oldest)
+            return max(0.0, self.time_window - time_since_oldest)
 
 
 # Validation constants for web scraper parameters

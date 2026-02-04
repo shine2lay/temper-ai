@@ -5,13 +5,15 @@ Provides decorators and utilities for hooking into agent execution
 and automatically tracking to the observability database.
 """
 import inspect
+import threading
 from functools import wraps
 from typing import Callable, Optional, Dict, Any, cast
 from src.observability.tracker import ExecutionTracker
 
 
-# Global tracker instance
+# Global tracker instance (OB-06: double-check locking for thread safety)
 _global_tracker: Optional[ExecutionTracker] = None
+_tracker_lock = threading.Lock()
 
 
 def get_tracker() -> ExecutionTracker:
@@ -28,7 +30,9 @@ def get_tracker() -> ExecutionTracker:
     """
     global _global_tracker
     if _global_tracker is None:
-        _global_tracker = ExecutionTracker()
+        with _tracker_lock:
+            if _global_tracker is None:
+                _global_tracker = ExecutionTracker()
     return _global_tracker
 
 
@@ -240,7 +244,8 @@ class ExecutionHook:
         ctx = self._active_contexts.pop(workflow_id, None)
         if ctx:
             if error:
-                ctx.__exit__(type(error), error, None)
+                # OB-07: Pass the real traceback so stack traces are preserved.
+                ctx.__exit__(type(error), error, error.__traceback__)
             else:
                 ctx.__exit__(None, None, None)
 

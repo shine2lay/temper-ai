@@ -27,7 +27,8 @@ class NodeBuilder:
         self,
         config_loader: ConfigLoader,
         tool_registry: ToolRegistry,
-        executors: Dict[str, Any]
+        executors: Dict[str, Any],
+        tool_executor: Optional[Any] = None
     ) -> None:
         """Initialize node builder.
 
@@ -35,10 +36,12 @@ class NodeBuilder:
             config_loader: ConfigLoader for loading stage/agent configs
             tool_registry: ToolRegistry for agent tool access
             executors: Dictionary of stage executors (sequential, parallel, adaptive)
+            tool_executor: ToolExecutor with safety stack (optional)
         """
         self.config_loader = config_loader
         self.tool_registry = tool_registry
         self.executors = executors
+        self.tool_executor = tool_executor
 
     def create_stage_node(
         self,
@@ -76,6 +79,10 @@ class NodeBuilder:
             """
             # Convert to dict for executor
             state_dict = state.to_typed_dict()
+
+            # Add tool_executor to state if available (for safety-integrated tool execution)
+            if self.tool_executor is not None:
+                state_dict['tool_executor'] = self.tool_executor
 
             # Load stage config
             stage_config = self._load_stage_config(stage_name, workflow_config)

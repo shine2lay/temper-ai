@@ -32,6 +32,7 @@ Example:
     ...         return {"supports_debate": False}
 """
 
+import json
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
@@ -291,6 +292,30 @@ class CollaborationStrategy(ABC):
             "config_schema": {}
         }
 
+    @property
+    def requires_requery(self) -> bool:
+        """Whether this strategy requires re-invoking agents.
+
+        Multi-round strategies (e.g., dialogue orchestrator) need to re-invoke
+        agents across multiple rounds with accumulated context. One-shot strategies
+        (e.g., consensus, existing debate) operate on pre-collected outputs.
+
+        Returns:
+            True: Multi-round strategies requiring agent re-invocation
+            False: One-shot strategies (default for backward compatibility)
+
+        Default: False
+
+        Example:
+            >>> consensus = ConsensusStrategy()
+            >>> consensus.requires_requery
+            False
+            >>> dialogue = DialogueOrchestrator()
+            >>> dialogue.requires_requery
+            True
+        """
+        return False
+
     def validate_inputs(self, agent_outputs: List[AgentOutput]) -> None:
         """Validate agent outputs before synthesis.
 
@@ -351,10 +376,17 @@ class CollaborationStrategy(ABC):
         # Group outputs by decision (use actual decision values, not strings)
         decision_groups: Dict[Any, List[AgentOutput]] = {}
         for output in agent_outputs:
-            # Use decision directly to avoid false equivalence (e.g., int(1) vs str("1"))
-            if output.decision not in decision_groups:
-                decision_groups[output.decision] = []
-            decision_groups[output.decision].append(output)
+            # ST-05: Decisions may be unhashable types (dict, list). Use the
+            # decision directly when hashable; fall back to its JSON repr for
+            # unhashable types so they can serve as dict keys.
+            key = output.decision
+            try:
+                hash(key)
+            except TypeError:
+                key = json.dumps(key, sort_keys=True, default=str)
+            if key not in decision_groups:
+                decision_groups[key] = []
+            decision_groups[key].append(output)
 
         # If more than one decision group, we have disagreement
         if len(decision_groups) > 1:

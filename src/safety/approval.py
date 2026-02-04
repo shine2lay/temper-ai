@@ -244,7 +244,11 @@ class ApprovalWorkflow:
         return request
 
     def _evict_oldest_completed(self) -> None:
-        """Remove oldest non-pending requests to stay within max_requests limit."""
+        """Remove oldest requests to stay within max_requests limit.
+
+        SA-07: Evicts completed requests first, then oldest pending requests
+        as a fallback to prevent unbounded growth of pending requests.
+        """
         if len(self._requests) <= self._max_requests:
             return
         # Prefer evicting completed/rejected/expired over pending
@@ -257,6 +261,17 @@ class ApprovalWorkflow:
         to_remove = len(self._requests) - self._max_requests
         for rid in completed_ids[:to_remove]:
             del self._requests[rid]
+
+        # SA-07: If still over limit (too many pending), evict oldest pending
+        if len(self._requests) > self._max_requests:
+            pending_ids = [
+                rid for rid, req in self._requests.items()
+                if req.is_pending()
+            ]
+            pending_ids.sort(key=lambda rid: self._requests[rid].created_at)
+            still_to_remove = len(self._requests) - self._max_requests
+            for rid in pending_ids[:still_to_remove]:
+                del self._requests[rid]
 
     def _check_approver_authorized(self, approver: str, request: ApprovalRequest) -> Optional[str]:
         """Validate that the approver is authorized and not self-approving.

@@ -268,12 +268,18 @@ class RateLimiterPolicy(BaseSafetyPolicy):
             # If no violations, record this operation
             if not violations:
                 history.append(now)
-                # Keep only recent history to prevent memory growth
-                max_history_age = max(3600.0, max(
-                    v for k, v in operation_limits.items()
-                    if k.startswith("max_per_")
-                ) if any(k.startswith("max_per_") for k in operation_limits) else 3600.0)
-                self._operation_history[history_key] = self._clean_old_records(history, max_history_age * 2)
+                # SA-04: Use window durations (not count values) for history age
+                _window_durations = {
+                    "max_per_second": 1.0,
+                    "max_per_minute": 60.0,
+                    "max_per_hour": 3600.0,
+                    "max_per_day": 86400.0,
+                }
+                max_window = max(
+                    (_window_durations.get(k, 3600.0) for k in operation_limits if k.startswith("max_per_")),
+                    default=3600.0
+                )
+                self._operation_history[history_key] = self._clean_old_records(history, max_window * 2)
 
         # Determine validity (invalid if any HIGH or CRITICAL violations)
         valid = not any(

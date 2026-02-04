@@ -1,4 +1,5 @@
 """Console visualization for workflow execution using Rich."""
+import logging
 from typing import Optional, Any
 from threading import Thread, Event
 import time
@@ -9,6 +10,9 @@ from rich.panel import Panel
 from rich import box
 from rich.spinner import Spinner
 from datetime import datetime, timezone
+
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowVisualizer:
@@ -427,8 +431,8 @@ class StreamingVisualizer(WorkflowVisualizer):
                         break
 
             except Exception as e:
-                # Log error but continue
-                pass
+                # OB-08: Log error instead of silently swallowing it.
+                logger.debug(f"Error in _update_loop polling: {e}")
 
             # Wait before next poll
             time.sleep(self.poll_interval)

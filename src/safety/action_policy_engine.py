@@ -160,6 +160,10 @@ class ActionPolicyEngine:
         self._cache_hits = 0
         self._cache_misses = 0
 
+        # SA-06: Track policy snapshot for cache invalidation.
+        # When policies change in the registry, cached results may be stale.
+        self._cached_policy_snapshot: Optional[str] = None
+
     async def validate_action(
         self,
         action: Dict[str, Any],
@@ -186,6 +190,9 @@ class ActionPolicyEngine:
             >>> assert result.has_critical_violations()
         """
         start_time = time.time()
+
+        # SA-06: Invalidate cache when the set of registered policies changes.
+        self._invalidate_cache_if_policies_changed()
 
         # Get applicable policies for this action type
         policies = self.registry.get_policies_for_action(context.action_type)
@@ -243,14 +250,16 @@ class ActionPolicyEngine:
                 # Policy execution error - log and treat as violation for safety
                 logger.error(f"Policy {policy.name} execution failed: {e}", exc_info=True)
 
+                # SECURITY (SA-03): Use generic message to prevent info leakage
+                # Full exception details are logged above at ERROR level with exc_info
                 violation = SafetyViolation(
                     policy_name=policy.name,
                     severity=ViolationSeverity.CRITICAL,
-                    message=f"Policy execution error: {str(e)}",
+                    message=f"Policy execution error in {policy.name}",
                     action=str(action),
                     context=self._context_to_dict(context),
                     remediation_hint="Check policy implementation for errors",
-                    metadata={'exception': str(e), 'exception_type': type(e).__name__}
+                    metadata={'exception_type': type(e).__name__}
                 )
                 all_violations.append(violation)
                 policies_executed.append(policy.name)
@@ -406,6 +415,27 @@ class ActionPolicyEngine:
                 del self._cache[key]
 
             logger.debug(f"Cache eviction: removed {num_to_remove} oldest entries")
+
+    def _get_policy_snapshot(self) -> str:
+        """Get a fingerprint of the current set of registered policies."""
+        names = sorted(self.registry.list_policies())
+        return hashlib.sha256(",".join(names).encode()).hexdigest()
+
+    def _invalidate_cache_if_policies_changed(self) -> None:
+        """SA-06: Clear cache when registered policies change."""
+        snapshot = self._get_policy_snapshot()
+        if self._cached_policy_snapshot is None:
+            self._cached_policy_snapshot = snapshot
+        elif snapshot != self._cached_policy_snapshot:
+            logger.debug("Policy registration changed; clearing validation cache")
+            self._cache.clear()
+            self._cached_policy_snapshot = snapshot
+
+    def clear_cache(self) -> None:
+        """Explicitly clear the validation result cache."""
+        self._cache.clear()
+        self._cached_policy_snapshot = None
+        logger.debug("Validation cache cleared")
 
     def _context_to_dict(self, context: PolicyExecutionContext) -> Dict[str, Any]:
         """Convert PolicyExecutionContext to dict for policy validation."""

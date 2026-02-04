@@ -776,11 +776,15 @@ class RateLimiter:
             self.call_history[entity_id].append(now)
 
     def _cleanup_old_entries(self, entity_id: str, now: float) -> None:
-        """Remove entries older than 1 hour."""
+        """Remove entries older than 1 hour and evict empty entity keys."""
         hour_ago = now - 3600
         self.call_history[entity_id] = [
             t for t in self.call_history[entity_id] if t > hour_ago
         ]
+        # AG-10: Evict entity keys that have no remaining entries to prevent
+        # unbounded memory growth from stale entity IDs.
+        if not self.call_history[entity_id]:
+            del self.call_history[entity_id]
 
     def get_stats(self, entity_id: str) -> Dict[str, int]:
         """

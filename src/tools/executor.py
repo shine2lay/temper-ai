@@ -264,7 +264,8 @@ class ToolExecutor:
 
         # Validate parameters
         try:
-            if not tool.validate_params(params):
+            validation = tool.validate_params(params)
+            if not validation.valid:
                 return ToolResult(
                     success=False,
                     result=None,
@@ -610,7 +611,8 @@ class ToolExecutor:
 
         # Validate parameters
         try:
-            if not tool.validate_params(params):
+            validation = tool.validate_params(params)
+            if not validation.valid:
                 return False, f"Invalid parameters for tool '{tool_name}'"
         except Exception as e:
             return False, f"Parameter validation failed: {str(e)}"

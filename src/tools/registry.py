@@ -460,13 +460,16 @@ class ToolRegistry:
         """
         global _DISCOVERED_TOOLS_CACHE
 
-        # Use cached tools if available
-        if use_cache and _DISCOVERED_TOOLS_CACHE is not None:
-            logger.info(f"Using cached discovered tools ({len(_DISCOVERED_TOOLS_CACHE)} tools)")
-            for tool_name, tool_instance in _DISCOVERED_TOOLS_CACHE.items():
-                # Re-register cached tools to ensure proper version management
-                self.register(tool_instance, allow_override=True)
-            return len(_DISCOVERED_TOOLS_CACHE)
+        # TO-07: Read cache under lock
+        if use_cache:
+            with _GLOBAL_LOCK:
+                cached = _DISCOVERED_TOOLS_CACHE
+            if cached is not None:
+                logger.info(f"Using cached discovered tools ({len(cached)} tools)")
+                for tool_name, tool_instance in cached.items():
+                    # Re-register cached tools to ensure proper version management
+                    self.register(tool_instance, allow_override=True)
+                return len(cached)
 
         # Perform discovery
         logger.info(f"Starting tool discovery in package: {tools_package}")
@@ -586,9 +589,10 @@ class ToolRegistry:
             for tool_name, reason in skipped_tools:
                 logger.debug(f"  {tool_name}: {reason}")
 
-        # Cache discovered tools for future use
+        # TO-07: Cache discovered tools under lock
         if use_cache and discovered_tools:
-            _DISCOVERED_TOOLS_CACHE = discovered_tools
+            with _GLOBAL_LOCK:
+                _DISCOVERED_TOOLS_CACHE = discovered_tools
 
         return registered_count
 

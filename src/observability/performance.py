@@ -6,6 +6,7 @@ across critical execution paths: stage execution, LLM calls, and tool execution.
 """
 import time
 import statistics
+import threading
 from typing import Dict, List, Optional, Any, Generator
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -366,8 +367,9 @@ class PerformanceTracker:
         self.default_thresholds[operation] = threshold_ms
 
 
-# Global performance tracker instance
+# Global performance tracker instance (OB-06: double-check locking)
 _global_tracker: Optional[PerformanceTracker] = None
+_perf_tracker_lock = threading.Lock()
 
 
 def get_performance_tracker() -> PerformanceTracker:
@@ -380,7 +382,9 @@ def get_performance_tracker() -> PerformanceTracker:
     global _global_tracker
 
     if _global_tracker is None:
-        _global_tracker = PerformanceTracker()
+        with _perf_tracker_lock:
+            if _global_tracker is None:
+                _global_tracker = PerformanceTracker()
 
     return _global_tracker
 

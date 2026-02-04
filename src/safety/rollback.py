@@ -493,8 +493,22 @@ class FileRollbackStrategy(RollbackStrategy):
                     continue
 
                 try:
-                    if os.path.exists(file_path):
-                        os.remove(file_path)
+                    # SECURITY (SA-02): Resolve real path immediately before
+                    # deletion to close TOCTOU gap. A symlink swap between
+                    # validate_rollback_path() and os.remove() could target
+                    # arbitrary files.
+                    real_path = os.path.realpath(file_path)
+                    is_valid2, error2 = validate_rollback_path(real_path)
+                    if not is_valid2:
+                        logger.error(
+                            f"SECURITY: Resolved path failed validation: {real_path}",
+                            extra={"original": file_path, "error": error2}
+                        )
+                        result.failed_items.append(file_path)
+                        result.errors.append(f"Security violation (resolved path): {error2}")
+                        continue
+                    if os.path.exists(real_path):
+                        os.remove(real_path)
                         result.reverted_items.append(f"deleted:{file_path}")
                 except Exception as e:
                     result.failed_items.append(file_path)

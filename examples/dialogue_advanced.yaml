@@ -1,0 +1,66 @@
+name: "Advanced Dialogue - Architecture Decision"
+description: "Multi-round dialogue for complex architectural choices with specialized agents"
+
+# This example demonstrates advanced dialogue orchestration for high-stakes
+# architectural decisions requiring multiple perspectives and thorough deliberation.
+
+stages:
+  - name: "architecture_dialogue"
+    type: sequential
+    agents:
+      - architect
+      - security_engineer
+      - performance_engineer
+      - devops_engineer
+      - tech_lead
+
+    collaboration:
+      strategy: dialogue
+      config:
+        # More rounds for complex decisions
+        max_rounds: 5
+
+        # Higher convergence threshold (90%) for critical decisions
+        convergence_threshold: 0.90
+
+        # Higher budget for thorough analysis
+        cost_budget_usd: 20.0
+
+        # Require at least 3 rounds for thorough deliberation
+        min_rounds: 3
+
+  - name: "risk_assessment"
+    type: sequential
+    agents:
+      - risk_assessor
+      - compliance_officer
+
+    collaboration:
+      strategy: consensus
+      config:
+        min_consensus: 0.75
+
+# Use case: Deciding between microservices vs monolith architecture
+#
+# Round 1: Each specialist provides initial position
+#   - architect: "Microservices" (scalability focus)
+#   - security: "Monolith" (simpler attack surface)
+#   - performance: "Microservices" (independent scaling)
+#   - devops: "Monolith" (operational simplicity)
+#   - tech_lead: "Microservices" (team autonomy)
+#
+# Round 2: Agents see others' reasoning and adjust
+#   - security: "Microservices" (changed after seeing auth patterns)
+#   - devops: "Microservices" (changed after seeing automation plans)
+#   - Others maintain positions with refined reasoning
+#
+# Round 3: Convergence check - 80% unchanged (4/5)
+#   - Below 90% threshold, continue to Round 4
+#
+# Round 4: Final refinements
+#   - All agents align on "Microservices"
+#   - Convergence: 100% (5/5 agents unchanged)
+#   - Early stop triggered (exceeds 90% threshold)
+#
+# Result: "Microservices" with high confidence (0.85+)
+# Total cost: ~$8-12 across 4 rounds

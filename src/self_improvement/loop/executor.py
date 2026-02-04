@@ -34,6 +34,7 @@ from src.self_improvement.deployment.rollback_monitor import (
 )
 from src.self_improvement.data_models import AgentConfig, StrategyOutcome
 from src.self_improvement.strategy_learning import StrategyLearningStore
+from src.self_improvement.pattern_mining import PatternMiner
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +100,9 @@ class LoopExecutor:
 
         # Initialize strategy learning store for tracking outcomes
         self.strategy_learning_store = StrategyLearningStore(coord_db)
+
+        # Initialize pattern miner for discovering recurring patterns
+        self.pattern_miner = PatternMiner(self.strategy_learning_store)
 
         # Initialize rollback monitor with config thresholds
         rollback_thresholds = RegressionThresholds(
@@ -362,6 +366,9 @@ class LoopExecutor:
         """
         Execute Phase 3: Strategy Generation.
 
+        Mines patterns from experiment history and uses them to inform
+        strategy selection and variant generation.
+
         Args:
             agent_name: Name of agent
             analysis_result: Result from Phase 2
@@ -374,7 +381,32 @@ class LoopExecutor:
         # Get current config (or create default)
         control_config = self.config_deployer.get_agent_config(agent_name)
 
-        # Generate variant configs (simplified - use model variants for now)
+        # Mine patterns from experiment history
+        # This identifies which strategies have historically worked well
+        try:
+            patterns = self.pattern_miner.mine_patterns(
+                min_support=5,  # Require at least 5 observations
+                min_confidence=0.70,  # 70% confidence threshold
+                min_win_rate=0.50,  # Strategy wins at least 50% of time
+                min_improvement=0.03,  # At least 3% improvement
+                days_back=90  # Last 90 days
+            )
+            logger.info(f"Mined {len(patterns)} patterns from experiment history")
+
+            # Log top patterns for debugging
+            for pattern in patterns[:3]:
+                logger.info(
+                    f"  Pattern: {pattern.evidence['strategy_name']} for "
+                    f"{pattern.evidence['problem_type']} "
+                    f"(confidence={pattern.confidence:.2f})"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to mine patterns: {e}")
+            patterns = []
+
+        # Generate variant configs
+        # For MVP, still use model variants but could be extended to use
+        # pattern-informed strategy selection
         variant_configs = []
 
         if self.config.enable_model_variants:
@@ -393,7 +425,11 @@ class LoopExecutor:
             control_config=control_config,
             variant_configs=variant_configs,
             strategy_name="model_variants",
-            strategy_metadata={"models_tested": [v.inference["model"] for v in variant_configs]},
+            strategy_metadata={
+                "models_tested": [v.inference["model"] for v in variant_configs],
+                "patterns_considered": len(patterns),
+                "problem_type": "quality_low"  # Default for now
+            },
         )
 
     def _execute_phase_4_experiment(

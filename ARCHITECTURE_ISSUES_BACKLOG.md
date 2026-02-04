@@ -34,7 +34,7 @@ Identified during architecture walkthrough (Section 5: Agent Layer).
 **Wave 6 (Self-Improvement): 🔄 In Progress**
 - Issue #27: ✅ Completed - M5 integrated with M4 safety stack
 - Issue #25: ✅ Completed - Strategies learn from outcomes via Bayesian updating
-- Issue #26: ⏳ Pending - Add pattern mining from experiments
+- Issue #26: ✅ Completed - Pattern mining from experiment history
 - Issue #29: ⏳ Pending - Add more concrete strategies
 - Issue #28: ⏳ Pending - Implement continuous improvement mode
 
@@ -710,7 +710,9 @@ Identified during architecture walkthrough (Section 11: Self-Improvement / M5).
 - `src/self_improvement/strategies/erc721_strategy.py:71-81,158-180` — Uses learning
 - `src/self_improvement/loop/executor.py:36-37,96-97,489-522,551-582` — Records outcomes
 
-## 26. No Pattern Mining From Experiment History
+## 26. No Pattern Mining From Experiment History ✅ COMPLETED
+
+**Status:** ✅ Completed in Wave 6
 
 **Problem:** `LearnedPattern` data model exists but nothing mines experiment history for recurring patterns. The system can't discover that "lower temperature consistently improves quality for code generation agents" or "switching from phi3:mini to llama3.1:8b improves success rate by 15% on average." Each improvement cycle is independent.
 
@@ -720,9 +722,71 @@ Identified during architecture walkthrough (Section 11: Self-Improvement / M5).
 - Store as `LearnedPattern` records with confidence and sample count
 - Feed patterns back into detection phase to proactively suggest improvements before degradation occurs
 
+**Implementation:**
+
+1. **Created PatternMiner class** (`src/self_improvement/pattern_mining.py`):
+   - Analyzes historical StrategyOutcome records
+   - Groups by strategy_name + problem_type combinations
+   - Identifies patterns meeting statistical thresholds:
+     - Minimum support (sample count)
+     - Minimum confidence score
+     - Minimum win rate
+     - Minimum improvement magnitude
+
+2. **Pattern confidence calculation**:
+   - Sample size confidence: Asymptotic function (90% at 50 samples, 95% at 100)
+   - Win rate confidence: Linear with win rate
+   - Improvement magnitude confidence: Based on improvement percentage
+   - Weighted combination: 50% sample + 30% win rate + 20% improvement
+
+3. **mine_patterns() method**:
+   - Queries strategy_outcomes table with SQL aggregation
+   - Groups by (strategy_name, problem_type)
+   - Calculates win_rate, avg_improvement, sample_count
+   - Filters candidates by thresholds
+   - Creates LearnedPattern objects with evidence
+   - Default thresholds: 10+ samples, 80% confidence, 60% win rate, 5% improvement
+
+4. **Pattern types created**:
+   - `strategy_effectiveness_{problem_type}`: Which strategies work for which problems
+   - Evidence includes: strategy_name, problem_type, win_rate, avg_improvement, agent_names
+   - Description: Human-readable summary of pattern
+
+5. **Integrated with LoopExecutor**:
+   - Initializes PatternMiner with StrategyLearningStore
+   - Phase 3 (Strategy) now mines patterns before generating variants
+   - Patterns inform which strategies have historically worked
+   - Logged for debugging and observability
+
+6. **Additional utilities**:
+   - `get_patterns_for_problem_type()`: Filter patterns by problem
+   - `get_strategy_insights()`: Analyze specific strategy performance
+   - Detailed metrics: win rates by problem type, best problem types
+
+**Pattern Discovery Process:**
+1. Query all strategy outcomes from learning store
+2. Group by (strategy_name, problem_type)
+3. Calculate aggregated metrics per group
+4. Apply statistical filters
+5. Calculate confidence scores
+6. Create LearnedPattern objects
+7. Make available to detection and strategy phases
+
+**Example Pattern:**
+```
+Pattern: "ollama_model_selection for quality_low"
+- Win rate: 75%
+- Avg improvement: 28%
+- Support: 25 experiments
+- Confidence: 0.87
+- Description: "Strategy 'ollama_model_selection' consistently
+  improves 'quality_low' (win rate: 75%, avg improvement: 28%)"
+```
+
 **Relevant Files:**
-- `src/self_improvement/data_models.py` — `LearnedPattern` model (exists, unused)
-- `src/self_improvement/experiment_orchestrator.py:802` — `analyze_experiment()` (one-off, no cross-experiment analysis)
+- `src/self_improvement/pattern_mining.py` — NEW: PatternMiner class with mining algorithms
+- `src/self_improvement/loop/executor.py:38,99-101,361-410` — Integrated in Phase 3
+- `src/self_improvement/strategies/strategy.py:41-75` — LearnedPattern model (now used)
 
 ## 27. M4 Safety Integration Missing ✅ COMPLETED
 

@@ -7,6 +7,12 @@ agent-to-agent context sharing within a stage.
 from typing import Dict, Any, Optional, cast
 import time
 import uuid
+import traceback
+import logging
+
+from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message
+
+logger = logging.getLogger(__name__)
 
 from src.compiler.executors.base import StageExecutor
 from src.compiler.utils import extract_agent_name
@@ -28,7 +34,8 @@ class SequentialStageExecutor(StageExecutor):
         stage_config: Any,
         state: Dict[str, Any],
         config_loader: Any,
-        tool_registry: Optional[Any] = None
+        tool_registry: Optional[Any] = None,
+        halt_on_failure: bool = True
     ) -> Dict[str, Any]:
         """Execute stage with sequential agent execution.
 
@@ -61,7 +68,7 @@ class SequentialStageExecutor(StageExecutor):
 
         # Accumulators for per-agent results
         agent_outputs: Dict[str, Any] = {}
-        agent_statuses: Dict[str, str] = {}
+        agent_statuses: Dict[str, Any] = {}  # str for success, dict for failure
         agent_metrics: Dict[str, Any] = {}
 
         # Track stage execution if tracker available
@@ -74,35 +81,27 @@ class SequentialStageExecutor(StageExecutor):
                 workflow_id=workflow_id,
                 input_data=state.get("stage_outputs", {})
             ) as stage_id:
-                for agent_ref in agents:
-                    agent_result = self._execute_agent(
-                        agent_ref=agent_ref,
-                        stage_id=stage_id,
-                        stage_name=stage_name,
-                        workflow_id=workflow_id,
-                        state=state,
-                        tracker=tracker,
-                        config_loader=config_loader,
-                        prior_agent_outputs=agent_outputs,
-                    )
-                    agent_outputs[agent_result["agent_name"]] = agent_result["output_data"]
-                    agent_statuses[agent_result["agent_name"]] = agent_result["status"]
-                    agent_metrics[agent_result["agent_name"]] = agent_result["metrics"]
-        else:
-            for agent_ref in agents:
-                agent_result = self._execute_agent(
-                    agent_ref=agent_ref,
-                    stage_id=f"stage-{uuid.uuid4().hex[:12]}",
+                agent_outputs, agent_statuses, agent_metrics = self._run_all_agents(
+                    agents=agents,
+                    stage_id=stage_id,
                     stage_name=stage_name,
                     workflow_id=workflow_id,
                     state=state,
-                    tracker=None,
+                    tracker=tracker,
                     config_loader=config_loader,
-                    prior_agent_outputs=agent_outputs,
+                    halt_on_failure=halt_on_failure,
                 )
-                agent_outputs[agent_result["agent_name"]] = agent_result["output_data"]
-                agent_statuses[agent_result["agent_name"]] = agent_result["status"]
-                agent_metrics[agent_result["agent_name"]] = agent_result["metrics"]
+        else:
+            agent_outputs, agent_statuses, agent_metrics = self._run_all_agents(
+                agents=agents,
+                stage_id=f"stage-{uuid.uuid4().hex[:12]}",
+                stage_name=stage_name,
+                workflow_id=workflow_id,
+                state=state,
+                tracker=None,
+                config_loader=config_loader,
+                halt_on_failure=halt_on_failure,
+            )
 
         # Determine the final agent's text output for backward compatibility
         last_agent_output = ""
@@ -133,6 +132,70 @@ class SequentialStageExecutor(StageExecutor):
             True for "sequential" type
         """
         return stage_type == "sequential"
+
+    def _run_all_agents(
+        self,
+        agents: list,
+        stage_id: str,
+        stage_name: str,
+        workflow_id: str,
+        state: Dict[str, Any],
+        tracker: Optional[Any],
+        config_loader: Any,
+        halt_on_failure: bool,
+    ) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        """Execute all agents in sequence with optional halt-on-failure.
+
+        Args:
+            agents: List of agent references
+            stage_id: Stage execution ID
+            stage_name: Stage name
+            workflow_id: Workflow execution ID
+            state: Current workflow state
+            tracker: ExecutionTracker instance (optional)
+            config_loader: ConfigLoader for loading agent configs
+            halt_on_failure: Stop executing agents after first failure
+
+        Returns:
+            Tuple of (agent_outputs, agent_statuses, agent_metrics)
+        """
+        agent_outputs: Dict[str, Any] = {}
+        agent_statuses: Dict[str, Any] = {}
+        agent_metrics: Dict[str, Any] = {}
+
+        for agent_ref in agents:
+            agent_result = self._execute_agent(
+                agent_ref=agent_ref,
+                stage_id=stage_id,
+                stage_name=stage_name,
+                workflow_id=workflow_id,
+                state=state,
+                tracker=tracker,
+                config_loader=config_loader,
+                prior_agent_outputs=agent_outputs,
+            )
+
+            agent_name = agent_result["agent_name"]
+            agent_outputs[agent_name] = agent_result["output_data"]
+            agent_metrics[agent_name] = agent_result["metrics"]
+
+            # Store status with error details for failed agents
+            if agent_result["status"] == "failed":
+                agent_statuses[agent_name] = {
+                    "status": "failed",
+                    "error": agent_result["output_data"].get("error", ""),
+                    "error_type": agent_result["output_data"].get("error_type", ""),
+                }
+                if halt_on_failure:
+                    logger.warning(
+                        "Agent %s failed in stage %s, halting execution: %s",
+                        agent_name, stage_name, agent_result["output_data"].get("error", "")
+                    )
+                    break
+            else:
+                agent_statuses[agent_name] = agent_result["status"]
+
+        return agent_outputs, agent_statuses, agent_metrics
 
     def _execute_agent(
         self,
@@ -178,11 +241,41 @@ class SequentialStageExecutor(StageExecutor):
             )
         except (KeyboardInterrupt, SystemExit):
             raise
-        except Exception:
+        except Exception as e:
             duration = time.time() - start_time
+
+            # Derive error_type from framework ErrorCode if available
+            if isinstance(e, BaseError):
+                error_type = e.error_code.value
+            else:
+                # Map standard Python exceptions to ErrorCode
+                error_type_map = {
+                    "TimeoutError": ErrorCode.SYSTEM_TIMEOUT.value,
+                    "ConnectionError": ErrorCode.LLM_CONNECTION_ERROR.value,
+                    "ValueError": ErrorCode.VALIDATION_ERROR.value,
+                    "RuntimeError": ErrorCode.AGENT_EXECUTION_ERROR.value,
+                }
+                error_type = error_type_map.get(
+                    type(e).__name__, ErrorCode.UNKNOWN_ERROR.value
+                )
+
+            # Sanitize error message and traceback to prevent credential leakage
+            error_message = sanitize_error_message(str(e))
+            error_traceback = sanitize_error_message(traceback.format_exc())
+
+            logger.warning(
+                "Agent %s failed in stage: %s",
+                agent_name, error_message
+            )
+
             return {
                 "agent_name": agent_name,
-                "output_data": {"output": ""},
+                "output_data": {
+                    "output": "",
+                    "error": error_message,
+                    "error_type": error_type,
+                    "traceback": error_traceback,
+                },
                 "status": "failed",
                 "metrics": {
                     "tokens": 0,

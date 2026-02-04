@@ -218,12 +218,12 @@ class TestAgentContextSharing:
 
 
 class TestAgentFailureHandling:
-    """Test that agent failures are recorded properly."""
+    """Test that agent failures are recorded properly with error context."""
 
     @patch(CONFIG_PATCH)
     @patch(FACTORY_PATCH)
     def test_agent_failure_recorded_in_statuses(self, mock_factory, mock_config_cls):
-        """Failed agent is recorded as 'failed' and execution continues."""
+        """Failed agent is recorded with error details and execution continues with halt_on_failure=False."""
         failing_agent = Mock()
         failing_agent.execute.side_effect = RuntimeError("LLM timeout")
 
@@ -241,12 +241,126 @@ class TestAgentFailureHandling:
             stage_config={"stage": {"agents": ["flaky_agent", "reliable_agent"]}},
             state=state,
             config_loader=_mock_config_loader(),
+            halt_on_failure=False,  # Allow execution to continue after failure
         )
 
         stage_out = result["stage_outputs"]["resilient"]
-        assert stage_out["agent_statuses"]["flaky_agent"] == "failed"
+
+        # Failed agent status includes error details
+        assert isinstance(stage_out["agent_statuses"]["flaky_agent"], dict)
+        assert stage_out["agent_statuses"]["flaky_agent"]["status"] == "failed"
+        assert stage_out["agent_statuses"]["flaky_agent"]["error"] == "LLM timeout"
+        assert stage_out["agent_statuses"]["flaky_agent"]["error_type"] == "AGENT_EXECUTION_ERROR"
+
+        # Failed agent output_data includes error fields
+        failed_output = stage_out["agent_outputs"]["flaky_agent"]
+        assert failed_output["error"] == "LLM timeout"
+        assert failed_output["error_type"] == "AGENT_EXECUTION_ERROR"
+        assert "traceback" in failed_output
+        assert failed_output["output"] == ""
+
+        # Succeeding agent continues and completes
         assert stage_out["agent_statuses"]["reliable_agent"] == "success"
         assert stage_out["agent_outputs"]["reliable_agent"]["output"] == "recovered"
+
+    @patch(CONFIG_PATCH)
+    @patch(FACTORY_PATCH)
+    def test_halt_on_failure_stops_execution(self, mock_factory, mock_config_cls):
+        """With halt_on_failure=True (default), stage stops after first agent failure."""
+        failing_agent = Mock()
+        failing_agent.execute.side_effect = ValueError("Invalid input")
+
+        succeeding_agent = Mock()
+        succeeding_agent.execute.return_value = _make_agent_response(output="should not run")
+
+        mock_config_cls.side_effect = lambda **kwargs: Mock()
+        mock_factory.create.side_effect = [failing_agent, succeeding_agent]
+
+        executor = SequentialStageExecutor()
+        state = {"stage_outputs": {}, "workflow_id": "wf-test"}
+
+        result = executor.execute_stage(
+            stage_name="halt_test",
+            stage_config={"stage": {"agents": ["failing", "should_not_run"]}},
+            state=state,
+            config_loader=_mock_config_loader(),
+            halt_on_failure=True,  # Explicit, but this is the default
+        )
+
+        stage_out = result["stage_outputs"]["halt_test"]
+
+        # First agent failed
+        assert stage_out["agent_statuses"]["failing"]["status"] == "failed"
+        assert stage_out["agent_statuses"]["failing"]["error"] == "Invalid input"
+
+        # Second agent was not executed
+        assert "should_not_run" not in stage_out["agent_statuses"]
+        assert "should_not_run" not in stage_out["agent_outputs"]
+
+    @patch(CONFIG_PATCH)
+    @patch(FACTORY_PATCH)
+    def test_error_type_from_base_error(self, mock_factory, mock_config_cls):
+        """Error type is derived from BaseError.error_code when available."""
+        from src.utils.exceptions import BaseError, ErrorCode
+
+        class CustomLLMError(BaseError):
+            def __init__(self):
+                super().__init__(
+                    message="API key invalid",
+                    error_code=ErrorCode.LLM_AUTHENTICATION_ERROR
+                )
+
+        failing_agent = Mock()
+        failing_agent.execute.side_effect = CustomLLMError()
+
+        mock_config_cls.side_effect = lambda **kwargs: Mock()
+        mock_factory.create.return_value = failing_agent
+
+        executor = SequentialStageExecutor()
+        state = {"stage_outputs": {}, "workflow_id": "wf-test"}
+
+        result = executor.execute_stage(
+            stage_name="error_type_test",
+            stage_config={"stage": {"agents": ["failing"]}},
+            state=state,
+            config_loader=_mock_config_loader(),
+            halt_on_failure=True,
+        )
+
+        stage_out = result["stage_outputs"]["error_type_test"]
+        failed_status = stage_out["agent_statuses"]["failing"]
+
+        # Error type should be the ErrorCode value from BaseError
+        assert failed_status["error_type"] == "LLM_AUTHENTICATION_ERROR"
+
+    @patch(CONFIG_PATCH)
+    @patch(FACTORY_PATCH)
+    def test_error_message_sanitization(self, mock_factory, mock_config_cls):
+        """Error messages are sanitized to prevent credential leakage."""
+        failing_agent = Mock()
+        failing_agent.execute.side_effect = RuntimeError(
+            "Connection failed with API key: sk-1234567890abcdef"
+        )
+
+        mock_config_cls.side_effect = lambda **kwargs: Mock()
+        mock_factory.create.return_value = failing_agent
+
+        executor = SequentialStageExecutor()
+        state = {"stage_outputs": {}, "workflow_id": "wf-test"}
+
+        result = executor.execute_stage(
+            stage_name="sanitize_test",
+            stage_config={"stage": {"agents": ["failing"]}},
+            state=state,
+            config_loader=_mock_config_loader(),
+        )
+
+        stage_out = result["stage_outputs"]["sanitize_test"]
+        failed_output = stage_out["agent_outputs"]["failing"]
+
+        # Error message should be sanitized (API key redacted)
+        assert "sk-1234567890abcdef" not in failed_output["error"]
+        assert "[REDACTED" in failed_output["error"]
 
 
 class TestMetricsTracking:

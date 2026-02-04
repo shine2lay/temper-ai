@@ -535,7 +535,7 @@ class StandardAgent(BaseAgent):
 
                     self.tracker.track_llm_call(
                         agent_id=self._execution_context.agent_id,
-                        provider=inf_config.provider.value,
+                        provider=inf_config.provider,
                         model=inf_config.model,
                         prompt=prompt,
                         response=llm_response.content,
@@ -939,8 +939,12 @@ class StandardAgent(BaseAgent):
         # Get template from config
         prompt_config = self.config.agent.prompt
 
-        # Merge input_data with configured variables
-        all_variables = {**input_data, **prompt_config.variables}
+        # Filter out internal variables that shouldn't be in prompts
+        internal_vars = {'tracker', 'config_loader', 'tool_registry', 'workflow_id', 'tool_executor'}
+        filtered_input = {k: v for k, v in input_data.items() if k not in internal_vars}
+
+        # Merge filtered input_data with configured variables
+        all_variables = {**filtered_input, **prompt_config.variables}
 
         if prompt_config.template:
             # Load from file (if templates directory exists)

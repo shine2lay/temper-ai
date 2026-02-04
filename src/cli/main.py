@@ -180,7 +180,25 @@ def run(
         # 9. Display Rich summary
         _print_run_summary(workflow_name, workflow_id, result)
 
-        # 10. Save results if --output
+        # 10. Display hierarchical gantt chart
+        try:
+            import sys
+            from pathlib import Path as ImportPath
+            # Add project root to Python path for examples module
+            project_root = ImportPath(__file__).parent.parent.parent
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+
+            from examples.export_waterfall import export_waterfall_trace
+            from src.observability.visualize_trace import print_console_gantt
+
+            trace = export_waterfall_trace(workflow_id)
+            if "error" not in trace:
+                print_console_gantt(trace)
+        except Exception as e:
+            logger.debug(f"Could not display gantt chart: {e}")
+
+        # 11. Save results if --output
         if output:
             output_path = Path(output)
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -188,15 +206,57 @@ def run(
                 json.dump(result, f, indent=2, default=str)
             console.print(f"\nResults saved to [cyan]{output}[/cyan]")
 
+        # 12. Cleanup resources
+        logger.debug(f"Starting cleanup, engine type: {type(engine)}")
+        tool_executor = None
+        if hasattr(engine, 'tool_executor'):
+            tool_executor = engine.tool_executor
+        elif hasattr(engine, 'compiler') and hasattr(engine.compiler, 'tool_executor'):
+            tool_executor = engine.compiler.tool_executor
+
+        if tool_executor is not None:
+            try:
+                logger.debug("Calling tool_executor.shutdown()")
+                tool_executor.shutdown()
+                logger.debug("tool_executor.shutdown() completed")
+            except Exception as e:
+                logger.debug(f"Error during tool executor shutdown: {e}")
+        else:
+            logger.debug("No tool_executor found to cleanup")
+
     except SystemExit:
         raise
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted[/yellow]")
+        # Cleanup on interrupt
+        if 'engine' in locals():
+            tool_executor = None
+            if hasattr(engine, 'tool_executor'):
+                tool_executor = engine.tool_executor
+            elif hasattr(engine, 'compiler') and hasattr(engine.compiler, 'tool_executor'):
+                tool_executor = engine.compiler.tool_executor
+            if tool_executor is not None:
+                try:
+                    tool_executor.shutdown()
+                except Exception:
+                    pass
         raise SystemExit(130)
     except Exception as e:
         console.print(f"[red]Execution error:[/red] {e}")
         if verbose:
             logger.exception("Workflow execution failed")
+        # Cleanup on error
+        if 'engine' in locals():
+            tool_executor = None
+            if hasattr(engine, 'tool_executor'):
+                tool_executor = engine.tool_executor
+            elif hasattr(engine, 'compiler') and hasattr(engine.compiler, 'tool_executor'):
+                tool_executor = engine.compiler.tool_executor
+            if tool_executor is not None:
+                try:
+                    tool_executor.shutdown()
+                except Exception:
+                    pass
         raise SystemExit(1)
 
 

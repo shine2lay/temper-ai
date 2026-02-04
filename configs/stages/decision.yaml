@@ -1,0 +1,81 @@
+stage:
+  name: quick_decision
+  description: "Fast multi-perspective decision making"
+  version: "1.0"
+
+  # Agent references (agent names - will be loaded from configs/agents/)
+  agents:
+    - optimist
+    - skeptic
+    - pragmatist
+
+  # Execution settings
+  execution:
+    agent_mode: parallel
+    timeout_seconds: 180
+
+  # Input schema
+  inputs:
+    question:
+      type: string
+      required: true
+      description: "The decision question to answer"
+
+    options:
+      type: array
+      required: true
+      description: "List of options to choose from"
+
+    context:
+      type: string
+      required: false
+      description: "Additional context or constraints"
+
+  # Output schema
+  outputs:
+    final_decision:
+      type: string
+      description: "The chosen option"
+
+    confidence:
+      type: number
+      description: "Confidence in the decision (0-1)"
+
+    reasoning:
+      type: string
+      description: "Combined reasoning from all agents"
+
+    votes:
+      type: object
+      description: "Vote distribution across options"
+
+  # Collaboration strategy
+  collaboration:
+    strategy: DialogueOrchestrator
+    max_rounds: 1
+    convergence_threshold: 0.8
+    dialogue_mode: false
+    config:
+      min_consensus: 0.67  # 2 out of 3 agents must agree
+
+  # Conflict resolution
+  conflict_resolution:
+    strategy: HighestConfidenceResolver
+    metrics:
+      - confidence
+    auto_resolve_threshold: 0.85
+    escalation_threshold: 0.50
+
+  # Error handling
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2
+
+  # Metadata
+  metadata:
+    tags:
+      - quick
+      - demo
+      - consensus

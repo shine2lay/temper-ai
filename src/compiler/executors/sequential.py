@@ -1,9 +1,11 @@
 """Sequential stage executor.
 
 Executes agents one after another in the order specified in the stage config.
-This is the original M2 behavior.
+Each agent's output is accumulated and passed to subsequent agents, enabling
+agent-to-agent context sharing within a stage.
 """
 from typing import Dict, Any, Optional, cast
+import time
 import uuid
 
 from src.compiler.executors.base import StageExecutor
@@ -30,6 +32,11 @@ class SequentialStageExecutor(StageExecutor):
     ) -> Dict[str, Any]:
         """Execute stage with sequential agent execution.
 
+        Agents run one at a time. Each agent's output is accumulated so that
+        subsequent agents can see prior agents' work via ``current_stage_agents``
+        in their input data. The final stage output is a dict containing all
+        per-agent outputs, statuses, and metrics.
+
         Args:
             stage_name: Stage name
             stage_config: Stage configuration
@@ -52,47 +59,66 @@ class SequentialStageExecutor(StageExecutor):
             # Dict - try nested path first, then direct
             agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
 
-        stage_output = None
+        # Accumulators for per-agent results
+        agent_outputs: Dict[str, Any] = {}
+        agent_statuses: Dict[str, str] = {}
+        agent_metrics: Dict[str, Any] = {}
 
         # Track stage execution if tracker available
         stage_config_dict = stage_config.model_dump() if hasattr(stage_config, 'model_dump') else stage_config
 
         if tracker:
-            # Use tracker context manager
             with tracker.track_stage(
                 stage_name=stage_name,
                 stage_config=stage_config_dict,
                 workflow_id=workflow_id,
                 input_data=state.get("stage_outputs", {})
             ) as stage_id:
-                # Execute each agent sequentially
                 for agent_ref in agents:
-                    stage_output = self._execute_agent(
+                    agent_result = self._execute_agent(
                         agent_ref=agent_ref,
                         stage_id=stage_id,
                         stage_name=stage_name,
                         workflow_id=workflow_id,
                         state=state,
                         tracker=tracker,
-                        config_loader=config_loader
+                        config_loader=config_loader,
+                        prior_agent_outputs=agent_outputs,
                     )
+                    agent_outputs[agent_result["agent_name"]] = agent_result["output_data"]
+                    agent_statuses[agent_result["agent_name"]] = agent_result["status"]
+                    agent_metrics[agent_result["agent_name"]] = agent_result["metrics"]
         else:
-            # Execute without tracking
             for agent_ref in agents:
-                stage_output = self._execute_agent(
+                agent_result = self._execute_agent(
                     agent_ref=agent_ref,
                     stage_id=f"stage-{uuid.uuid4().hex[:12]}",
                     stage_name=stage_name,
                     workflow_id=workflow_id,
                     state=state,
                     tracker=None,
-                    config_loader=config_loader
+                    config_loader=config_loader,
+                    prior_agent_outputs=agent_outputs,
                 )
+                agent_outputs[agent_result["agent_name"]] = agent_result["output_data"]
+                agent_statuses[agent_result["agent_name"]] = agent_result["status"]
+                agent_metrics[agent_result["agent_name"]] = agent_result["metrics"]
 
-        # Store stage output in state
+        # Determine the final agent's text output for backward compatibility
+        last_agent_output = ""
+        if agent_outputs:
+            last_key = list(agent_outputs.keys())[-1]
+            last_agent_output = agent_outputs[last_key].get("output", "")
+
+        # Store structured stage output in state
         if not isinstance(state.get("stage_outputs"), dict):
             state["stage_outputs"] = {}
-        state["stage_outputs"][stage_name] = stage_output
+        state["stage_outputs"][stage_name] = {
+            "output": last_agent_output,
+            "agent_outputs": agent_outputs,
+            "agent_statuses": agent_statuses,
+            "agent_metrics": agent_metrics,
+        }
         state["current_stage"] = stage_name
 
         return state
@@ -116,9 +142,10 @@ class SequentialStageExecutor(StageExecutor):
         workflow_id: str,
         state: Dict[str, Any],
         tracker: Optional[Any],
-        config_loader: Any
-    ) -> str:
-        """Execute a single agent.
+        config_loader: Any,
+        prior_agent_outputs: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Execute a single agent and return structured result.
 
         Args:
             agent_ref: Agent reference from stage config
@@ -128,33 +155,80 @@ class SequentialStageExecutor(StageExecutor):
             state: Current workflow state
             tracker: ExecutionTracker instance (optional)
             config_loader: ConfigLoader for loading agent configs
+            prior_agent_outputs: Outputs from prior agents in the same stage
 
         Returns:
-            Agent output text
+            Dict with keys: agent_name, output_data, status, metrics
         """
-        # Get agent name
         agent_name = self._extract_agent_name(agent_ref)
+        start_time = time.time()
 
+        try:
+            return self._run_agent(
+                agent_name=agent_name,
+                agent_ref=agent_ref,
+                stage_id=stage_id,
+                stage_name=stage_name,
+                workflow_id=workflow_id,
+                state=state,
+                tracker=tracker,
+                config_loader=config_loader,
+                prior_agent_outputs=prior_agent_outputs or {},
+                start_time=start_time,
+            )
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except Exception:
+            duration = time.time() - start_time
+            return {
+                "agent_name": agent_name,
+                "output_data": {"output": ""},
+                "status": "failed",
+                "metrics": {
+                    "tokens": 0,
+                    "cost_usd": 0.0,
+                    "duration_seconds": duration,
+                    "tool_calls": 0,
+                },
+            }
+
+    def _run_agent(
+        self,
+        agent_name: str,
+        agent_ref: Any,
+        stage_id: str,
+        stage_name: str,
+        workflow_id: str,
+        state: Dict[str, Any],
+        tracker: Optional[Any],
+        config_loader: Any,
+        prior_agent_outputs: Dict[str, Any],
+        start_time: float,
+    ) -> Dict[str, Any]:
+        """Internal: load, execute, and track a single agent.
+
+        Returns:
+            Dict with keys: agent_name, output_data, status, metrics
+        """
         # Load agent config
         agent_config_dict = config_loader.load_agent(agent_name)
 
-        # Parse to Pydantic model
         from src.compiler.schemas import AgentConfig
         agent_config = AgentConfig(**agent_config_dict)
 
         # Create agent
         agent = AgentFactory.create(agent_config)
 
-        # Prepare input data (includes previous stage outputs)
-        # Convert WorkflowState to dict if needed
+        # Prepare input data
         if hasattr(state, 'to_dict'):
             state_dict = state.to_dict(exclude_internal=True)
         else:
             state_dict = dict(state) if hasattr(state, '__iter__') else state
 
         input_data = {
-            **state_dict,  # Include all state
+            **state_dict,
             "stage_outputs": state_dict.get("stage_outputs", {}),
+            "current_stage_agents": dict(prior_agent_outputs),
         }
 
         # Create execution context
@@ -168,22 +242,18 @@ class SequentialStageExecutor(StageExecutor):
             }
         )
 
-        # Track agent execution if tracker available
-        # Convert to dict and ensure it's serializable
+        # Prepare serializable config for tracking
         if hasattr(agent_config, 'model_dump'):
             agent_config_dict_for_tracking = agent_config.model_dump()
         elif hasattr(agent_config, 'dict'):
             agent_config_dict_for_tracking = agent_config.dict()
         else:
             agent_config_dict_for_tracking = cast(Dict[str, Any], agent_config)
-
-        # Sanitize the config to remove any non-serializable objects
         agent_config_dict_for_tracking = sanitize_config_for_display(agent_config_dict_for_tracking)
 
         if tracker:
-            # Prepare input data for tracking (sanitize to exclude non-serializable objects)
-            # Helper to check if value is JSON serializable
             import json
+
             def is_serializable(value: Any) -> bool:
                 try:
                     json.dumps(value)
@@ -191,30 +261,22 @@ class SequentialStageExecutor(StageExecutor):
                 except (TypeError, ValueError):
                     return False
 
-            # Remove tracker, registry, and loader objects which aren't serializable
-            # Also filter out any non-JSON-serializable values
             tracking_input_data = {
                 k: v for k, v in input_data.items()
                 if k not in ('tracker', 'tool_registry', 'config_loader', 'visualizer')
                 and is_serializable(v)
             }
-            # Sanitize any remaining config data
             tracking_input_data = sanitize_config_for_display(tracking_input_data)
 
-            # Use tracker context manager
             with tracker.track_agent(
                 agent_name=agent_name,
                 agent_config=agent_config_dict_for_tracking,
                 stage_id=stage_id,
                 input_data=tracking_input_data
             ) as agent_id:
-                # Update context with tracked agent ID
                 context.agent_id = agent_id
-
-                # Execute agent
                 response = agent.execute(input_data, context)
 
-                # Set agent output for tracking (include all metrics)
                 tracker.set_agent_output(
                     agent_id=agent_id,
                     output_data={"output": response.output},
@@ -224,12 +286,28 @@ class SequentialStageExecutor(StageExecutor):
                     num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
                     num_tool_calls=len(response.tool_calls) if response.tool_calls else 0
                 )
-
-                return response.output
         else:
-            # Execute without tracking
             response = agent.execute(input_data, context)
-            return response.output
+
+        duration = time.time() - start_time
+        return {
+            "agent_name": agent_name,
+            "output_data": {
+                "output": response.output,
+                "reasoning": response.reasoning,
+                "confidence": response.confidence,
+                "tokens": response.tokens,
+                "cost_usd": response.estimated_cost_usd,
+                "tool_calls": len(response.tool_calls) if response.tool_calls else 0,
+            },
+            "status": "success",
+            "metrics": {
+                "tokens": response.tokens or 0,
+                "cost_usd": response.estimated_cost_usd or 0.0,
+                "duration_seconds": duration,
+                "tool_calls": len(response.tool_calls) if response.tool_calls else 0,
+            },
+        }
 
     def _extract_agent_name(self, agent_ref: Any) -> str:
         """Extract agent name from various agent reference formats.

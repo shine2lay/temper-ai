@@ -162,8 +162,8 @@ class TestSequentialExecutor:
                     config_loader=mock_config_loader
                 )
 
-                # Verify execution
-                assert result["stage_outputs"]["research"] == "Sequential output"
+                # Verify execution — sequential now returns structured dict
+                assert result["stage_outputs"]["research"]["output"] == "Sequential output"
                 assert result["current_stage"] == "research"
 
 
@@ -243,8 +243,8 @@ class TestBackwardCompatibility:
                         config_loader=compiler.config_loader
                     )
 
-                    # Verify sequential execution worked
-                    assert result["stage_outputs"]["research"] == "Sequential output"
+                    # Verify sequential execution worked — sequential now returns structured dict
+                    assert result["stage_outputs"]["research"]["output"] == "Sequential output"
                     assert result["current_stage"] == "research"
 
 

@@ -140,10 +140,12 @@ class TestAdaptiveExecution:
             "collaboration": {"strategy": "consensus"}
         }
 
-        state = WorkflowState(
-            workflow_id="wf-123",
-            stage_outputs={}
-        )
+        # Use plain dict — WorkflowState doesn't support ** unpacking
+        # which the parallel executor's init_parallel needs
+        state = {
+            "workflow_id": "wf-123",
+            "stage_outputs": {}
+        }
 
         # Mock config loader
         def mock_load_agent(name):
@@ -368,6 +370,7 @@ class TestAdaptiveExecutionEdgeCases:
     def test_adaptive_handles_parallel_failure(self):
         """Test adaptive mode falls back to sequential if parallel fails."""
         compiler = LangGraphCompiler()
+        adaptive_executor = compiler.executors['adaptive']
 
         stage_config = {
             "agents": ["agent1", "agent2"],
@@ -375,20 +378,29 @@ class TestAdaptiveExecutionEdgeCases:
             "collaboration": {"strategy": "consensus"}
         }
 
-        state = WorkflowState(
-            workflow_id="wf-123",
-            stage_outputs={}
-        )
+        # Use plain dict — WorkflowState doesn't support ** unpacking
+        state = {
+            "workflow_id": "wf-123",
+            "stage_outputs": {}
+        }
 
-        # Mock parallel execution to fail
-        with patch.object(compiler.executors['parallel'], 'execute_stage') as mock_parallel:
-            with patch.object(compiler.executors['sequential'], 'execute_stage') as mock_sequential:
-                mock_parallel.side_effect = RuntimeError("Parallel execution failed")
-                mock_sequential.return_value = WorkflowState(
-                    stage_outputs={"research": "Sequential output"}
-                )
+        # Patch the adaptive executor's INTERNAL executors, not the compiler's
+        with patch.object(adaptive_executor, 'parallel_executor') as mock_parallel_exec:
+            with patch.object(adaptive_executor, 'sequential_executor') as mock_sequential_exec:
+                mock_parallel_exec.execute_stage.side_effect = RuntimeError("Parallel execution failed")
+                mock_sequential_exec.execute_stage.return_value = {
+                    "stage_outputs": {
+                        "research": {
+                            "output": "Sequential output",
+                            "agent_outputs": {},
+                            "agent_statuses": {},
+                            "agent_metrics": {},
+                        }
+                    },
+                    "current_stage": "research",
+                }
 
-                result = compiler.executors['adaptive'].execute_stage(
+                result = adaptive_executor.execute_stage(
                     stage_name="research",
                     stage_config=stage_config,
                     state=state,
@@ -397,8 +409,10 @@ class TestAdaptiveExecutionEdgeCases:
                 )
 
                 # Should fall back to sequential
-                mock_sequential.assert_called_once()
+                mock_sequential_exec.execute_stage.assert_called_once()
                 assert "research" in result["stage_outputs"]
+                # Should have mode_switch metadata from adaptive fallback
+                assert result["stage_outputs"]["research"]["mode_switch"]["switched_to"] == "sequential"
 
 
 if __name__ == "__main__":

@@ -236,11 +236,45 @@ Identified during architecture walkthrough (Section 7: Tool System).
 
 **Fix:** Detect independent tool calls (no data dependencies between them) and execute in parallel via `ToolExecutor`'s thread pool. Conservative approach: execute in parallel by default, with a `parallel_tool_calls: false` config option to disable.
 
-## 12. No Tool Call Budget Awareness
+## 12. No Tool Call Budget Awareness ✅ COMPLETED
+
+**Status:** ✅ Completed
 
 **Problem:** The agent config has `max_tool_calls_per_execution`, but the LLM doesn't know how many calls it has remaining. It can burn through the budget and get cut off mid-task with no warning.
 
 **Fix:** Inject remaining budget info into the tool results section: `"You have {remaining} tool calls remaining."` Simple, no schema changes needed.
+
+**Implementation:**
+1. Modified `_inject_tool_results()` to accept optional `remaining_tool_calls` parameter:
+   - Adds budget awareness message after tool results
+   - Message: "[System Info: You have N tool call(s) remaining in your budget.]"
+   - When remaining = 0: "[System Info: This is your last tool call. Budget exhausted after this iteration.]"
+
+2. Modified `_execute_iteration()` to accept optional `max_iterations` parameter:
+   - Calculates remaining budget: `max_iterations - len(tool_calls_made)`
+   - Passes remaining count to `_inject_tool_results()`
+
+3. Updated `execute()` main loop to pass max_iterations to _execute_iteration():
+   - Enables budget awareness throughout execution
+   - No breaking changes - parameters are optional
+
+4. Budget awareness flow:
+   - LLM sees budget in tool results section
+   - Can plan accordingly and prioritize remaining calls
+   - Avoids mid-task cutoffs from budget exhaustion
+   - Better task completion rates
+
+**Result:**
+- LLM now aware of remaining tool call budget
+- Can plan and prioritize remaining calls intelligently
+- Prevents frustrating mid-task cutoffs
+- Simple implementation, no schema changes
+- Backward compatible (optional parameters)
+
+**Relevant Files:**
+- `src/agents/standard_agent.py:1051-1106` — Modified _inject_tool_results() to add budget message
+- `src/agents/standard_agent.py:402-425` — Modified _execute_iteration() to accept max_iterations
+- `src/agents/standard_agent.py:358-360` — Updated execute() to pass budget info
 
 ---
 

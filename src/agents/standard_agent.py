@@ -354,9 +354,9 @@ class StandardAgent(BaseAgent):
                         metadata={"elapsed_seconds": elapsed, "iteration": iteration}
                     )
 
-                # Execute single iteration
+                # Execute single iteration with budget awareness
                 iteration_result = self._execute_iteration(
-                    prompt, total_tokens, total_cost, tool_calls_made, start_time
+                    prompt, total_tokens, total_cost, tool_calls_made, start_time, max_iterations
                 )
 
                 # Check if iteration completed successfully
@@ -405,7 +405,8 @@ class StandardAgent(BaseAgent):
         total_tokens: int,
         total_cost: float,
         tool_calls_made: List[Dict[str, Any]],
-        start_time: float
+        start_time: float,
+        max_iterations: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Execute single iteration of the tool calling loop.
@@ -416,6 +417,7 @@ class StandardAgent(BaseAgent):
             total_cost: Accumulated cost
             tool_calls_made: List of all tool calls made so far
             start_time: Execution start time
+            max_iterations: Optional max tool call budget for budget awareness
 
         Returns:
             Dict with iteration results and state updates
@@ -571,8 +573,18 @@ class StandardAgent(BaseAgent):
         tool_results = self._execute_tool_calls(tool_calls)
         tool_calls_made.extend(tool_results)
 
-        # Prepare next iteration
-        next_prompt = self._inject_tool_results(prompt, llm_response.content, tool_results)
+        # Calculate remaining tool calls for budget awareness
+        remaining_budget = None
+        if max_iterations is not None:
+            remaining_budget = max_iterations - len(tool_calls_made)
+
+        # Prepare next iteration with budget awareness
+        next_prompt = self._inject_tool_results(
+            prompt,
+            llm_response.content,
+            tool_results,
+            remaining_tool_calls=remaining_budget
+        )
 
         return {
             "complete": False,
@@ -1044,7 +1056,8 @@ class StandardAgent(BaseAgent):
         self,
         original_prompt: str,
         llm_response: str,
-        tool_results: List[Dict[str, Any]]
+        tool_results: List[Dict[str, Any]],
+        remaining_tool_calls: Optional[int] = None
     ) -> str:
         """Inject tool results into prompt for next iteration.
 
@@ -1052,6 +1065,7 @@ class StandardAgent(BaseAgent):
             original_prompt: Original prompt
             llm_response: LLM response with tool calls
             tool_results: Results from tool execution
+            remaining_tool_calls: Optional count of remaining tool calls (budget awareness)
 
         Returns:
             Updated prompt with tool results
@@ -1085,6 +1099,17 @@ class StandardAgent(BaseAgent):
                     safe_error += f"\n[truncated — {original_size:,} total chars, showing first {MAX_TOOL_RESULT_SIZE:,}]"
 
                 results_parts.append(f"Error: {safe_error}\n")
+
+        # Add budget awareness message if remaining count provided
+        if remaining_tool_calls is not None:
+            if remaining_tool_calls > 0:
+                results_parts.append(
+                    f"\n[System Info: You have {remaining_tool_calls} tool call(s) remaining in your budget.]\n"
+                )
+            else:
+                results_parts.append(
+                    "\n[System Info: This is your last tool call. Budget exhausted after this iteration.]\n"
+                )
 
         results_text = ''.join(results_parts)
 

@@ -32,7 +32,8 @@ from src.self_improvement.deployment.rollback_monitor import (
     RollbackMonitor,
     RegressionThresholds,
 )
-from src.self_improvement.data_models import AgentConfig
+from src.self_improvement.data_models import AgentConfig, StrategyOutcome
+from src.self_improvement.strategy_learning import StrategyLearningStore
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +55,11 @@ class LoopExecutor:
         error_recovery: ErrorRecoveryStrategy,
         metrics_collector: MetricsCollector,
         tracker: Optional[Any] = None,
+        policy_engine: Optional[Any] = None,
+        approval_workflow: Optional[Any] = None,
     ):
         """
-        Initialize loop executor.
+        Initialize loop executor with M4 safety stack integration.
 
         Args:
             coord_db: Coordination database
@@ -66,6 +69,8 @@ class LoopExecutor:
             error_recovery: Error recovery strategy
             metrics_collector: Metrics collector
             tracker: Optional ExecutionTracker for decision outcome tracking
+            policy_engine: Optional ActionPolicyEngine for safety validation
+            approval_workflow: Optional ApprovalWorkflow for high-impact changes
         """
         self.coord_db = coord_db
         self.obs_session = obs_session
@@ -83,7 +88,17 @@ class LoopExecutor:
             session=obs_session,
             target_executions_per_variant=config.target_samples_per_variant
         )
-        self.config_deployer = ConfigDeployer(coord_db)
+
+        # Initialize ConfigDeployer with M4 safety stack integration
+        self.config_deployer = ConfigDeployer(
+            db=coord_db,
+            policy_engine=policy_engine,
+            approval_workflow=approval_workflow,
+            enable_safety_checks=config.enable_safety_checks if hasattr(config, 'enable_safety_checks') else True
+        )
+
+        # Initialize strategy learning store for tracking outcomes
+        self.strategy_learning_store = StrategyLearningStore(coord_db)
 
         # Initialize rollback monitor with config thresholds
         rollback_thresholds = RegressionThresholds(
@@ -470,6 +485,41 @@ class LoopExecutor:
                 except Exception as e:
                     logger.warning(f"Failed to track experiment outcome: {e}")
 
+            # Record strategy outcome for learning
+            try:
+                import uuid
+
+                # Infer problem type from strategy metadata or use generic
+                problem_type = strategy_result.strategy_metadata.get("problem_type", "quality_low")
+
+                outcome = StrategyOutcome(
+                    id=f"outcome-{uuid.uuid4().hex[:12]}",
+                    strategy_name=strategy_result.strategy_name,
+                    problem_type=problem_type,
+                    agent_name=agent_name,
+                    experiment_id=experiment.id,
+                    was_winner=True,
+                    actual_quality_improvement=winner.quality_improvement / 100.0,  # Convert percentage to fraction
+                    actual_speed_improvement=winner.speed_improvement / 100.0,
+                    actual_cost_improvement=winner.cost_improvement / 100.0,
+                    composite_score=winner.composite_score / 100.0,
+                    confidence=winner.confidence,
+                    sample_size=self.config.target_samples_per_variant * (len(strategy_result.variant_configs) + 1),  # Variants + control
+                    context={
+                        "control_config": strategy_result.control_config.to_dict(),
+                        "winner_variant_id": winner.variant_id,
+                        "statistical_significance": winner.is_statistically_significant,
+                    },
+                )
+
+                self.strategy_learning_store.record_outcome(outcome)
+                logger.info(
+                    f"Recorded strategy outcome for {strategy_result.strategy_name}: "
+                    f"{winner.quality_improvement:.1f}% quality improvement"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record strategy outcome: {e}")
+
             return result
         else:
             logger.info(f"No winner (control best or inconclusive) for {agent_name}")
@@ -501,6 +551,39 @@ class LoopExecutor:
                     )
                 except Exception as e:
                     logger.warning(f"Failed to track experiment outcome: {e}")
+
+            # Record strategy outcome (no improvement) for learning
+            try:
+                import uuid
+
+                # Infer problem type from strategy metadata or use generic
+                problem_type = strategy_result.strategy_metadata.get("problem_type", "quality_low")
+
+                outcome = StrategyOutcome(
+                    id=f"outcome-{uuid.uuid4().hex[:12]}",
+                    strategy_name=strategy_result.strategy_name,
+                    problem_type=problem_type,
+                    agent_name=agent_name,
+                    experiment_id=experiment.id,
+                    was_winner=False,
+                    actual_quality_improvement=0.0,  # No improvement
+                    actual_speed_improvement=0.0,
+                    actual_cost_improvement=0.0,
+                    composite_score=0.0,
+                    confidence=0.80,  # Moderate confidence that control is best
+                    sample_size=self.config.target_samples_per_variant * (len(strategy_result.variant_configs) + 1),
+                    context={
+                        "control_config": strategy_result.control_config.to_dict(),
+                        "reason": "No statistically significant improvement",
+                    },
+                )
+
+                self.strategy_learning_store.record_outcome(outcome)
+                logger.info(
+                    f"Recorded no-improvement outcome for {strategy_result.strategy_name}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record strategy outcome: {e}")
 
             return result
 

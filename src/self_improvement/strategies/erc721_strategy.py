@@ -70,6 +70,15 @@ contract MyNFT is ERC721, Ownable {
 }
 '''
 
+    def __init__(self, learning_store=None):
+        """
+        Initialize strategy with optional learning store.
+
+        Args:
+            learning_store: Optional StrategyLearningStore for learning from outcomes
+        """
+        super().__init__(learning_store)
+
     @property
     def name(self) -> str:
         """Strategy identifier."""
@@ -158,12 +167,21 @@ contract MyNFT is ERC721, Ownable {
     def estimate_impact(self, problem: Dict) -> float:
         """Estimate expected improvement.
 
+        Uses historical outcomes from learning_store if available,
+        otherwise falls back to problem-type-specific estimates.
+
         Args:
             problem: Problem details
 
         Returns:
             Estimated improvement (0.0-1.0)
         """
+        # If learning store available, use learned estimate
+        if self.learning_store:
+            # Call parent's learned estimate (uses Bayesian updating)
+            return super().estimate_impact(problem)
+
+        # Fallback: Problem-type-specific estimates (used as priors if no data)
         problem_type = problem.get("problem_type", problem.get("type", "unknown"))
 
         impact_by_type = {

@@ -39,13 +39,15 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         >>> # Variants use different models: llama3.1:8b, mistral:7b, qwen2.5:32b
     """
 
-    def __init__(self, model_registry: ModelRegistry):
+    def __init__(self, model_registry: ModelRegistry, learning_store=None):
         """
-        Initialize strategy with model registry.
+        Initialize strategy with model registry and optional learning store.
 
         Args:
             model_registry: Registry of available models
+            learning_store: Optional StrategyLearningStore for learning from outcomes
         """
+        super().__init__(learning_store)
         self._registry = model_registry
 
     @property
@@ -119,12 +121,21 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         """
         Estimate expected improvement from model selection.
 
+        Uses historical outcomes from learning_store if available,
+        otherwise falls back to problem-type-specific estimates.
+
         Args:
             problem: Problem details including type and metrics
 
         Returns:
             Estimated improvement (0.0-1.0)
         """
+        # If learning store available, use learned estimate
+        if self.learning_store:
+            # Call parent's learned estimate (uses Bayesian updating)
+            return super().estimate_impact(problem)
+
+        # Fallback: Problem-type-specific estimates (used as priors if no data)
         problem_type = problem.get("problem_type", problem.get("type", "unknown"))
 
         # Model selection has high impact on quality and moderate on speed/cost

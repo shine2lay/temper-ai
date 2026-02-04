@@ -426,3 +426,93 @@ class ConfigDeployment:
             rollback_at=datetime.fromisoformat(data["rollback_at"]) if data.get("rollback_at") else None,
             rollback_reason=data.get("rollback_reason"),
         )
+
+
+@dataclass
+class StrategyOutcome:
+    """
+    Tracks actual outcomes from strategy applications for learning.
+
+    Records the real-world results when a strategy is applied and tested
+    through experimentation. Used to refine estimate_impact() predictions
+    over time through Bayesian updating or moving averages.
+
+    Attributes:
+        id: Unique outcome identifier
+        strategy_name: Name of strategy that was applied
+        problem_type: Type of problem addressed (quality_low, cost_high, etc.)
+        agent_name: Name of agent this was applied to
+        experiment_id: ID of experiment that tested this strategy
+        was_winner: Whether this strategy's variant won the experiment
+        actual_quality_improvement: Actual quality improvement (0.0-1.0, negative if degraded)
+        actual_speed_improvement: Actual speed improvement (0.0-1.0, negative if slower)
+        actual_cost_improvement: Actual cost improvement (0.0-1.0, negative if more expensive)
+        composite_score: Combined improvement score
+        confidence: Statistical confidence of the result (0.0-1.0)
+        sample_size: Number of executions used in experiment
+        recorded_at: When this outcome was recorded
+        context: Additional context (current config, patterns, etc.)
+    """
+
+    # Identity
+    id: str
+    strategy_name: str
+    problem_type: str
+    agent_name: str
+
+    # Experiment linkage
+    experiment_id: str
+    was_winner: bool
+
+    # Actual improvement metrics
+    actual_quality_improvement: float  # Fraction: 0.3 = 30% improvement
+    actual_speed_improvement: float
+    actual_cost_improvement: float
+    composite_score: float
+
+    # Statistical confidence
+    confidence: float
+    sample_size: int
+
+    # Metadata
+    recorded_at: datetime = field(default_factory=utcnow)
+    context: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for database storage."""
+        return {
+            "id": self.id,
+            "strategy_name": self.strategy_name,
+            "problem_type": self.problem_type,
+            "agent_name": self.agent_name,
+            "experiment_id": self.experiment_id,
+            "was_winner": self.was_winner,
+            "actual_quality_improvement": self.actual_quality_improvement,
+            "actual_speed_improvement": self.actual_speed_improvement,
+            "actual_cost_improvement": self.actual_cost_improvement,
+            "composite_score": self.composite_score,
+            "confidence": self.confidence,
+            "sample_size": self.sample_size,
+            "recorded_at": self.recorded_at.isoformat(),
+            "context": self.context,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "StrategyOutcome":
+        """Load from dictionary (e.g., from database)."""
+        return cls(
+            id=data["id"],
+            strategy_name=data["strategy_name"],
+            problem_type=data["problem_type"],
+            agent_name=data["agent_name"],
+            experiment_id=data["experiment_id"],
+            was_winner=data["was_winner"],
+            actual_quality_improvement=data["actual_quality_improvement"],
+            actual_speed_improvement=data["actual_speed_improvement"],
+            actual_cost_improvement=data["actual_cost_improvement"],
+            composite_score=data["composite_score"],
+            confidence=data["confidence"],
+            sample_size=data["sample_size"],
+            recorded_at=datetime.fromisoformat(data["recorded_at"]),
+            context=data.get("context", {}),
+        )

@@ -31,7 +31,12 @@ Identified during architecture walkthrough (Section 5: Agent Layer).
 
 **Wave 5 (Collaboration): ⏳ Pending**
 
-**Wave 6 (Self-Improvement): ⏳ Pending**
+**Wave 6 (Self-Improvement): 🔄 In Progress**
+- Issue #27: ✅ Completed - M5 integrated with M4 safety stack
+- Issue #25: ✅ Completed - Strategies learn from outcomes via Bayesian updating
+- Issue #26: ⏳ Pending - Add pattern mining from experiments
+- Issue #29: ⏳ Pending - Add more concrete strategies
+- Issue #28: ⏳ Pending - Implement continuous improvement mode
 
 ---
 
@@ -640,7 +645,9 @@ Identified during architecture walkthrough (Section 10: Observability).
 
 Identified during architecture walkthrough (Section 11: Self-Improvement / M5).
 
-## 25. Strategies Don't Learn From Outcomes (Open Loop)
+## 25. Strategies Don't Learn From Outcomes (Open Loop) ✅ COMPLETED
+
+**Status:** ✅ Completed in Wave 6
 
 **Problem:** `estimate_impact()` returns hardcoded values (30-40% for Ollama model selection, 25-35% for ERC721). After an experiment runs and produces a winner (or loser), that result is never fed back into the strategy. The next time the same strategy runs, it makes the same estimates regardless of past performance. Each experiment starts from scratch.
 
@@ -650,10 +657,58 @@ Identified during architecture walkthrough (Section 11: Self-Improvement / M5).
 - Use Bayesian updating or simple moving averages to refine estimates over time
 - Strategies that consistently underperform should be deprioritized
 
+**Implementation:**
+
+1. **Created StrategyOutcome data model** (`src/self_improvement/data_models.py:431-520`):
+   - Tracks actual improvements (quality, speed, cost, composite)
+   - Links to experiment ID and strategy name
+   - Records whether strategy was winner
+   - Includes statistical confidence and sample size
+   - Stores problem type and agent context
+
+2. **Created StrategyLearningStore** (`src/self_improvement/strategy_learning.py`):
+   - SQLite-backed storage with indexed queries
+   - `record_outcome()`: Stores strategy outcomes after experiments
+   - `get_average_improvement()`: Weighted average by confidence
+   - `get_win_rate()`: Success rate for strategy + problem type
+   - `get_sample_count()`: Number of historical outcomes
+   - Supports time windows (e.g., last 90 days)
+
+3. **Updated base ImprovementStrategy** (`src/self_improvement/strategies/strategy.py`):
+   - Added `learning_store` parameter to `__init__()`
+   - Redesigned `estimate_impact()` with Bayesian updating:
+     - Queries historical outcomes for strategy + problem_type
+     - Combines prior estimate with historical data using weighted average
+     - Prior weight = 10, data weight = sample count
+     - Formula: `(prior * 10 + historical_avg * N) / (10 + N)`
+     - Requires ~10 samples before historical data dominates
+
+4. **Updated concrete strategies**:
+   - `OllamaModelSelectionStrategy`: Calls `super().estimate_impact()` if learning_store available
+   - `ERC721WorkflowStrategy`: Same pattern
+   - Fall back to hardcoded estimates if no historical data
+
+5. **Integrated with LoopExecutor** (`src/self_improvement/loop/executor.py`):
+   - Initializes `StrategyLearningStore` with coordination database
+   - After Phase 4 (Experiment):
+     - If winner found: Records outcome with actual improvements
+     - If no winner: Records zero-improvement outcome
+   - Both cases build learning data for future iterations
+
+**Learning Process:**
+1. Experiment completes → Outcome recorded with actual metrics
+2. Next iteration → Strategy queries historical outcomes
+3. Bayesian update combines prior + historical data
+4. More samples → More confidence in historical average
+5. Better estimates → Better strategy prioritization
+
 **Relevant Files:**
-- `src/self_improvement/strategies/strategy.py:178` — `estimate_impact()` (hardcoded returns)
-- `src/self_improvement/strategies/ollama_model_strategy.py:220-237` — Fixed 0.3-0.4 estimates
-- `src/self_improvement/experiment_orchestrator.py:738` — `get_winner()` (result not fed back)
+- `src/self_improvement/data_models.py:431-520` — NEW: StrategyOutcome model
+- `src/self_improvement/strategy_learning.py` — NEW: Learning store with queries
+- `src/self_improvement/strategies/strategy.py:100-258` — Bayesian estimate_impact()
+- `src/self_improvement/strategies/ollama_model_strategy.py:43,118-139` — Uses learning
+- `src/self_improvement/strategies/erc721_strategy.py:71-81,158-180` — Uses learning
+- `src/self_improvement/loop/executor.py:36-37,96-97,489-522,551-582` — Records outcomes
 
 ## 26. No Pattern Mining From Experiment History
 
@@ -669,7 +724,9 @@ Identified during architecture walkthrough (Section 11: Self-Improvement / M5).
 - `src/self_improvement/data_models.py` — `LearnedPattern` model (exists, unused)
 - `src/self_improvement/experiment_orchestrator.py:802` — `analyze_experiment()` (one-off, no cross-experiment analysis)
 
-## 27. M4 Safety Integration Missing
+## 27. M4 Safety Integration Missing ✅ COMPLETED
+
+**Status:** ✅ Completed in Wave 6
 
 **Problem:** M5 built its own `ConfigDeployer` instead of using M4's safety/rollback infrastructure. Config deployments bypass all safety policies — no `ActionPolicyEngine` validation, no `CircuitBreaker` protection, no `ApprovalWorkflow` for human review of automated config changes. An improvement cycle could deploy a config that violates safety policies.
 
@@ -680,11 +737,44 @@ Identified during architecture walkthrough (Section 11: Self-Improvement / M5).
 - Use M4's `RollbackManager` instead of M5's standalone rollback (consolidate)
 - This depends on Issue #13 (safety layer connection) being resolved first
 
+**Implementation:**
+
+1. **Created ConfigChangePolicy** (`src/safety/config_change_policy.py`):
+   - Extends `BaseSafetyPolicy` with full M4 safety stack integration
+   - Validates model changes (checks allowed list, requires approval)
+   - Validates temperature changes (enforces min/max ranges)
+   - Blocks safety mode downgrades (prevent require_approval → execute)
+   - Validates tool configuration changes (requires approval)
+   - Estimates cost impact using model size heuristics
+   - Returns `ValidationResult` with critical/high violations for ActionPolicyEngine
+
+2. **Updated ConfigDeployer** (`src/self_improvement/deployment/deployer.py`):
+   - Added `ActionPolicyEngine` and `ApprovalWorkflow` as dependencies
+   - `deploy()` method now validates through `_validate_through_safety_stack()`
+   - Creates config_change action and routes through ActionPolicyEngine
+   - Blocks deployment on critical violations (raises ValueError)
+   - Requests approval for high-impact changes via `_request_and_wait_for_approval()`
+   - Waits for approval decision with configurable timeout
+   - Only deploys if approved or no violations
+   - Fully integrated with M4 PolicyExecutionContext
+
+3. **Updated LoopExecutor** (`src/self_improvement/loop/executor.py`):
+   - Added `policy_engine` and `approval_workflow` parameters to `__init__()`
+   - Passes safety components to ConfigDeployer during initialization
+   - Enables `enable_safety_checks` flag from config
+
+**Safety Checks:**
+- **CRITICAL violations block deployment**: Unauthorized model, temperature out of range, safety downgrade
+- **HIGH violations require approval**: Model changes, tool config changes, cost increases >50%
+- **Approval workflow**: Configurable timeout, polls for approval decision
+- **Context tracking**: Full PolicyExecutionContext with agent_id, workflow_id, stage_id
+
 **Relevant Files:**
-- `src/self_improvement/deployment/deployer.py` — Standalone deployer (no safety checks)
-- `src/self_improvement/deployment/rollback_monitor.py` — Standalone rollback (duplicates M4)
-- `src/safety/action_policy_engine.py` — Should validate config changes
-- `src/safety/rollback.py` — Should handle config rollbacks
+- `src/safety/config_change_policy.py` — NEW: Validates config changes through M4 stack
+- `src/self_improvement/deployment/deployer.py` — Integrated with ActionPolicyEngine + ApprovalWorkflow
+- `src/self_improvement/loop/executor.py` — Passes safety components to ConfigDeployer
+- `src/safety/action_policy_engine.py` — Validates config_change actions
+- `src/safety/approval.py` — Handles approval requests for high-impact changes
 
 ## 28. Continuous Mode Not Implemented
 

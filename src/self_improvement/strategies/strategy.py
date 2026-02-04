@@ -82,12 +82,16 @@ class ImprovementStrategy(ABC):
     agent performance. Strategies analyze current configuration and learned
     patterns to generate promising configuration variants for experimentation.
 
+    Strategies can learn from past outcomes to refine their impact estimates
+    over time through the optional learning_store parameter.
+
     The core workflow:
     1. ImprovementDetector identifies a performance problem
     2. StrategySelector chooses applicable strategies
     3. Each strategy generates 2-4 config variants to test
     4. ExperimentOrchestrator tests variants and selects best
     5. ConfigDeployer applies winning configuration
+    6. StrategyLearningStore records outcome for future learning
 
     Concrete strategies must implement:
     - name: Unique identifier for the strategy
@@ -96,7 +100,17 @@ class ImprovementStrategy(ABC):
 
     Optional override:
     - estimate_impact: Predict expected improvement (for prioritization)
+      Default implementation queries learning_store if available
     """
+
+    def __init__(self, learning_store=None):
+        """
+        Initialize strategy with optional learning store.
+
+        Args:
+            learning_store: Optional StrategyLearningStore for querying historical outcomes
+        """
+        self.learning_store = learning_store
 
     @property
     @abstractmethod
@@ -181,11 +195,23 @@ class ImprovementStrategy(ABC):
 
         Optional method for strategies to predict their likely impact
         on the given problem. Used for prioritizing strategies when
-        multiple are applicable. Default implementation returns 0.1
-        (10% improvement).
+        multiple are applicable.
+
+        Default implementation:
+        1. If learning_store available: Query historical outcomes and use
+           Bayesian updating to combine historical average with base estimate
+        2. Otherwise: Return base estimate (0.1 = 10% improvement)
+
+        Concrete strategies can override this to provide custom estimates
+        or call super().estimate_impact(problem) to get learned estimate
+        and then adjust based on strategy-specific logic.
 
         Args:
-            problem: Problem details including metrics, severity, context
+            problem: Problem details including:
+                - type or problem_type: Problem category (quality_low, cost_high, etc.)
+                - metrics: Current performance metrics
+                - severity: Problem severity
+                - context: Additional context
 
         Returns:
             Estimated improvement from 0 (no impact) to 1 (complete resolution).
@@ -193,8 +219,54 @@ class ImprovementStrategy(ABC):
 
         Example:
             >>> problem = {'type': 'cost_high', 'current_cost': 100}
-            >>> strategy = ModelSelectionStrategy()
+            >>> strategy = ModelSelectionStrategy(learning_store)
             >>> strategy.estimate_impact(problem)
-            0.3  # Expects ~30% cost reduction
+            0.35  # Learned from historical outcomes
         """
-        return 0.1
+        # Base estimate (prior belief)
+        base_estimate = 0.1
+
+        # If no learning store, return base estimate
+        if not self.learning_store:
+            return base_estimate
+
+        # Get problem type
+        problem_type = problem.get("problem_type", problem.get("type", "unknown"))
+
+        # Query historical outcomes
+        avg_improvement = self.learning_store.get_average_improvement(
+            strategy_name=self.name,
+            problem_type=problem_type,
+            metric="composite_score",
+            min_confidence=0.80,
+            days_back=90
+        )
+
+        # If no historical data, return base estimate
+        if avg_improvement is None:
+            return base_estimate
+
+        # Get sample count for confidence weighting
+        sample_count = self.learning_store.get_sample_count(
+            strategy_name=self.name,
+            problem_type=problem_type,
+            days_back=90
+        )
+
+        # Bayesian updating: weight historical average by sample size
+        # More samples = more confidence in historical average
+        # Fewer samples = more reliance on prior (base estimate)
+        #
+        # Formula: weighted_estimate = (prior * prior_weight + data * data_weight) / (prior_weight + data_weight)
+        # where prior_weight is fixed at 10, and data_weight is sample_count
+        #
+        # This means we need ~10 samples before historical data dominates the estimate
+        prior_weight = 10.0
+        data_weight = float(sample_count)
+
+        weighted_estimate = (
+            (base_estimate * prior_weight + avg_improvement * data_weight) /
+            (prior_weight + data_weight)
+        )
+
+        return weighted_estimate

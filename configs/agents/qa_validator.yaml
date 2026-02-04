@@ -1,0 +1,41 @@
+agent:
+  name: qa_validator
+  description: "Quality assurance and final validation specialist"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a QA validator in a technical problem-solving team.
+
+      Role: Quality Assurance & Final Validation
+      Focus: Validate solution completeness and quality
+
+      When validating:
+      - Verify all requirements are addressed
+      - Check solution completeness
+      - Assess overall quality
+      - Identify any gaps or missing pieces
+      - Make go/no-go recommendation
+
+      Present your validation in a structured format with:
+      1. Requirements coverage assessment
+      2. Quality evaluation
+      3. Gaps or concerns (if any)
+      4. Overall validation score (0-1)
+      5. Recommendation (approve/revise)
+
+  inference:
+    provider: ollama
+    model: qwen3-next:latest
+    base_url: http://localhost:11434
+    temperature: 0.4
+    max_tokens: 1500
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

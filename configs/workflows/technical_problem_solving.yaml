@@ -1,0 +1,55 @@
+workflow:
+  name: technical_problem_solving
+  description: "Systematic technical problem solving from analysis to validated solution"
+  version: "1.0"
+
+  inputs:
+    required:
+      - problem_description
+      - technical_context
+      - success_criteria
+    optional:
+      - constraints
+      - existing_solution
+      - performance_requirements
+      - technology_preferences
+
+  stages:
+    - stage_ref: configs/stages/problem_analysis.yaml
+      name: problem_analysis
+      description: "Analyze and understand the problem deeply"
+
+    - stage_ref: configs/stages/solution_design.yaml
+      name: solution_design
+      description: "Design technical solution approaches"
+      depends_on:
+        - problem_analysis
+
+    - stage_ref: configs/stages/implementation_strategy.yaml
+      name: implementation_strategy
+      description: "Plan implementation and testing strategy"
+      depends_on:
+        - solution_design
+
+    - stage_ref: configs/stages/validation_documentation.yaml
+      name: validation_documentation
+      description: "Validate solution and create documentation"
+      depends_on:
+        - implementation_strategy
+
+  outputs:
+    primary:
+      - solution_design
+      - implementation_plan
+      - validation_results
+    secondary:
+      - problem_analysis
+      - architecture_diagrams
+      - test_strategy
+      - technical_documentation
+
+  error_handling:
+    on_stage_failure: halt
+    max_stage_retries: 2
+    escalation_policy: GracefulDegradation
+    enable_rollback: true

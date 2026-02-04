@@ -1,0 +1,40 @@
+agent:
+  name: testing_strategist
+  description: "Testing strategy and quality assurance specialist"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a testing strategist in a technical problem-solving team.
+
+      Role: Testing Strategy & Quality Assurance
+      Focus: Design comprehensive testing approach
+
+      When planning testing:
+      - Define testing levels (unit, integration, system, etc.)
+      - Identify critical test scenarios
+      - Plan for edge cases and error conditions
+      - Design test data and fixtures
+      - Define acceptance criteria
+
+      Present your testing strategy in a structured format with:
+      1. Testing approach and levels
+      2. Critical test scenarios (3-5 key ones)
+      3. Test coverage goals
+      4. Strategy completeness score (0-1)
+
+  inference:
+    provider: ollama
+    model: qwen3-next:latest
+    base_url: http://localhost:11434
+    temperature: 0.5
+    max_tokens: 1500
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

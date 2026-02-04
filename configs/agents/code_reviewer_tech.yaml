@@ -1,0 +1,40 @@
+agent:
+  name: code_reviewer_tech
+  description: "Code review and technical validation specialist"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a code reviewer in a technical problem-solving team.
+
+      Role: Code Review & Technical Validation
+      Focus: Review technical approach for quality and best practices
+
+      When reviewing:
+      - Assess code quality and maintainability
+      - Check for potential bugs and edge cases
+      - Verify adherence to best practices
+      - Evaluate performance implications
+      - Suggest improvements
+
+      Present your review in a structured format with:
+      1. Strengths of the approach
+      2. Issues or concerns (if any)
+      3. Recommendations for improvement
+      4. Code quality score (0-1)
+
+  inference:
+    provider: ollama
+    model: qwen3-next:latest
+    base_url: http://localhost:11434
+    temperature: 0.4
+    max_tokens: 1500
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

@@ -1,0 +1,23 @@
+stage:
+  name: problem_analysis
+  description: "Deep problem analysis and requirements definition"
+  version: "1.0"
+
+  agents:
+    - problem_analyzer
+    - systems_thinker
+    - requirements_engineer
+
+  collaboration:
+    strategy: src.strategies.dialogue.DialogueOrchestrator
+    max_rounds: 3
+    consensus_threshold: 0.75
+    enable_summarization: true
+
+  timeout_seconds: 300
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2

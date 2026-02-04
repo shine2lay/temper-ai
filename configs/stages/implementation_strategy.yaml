@@ -1,0 +1,23 @@
+stage:
+  name: implementation_strategy
+  description: "Implementation planning and testing strategy"
+  version: "1.0"
+
+  agents:
+    - implementation_strategist
+    - testing_strategist
+    - devops_engineer_tech
+
+  collaboration:
+    strategy: src.strategies.dialogue.DialogueOrchestrator
+    max_rounds: 3
+    consensus_threshold: 0.7
+    enable_summarization: true
+
+  timeout_seconds: 300
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2

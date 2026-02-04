@@ -1,0 +1,23 @@
+stage:
+  name: solution_design
+  description: "Technical solution design with multiple perspectives"
+  version: "1.0"
+
+  agents:
+    - algorithm_designer
+    - software_architect_tech
+    - data_engineer_tech
+
+  collaboration:
+    strategy: src.strategies.dialogue.DialogueOrchestrator
+    max_rounds: 3
+    consensus_threshold: 0.7
+    enable_summarization: true
+
+  timeout_seconds: 300
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2

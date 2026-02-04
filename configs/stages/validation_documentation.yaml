@@ -1,0 +1,23 @@
+stage:
+  name: validation_documentation
+  description: "Solution validation and technical documentation"
+  version: "1.0"
+
+  agents:
+    - code_reviewer_tech
+    - documentation_specialist
+    - qa_validator
+
+  collaboration:
+    strategy: src.strategies.dialogue.DialogueOrchestrator
+    max_rounds: 2
+    consensus_threshold: 0.75
+    enable_summarization: true
+
+  timeout_seconds: 300
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2

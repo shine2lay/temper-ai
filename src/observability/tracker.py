@@ -71,16 +71,19 @@ class ExecutionTracker:
         self,
         backend: Optional[ObservabilityBackend] = None,
         sanitization_config: Optional[SanitizationConfig] = None,
-        metric_registry: Optional['MetricRegistry'] = None
+        metric_registry: Optional['MetricRegistry'] = None,
+        alert_manager: Optional[Any] = None
     ):
         """
-        Initialize execution tracker with sanitization support.
+        Initialize execution tracker with sanitization and alerting support.
 
         Args:
             backend: Observability backend to use. If None, defaults to SQLObservabilityBackend.
             sanitization_config: Configuration for data sanitization. If None, uses secure defaults.
             metric_registry: Optional MetricRegistry for collecting metrics after agent execution.
                             If provided, metrics will be automatically collected and stored for each agent.
+            alert_manager: Optional AlertManager for real-time alerting on metric thresholds.
+                          If None, creates default AlertManager with built-in rules.
         """
         # Thread-safe: each thread/async-task gets its own ExecutionContext
         # Note: no default= so each thread creates its own via the property getter
@@ -104,6 +107,12 @@ class ExecutionTracker:
 
         # Store metric registry for automatic metric collection
         self.metric_registry = metric_registry
+
+        # Initialize alert manager for real-time alerting
+        if alert_manager is None:
+            from src.observability.alerting import AlertManager
+            alert_manager = AlertManager()
+        self.alert_manager = alert_manager
 
     @property
     def context(self) -> ExecutionContext:
@@ -299,13 +308,23 @@ class ExecutionTracker:
                         metrics = session.exec(metrics_statement).first()
 
                         if metrics:
+                            total_cost = float(metrics.total_cost_usd or 0.0)
+
                             self.backend.update_workflow_metrics(
                                 workflow_id=workflow_id,
                                 total_llm_calls=int(metrics.total_llm_calls or 0),
                                 total_tool_calls=int(metrics.total_tool_calls or 0),
                                 total_tokens=int(metrics.total_tokens or 0),
-                                total_cost_usd=float(metrics.total_cost_usd or 0.0)
+                                total_cost_usd=total_cost
                             )
+
+                            # Check cost alerts
+                            if self.alert_manager and total_cost > 0:
+                                self.alert_manager.check_metric(
+                                    metric_type="cost_usd",
+                                    value=total_cost,
+                                    context={"workflow_id": workflow_id}
+                                )
                 except (ImportError, AttributeError):
                     # Non-SQL backends don't need metric aggregation
                     # Expected when backend doesn't support SQL queries
@@ -730,6 +749,34 @@ class ExecutionTracker:
         # This is sufficient for security purposes - the important thing is that
         # secrets/PII are redacted from the stored prompt/response.
 
+        # Check latency and cost alerts
+        if self.alert_manager:
+            # Check latency
+            if latency_ms > 0:
+                self.alert_manager.check_metric(
+                    metric_type="latency_p99",  # Treat each call as potential p99
+                    value=latency_ms,
+                    context={
+                        "agent_id": agent_id,
+                        "provider": provider,
+                        "model": model,
+                        "llm_call_id": llm_call_id
+                    }
+                )
+
+            # Check cost
+            if estimated_cost_usd > 0:
+                self.alert_manager.check_metric(
+                    metric_type="cost_usd",
+                    value=estimated_cost_usd,
+                    context={
+                        "agent_id": agent_id,
+                        "provider": provider,
+                        "model": model,
+                        "llm_call_id": llm_call_id
+                    }
+                )
+
         return llm_call_id
 
     def track_tool_call(
@@ -792,23 +839,43 @@ class ExecutionTracker:
             approval_required=approval_required
         )
 
+        # Check tool execution duration alerts
+        if self.alert_manager and duration_seconds > 0:
+            duration_ms = duration_seconds * 1000
+            self.alert_manager.check_metric(
+                metric_type="duration",
+                value=duration_ms,
+                context={
+                    "agent_id": agent_id,
+                    "tool_name": tool_name,
+                    "tool_execution_id": tool_execution_id,
+                    "status": status
+                }
+            )
+
         return tool_execution_id
 
-    def _sanitize_dict(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def _sanitize_dict(self, data: Dict[str, Any], _depth: int = 0) -> Dict[str, Any]:
         """
         Recursively sanitize dictionary values to remove secrets.
 
         SECURITY: Prevents credential exposure in tool parameters/outputs.
         Uses recursive traversal instead of JSON round-trip to avoid injection attacks.
+        OB-09: Depth-limited to prevent RecursionError on deeply nested structures.
 
         Args:
             data: Dictionary to sanitize
+            _depth: Current recursion depth (internal)
 
         Returns:
             Sanitized dictionary with secrets redacted
         """
         if not isinstance(data, dict):
             return data
+
+        # OB-09: Prevent RecursionError on deeply nested structures
+        if _depth > 20:
+            return {"__truncated__": "max depth exceeded"}
 
         sanitized = {}
         for key, value in data.items():
@@ -819,10 +886,10 @@ class ExecutionTracker:
 
                 # Recursively sanitize value based on type
                 if isinstance(value, dict):
-                    sanitized[safe_key] = self._sanitize_dict(value)
+                    sanitized[safe_key] = self._sanitize_dict(value, _depth + 1)
                 elif isinstance(value, list):
                     sanitized[safe_key] = [
-                        self._sanitize_dict(item) if isinstance(item, dict)
+                        self._sanitize_dict(item, _depth + 1) if isinstance(item, dict)
                         else self.sanitizer.sanitize_text(str(item), context="config").sanitized_text
                         if isinstance(item, str)
                         else item
@@ -1114,3 +1181,368 @@ class ExecutionTracker:
                 }
             )
             return ""
+
+    def track_decision_outcome(
+        self,
+        decision_type: str,
+        decision_data: Dict[str, Any],
+        outcome: str,
+        impact_metrics: Optional[Dict[str, Any]] = None,
+        lessons_learned: Optional[str] = None,
+        should_repeat: Optional[bool] = None,
+        tags: Optional[List[str]] = None,
+        agent_execution_id: Optional[str] = None,
+        stage_execution_id: Optional[str] = None,
+        workflow_execution_id: Optional[str] = None,
+        validation_method: Optional[str] = None,
+        validation_timestamp: Optional[datetime] = None,
+        validation_duration_seconds: Optional[float] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None
+    ) -> str:
+        """
+        Track decision outcome for self-improvement learning loop.
+
+        Records decisions made by M5 self-improvement system (experiment selections,
+        config deployments, strategy choices) and their outcomes. This enables:
+        - Audit trail of what M5 changed and why
+        - Learning from past decisions (what worked, what didn't)
+        - Cross-session persistence of learned patterns
+        - Observability of the self-improvement process itself
+
+        Args:
+            decision_type: Type of decision (e.g., "experiment_selection", "config_deployment",
+                          "strategy_choice", "rollback", "quality_gate")
+            decision_data: Decision details (proposed changes, selected strategy, etc.)
+            outcome: Decision outcome ("success", "failure", "neutral", "mixed")
+            impact_metrics: Measured impact of decision (cost change, quality change, etc.)
+            lessons_learned: Human-readable summary of what was learned
+            should_repeat: Whether this decision should be repeated in similar contexts
+            tags: Tags for categorization (e.g., ["cost_optimization", "quality_improvement"])
+            agent_execution_id: Optional agent execution ID this decision relates to
+            stage_execution_id: Optional stage execution ID this decision relates to
+            workflow_execution_id: Optional workflow execution ID this decision relates to
+            validation_method: How outcome was validated (A/B test, rollback monitor, etc.)
+            validation_timestamp: When outcome was validated
+            validation_duration_seconds: How long validation took
+            extra_metadata: Additional metadata for custom tracking
+
+        Returns:
+            str: ID of created decision outcome record (format: "decision-{12-char-hex}"),
+                 or empty string if tracking failed (safe to ignore - tracking failures
+                 do not break self-improvement loop)
+
+        Example:
+            >>> tracker.track_decision_outcome(
+            ...     decision_type="experiment_selection",
+            ...     decision_data={
+            ...         "baseline_config": {...},
+            ...         "candidate_config": {...},
+            ...         "strategy": "temperature_tuning"
+            ...     },
+            ...     outcome="success",
+            ...     impact_metrics={
+            ...         "cost_reduction_pct": 15.2,
+            ...         "quality_improvement_pct": 2.3
+            ...     },
+            ...     lessons_learned="Lowering temperature from 0.7 to 0.5 improved both cost and quality",
+            ...     should_repeat=True,
+            ...     tags=["cost_optimization", "temperature_tuning"]
+            ... )
+            'decision-456abc789def'
+        """
+        import uuid
+
+        decision_id = f"decision-{uuid.uuid4().hex[:12]}"
+
+        # Get execution IDs from context if not provided
+        if not workflow_execution_id:
+            workflow_execution_id = self.context.workflow_id
+        if not stage_execution_id:
+            stage_execution_id = self.context.stage_id
+        if not agent_execution_id:
+            agent_execution_id = self.context.agent_id
+
+        # Sanitize decision_data and impact_metrics to prevent sensitive data exposure
+        safe_decision_data = self._sanitize_dict(decision_data) if decision_data else {}
+        safe_impact_metrics = self._sanitize_dict(impact_metrics) if impact_metrics else None
+
+        # Delegate to backend
+        try:
+            from src.observability.models import DecisionOutcome
+
+            # Get current session (use existing session from stack if available)
+            if self._session_stack:
+                session = self._session_stack[-1]
+            else:
+                # Create new session for standalone decision tracking
+                with self.backend.get_session_context() as session:
+                    decision_record = DecisionOutcome(
+                        id=decision_id,
+                        agent_execution_id=agent_execution_id,
+                        stage_execution_id=stage_execution_id,
+                        workflow_execution_id=workflow_execution_id,
+                        decision_type=decision_type,
+                        decision_data=safe_decision_data,
+                        validation_method=validation_method,
+                        validation_timestamp=validation_timestamp,
+                        validation_duration_seconds=validation_duration_seconds,
+                        outcome=outcome,
+                        impact_metrics=safe_impact_metrics,
+                        lessons_learned=lessons_learned,
+                        should_repeat=should_repeat,
+                        tags=tags or [],
+                        extra_metadata=extra_metadata
+                    )
+                    session.add(decision_record)
+                    session.commit()
+                    logger.info(
+                        f"Tracked decision outcome: {decision_type} -> {outcome}",
+                        extra={
+                            "decision_id": decision_id,
+                            "decision_type": decision_type,
+                            "outcome": outcome
+                        }
+                    )
+                    return decision_id
+
+            # Use existing session
+            decision_record = DecisionOutcome(
+                id=decision_id,
+                agent_execution_id=agent_execution_id,
+                stage_execution_id=stage_execution_id,
+                workflow_execution_id=workflow_execution_id,
+                decision_type=decision_type,
+                decision_data=safe_decision_data,
+                validation_method=validation_method,
+                validation_timestamp=validation_timestamp,
+                validation_duration_seconds=validation_duration_seconds,
+                outcome=outcome,
+                impact_metrics=safe_impact_metrics,
+                lessons_learned=lessons_learned,
+                should_repeat=should_repeat,
+                tags=tags or [],
+                extra_metadata=extra_metadata
+            )
+            session.add(decision_record)
+            session.commit()
+
+            logger.info(
+                f"Tracked decision outcome: {decision_type} -> {outcome}",
+                extra={
+                    "decision_id": decision_id,
+                    "decision_type": decision_type,
+                    "outcome": outcome
+                }
+            )
+
+            # Update agent merit score if agent_name is in decision_data
+            if decision_data and 'agent_name' in decision_data:
+                try:
+                    agent_name_val = decision_data['agent_name']
+                    # Determine domain from decision_type or tags
+                    domain = tags[0] if tags and len(tags) > 0 else decision_type
+                    # Extract confidence from impact_metrics if available
+                    confidence_val = None
+                    if impact_metrics and 'confidence' in impact_metrics:
+                        confidence_val = impact_metrics['confidence']
+
+                    self.update_agent_merit_score(
+                        agent_name=agent_name_val,
+                        domain=domain,
+                        decision_outcome=outcome,
+                        confidence=confidence_val
+                    )
+                except Exception as merit_e:
+                    # Log but don't fail decision tracking for merit score errors
+                    logger.warning(f"Failed to update merit score for decision {decision_id}: {merit_e}")
+
+            return decision_id
+
+        except Exception as e:
+            logger.error(
+                f"Failed to track decision outcome: {e}",
+                exc_info=True,
+                extra={
+                    "decision_type": decision_type,
+                    "outcome": outcome
+                }
+            )
+            return ""
+
+    def update_agent_merit_score(
+        self,
+        agent_name: str,
+        domain: str,
+        decision_outcome: str,
+        confidence: Optional[float] = None
+    ) -> None:
+        """
+        Update agent merit score based on decision outcome.
+
+        Updates cumulative and time-windowed metrics for agent reputation tracking.
+        Called automatically when decision outcomes are recorded, or can be called
+        manually for custom merit score updates.
+
+        Args:
+            agent_name: Name of the agent
+            domain: Domain of expertise (e.g., "code_generation", "market_research")
+            decision_outcome: Outcome of decision ("success", "failure", "neutral", "mixed")
+            confidence: Confidence score of the decision (0.0-1.0)
+
+        Example:
+            >>> tracker.update_agent_merit_score(
+            ...     agent_name="researcher",
+            ...     domain="market_analysis",
+            ...     decision_outcome="success",
+            ...     confidence=0.85
+            ... )
+        """
+        try:
+            from src.observability.models import AgentMeritScore
+            from sqlmodel import select
+            from datetime import timedelta
+
+            # Get or create merit score record
+            if self._session_stack:
+                session = self._session_stack[-1]
+            else:
+                # Create new session for standalone merit score update
+                with self.backend.get_session_context() as session:
+                    self._update_merit_score_in_session(
+                        session, agent_name, domain, decision_outcome, confidence
+                    )
+                    return
+
+            # Use existing session
+            self._update_merit_score_in_session(
+                session, agent_name, domain, decision_outcome, confidence
+            )
+
+        except Exception as e:
+            logger.error(
+                f"Failed to update agent merit score: {e}",
+                exc_info=True,
+                extra={
+                    "agent_name": agent_name,
+                    "domain": domain,
+                    "outcome": decision_outcome
+                }
+            )
+
+    def _update_merit_score_in_session(
+        self,
+        session: Any,
+        agent_name: str,
+        domain: str,
+        decision_outcome: str,
+        confidence: Optional[float]
+    ) -> None:
+        """Helper method to update merit score within an existing session."""
+        from src.observability.models import AgentMeritScore
+        from sqlmodel import select
+        from datetime import timedelta
+        import uuid
+
+        # Get or create merit score record
+        statement = select(AgentMeritScore).where(
+            AgentMeritScore.agent_name == agent_name,
+            AgentMeritScore.domain == domain
+        )
+        merit_score = session.exec(statement).first()
+
+        if not merit_score:
+            # Create new merit score record
+            merit_score = AgentMeritScore(
+                id=f"merit-{uuid.uuid4().hex[:12]}",
+                agent_name=agent_name,
+                domain=domain,
+                total_decisions=0,
+                successful_decisions=0,
+                failed_decisions=0,
+                overridden_decisions=0,
+                first_decision_date=utcnow(),
+                last_decision_date=utcnow(),
+                last_updated=utcnow()
+            )
+            session.add(merit_score)
+
+        # Update decision counts
+        merit_score.total_decisions += 1
+        merit_score.last_decision_date = utcnow()
+        merit_score.last_updated = utcnow()
+
+        if decision_outcome == "success":
+            merit_score.successful_decisions += 1
+        elif decision_outcome == "failure":
+            merit_score.failed_decisions += 1
+        elif decision_outcome == "mixed":
+            # Count mixed as partial success (0.5 each)
+            merit_score.successful_decisions += 0.5
+            merit_score.failed_decisions += 0.5
+
+        # Update cumulative metrics
+        if merit_score.total_decisions > 0:
+            merit_score.success_rate = merit_score.successful_decisions / merit_score.total_decisions
+
+        # Update average confidence
+        if confidence is not None:
+            if merit_score.average_confidence is None:
+                merit_score.average_confidence = confidence
+            else:
+                # Exponential moving average with alpha=0.1
+                merit_score.average_confidence = 0.9 * merit_score.average_confidence + 0.1 * confidence
+
+        # Compute expertise score (weighted combination of success rate and confidence)
+        if merit_score.success_rate is not None:
+            confidence_component = merit_score.average_confidence or 0.5
+            merit_score.expertise_score = 0.7 * merit_score.success_rate + 0.3 * confidence_component
+
+        # Update time-windowed metrics (30-day and 90-day success rates)
+        # Note: This is a simplified implementation that requires DecisionOutcome records
+        # For production, should query DecisionOutcome table for time-windowed calculations
+        try:
+            from src.observability.models import DecisionOutcome
+            from sqlalchemy import func
+
+            # Get decisions in last 30 days
+            thirty_days_ago = utcnow() - timedelta(days=30)
+            ninety_days_ago = utcnow() - timedelta(days=90)
+
+            # 30-day success rate
+            recent_statement = select(
+                func.count(DecisionOutcome.id).label('total'),
+                func.sum(func.case((DecisionOutcome.outcome == 'success', 1), else_=0)).label('successful')
+            ).where(
+                DecisionOutcome.decision_data['agent_name'].astext == agent_name,
+                DecisionOutcome.validation_timestamp >= thirty_days_ago
+            )
+
+            recent_result = session.exec(recent_statement).first()
+            if recent_result and recent_result.total > 0:
+                merit_score.last_30_days_success_rate = recent_result.successful / recent_result.total
+
+            # 90-day success rate
+            ninety_statement = select(
+                func.count(DecisionOutcome.id).label('total'),
+                func.sum(func.case((DecisionOutcome.outcome == 'success', 1), else_=0)).label('successful')
+            ).where(
+                DecisionOutcome.decision_data['agent_name'].astext == agent_name,
+                DecisionOutcome.validation_timestamp >= ninety_days_ago
+            )
+
+            ninety_result = session.exec(ninety_statement).first()
+            if ninety_result and ninety_result.total > 0:
+                merit_score.last_90_days_success_rate = ninety_result.successful / ninety_result.total
+
+        except Exception as e:
+            # Time-windowed metrics are optional - log but don't fail
+            logger.debug(f"Could not compute time-windowed metrics: {e}")
+
+        session.commit()
+
+        logger.info(
+            f"Updated merit score for {agent_name} in {domain}: "
+            f"total={merit_score.total_decisions}, "
+            f"success_rate={merit_score.success_rate:.3f if merit_score.success_rate else 0:.3f}, "
+            f"expertise={merit_score.expertise_score:.3f if merit_score.expertise_score else 0:.3f}"
+        )

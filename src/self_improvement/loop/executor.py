@@ -53,6 +53,7 @@ class LoopExecutor:
         state_manager: LoopStateManager,
         error_recovery: ErrorRecoveryStrategy,
         metrics_collector: MetricsCollector,
+        tracker: Optional[Any] = None,
     ):
         """
         Initialize loop executor.
@@ -64,6 +65,7 @@ class LoopExecutor:
             state_manager: State manager instance
             error_recovery: Error recovery strategy
             metrics_collector: Metrics collector
+            tracker: Optional ExecutionTracker for decision outcome tracking
         """
         self.coord_db = coord_db
         self.obs_session = obs_session
@@ -71,10 +73,12 @@ class LoopExecutor:
         self.state_manager = state_manager
         self.error_recovery = error_recovery
         self.metrics_collector = metrics_collector
+        self.tracker = tracker
 
         # Initialize phase components
         self.performance_analyzer = PerformanceAnalyzer(obs_session)
-        self.improvement_detector = ImprovementDetector(self.performance_analyzer)
+        # SI-04: ImprovementDetector expects a Session, not PerformanceAnalyzer
+        self.improvement_detector = ImprovementDetector(obs_session)
         self.experiment_orchestrator = ExperimentOrchestrator(
             session=obs_session,
             target_executions_per_variant=config.target_samples_per_variant
@@ -321,10 +325,13 @@ class LoopExecutor:
             "duration_seconds": profile.get_metric("duration_seconds", "mean"),
         }
 
+        # SI-03: Guard against None quality_score to prevent TypeError on :.3f format
+        quality_val = metrics_summary['quality_score']
+        quality_str = f"{quality_val:.3f}" if quality_val is not None else "N/A"
         logger.info(
             f"Performance analysis for {agent_name}: "
             f"{profile.total_executions} executions, "
-            f"quality={metrics_summary['quality_score']:.3f}"
+            f"quality={quality_str}"
         )
 
         return AnalysisResult(
@@ -420,7 +427,7 @@ class LoopExecutor:
                 f"confidence: {winner.confidence:.2f})"
             )
 
-            return ExperimentResult(
+            result = ExperimentResult(
                 experiment_id=experiment.id,
                 winner_variant_id=winner.variant_id,
                 winner_config=winner.winning_config,
@@ -432,16 +439,70 @@ class LoopExecutor:
                     "composite_score": winner.composite_score,
                 },
             )
+
+            # Track experiment decision outcome for observability
+            if self.tracker:
+                try:
+                    self.tracker.track_decision_outcome(
+                        decision_type="experiment_selection",
+                        decision_data={
+                            "agent_name": agent_name,
+                            "experiment_id": experiment.id,
+                            "control_config": strategy_result.control_config.model_dump() if hasattr(strategy_result.control_config, 'model_dump') else dict(strategy_result.control_config),
+                            "winner_variant_id": winner.variant_id,
+                            "winner_config": winner.winning_config.model_dump() if hasattr(winner.winning_config, 'model_dump') else dict(winner.winning_config),
+                            "strategy": strategy_result.strategy_name,
+                        },
+                        outcome="success",
+                        impact_metrics={
+                            "quality_improvement_pct": winner.quality_improvement,
+                            "speed_improvement_pct": winner.speed_improvement,
+                            "cost_improvement_pct": winner.cost_improvement,
+                            "composite_score": winner.composite_score,
+                            "statistical_significance": winner.is_statistically_significant,
+                            "confidence": winner.confidence,
+                        },
+                        lessons_learned=f"Variant {winner.variant_id} outperformed control with {winner.quality_improvement:.1f}% quality improvement",
+                        should_repeat=winner.is_statistically_significant,
+                        tags=["self_improvement", "experiment", strategy_result.strategy_name],
+                        validation_method="statistical_analysis",
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to track experiment outcome: {e}")
+
+            return result
         else:
             logger.info(f"No winner (control best or inconclusive) for {agent_name}")
 
-            return ExperimentResult(
+            result = ExperimentResult(
                 experiment_id=experiment.id,
                 winner_variant_id=None,
                 winner_config=None,
                 statistical_significance=None,
                 metrics_comparison=None,
             )
+
+            # Track inconclusive experiment outcome
+            if self.tracker:
+                try:
+                    self.tracker.track_decision_outcome(
+                        decision_type="experiment_selection",
+                        decision_data={
+                            "agent_name": agent_name,
+                            "experiment_id": experiment.id,
+                            "strategy": strategy_result.strategy_name,
+                        },
+                        outcome="neutral",
+                        impact_metrics={},
+                        lessons_learned="No statistically significant improvement found - control remains best",
+                        should_repeat=False,
+                        tags=["self_improvement", "experiment", "inconclusive"],
+                        validation_method="statistical_analysis",
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to track experiment outcome: {e}")
+
+            return result
 
     def _execute_phase_5_deploy(
         self,
@@ -481,13 +542,39 @@ class LoopExecutor:
                 f"Rollback monitoring: {self.config.enable_auto_rollback}"
             )
 
-            return DeploymentResult(
+            result = DeploymentResult(
                 deployment_id=deployment.id,
                 deployed_config=experiment_result.winner_config,
                 previous_config=previous_config,
                 deployment_timestamp=deployment.deployed_at,
                 rollback_monitoring_enabled=self.config.enable_auto_rollback,
             )
+
+            # Track deployment decision outcome for observability
+            if self.tracker:
+                try:
+                    self.tracker.track_decision_outcome(
+                        decision_type="config_deployment",
+                        decision_data={
+                            "agent_name": agent_name,
+                            "deployment_id": deployment.id,
+                            "experiment_id": experiment_result.experiment_id,
+                            "deployed_config": experiment_result.winner_config.model_dump() if hasattr(experiment_result.winner_config, 'model_dump') else dict(experiment_result.winner_config),
+                            "previous_config": previous_config.model_dump() if hasattr(previous_config, 'model_dump') else dict(previous_config),
+                            "rollback_monitoring_enabled": self.config.enable_auto_rollback,
+                        },
+                        outcome="success",
+                        impact_metrics=experiment_result.metrics_comparison or {},
+                        lessons_learned=f"Deployed winning config from experiment {experiment_result.experiment_id}",
+                        should_repeat=True,
+                        tags=["self_improvement", "deployment", "auto_deploy"],
+                        validation_method="rollback_monitor" if self.config.enable_auto_rollback else "manual",
+                        validation_timestamp=deployment.deployed_at,
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to track deployment outcome: {e}")
+
+            return result
         else:
             logger.info(f"Auto-deploy disabled, skipping deployment for {agent_name}")
             raise ValueError("Auto-deploy disabled")

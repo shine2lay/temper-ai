@@ -457,6 +457,11 @@ class ParallelStageExecutor(StageExecutor):
                 # Prepare input
                 input_data = s.get("stage_input", {})
 
+                # Pass tracker to agent for direct observability reporting
+                tracker = state.get("tracker")
+                if tracker:
+                    input_data['tracker'] = tracker
+
                 # Create execution context
                 context = ExecutionContext(
                     workflow_id=state.get("workflow_id", "unknown"),

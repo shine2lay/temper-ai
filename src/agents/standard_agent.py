@@ -9,10 +9,13 @@ StandardAgent is the default agent type that executes a multi-turn loop:
 6. Repeat until no more tool calls or max iterations reached
 """
 import json
+import logging
 import re
 import time
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 
 # XML tag constants for parsing LLM responses
 TOOL_CALL_TAG = "tool_call"
@@ -23,10 +26,14 @@ REASONING_TAGS = ["reasoning", "thinking", "think", "thought"]
 TOOL_CALL_PATTERN = re.compile(rf'<{TOOL_CALL_TAG}>(.*?)</{TOOL_CALL_TAG}>', re.DOTALL)
 ANSWER_PATTERN = re.compile(rf'<{ANSWER_TAG}>(.*?)</{ANSWER_TAG}>', re.DOTALL)
 
-# Pattern to match tool_call tags in tool output (for sanitization)
+# Pattern to match structural tags in tool output (for sanitization) (AG-02)
+# Covers: tool_call, answer, reasoning, thinking, think, thought,
+# and role delimiters (Assistant:, User:, System:) that could be injected
+_SANITIZE_TAGS = [TOOL_CALL_TAG, ANSWER_TAG] + REASONING_TAGS
 _TOOL_RESULT_SANITIZE_PATTERN = re.compile(
-    r'<\s*/?\s*' + TOOL_CALL_TAG + r'[^>]*>',
-    re.IGNORECASE,
+    r'<\s*/?\s*(?:' + '|'.join(re.escape(t) for t in _SANITIZE_TAGS) + r')[^>]*>'
+    r'|(?:^|\n)\s*(?:Assistant|User|System|Human)\s*:',
+    re.IGNORECASE | re.MULTILINE,
 )
 REASONING_PATTERNS = {
     tag: re.compile(f'<{tag}>(.*?)</{tag}>', re.DOTALL)
@@ -306,6 +313,17 @@ class StandardAgent(BaseAgent):
         # Validate input_data and context using centralized helper
         validate_input_data(input_data, context)
 
+        # Store execution context for access in helper methods
+        self._execution_context = context
+
+        # Extract tool_executor from input_data if available (for safety-integrated execution)
+        # This is passed through state by NodeBuilder when safety stack is initialized
+        self.tool_executor = input_data.get('tool_executor', None)
+
+        # Extract tracker from input_data if available (for direct observability reporting)
+        # This is passed through state by executors to enable agent-level tracking
+        self.tracker = input_data.get('tracker', None)
+
         start_time = time.time()
         tool_calls_made: list[dict[str, Any]] = []
         total_tokens = 0
@@ -366,6 +384,11 @@ class StandardAgent(BaseAgent):
 
         except Exception as e:
             # Unexpected error
+            logger.warning(
+                "Agent execution error: %s",
+                str(e),
+                exc_info=True
+            )
             return self._build_final_response(
                 output="",
                 reasoning=None,
@@ -397,15 +420,92 @@ class StandardAgent(BaseAgent):
         Returns:
             Dict with iteration results and state updates
         """
-        # Call LLM — pass native tool definitions for providers that support it
-        try:
-            llm_kwargs: Dict[str, Any] = {}
-            native_tools = self._get_native_tool_definitions()
-            if native_tools:
-                llm_kwargs["tools"] = native_tools
-            llm_response = self.llm.complete(prompt, **llm_kwargs)
-        except LLMError as e:
-            # LLM call failed
+        # Agent-level retry configuration
+        inf_config = self.config.agent.inference
+        max_agent_retries = inf_config.max_retries
+        retry_delay = float(inf_config.retry_delay_seconds)
+
+        # Safety validation for LLM calls (if policy engine available)
+        if hasattr(self, 'tool_executor') and self.tool_executor is not None:
+            if self.tool_executor.policy_engine is not None:
+                try:
+                    import asyncio
+                    from src.safety.action_policy_engine import PolicyExecutionContext
+
+                    # Validate LLM call through policy engine (rate limiting, resource limits)
+                    # Note: validate_action is async, so we use asyncio.run() to call it
+                    validation_result = asyncio.run(
+                        self.tool_executor.policy_engine.validate_action(
+                            action={"type": "llm_call", "model": inf_config.model, "prompt_length": len(prompt)},
+                            context=PolicyExecutionContext(
+                                agent_id="agent",  # TODO: Get from execution context
+                                workflow_id="workflow",  # TODO: Get from execution context
+                                stage_id="stage",  # TODO: Get from execution context
+                                action_type="llm_call",
+                                action_data={"model": inf_config.model}
+                            )
+                        )
+                    )
+
+                    # Block if policy violations
+                    if not validation_result.allowed:
+                        violations_msg = "; ".join(v.message for v in validation_result.violations)
+                        logger.warning(f"LLM call blocked by safety policy: {violations_msg}")
+                        return {
+                            "complete": True,
+                            "response": self._build_final_response(
+                                output="",
+                                reasoning=None,
+                                tool_calls=tool_calls_made,
+                                tokens=total_tokens,
+                                cost=total_cost,
+                                start_time=start_time,
+                                error=f"LLM call blocked by safety policy: {violations_msg}"
+                            )
+                        }
+                except Exception as e:
+                    # Log policy validation error but don't block execution
+                    logger.warning(f"LLM call safety validation error: {e}")
+
+        # Call LLM with agent-level retries
+        llm_response = None
+        last_error = None
+
+        for attempt in range(max_agent_retries + 1):  # +1 for initial attempt
+            try:
+                llm_kwargs: Dict[str, Any] = {}
+                native_tools = self._get_native_tool_definitions()
+                if native_tools:
+                    llm_kwargs["tools"] = native_tools
+                llm_response = self.llm.complete(prompt, **llm_kwargs)
+                break  # Success - exit retry loop
+
+            except LLMError as e:
+                last_error = e
+
+                # Check if we should retry
+                if attempt < max_agent_retries:
+                    # Calculate backoff delay (exponential with base 2.0)
+                    backoff_delay = retry_delay * (2.0 ** attempt)
+                    logger.warning(
+                        "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
+                        attempt + 1,
+                        max_agent_retries + 1,
+                        str(e),
+                        backoff_delay
+                    )
+                    time.sleep(backoff_delay)
+                else:
+                    # Max retries exhausted
+                    logger.error(
+                        "LLM call failed after %d attempts: %s",
+                        max_agent_retries + 1,
+                        str(e),
+                        exc_info=True
+                    )
+
+        # If all retries failed, return error response
+        if llm_response is None:
             return {
                 "complete": True,
                 "response": self._build_final_response(
@@ -415,7 +515,7 @@ class StandardAgent(BaseAgent):
                     tokens=total_tokens,
                     cost=total_cost,
                     start_time=start_time,
-                    error=f"LLM call failed: {str(e)}"
+                    error=f"LLM call failed after {max_agent_retries + 1} attempts: {str(last_error)}"
                 )
             }
 
@@ -423,6 +523,31 @@ class StandardAgent(BaseAgent):
         if llm_response.total_tokens:
             total_tokens += llm_response.total_tokens
         total_cost += self._estimate_cost(llm_response)
+
+        # Track LLM call for observability (if tracker and context available)
+        if self.tracker is not None and hasattr(self, '_execution_context') and self._execution_context is not None:
+            if self._execution_context.agent_id:
+                try:
+                    # Calculate latency from LLM response metadata
+                    latency_ms = int(llm_response.latency_ms) if hasattr(llm_response, 'latency_ms') and llm_response.latency_ms else 0
+
+                    self.tracker.track_llm_call(
+                        agent_id=self._execution_context.agent_id,
+                        provider=inf_config.provider.value,
+                        model=inf_config.model,
+                        prompt=prompt,
+                        response=llm_response.content,
+                        prompt_tokens=llm_response.prompt_tokens or 0,
+                        completion_tokens=llm_response.completion_tokens or 0,
+                        latency_ms=latency_ms,
+                        estimated_cost_usd=self._estimate_cost(llm_response),
+                        temperature=inf_config.temperature,
+                        max_tokens=inf_config.max_tokens,
+                        status="success"
+                    )
+                except Exception as e:
+                    # Log but don't fail execution for tracking errors
+                    logger.warning(f"Failed to track LLM call: {e}")
 
         # Parse tool calls
         tool_calls = self._parse_tool_calls(llm_response.content)
@@ -530,7 +655,72 @@ class StandardAgent(BaseAgent):
                 f"tool_call 'parameters' must be a dictionary, got {type(tool_params).__name__}"
             )
 
-        # Get tool from registry
+        # Route through ToolExecutor if available (safety-integrated execution)
+        if hasattr(self, 'tool_executor') and self.tool_executor is not None:
+            # Use ToolExecutor which handles:
+            # - Policy validation (FileAccess, SecretDetection, ForbiddenOperations, etc.)
+            # - Approval workflow (human-in-the-loop)
+            # - Rollback snapshots (pre-action recovery)
+            # - Rate limiting and resource limits
+            tool_start_time = time.time()
+            try:
+                result = self.tool_executor.execute(tool_name, tool_params)
+                duration_seconds = time.time() - tool_start_time
+
+                # Track tool call for observability
+                if self.tracker is not None and hasattr(self, '_execution_context') and self._execution_context is not None:
+                    if self._execution_context.agent_id:
+                        try:
+                            self.tracker.track_tool_call(
+                                agent_id=self._execution_context.agent_id,
+                                tool_name=tool_name,
+                                input_params=tool_params,
+                                output_data={"result": result.result} if result.success else {},
+                                duration_seconds=duration_seconds,
+                                status="success" if result.success else "failed",
+                                error_message=result.error if not result.success else None
+                            )
+                        except Exception as e:
+                            # Log but don't fail execution for tracking errors
+                            logger.warning(f"Failed to track tool call: {e}")
+
+                return {
+                    "name": tool_name,
+                    "parameters": tool_params,
+                    "result": result.result if result.success else None,
+                    "error": result.error if not result.success else None,
+                    "success": result.success
+                }
+            except Exception as e:
+                duration_seconds = time.time() - tool_start_time
+
+                # Track failed tool call
+                if self.tracker is not None and hasattr(self, '_execution_context') and self._execution_context is not None:
+                    if self._execution_context.agent_id:
+                        try:
+                            self.tracker.track_tool_call(
+                                agent_id=self._execution_context.agent_id,
+                                tool_name=tool_name,
+                                input_params=tool_params,
+                                output_data={},
+                                duration_seconds=duration_seconds,
+                                status="failed",
+                                error_message=f"Tool execution error: {str(e)}"
+                            )
+                        except Exception as track_e:
+                            # Log but don't fail execution for tracking errors
+                            logger.warning(f"Failed to track tool call: {track_e}")
+
+                return {
+                    "name": tool_name,
+                    "parameters": tool_params,
+                    "result": None,
+                    "error": f"Tool execution error: {str(e)}",
+                    "success": False
+                }
+
+        # Fallback: Direct tool execution with inline safety checks
+        # (Used when tool_executor not available - backward compatibility)
         tool = self.tool_registry.get(tool_name) if tool_name else None
         if not tool:
             return {
@@ -575,8 +765,28 @@ class StandardAgent(BaseAgent):
             }
 
         # Execute tool (mode == "execute")
+        tool_start_time = time.time()
         try:
             result = tool.execute(**tool_params)
+            duration_seconds = time.time() - tool_start_time
+
+            # Track tool call for observability
+            if self.tracker is not None and hasattr(self, '_execution_context') and self._execution_context is not None:
+                if self._execution_context.agent_id:
+                    try:
+                        self.tracker.track_tool_call(
+                            agent_id=self._execution_context.agent_id,
+                            tool_name=tool_name,
+                            input_params=tool_params,
+                            output_data={"result": result.result} if result.success else {},
+                            duration_seconds=duration_seconds,
+                            status="success" if result.success else "failed",
+                            error_message=result.error if not result.success else None
+                        )
+                    except Exception as e:
+                        # Log but don't fail execution for tracking errors
+                        logger.warning(f"Failed to track tool call: {e}")
+
             return {
                 "name": tool_name,
                 "parameters": tool_params,
@@ -585,6 +795,25 @@ class StandardAgent(BaseAgent):
                 "success": result.success
             }
         except Exception as e:
+            duration_seconds = time.time() - tool_start_time
+
+            # Track failed tool call
+            if self.tracker is not None and hasattr(self, '_execution_context') and self._execution_context is not None:
+                if self._execution_context.agent_id:
+                    try:
+                        self.tracker.track_tool_call(
+                            agent_id=self._execution_context.agent_id,
+                            tool_name=tool_name,
+                            input_params=tool_params,
+                            output_data={},
+                            duration_seconds=duration_seconds,
+                            status="failed",
+                            error_message=f"Tool execution error: {str(e)}"
+                        )
+                    except Exception as track_e:
+                        # Log but don't fail execution for tracking errors
+                        logger.warning(f"Failed to track tool call: {track_e}")
+
             return {
                 "name": tool_name,
                 "parameters": tool_params,
@@ -729,15 +958,16 @@ class StandardAgent(BaseAgent):
         """Build native tool definitions for providers that support them.
 
         Converts framework tool schemas to the OpenAI-compatible format used
-        by Ollama's /api/chat endpoint.
+        by Ollama, OpenAI, and Anthropic APIs.
 
         Returns:
             List of tool dicts in OpenAI format, or None if no tools.
         """
-        from src.agents.llm_providers import OllamaLLM
+        from src.agents.llm_providers import OllamaLLM, OpenAILLM, AnthropicLLM
 
-        # Only provide native tool defs for Ollama (which supports /api/chat tools)
-        if not isinstance(self.llm, OllamaLLM):
+        # Provide native tool definitions for providers that support function calling
+        # OpenAI and Anthropic support is added in Wave 3 (Issue #6)
+        if not isinstance(self.llm, (OllamaLLM, OpenAILLM, AnthropicLLM)):
             return None
 
         tools_dict = self.tool_registry.get_all_tools()
@@ -826,6 +1056,10 @@ class StandardAgent(BaseAgent):
         Returns:
             Updated prompt with tool results
         """
+        # Maximum size per tool result to prevent context window blowout
+        # Default: 10KB per result (~2500 tokens)
+        MAX_TOOL_RESULT_SIZE = 10_000  # characters
+
         # Build tool results section efficiently using list join
         results_parts = ["\n\nTool Results:\n"]
         for result in tool_results:
@@ -833,15 +1067,35 @@ class StandardAgent(BaseAgent):
             results_parts.append(f"Parameters: {json.dumps(result['parameters'])}\n")
             if result['success']:
                 safe_result = self._sanitize_tool_output(str(result['result']))
+
+                # Truncate if result exceeds max size
+                if len(safe_result) > MAX_TOOL_RESULT_SIZE:
+                    original_size = len(safe_result)
+                    safe_result = safe_result[:MAX_TOOL_RESULT_SIZE]
+                    safe_result += f"\n[truncated — {original_size:,} total chars, showing first {MAX_TOOL_RESULT_SIZE:,}]"
+
                 results_parts.append(f"Result: {safe_result}\n")
             else:
                 safe_error = self._sanitize_tool_output(str(result['error']))
+
+                # Truncate error messages too (though they're usually small)
+                if len(safe_error) > MAX_TOOL_RESULT_SIZE:
+                    original_size = len(safe_error)
+                    safe_error = safe_error[:MAX_TOOL_RESULT_SIZE]
+                    safe_error += f"\n[truncated — {original_size:,} total chars, showing first {MAX_TOOL_RESULT_SIZE:,}]"
+
                 results_parts.append(f"Error: {safe_error}\n")
 
         results_text = ''.join(results_parts)
 
-        # Append to prompt
-        return original_prompt + "\n\nAssistant: " + llm_response + results_text + "\n\nPlease continue:"
+        # AG-05: Truncate prompt to prevent unbounded growth in multi-turn loop.
+        # Keep the original system prompt prefix and only the most recent exchange.
+        MAX_PROMPT_CHARS = 100_000  # ~25k tokens as a safe upper bound
+        new_prompt = original_prompt + "\n\nAssistant: " + llm_response + results_text + "\n\nPlease continue:"
+        if len(new_prompt) > MAX_PROMPT_CHARS:
+            # Keep the last MAX_PROMPT_CHARS characters to preserve the most recent context
+            new_prompt = "...(truncated)...\n" + new_prompt[-MAX_PROMPT_CHARS:]
+        return new_prompt
 
     def _extract_final_answer(self, llm_response: str) -> str:
         """Extract final answer from LLM response.

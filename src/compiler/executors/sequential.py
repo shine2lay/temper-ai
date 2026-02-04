@@ -11,6 +11,7 @@ import traceback
 import logging
 
 from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message
+from src.llm.circuit_breaker import CircuitBreakerError
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ class SequentialStageExecutor(StageExecutor):
             state: Current workflow state
             config_loader: ConfigLoader for loading agent configs
             tool_registry: ToolRegistry for agent tool access
+            halt_on_failure: DEPRECATED - use stage error_handling config instead
 
         Returns:
             Updated workflow state
@@ -58,13 +60,26 @@ class SequentialStageExecutor(StageExecutor):
         tracker = state.get("tracker")
         workflow_id = state.get("workflow_id", "unknown")
 
-        # Get agents for this stage
+        # Get error handling config from stage_config
+        error_handling_config = None
         if hasattr(stage_config, 'stage'):
             # Pydantic model
             agents = stage_config.stage.agents
+            if hasattr(stage_config.stage, 'error_handling'):
+                error_handling_config = stage_config.stage.error_handling
         else:
             # Dict - try nested path first, then direct
             agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
+            error_handling_dict = get_nested_value(stage_config, 'stage.error_handling')
+            if error_handling_dict:
+                from src.compiler.schemas import StageErrorHandlingConfig
+                error_handling_config = StageErrorHandlingConfig(**error_handling_dict)
+
+        # If no error_handling config, create default based on halt_on_failure param
+        if error_handling_config is None:
+            from src.compiler.schemas import StageErrorHandlingConfig
+            on_failure = "halt_stage" if halt_on_failure else "continue_with_remaining"
+            error_handling_config = StageErrorHandlingConfig(on_agent_failure=on_failure)
 
         # Accumulators for per-agent results
         agent_outputs: Dict[str, Any] = {}
@@ -89,7 +104,7 @@ class SequentialStageExecutor(StageExecutor):
                     state=state,
                     tracker=tracker,
                     config_loader=config_loader,
-                    halt_on_failure=halt_on_failure,
+                    error_handling=error_handling_config,
                 )
         else:
             agent_outputs, agent_statuses, agent_metrics = self._run_all_agents(
@@ -100,7 +115,7 @@ class SequentialStageExecutor(StageExecutor):
                 state=state,
                 tracker=None,
                 config_loader=config_loader,
-                halt_on_failure=halt_on_failure,
+                error_handling=error_handling_config,
             )
 
         # Determine the final agent's text output for backward compatibility
@@ -142,9 +157,9 @@ class SequentialStageExecutor(StageExecutor):
         state: Dict[str, Any],
         tracker: Optional[Any],
         config_loader: Any,
-        halt_on_failure: bool,
+        error_handling: Any,
     ) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-        """Execute all agents in sequence with optional halt-on-failure.
+        """Execute all agents in sequence with configurable error handling.
 
         Args:
             agents: List of agent references
@@ -154,7 +169,7 @@ class SequentialStageExecutor(StageExecutor):
             state: Current workflow state
             tracker: ExecutionTracker instance (optional)
             config_loader: ConfigLoader for loading agent configs
-            halt_on_failure: Stop executing agents after first failure
+            error_handling: StageErrorHandlingConfig with on_agent_failure policy
 
         Returns:
             Tuple of (agent_outputs, agent_statuses, agent_metrics)
@@ -176,8 +191,6 @@ class SequentialStageExecutor(StageExecutor):
             )
 
             agent_name = agent_result["agent_name"]
-            agent_outputs[agent_name] = agent_result["output_data"]
-            agent_metrics[agent_name] = agent_result["metrics"]
 
             # Store status with error details for failed agents
             if agent_result["status"] == "failed":
@@ -186,14 +199,54 @@ class SequentialStageExecutor(StageExecutor):
                     "error": agent_result["output_data"].get("error", ""),
                     "error_type": agent_result["output_data"].get("error_type", ""),
                 }
-                if halt_on_failure:
+
+                # Handle failure based on policy
+                policy = error_handling.on_agent_failure
+
+                if policy == "halt_stage":
                     logger.warning(
-                        "Agent %s failed in stage %s, halting execution: %s",
+                        "Agent %s failed in stage %s (policy: halt_stage), stopping execution: %s",
                         agent_name, stage_name, agent_result["output_data"].get("error", "")
                     )
+                    # Don't store output for halted agent
+                    agent_outputs[agent_name] = agent_result["output_data"]
+                    agent_metrics[agent_name] = agent_result["metrics"]
                     break
+
+                elif policy == "skip_agent":
+                    logger.warning(
+                        "Agent %s failed in stage %s (policy: skip_agent), skipping: %s",
+                        agent_name, stage_name, agent_result["output_data"].get("error", "")
+                    )
+                    # Don't add output to agent_outputs - subsequent agents won't see it
+                    agent_metrics[agent_name] = agent_result["metrics"]
+                    continue
+
+                elif policy == "retry_agent":
+                    max_retries = error_handling.max_agent_retries
+                    logger.warning(
+                        "Agent %s failed in stage %s (policy: retry_agent), retries not yet implemented: %s",
+                        agent_name, stage_name, agent_result["output_data"].get("error", "")
+                    )
+                    # TODO: Implement retry_agent policy in future PR
+                    # For now, treat as continue_with_remaining
+                    agent_outputs[agent_name] = agent_result["output_data"]
+                    agent_metrics[agent_name] = agent_result["metrics"]
+
+                elif policy == "continue_with_remaining":
+                    logger.warning(
+                        "Agent %s failed in stage %s (policy: continue_with_remaining), continuing: %s",
+                        agent_name, stage_name, agent_result["output_data"].get("error", "")
+                    )
+                    # Store output with error details for subsequent agents
+                    agent_outputs[agent_name] = agent_result["output_data"]
+                    agent_metrics[agent_name] = agent_result["metrics"]
+
             else:
+                # Success
                 agent_statuses[agent_name] = agent_result["status"]
+                agent_outputs[agent_name] = agent_result["output_data"]
+                agent_metrics[agent_name] = agent_result["metrics"]
 
         return agent_outputs, agent_statuses, agent_metrics
 
@@ -244,9 +297,29 @@ class SequentialStageExecutor(StageExecutor):
         except Exception as e:
             duration = time.time() - start_time
 
+            # Check for circuit breaker error (provider unhealthy)
+            if isinstance(e, CircuitBreakerError):
+                error_type = ErrorCode.LLM_CONNECTION_ERROR.value
+                error_message = sanitize_error_message(str(e))
+                error_traceback = sanitize_error_message(traceback.format_exc())
+
+                logger.error(
+                    "Agent %s failed: Circuit breaker OPEN (provider unhealthy). "
+                    "Subsequent agents using same provider will fast-fail. Error: %s",
+                    agent_name, error_message
+                )
+
             # Derive error_type from framework ErrorCode if available
-            if isinstance(e, BaseError):
+            elif isinstance(e, BaseError):
                 error_type = e.error_code.value
+                error_message = sanitize_error_message(str(e))
+                error_traceback = sanitize_error_message(traceback.format_exc())
+
+                logger.warning(
+                    "Agent %s failed in stage: %s",
+                    agent_name, error_message
+                )
+
             else:
                 # Map standard Python exceptions to ErrorCode
                 error_type_map = {
@@ -259,14 +332,14 @@ class SequentialStageExecutor(StageExecutor):
                     type(e).__name__, ErrorCode.UNKNOWN_ERROR.value
                 )
 
-            # Sanitize error message and traceback to prevent credential leakage
-            error_message = sanitize_error_message(str(e))
-            error_traceback = sanitize_error_message(traceback.format_exc())
+                # Sanitize error message and traceback to prevent credential leakage
+                error_message = sanitize_error_message(str(e))
+                error_traceback = sanitize_error_message(traceback.format_exc())
 
-            logger.warning(
-                "Agent %s failed in stage: %s",
-                agent_name, error_message
-            )
+                logger.warning(
+                    "Agent %s failed in stage: %s",
+                    agent_name, error_message
+                )
 
             return {
                 "agent_name": agent_name,
@@ -368,6 +441,10 @@ class SequentialStageExecutor(StageExecutor):
                 input_data=tracking_input_data
             ) as agent_id:
                 context.agent_id = agent_id
+
+                # Pass tracker to agent for direct observability reporting
+                input_data['tracker'] = tracker
+
                 response = agent.execute(input_data, context)
 
                 tracker.set_agent_output(

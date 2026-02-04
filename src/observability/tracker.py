@@ -234,7 +234,7 @@ class ExecutionTracker:
             ...     # Run workflow stages
             ...     pass
         """
-        workflow_id = str(uuid.uuid4())
+        workflow_id = f"wf-{uuid.uuid4()}"
         self.context.workflow_id = workflow_id
 
         start_time = utcnow()

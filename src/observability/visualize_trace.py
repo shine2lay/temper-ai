@@ -28,7 +28,7 @@ try:
     PLOTLY_AVAILABLE = True
 except ImportError:
     PLOTLY_AVAILABLE = False
-    print("WARNING: Plotly not installed. Install with: pip install plotly")
+    # Plotly is optional - console gantt chart works without it
 
 
 def create_hierarchical_gantt(

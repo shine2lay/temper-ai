@@ -76,8 +76,15 @@ dmypy.json
 .claude-coord/.state-shadow/
 .claude-coord/watcher.log
 .claude-coord/snapshot.log
+.claude-coord/*.db-shm
+.claude-coord/*.db-wal
+.claude-coord/activity.jsonl
+.claude-coord/metrics.jsonl
+.claude-coord/daemon.pid
+.claude-coord/.auth_token
 
 # Temporary files
 *.tmp
 *.temp
 .cache/
+.tmp/

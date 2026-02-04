@@ -29,14 +29,16 @@ Identified during architecture walkthrough (Section 5: Agent Layer).
 - Issue #22: ✅ Completed - Real-time alerting for metric thresholds
 - Issue #23: ✅ Completed - Metric aggregation pipeline
 
-**Wave 5 (Collaboration): ⏳ Pending**
+**Wave 5 (Collaboration): 🔄 Partial**
+- Issue #17: ✅ Completed - Collaboration available in sequential mode
+- Issue #20: ⏳ Pending - Dialogue orchestrator for back-and-forth agent collaboration
 
-**Wave 6 (Self-Improvement): 🔄 In Progress**
+**Wave 6 (Self-Improvement): ✅ COMPLETE**
 - Issue #27: ✅ Completed - M5 integrated with M4 safety stack
 - Issue #25: ✅ Completed - Strategies learn from outcomes via Bayesian updating
 - Issue #26: ✅ Completed - Pattern mining from experiment history
-- Issue #29: ⏳ Pending - Add more concrete strategies
-- Issue #28: ⏳ Pending - Implement continuous improvement mode
+- Issue #29: ✅ Completed - Add more concrete strategies
+- Issue #28: ✅ Completed - Implement continuous improvement mode
 
 ---
 
@@ -1431,11 +1433,11 @@ Wave 6 (Self-Improvement)
 | **Wave 2** | #19, #13, #9, #14 | Safety wiring | ✅ COMPLETE | — |
 | **Wave 3** | #6, #7, #18 | Tool system | ✅ COMPLETE | — |
 | **Wave 4** | #21, #30, #24, #22, #23 | Observability | ✅ COMPLETE | Wave 5 |
-| **Wave 5** | #17, #20 | Collaboration redesign | ⏳ Pending | Wave 4 |
-| **Wave 6** | #27, #25, #26, #29, #28 | Self-improvement | ⏳ Pending | — |
+| **Wave 5** | #17, #20 | Collaboration redesign | 🔄 Partial (#17 ✅) | Wave 4 |
+| **Wave 6** | #27, #25, #26, #29, #28 | Self-improvement | ✅ COMPLETE | — |
 
-**Critical path:** Wave 1 → Wave 2 → Wave 4 → Wave 6
+**Critical path:** Wave 1 → Wave 2 → Wave 4 → Wave 6 ✅ COMPLETE
 
 Waves 1 and 3 can run in parallel. Waves 4 and 5 can run in parallel. Wave 6 depends on both Waves 2 and 4 completing.
 
-**Progress:** Waves 1, 2, 3, and 4 complete! Wave 6 (Self-Improvement Maturity) is now unblocked and ready to start. Wave 5 (Collaboration) can run in parallel with Wave 6.
+**Progress:** Waves 1, 2, 3, 4, and 6 complete! Only 1 issue remains: Wave 5 Issue #20 (Dialogue Orchestrator). This is the most architecturally complex remaining work, requiring a new dialogue orchestration layer for true back-and-forth agent collaboration.

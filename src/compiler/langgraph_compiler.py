@@ -363,7 +363,7 @@ class LangGraphCompiler:
                 agent_name = self.node_builder.extract_agent_name(agent_ref)
 
                 try:
-                    agent_config = self.config_loader.load_agent_config(agent_name)
+                    agent_config = self.config_loader.load_agent(agent_name)
                 except Exception as e:
                     errors.append(f"Agent '{agent_name}' in stage '{stage_name}': Failed to load config - {e}")
                     continue

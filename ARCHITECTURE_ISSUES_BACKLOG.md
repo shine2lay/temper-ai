@@ -902,7 +902,9 @@ Pattern: "ollama_model_selection for quality_low"
 - `src/self_improvement/loop/orchestrator.py:130-354` — Complete `run_continuous()` implementation (225 lines)
 - `src/self_improvement/loop/config.py:57-60` — Added 3 continuous mode config parameters
 
-## 29. Only 2 Concrete Strategies
+## 29. Only 2 Concrete Strategies ✅ COMPLETED
+
+**Status:** ✅ Completed in Wave 6
 
 **Problem:** The strategy framework is flexible, but only 2 concrete strategies exist:
 1. `OllamaModelSelectionStrategy` — Swap the LLM model
@@ -918,9 +920,49 @@ Missing strategy types that the framework could support:
 
 **Fix:** Implement additional strategies following the `ImprovementStrategy` interface. Priority should be prompt optimization (highest expected impact for effort) and temperature search (systematic, low effort).
 
+**Implementation:**
+1. **PromptOptimizationStrategy** — High-impact strategy for improving output quality:
+   - Variant 1: Add chain-of-thought reasoning guide (step-by-step thinking)
+   - Variant 2: Enhance system prompt with specificity guide (precision, concrete examples)
+   - Variant 3: Add structured output format guide (clear structure)
+   - Variant 4: Combined approach (specificity + format)
+   - Applicable to: quality_low, error_rate_high, inconsistent_output, hallucination, incorrect_output
+   - Expected impact: 35-45% improvement depending on problem type
+   - Uses Bayesian learning when historical data available
+
+2. **TemperatureSearchStrategy** — Systematic sampling parameter tuning:
+   - Variant 1: Lower temperature (more deterministic, better for quality/consistency)
+   - Variant 2: Higher temperature (more creative, better for diversity)
+   - Variant 3: Adjusted top_p (focused vs diverse sampling based on problem)
+   - Variant 4: Combined optimal temperature + top_p
+   - Presets: DETERMINISTIC (0.1), BALANCED (0.5), CREATIVE (0.9)
+   - Top-p presets: FOCUSED (0.8), BALANCED (0.9), DIVERSE (0.95)
+   - Applicable to: quality_low, error_rate_high, inconsistent_output, hallucination, incorrect_output, too_verbose, too_brief
+   - Expected impact: 20-40% improvement depending on problem type
+   - Pattern-aware: Infers problem type from learned patterns to select optimal direction
+
+3. Both strategies:
+   - Follow ImprovementStrategy interface with generate_variants(), is_applicable(), estimate_impact()
+   - Support Bayesian learning from StrategyLearningStore
+   - Provide problem-specific fallback estimates when no historical data
+   - Include rich metadata for tracking changes
+   - Support learned pattern input for informed variant generation
+
+4. Updated exports in `__init__.py` for easy importing
+
+**Result:**
+- Now 4 concrete strategies available (2x growth)
+- Prompt optimization addresses highest-impact improvement area
+- Temperature search provides systematic, low-effort tuning
+- Both strategies integrate with learning system for continuous improvement
+- Framework ready for additional strategies (tool config, context window, retry policy, caching)
+
 **Relevant Files:**
-- `src/self_improvement/strategies/strategy.py` — `ImprovementStrategy` ABC
-- `src/self_improvement/strategies/registry.py` — `StrategyRegistry`
+- `src/self_improvement/strategies/prompt_optimization_strategy.py` — New PromptOptimizationStrategy (complete, 211 lines)
+- `src/self_improvement/strategies/temperature_search_strategy.py` — New TemperatureSearchStrategy (complete, 264 lines)
+- `src/self_improvement/strategies/__init__.py` — Updated exports to include new strategies
+- `src/self_improvement/strategies/strategy.py` — ImprovementStrategy ABC (interface)
+- `src/self_improvement/strategies/registry.py` — StrategyRegistry (for registration)
 
 ## 30. Self-Improvement Feedback Path is One-Directional ✅ COMPLETED
 

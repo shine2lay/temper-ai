@@ -4,7 +4,7 @@ Executes agents one after another in the order specified in the stage config.
 Each agent's output is accumulated and passed to subsequent agents, enabling
 agent-to-agent context sharing within a stage.
 """
-from typing import Dict, Any, Optional, cast
+from typing import Dict, Any, Optional, cast, List
 import time
 import uuid
 import traceback
@@ -144,11 +144,14 @@ class SequentialStageExecutor(StageExecutor):
                         metadata=output_data.get("metadata", {})
                     ))
 
-                # Run synthesis
+                # Run synthesis (pass dialogue parameters for multi-round support)
                 synthesis_result = self._run_synthesis(
                     agent_output_list,
                     stage_config,
-                    stage_name
+                    stage_name,
+                    state=state,
+                    config_loader=config_loader,
+                    agents=agents
                 )
 
                 # Use synthesized output

@@ -693,6 +693,10 @@ class SequentialStageExecutor(StageExecutor):
 
         # Execute additional rounds (1 to max_rounds-1)
         final_round = 0
+        previous_outputs = initial_outputs
+        converged = False
+        convergence_round = -1
+
         for round_num in range(1, strategy.max_rounds):
             final_round = round_num
 
@@ -704,7 +708,8 @@ class SequentialStageExecutor(StageExecutor):
                 config_loader=config_loader,
                 dialogue_history=dialogue_history,
                 round_number=round_num,
-                max_rounds=strategy.max_rounds
+                max_rounds=strategy.max_rounds,
+                strategy=strategy  # Pass strategy for context curation
             )
 
             # Record this round
@@ -718,6 +723,27 @@ class SequentialStageExecutor(StageExecutor):
                 })
                 total_cost += output.metadata.get("cost_usd", 0.0)
 
+            # Check convergence (after min_rounds)
+            if round_num >= strategy.min_rounds:
+                convergence_score = strategy.calculate_convergence(
+                    current_outputs,
+                    previous_outputs
+                )
+                logger.info(
+                    f"Dialogue round {round_num + 1} for stage '{stage_name}': "
+                    f"convergence {convergence_score:.1%} "
+                    f"(threshold: {strategy.convergence_threshold:.1%})"
+                )
+
+                if convergence_score >= strategy.convergence_threshold:
+                    converged = True
+                    convergence_round = round_num
+                    logger.info(
+                        f"Dialogue converged at round {round_num + 1} for stage '{stage_name}': "
+                        f"{convergence_score:.1%} >= {strategy.convergence_threshold:.1%}"
+                    )
+                    break
+
             # Check budget
             if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
                 logger.warning(
@@ -726,15 +752,27 @@ class SequentialStageExecutor(StageExecutor):
                 )
                 break
 
+            # Update previous outputs for next convergence check
+            previous_outputs = current_outputs
+
         # Final synthesis
         result = strategy.synthesize(current_outputs, {})
         result.metadata["dialogue_rounds"] = final_round + 1
         result.metadata["total_cost_usd"] = total_cost
         result.metadata["dialogue_history"] = dialogue_history
+        result.metadata["converged"] = converged
+        if converged:
+            result.metadata["convergence_round"] = convergence_round
+            result.metadata["early_stop_reason"] = "convergence"
+        elif strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
+            result.metadata["early_stop_reason"] = "budget"
+        else:
+            result.metadata["early_stop_reason"] = "max_rounds"
 
         logger.info(
             f"Dialogue completed for stage '{stage_name}': "
-            f"{final_round + 1} rounds, ${total_cost:.2f} cost"
+            f"{final_round + 1} rounds, ${total_cost:.2f} cost, "
+            f"converged: {converged}, reason: {result.metadata['early_stop_reason']}"
         )
 
         return result
@@ -747,7 +785,8 @@ class SequentialStageExecutor(StageExecutor):
         config_loader: Any,
         dialogue_history: list,
         round_number: int,
-        max_rounds: int
+        max_rounds: int,
+        strategy: Any = None
     ) -> list:
         """Re-invoke agents with dialogue history as context.
 
@@ -759,6 +798,7 @@ class SequentialStageExecutor(StageExecutor):
             dialogue_history: Accumulated dialogue history
             round_number: Current round number
             max_rounds: Maximum rounds
+            strategy: DialogueOrchestrator strategy (for context curation)
 
         Returns:
             List of AgentOutput objects
@@ -777,12 +817,30 @@ class SequentialStageExecutor(StageExecutor):
             agent_config = AgentConfig(**agent_config_dict)
             agent = AgentFactory.create(agent_config)
 
+            # Extract role from agent metadata (if present)
+            agent_role = None
+            if hasattr(agent_config.agent, 'metadata') and agent_config.agent.metadata:
+                agent_role = agent_config.agent.metadata.tags[0] if agent_config.agent.metadata.tags else None
+                # Try explicit role field in metadata (custom metadata)
+                if hasattr(agent_config.agent.metadata, 'role'):
+                    agent_role = agent_config.agent.metadata.role
+
+            # Curate dialogue history based on strategy (reduce context size/noise)
+            curated_history = dialogue_history
+            if strategy and hasattr(strategy, 'curate_dialogue_history'):
+                curated_history = strategy.curate_dialogue_history(
+                    dialogue_history=dialogue_history,
+                    current_round=round_number,
+                    agent_name=agent_name
+                )
+
             # Enrich input with dialogue context
             input_data = {
                 **state,
-                "dialogue_history": dialogue_history,
+                "dialogue_history": curated_history,  # Use curated history
                 "round_number": round_number,
-                "max_rounds": max_rounds
+                "max_rounds": max_rounds,
+                "agent_role": agent_role  # Pass role context to agent
             }
 
             # Create execution context

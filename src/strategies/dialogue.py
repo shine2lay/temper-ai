@@ -33,12 +33,15 @@ Example:
 
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
+import logging
 
 from src.strategies.base import (
     CollaborationStrategy,
     AgentOutput,
     SynthesisResult
 )
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -131,6 +134,11 @@ class DialogueOrchestrator(CollaborationStrategy):
         convergence_threshold: Similarity threshold for early stopping (default: 0.85)
         cost_budget_usd: Maximum cost in USD, None for unlimited (default: None)
         min_rounds: Minimum rounds before convergence check (default: 1)
+        use_semantic_convergence: Use semantic similarity instead of exact match (default: True)
+        context_strategy: How to propagate dialogue history - "full", "recent", "relevant" (default: "full")
+        context_window_size: For "recent" strategy, how many recent rounds to include (default: 2)
+        use_merit_weighting: Weight agent opinions by historical performance (default: False)
+        merit_domain: Domain for merit score lookup, None for agent name (default: None)
 
     Note:
         Phase 1 implementation (this file) provides core data structures and
@@ -156,7 +164,12 @@ class DialogueOrchestrator(CollaborationStrategy):
         max_rounds: int = 3,
         convergence_threshold: float = 0.85,
         cost_budget_usd: Optional[float] = None,
-        min_rounds: int = 1
+        min_rounds: int = 1,
+        use_semantic_convergence: bool = True,
+        context_strategy: str = "full",
+        context_window_size: int = 2,
+        use_merit_weighting: bool = False,
+        merit_domain: Optional[str] = None
     ):
         """Initialize dialogue orchestrator.
 
@@ -165,6 +178,11 @@ class DialogueOrchestrator(CollaborationStrategy):
             convergence_threshold: Threshold for convergence detection (0.0-1.0)
             cost_budget_usd: Cost budget in USD, None for unlimited
             min_rounds: Minimum rounds before allowing convergence (must be >= 1)
+            use_semantic_convergence: Use semantic similarity instead of exact match (default: True)
+            context_strategy: Context propagation strategy - "full", "recent", "relevant" (default: "full")
+            context_window_size: For "recent" strategy, number of recent rounds to include (default: 2)
+            use_merit_weighting: Weight agent opinions by historical performance (default: False)
+            merit_domain: Domain for merit score lookup, None uses agent name as domain (default: None)
 
         Raises:
             ValueError: If max_rounds < 1 or min_rounds < 1 or convergence_threshold not in [0, 1]
@@ -179,11 +197,23 @@ class DialogueOrchestrator(CollaborationStrategy):
             )
         if cost_budget_usd is not None and cost_budget_usd <= 0:
             raise ValueError(f"cost_budget_usd must be > 0, got {cost_budget_usd}")
+        if context_strategy not in ["full", "recent", "relevant"]:
+            raise ValueError(
+                f"context_strategy must be 'full', 'recent', or 'relevant', got {context_strategy}"
+            )
+        if context_window_size < 1:
+            raise ValueError(f"context_window_size must be >= 1, got {context_window_size}")
 
         self.max_rounds = max_rounds
         self.convergence_threshold = convergence_threshold
         self.cost_budget_usd = cost_budget_usd
         self.min_rounds = min_rounds
+        self.use_semantic_convergence = use_semantic_convergence
+        self.context_strategy = context_strategy
+        self.context_window_size = context_window_size
+        self.use_merit_weighting = use_merit_weighting
+        self.merit_domain = merit_domain
+        self._embeddings_available = None  # Lazy check for sentence-transformers
 
     @property
     def requires_requery(self) -> bool:
@@ -208,37 +238,560 @@ class DialogueOrchestrator(CollaborationStrategy):
         """Final synthesis from last dialogue round outputs.
 
         This method is called by executors after all dialogue rounds complete.
-        It uses consensus strategy logic to synthesize the final decision from
-        the last round's agent outputs.
+        If merit weighting is enabled, uses merit scores to weight agent opinions.
+        Otherwise, uses consensus strategy for equal-weight voting.
 
         Args:
             agent_outputs: Agent outputs from the final dialogue round
-            config: Collaboration configuration (passed to consensus strategy)
+            config: Collaboration configuration
 
         Returns:
             SynthesisResult with final synthesized decision
 
         Raises:
             ValueError: If agent_outputs is empty
-
-        Note:
-            This is a simplified Phase 1 implementation. Phase 2+ may add
-            custom synthesis logic that considers full dialogue history.
         """
         # Validate inputs
         self.validate_inputs(agent_outputs)
 
-        # Use consensus strategy for final synthesis
-        # (avoids code duplication, provides consistent synthesis)
-        from src.strategies.consensus import ConsensusStrategy
-        consensus = ConsensusStrategy()
-        result = consensus.synthesize(agent_outputs, config)
+        # Use merit-weighted synthesis if enabled
+        if self.use_merit_weighting:
+            result = self._merit_weighted_synthesis(agent_outputs, config)
+            result.metadata["synthesis_method"] = "merit_weighted"
+        else:
+            # Use consensus strategy for equal-weight synthesis
+            from src.strategies.consensus import ConsensusStrategy
+            consensus = ConsensusStrategy()
+            result = consensus.synthesize(agent_outputs, config)
+            result.metadata["synthesis_method"] = "consensus_from_final_round"
 
         # Add dialogue-specific metadata
         result.metadata["strategy"] = "dialogue"
-        result.metadata["synthesis_method"] = "consensus_from_final_round"
 
         return result
+
+    def _get_merit_weights(self, agent_outputs: List[AgentOutput]) -> Dict[str, float]:
+        """Get merit weights for each agent from observability tracker.
+
+        Queries AgentMeritScore from observability database and converts to weights.
+        Falls back to equal weights (1.0) if scores unavailable.
+
+        Args:
+            agent_outputs: Agent outputs to get weights for
+
+        Returns:
+            Dict mapping agent_name to weight (0.0-1.0+)
+        """
+        weights = {}
+
+        try:
+            # Try to import and query observability tracker
+            from src.observability.tracker import ObservabilityTracker
+            from src.observability.models import AgentMeritScore
+            from sqlmodel import Session, select
+
+            tracker = ObservabilityTracker()
+            if not tracker.engine:
+                logger.debug("Observability tracker not initialized, using equal weights")
+                return {out.agent_name: 1.0 for out in agent_outputs}
+
+            with Session(tracker.engine) as session:
+                for output in agent_outputs:
+                    agent_name = output.agent_name
+                    domain = self.merit_domain or agent_name  # Default to agent name as domain
+
+                    # Query merit score
+                    statement = select(AgentMeritScore).where(
+                        AgentMeritScore.agent_name == agent_name,
+                        AgentMeritScore.domain == domain
+                    )
+                    merit_score = session.exec(statement).first()
+
+                    if merit_score and merit_score.expertise_score is not None:
+                        # Use expertise_score as weight (0.0-1.0+)
+                        weights[agent_name] = merit_score.expertise_score
+                        logger.debug(
+                            f"Merit weight for {agent_name} in {domain}: "
+                            f"{merit_score.expertise_score:.3f}"
+                        )
+                    elif merit_score and merit_score.success_rate is not None:
+                        # Fallback to success_rate
+                        weights[agent_name] = merit_score.success_rate
+                        logger.debug(
+                            f"Merit weight for {agent_name} (success_rate): "
+                            f"{merit_score.success_rate:.3f}"
+                        )
+                    else:
+                        # No merit score available, use neutral weight
+                        weights[agent_name] = 0.5  # Neutral for new agents
+                        logger.debug(f"No merit score for {agent_name}, using neutral weight 0.5")
+
+        except Exception as e:
+            logger.warning(f"Failed to load merit scores: {e}. Using equal weights.")
+            weights = {out.agent_name: 1.0 for out in agent_outputs}
+
+        # Ensure all agents have weights
+        for output in agent_outputs:
+            if output.agent_name not in weights:
+                weights[output.agent_name] = 1.0
+
+        return weights
+
+    def _merit_weighted_synthesis(
+        self,
+        agent_outputs: List[AgentOutput],
+        config: Dict[str, Any]
+    ) -> SynthesisResult:
+        """Synthesize decision using merit-weighted voting.
+
+        Higher-merit agents have more influence on the final decision.
+        Merit scores are multiplied by confidence to get weighted votes.
+
+        Args:
+            agent_outputs: Agent outputs from final round
+            config: Configuration (unused currently)
+
+        Returns:
+            SynthesisResult with merit-weighted decision
+        """
+        from src.strategies.base import Conflict
+        from collections import defaultdict
+
+        # Get merit weights
+        merit_weights = self._get_merit_weights(agent_outputs)
+
+        # Calculate weighted votes
+        weighted_votes = defaultdict(float)
+        agent_votes = {}  # Track which agents voted for what
+
+        for output in agent_outputs:
+            decision = output.decision
+            agent_name = output.agent_name
+            confidence = output.confidence
+            merit_weight = merit_weights.get(agent_name, 1.0)
+
+            # Weight = merit_score × confidence
+            vote_weight = merit_weight * confidence
+            weighted_votes[decision] += vote_weight
+            agent_votes[agent_name] = decision
+
+        # Find winning decision (highest weighted vote)
+        if not weighted_votes:
+            raise ValueError("No votes recorded")
+
+        winning_decision = max(weighted_votes, key=weighted_votes.get)
+        total_weight = sum(weighted_votes.values())
+        decision_support = weighted_votes[winning_decision] / total_weight if total_weight > 0 else 0
+
+        # Calculate confidence (weighted average of supporting agents)
+        supporting_agents = [
+            out for out in agent_outputs if out.decision == winning_decision
+        ]
+        if supporting_agents:
+            # Weight confidence by merit scores
+            weighted_conf_sum = sum(
+                out.confidence * merit_weights.get(out.agent_name, 1.0)
+                for out in supporting_agents
+            )
+            weight_sum = sum(
+                merit_weights.get(out.agent_name, 1.0)
+                for out in supporting_agents
+            )
+            avg_confidence = weighted_conf_sum / weight_sum if weight_sum > 0 else 0
+            final_confidence = decision_support * avg_confidence
+        else:
+            final_confidence = 0.5
+
+        # Build reasoning
+        reasoning = self._build_merit_weighted_reasoning(
+            winning_decision,
+            decision_support,
+            agent_outputs,
+            merit_weights,
+            weighted_votes
+        )
+
+        # Detect conflicts
+        conflicts = []
+        if len(weighted_votes) > 1:
+            all_agents = [out.agent_name for out in agent_outputs]
+            all_decisions = list(weighted_votes.keys())
+            disagreement_score = 1.0 - decision_support
+
+            conflicts.append(Conflict(
+                agents=all_agents,
+                decisions=all_decisions,
+                disagreement_score=disagreement_score,
+                context={"weighted_votes": dict(weighted_votes)}
+            ))
+
+        # Build metadata
+        metadata = {
+            "total_agents": len(agent_outputs),
+            "decision_support": decision_support,
+            "merit_weights": merit_weights,
+            "weighted_votes": dict(weighted_votes),
+            "supporters": [out.agent_name for out in supporting_agents],
+            "dissenters": [out.agent_name for out in agent_outputs if out.decision != winning_decision]
+        }
+
+        # Convert weighted votes to integer vote counts for display
+        vote_counts = {decision: len([o for o in agent_outputs if o.decision == decision])
+                      for decision in weighted_votes.keys()}
+
+        return SynthesisResult(
+            decision=winning_decision,
+            confidence=final_confidence,
+            method="merit_weighted",
+            votes=vote_counts,
+            conflicts=conflicts,
+            reasoning=reasoning,
+            metadata=metadata
+        )
+
+    def _build_merit_weighted_reasoning(
+        self,
+        decision: Any,
+        support: float,
+        agent_outputs: List[AgentOutput],
+        merit_weights: Dict[str, float],
+        weighted_votes: Dict[Any, float]
+    ) -> str:
+        """Build reasoning explanation for merit-weighted synthesis.
+
+        Args:
+            decision: Winning decision
+            support: Decision support (0.0-1.0)
+            agent_outputs: All agent outputs
+            merit_weights: Merit weights by agent
+            weighted_votes: Weighted vote totals by decision
+
+        Returns:
+            Human-readable reasoning string
+        """
+        # Find supporters
+        supporters = [out for out in agent_outputs if out.decision == decision]
+        supporter_names = [
+            f"{out.agent_name} (merit: {merit_weights.get(out.agent_name, 1.0):.2f})"
+            for out in supporters
+        ]
+
+        reasoning = f"Merit-weighted decision: '{decision}' with {support:.1%} weighted support.\n\n"
+
+        reasoning += f"Supporters ({len(supporters)}/{len(agent_outputs)}): "
+        reasoning += ", ".join(supporter_names) + "\n\n"
+
+        # Show weighted vote breakdown
+        if len(weighted_votes) > 1:
+            reasoning += "Weighted vote breakdown:\n"
+            for dec, weight in sorted(weighted_votes.items(), key=lambda x: x[1], reverse=True):
+                percentage = (weight / sum(weighted_votes.values())) * 100
+                reasoning += f"  - '{dec}': {weight:.2f} ({percentage:.1f}%)\n"
+
+        reasoning += "\nNote: Votes weighted by agent merit scores and confidence."
+
+        return reasoning
+
+    def curate_dialogue_history(
+        self,
+        dialogue_history: List[Dict[str, Any]],
+        current_round: int,
+        agent_name: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Curate dialogue history based on context strategy.
+
+        Reduces context size and noise by selectively propagating history.
+        Helps reduce costs and improve focus in long dialogues.
+
+        Args:
+            dialogue_history: Full dialogue history
+            current_round: Current round number
+            agent_name: Name of agent receiving the history (for relevance filtering)
+
+        Returns:
+            Curated dialogue history based on context_strategy
+
+        Example:
+            >>> strategy = DialogueOrchestrator(context_strategy="recent", context_window_size=2)
+            >>> full_history = [round0, round1, round2, round3]  # 4 rounds
+            >>> curated = strategy.curate_dialogue_history(full_history, current_round=4)
+            >>> len(curated)  # Only last 2 rounds
+            2
+        """
+        if not dialogue_history:
+            return []
+
+        if self.context_strategy == "full":
+            # Return all history (current behavior)
+            return dialogue_history
+
+        elif self.context_strategy == "recent":
+            # Return only recent rounds (sliding window)
+            return self._curate_recent(dialogue_history, current_round)
+
+        elif self.context_strategy == "relevant":
+            # Return history relevant to current agent (keyword-based)
+            return self._curate_relevant(dialogue_history, agent_name)
+
+        else:
+            # Fallback to full (should not reach here due to validation)
+            logger.warning(f"Unknown context_strategy '{self.context_strategy}', using 'full'")
+            return dialogue_history
+
+    def _curate_recent(
+        self,
+        dialogue_history: List[Dict[str, Any]],
+        current_round: int
+    ) -> List[Dict[str, Any]]:
+        """Curate history to recent rounds only (sliding window).
+
+        Args:
+            dialogue_history: Full dialogue history
+            current_round: Current round number
+
+        Returns:
+            Recent rounds only (up to context_window_size)
+        """
+        # Group by round number
+        rounds_dict = {}
+        for entry in dialogue_history:
+            round_num = entry["round"]
+            if round_num not in rounds_dict:
+                rounds_dict[round_num] = []
+            rounds_dict[round_num].append(entry)
+
+        # Get recent round numbers
+        all_rounds = sorted(rounds_dict.keys())
+        recent_rounds = all_rounds[-self.context_window_size:] if all_rounds else []
+
+        # Build curated history from recent rounds
+        curated = []
+        for round_num in recent_rounds:
+            curated.extend(rounds_dict[round_num])
+
+        logger.debug(
+            f"Context curation (recent): {len(dialogue_history)} entries → "
+            f"{len(curated)} entries (last {len(recent_rounds)} rounds)"
+        )
+
+        return curated
+
+    def _curate_relevant(
+        self,
+        dialogue_history: List[Dict[str, Any]],
+        agent_name: Optional[str]
+    ) -> List[Dict[str, Any]]:
+        """Curate history to entries relevant to current agent.
+
+        Uses keyword matching and agent participation to filter relevant history.
+        Falls back to recent strategy if agent_name not provided.
+
+        Args:
+            dialogue_history: Full dialogue history
+            agent_name: Name of current agent
+
+        Returns:
+            Relevant history entries
+        """
+        if not agent_name:
+            # Fallback to recent if no agent name
+            logger.debug("No agent_name for relevance filtering, using recent strategy")
+            return self._curate_recent(dialogue_history, len(dialogue_history))
+
+        # Always include:
+        # 1. Latest round (immediate context)
+        # 2. Entries mentioning this agent's previous outputs
+        # 3. Entries from this agent in prior rounds
+
+        curated = []
+        latest_round = max((entry["round"] for entry in dialogue_history), default=0)
+
+        for entry in dialogue_history:
+            # Include latest round
+            if entry["round"] == latest_round:
+                curated.append(entry)
+                continue
+
+            # Include agent's own prior contributions
+            if entry["agent"] == agent_name:
+                curated.append(entry)
+                continue
+
+            # Include entries mentioning this agent (simple keyword match)
+            reasoning = str(entry.get("reasoning", "")).lower()
+            if agent_name.lower() in reasoning:
+                curated.append(entry)
+                continue
+
+        # Ensure at least some context (fallback to recent if too little)
+        if len(curated) < 2:
+            logger.debug(
+                f"Relevance filtering produced too little context ({len(curated)} entries), "
+                f"using recent strategy"
+            )
+            return self._curate_recent(dialogue_history, len(dialogue_history))
+
+        logger.debug(
+            f"Context curation (relevant for {agent_name}): "
+            f"{len(dialogue_history)} entries → {len(curated)} entries"
+        )
+
+        return curated
+
+    def _check_embeddings_available(self) -> bool:
+        """Check if sentence-transformers is available for semantic convergence.
+
+        Returns:
+            True if sentence-transformers can be imported, False otherwise
+        """
+        if self._embeddings_available is not None:
+            return self._embeddings_available
+
+        try:
+            import sentence_transformers  # noqa: F401
+            self._embeddings_available = True
+            logger.debug("sentence-transformers available for semantic convergence")
+        except ImportError:
+            self._embeddings_available = False
+            logger.warning(
+                "sentence-transformers not available, falling back to exact match convergence. "
+                "Install with: pip install sentence-transformers"
+            )
+
+        return self._embeddings_available
+
+    def _calculate_semantic_similarity(
+        self,
+        current_outputs: List[AgentOutput],
+        previous_outputs: List[AgentOutput]
+    ) -> float:
+        """Calculate semantic similarity between current and previous outputs.
+
+        Uses sentence embeddings to detect when agents express the same idea
+        differently (e.g., "Use microservices" vs "Adopt microservice architecture").
+
+        Args:
+            current_outputs: Outputs from current round
+            previous_outputs: Outputs from previous round
+
+        Returns:
+            Similarity score (0.0-1.0): percentage of agents with semantically similar positions
+        """
+        from sentence_transformers import SentenceTransformer
+        from sentence_transformers.util import cos_sim
+
+        # Load model (cached after first call)
+        if not hasattr(self, '_embedding_model'):
+            logger.info("Loading sentence-transformers model (paraphrase-MiniLM-L6-v2)...")
+            self._embedding_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+
+        # Map agent names to outputs
+        prev_decisions = {out.agent_name: out.decision for out in previous_outputs}
+        curr_decisions = {out.agent_name: out.decision for out in current_outputs}
+
+        # Only compare agents present in both rounds
+        common_agents = set(prev_decisions.keys()) & set(curr_decisions.keys())
+        if not common_agents:
+            return 0.0
+
+        # Calculate similarity for each agent
+        similar_count = 0
+        for agent in common_agents:
+            prev_text = str(prev_decisions[agent])
+            curr_text = str(curr_decisions[agent])
+
+            # Exact match shortcut
+            if prev_text == curr_text:
+                similar_count += 1
+                continue
+
+            # Calculate semantic similarity
+            embeddings = self._embedding_model.encode([prev_text, curr_text])
+            similarity = cos_sim(embeddings[0], embeddings[1]).item()
+
+            # Use high threshold (0.9) for semantic similarity
+            # This ensures agents truly mean the same thing, not just related ideas
+            if similarity >= 0.9:
+                similar_count += 1
+                logger.debug(
+                    f"Agent {agent} semantically similar: {similarity:.3f} "
+                    f"(prev: '{prev_text[:50]}...', curr: '{curr_text[:50]}...')"
+                )
+
+        return similar_count / len(common_agents)
+
+    def _calculate_exact_match_convergence(
+        self,
+        current_outputs: List[AgentOutput],
+        previous_outputs: List[AgentOutput]
+    ) -> float:
+        """Calculate exact match convergence between current and previous outputs.
+
+        Args:
+            current_outputs: Outputs from current round
+            previous_outputs: Outputs from previous round
+
+        Returns:
+            Convergence score (0.0-1.0): percentage of agents with unchanged positions
+        """
+        # Map agent names to decisions
+        prev_decisions = {out.agent_name: out.decision for out in previous_outputs}
+        curr_decisions = {out.agent_name: out.decision for out in current_outputs}
+
+        # Only compare agents present in both rounds
+        common_agents = set(prev_decisions.keys()) & set(curr_decisions.keys())
+        if not common_agents:
+            return 0.0
+
+        # Count unchanged positions (exact string match)
+        unchanged = sum(
+            1 for agent in common_agents
+            if str(prev_decisions[agent]) == str(curr_decisions[agent])
+        )
+
+        return unchanged / len(common_agents)
+
+    def calculate_convergence(
+        self,
+        current_outputs: List[AgentOutput],
+        previous_outputs: List[AgentOutput]
+    ) -> float:
+        """Calculate convergence score between current and previous round outputs.
+
+        Uses semantic similarity if use_semantic_convergence is True and
+        sentence-transformers is available, otherwise falls back to exact match.
+
+        Args:
+            current_outputs: Outputs from current round
+            previous_outputs: Outputs from previous round
+
+        Returns:
+            Convergence score (0.0-1.0): percentage of agents with similar/unchanged positions
+
+        Example:
+            >>> strategy = DialogueOrchestrator(use_semantic_convergence=True)
+            >>> current = [AgentOutput("a1", "Use microservices", "r", 0.8, {})]
+            >>> previous = [AgentOutput("a1", "Adopt microservice architecture", "r", 0.7, {})]
+            >>> score = strategy.calculate_convergence(current, previous)
+            >>> # score ≈ 1.0 (semantically similar) vs 0.0 (exact match)
+        """
+        if not previous_outputs:
+            return 0.0  # First round, no convergence yet
+
+        # Try semantic convergence if enabled
+        if self.use_semantic_convergence:
+            if self._check_embeddings_available():
+                try:
+                    return self._calculate_semantic_similarity(current_outputs, previous_outputs)
+                except Exception as e:
+                    logger.warning(
+                        f"Semantic similarity calculation failed: {e}. "
+                        f"Falling back to exact match."
+                    )
+                    # Fall through to exact match
+
+        # Fall back to exact match
+        return self._calculate_exact_match_convergence(current_outputs, previous_outputs)
 
     def get_capabilities(self) -> Dict[str, bool]:
         """Get dialogue orchestrator capabilities.
@@ -246,16 +799,16 @@ class DialogueOrchestrator(CollaborationStrategy):
         Returns:
             Dict of capability flags:
             - supports_debate: True (multi-round dialogue)
-            - supports_convergence: True (Phase 2+)
-            - supports_merit_weighting: False (uses consensus)
+            - supports_convergence: True (Phase 2.1)
+            - supports_merit_weighting: True (Phase 2.4)
             - supports_partial_participation: False
-            - supports_async: False (Phase 1)
+            - supports_async: False
             - supports_streaming: False
         """
         return {
             "supports_debate": True,
-            "supports_convergence": True,  # Phase 2
-            "supports_merit_weighting": False,
+            "supports_convergence": True,  # Phase 2.1
+            "supports_merit_weighting": True,  # Phase 2.4
             "supports_partial_participation": False,
             "supports_async": False,
             "supports_streaming": False

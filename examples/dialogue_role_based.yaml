@@ -1,0 +1,80 @@
+name: "Role-Based Dialogue Example"
+description: "Structured dialogue with specialized agent roles for complex decision-making"
+
+# This example demonstrates role-based dialogue where each agent has a specific
+# role in the conversation:
+# - PROPOSER: Makes proposals and iterates based on feedback
+# - CRITIC: Challenges proposals and identifies flaws
+# - SYNTHESIZER: Merges perspectives and finds common ground
+# - REVIEWER: Validates final decisions and ensures quality
+#
+# Role-based dialogue is more structured than standard dialogue and works well
+# for complex decisions requiring multiple perspectives.
+
+stages:
+  - name: "architecture_decision_with_roles"
+    type: sequential
+    agents:
+      - dialogue_proposer      # Role: Makes initial architectural proposal
+      - dialogue_critic        # Role: Challenges and identifies risks
+      - dialogue_synthesizer   # Role: Integrates feedback into balanced solution
+      - dialogue_reviewer      # Role: Final validation and approval
+
+    collaboration:
+      strategy: dialogue
+      config:
+        # Allow enough rounds for role-based interaction
+        max_rounds: 4
+
+        # Higher convergence threshold since roles bring structure
+        convergence_threshold: 0.85
+
+        # Reasonable budget for thorough role-based dialogue
+        cost_budget_usd: 15.0
+
+        # Require at least 2 rounds so all roles can participate
+        min_rounds: 2
+
+        # Use semantic convergence to detect agreement across rephrasing
+        use_semantic_convergence: true
+
+# How Role-Based Dialogue Works:
+#
+# Round 1 (Initial Positions):
+#   - Proposer: "Use microservices architecture" (makes proposal)
+#   - Critic: "Concerned about operational complexity" (challenges)
+#   - Synthesizer: "Hybrid approach with bounded contexts" (finds middle ground)
+#   - Reviewer: "NEEDS WORK - operational plan unclear" (validates)
+#
+# Round 2 (After Dialogue):
+#   - Proposer: "Microservices with centralized ops platform" (addresses critique)
+#   - Critic: "Better, but need migration strategy" (acknowledges improvement)
+#   - Synthesizer: "Phased migration starting with new features" (integrates)
+#   - Reviewer: "CONDITIONAL - approve if monitoring included" (closer to approval)
+#
+# Round 3 (Convergence):
+#   - Proposer: "Microservices + ops platform + monitoring" (incorporates all feedback)
+#   - Critic: "Concerns addressed" (accepts)
+#   - Synthesizer: "Aligned on phased approach with guardrails" (consensus)
+#   - Reviewer: "APPROVE - comprehensive solution" (approved)
+#
+# Result: Converged after 3 rounds with high-quality, validated decision
+
+# Benefits of Role-Based Dialogue:
+# - Structured interaction pattern (not chaotic)
+# - Each agent has clear responsibility
+# - Natural tension between proposer and critic drives improvement
+# - Synthesizer prevents polarization
+# - Reviewer ensures quality threshold met
+# - Faster convergence than unstructured dialogue
+
+# When to Use Role-Based Dialogue:
+# ✅ Complex architectural decisions
+# ✅ High-stakes choices requiring validation
+# ✅ When you need both creativity (proposer) and caution (critic)
+# ✅ Multi-stakeholder decisions
+#
+# When NOT to Use:
+# ❌ Simple yes/no decisions (use consensus)
+# ❌ Only 2 agents (not enough for roles)
+# ❌ When all agents should have equal voice (use standard dialogue)

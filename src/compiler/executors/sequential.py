@@ -243,7 +243,13 @@ class SequentialStageExecutor(StageExecutor):
         agent_statuses: Dict[str, Any] = {}
         agent_metrics: Dict[str, Any] = {}
 
-        for agent_ref in agents:
+        show_details = state.get("show_details", False)
+        detail_console = state.get("detail_console")
+        if show_details and detail_console:
+            detail_console.print(f"\n[bold cyan]── Stage: {stage_name} ──[/bold cyan]")
+
+        total_agents = len(agents)
+        for agent_idx, agent_ref in enumerate(agents):
             agent_result = self._execute_agent(
                 agent_ref=agent_ref,
                 stage_id=stage_id,
@@ -256,6 +262,24 @@ class SequentialStageExecutor(StageExecutor):
             )
 
             agent_name = agent_result["agent_name"]
+
+            # Print real-time progress if show_details enabled
+            if show_details and detail_console:
+                is_last = (agent_idx == total_agents - 1)
+                connector = "└─" if is_last else "├─"
+                metrics = agent_result.get("metrics", {})
+                duration = metrics.get("duration_seconds", 0.0)
+                tokens = metrics.get("tokens", 0)
+
+                if agent_result["status"] == "failed":
+                    error_type = agent_result.get("output_data", {}).get("error_type", "error")
+                    detail_console.print(
+                        f"  {connector} [red]{agent_name} ✗[/red] ({duration:.1f}s) [{error_type}]"
+                    )
+                else:
+                    detail_console.print(
+                        f"  {connector} [green]{agent_name} ✓[/green] ({duration:.1f}s, {tokens} tokens)"
+                    )
 
             # Store status with error details for failed agents
             if agent_result["status"] == "failed":
@@ -494,7 +518,8 @@ class SequentialStageExecutor(StageExecutor):
 
             tracking_input_data = {
                 k: v for k, v in input_data.items()
-                if k not in ('tracker', 'tool_registry', 'config_loader', 'visualizer')
+                if k not in ('tracker', 'tool_registry', 'config_loader', 'visualizer',
+                             'show_details', 'detail_console')
                 and is_serializable(v)
             }
             tracking_input_data = sanitize_config_for_display(tracking_input_data)
@@ -544,332 +569,3 @@ class SequentialStageExecutor(StageExecutor):
             },
         }
 
-    def _extract_agent_name(self, agent_ref: Any) -> str:
-        """Extract agent name from various agent reference formats.
-
-        Delegates to shared utility function to avoid code duplication.
-
-        Args:
-            agent_ref: Agent reference (dict, str, or Pydantic model)
-
-        Returns:
-            Agent name
-        """
-        return extract_agent_name(agent_ref)
-
-    def _run_synthesis(
-        self,
-        agent_outputs: list,
-        stage_config: Any,
-        stage_name: str,
-        state: Dict[str, Any] = None,
-        config_loader: Any = None,
-        agents: List = None
-    ) -> Any:
-        """Run collaboration strategy to synthesize agent outputs.
-
-        Args:
-            agent_outputs: List of AgentOutput objects
-            stage_config: Stage configuration
-            stage_name: Stage name
-            state: Workflow state (optional, for dialogue mode)
-            config_loader: Config loader (optional, for dialogue mode)
-            agents: List of agent refs (optional, for dialogue mode)
-
-        Returns:
-            SynthesisResult
-
-        Raises:
-            ImportError: If strategy registry not available
-        """
-        try:
-            # Try to import registry
-            from src.strategies.registry import get_strategy_from_config
-
-            # Get strategy from config
-            strategy = get_strategy_from_config(stage_config)
-
-            # Check if strategy requires multi-round dialogue
-            if hasattr(strategy, 'requires_requery') and strategy.requires_requery:
-                # Multi-round dialogue mode
-                if state is None or config_loader is None or agents is None:
-                    logger.warning(
-                        "Dialogue mode requires state, config_loader, and agents. "
-                        "Falling back to one-shot synthesis."
-                    )
-                else:
-                    return self._run_dialogue_synthesis(
-                        initial_outputs=agent_outputs,
-                        strategy=strategy,
-                        stage_config=stage_config,
-                        stage_name=stage_name,
-                        state=state,
-                        config_loader=config_loader,
-                        agents=agents
-                    )
-
-            # Get strategy config
-            stage_dict = stage_config if isinstance(stage_config, dict) else {}
-            collaboration_config = stage_dict.get("collaboration", {}).get("config", {})
-
-            # One-shot synthesis
-            result = strategy.synthesize(agent_outputs, collaboration_config)
-
-            return result
-
-        except ImportError:
-            # Fallback: use simple consensus
-            from src.strategies.base import SynthesisResult, calculate_vote_distribution, extract_majority_decision
-
-            decision = extract_majority_decision(agent_outputs)
-            votes = calculate_vote_distribution(agent_outputs)
-
-            # Calculate simple confidence
-            if decision and votes:
-                confidence = votes.get(str(decision), 0) / len(agent_outputs)
-            else:
-                confidence = 0.5
-
-            return SynthesisResult(
-                decision=decision or "",
-                confidence=confidence,
-                method="fallback_consensus",
-                votes=votes,
-                metadata={"fallback": True}
-            )
-
-    def _run_dialogue_synthesis(
-        self,
-        initial_outputs: list,
-        strategy: Any,
-        stage_config: Any,
-        stage_name: str,
-        state: Dict[str, Any],
-        config_loader: Any,
-        agents: list
-    ) -> Any:
-        """Execute multi-round dialogue with agent re-invocation.
-
-        Args:
-            initial_outputs: Initial round agent outputs
-            strategy: DialogueOrchestrator strategy
-            stage_config: Stage configuration
-            stage_name: Stage name
-            state: Workflow state
-            config_loader: Config loader
-            agents: List of agent refs
-
-        Returns:
-            SynthesisResult from final dialogue round
-        """
-        from src.strategies.base import AgentOutput
-
-        dialogue_history = []
-        current_outputs = initial_outputs
-        total_cost = 0.0
-
-        # Record initial round (round 0)
-        for output in current_outputs:
-            dialogue_history.append({
-                "agent": output.agent_name,
-                "round": 0,
-                "output": output.decision,
-                "reasoning": output.reasoning,
-                "confidence": output.confidence
-            })
-            total_cost += output.metadata.get("cost_usd", 0.0)
-
-        # Check budget after round 0
-        if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
-            logger.warning(
-                f"Dialogue stopped after round 0 for stage '{stage_name}': "
-                f"budget ${strategy.cost_budget_usd:.2f} reached (cost: ${total_cost:.2f})"
-            )
-            result = strategy.synthesize(current_outputs, {})
-            result.metadata["dialogue_rounds"] = 1
-            result.metadata["total_cost_usd"] = total_cost
-            result.metadata["early_stop_reason"] = "budget"
-            return result
-
-        # Execute additional rounds (1 to max_rounds-1)
-        final_round = 0
-        previous_outputs = initial_outputs
-        converged = False
-        convergence_round = -1
-
-        for round_num in range(1, strategy.max_rounds):
-            final_round = round_num
-
-            # Re-invoke agents with dialogue history
-            current_outputs = self._reinvoke_agents_with_dialogue(
-                agents=agents,
-                stage_name=stage_name,
-                state=state,
-                config_loader=config_loader,
-                dialogue_history=dialogue_history,
-                round_number=round_num,
-                max_rounds=strategy.max_rounds,
-                strategy=strategy  # Pass strategy for context curation
-            )
-
-            # Record this round
-            for output in current_outputs:
-                dialogue_history.append({
-                    "agent": output.agent_name,
-                    "round": round_num,
-                    "output": output.decision,
-                    "reasoning": output.reasoning,
-                    "confidence": output.confidence
-                })
-                total_cost += output.metadata.get("cost_usd", 0.0)
-
-            # Check convergence (after min_rounds)
-            if round_num >= strategy.min_rounds:
-                convergence_score = strategy.calculate_convergence(
-                    current_outputs,
-                    previous_outputs
-                )
-                logger.info(
-                    f"Dialogue round {round_num + 1} for stage '{stage_name}': "
-                    f"convergence {convergence_score:.1%} "
-                    f"(threshold: {strategy.convergence_threshold:.1%})"
-                )
-
-                if convergence_score >= strategy.convergence_threshold:
-                    converged = True
-                    convergence_round = round_num
-                    logger.info(
-                        f"Dialogue converged at round {round_num + 1} for stage '{stage_name}': "
-                        f"{convergence_score:.1%} >= {strategy.convergence_threshold:.1%}"
-                    )
-                    break
-
-            # Check budget
-            if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
-                logger.warning(
-                    f"Dialogue stopped at round {round_num + 1} for stage '{stage_name}': "
-                    f"budget ${strategy.cost_budget_usd:.2f} reached (cost: ${total_cost:.2f})"
-                )
-                break
-
-            # Update previous outputs for next convergence check
-            previous_outputs = current_outputs
-
-        # Final synthesis
-        result = strategy.synthesize(current_outputs, {})
-        result.metadata["dialogue_rounds"] = final_round + 1
-        result.metadata["total_cost_usd"] = total_cost
-        result.metadata["dialogue_history"] = dialogue_history
-        result.metadata["converged"] = converged
-        if converged:
-            result.metadata["convergence_round"] = convergence_round
-            result.metadata["early_stop_reason"] = "convergence"
-        elif strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
-            result.metadata["early_stop_reason"] = "budget"
-        else:
-            result.metadata["early_stop_reason"] = "max_rounds"
-
-        logger.info(
-            f"Dialogue completed for stage '{stage_name}': "
-            f"{final_round + 1} rounds, ${total_cost:.2f} cost, "
-            f"converged: {converged}, reason: {result.metadata['early_stop_reason']}"
-        )
-
-        return result
-
-    def _reinvoke_agents_with_dialogue(
-        self,
-        agents: list,
-        stage_name: str,
-        state: Dict[str, Any],
-        config_loader: Any,
-        dialogue_history: list,
-        round_number: int,
-        max_rounds: int,
-        strategy: Any = None
-    ) -> list:
-        """Re-invoke agents with dialogue history as context.
-
-        Args:
-            agents: List of agent refs
-            stage_name: Stage name
-            state: Workflow state
-            config_loader: Config loader
-            dialogue_history: Accumulated dialogue history
-            round_number: Current round number
-            max_rounds: Maximum rounds
-            strategy: DialogueOrchestrator strategy (for context curation)
-
-        Returns:
-            List of AgentOutput objects
-        """
-        from src.strategies.base import AgentOutput
-        from src.compiler.schemas import AgentConfig
-
-        agent_outputs = []
-
-        # Execute agents sequentially
-        for agent_ref in agents:
-            agent_name = self._extract_agent_name(agent_ref)
-
-            # Load agent config
-            agent_config_dict = config_loader.load_agent(agent_name)
-            agent_config = AgentConfig(**agent_config_dict)
-            agent = AgentFactory.create(agent_config)
-
-            # Extract role from agent metadata (if present)
-            agent_role = None
-            if hasattr(agent_config.agent, 'metadata') and agent_config.agent.metadata:
-                agent_role = agent_config.agent.metadata.tags[0] if agent_config.agent.metadata.tags else None
-                # Try explicit role field in metadata (custom metadata)
-                if hasattr(agent_config.agent.metadata, 'role'):
-                    agent_role = agent_config.agent.metadata.role
-
-            # Curate dialogue history based on strategy (reduce context size/noise)
-            curated_history = dialogue_history
-            if strategy and hasattr(strategy, 'curate_dialogue_history'):
-                curated_history = strategy.curate_dialogue_history(
-                    dialogue_history=dialogue_history,
-                    current_round=round_number,
-                    agent_name=agent_name
-                )
-
-            # Enrich input with dialogue context
-            input_data = {
-                **state,
-                "dialogue_history": curated_history,  # Use curated history
-                "round_number": round_number,
-                "max_rounds": max_rounds,
-                "agent_role": agent_role  # Pass role context to agent
-            }
-
-            # Create execution context
-            context = ExecutionContext(
-                workflow_id=state.get("workflow_id", "unknown"),
-                stage_id=f"stage-{uuid.uuid4().hex[:12]}",
-                agent_id=f"agent-{uuid.uuid4().hex[:12]}",
-                metadata={
-                    "stage_name": stage_name,
-                    "agent_name": agent_name,
-                    "execution_mode": "dialogue",
-                    "round": round_number
-                }
-            )
-
-            # Execute agent
-            response = agent.execute(input_data, context)
-
-            # Create agent output
-            agent_outputs.append(AgentOutput(
-                agent_name=agent_name,
-                decision=response.output,
-                reasoning=response.reasoning,
-                confidence=response.confidence,
-                metadata={
-                    "tokens": response.tokens,
-                    "cost_usd": response.estimated_cost_usd,
-                    "round": round_number
-                }
-            ))
-
-        return agent_outputs

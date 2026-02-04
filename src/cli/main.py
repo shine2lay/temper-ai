@@ -94,6 +94,12 @@ def main() -> None:
     show_default=True,
     help="Config directory root",
 )
+@click.option(
+    "--show-details",
+    "-d",
+    is_flag=True,
+    help="Show real-time agent progress and detailed post-execution report",
+)
 def run(
     workflow: str,
     input_file: Optional[str],
@@ -101,6 +107,7 @@ def run(
     output: Optional[str],
     db: Optional[str],
     config_root: str,
+    show_details: bool,
 ) -> None:
     """Run a workflow from a YAML config file."""
     if verbose:
@@ -174,11 +181,18 @@ def run(
                 "config_loader": config_loader,
                 "tool_registry": tool_registry,
                 "workflow_id": workflow_id,
+                "show_details": show_details,
+                "detail_console": console if show_details else None,
             }
             result = compiled.invoke(state)
 
         # 9. Display Rich summary
         _print_run_summary(workflow_name, workflow_id, result)
+
+        # 9b. Display detailed report if --show-details
+        if show_details and isinstance(result, dict):
+            from src.cli.detail_report import print_detailed_report
+            print_detailed_report(result, console)
 
         # 10. Display hierarchical gantt chart
         try:

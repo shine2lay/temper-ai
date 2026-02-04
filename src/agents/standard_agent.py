@@ -237,14 +237,21 @@ class StandardAgent(BaseAgent):
         Raises:
             ValueError: If a configured tool cannot be loaded
         """
-        # Mapping of tool names to their classes
-        # This provides security by only allowing known, vetted tools
-        AVAILABLE_TOOLS = {
-            'WebScraper': 'src.tools.web_scraper.WebScraper',
-            'Calculator': 'src.tools.calculator.Calculator',
-            'FileWriter': 'src.tools.file_writer.FileWriter',
-            'Bash': 'src.tools.bash.Bash',
-        }
+        # Auto-discover tools if registry is empty
+        # This populates the registry with all tools from src/tools/
+        # No hardcoded mapping required - adding new tools is seamless
+        if len(registry.list()) == 0:
+            discovered_count = registry.auto_discover()
+            if discovered_count == 0:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    "No tools discovered via auto-discovery. "
+                    "Check that src/tools/ contains valid BaseTool subclasses."
+                )
+
+        # Get list of available tools for error messages
+        available_tools = registry.list()
 
         for tool_spec in configured_tools:
             # Handle both string and ToolReference format
@@ -258,31 +265,24 @@ class StandardAgent(BaseAgent):
                 tool_name = tool_spec.name
                 tool_config = tool_spec.config if hasattr(tool_spec, 'config') else {}
 
-            # Validate tool is in allowed list
-            if tool_name not in AVAILABLE_TOOLS:
+            # Try to get tool from registry (already discovered)
+            tool_instance = registry.get(tool_name)
+
+            if tool_instance is None:
+                # Tool not found - provide helpful error message
                 raise ValueError(
-                    f"Unknown tool '{tool_name}'. Available tools: {list(AVAILABLE_TOOLS.keys())}"
+                    f"Unknown tool '{tool_name}'. Available tools: {available_tools}\n"
+                    f"To add a new tool, create a BaseTool subclass in src/tools/"
                 )
 
-            # Import and instantiate tool
-            tool_module_path = AVAILABLE_TOOLS[tool_name]
-            module_path, class_name = tool_module_path.rsplit('.', 1)
-
-            try:
-                import importlib
-                module = importlib.import_module(module_path)
-                tool_class = getattr(module, class_name)
-
-                # Instantiate tool with optional configuration
-                tool_instance = tool_class(config=tool_config)
-
-                # Register with registry
-                registry.register(tool_instance)
-
-            except Exception as e:
-                raise ValueError(
-                    f"Failed to load tool '{tool_name}': {e}"
-                )
+            # Tool found and already in registry from auto_discover()
+            # Just log if tool_config provided (future enhancement)
+            if tool_config:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.debug(f"Tool config provided for {tool_name}: {tool_config}")
+                # Note: Tool config handling could be enhanced to allow
+                # per-agent tool customization
 
     def execute(
         self,

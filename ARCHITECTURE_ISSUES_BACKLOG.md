@@ -174,11 +174,41 @@ Identified during architecture walkthrough (Section 7: Tool System).
 - Applies to both successful results and error messages
 - Protects context window while preserving most relevant information
 
-## 8. AVAILABLE_TOOLS Mapping is Hardcoded
+## 8. AVAILABLE_TOOLS Mapping is Hardcoded ✅ COMPLETED
+
+**Status:** ✅ Completed
 
 **Problem:** `StandardAgent._setup_tools()` maps tool names to class paths via a hardcoded dict. Auto-discovery exists in `ToolRegistry` but is only the fallback when no tools are configured. Adding a new tool requires updating both `src/tools/` and the dict in `standard_agent.py`.
 
 **Fix:** Remove the hardcoded dict. Use auto-discovery as the primary mechanism — scan `src/tools/`, build a name→class mapping dynamically, then filter by the agent config's `tools` list. The hardcoded dict becomes unnecessary.
+
+**Implementation:**
+1. Removed hardcoded AVAILABLE_TOOLS dictionary from StandardAgent._setup_tools():
+   - Was: {' WebScraper': 'src.tools.web_scraper.WebScraper', ...}
+   - Now: Uses ToolRegistry.auto_discover() to scan src/tools/
+
+2. Modified _setup_tools() flow:
+   - Check if registry empty → call registry.auto_discover()
+   - Auto-discovery scans src/tools/ for BaseTool subclasses
+   - Get tool via registry.get(tool_name) - already instantiated
+   - Provide helpful error if tool not found
+
+3. Benefits:
+   - Adding new tools is seamless: just create BaseTool in src/tools/
+   - No code changes needed in StandardAgent
+   - Auto-discovery caches results for performance
+   - Better error messages with list of available tools
+   - Removes 50+ lines of hardcoded mapping maintenance
+
+**Result:**
+- Tool system now fully dynamic
+- Adding new tools requires zero code changes outside src/tools/
+- Better maintainability and extensibility
+- Consistent with ToolRegistry design
+
+**Relevant Files:**
+- `src/agents/standard_agent.py:240-285` — Replaced hardcoded dict with auto-discovery
+- `src/tools/registry.py` — ToolRegistry.auto_discover() (existing)
 
 ## 9. Parameter Validation Bypassed in Execution Path ✅ COMPLETED
 

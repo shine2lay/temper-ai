@@ -355,7 +355,7 @@ class LangGraphCompiler:
             if hasattr(stage_config, 'stage'):
                 agents = stage_config.stage.agents
             else:
-                from src.compiler.utils import get_nested_value
+                from src.utils.config_helpers import get_nested_value
                 agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
 
             # Validate each agent config

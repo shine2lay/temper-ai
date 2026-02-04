@@ -153,18 +153,16 @@ def create_safety_stack(
     # For development, use NoOpApprover (auto-approves everything)
     # For staging/production, this should be replaced with real approver
     if environment == "development":
-        approver = NoOpApprover()
-        logger.info("Created ApprovalWorkflow with NoOpApprover (auto-approve for dev)")
+        approval_workflow = NoOpApprover()
+        logger.info("Created NoOpApprover approval workflow (auto-approve for dev)")
     else:
         # In staging/production, use NoOpApprover but log warning
         # Real approver implementation should be added for production use
-        approver = NoOpApprover()
+        approval_workflow = NoOpApprover()
         logger.warning(
             f"Using NoOpApprover in {environment} environment. "
             "Replace with real approver for production use."
         )
-
-    approval_workflow = ApprovalWorkflow(approver=approver)
 
     # Create RollbackManager
     rollback_manager = RollbackManager()

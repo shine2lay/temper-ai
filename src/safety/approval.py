@@ -577,3 +577,38 @@ class ApprovalWorkflow:
             f"timeout={self.default_timeout_minutes}min, "
             f"auto_reject={self.auto_reject_on_timeout})"
         )
+
+
+class NoOpApprover(ApprovalWorkflow):
+    """Auto-approving workflow for development environments.
+
+    Immediately approves all requests upon creation, bypassing
+    human review. Suitable only for development and testing.
+    """
+
+    def request_approval(
+        self,
+        action: Dict[str, Any],
+        reason: str,
+        context: Optional[Dict[str, Any]] = None,
+        violations: Optional[List[SafetyViolation]] = None,
+        required_approvers: int = 1,
+        timeout_minutes: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        requester: Optional[str] = None,
+    ) -> ApprovalRequest:
+        """Create and immediately approve an approval request."""
+        request = super().request_approval(
+            action=action,
+            reason=reason,
+            context=context,
+            violations=violations,
+            required_approvers=required_approvers,
+            timeout_minutes=timeout_minutes,
+            metadata=metadata,
+            requester=requester,
+        )
+        request.status = ApprovalStatus.APPROVED
+        request.decision_reason = "Auto-approved by NoOpApprover"
+        request.approvers = ["NoOpApprover"]
+        return request

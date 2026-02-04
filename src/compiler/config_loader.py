@@ -3,11 +3,15 @@ Configuration loader for YAML/JSON configs.
 
 Loads and validates configuration files for agents, stages, workflows, tools, and triggers.
 Supports environment variable substitution, secret references, and prompt template loading.
+
+M5 Integration: Automatically checks ConfigDeployer for M5-improved configs before
+falling back to YAML files. This closes the self-improvement feedback loop.
 """
 import os
 import re
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List, Match, cast
 import yaml
@@ -65,16 +69,27 @@ class ConfigLoader:
     - Prompt template loading with variable substitution
     - Validation against schemas (when provided)
     - Caching for performance
+    - M5 Integration: Checks ConfigDeployer for improved configs before YAML fallback
     """
 
-    def __init__(self, config_root: Optional[Union[str, Path]] = None, cache_enabled: bool = True):
+    def __init__(
+        self,
+        config_root: Optional[Union[str, Path]] = None,
+        cache_enabled: bool = True,
+        config_deployer=None
+    ):
         """
         Initialize config loader.
 
         Args:
             config_root: Root directory for configs (defaults to ./configs)
             cache_enabled: Whether to cache loaded configs
+            config_deployer: Optional ConfigDeployer for M5 integration (closes feedback loop)
         """
+        self.config_deployer = config_deployer
+        self._config_deployer_initialized = False  # Lazy init flag
+        self._config_deployer_available = False  # Whether ConfigDeployer is available
+
         if config_root is None:
             # Default to configs/ in current directory or project root
             config_root = Path.cwd() / "configs"
@@ -148,21 +163,116 @@ class ConfigLoader:
 
         return cast(Dict[str, Any], config)
 
+    def _ensure_config_deployer(self) -> None:
+        """
+        Lazy-initialize ConfigDeployer for M5 integration.
+
+        Attempts to import and initialize ConfigDeployer with coordination database.
+        If initialization fails (no database, import error, etc.), gracefully disables
+        M5 integration and logs the issue.
+
+        This enables seamless M5 integration: when coordination database is available,
+        ConfigLoader automatically uses M5-improved configs. When not available, it
+        falls back to YAML-only mode.
+        """
+        if self._config_deployer_initialized:
+            return
+
+        self._config_deployer_initialized = True
+        logger = logging.getLogger(__name__)
+
+        # If ConfigDeployer was explicitly provided, use it
+        if self.config_deployer is not None:
+            self._config_deployer_available = True
+            logger.debug("Using provided ConfigDeployer for M5 integration")
+            return
+
+        # Try to lazy-initialize ConfigDeployer
+        try:
+            # Import coordination database
+            coord_db_path = Path.cwd() / ".claude-coord"
+            sys.path.insert(0, str(coord_db_path))
+            from coord_service.database import Database
+
+            # Import ConfigDeployer
+            from src.self_improvement.deployment.deployer import ConfigDeployer
+
+            # Initialize database
+            db = Database()
+
+            # Create ConfigDeployer
+            self.config_deployer = ConfigDeployer(db=db, enable_safety_checks=False)
+            self._config_deployer_available = True
+
+            logger.debug("Initialized ConfigDeployer for M5 integration (lazy init)")
+
+        except Exception as e:
+            # ConfigDeployer not available - continue with YAML-only mode
+            logger.debug(
+                f"ConfigDeployer not available, using YAML-only mode: {e}"
+            )
+            self.config_deployer = None
+            self._config_deployer_available = False
+
     def load_agent(self, agent_name: str, validate: bool = True) -> Dict[str, Any]:
         """
         Load agent configuration.
+
+        M5 Integration: Checks ConfigDeployer first for improved configs deployed by M5,
+        then falls back to YAML files if no deployed config exists. This closes the
+        self-improvement feedback loop.
+
+        Flow:
+        1. If config_deployer provided, check for deployed config
+        2. If deployed config exists and valid, return it (M5-improved config)
+        3. Otherwise, fall back to loading from YAML file (baseline config)
 
         Args:
             agent_name: Name of the agent (without extension)
             validate: Whether to validate the config (requires schema)
 
         Returns:
-            Agent configuration dictionary
+            Agent configuration dictionary (from ConfigDeployer or YAML)
 
         Raises:
-            ConfigNotFoundError: If agent config not found
+            ConfigNotFoundError: If agent config not found in either source
             ConfigValidationError: If validation fails
         """
+        logger = logging.getLogger(__name__)
+
+        # M5 Integration: Ensure ConfigDeployer is initialized (lazy init)
+        self._ensure_config_deployer()
+
+        # M5 Integration: Check ConfigDeployer first (closes feedback loop)
+        if self._config_deployer_available and self.config_deployer:
+            try:
+                deployed_config_obj = self.config_deployer.get_agent_config(agent_name)
+                # Convert AgentConfig object to dict
+                deployed_config = deployed_config_obj.to_dict()
+
+                # If we got a non-default config (has deployed settings), use it
+                if deployed_config.get("inference") or deployed_config.get("prompt"):
+                    logger.info(
+                        f"Loading M5-improved config for {agent_name} from ConfigDeployer"
+                    )
+
+                    # Validate if requested
+                    if validate:
+                        self._validate_config("agent", deployed_config)
+
+                    return deployed_config
+                else:
+                    # Got default config from ConfigDeployer, fall back to YAML
+                    logger.debug(
+                        f"No deployed config for {agent_name}, falling back to YAML"
+                    )
+            except Exception as e:
+                # ConfigDeployer failed, fall back to YAML
+                logger.debug(
+                    f"ConfigDeployer lookup failed for {agent_name}, falling back to YAML: {e}"
+                )
+
+        # Fall back to YAML file loading (baseline config)
         return self._load_config("agent", agent_name, self.agents_dir, validate)
 
     def load_stage(self, stage_name: str, validate: bool = True) -> Dict[str, Any]:

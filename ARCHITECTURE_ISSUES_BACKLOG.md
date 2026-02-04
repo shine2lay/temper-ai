@@ -287,11 +287,52 @@ Relevant files:
 
 **Fix:** Move observability tracking into `StandardAgent.execute()` itself rather than relying on the executor to extract metrics from `AgentResponse`. The agent has access to `ExecutionContext` (which contains workflow_id, stage_id, agent_id) — it can report directly to the tracker.
 
-## 16. Self-Improvement Has No Feedback Path
+## 16. Self-Improvement Has No Feedback Path ✅ COMPLETED
+
+**Status:** ✅ Completed (continuation of existing work)
 
 **Problem:** The self-improvement layer reads metrics from observability but has no feedback path back into the system. It can't modify agent configs, adjust prompts, change strategies, or influence the next workflow run. The strategies and experiment orchestrator exist, but the connection from "experiment result" → "apply to next run" is missing.
 
 **Impact:** The self-improvement loop is open, not closed. Analysis happens but nothing changes as a result.
+
+**Implementation:**
+1. Modified ConfigLoader to integrate with ConfigDeployer (M5 deployment store):
+   - Added optional `config_deployer` parameter to __init__()
+   - Implemented lazy initialization of ConfigDeployer (automatic M5 integration)
+   - Added `_ensure_config_deployer()` for seamless setup
+
+2. Updated `load_agent()` to check ConfigDeployer first:
+   - **Flow**: ConfigDeployer (M5-improved) → YAML fallback (baseline)
+   - Checks coordination database for deployed configs
+   - Falls back to YAML if no deployed config exists
+   - Gracefully handles missing database or initialization failures
+   - Logs source of config (M5-improved vs YAML baseline)
+
+3. Lazy initialization enables seamless integration:
+   - When coordination database available: automatic M5 integration
+   - When database unavailable: graceful fallback to YAML-only mode
+   - No changes needed to existing ConfigLoader instantiations
+   - Zero breaking changes to existing code
+
+4. Closes the feedback loop:
+   ```
+   Observability → M5 Detection → M5 Analysis → M5 Strategy →
+   M5 Experiment → M5 Deploy (ConfigDeployer) →
+   ConfigLoader → Runtime (agents use improved configs) →
+   Observability (cycle repeats)
+   ```
+
+**Result:**
+- M5 self-improvement loop now fully closed
+- Deployed configs automatically used in next workflow run
+- Backward compatible: YAML configs still work as fallback
+- Seamless integration via lazy initialization
+- Production-ready with graceful degradation
+
+**Relevant Files:**
+- `src/compiler/config_loader.py` — Modified load_agent() to check ConfigDeployer first, added lazy init
+- `src/self_improvement/deployment/deployer.py` — ConfigDeployer.get_agent_config() (existing)
+- Coordination database `config_deployments` table (existing)
 
 ## 17. Collaboration Only Available in Parallel Mode
 

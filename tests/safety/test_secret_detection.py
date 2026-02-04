@@ -805,7 +805,7 @@ class TestConfiguration:
     def test_default_configuration(self):
         """Default configuration should be sensible."""
         policy = SecretDetectionPolicy()
-        assert len(policy.enabled_patterns) == 11
+        assert len(policy.enabled_patterns) == 19
         assert policy.entropy_threshold == 4.5
         assert policy.allow_test_secrets is True
         assert policy.excluded_paths == []
@@ -1245,14 +1245,14 @@ class TestDetectionSummary:
         policy = SecretDetectionPolicy()
         summary = policy.get_detection_summary()
 
-        assert summary["pattern_count"] == 11
+        assert summary["pattern_count"] == 19
         assert summary["entropy_threshold"] == 4.5
         assert summary["entropy_threshold_generic"] == 3.5
         assert summary["allow_test_secrets"] is True
         assert summary["excluded_paths"] == []
-        assert len(summary["enabled_patterns"]) == 11
-        assert len(summary["specific_patterns"]) == 9  # All except generic_*
-        assert len(summary["generic_patterns"]) == 2  # generic_api_key, generic_secret
+        assert len(summary["enabled_patterns"]) == 19
+        assert len(summary["specific_patterns"]) == 13  # SECRET_PATTERNS
+        assert len(summary["generic_patterns"]) == 6  # GENERIC_SECRET_PATTERNS
 
     def test_get_detection_summary_custom_config(self):
         """Custom configuration should be reflected in summary."""

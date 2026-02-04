@@ -410,28 +410,20 @@ def detect_secret_patterns(text: str) -> Tuple[bool, Optional[str]]:
             "This protects against ReDoS attacks."
         )
 
-    # High-confidence patterns (known secret formats)
-    high_confidence_patterns = [
-        r'sk-[a-zA-Z0-9]{20,}',  # OpenAI API keys
-        r'sk-proj-[a-zA-Z0-9]{20,}',  # OpenAI project keys
-        r'sk-ant-api\d{2,4}-[a-zA-Z0-9]{20,100}',  # Anthropic API keys (bounded per ReDoS fix)
-        r'AIza[0-9A-Za-z\\-_]{35}',  # Google API keys
-        r'AKIA[0-9A-Z]{16}',  # AWS access keys
-        r'ya29\.[0-9A-Za-z_-]{1,500}',  # Google OAuth tokens (bounded per ReDoS fix)
-        r'ghp_[0-9a-zA-Z]{30,40}',  # GitHub personal access tokens
-        r'gho_[0-9a-zA-Z]{30,40}',  # GitHub OAuth tokens
-    ]
+    # Import high-confidence patterns from centralized registry
+    from src.utils.secret_patterns import SECRET_PATTERNS
+
+    for pattern in SECRET_PATTERNS.values():
+        if re.search(pattern, text):
+            return True, "high"
 
     # Medium-confidence patterns (generic secret-like strings)
+    # These are heuristic patterns not in the central registry
     medium_confidence_patterns = [
         r'[a-f0-9]{32}',  # MD5-like hashes
         r'[a-f0-9]{40}',  # SHA1-like hashes
-        r'[A-Za-z0-9+/]{40,100}={0,2}',  # Base64-encoded strings (reduced per code-crit-redos-regex-05)
+        r'[A-Za-z0-9+/]{40,100}={0,2}',  # Base64-encoded strings
     ]
-
-    for pattern in high_confidence_patterns:
-        if re.search(pattern, text):
-            return True, "high"
 
     for pattern in medium_confidence_patterns:
         if re.search(pattern, text):

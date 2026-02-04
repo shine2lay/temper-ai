@@ -330,44 +330,57 @@ class OutputSanitizer:
     - Path traversal prevention
     """
 
+    # Severity mapping for centralized patterns
+    _SECRET_SEVERITY: dict[str, str] = {
+        "openai_key": "critical",
+        "anthropic_key": "critical",
+        "aws_access_key": "critical",
+        "aws_secret_key": "critical",
+        "github_token": "critical",
+        "google_api_key": "high",
+        "google_oauth": "high",
+        "slack_token": "high",
+        "stripe_key": "critical",
+        "connection_string": "critical",
+        "jwt_token": "high",
+        "private_key": "critical",
+        "api_key": "high",
+        "generic_api_key": "high",
+        "generic_secret": "high",
+        "generic_token": "high",
+        "password_disclosure": "critical",
+        "db_credentials": "critical",
+    }
+
+    _PII_SEVERITY: dict[str, str] = {
+        "ssn": "high",
+        "credit_card": "critical",
+        "email": "medium",
+        "phone_us": "medium",
+        "ipv4": "low",
+    }
+
     def __init__(self) -> None:
-        """Initialize sanitizer with detection patterns."""
-        # Secret patterns
-        self.secret_patterns = [
-            # Specific API key formats (high confidence)
-            (r"sk-[a-zA-Z0-9]{48}", "openai_key", "critical"),  # OpenAI
-            (r"sk-ant-api03-[a-zA-Z0-9_\-]{95}", "anthropic_key", "critical"),  # Anthropic
-            (r"(ghp|gho|ghs|ghu)_[a-zA-Z0-9]{36}", "github_token", "critical"),  # GitHub tokens
+        """Initialize sanitizer with detection patterns from centralized registry."""
+        from src.utils.secret_patterns import (
+            SECRET_PATTERNS,
+            GENERIC_SECRET_PATTERNS,
+            PII_PATTERNS,
+        )
 
-            # Generic API keys with common prefixes
-            (r"(sk|pk|api[_-]?key)[_-]?[a-zA-Z0-9]{20,}", "api_key", "high"),
-
-            # AWS credentials
-            (r"AKIA[0-9A-Z]{16}", "aws_access_key", "critical"),
-            (r"aws_secret_access_key\s*=\s*['\"]?([a-zA-Z0-9/+=]{40})", "aws_secret_key", "critical"),
-
-            # Generic secrets with explicit labels (key=value pattern)
-            (r"(token|key|secret)\s*[=:]\s*['\"]?([a-zA-Z0-9_\-/+=!@#$%^&*]{16,})", "generic_secret", "high"),
-
-            # Password patterns (explicit "password is" statements)
-            (r"(password|passwd|pass)\s+(is|are)\s*:?\s*['\"]?([a-zA-Z0-9_\-!@#$%^&*]+)", "password", "critical"),
-
-            # Private keys
-            (r"-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----", "private_key", "critical"),
-
-            # Database URLs with credentials
-            (r"(postgres|mysql|mongodb)://[^:]+:[^@]+@", "db_credentials", "critical"),
-
-            # JWT tokens
-            (r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+", "jwt_token", "high"),
-
-            # PII patterns
-            (r"\b\d{3}-\d{2}-\d{4}\b", "ssn", "high"),  # US SSN: 123-45-6789
-            (r"\b(?:\d{4}[\s\-]?){3}\d{4}\b", "credit_card", "critical"),  # Credit card: 1234 5678 9012 3456
-            (r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b", "email", "medium"),  # Email
-            (r"\b(?:\+?1[-.\s]?)?\(?([0-9]{3})\)?[-.\s]?([0-9]{3})[-.\s]?([0-9]{4})\b", "phone", "medium"),  # Phone: (123) 456-7890
-            (r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b", "ip_address", "low"),  # IPv4
-        ]
+        # Build secret pattern list with severity from centralized registry.
+        # Exclude key=value assignment patterns (generic_api_key, generic_secret)
+        # which consume JSON/config key names during inline redaction.
+        _DETECTION_ONLY = {"generic_api_key", "generic_secret"}
+        self.secret_patterns = []
+        for name, pattern in {**SECRET_PATTERNS, **GENERIC_SECRET_PATTERNS}.items():
+            if name in _DETECTION_ONLY:
+                continue
+            severity = self._SECRET_SEVERITY.get(name, "high")
+            self.secret_patterns.append((pattern, name, severity))
+        for name, pattern in PII_PATTERNS.items():
+            severity = self._PII_SEVERITY.get(name, "medium")
+            self.secret_patterns.append((pattern, name, severity))
 
         # Compile patterns
         self.compiled_secret_patterns = [

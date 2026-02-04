@@ -105,28 +105,14 @@ class DataSanitizer:
         'API key: [GENERIC_API_KEY_REDACTED]'
     """
 
-    # PII patterns (based on OWASP recommendations)
-    PII_PATTERNS = {
-        "email": r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b',
-        "ssn": r'\b\d{3}-\d{2}-\d{4}\b',
-        "phone_us": r'\b(\+?1[-.]?)?\(?\d{3}\)?[-.]?\d{3}[-.]?\d{4}\b',
-        "credit_card": r'\b(?:\d{4}[-\s]?){3}\d{4}\b',
-        "ipv4": r'\b(?:\d{1,3}\.){3}\d{1,3}\b',
-    }
-
-    # Secret patterns (imported from SecretDetectionPolicy)
-    SECRET_PATTERNS = {
-        "openai_key": r'sk-proj-[a-zA-Z0-9]{20,}',
-        "anthropic_key": r'sk-ant-api\d+-[a-zA-Z0-9_-]{20,}',
-        "aws_access_key": r'AKIA[0-9A-Z]{16}',
-        "aws_secret_key": r'(?:aws_secret_access_key|SecretAccessKey|AWS_SECRET)\s*[=:]\s*["\']?([a-zA-Z0-9+/]{40})["\']?',
-        "github_token": r'gh[pousr]_[0-9a-zA-Z]{36}',
-        "google_api_key": r'AIza[0-9A-Za-z_-]{35}',
-        "slack_token": r'xox[baprs]-[0-9a-zA-Z]{10,}',
-        "generic_api_key": r'["\']?(?:api[_-]?key|apikey|api[_-]?secret)["\']?\s*[:=]\s*["\']?([a-zA-Z0-9_\-]{20,})["\']?',
-        "jwt_token": r'eyJ[a-zA-Z0-9_-]*\.eyJ[a-zA-Z0-9_-]*\.[a-zA-Z0-9_-]*',
-        "private_key": r'-----BEGIN (?:RSA |EC )?PRIVATE KEY-----',
-    }
+    # Import patterns from centralized registry (single source of truth)
+    from src.utils.secret_patterns import (
+        PII_PATTERNS as _PII_PATTERNS,
+        SECRET_PATTERNS as _SECRET_PATTERNS,
+        GENERIC_SECRET_PATTERNS as _GENERIC_SECRET_PATTERNS,
+    )
+    PII_PATTERNS = _PII_PATTERNS
+    SECRET_PATTERNS = {**_SECRET_PATTERNS, **_GENERIC_SECRET_PATTERNS}
 
     def __init__(self, config: Optional[SanitizationConfig] = None):
         """

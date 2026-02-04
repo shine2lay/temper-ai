@@ -203,15 +203,10 @@ def sanitize_config_for_display(
     if secret_keys is None:
         secret_keys = []
 
-    # Common secret key patterns (case-insensitive)
-    default_secret_patterns = [
-        "api_key", "apikey", "api-key", "api_key_ref",
-        "password", "passwd", "pwd",
-        "secret", "token", "auth",
-        "credential", "private_key", "access_key"
-    ]
+    # Import key names from centralized registry
+    from src.utils.secret_patterns import SECRET_KEY_NAMES
 
-    secret_patterns = [p.lower() for p in default_secret_patterns + secret_keys]
+    secret_patterns = [p.lower() for p in SECRET_KEY_NAMES + secret_keys]
 
     def _sanitize(obj: Any) -> Any:
         """Recursively sanitize object."""

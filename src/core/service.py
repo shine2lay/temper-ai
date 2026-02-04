@@ -26,6 +26,13 @@ def _get_sanitizer():
                 _sanitizer = DataSanitizer()
     return _sanitizer
 
+
+def reset_sanitizer() -> None:
+    """Reset global sanitizer to None (for testing)."""
+    global _sanitizer
+    _sanitizer = None
+
+
 def _sanitize_violation_context(context: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     """
     Sanitize violation context to prevent sensitive data exposure in logs.

@@ -100,28 +100,13 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         >>> specific_policy = SecretDetectionPolicy(config)
     """
 
-    # Common secret patterns (regex)
-    # SECURITY: Patterns have upper bounds {min,max} to prevent ReDoS attacks
-    SECRET_PATTERNS = {
-        # Specific patterns (high confidence - vendor-specific formats)
-        "aws_access_key": r"AKIA[0-9A-Z]{16}",
-        "aws_secret_key": r"aws(.{0,20})?['\"][0-9a-zA-Z/+]{40}['\"]",
-        "github_token": r"gh[pousr]_[0-9a-zA-Z]{36}",
-        "jwt_token": r"eyJ[a-zA-Z0-9_-]+\.eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+",
-        "private_key": r"-----BEGIN (RSA |EC |DSA )?PRIVATE KEY-----",
-        "google_api_key": r"AIza[0-9A-Za-z\\-_]{35}",
-        "slack_token": r"xox[baprs]-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24,32}",
-        "stripe_key": r"(sk|pk)_(test|live)_[0-9a-zA-Z]{24,}",
-        "connection_string": r"(mongodb|postgres|mysql|redis)://[^'\"\s]+",
-
-        # Generic patterns (lower confidence - require entropy filtering)
-        # IMPROVED: Added upper bounds {20,500} to prevent ReDoS
-        # NOTE: These patterns are filtered by entropy (>3.5) to reduce false positives
-        "generic_api_key": r"(api[_-]?key|apikey)['\"]?\s*[:=]\s*['\"]?([0-9a-zA-Z_\-+/]{20,500})['\"]?",
-        # IMPROVED: Allow word characters after keyword (e.g., "SECRET_KEY", "password_hash")
-        # Increased minimum from 8 to 12 chars, added upper bound
-        "generic_secret": r"(secret|password|passwd|pwd)[\w_-]*['\"]?\s*[:=]\s*['\"]?([^\s]{12,500})['\"]?",
-    }
+    # Import patterns from centralized registry (single source of truth)
+    # SECURITY: All patterns use bounded quantifiers to prevent ReDoS attacks
+    from src.utils.secret_patterns import (
+        SECRET_PATTERNS as _SECRET_PATTERNS,
+        GENERIC_SECRET_PATTERNS as _GENERIC_SECRET_PATTERNS,
+    )
+    SECRET_PATTERNS = {**_SECRET_PATTERNS, **_GENERIC_SECRET_PATTERNS}
 
     # Test/example secrets to allow (case-insensitive matching)
     # IMPROVED: Expanded to reduce false positives from documentation and test code
@@ -424,13 +409,14 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
                 'generic_patterns': ['generic_api_key', 'generic_secret']
             }
         """
+        generic_names = set(self._GENERIC_SECRET_PATTERNS.keys())
         specific_patterns = [
             name for name in self.enabled_patterns
-            if name not in ["generic_api_key", "generic_secret"]
+            if name not in generic_names
         ]
         generic_patterns = [
             name for name in self.enabled_patterns
-            if name in ["generic_api_key", "generic_secret"]
+            if name in generic_names
         ]
 
         return {

@@ -38,17 +38,26 @@ _CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
 
 # Sensitive data patterns for redaction
 # Note: Patterns should not match template references like ${env:VAR} or ${vault:...}
-_SENSITIVE_PATTERNS = [
-    # Match password/api_key/secret assignments, but exclude template refs
-    (re.compile(r'(password|passwd|pwd)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
-    (re.compile(r'(api[_-]?key|apikey|token)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
-    (re.compile(r'(secret|credential)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
-    # Specific secret patterns
-    (re.compile(r'sk-[a-zA-Z0-9]{20,}'), '***REDACTED***'),  # OpenAI keys
-    (re.compile(r'sk-proj-[a-zA-Z0-9]{20,}'), '***REDACTED***'),  # OpenAI project keys
-    (re.compile(r'sk-ant-api\d+-[a-zA-Z0-9]{20,}'), '***REDACTED***'),  # Anthropic keys
-    (re.compile(r'AKIA[0-9A-Z]{16}'), '***REDACTED***'),  # AWS access keys
-]
+def _build_sensitive_patterns():
+    """Build redaction patterns from centralized registry + log-specific rules."""
+    from src.utils.secret_patterns import SECRET_PATTERNS
+
+    patterns = [
+        # Key=value assignment patterns (log-specific, exclude template refs)
+        (re.compile(r'(password|passwd|pwd)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
+        (re.compile(r'(api[_-]?key|apikey|token)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
+        (re.compile(r'(secret|credential)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
+    ]
+    # Add vendor-specific patterns from centralized registry
+    for name in ('openai_key', 'anthropic_key', 'aws_access_key',
+                 'github_token', 'google_api_key', 'stripe_key'):
+        if name in SECRET_PATTERNS:
+            patterns.append(
+                (re.compile(SECRET_PATTERNS[name]), '***REDACTED***')
+            )
+    return patterns
+
+_SENSITIVE_PATTERNS = _build_sensitive_patterns()
 
 # Unicode line terminators to block
 _UNICODE_LINE_TERMINATORS = {

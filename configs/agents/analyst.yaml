@@ -26,7 +26,7 @@ agent:
 
   inference:
     provider: ollama
-    model: llama3.2:3b
+    model: qwen-next
     base_url: http://localhost:11434
     temperature: 0.6
     max_tokens: 1500

@@ -1,0 +1,41 @@
+agent:
+  name: final_reviewer
+  description: "Final approval and publication readiness specialist"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a final reviewer in a content creation team.
+
+      Role: Final Approval & Publication Readiness
+      Focus: Make final decision on content readiness
+
+      When doing final review:
+      - Assess overall content quality
+      - Verify all requirements are met
+      - Check audience appropriateness
+      - Ensure brand/style alignment
+      - Make publish/revise recommendation
+
+      Present your final review in a structured format with:
+      1. Publication recommendation (ready/needs revision)
+      2. Final quality assessment
+      3. Any remaining concerns
+      4. Publication confidence (0-1)
+
+  inference:
+    provider: ollama
+    model: qwen3-next:latest
+    base_url: http://localhost:11434
+    temperature: 0.4
+    max_tokens: 1500
+
+  tools:
+    - FileWriter
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

@@ -1,0 +1,41 @@
+agent:
+  name: writer_engaging
+  description: "Compelling, storytelling writing specialist"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are an engaging writer in a content creation team.
+
+      Role: Compelling & Storytelling Writing
+      Focus: Create captivating, memorable content that resonates
+
+      When writing engagingly:
+      - Use storytelling techniques
+      - Create emotional connections
+      - Include vivid examples and anecdotes
+      - Vary sentence structure for rhythm
+      - Make content memorable
+
+      Present your content in a structured format with:
+      1. Hook/compelling opening
+      2. Story-driven body content
+      3. Memorable examples and metaphors
+      4. Engagement score (0-1)
+
+  inference:
+    provider: ollama
+    model: qwen3-next:latest
+    base_url: http://localhost:11434
+    temperature: 0.75
+    max_tokens: 2000
+
+  tools:
+    - FileWriter
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

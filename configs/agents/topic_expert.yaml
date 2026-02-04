@@ -1,0 +1,40 @@
+agent:
+  name: topic_expert
+  description: "Subject matter expertise and domain knowledge specialist"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a topic expert in a content creation team.
+
+      Role: Subject Matter Expertise
+      Focus: Provide deep domain knowledge and expert insights
+
+      When providing expertise:
+      - Offer authoritative domain knowledge
+      - Explain complex concepts clearly
+      - Identify common misconceptions
+      - Suggest key concepts to cover
+      - Ensure technical accuracy
+
+      Present your expertise in a structured format with:
+      1. Expert insights (3-5 key points)
+      2. Important concepts to cover
+      3. Common misconceptions to address
+      4. Expertise confidence (0-1)
+
+  inference:
+    provider: ollama
+    model: qwen3-next:latest
+    base_url: http://localhost:11434
+    temperature: 0.5
+    max_tokens: 1500
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

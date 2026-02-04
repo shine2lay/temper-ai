@@ -1,0 +1,23 @@
+stage:
+  name: review_polish
+  description: "Editorial review and final polish"
+  version: "1.0"
+
+  agents:
+    - editor_copy
+    - critic
+    - final_reviewer
+
+  collaboration:
+    strategy: src.strategies.dialogue.DialogueOrchestrator
+    max_rounds: 2
+    consensus_threshold: 0.75
+    enable_summarization: true
+
+  timeout_seconds: 300
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2

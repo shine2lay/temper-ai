@@ -597,13 +597,17 @@ class StandardAgent(BaseAgent):
 
     def _execute_tool_calls(self, tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
-        Execute a list of tool calls.
+        Execute a list of tool calls (parallel if independent, sequential if dependent).
+
+        For independent tool calls (no data dependencies), executes in parallel
+        using ThreadPoolExecutor for better performance. Sequential execution
+        is used for single calls or when parallel execution is disabled.
 
         Args:
             tool_calls: List of tool calls from LLM response
 
         Returns:
-            List of tool results
+            List of tool results (order preserved)
 
         Raises:
             TypeError: If tool_calls is not a list
@@ -614,16 +618,55 @@ class StandardAgent(BaseAgent):
                 f"tool_calls must be a list, got {type(tool_calls).__name__}"
             )
 
-        tool_results = []
+        # Validate each tool call
         for i, tool_call in enumerate(tool_calls):
-            # Validate each tool call is a dict
             if not isinstance(tool_call, dict):
                 raise TypeError(
                     f"tool_call at index {i} must be a dictionary, got {type(tool_call).__name__}"
                 )
 
-            tool_result = self._execute_single_tool(tool_call)
-            tool_results.append(tool_result)
+        # Single tool call or parallel disabled - use sequential execution
+        if len(tool_calls) <= 1:
+            return [self._execute_single_tool(tool_call) for tool_call in tool_calls]
+
+        # Check if parallel execution is enabled (config or default to True)
+        parallel_enabled = self.config.agent.safety.get("parallel_tool_calls", True)
+
+        if not parallel_enabled:
+            # Sequential execution
+            return [self._execute_single_tool(tool_call) for tool_call in tool_calls]
+
+        # Parallel execution for multiple independent tool calls
+        import concurrent.futures
+
+        tool_results = [None] * len(tool_calls)  # Preserve order
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(tool_calls), 4)) as executor:
+            # Submit all tool calls
+            future_to_index = {
+                executor.submit(self._execute_single_tool, tool_call): i
+                for i, tool_call in enumerate(tool_calls)
+            }
+
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_index):
+                index = future_to_index[future]
+                try:
+                    result = future.result()
+                    tool_results[index] = result
+                except Exception as e:
+                    # Handle exception from tool execution
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.error(f"Tool execution failed in parallel mode: {e}")
+                    tool_results[index] = {
+                        "name": tool_calls[index].get("name", "unknown"),
+                        "parameters": tool_calls[index].get("parameters", {}),
+                        "success": False,
+                        "result": None,
+                        "error": f"Parallel execution error: {str(e)}"
+                    }
+
         return tool_results
 
     def _execute_single_tool(self, tool_call: Dict[str, Any]) -> Dict[str, Any]:

@@ -276,11 +276,52 @@ Identified during architecture walkthrough (Section 7: Tool System).
 - `src/tools/base.py:143-194` — Added get_result_schema() method to BaseTool
 - `src/agents/standard_agent.py:989-1009` — Modified _get_native_tool_definitions() to include result schema
 
-## 11. Sequential-Only Tool Execution
+## 11. Sequential-Only Tool Execution ✅ COMPLETED
+
+**Status:** ✅ Completed
 
 **Problem:** Multiple tool calls in a single LLM response are executed one at a time. If the LLM requests three independent operations (e.g., three file reads), they run sequentially. `ToolExecutor` has thread pool support, but the agent loop doesn't use it for parallel execution.
 
 **Fix:** Detect independent tool calls (no data dependencies between them) and execute in parallel via `ToolExecutor`'s thread pool. Conservative approach: execute in parallel by default, with a `parallel_tool_calls: false` config option to disable.
+
+**Implementation:**
+1. Modified `_execute_tool_calls()` to support parallel execution:
+   - Detects when multiple tool calls present (>1)
+   - Checks config for `parallel_tool_calls` setting (defaults to True)
+   - Uses concurrent.futures.ThreadPoolExecutor for parallel execution
+   - Max workers: min(tool_calls_count, 4) to limit concurrency
+
+2. Execution strategy:
+   - **Single call**: Direct sequential execution (no overhead)
+   - **Multiple calls + parallel enabled**: ThreadPoolExecutor with order preservation
+   - **Multiple calls + parallel disabled**: Sequential execution (backward compat)
+
+3. Order preservation:
+   - Pre-allocates result list: `[None] * len(tool_calls)`
+   - Uses future_to_index mapping to restore original order
+   - LLM receives results in same order as requests
+
+4. Error handling:
+   - Exceptions caught per tool call
+   - Failed tools return error result dict
+   - Other successful tools continue execution
+   - Logging for debugging parallel failures
+
+5. Config option:
+   - `agent.safety.parallel_tool_calls` (boolean, default True)
+   - Set to False for debugging or sequential-only mode
+   - Enables/disables parallel execution globally per agent
+
+**Result:**
+- Independent tool calls execute in parallel
+- Significant performance improvement for multi-tool scenarios
+- Order preserved for LLM consistency
+- Configurable with backward compatibility
+- Graceful error handling per tool
+- Max 4 concurrent workers (resource-friendly)
+
+**Relevant Files:**
+- `src/agents/standard_agent.py:598-664` — Modified _execute_tool_calls() with parallel execution
 
 ## 12. No Tool Call Budget Awareness ✅ COMPLETED
 

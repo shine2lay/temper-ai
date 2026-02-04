@@ -57,6 +57,9 @@ class LoopConfig:
     # Continuous mode
     continuous_check_interval_minutes: int = 60  # Check hourly
     continuous_enabled: bool = False  # Disabled by default
+    continuous_max_iterations: Optional[int] = None  # Max iterations (None = unlimited)
+    continuous_convergence_window: int = 5  # Stop if no deployments in N iterations
+    continuous_cost_budget: Optional[float] = None  # Max total cost (None = unlimited)
 
     # Observability
     enable_metrics: bool = True  # Collect loop metrics

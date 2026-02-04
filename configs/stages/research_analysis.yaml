@@ -1,0 +1,23 @@
+stage:
+  name: research_analysis
+  description: "Research and analysis stage with collaborative dialogue"
+  version: "1.0"
+
+  agents:
+    - researcher
+    - analyst
+    - domain_expert
+
+  collaboration:
+    strategy: src.strategies.dialogue.DialogueOrchestrator
+    max_rounds: 3
+    consensus_threshold: 0.7
+    enable_summarization: true
+
+  timeout_seconds: 300
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2

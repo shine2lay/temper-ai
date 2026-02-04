@@ -1,0 +1,28 @@
+problem_statement: |
+  Our e-commerce platform is experiencing a 40% cart abandonment rate during checkout.
+  Customer feedback indicates the checkout process is too complex and time-consuming.
+  We need to decide on the best approach to redesign the checkout experience.
+
+context: |
+  Current situation:
+  - Average checkout time: 4.5 minutes
+  - 7-step checkout process
+  - Mobile users represent 65% of traffic
+  - Current conversion rate: 2.3%
+  - Industry average conversion rate: 3.8%
+
+  Business goals:
+  - Reduce cart abandonment by 50%
+  - Improve mobile checkout experience
+  - Maintain security and fraud prevention
+  - Increase overall conversion rate to 3.5%+
+
+constraints: |
+  - Must maintain PCI compliance
+  - Budget: $200,000 for implementation
+  - Timeline: 6 months for full rollout
+  - Cannot require customers to create accounts
+  - Must support guest checkout
+  - Need to integrate with existing payment gateway
+
+timeline: "6 months with phased rollout preferred"

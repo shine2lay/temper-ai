@@ -1,0 +1,23 @@
+stage:
+  name: design_planning
+  description: "Design and planning stage with debate-style collaboration"
+  version: "1.0"
+
+  agents:
+    - creative_designer
+    - practical_planner
+    - innovator
+
+  collaboration:
+    strategy: src.strategies.dialogue.DialogueOrchestrator
+    max_rounds: 4
+    consensus_threshold: 0.6
+    enable_summarization: true
+
+  timeout_seconds: 300
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2

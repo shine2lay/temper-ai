@@ -12,6 +12,7 @@ Example:
     >>> registry.register_policy(RateLimitPolicy())  # Global
     >>> policies = registry.get_policies_for_action("file_write")
 """
+import threading
 from typing import Dict, List, Set, Optional, Any
 from src.safety.interfaces import SafetyPolicy
 
@@ -43,6 +44,8 @@ class PolicyRegistry:
 
     def __init__(self) -> None:
         """Initialize empty policy registry."""
+        self._lock = threading.Lock()
+
         # action_type -> List[SafetyPolicy]
         self._policies: Dict[str, List[SafetyPolicy]] = {}
 
@@ -72,31 +75,32 @@ class PolicyRegistry:
             ...     action_types=["file_read", "file_write"]
             ... )
         """
-        # Check for duplicate policy name
-        if policy.name in self._policy_mappings:
-            raise ValueError(
-                f"Policy '{policy.name}' already registered. "
-                f"Unregister existing policy first or use unique name."
-            )
+        with self._lock:
+            # Check for duplicate policy name
+            if policy.name in self._policy_mappings:
+                raise ValueError(
+                    f"Policy '{policy.name}' already registered. "
+                    f"Unregister existing policy first or use unique name."
+                )
 
-        if action_types is None:
-            # Global policy (applies to all actions)
-            self._global_policies.append(policy)
-            self._global_policies.sort(key=lambda p: p.priority, reverse=True)
-            self._policy_mappings[policy.name] = set()  # Empty set = global
-        else:
-            # Action-specific policy
-            action_types_set = set(action_types)
+            if action_types is None:
+                # Global policy (applies to all actions)
+                self._global_policies.append(policy)
+                self._global_policies.sort(key=lambda p: p.priority, reverse=True)
+                self._policy_mappings[policy.name] = set()  # Empty set = global
+            else:
+                # Action-specific policy
+                action_types_set = set(action_types)
 
-            for action_type in action_types:
-                if action_type not in self._policies:
-                    self._policies[action_type] = []
+                for action_type in action_types:
+                    if action_type not in self._policies:
+                        self._policies[action_type] = []
 
-                self._policies[action_type].append(policy)
-                # Sort by priority (highest first)
-                self._policies[action_type].sort(key=lambda p: p.priority, reverse=True)
+                    self._policies[action_type].append(policy)
+                    # Sort by priority (highest first)
+                    self._policies[action_type].sort(key=lambda p: p.priority, reverse=True)
 
-            self._policy_mappings[policy.name] = action_types_set
+                self._policy_mappings[policy.name] = action_types_set
 
     def list_policies(self) -> List[str]:
         """Get names of all registered policies.
@@ -118,31 +122,32 @@ class PolicyRegistry:
         Example:
             >>> registry.unregister_policy("file_access_policy")
         """
-        if policy_name not in self._policy_mappings:
-            return False
+        with self._lock:
+            if policy_name not in self._policy_mappings:
+                return False
 
-        action_types = self._policy_mappings[policy_name]
+            action_types = self._policy_mappings[policy_name]
 
-        if not action_types:
-            # Global policy
-            self._global_policies = [
-                p for p in self._global_policies
-                if p.name != policy_name
-            ]
-        else:
-            # Action-specific policy
-            for action_type in action_types:
-                if action_type in self._policies:
-                    self._policies[action_type] = [
-                        p for p in self._policies[action_type]
-                        if p.name != policy_name
-                    ]
-                    # Remove empty action type entries
-                    if not self._policies[action_type]:
-                        del self._policies[action_type]
+            if not action_types:
+                # Global policy
+                self._global_policies = [
+                    p for p in self._global_policies
+                    if p.name != policy_name
+                ]
+            else:
+                # Action-specific policy
+                for action_type in action_types:
+                    if action_type in self._policies:
+                        self._policies[action_type] = [
+                            p for p in self._policies[action_type]
+                            if p.name != policy_name
+                        ]
+                        # Remove empty action type entries
+                        if not self._policies[action_type]:
+                            del self._policies[action_type]
 
-        del self._policy_mappings[policy_name]
-        return True
+            del self._policy_mappings[policy_name]
+            return True
 
     def get_policies_for_action(self, action_type: str) -> List[SafetyPolicy]:
         """Get all policies applicable to an action type.
@@ -161,18 +166,19 @@ class PolicyRegistry:
             >>> for policy in policies:
             ...     print(f"{policy.name} (priority {policy.priority})")
         """
-        # Start with global policies (apply to all actions)
-        policies = list(self._global_policies)
+        with self._lock:
+            # Start with global policies (apply to all actions)
+            policies = list(self._global_policies)
 
-        # Add action-specific policies
-        if action_type in self._policies:
-            policies.extend(self._policies[action_type])
+            # Add action-specific policies
+            if action_type in self._policies:
+                policies.extend(self._policies[action_type])
 
-        # Re-sort by priority (highest first) to ensure correct order
-        # when combining global + action-specific policies
-        policies.sort(key=lambda p: p.priority, reverse=True)
+            # Re-sort by priority (highest first) to ensure correct order
+            # when combining global + action-specific policies
+            policies.sort(key=lambda p: p.priority, reverse=True)
 
-        return policies
+            return policies
 
     def get_policy(self, policy_name: str) -> Optional[SafetyPolicy]:
         """Get policy instance by name.
@@ -277,9 +283,10 @@ class PolicyRegistry:
         Example:
             >>> registry.clear()
         """
-        self._policies.clear()
-        self._global_policies.clear()
-        self._policy_mappings.clear()
+        with self._lock:
+            self._policies.clear()
+            self._global_policies.clear()
+            self._policy_mappings.clear()
 
     def policy_count(self) -> int:
         """Get total number of registered policies.

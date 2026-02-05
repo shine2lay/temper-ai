@@ -127,95 +127,16 @@ class DatabaseManager:
 
         return engine
 
-    def _create_m5_experiment_tables(self) -> None:
-        """Create M5 experiment tables for A/B testing.
-
-        Creates tables for storing experiments, results, and assignments.
-        These tables are NOT managed by SQLModel as they use JSON columns.
-        """
-        with self.session() as session:
-            # Check if tables already exist
-            if self.database_url.startswith("sqlite"):
-                result = session.execute(text(
-                    "SELECT name FROM sqlite_master "
-                    "WHERE type='table' AND name='m5_experiments'"
-                )).fetchone()
-                if result:
-                    logger.debug("M5 experiment tables already exist")
-                    return
-
-            # Create experiments table
-            session.execute(text("""
-                CREATE TABLE IF NOT EXISTS m5_experiments (
-                    id TEXT PRIMARY KEY,
-                    agent_name TEXT NOT NULL,
-                    status TEXT NOT NULL,
-
-                    -- Configuration (JSON)
-                    control_config TEXT NOT NULL,
-                    variant_configs TEXT NOT NULL,
-
-                    -- Completion criteria
-                    target_samples_per_variant INTEGER DEFAULT 50,
-
-                    -- Results (cached)
-                    winner_variant_id TEXT,
-                    analysis_results TEXT,
-
-                    -- Metadata
-                    proposal_id TEXT,
-                    created_at TEXT NOT NULL,
-                    completed_at TEXT,
-                    extra_metadata TEXT
-                )
-            """))
-
-            # Create experiment results table
-            session.execute(text("""
-                CREATE TABLE IF NOT EXISTS m5_experiment_results (
-                    id TEXT PRIMARY KEY,
-                    experiment_id TEXT NOT NULL,
-                    variant_id TEXT NOT NULL,
-                    execution_id TEXT NOT NULL UNIQUE,
-
-                    -- Metrics
-                    quality_score REAL,
-                    speed_seconds REAL,
-                    cost_usd REAL,
-                    success BOOLEAN,
-
-                    -- Metadata
-                    recorded_at TEXT NOT NULL,
-                    extra_metrics TEXT,
-
-                    FOREIGN KEY (experiment_id) REFERENCES m5_experiments(id)
-                )
-            """))
-
-            # Create indexes
-            session.execute(text(
-                "CREATE INDEX IF NOT EXISTS idx_m5_exp_agent "
-                "ON m5_experiments(agent_name)"
-            ))
-            session.execute(text(
-                "CREATE INDEX IF NOT EXISTS idx_m5_exp_status "
-                "ON m5_experiments(status)"
-            ))
-            session.execute(text(
-                "CREATE INDEX IF NOT EXISTS idx_m5_result_experiment "
-                "ON m5_experiment_results(experiment_id)"
-            ))
-            session.execute(text(
-                "CREATE INDEX IF NOT EXISTS idx_m5_result_variant "
-                "ON m5_experiment_results(variant_id)"
-            ))
-
-            logger.info("Created M5 experiment tables")
-
     def create_all_tables(self) -> None:
-        """Create all tables in the database."""
+        """Create all tables in the database.
+
+        M5 experiment tables (m5_experiments, m5_experiment_results) are now
+        managed by SQLModel via storage.experiment_models and created
+        automatically by metadata.create_all().
+        """
+        # Ensure M5 experiment models are imported so SQLModel registers them
+        import src.self_improvement.storage.experiment_models  # noqa: F401
         SQLModel.metadata.create_all(self.engine)
-        self._create_m5_experiment_tables()
 
     def drop_all_tables(self) -> None:
         """Drop all tables. Use with caution!"""

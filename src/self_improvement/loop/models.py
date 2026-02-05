@@ -106,7 +106,7 @@ class StrategyResult:
 
 
 @dataclass
-class ExperimentResult:
+class ExperimentPhaseResult:
     """Result from Phase 4: Experimentation."""
     experiment_id: str
     winner_variant_id: Optional[str]
@@ -139,7 +139,7 @@ class IterationResult:
     detection_result: Optional[DetectionResult] = None
     analysis_result: Optional[AnalysisResult] = None
     strategy_result: Optional[StrategyResult] = None
-    experiment_result: Optional[ExperimentResult] = None
+    experiment_result: Optional[ExperimentPhaseResult] = None
     deployment_result: Optional[DeploymentResult] = None
     error: Optional[Exception] = None
     error_phase: Optional[Phase] = None

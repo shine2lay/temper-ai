@@ -13,7 +13,7 @@ from .models import (
     DetectionResult,
     AnalysisResult,
     StrategyResult,
-    ExperimentResult,
+    ExperimentPhaseResult,
     DeploymentResult,
     IterationResult,
     RecoveryAction,
@@ -436,7 +436,7 @@ class LoopExecutor:
         self,
         agent_name: str,
         strategy_result: StrategyResult
-    ) -> ExperimentResult:
+    ) -> ExperimentPhaseResult:
         """
         Execute Phase 4: Experimentation.
 
@@ -445,7 +445,7 @@ class LoopExecutor:
             strategy_result: Result from Phase 3
 
         Returns:
-            ExperimentResult
+            ExperimentPhaseResult
         """
         logger.info(f"Phase 4 (EXPERIMENT): Running A/B test for {agent_name}")
 
@@ -478,7 +478,7 @@ class LoopExecutor:
                 f"confidence: {winner.confidence:.2f})"
             )
 
-            result = ExperimentResult(
+            result = ExperimentPhaseResult(
                 experiment_id=experiment.id,
                 winner_variant_id=winner.variant_id,
                 winner_config=winner.winning_config,
@@ -560,7 +560,7 @@ class LoopExecutor:
         else:
             logger.info(f"No winner (control best or inconclusive) for {agent_name}")
 
-            result = ExperimentResult(
+            result = ExperimentPhaseResult(
                 experiment_id=experiment.id,
                 winner_variant_id=None,
                 winner_config=None,
@@ -626,7 +626,7 @@ class LoopExecutor:
     def _execute_phase_5_deploy(
         self,
         agent_name: str,
-        experiment_result: ExperimentResult
+        experiment_result: ExperimentPhaseResult
     ) -> DeploymentResult:
         """
         Execute Phase 5: Deployment.

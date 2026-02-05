@@ -3,6 +3,9 @@ Experiment orchestrator for M5 self-improvement A/B testing.
 
 Coordinates experiment creation, variant assignment, result collection,
 and statistical analysis to determine winning agent configurations.
+
+Database access uses SQLModel ORM via M5Experiment and M5ExecutionResult
+models (no raw SQL).
 """
 import hashlib
 import json
@@ -11,14 +14,18 @@ import re
 import uuid
 from dataclasses import dataclass, field
 from typing import Optional, Dict, Any, List
-from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlmodel import select, func
 
 from src.self_improvement.data_models import (
     Experiment,
-    ExperimentResult,
+    ExecutionResult,
     OptimizationConfig,
     utcnow
+)
+from src.self_improvement.storage.experiment_models import (
+    M5Experiment,
+    M5ExecutionResult,
 )
 from src.self_improvement.statistical_analyzer import (
     StatisticalAnalyzer,
@@ -100,6 +107,44 @@ class WinnerResult:
 
     # Full analysis
     analysis: ExperimentAnalysis
+
+
+# ========== Conversion helpers ==========
+
+def _db_to_experiment(db_exp: M5Experiment) -> Experiment:
+    """Convert M5Experiment ORM model to data_models.Experiment."""
+    return Experiment(
+        id=db_exp.id,
+        agent_name=db_exp.agent_name,
+        status=db_exp.status,
+        control_config=OptimizationConfig.from_dict(
+            json.loads(db_exp.control_config)
+        ),
+        variant_configs=[
+            OptimizationConfig.from_dict(v)
+            for v in json.loads(db_exp.variant_configs)
+        ],
+        proposal_id=db_exp.proposal_id,
+        created_at=db_exp.created_at,
+        completed_at=db_exp.completed_at,
+        extra_metadata=db_exp.get_extra_metadata(),
+    )
+
+
+def _db_to_execution_result(row: M5ExecutionResult) -> ExecutionResult:
+    """Convert M5ExecutionResult ORM model to data_models.ExecutionResult."""
+    return ExecutionResult(
+        id=row.id,
+        experiment_id=row.experiment_id,
+        variant_id=row.variant_id,
+        execution_id=row.execution_id,
+        quality_score=row.quality_score,
+        speed_seconds=row.speed_seconds,
+        cost_usd=row.cost_usd,
+        success=row.success,
+        recorded_at=row.recorded_at,
+        extra_metrics=row.get_extra_metrics(),
+    )
 
 
 # ========== Main Orchestrator ==========
@@ -218,6 +263,20 @@ class ExperimentOrchestrator:
                 f"Expected: 'control' or 'variant_N'"
             )
 
+    # ========== ORM Helpers ==========
+
+    def _get_db_experiment(self, experiment_id: str) -> M5Experiment:
+        """Load M5Experiment ORM model by ID.
+
+        Raises:
+            ExperimentNotFoundError: If experiment doesn't exist
+        """
+        stmt = select(M5Experiment).where(M5Experiment.id == experiment_id)
+        db_exp = self.session.execute(stmt).scalars().first()
+        if not db_exp:
+            raise ExperimentNotFoundError(f"Experiment not found: {experiment_id}")
+        return db_exp
+
     # ========== Experiment Creation ==========
 
     def create_experiment(
@@ -270,7 +329,24 @@ class ExperimentOrchestrator:
         # Set target
         target = target_executions_per_variant or self.target_executions_per_variant
 
-        # Create experiment
+        now = utcnow()
+
+        # Create ORM model and store
+        db_exp = M5Experiment(
+            id=experiment_id,
+            agent_name=agent_name,
+            status="running",
+            control_config=json.dumps(control_config.to_dict()),
+            variant_configs=json.dumps([v.to_dict() for v in variant_configs]),
+            target_samples_per_variant=target,
+            proposal_id=proposal_id,
+            created_at=now.isoformat(),
+            extra_metadata=json.dumps(extra_metadata or {}),
+        )
+        self.session.add(db_exp)
+        self.session.commit()
+
+        # Build domain model for return value
         experiment = Experiment(
             id=experiment_id,
             agent_name=agent_name,
@@ -278,11 +354,9 @@ class ExperimentOrchestrator:
             control_config=control_config,
             variant_configs=variant_configs,
             proposal_id=proposal_id,
-            extra_metadata=extra_metadata or {}
+            created_at=now,
+            extra_metadata=extra_metadata or {},
         )
-
-        # Store in database
-        self._store_experiment(experiment, target)
 
         logger.info(
             f"Created experiment {experiment_id} for {agent_name} "
@@ -290,33 +364,6 @@ class ExperimentOrchestrator:
         )
 
         return experiment
-
-    def _store_experiment(self, experiment: Experiment, target: int) -> None:
-        """Store experiment in database."""
-        query = text("""
-            INSERT INTO m5_experiments (
-                id, agent_name, status, control_config, variant_configs,
-                proposal_id, target_samples_per_variant,
-                created_at, extra_metadata
-            ) VALUES (
-                :id, :agent_name, :status, :control_config, :variant_configs,
-                :proposal_id, :target,
-                :created_at, :extra_metadata
-            )
-        """)
-
-        self.session.execute(query, {
-            "id": experiment.id,
-            "agent_name": experiment.agent_name,
-            "status": experiment.status,
-            "control_config": json.dumps(experiment.control_config.to_dict()),
-            "variant_configs": json.dumps([v.to_dict() for v in experiment.variant_configs]),
-            "proposal_id": experiment.proposal_id,
-            "target": target,
-            "created_at": experiment.created_at.isoformat(),
-            "extra_metadata": json.dumps(experiment.extra_metadata)
-        })
-        self.session.commit()
 
     # ========== Experiment Retrieval ==========
 
@@ -334,27 +381,8 @@ class ExperimentOrchestrator:
             ExperimentNotFoundError: If experiment doesn't exist
         """
         self._validate_experiment_id(experiment_id)
-
-        query = text("SELECT * FROM m5_experiments WHERE id = :id")
-        result = self.session.execute(query, {"id": experiment_id}).fetchone()
-
-        if not result:
-            raise ExperimentNotFoundError(f"Experiment not found: {experiment_id}")
-
-        return Experiment(
-            id=result.id,
-            agent_name=result.agent_name,
-            status=result.status,
-            control_config=OptimizationConfig.from_dict(json.loads(result.control_config)),
-            variant_configs=[
-                OptimizationConfig.from_dict(v)
-                for v in json.loads(result.variant_configs)
-            ],
-            proposal_id=result.proposal_id,
-            created_at=result.created_at,
-            completed_at=result.completed_at,
-            extra_metadata=json.loads(result.extra_metadata) if result.extra_metadata else {}
-        )
+        db_exp = self._get_db_experiment(experiment_id)
+        return _db_to_experiment(db_exp)
 
     def list_active_experiments(self, agent_name: Optional[str] = None) -> List[Experiment]:
         """
@@ -366,34 +394,12 @@ class ExperimentOrchestrator:
         Returns:
             List of running experiments
         """
+        stmt = select(M5Experiment).where(M5Experiment.status == "running")
         if agent_name:
-            query = text(
-                "SELECT * FROM m5_experiments "
-                "WHERE status = 'running' AND agent_name = :agent_name"
-            )
-            results = self.session.execute(query, {"agent_name": agent_name}).fetchall()
-        else:
-            query = text("SELECT * FROM m5_experiments WHERE status = 'running'")
-            results = self.session.execute(query).fetchall()
+            stmt = stmt.where(M5Experiment.agent_name == agent_name)
 
-        experiments = []
-        for row in results:
-            experiments.append(Experiment(
-                id=row.id,
-                agent_name=row.agent_name,
-                status=row.status,
-                control_config=OptimizationConfig.from_dict(json.loads(row.control_config)),
-                variant_configs=[
-                    OptimizationConfig.from_dict(v)
-                    for v in json.loads(row.variant_configs)
-                ],
-                proposal_id=row.proposal_id,
-                created_at=row.created_at,
-                completed_at=row.completed_at,
-                extra_metadata=json.loads(row.extra_metadata) if row.extra_metadata else {}
-            ))
-
-        return experiments
+        rows = self.session.execute(stmt).scalars().all()
+        return [_db_to_experiment(row) for row in rows]
 
     # ========== Variant Assignment ==========
 
@@ -568,9 +574,9 @@ class ExperimentOrchestrator:
                 f"Valid variants: {valid_variants}"
             )
 
-        # Create result
+        # Create and store ORM result
         result_id = f"result-{uuid.uuid4().hex[:12]}"
-        result = ExperimentResult(
+        db_result = M5ExecutionResult(
             id=result_id,
             experiment_id=experiment_id,
             variant_id=variant_id,
@@ -579,45 +585,17 @@ class ExperimentOrchestrator:
             speed_seconds=speed_seconds,
             cost_usd=cost_usd,
             success=success,
-            extra_metrics=extra_metrics or {}
+            recorded_at=utcnow().isoformat(),
+            extra_metrics=json.dumps(extra_metrics or {}),
         )
-
-        # Store in database
-        self._store_result(result)
+        self.session.add(db_result)
+        self.session.commit()
 
         logger.debug(
             f"Recorded result for {execution_id} ({variant_id}) "
             f"in experiment {experiment_id}: quality={quality_score}, "
             f"speed={speed_seconds}s, cost=${cost_usd}"
         )
-
-    def _store_result(self, result: ExperimentResult) -> None:
-        """Store experiment result in database."""
-        query = text("""
-            INSERT INTO m5_experiment_results (
-                id, experiment_id, variant_id, execution_id,
-                quality_score, speed_seconds, cost_usd, success,
-                recorded_at, extra_metrics
-            ) VALUES (
-                :id, :experiment_id, :variant_id, :execution_id,
-                :quality_score, :speed_seconds, :cost_usd, :success,
-                :recorded_at, :extra_metrics
-            )
-        """)
-
-        self.session.execute(query, {
-            "id": result.id,
-            "experiment_id": result.experiment_id,
-            "variant_id": result.variant_id,
-            "execution_id": result.execution_id,
-            "quality_score": result.quality_score,
-            "speed_seconds": result.speed_seconds,
-            "cost_usd": result.cost_usd,
-            "success": result.success,
-            "recorded_at": result.recorded_at.isoformat(),
-            "extra_metrics": json.dumps(result.extra_metrics)
-        })
-        self.session.commit()
 
     # ========== Experiment Status ==========
 
@@ -649,37 +627,32 @@ class ExperimentOrchestrator:
         """
         self._validate_experiment_id(experiment_id)
 
-        # Get experiment and target
-        experiment = self.get_experiment(experiment_id)
-        target_query = text(
-            "SELECT target_samples_per_variant FROM m5_experiments WHERE id = :id"
-        )
-        target = self.session.execute(target_query, {"id": experiment_id}).scalar()
+        # Get experiment via ORM
+        db_exp = self._get_db_experiment(experiment_id)
+        experiment = _db_to_experiment(db_exp)
+        target = db_exp.target_samples_per_variant
 
-        # Get sample counts per variant
-        count_query = text("""
-            SELECT variant_id, COUNT(*) as count
-            FROM m5_experiment_results
-            WHERE experiment_id = :experiment_id
-            GROUP BY variant_id
-        """)
-        results = self.session.execute(count_query, {"experiment_id": experiment_id}).fetchall()
+        # Get sample counts per variant via ORM
+        count_stmt = (
+            select(M5ExecutionResult.variant_id, func.count())
+            .where(M5ExecutionResult.experiment_id == experiment_id)
+            .group_by(M5ExecutionResult.variant_id)
+        )
+        count_rows = self.session.execute(count_stmt).all()
+        count_map = {row[0]: row[1] for row in count_rows}
 
         # Build variant progress
         variant_progress = {}
-        expected_variants = ["control"] + [f"variant_{i}" for i in range(len(experiment.variant_configs))]
+        expected_variants = ["control"] + [
+            f"variant_{i}" for i in range(len(experiment.variant_configs))
+        ]
 
-        for variant_id in expected_variants:
-            count = 0
-            for row in results:
-                if row.variant_id == variant_id:
-                    count = row.count
-                    break
-
-            variant_progress[variant_id] = {
+        for vid in expected_variants:
+            count = count_map.get(vid, 0)
+            variant_progress[vid] = {
                 "collected": count,
                 "target": target,
-                "pct": (count / target * 100) if target > 0 else 0
+                "pct": (count / target * 100) if target > 0 else 0,
             }
 
         # Check if complete (all variants reached target)
@@ -697,10 +670,10 @@ class ExperimentOrchestrator:
             "total_collected": total_collected,
             "total_target": total_target,
             "is_complete": is_complete,
-            "can_analyze": is_complete
+            "can_analyze": is_complete,
         }
 
-    def get_experiment_results(self, experiment_id: str) -> List[ExperimentResult]:
+    def get_experiment_results(self, experiment_id: str) -> List[ExecutionResult]:
         """
         Get all results for experiment.
 
@@ -712,26 +685,12 @@ class ExperimentOrchestrator:
         """
         self._validate_experiment_id(experiment_id)
 
-        query = text(
-            "SELECT * FROM m5_experiment_results WHERE experiment_id = :experiment_id"
+        stmt = (
+            select(M5ExecutionResult)
+            .where(M5ExecutionResult.experiment_id == experiment_id)
         )
-        results = self.session.execute(query, {"experiment_id": experiment_id}).fetchall()
-
-        return [
-            ExperimentResult(
-                id=row.id,
-                experiment_id=row.experiment_id,
-                variant_id=row.variant_id,
-                execution_id=row.execution_id,
-                quality_score=row.quality_score,
-                speed_seconds=row.speed_seconds,
-                cost_usd=row.cost_usd,
-                success=row.success,
-                recorded_at=row.recorded_at,
-                extra_metrics=json.loads(row.extra_metrics) if row.extra_metrics else {}
-            )
-            for row in results
-        ]
+        rows = self.session.execute(stmt).scalars().all()
+        return [_db_to_execution_result(row) for row in rows]
 
     # ========== Winner Determination ==========
 
@@ -833,7 +792,7 @@ class ExperimentOrchestrator:
     def _aggregate_variant_results(
         self,
         variant_id: str,
-        results: List[ExperimentResult]
+        results: List[ExecutionResult]
     ) -> VariantResults:
         """Aggregate results for a specific variant."""
         variant_results = [r for r in results if r.variant_id == variant_id]
@@ -869,19 +828,10 @@ class ExperimentOrchestrator:
         if winner_variant_id is not None:
             self._validate_variant_id(winner_variant_id)
 
-        query = text("""
-            UPDATE m5_experiments
-            SET status = 'completed',
-                completed_at = :completed_at,
-                winner_variant_id = :winner_variant_id
-            WHERE id = :id
-        """)
-
-        self.session.execute(query, {
-            "id": experiment_id,
-            "completed_at": utcnow().isoformat(),
-            "winner_variant_id": winner_variant_id
-        })
+        db_exp = self._get_db_experiment(experiment_id)
+        db_exp.status = "completed"
+        db_exp.completed_at = utcnow().isoformat()
+        db_exp.winner_variant_id = winner_variant_id
         self.session.commit()
 
         logger.info(f"Completed experiment {experiment_id}, winner: {winner_variant_id}")
@@ -898,27 +848,15 @@ class ExperimentOrchestrator:
         """
         self._validate_experiment_id(experiment_id)
 
-        # Load current experiment to get metadata (database-agnostic approach)
-        experiment = self.get_experiment(experiment_id)
+        db_exp = self._get_db_experiment(experiment_id)
 
-        # Update metadata in Python (safe, no SQL injection)
-        updated_metadata = experiment.extra_metadata.copy()
-        updated_metadata["stop_reason"] = reason
+        # Update metadata with stop reason
+        metadata = db_exp.get_extra_metadata()
+        metadata["stop_reason"] = reason
 
-        # Store with parameterized query (database-agnostic)
-        query = text("""
-            UPDATE m5_experiments
-            SET status = 'stopped',
-                completed_at = :completed_at,
-                extra_metadata = :extra_metadata
-            WHERE id = :id
-        """)
-
-        self.session.execute(query, {
-            "id": experiment_id,
-            "completed_at": utcnow().isoformat(),
-            "extra_metadata": json.dumps(updated_metadata)
-        })
+        db_exp.status = "stopped"
+        db_exp.completed_at = utcnow().isoformat()
+        db_exp.extra_metadata = json.dumps(metadata)
         self.session.commit()
 
         logger.info(f"Stopped experiment {experiment_id}, reason: {reason}")

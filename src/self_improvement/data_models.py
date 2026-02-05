@@ -301,7 +301,7 @@ class Experiment:
 
 
 @dataclass
-class ExperimentResult:
+class ExecutionResult:
     """
     Single execution result within an experiment.
 
@@ -345,7 +345,7 @@ class ExperimentResult:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ExperimentResult":
+    def from_dict(cls, data: Dict[str, Any]) -> "ExecutionResult":
         """Load from dictionary (e.g., from database)."""
         return cls(
             id=data["id"],

@@ -115,15 +115,24 @@ class StandardAgent(BaseAgent):
         self.validate_config()
 
     def _create_tool_registry(self) -> ToolRegistry:
-        """Create tool registry and load configured tools."""
+        """Create tool registry and load configured tools.
+
+        Behavior based on config ``tools`` field:
+        - ``tools: null`` or missing → auto-discover all available tools
+        - ``tools: []`` (explicit empty list) → no tools loaded
+        - ``tools: ["calc", ...]`` → load only the listed tools
+        """
         registry = ToolRegistry(auto_discover=False)
 
         configured_tools = self.config.agent.tools
 
-        if not configured_tools:
+        if configured_tools is None:
+            # No tools field or explicitly null → auto-discover
             registry.auto_discover()
-        else:
+        elif configured_tools:
+            # Non-empty list → load specific tools
             self._load_tools_from_config(registry, configured_tools)
+        # else: empty list [] → intentionally no tools
 
         return registry
 
@@ -182,7 +191,15 @@ class StandardAgent(BaseAgent):
         validate_input_data(input_data, context)
 
         self._execution_context = context
-        self.tool_executor = input_data.get('tool_executor', None)
+        _tool_executor = input_data.get('tool_executor', None)
+        if _tool_executor is not None:
+            from src.tools.executor import ToolExecutor
+            if not isinstance(_tool_executor, ToolExecutor):
+                raise TypeError(
+                    f"tool_executor must be a ToolExecutor instance, "
+                    f"got {type(_tool_executor).__name__}"
+                )
+        self.tool_executor = _tool_executor
         self.tracker = input_data.get('tracker', None)
         self._observer = AgentObserver(self.tracker, self._execution_context)
         logger.info("[%s] Starting execution", self.name)
@@ -195,6 +212,9 @@ class StandardAgent(BaseAgent):
 
         try:
             prompt = self._render_prompt(input_data, context)
+            # Log input preview (last 200 chars of prompt shows injected context)
+            prompt_preview = prompt[-200:].replace('\n', ' ').strip()
+            logger.info("[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), prompt_preview)
 
             max_iterations = self.config.agent.safety.max_tool_calls_per_execution
             max_execution_time = self.config.agent.safety.max_execution_time_seconds
@@ -589,9 +609,10 @@ class StandardAgent(BaseAgent):
     ) -> AgentResponse:
         """Build final AgentResponse."""
         duration = time.time() - start_time
+        output_preview = (output[:150].replace('\n', ' ').strip() + "...") if len(output) > 150 else output.replace('\n', ' ').strip()
         logger.info(
-            "[%s] Execution complete (%d tokens, $%.4f, %.1fs)",
-            self.name, tokens, cost, duration,
+            "[%s] Execution complete (%d tokens, $%.4f, %.1fs) → %s",
+            self.name, tokens, cost, duration, output_preview or "(empty)",
         )
         return AgentResponse(
             output=output,
@@ -614,7 +635,7 @@ class StandardAgent(BaseAgent):
 
         prompt_config = self.config.agent.prompt
 
-        internal_vars = {'tracker', 'config_loader', 'tool_registry', 'workflow_id', 'tool_executor'}
+        internal_vars = {'tracker', 'config_loader', 'tool_registry', 'workflow_id', 'tool_executor', 'show_details', 'detail_console', 'visualizer'}
         filtered_input = {k: v for k, v in input_data.items() if k not in internal_vars}
 
         all_variables = {**filtered_input, **prompt_config.variables}
@@ -636,6 +657,16 @@ class StandardAgent(BaseAgent):
             )
         else:
             raise ValueError("No prompt template or inline prompt configured")
+
+        # Auto-inject input context so agents always receive user inputs
+        # even when the prompt template doesn't use {{ variable }} references
+        input_parts = []
+        for key, value in filtered_input.items():
+            if value and isinstance(value, str):
+                label = key.replace('_', ' ').title()
+                input_parts.append(f"## {label}\n{value}")
+        if input_parts:
+            template += "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
 
         if not self._get_native_tool_definitions():
             tools_section = self._get_cached_tool_schemas()

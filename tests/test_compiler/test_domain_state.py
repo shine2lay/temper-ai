@@ -273,7 +273,7 @@ class TestExecutionContext:
 
         repr_str = repr(context)
 
-        assert "ExecutionContext" in repr_str
+        assert "InfrastructureContext" in repr_str
         assert "tracker" in repr_str
         assert "tool_registry" in repr_str
         assert "config_loader" not in repr_str  # Not set

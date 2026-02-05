@@ -24,6 +24,17 @@ agent:
       3. Suggested corrections
       4. Copy quality score (0-1)
 
+      {% if target_audience is defined %}
+      Target Audience: {{ target_audience }}
+      {% endif %}
+      {% if tone_preference is defined %}
+      Expected Tone: {{ tone_preference }}
+      {% endif %}
+      {% if stage_outputs is defined and stage_outputs.content_writing is defined %}
+      Content to Edit:
+      {{ stage_outputs.content_writing.output }}
+      {% endif %}
+
   inference:
     provider: ollama
     model: qwen3-next:latest

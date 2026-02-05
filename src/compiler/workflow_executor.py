@@ -9,7 +9,7 @@ from langgraph.graph import StateGraph
 
 from src.compiler.state_manager import StateManager
 from src.compiler.checkpoint import CheckpointManager
-from src.compiler.domain_state import WorkflowDomainState, ExecutionContext
+from src.compiler.domain_state import WorkflowDomainState, InfrastructureContext
 
 
 class WorkflowExecutor:

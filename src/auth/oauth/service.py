@@ -11,7 +11,7 @@ Security Features:
 - Token expiry tracking and refresh
 """
 from typing import Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import secrets
 import hashlib
 import base64
@@ -211,7 +211,7 @@ class OAuthService:
                 'user_id': user_id,
                 'provider': provider,
                 'code_verifier': code_verifier,
-                'created_at': datetime.utcnow().isoformat()
+                'created_at': datetime.now(timezone.utc).isoformat()
             },
             ttl_seconds=600  # 10 minutes
         )

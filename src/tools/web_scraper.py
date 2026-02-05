@@ -260,65 +260,43 @@ def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optiona
 
 
 class RateLimiter:
-    """
-    Simple rate limiter for web requests with automatic memory management.
+    """Rate limiter for web requests backed by :class:`~src.safety.token_bucket.TokenBucket`.
 
-    Automatically cleans up expired request timestamps to prevent unbounded
-    memory growth in long-running applications.
+    Wraps the canonical TokenBucket implementation with a simpler API
+    suited for per-domain web request rate limiting.
 
-    TO-05: Thread-safe via internal lock for concurrent access from thread pool.
+    TO-05: Thread-safe via TokenBucket's internal lock.
     """
 
     def __init__(self, max_requests: int, time_window: int):
-        """
-        Initialize rate limiter.
+        """Initialize rate limiter.
 
         Args:
             max_requests: Maximum requests allowed in time window
             time_window: Time window in seconds
         """
+        from src.safety.token_bucket import TokenBucket, RateLimit
+
         self.max_requests = max_requests
         self.time_window = time_window
-        self.requests: list[float] = []
-        self._lock = threading.Lock()
-
-    def _cleanup_expired_requests(self) -> None:
-        """Remove requests outside the time window to prevent memory leak.
-
-        Note: Must be called with self._lock held.
-        """
-        now = time.time()
-        self.requests = [req_time for req_time in self.requests
-                        if now - req_time < self.time_window]
+        # Configure token bucket: refill all tokens over the time window
+        self._bucket = TokenBucket(RateLimit(
+            max_tokens=max_requests,
+            refill_rate=max_requests / time_window if time_window > 0 else max_requests,
+            refill_period=1.0,
+        ))
 
     def can_proceed(self) -> bool:
         """Check if request can proceed without exceeding rate limit."""
-        with self._lock:
-            self._cleanup_expired_requests()
-            return len(self.requests) < self.max_requests
+        return self._bucket.peek(1)
 
     def record_request(self) -> None:
-        """Record a new request."""
-        with self._lock:
-            self._cleanup_expired_requests()
-            self.requests.append(time.time())
+        """Record a new request (consume one token)."""
+        self._bucket.consume(1)
 
     def wait_time(self) -> float:
         """Get seconds to wait before next request is allowed."""
-        with self._lock:
-            self._cleanup_expired_requests()
-
-            if len(self.requests) < self.max_requests:
-                return 0.0
-
-            # Find oldest request
-            if not self.requests:
-                return 0.0
-
-            oldest = min(self.requests)
-            time_since_oldest = time.time() - oldest
-
-            return max(0.0, self.time_window - time_since_oldest)
+        return self._bucket.get_wait_time(1)
 
 
 # Validation constants for web scraper parameters

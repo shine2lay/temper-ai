@@ -160,7 +160,7 @@ class AgentConfigInner(BaseModel):
     type: str = "standard"  # Agent type: standard, debate, human, custom
     prompt: PromptConfig
     inference: InferenceConfig
-    tools: List[Union[str, ToolReference]]
+    tools: Optional[List[Union[str, ToolReference]]] = None
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     error_handling: ErrorHandlingConfig

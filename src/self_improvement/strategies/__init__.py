@@ -1,7 +1,7 @@
 """Self-improvement strategies for M5."""
 
 from .strategy import ImprovementStrategy, OptimizationConfig, LearnedPattern
-from .registry import StrategyRegistry
+from .registry import ImprovementStrategyRegistry, StrategyRegistry
 from .ollama_model_strategy import OllamaModelSelectionStrategy
 from .erc721_strategy import ERC721WorkflowStrategy
 from .prompt_optimization_strategy import PromptOptimizationStrategy
@@ -11,6 +11,7 @@ __all__ = [
     "ImprovementStrategy",
     "OptimizationConfig",
     "LearnedPattern",
+    "ImprovementStrategyRegistry",
     "StrategyRegistry",
     "OllamaModelSelectionStrategy",
     "ERC721WorkflowStrategy",

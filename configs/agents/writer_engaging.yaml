@@ -24,6 +24,26 @@ agent:
       3. Memorable examples and metaphors
       4. Engagement score (0-1)
 
+      {% if topic is defined %}
+      Topic: {{ topic }}
+      {% endif %}
+      {% if content_type is defined %}
+      Content Type: {{ content_type }}
+      {% endif %}
+      {% if target_audience is defined %}
+      Target Audience: {{ target_audience }}
+      {% endif %}
+      {% if word_count_target is defined %}
+      Word Count Target: {{ word_count_target }}
+      {% endif %}
+      {% if tone_preference is defined %}
+      Tone: {{ tone_preference }}
+      {% endif %}
+      {% if stage_outputs is defined and stage_outputs.research_fact_checking is defined %}
+      Research Findings:
+      {{ stage_outputs.research_fact_checking.output }}
+      {% endif %}
+
   inference:
     provider: ollama
     model: qwen3-next:latest
@@ -31,8 +51,7 @@ agent:
     temperature: 0.75
     max_tokens: 2000
 
-  tools:
-    - FileWriter
+  tools: []
 
   error_handling:
     retry_strategy: ExponentialBackoff

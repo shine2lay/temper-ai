@@ -24,6 +24,7 @@ from src.safety.rate_limiter import RateLimiterPolicy
 from src.safety.config_change_policy import ConfigChangePolicy
 from src.safety.policies.rate_limit_policy import RateLimitPolicy
 from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
+from src.safety.stub_policies import ApprovalWorkflowPolicy, CircuitBreakerPolicy
 
 if TYPE_CHECKING:
     from src.tools.executor import ToolExecutor
@@ -43,6 +44,8 @@ BUILTIN_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {
     "config_change_policy": ConfigChangePolicy,
     "rate_limit_policy": RateLimitPolicy,
     "resource_limit_policy": ResourceLimitPolicy,
+    "approval_workflow_policy": ApprovalWorkflowPolicy,
+    "circuit_breaker_policy": CircuitBreakerPolicy,
 }
 
 

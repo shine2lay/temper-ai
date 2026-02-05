@@ -24,6 +24,17 @@ agent:
       3. Specific recommendations
       4. Overall quality rating (0-1)
 
+      {% if topic is defined %}
+      Topic: {{ topic }}
+      {% endif %}
+      {% if target_audience is defined %}
+      Target Audience: {{ target_audience }}
+      {% endif %}
+      {% if stage_outputs is defined and stage_outputs.content_writing is defined %}
+      Content to Critique:
+      {{ stage_outputs.content_writing.output }}
+      {% endif %}
+
   inference:
     provider: ollama
     model: qwen3-next:latest

@@ -33,7 +33,7 @@ import json
 import os
 import threading
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # Optional keyring import (fallback gracefully if not available)
 try:
@@ -280,9 +280,9 @@ class SecureTokenStore:
             # Add metadata
             token_with_metadata = {
                 **token_data,
-                "stored_at": datetime.utcnow().isoformat(),
+                "stored_at": datetime.now(timezone.utc).isoformat(),
                 "expires_at": (
-                    datetime.utcnow() + timedelta(seconds=expires_in)
+                    datetime.now(timezone.utc) + timedelta(seconds=expires_in)
                 ).isoformat()
                 if expires_in
                 else None,
@@ -299,7 +299,7 @@ class SecureTokenStore:
             self._access_log.append({
                 "action": "store",
                 "user_id": user_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "expires_in": expires_in,
             })
 
@@ -333,7 +333,7 @@ class SecureTokenStore:
             if token_data.get("expires_at"):
                 try:
                     expires_at = datetime.fromisoformat(token_data["expires_at"])
-                    if datetime.utcnow() > expires_at:
+                    if datetime.now(timezone.utc) > expires_at:
                         # Token expired - delete it
                         self.delete_token(user_id)
                         return None
@@ -346,7 +346,7 @@ class SecureTokenStore:
             self._access_log.append({
                 "action": "retrieve",
                 "user_id": user_id,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
             })
 
             return token_data
@@ -368,7 +368,7 @@ class SecureTokenStore:
                 self._access_log.append({
                     "action": "delete",
                     "user_id": user_id,
-                    "timestamp": datetime.utcnow().isoformat(),
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
                 return True
 
@@ -421,7 +421,7 @@ class SecureTokenStore:
                 if token_data.get("expires_at"):
                     try:
                         expires_at = datetime.fromisoformat(token_data["expires_at"])
-                        expires_in = int((expires_at - datetime.utcnow()).total_seconds())
+                        expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
                         if expires_in > 0:
                             # Remove metadata before re-storing
                             clean_token = {
@@ -432,9 +432,9 @@ class SecureTokenStore:
                             # Direct encryption to avoid nested locking
                             token_with_metadata = {
                                 **clean_token,
-                                "stored_at": datetime.utcnow().isoformat(),
+                                "stored_at": datetime.now(timezone.utc).isoformat(),
                                 "expires_at": (
-                                    datetime.utcnow() + timedelta(seconds=expires_in)
+                                    datetime.now(timezone.utc) + timedelta(seconds=expires_in)
                                 ).isoformat(),
                             }
                             token_json = json.dumps(token_with_metadata)
@@ -452,7 +452,7 @@ class SecureTokenStore:
                         }
                         token_with_metadata = {
                             **clean_token,
-                            "stored_at": datetime.utcnow().isoformat(),
+                            "stored_at": datetime.now(timezone.utc).isoformat(),
                         }
                         token_json = json.dumps(token_with_metadata)
                         encrypted = self.cipher.encrypt(token_json.encode())
@@ -463,7 +463,7 @@ class SecureTokenStore:
             # Audit log
             self._access_log.append({
                 "action": "rotate_key",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "tokens_re_encrypted": len(decrypted_tokens),
             })
 
@@ -526,7 +526,7 @@ class SecureTokenStore:
             # Audit log
             self._access_log.append({
                 "action": "clear_all",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "tokens_deleted": count,
             })
 

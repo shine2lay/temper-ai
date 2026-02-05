@@ -19,7 +19,7 @@ from src.compiler.config_loader import ConfigLoader
 from src.compiler.langgraph_compiler import LangGraphCompiler
 from src.compiler.langgraph_engine import LangGraphExecutionEngine
 from src.compiler.state_manager import StateManager
-from src.compiler.domain_state import WorkflowDomainState, ExecutionContext
+from src.compiler.domain_state import WorkflowDomainState, InfrastructureContext
 from src.compiler.checkpoint_manager import CheckpointManager, CheckpointStrategy
 from src.compiler.checkpoint_backends import FileCheckpointBackend
 from src.compiler.workflow_executor import WorkflowExecutor
@@ -296,7 +296,7 @@ def test_execution_context_not_checkpointed(checkpoint_manager):
     """Test that execution context is not included in checkpoints."""
     # Create domain state and context
     domain = WorkflowDomainState(workflow_id="wf-context-test", input="test")
-    context = ExecutionContext(
+    context = InfrastructureContext(
         tracker=Mock(),
         tool_registry=Mock(),
         config_loader=Mock()

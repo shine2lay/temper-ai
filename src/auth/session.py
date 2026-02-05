@@ -1,10 +1,13 @@
 """Session management for authentication.
 
 Handles session creation, validation, and cleanup with security best practices.
+Provides a protocol-based abstraction for pluggable session storage backends.
 """
+import abc
 import asyncio
+import json
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any
 import logging
 
@@ -13,44 +16,60 @@ from src.auth.models import Session, User
 logger = logging.getLogger(__name__)
 
 
-class SessionStore:
+class SessionStoreProtocol(abc.ABC):
+    """Abstract base class for session storage backends.
+
+    All session store implementations must implement these methods.
+    This enables swapping between in-memory, Redis, database, etc.
+    """
+
+    @abc.abstractmethod
+    async def create_session(
+        self,
+        user: User,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        session_max_age: int = 3600,
+    ) -> Session:
+        """Create a new session for authenticated user."""
+        ...
+
+    @abc.abstractmethod
+    async def get_session(self, session_id: str) -> Optional[Session]:
+        """Retrieve session by ID. Returns None if not found or expired."""
+        ...
+
+    @abc.abstractmethod
+    async def delete_session(self, session_id: str) -> bool:
+        """Delete session by ID. Returns True if deleted."""
+        ...
+
+    @abc.abstractmethod
+    async def cleanup_expired(self) -> None:
+        """Remove all expired sessions."""
+        ...
+
+
+class InMemorySessionStore(SessionStoreProtocol):
     """In-memory session storage.
 
     SECURITY WARNING: This is a simple in-memory implementation for development ONLY.
-    This implementation is NOT thread-safe and NOT suitable for production use.
+    This implementation is NOT suitable for production use.
 
-    For production deployment, you MUST replace this with:
-    - Redis-backed storage with proper connection pooling
-    - Database-backed storage with async ORM (SQLAlchemy async, etc.)
-    - Distributed session store for multi-server deployments
+    For production deployment, use RedisSessionStore or a database-backed store.
 
     Production issues with this implementation:
-    - Race conditions with concurrent authentication requests
     - Session data loss on server restart
     - No session sharing across multiple server instances
-    - No automatic session cleanup/expiry
-
-    Example production implementation using Redis:
-        from redis import asyncio as aioredis
-
-        class RedisSessionStore:
-            def __init__(self, redis_url: str):
-                self.redis = aioredis.from_url(redis_url)
-
-            async def create_session(self, user, ...):
-                session = Session(...)
-                await self.redis.setex(
-                    f"session:{session.session_id}",
-                    3600,
-                    session.to_dict()
-                )
-                return session
     """
+
+    CLEANUP_INTERVAL = 100  # Run cleanup every N lookups
 
     def __init__(self):
         """Initialize session store."""
         self._sessions: Dict[str, Session] = {}
         self._lock = asyncio.Lock()
+        self._lookup_count = 0
 
     async def create_session(
         self,
@@ -83,8 +102,8 @@ class SessionStore:
             name=user.name,
             picture=user.picture,
             provider=user.oauth_provider,
-            authenticated_at=datetime.utcnow(),
-            expires_at=datetime.utcnow() + timedelta(seconds=session_max_age),
+            authenticated_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=session_max_age),
             ip_address=ip_address,
             user_agent=user_agent,
         )
@@ -110,6 +129,20 @@ class SessionStore:
             Session if found and not expired, None otherwise
         """
         async with self._lock:
+            # Lazy cleanup: every CLEANUP_INTERVAL lookups, purge expired sessions
+            self._lookup_count += 1
+            if self._lookup_count >= self.CLEANUP_INTERVAL:
+                self._lookup_count = 0
+                now = datetime.now(timezone.utc)
+                expired_ids = [
+                    sid for sid, sess in self._sessions.items()
+                    if sess.expires_at and now > sess.expires_at
+                ]
+                for sid in expired_ids:
+                    del self._sessions[sid]
+                if expired_ids:
+                    logger.info(f"Lazy cleanup removed {len(expired_ids)} expired sessions")
+
             session = self._sessions.get(session_id)
 
             if not session:
@@ -143,7 +176,7 @@ class SessionStore:
     async def cleanup_expired(self):
         """Remove all expired sessions."""
         async with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             expired_ids = [
                 sid
                 for sid, session in self._sessions.items()
@@ -258,8 +291,8 @@ class UserStore:
                 existing_user.picture = picture or existing_user.picture
                 existing_user.oauth_provider = provider
                 existing_user.oauth_subject = oauth_subject
-                existing_user.updated_at = datetime.utcnow()
-                existing_user.last_login = datetime.utcnow()
+                existing_user.updated_at = datetime.now(timezone.utc)
+                existing_user.last_login = datetime.now(timezone.utc)
 
                 # Update OAuth subject mapping
                 oauth_key = f"{provider}:{oauth_subject}"
@@ -276,9 +309,9 @@ class UserStore:
                 picture=picture,
                 oauth_provider=provider,
                 oauth_subject=oauth_subject,
-                created_at=datetime.utcnow(),
-                updated_at=datetime.utcnow(),
-                last_login=datetime.utcnow(),
+                created_at=datetime.now(timezone.utc),
+                updated_at=datetime.now(timezone.utc),
+                last_login=datetime.now(timezone.utc),
             )
 
             # Store user and all indexes atomically
@@ -289,3 +322,109 @@ class UserStore:
 
             logger.info(f"User created: {user_id}")
             return user
+
+
+class RedisSessionStore(SessionStoreProtocol):
+    """Redis-backed session storage for production deployments.
+
+    Provides persistent, distributed session storage with automatic expiry.
+    Requires the `redis` package: ``pip install redis``.
+
+    Args:
+        redis_url: Redis connection URL (e.g., "redis://localhost:6379/0")
+        key_prefix: Prefix for session keys in Redis (default: "session:")
+    """
+
+    def __init__(self, redis_url: str, key_prefix: str = "session:"):
+        try:
+            from redis import asyncio as aioredis
+        except ImportError:
+            raise ImportError(
+                "RedisSessionStore requires the 'redis' package. "
+                "Install it with: pip install redis"
+            )
+        self._redis = aioredis.from_url(redis_url, decode_responses=True)
+        self._key_prefix = key_prefix
+
+    def _key(self, session_id: str) -> str:
+        return f"{self._key_prefix}{session_id}"
+
+    def _session_to_dict(self, session: Session) -> Dict[str, Any]:
+        return {
+            "session_id": session.session_id,
+            "user_id": session.user_id,
+            "email": session.email,
+            "name": session.name,
+            "picture": session.picture,
+            "provider": session.provider,
+            "authenticated_at": session.authenticated_at.isoformat(),
+            "expires_at": session.expires_at.isoformat() if session.expires_at else None,
+            "ip_address": session.ip_address,
+            "user_agent": session.user_agent,
+        }
+
+    def _dict_to_session(self, data: Dict[str, Any]) -> Session:
+        return Session(
+            session_id=data["session_id"],
+            user_id=data["user_id"],
+            email=data["email"],
+            name=data["name"],
+            picture=data.get("picture"),
+            provider=data.get("provider"),
+            authenticated_at=datetime.fromisoformat(data["authenticated_at"]),
+            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
+            ip_address=data.get("ip_address"),
+            user_agent=data.get("user_agent"),
+        )
+
+    async def create_session(
+        self,
+        user: User,
+        ip_address: Optional[str] = None,
+        user_agent: Optional[str] = None,
+        session_max_age: int = 3600,
+    ) -> Session:
+        session_id = f"sess_{secrets.token_urlsafe(32)}"
+        session = Session(
+            session_id=session_id,
+            user_id=user.user_id,
+            email=user.email,
+            name=user.name,
+            picture=user.picture,
+            provider=user.oauth_provider,
+            authenticated_at=datetime.now(timezone.utc),
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=session_max_age),
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+        await self._redis.setex(
+            self._key(session_id),
+            session_max_age,
+            json.dumps(self._session_to_dict(session)),
+        )
+        logger.info(f"Session created (Redis): session_id={session_id[:16]}..., user={user.user_id}")
+        return session
+
+    async def get_session(self, session_id: str) -> Optional[Session]:
+        data = await self._redis.get(self._key(session_id))
+        if not data:
+            return None
+        session = self._dict_to_session(json.loads(data))
+        if session.is_expired():
+            await self._redis.delete(self._key(session_id))
+            return None
+        return session
+
+    async def delete_session(self, session_id: str) -> bool:
+        result = await self._redis.delete(self._key(session_id))
+        if result:
+            logger.info(f"Session deleted (Redis): {session_id[:16]}...")
+        return bool(result)
+
+    async def cleanup_expired(self) -> None:
+        # Redis TTL handles expiry automatically; this is a no-op.
+        pass
+
+
+# Backward compatibility alias
+SessionStore = InMemorySessionStore

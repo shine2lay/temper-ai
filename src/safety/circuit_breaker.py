@@ -1,9 +1,7 @@
 """Circuit breakers and safety gates for preventing cascading failures.
 
-This module provides circuit breakers that monitor failure rates and automatically
-block operations when failures exceed thresholds, preventing cascading failures.
-Safety gates integrate circuit breakers with policy validation for comprehensive
-execution control.
+This module re-exports the unified CircuitBreaker from src.core.circuit_breaker
+and provides SafetyGate and CircuitBreakerManager which build on top of it.
 
 Key Features:
 - Circuit breaker pattern (CLOSED/OPEN/HALF_OPEN states)
@@ -23,360 +21,28 @@ Example:
     ... except CircuitBreakerOpen:
     ...     print("Circuit breaker is open - too many failures")
 """
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, UTC
-from enum import Enum
-from typing import Dict, Any, Optional, List, Callable, Generator
+from typing import Dict, Any, Optional, List, Generator
 from contextlib import contextmanager
 import threading
 
+# Re-export core circuit breaker classes
+from src.core.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerError,
+    CircuitBreakerMetrics,
+    CircuitState,
+    StateStorage,
+)
 
-class CircuitBreakerState(Enum):
-    """Circuit breaker states.
-
-    States:
-        CLOSED: Normal operation, requests pass through
-        OPEN: Too many failures, requests blocked
-        HALF_OPEN: Testing if service recovered, limited requests allowed
-    """
-    CLOSED = "closed"
-    OPEN = "open"
-    HALF_OPEN = "half_open"
-
-
-class CircuitBreakerOpen(Exception):
-    """Exception raised when circuit breaker is open."""
-    pass
+# Backward-compatible aliases
+CircuitBreakerState = CircuitState
+CircuitBreakerOpen = CircuitBreakerError
 
 
 class SafetyGateBlocked(Exception):
     """Exception raised when safety gate blocks execution."""
     pass
-
-
-@dataclass
-class CircuitBreakerMetrics:
-    """Metrics for circuit breaker monitoring.
-
-    Attributes:
-        total_calls: Total number of calls attempted
-        successful_calls: Number of successful calls
-        failed_calls: Number of failed calls
-        rejected_calls: Number of calls rejected (breaker open)
-        state_changes: Number of state transitions
-        last_failure_time: Timestamp of last failure
-        last_state_change_time: Timestamp of last state change
-    """
-    total_calls: int = 0
-    successful_calls: int = 0
-    failed_calls: int = 0
-    rejected_calls: int = 0
-    state_changes: int = 0
-    last_failure_time: Optional[datetime] = None
-    last_state_change_time: Optional[datetime] = None
-
-    def success_rate(self) -> float:
-        """Calculate success rate (0.0 to 1.0)."""
-        if self.total_calls == 0:
-            return 1.0
-        return self.successful_calls / self.total_calls
-
-    def failure_rate(self) -> float:
-        """Calculate failure rate (0.0 to 1.0)."""
-        return 1.0 - self.success_rate()
-
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for serialization."""
-        return {
-            "total_calls": self.total_calls,
-            "successful_calls": self.successful_calls,
-            "failed_calls": self.failed_calls,
-            "rejected_calls": self.rejected_calls,
-            "state_changes": self.state_changes,
-            "success_rate": self.success_rate(),
-            "failure_rate": self.failure_rate(),
-            "last_failure_time": self.last_failure_time.isoformat() if self.last_failure_time else None,
-            "last_state_change_time": self.last_state_change_time.isoformat() if self.last_state_change_time else None
-        }
-
-
-class CircuitBreaker:
-    """Circuit breaker for preventing cascading failures.
-
-    Monitors failure rates and automatically blocks operations when failures
-    exceed thresholds. Implements the circuit breaker pattern with CLOSED,
-    OPEN, and HALF_OPEN states.
-
-    Example:
-        >>> breaker = CircuitBreaker(
-        ...     name="database_calls",
-        ...     failure_threshold=5,
-        ...     timeout_seconds=60,
-        ...     success_threshold=2
-        ... )
-        >>>
-        >>> # Use as context manager
-        >>> try:
-        ...     with breaker:
-        ...         execute_database_query()
-        ... except CircuitBreakerOpen:
-        ...     print("Too many failures - circuit breaker open")
-        >>>
-        >>> # Or manually
-        >>> if breaker.can_execute():
-        ...     try:
-        ...         result = execute_query()
-        ...         breaker.record_success()
-        ...     except Exception:
-        ...         breaker.record_failure()
-    """
-
-    def __init__(
-        self,
-        name: str,
-        failure_threshold: int = 5,
-        timeout_seconds: int = 60,
-        success_threshold: int = 2
-    ):
-        """Initialize circuit breaker with validated parameters.
-
-        Args:
-            name: Circuit breaker name (1-100 characters)
-            failure_threshold: Number of failures before opening circuit (1-1000)
-            timeout_seconds: Seconds to wait before attempting recovery (1-86400)
-            success_threshold: Successes needed in HALF_OPEN to close circuit (1-100)
-
-        Raises:
-            ValueError: If parameters are invalid
-        """
-        # SECURITY (code-high-12): Validate name
-        if not isinstance(name, str):
-            raise ValueError(
-                f"name must be a string, got {type(name).__name__}"
-            )
-        if not name or len(name) > 100:
-            raise ValueError(
-                f"name must be 1-100 characters, got {len(name)}"
-            )
-        self.name = name
-
-        # SECURITY: Validate failure_threshold
-        if not isinstance(failure_threshold, int):
-            raise ValueError(
-                f"failure_threshold must be an integer, got {type(failure_threshold).__name__}"
-            )
-        if failure_threshold < 1 or failure_threshold > 1000:
-            raise ValueError(
-                f"failure_threshold must be 1-1000, got {failure_threshold}"
-            )
-        self.failure_threshold = failure_threshold
-
-        # SECURITY: Validate timeout_seconds
-        if not isinstance(timeout_seconds, int):
-            raise ValueError(
-                f"timeout_seconds must be an integer, got {type(timeout_seconds).__name__}"
-            )
-        if timeout_seconds < 1 or timeout_seconds > 86400:  # Max 24 hours
-            raise ValueError(
-                f"timeout_seconds must be 1-86400 (24h), got {timeout_seconds}"
-            )
-        self.timeout_seconds = timeout_seconds
-
-        # SECURITY: Validate success_threshold
-        if not isinstance(success_threshold, int):
-            raise ValueError(
-                f"success_threshold must be an integer, got {type(success_threshold).__name__}"
-            )
-        if success_threshold < 1 or success_threshold > 100:
-            raise ValueError(
-                f"success_threshold must be 1-100, got {success_threshold}"
-            )
-        self.success_threshold = success_threshold
-
-        # Initialize state
-        self._state = CircuitBreakerState.CLOSED
-        self._failure_count = 0
-        self._success_count = 0
-        self._last_failure_time: Optional[datetime] = None
-        self._opened_at: Optional[datetime] = None
-        self._lock = threading.Lock()
-
-        self.metrics = CircuitBreakerMetrics()
-        self._on_state_change_callbacks: List[Callable[[CircuitBreakerState, CircuitBreakerState], None]] = []
-
-    @property
-    def state(self) -> CircuitBreakerState:
-        """Get current circuit breaker state."""
-        with self._lock:
-            pending = self._check_state_transition()
-            current = self._state
-        self._fire_callbacks(pending)
-        return current
-
-    def can_execute(self) -> bool:
-        """Check if execution is allowed.
-
-        Returns:
-            True if execution allowed, False if breaker is open
-        """
-        state = self.state  # This also checks transitions
-        return state != CircuitBreakerState.OPEN
-
-    def record_success(self) -> None:
-        """Record successful execution."""
-        pending = None
-        with self._lock:
-            self.metrics.total_calls += 1
-            self.metrics.successful_calls += 1
-
-            if self._state == CircuitBreakerState.HALF_OPEN:
-                self._success_count += 1
-
-                # Enough successes to close circuit
-                if self._success_count >= self.success_threshold:
-                    pending = self._transition_to(CircuitBreakerState.CLOSED)
-                    self._failure_count = 0
-                    self._success_count = 0
-        self._fire_callbacks(pending)
-
-    def record_failure(self, error: Optional[Exception] = None) -> None:
-        """Record failed execution.
-
-        Args:
-            error: Optional exception that caused failure
-        """
-        pending = None
-        with self._lock:
-            self.metrics.total_calls += 1
-            self.metrics.failed_calls += 1
-            self.metrics.last_failure_time = datetime.now(UTC)
-
-            self._failure_count += 1
-            self._last_failure_time = datetime.now(UTC)
-
-            # Check if we should open circuit
-            if self._state == CircuitBreakerState.CLOSED:
-                if self._failure_count >= self.failure_threshold:
-                    pending = self._transition_to(CircuitBreakerState.OPEN)
-                    self._opened_at = datetime.now(UTC)
-                    self._failure_count = 0
-
-            elif self._state == CircuitBreakerState.HALF_OPEN:
-                # Any failure in half-open state reopens circuit
-                pending = self._transition_to(CircuitBreakerState.OPEN)
-                self._opened_at = datetime.now(UTC)
-                self._failure_count = 0
-                self._success_count = 0
-        self._fire_callbacks(pending)
-
-    def reset(self) -> None:
-        """Manually reset circuit breaker to CLOSED state."""
-        with self._lock:
-            pending = self._transition_to(CircuitBreakerState.CLOSED)
-            self._failure_count = 0
-            self._success_count = 0
-            self._opened_at = None
-        self._fire_callbacks(pending)
-
-    def force_open(self) -> None:
-        """Manually force circuit breaker to OPEN state."""
-        with self._lock:
-            pending = self._transition_to(CircuitBreakerState.OPEN)
-            self._opened_at = datetime.now(UTC)
-        self._fire_callbacks(pending)
-
-    def _check_state_transition(self):
-        """Check if state should transition (OPEN -> HALF_OPEN).
-
-        Must be called while holding self._lock.
-        Returns callback info tuple or None.
-        """
-        if self._state == CircuitBreakerState.OPEN:
-            if self._opened_at:
-                time_since_open = (datetime.now(UTC) - self._opened_at).total_seconds()
-                if time_since_open >= self.timeout_seconds:
-                    result = self._transition_to(CircuitBreakerState.HALF_OPEN)
-                    self._success_count = 0
-                    return result
-        return None
-
-    def _transition_to(self, new_state: CircuitBreakerState):
-        """Transition to new state. Must be called while holding self._lock.
-
-        Returns tuple of (old_state, new_state, callbacks) for deferred
-        execution outside the lock, or None if no transition occurred.
-        """
-        if self._state != new_state:
-            old_state = self._state
-            self._state = new_state
-            self.metrics.state_changes += 1
-            self.metrics.last_state_change_time = datetime.now(UTC)
-            return (old_state, new_state, self._on_state_change_callbacks.copy())
-        return None
-
-    @staticmethod
-    def _fire_callbacks(transition_info) -> None:
-        """Execute state change callbacks outside the lock.
-
-        Args:
-            transition_info: Tuple from _transition_to, or None.
-        """
-        if transition_info is None:
-            return
-        old_state, new_state, callbacks = transition_info
-        for callback in callbacks:
-            try:
-                callback(old_state, new_state)
-            except Exception:
-                # Don't let callback errors break circuit breaker
-                pass
-
-    def on_state_change(self, callback: Callable[[CircuitBreakerState, CircuitBreakerState], None]) -> None:
-        """Register callback for state changes.
-
-        Args:
-            callback: Function(old_state, new_state) to call on state change
-        """
-        self._on_state_change_callbacks.append(callback)
-
-    @contextmanager
-    def __call__(self) -> Generator[None, None, None]:
-        """Context manager for circuit breaker protection.
-
-        Raises:
-            CircuitBreakerOpen: If circuit breaker is open
-
-        Example:
-            >>> with breaker:
-            ...     risky_operation()
-        """
-        if not self.can_execute():
-            self.metrics.rejected_calls += 1
-            raise CircuitBreakerOpen(f"Circuit breaker '{self.name}' is {self.state.value}")
-
-        try:
-            yield
-            self.record_success()
-        except Exception as e:
-            self.record_failure(e)
-            raise
-
-    def get_metrics(self) -> CircuitBreakerMetrics:
-        """Get current metrics.
-
-        Returns:
-            CircuitBreakerMetrics object
-        """
-        return self.metrics
-
-    def __repr__(self) -> str:
-        """String representation."""
-        return (
-            f"CircuitBreaker("
-            f"name='{self.name}', "
-            f"state={self.state.value}, "
-            f"failures={self._failure_count}/{self.failure_threshold})"
-        )
 
 
 class SafetyGate:
@@ -440,15 +106,12 @@ class SafetyGate:
         Returns:
             True if allowed, False if blocked
         """
-        # Check if manually blocked
         if self._blocked:
             return False
 
-        # Check circuit breaker
         if self.circuit_breaker and not self.circuit_breaker.can_execute():
             return False
 
-        # Check policies
         if self.policy_composer:
             result = self.policy_composer.validate(action, context or {})
             if not result.valid and result.has_blocking_violations():
@@ -472,18 +135,16 @@ class SafetyGate:
         """
         reasons = []
 
-        # Check manual block
         if self._blocked:
             reasons.append(f"Gate manually blocked: {self._blocked_reason}")
 
-        # Check circuit breaker
         if self.circuit_breaker:
             if not self.circuit_breaker.can_execute():
                 reasons.append(
-                    f"Circuit breaker '{self.circuit_breaker.name}' is {self.circuit_breaker.state.value}"
+                    f"Circuit breaker '{self.circuit_breaker.name}' is "
+                    f"{self.circuit_breaker.state.value}"
                 )
 
-        # Check policies
         if self.policy_composer:
             result = self.policy_composer.validate(action, context or {})
             if not result.valid and result.has_blocking_violations():
@@ -493,11 +154,7 @@ class SafetyGate:
         return (len(reasons) == 0, reasons)
 
     def block(self, reason: str) -> None:
-        """Manually block the gate.
-
-        Args:
-            reason: Reason for blocking
-        """
+        """Manually block the gate."""
         self._blocked = True
         self._blocked_reason = reason
 
@@ -518,16 +175,8 @@ class SafetyGate:
     ) -> Generator[None, None, None]:
         """Context manager for safety gate protection.
 
-        Args:
-            action: Action to validate
-            context: Execution context
-
         Raises:
             SafetyGateBlocked: If gate blocks execution
-
-        Example:
-            >>> with gate(action={"tool": "deploy"}, context={}):
-            ...     deploy_to_production()
         """
         can_pass, reasons = self.validate(action, context)
 
@@ -536,7 +185,6 @@ class SafetyGate:
                 f"Safety gate '{self.name}' blocked: {'; '.join(reasons)}"
             )
 
-        # If we have circuit breaker, use it
         if self.circuit_breaker:
             with self.circuit_breaker():
                 yield
@@ -544,33 +192,26 @@ class SafetyGate:
             yield
 
     def __repr__(self) -> str:
-        """String representation."""
         status = "blocked" if self._blocked else "open"
-        breaker_state = f", breaker={self.circuit_breaker.state.value}" if self.circuit_breaker else ""
+        breaker_state = (
+            f", breaker={self.circuit_breaker.state.value}"
+            if self.circuit_breaker else ""
+        )
         return f"SafetyGate(name='{self.name}', status={status}{breaker_state})"
 
 
 class CircuitBreakerManager:
     """Manages multiple circuit breakers and safety gates.
 
-    Provides centralized management, metrics aggregation, and coordination
-    across multiple circuit breakers.
-
     Example:
         >>> manager = CircuitBreakerManager()
-        >>>
-        >>> # Create breakers
         >>> manager.create_breaker("database", failure_threshold=5)
-        >>> manager.create_breaker("api_calls", failure_threshold=10)
-        >>>
-        >>> # Use breaker
         >>> breaker = manager.get_breaker("database")
         >>> with breaker:
         ...     execute_database_query()
     """
 
     def __init__(self) -> None:
-        """Initialize circuit breaker manager."""
         self._breakers: Dict[str, CircuitBreaker] = {}
         self._gates: Dict[str, SafetyGate] = {}
         self._lock = threading.Lock()
@@ -582,13 +223,13 @@ class CircuitBreakerManager:
         timeout_seconds: int = 60,
         success_threshold: int = 2
     ) -> CircuitBreaker:
-        """Create and register a circuit breaker with validated parameters.
+        """Create and register a circuit breaker.
 
         Args:
             name: Breaker name (1-100 characters)
             failure_threshold: Failures before opening (1-1000)
-            timeout_seconds: Timeout before attempting recovery (1-86400)
-            success_threshold: Successes needed to close from half-open (1-100)
+            timeout_seconds: Timeout before recovery attempt (1-86400)
+            success_threshold: Successes to close from half-open (1-100)
 
         Returns:
             CircuitBreaker instance
@@ -596,18 +237,15 @@ class CircuitBreakerManager:
         Raises:
             ValueError: If breaker with name already exists or parameters invalid
         """
-        # SECURITY (code-high-12): Validate name before checking duplicates
         if not isinstance(name, str):
             raise ValueError(f"name must be a string, got {type(name).__name__}")
         if not name or len(name) > 100:
             raise ValueError(f"name must be 1-100 characters, got {len(name)}")
 
         with self._lock:
-            # Check for duplicates
             if name in self._breakers:
                 raise ValueError(f"Circuit breaker '{name}' already exists")
 
-            # CircuitBreaker.__init__ will validate the other parameters
             breaker = CircuitBreaker(
                 name=name,
                 failure_threshold=failure_threshold,
@@ -619,25 +257,11 @@ class CircuitBreakerManager:
             return breaker
 
     def get_breaker(self, name: str) -> Optional[CircuitBreaker]:
-        """Get circuit breaker by name.
-
-        Args:
-            name: Breaker name
-
-        Returns:
-            CircuitBreaker if found, None otherwise
-        """
+        """Get circuit breaker by name."""
         return self._breakers.get(name)
 
     def remove_breaker(self, name: str) -> bool:
-        """Remove circuit breaker.
-
-        Args:
-            name: Breaker name
-
-        Returns:
-            True if removed, False if not found
-        """
+        """Remove circuit breaker."""
         with self._lock:
             if name in self._breakers:
                 del self._breakers[name]
@@ -645,11 +269,7 @@ class CircuitBreakerManager:
             return False
 
     def list_breakers(self) -> List[str]:
-        """Get list of all breaker names.
-
-        Returns:
-            List of breaker names
-        """
+        """Get list of all breaker names."""
         return list(self._breakers.keys())
 
     def create_gate(
@@ -658,19 +278,7 @@ class CircuitBreakerManager:
         breaker_name: Optional[str] = None,
         policy_composer: Optional[Any] = None
     ) -> SafetyGate:
-        """Create and register a safety gate.
-
-        Args:
-            name: Gate name
-            breaker_name: Name of circuit breaker to use
-            policy_composer: Policy composer for validation
-
-        Returns:
-            SafetyGate instance
-
-        Raises:
-            ValueError: If gate with name already exists
-        """
+        """Create and register a safety gate."""
         with self._lock:
             if name in self._gates:
                 raise ValueError(f"Safety gate '{name}' already exists")
@@ -687,25 +295,11 @@ class CircuitBreakerManager:
             return gate
 
     def get_gate(self, name: str) -> Optional[SafetyGate]:
-        """Get safety gate by name.
-
-        Args:
-            name: Gate name
-
-        Returns:
-            SafetyGate if found, None otherwise
-        """
+        """Get safety gate by name."""
         return self._gates.get(name)
 
     def remove_gate(self, name: str) -> bool:
-        """Remove safety gate.
-
-        Args:
-            name: Gate name
-
-        Returns:
-            True if removed, False if not found
-        """
+        """Remove safety gate."""
         with self._lock:
             if name in self._gates:
                 del self._gates[name]
@@ -713,19 +307,11 @@ class CircuitBreakerManager:
             return False
 
     def list_gates(self) -> List[str]:
-        """Get list of all gate names.
-
-        Returns:
-            List of gate names
-        """
+        """Get list of all gate names."""
         return list(self._gates.keys())
 
     def get_all_metrics(self) -> Dict[str, Dict[str, Any]]:
-        """Get metrics for all circuit breakers.
-
-        Returns:
-            Dict mapping breaker name to metrics
-        """
+        """Get metrics for all circuit breakers."""
         return {
             name: breaker.get_metrics().to_dict()
             for name, breaker in self._breakers.items()
@@ -737,23 +323,12 @@ class CircuitBreakerManager:
             breaker.reset()
 
     def breaker_count(self) -> int:
-        """Get total number of circuit breakers.
-
-        Returns:
-            Number of breakers
-        """
         return len(self._breakers)
 
     def gate_count(self) -> int:
-        """Get total number of safety gates.
-
-        Returns:
-            Number of gates
-        """
         return len(self._gates)
 
     def __repr__(self) -> str:
-        """String representation."""
         return (
             f"CircuitBreakerManager("
             f"breakers={len(self._breakers)}, "

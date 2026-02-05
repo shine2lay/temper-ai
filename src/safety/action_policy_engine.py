@@ -315,6 +315,142 @@ class ActionPolicyEngine:
             cache_hit=cache_hits > 0
         )
 
+    def validate_action_sync(
+        self,
+        action: Dict[str, Any],
+        context: PolicyExecutionContext
+    ) -> EnforcementResult:
+        """Synchronous version of validate_action for non-async callers.
+
+        Mirrors validate_action but uses policy.validate() instead of
+        policy.validate_async(). Safe to call from synchronous contexts
+        (e.g., StandardAgent._execute_iteration).
+        """
+        start_time = time.time()
+        self._invalidate_cache_if_policies_changed()
+
+        policies = self.registry.get_policies_for_action(context.action_type)
+
+        if not policies:
+            if self.fail_open:
+                return EnforcementResult(
+                    allowed=True, violations=[], policies_executed=[],
+                    execution_time_ms=0.0,
+                    metadata={'reason': 'no_policies_registered', 'mode': 'fail_open'},
+                    cache_hit=False,
+                )
+            logger.warning(
+                "No policies registered for action type '%s' — denying action (fail-closed).",
+                context.action_type,
+            )
+            return EnforcementResult(
+                allowed=False, violations=[], policies_executed=[],
+                execution_time_ms=0.0,
+                metadata={'reason': 'no_policies_registered', 'mode': 'fail_closed'},
+                cache_hit=False,
+            )
+
+        all_violations: List[SafetyViolation] = []
+        policies_executed: List[str] = []
+        cache_hits = 0
+
+        for policy in policies:
+            try:
+                cache_key = self._get_cache_key(policy, action, context)
+                cached_result = self._get_cached_result(cache_key) if self.enable_caching else None
+
+                if cached_result is not None:
+                    result = cached_result
+                    cache_hits += 1
+                    self._cache_hits += 1
+                else:
+                    result = policy.validate(
+                        action=action,
+                        context=self._context_to_dict(context)
+                    )
+                    if self.enable_caching:
+                        self._cache_result(cache_key, result)
+                        self._cache_misses += 1
+
+                policies_executed.append(policy.name)
+                all_violations.extend(result.violations)
+
+                if self.short_circuit_critical:
+                    if any(v.severity == ViolationSeverity.CRITICAL for v in result.violations):
+                        logger.warning(
+                            f"Short-circuiting on CRITICAL violation from {policy.name}"
+                        )
+                        break
+
+            except Exception as e:
+                logger.error(f"Policy {policy.name} execution failed: {e}", exc_info=True)
+                violation = SafetyViolation(
+                    policy_name=policy.name,
+                    severity=ViolationSeverity.CRITICAL,
+                    message=f"Policy execution error in {policy.name}",
+                    action=str(action),
+                    context=self._context_to_dict(context),
+                    remediation_hint="Check policy implementation for errors",
+                    metadata={'exception_type': type(e).__name__}
+                )
+                all_violations.append(violation)
+                policies_executed.append(policy.name)
+
+        blocking_violations = [
+            v for v in all_violations
+            if v.severity >= ViolationSeverity.HIGH
+        ]
+        allowed = len(blocking_violations) == 0
+
+        if self.log_violations and all_violations:
+            self._log_violations_sync(all_violations, context)
+
+        execution_time = (time.time() - start_time) * 1000
+        self._validations_performed += 1
+
+        return EnforcementResult(
+            allowed=allowed,
+            violations=all_violations,
+            policies_executed=policies_executed,
+            execution_time_ms=execution_time,
+            metadata={
+                'total_violations': len(all_violations),
+                'critical_violations': len([v for v in all_violations if v.severity == ViolationSeverity.CRITICAL]),
+                'high_violations': len([v for v in all_violations if v.severity == ViolationSeverity.HIGH]),
+                'medium_violations': len([v for v in all_violations if v.severity == ViolationSeverity.MEDIUM]),
+                'cache_hits': cache_hits,
+                'short_circuited': self.short_circuit_critical and any(
+                    v.severity == ViolationSeverity.CRITICAL for v in all_violations
+                )
+            },
+            cache_hit=cache_hits > 0
+        )
+
+    def _log_violations_sync(
+        self,
+        violations: List[SafetyViolation],
+        context: PolicyExecutionContext
+    ) -> None:
+        """Synchronous version of _log_violations."""
+        if self._sanitizer is None:
+            from src.observability.sanitization import DataSanitizer
+            self._sanitizer = DataSanitizer()
+
+        for violation in violations:
+            safe_message = self._sanitizer.sanitize_text(violation.message).sanitized_text
+            logger.warning(
+                f"Safety violation: [{violation.severity.name}] "
+                f"{violation.policy_name}: {safe_message}",
+                extra={
+                    'agent_id': context.agent_id,
+                    'workflow_id': context.workflow_id,
+                    'stage_id': context.stage_id,
+                    'policy': violation.policy_name,
+                    'severity': violation.severity.name,
+                    'action_type': context.action_type
+                }
+            )
+
     def _canonical_json(self, obj: Any) -> str:
         """Create canonical JSON representation for deterministic hashing.
 
@@ -397,8 +533,8 @@ class ActionPolicyEngine:
             'action': action,
             'agent_id': context.agent_id,
             'action_type': context.action_type,
-            # Note: workflow_id and stage_id deliberately excluded
-            # to allow caching across different workflow instances
+            'workflow_id': context.workflow_id,
+            'stage_id': context.stage_id,
         }
 
         # Use canonical JSON to prevent collision attacks
@@ -501,14 +637,6 @@ class ActionPolicyEngine:
             )
 
         self._violations_logged += len(violations)
-
-    def clear_cache(self) -> None:
-        """Clear policy result cache.
-
-        Useful for testing or when policies are updated.
-        """
-        self._cache.clear()
-        logger.info("Policy cache cleared")
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get engine metrics for observability.

@@ -22,6 +22,16 @@ agent:
       2. Key benefits and opportunities
       3. Confidence level (0-1)
 
+      {% if question is defined %}
+      Decision Question: {{ question }}
+      {% endif %}
+      {% if options is defined %}
+      Options: {{ options }}
+      {% endif %}
+      {% if context is defined %}
+      Context: {{ context }}
+      {% endif %}
+
   inference:
     provider: ollama
     model: qwen3-next:latest

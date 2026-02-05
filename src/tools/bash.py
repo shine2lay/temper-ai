@@ -8,6 +8,7 @@ Provides controlled command execution with:
 - Shell metacharacter injection prevention
 - stdout/stderr capture with exit code reporting
 """
+import logging
 import os
 import shlex
 import subprocess
@@ -15,6 +16,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Set
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
+
+logger = logging.getLogger(__name__)
 
 
 # Commands allowed by default
@@ -220,13 +223,33 @@ class Bash(BaseTool):
             # Split on shell operators to get individual commands
             sub_commands = _re.split(r'\s*(?:;|\|\||&&|\|)\s*', command)
 
-            # Also reject command substitution ($(...) and backticks)
+            # SECURITY: Reject command substitution ($(...) and backticks)
             if '`' in command or '$(' in command:
                 return ToolResult(
                     success=False,
                     error=(
                         "Command substitution ($() and backticks) is not allowed. "
                         f"Allowed commands: {sorted(self.allowed_commands)}"
+                    ),
+                )
+
+            # SECURITY (ISSUE-5): Block heredoc syntax (<<) to prevent
+            # arbitrary input injection and brace expansion ({,}) to prevent
+            # filename generation attacks
+            if '<<' in command:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Heredoc syntax (<<) is not allowed in shell mode. "
+                        "Use echo or printf with redirection instead."
+                    ),
+                )
+            if '{' in command or '}' in command:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Brace expansion ({, }) is not allowed in shell mode. "
+                        "List files explicitly instead."
                     ),
                 )
 
@@ -263,6 +286,38 @@ class Bash(BaseTool):
                             f"Allowed commands: {sorted(self.allowed_commands)}"
                         ),
                     )
+            # ISSUE-6: Validate path arguments in shell mode sub-commands
+            # against sandbox even though we use shell=True
+            for sub_cmd in sub_commands:
+                sub_cmd = sub_cmd.strip()
+                if not sub_cmd:
+                    continue
+                try:
+                    shell_parts = _shlex.split(sub_cmd)
+                except ValueError:
+                    continue  # Already validated above
+                for arg in shell_parts[1:]:
+                    if arg.startswith("-"):
+                        continue  # Skip flags
+                    # Skip redirection targets (handled by shell)
+                    if arg in (">", ">>", "<"):
+                        continue
+                    # Resolve path relative to workspace
+                    arg_path = (
+                        Path(arg).resolve() if Path(arg).is_absolute()
+                        else (self.workspace_root / arg).resolve()
+                    )
+                    try:
+                        arg_path.relative_to(self.workspace_root.resolve())
+                    except ValueError:
+                        return ToolResult(
+                            success=False,
+                            error=(
+                                f"Path argument '{arg}' resolves outside the sandbox. "
+                                f"All paths must stay within '{self.workspace_root}'."
+                            ),
+                        )
+
             parts = None  # Signal to use shell=True with the raw command string
         else:
             # Strict mode: block metacharacters and enforce allowlist
@@ -443,9 +498,10 @@ class Bash(BaseTool):
             )
 
         except OSError as e:
+            logger.error(f"OS error executing command: {e}", exc_info=True)
             return ToolResult(
                 success=False,
-                error=f"OS error executing command: {e}",
+                error="OS error executing command",
                 metadata={"command": command},
             )
 

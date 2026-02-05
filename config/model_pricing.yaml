@@ -489,6 +489,12 @@ models:
     effective_date: "2024-11-01"
     notes: "Code-specialized. Free via Ollama."
 
+  qwen3-next:latest:
+    input_price: 0.10
+    output_price: 0.20
+    effective_date: "2025-05-01"
+    notes: "Qwen3-next preview model. Free via Ollama."
+
   # --- DeepSeek (open-weight) ---
 
   deepseek-r1:7b:

@@ -24,6 +24,17 @@ agent:
       3. Recommended improvements
       4. Structure quality (0-1)
 
+      {% if topic is defined %}
+      Topic: {{ topic }}
+      {% endif %}
+      {% if target_audience is defined %}
+      Target Audience: {{ target_audience }}
+      {% endif %}
+      {% if stage_outputs is defined and stage_outputs.research_fact_checking is defined %}
+      Research Findings:
+      {{ stage_outputs.research_fact_checking.output }}
+      {% endif %}
+
   inference:
     provider: ollama
     model: qwen3-next:latest

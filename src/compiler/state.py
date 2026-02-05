@@ -17,15 +17,19 @@ Migration Path:
         >>> context = ExecutionContext(tracker=my_tracker)
         >>> domain.set_stage_output("research", data)
 """
+import warnings
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 
 from src.compiler.domain_state import (
     WorkflowDomainState,
-    ExecutionContext,
+    InfrastructureContext,
     create_initial_domain_state,
     merge_domain_states
 )
+
+# Backward-compatible alias for external consumers
+ExecutionContext = InfrastructureContext
 
 
 class WorkflowState:
@@ -77,6 +81,13 @@ class WorkflowState:
         Args:
             **kwargs: Any combination of domain and context fields
         """
+        warnings.warn(
+            "WorkflowState is deprecated. Use WorkflowDomainState for domain data "
+            "and InfrastructureContext for infrastructure components. "
+            "See src/compiler/domain_state.py for the new architecture.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         # Separate domain and context fields from kwargs
         domain_fields = {
             "stage_outputs", "current_stage", "workflow_id",

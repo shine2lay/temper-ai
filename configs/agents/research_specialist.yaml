@@ -24,6 +24,16 @@ agent:
       3. Relevant examples
       4. Research completeness (0-1)
 
+      {% if topic is defined %}
+      Topic: {{ topic }}
+      {% endif %}
+      {% if target_audience is defined %}
+      Target Audience: {{ target_audience }}
+      {% endif %}
+      {% if key_points is defined %}
+      Key Areas to Research: {{ key_points }}
+      {% endif %}
+
   inference:
     provider: ollama
     model: qwen3-next:latest
@@ -31,8 +41,7 @@ agent:
     temperature: 0.4
     max_tokens: 1500
 
-  tools:
-    - WebScraper
+  tools: []
 
   error_handling:
     retry_strategy: ExponentialBackoff

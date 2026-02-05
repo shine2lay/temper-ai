@@ -354,7 +354,7 @@ class InfrastructureContext:
         return f"InfrastructureContext(components=[{', '.join(components)}])"
 
 
-# Backward-compatible alias
+# Backward compatibility alias
 ExecutionContext = InfrastructureContext
 
 

@@ -330,8 +330,12 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
         text_lower = text.lower()
 
-        # Check for keyword indicators (substring match)
-        if any(keyword in text_lower for keyword in self.TEST_SECRET_KEYWORDS):
+        # Check for keyword indicators (word-boundary match)
+        # Using word boundaries prevents false positives like "testing" matching "test"
+        # in production secrets (e.g., "sk_live_testing_real_key")
+        import re
+        if any(re.search(rf'\b{re.escape(keyword)}\b', text_lower)
+               for keyword in self.TEST_SECRET_KEYWORDS):
             return True
 
         # Check for pattern indicators (exact match only)

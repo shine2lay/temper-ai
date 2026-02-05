@@ -286,7 +286,7 @@ class ToolExecutor:
         try:
             if self.policy_engine:
                 from src.safety.action_policy_engine import PolicyExecutionContext as _PEC
-                enforcement = self.policy_engine.validate_action(
+                enforcement = self.policy_engine.validate_action_sync(
                     action={"tool": tool_name, "params": params},
                     context=_PEC(
                         agent_id=context.get("agent_id", "unknown"),
@@ -454,10 +454,11 @@ class ToolExecutor:
                 except Exception as rollback_error:
                     logger.error(f"Auto-rollback on exception failed: {rollback_error}")
 
+            logger.error(f"Tool execution failed: {e}", exc_info=True)
             return ToolResult(
                 success=False,
                 result=None,
-                error=f"Tool execution failed: {str(e)}"
+                error="Tool execution failed due to an internal error"
             )
 
     def _execute_tool(self, tool: BaseTool, params: Dict[str, Any]) -> ToolResult:

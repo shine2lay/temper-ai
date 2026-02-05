@@ -118,6 +118,17 @@ def run(
     else:
         logging.basicConfig(level=logging.WARNING)
 
+    # Attach RichHandler for streaming logs when --show-details is active
+    if show_details and not verbose:
+        from rich.logging import RichHandler
+        src_logger = logging.getLogger("src")
+        if not any(isinstance(h, RichHandler) for h in src_logger.handlers):
+            src_logger.setLevel(logging.INFO)
+            src_logger.propagate = False
+            rh = RichHandler(console=console, show_path=False, show_time=True, markup=False)
+            rh.setLevel(logging.INFO)
+            src_logger.addHandler(rh)
+
     # 1-2. Load and validate workflow YAML
     workflow_config = _load_and_validate_workflow(workflow, verbose=verbose)
 

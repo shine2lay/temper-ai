@@ -14,8 +14,10 @@ from typing import Optional, Dict, Any, List, Generator
 
 from src.core.context import ExecutionContext
 from src.observability.backend import ObservabilityBackend
+from src.observability.collaboration_tracker import CollaborationEventTracker
 from src.observability.datetime_utils import utcnow
 from src.observability.decision_tracker import DecisionTracker
+from src.observability.metric_aggregator import MetricAggregator
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
 from src.utils.config_helpers import sanitize_config_for_display
 
@@ -107,6 +109,17 @@ class ExecutionTracker:
         # DecisionTracker owns a MeritScoreService internally.
         self._decision_tracker = DecisionTracker(sanitize_fn=self._sanitize_dict)
 
+        # Extracted services for metric aggregation and collaboration tracking
+        self._metric_aggregator = MetricAggregator(
+            backend=self.backend,
+            metric_registry=metric_registry,
+        )
+        self._collaboration_tracker = CollaborationEventTracker(
+            backend=self.backend,
+            sanitize_fn=self._sanitize_dict,
+            get_context=lambda: self.context,
+        )
+
     @staticmethod
     def ensure_database(db_url: str) -> None:
         """Ensure observability database is initialized.
@@ -147,58 +160,8 @@ class ExecutionTracker:
         return stack
 
     def _collect_agent_metrics(self, agent_id: str) -> None:
-        """
-        Collect metrics for agent execution using registered collectors.
-
-        This method is called automatically after successful agent execution
-        if a MetricRegistry was provided during tracker initialization.
-
-        Args:
-            agent_id: ID of the agent execution to collect metrics for
-
-        Note:
-            - Metric collection errors are logged but don't fail the agent execution
-            - Requires active session with SQL backend for metric collection
-            - Metrics are currently logged but not yet persisted (TODO)
-        """
-        if self.metric_registry is None:
-            return
-
-        try:
-            # Get current session for execution lookup
-            session = self._session_stack[-1] if self._session_stack else None
-
-            # Fetch agent execution object from backend (SQL backend only)
-            if hasattr(session, 'exec') and session is not None:
-                from sqlmodel import select
-                from src.observability.models import AgentExecution
-                statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-                execution = session.exec(statement).first()
-
-                if execution:
-                    # Collect all applicable metrics
-                    metrics = self.metric_registry.collect_all(execution)
-
-                    # Store metrics in extra_metadata
-                    if metrics:
-                        logger.info(
-                            f"Collected {len(metrics)} metrics for agent {agent_id}: "
-                            f"{', '.join(f'{k}={v:.3f}' for k, v in metrics.items())}"
-                        )
-                        # TODO: Store metrics in execution metadata
-                        # This requires backend support for updating extra_metadata
-                        # For now, metrics are collected and logged for validation
-                else:
-                    logger.debug(f"Agent execution {agent_id} not found for metric collection")
-            else:
-                logger.debug("No SQL session available for metric collection (expected for non-SQL backends)")
-
-        except Exception as e:
-            # Log but don't fail agent execution for metric collection errors
-            logger.warning(
-                f"Failed to collect metrics for agent {agent_id}: {e}",
-                exc_info=True
-            )
+        """Collect metrics for agent execution. Delegates to MetricAggregator."""
+        self._metric_aggregator.collect_agent_metrics(agent_id)
 
     @contextmanager
     def track_workflow(
@@ -297,33 +260,19 @@ class ExecutionTracker:
                     error_stack_trace=None
                 )
 
-                # Aggregate and update metrics (backend handles aggregation logic)
-                # Only for SQL backend - other backends handle metrics differently
+                # Aggregate and update metrics via backend method
                 try:
-                    from sqlmodel import select, func
-                    from src.observability.models import AgentExecution, StageExecution
-
-                    if hasattr(session, 'exec') and session is not None:
-                        metrics_statement = select(
-                            func.sum(AgentExecution.num_llm_calls).label('total_llm_calls'),
-                            func.sum(AgentExecution.num_tool_calls).label('total_tool_calls'),
-                            func.sum(AgentExecution.total_tokens).label('total_tokens'),
-                            func.sum(AgentExecution.estimated_cost_usd).label('total_cost_usd')
-                        ).join(
-                            StageExecution,
-                            AgentExecution.stage_execution_id == StageExecution.id  # type: ignore[arg-type]
-                        ).where(StageExecution.workflow_execution_id == workflow_id)
-
-                        metrics = session.exec(metrics_statement).first()
+                    if hasattr(self.backend, 'aggregate_workflow_metrics'):
+                        metrics = self.backend.aggregate_workflow_metrics(workflow_id)
 
                         if metrics:
-                            total_cost = float(metrics.total_cost_usd or 0.0)
+                            total_cost = metrics.get('total_cost_usd', 0.0)
 
                             self.backend.update_workflow_metrics(
                                 workflow_id=workflow_id,
-                                total_llm_calls=int(metrics.total_llm_calls or 0),
-                                total_tool_calls=int(metrics.total_tool_calls or 0),
-                                total_tokens=int(metrics.total_tokens or 0),
+                                total_llm_calls=metrics.get('total_llm_calls', 0),
+                                total_tool_calls=metrics.get('total_tool_calls', 0),
+                                total_tokens=metrics.get('total_tokens', 0),
                                 total_cost_usd=total_cost
                             )
 
@@ -334,12 +283,7 @@ class ExecutionTracker:
                                     value=total_cost,
                                     context={"workflow_id": workflow_id}
                                 )
-                except (ImportError, AttributeError):
-                    # Non-SQL backends don't need metric aggregation
-                    # Expected when backend doesn't support SQL queries
-                    pass
                 except Exception as e:
-                    # Unexpected error during metric aggregation
                     # Log and continue (don't fail workflow for observability issues)
                     logger.warning(
                         f"Failed to aggregate workflow metrics for {workflow_id}: {e}",
@@ -414,30 +358,18 @@ class ExecutionTracker:
                 # Success
                 end_time = utcnow()
 
-                # Aggregate metrics from child agents (SQL backend only)
+                # Aggregate metrics from child agents via backend method
                 try:
-                    from sqlmodel import select, func
-                    from sqlalchemy import case
-                    from src.observability.models import AgentExecution
-
-                    session = self._session_stack[-1] if self._session_stack else None
-                    if hasattr(session, 'exec') and session is not None:
-                        metrics_statement = select(
-                            func.count(AgentExecution.id).label('total'),  # type: ignore[arg-type]
-                            func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
-                            func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
-                        ).where(AgentExecution.stage_execution_id == stage_id)
-
-                        metrics = session.exec(metrics_statement).first()
-
+                    if hasattr(self.backend, 'aggregate_stage_metrics'):
+                        metrics = self.backend.aggregate_stage_metrics(stage_id)
                         self.backend.track_stage_end(
                             stage_id=stage_id,
                             end_time=end_time,
                             status="completed",
                             error_message=None,
-                            num_agents_executed=int(metrics.total or 0) if metrics else 0,
-                            num_agents_succeeded=int(metrics.succeeded or 0) if metrics else 0,
-                            num_agents_failed=int(metrics.failed or 0) if metrics else 0
+                            num_agents_executed=metrics.get('num_agents_executed', 0),
+                            num_agents_succeeded=metrics.get('num_agents_succeeded', 0),
+                            num_agents_failed=metrics.get('num_agents_failed', 0)
                         )
                     else:
                         self.backend.track_stage_end(
@@ -445,23 +377,11 @@ class ExecutionTracker:
                             end_time=end_time,
                             status="completed"
                         )
-                except (ImportError, AttributeError):
-                    # Expected for non-SQL backends (Prometheus, S3, etc.)
-                    # - ImportError: sqlmodel/sqlalchemy not available
-                    # - AttributeError: session doesn't have 'exec' method
-                    self.backend.track_stage_end(
-                        stage_id=stage_id,
-                        end_time=end_time,
-                        status="completed"
-                    )
                 except Exception as e:
-                    # Unexpected error during stage metric aggregation
-                    # Log and continue (don't fail stage for observability issues)
                     logger.warning(
                         f"Failed to aggregate stage metrics for {stage_id}: {e}",
                         exc_info=True
                     )
-                    # Fallback: complete stage without detailed metrics
                     self.backend.track_stage_end(
                         stage_id=stage_id,
                         end_time=end_time,
@@ -953,22 +873,8 @@ class ExecutionTracker:
         num_llm_calls: Optional[int] = None,
         num_tool_calls: Optional[int] = None
     ) -> None:
-        """
-        Set agent output data after execution.
-
-        Args:
-            agent_id: Agent execution ID
-            output_data: Agent output data
-            reasoning: Agent reasoning text
-            confidence_score: Confidence score (0-1)
-            total_tokens: Total tokens used
-            prompt_tokens: Prompt tokens used
-            completion_tokens: Completion tokens used
-            estimated_cost_usd: Estimated cost in USD
-            num_llm_calls: Number of LLM calls made
-            num_tool_calls: Number of tool calls made
-        """
-        self.backend.set_agent_output(
+        """Set agent output data. Delegates to MetricAggregator."""
+        self._metric_aggregator.set_agent_output(
             agent_id=agent_id,
             output_data=output_data,
             reasoning=reasoning,
@@ -978,7 +884,7 @@ class ExecutionTracker:
             completion_tokens=completion_tokens,
             estimated_cost_usd=estimated_cost_usd,
             num_llm_calls=num_llm_calls,
-            num_tool_calls=num_tool_calls
+            num_tool_calls=num_tool_calls,
         )
 
     def set_stage_output(
@@ -986,16 +892,10 @@ class ExecutionTracker:
         stage_id: str,
         output_data: Dict[str, Any]
     ) -> None:
-        """
-        Set stage output data after execution.
-
-        Args:
-            stage_id: Stage execution ID
-            output_data: Stage output data
-        """
-        self.backend.set_stage_output(
+        """Set stage output data. Delegates to MetricAggregator."""
+        self._metric_aggregator.set_stage_output(
             stage_id=stage_id,
-            output_data=output_data
+            output_data=output_data,
         )
 
     def track_safety_violation(
@@ -1006,47 +906,13 @@ class ExecutionTracker:
         service_name: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None
     ) -> None:
-        """
-        Track safety violation for observability and metrics.
-
-        Records safety violations in the execution context for analysis,
-        alerting, and policy enforcement monitoring.
-
-        Args:
-            violation_severity: Severity level (INFO, LOW, MEDIUM, HIGH, CRITICAL)
-            violation_message: Detailed violation message
-            policy_name: Name of policy that was violated
-            service_name: Service that detected the violation
-            context: Additional context (action, params, etc.)
-
-        Example:
-            >>> tracker.track_safety_violation(
-            ...     violation_severity="HIGH",
-            ...     violation_message="Path traversal attempt detected",
-            ...     policy_name="PathAccessPolicy",
-            ...     service_name="file_system_service",
-            ...     context={"path": "/etc/passwd", "action": "read"}
-            ... )
-        """
-        # Get current execution IDs from context
-        workflow_id = self.context.workflow_id
-        stage_id = self.context.stage_id
-        agent_id = self.context.agent_id
-
-        # SECURITY: Sanitize context to prevent sensitive data exposure
-        # The context may contain detected secrets or PII that should not be logged
-        sanitized_context = self._sanitize_dict(context) if context else None
-
-        self.backend.track_safety_violation(
-            workflow_id=workflow_id,
-            stage_id=stage_id,
-            agent_id=agent_id,
+        """Track safety violation. Delegates to CollaborationEventTracker."""
+        self._collaboration_tracker.track_safety_violation(
             violation_severity=violation_severity,
             violation_message=violation_message,
             policy_name=policy_name,
             service_name=service_name,
-            context=sanitized_context,
-            timestamp=utcnow()
+            context=context,
         )
 
     def track_collaboration_event(
@@ -1067,129 +933,23 @@ class ExecutionTracker:
         confidence: Optional[float] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
-        """
-        Track collaboration event for multi-agent interactions.
-
-        Records collaboration events such as voting, conflicts, resolutions,
-        consensus building, and debate rounds for analysis and monitoring.
-
-        Supports both schema-aligned parameters and legacy executor calls for
-        backward compatibility.
-
-        Args:
-            event_type: Type of event (vote, conflict, resolution, consensus,
-                debate_round, synthesis, quality_gate_failure, adaptive_mode_switch)
-            stage_id: ID of the stage where collaboration occurred
-            agents_involved: List of agent IDs participating
-            event_data: Event-specific data (votes, positions, arguments)
-            round_number: Round number for multi-round collaborations
-            resolution_strategy: Strategy used for conflict resolution
-            outcome: Final outcome of the collaboration event
-            confidence_score: Confidence score of outcome (0.0-1.0)
-            extra_metadata: Additional metadata for custom tracking
-
-            # Legacy parameters (for backward compatibility):
-            stage_name: Legacy parameter, maps to stage_id via context lookup
-            agents: Legacy parameter, maps to agents_involved
-            decision: Legacy parameter, maps to outcome
-            confidence: Legacy parameter, maps to confidence_score
-            metadata: Legacy parameter, maps to event_data
-
-        Returns:
-            str: ID of created collaboration event record (format: "collab-{12-char-hex}"),
-                 or empty string if tracking failed (safe to ignore - tracking failures
-                 do not break workflow execution)
-
-        Example:
-            >>> tracker.track_collaboration_event(
-            ...     event_type="consensus",
-            ...     stage_id="stage-123",
-            ...     agents_involved=["agent-1", "agent-2", "agent-3"],
-            ...     event_data={"votes": {"option_a": 2, "option_b": 1}},
-            ...     resolution_strategy="consensus",
-            ...     outcome="option_a",
-            ...     confidence_score=0.85
-            ... )
-            'collab-456abc789def'
-        """
-        # Map legacy parameters to new schema
-        if stage_name and not stage_id:
-            stage_id = self.context.stage_id or stage_name
-
-        if agents and not agents_involved:
-            agents_involved = agents
-
-        if decision is not None and not outcome:
-            outcome = decision
-
-        if confidence is not None and confidence_score is None:
-            confidence_score = confidence
-
-        if metadata and not event_data:
-            event_data = metadata
-
-        # Validation: Get stage_id from context if not provided
-        if not stage_id:
-            stage_id = self.context.stage_id
-            if not stage_id:
-                logger.warning(
-                    "track_collaboration_event called without stage_id context",
-                    extra={
-                        "event_type": event_type,
-                        "has_workflow_context": bool(self.context.workflow_id),
-                        "has_stage_context": bool(self.context.stage_id),
-                        "has_agent_context": bool(self.context.agent_id)
-                    }
-                )
-                return ""
-
-        # Validation: event_type is required
-        if not event_type:
-            logger.error(
-                "track_collaboration_event called without event_type",
-                extra={
-                    "stage_id": stage_id,
-                    "has_workflow_context": bool(self.context.workflow_id)
-                }
-            )
-            return ""
-
-        # Normalize agents_involved
-        if agents_involved is None:
-            agents_involved = []
-
-        # Validate confidence_score range
-        if confidence_score is not None and not (0.0 <= confidence_score <= 1.0):
-            logger.warning(
-                f"Invalid confidence_score {confidence_score}, clamping to [0.0, 1.0]",
-                extra={"event_type": event_type, "stage_id": stage_id}
-            )
-            confidence_score = max(0.0, min(1.0, confidence_score))
-
-        # Delegate to backend with error handling
-        try:
-            return self.backend.track_collaboration_event(
-                stage_id=stage_id,
-                event_type=event_type,
-                agents_involved=agents_involved,
-                event_data=event_data,
-                round_number=round_number,
-                resolution_strategy=resolution_strategy,
-                outcome=outcome,
-                confidence_score=confidence_score,
-                extra_metadata=extra_metadata,
-                timestamp=utcnow()
-            )
-        except Exception as e:
-            logger.error(
-                f"Failed to track collaboration event: {e}",
-                exc_info=True,
-                extra={
-                    "event_type": event_type,
-                    "stage_id": stage_id
-                }
-            )
-            return ""
+        """Track collaboration event. Delegates to CollaborationEventTracker."""
+        return self._collaboration_tracker.track_collaboration_event(
+            event_type=event_type,
+            stage_id=stage_id,
+            agents_involved=agents_involved,
+            event_data=event_data,
+            round_number=round_number,
+            resolution_strategy=resolution_strategy,
+            outcome=outcome,
+            confidence_score=confidence_score,
+            extra_metadata=extra_metadata,
+            stage_name=stage_name,
+            agents=agents,
+            decision=decision,
+            confidence=confidence,
+            metadata=metadata,
+        )
 
     def track_decision_outcome(
         self,

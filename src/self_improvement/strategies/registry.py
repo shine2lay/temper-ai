@@ -9,7 +9,7 @@ from src.self_improvement.strategies.strategy import ImprovementStrategy
 logger = logging.getLogger(__name__)
 
 
-class StrategyRegistry:
+class ImprovementStrategyRegistry:
     """Central registry for managing improvement strategies.
 
     The StrategyRegistry maintains a collection of ImprovementStrategy instances
@@ -187,3 +187,7 @@ class StrategyRegistry:
                 "strategies_registered": len(self._strategies),
                 "strategy_names": sorted(self._strategies.keys()),
             }
+
+
+# Backward-compatible alias
+StrategyRegistry = ImprovementStrategyRegistry

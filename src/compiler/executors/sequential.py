@@ -249,6 +249,9 @@ class SequentialStageExecutor(StageExecutor):
             detail_console.print(f"\n[bold cyan]── Stage: {stage_name} ──[/bold cyan]")
 
         total_agents = len(agents)
+        prior_stages = list(state.get("stage_outputs", {}).keys())
+        input_info = f"prior stages: {prior_stages}" if prior_stages else "workflow inputs only"
+        logger.info("Stage '%s' starting sequential execution with %d agent(s) (%s)", stage_name, total_agents, input_info)
         for agent_idx, agent_ref in enumerate(agents):
             agent_result = self._execute_agent(
                 agent_ref=agent_ref,
@@ -262,6 +265,7 @@ class SequentialStageExecutor(StageExecutor):
             )
 
             agent_name = agent_result["agent_name"]
+            logger.info("Stage '%s' agent '%s' completed (%s)", stage_name, agent_name, agent_result["status"])
 
             # Print real-time progress if show_details enabled
             if show_details and detail_console:
@@ -558,7 +562,7 @@ class SequentialStageExecutor(StageExecutor):
                 "confidence": response.confidence,
                 "tokens": response.tokens,
                 "cost_usd": response.estimated_cost_usd,
-                "tool_calls": len(response.tool_calls) if response.tool_calls else 0,
+                "tool_calls": response.tool_calls if response.tool_calls else [],
             },
             "status": "success",
             "metrics": {

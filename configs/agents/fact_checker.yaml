@@ -24,6 +24,16 @@ agent:
       3. Source recommendations
       4. Confidence level (0-1)
 
+      {% if topic is defined %}
+      Topic: {{ topic }}
+      {% endif %}
+      {% if key_points is defined %}
+      Key Points to Verify: {{ key_points }}
+      {% endif %}
+      {% if sources is defined %}
+      Source Guidelines: {{ sources }}
+      {% endif %}
+
   inference:
     provider: ollama
     model: qwen3-next:latest
@@ -31,8 +41,7 @@ agent:
     temperature: 0.3
     max_tokens: 1500
 
-  tools:
-    - WebScraper
+  tools: []
 
   error_handling:
     retry_strategy: ExponentialBackoff

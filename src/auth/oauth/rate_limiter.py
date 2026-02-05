@@ -10,7 +10,7 @@ For high-scale production, consider using redis-based rate limiting
 with libraries like slowapi or limits.
 """
 from typing import Dict, Tuple, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from collections import defaultdict, deque
 import logging
 import threading
@@ -77,7 +77,7 @@ class SlidingWindowRateLimiter:
             RateLimitExceeded: If rate limit exceeded
         """
         with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             window_start = now - timedelta(seconds=window_seconds)
 
             # Get timestamp queue for this identifier
@@ -131,7 +131,7 @@ class SlidingWindowRateLimiter:
             (remaining_requests, reset_after_seconds) tuple
         """
         with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             window_start = now - timedelta(seconds=window_seconds)
 
             timestamps = self._windows[limit_type][identifier]
@@ -160,7 +160,7 @@ class SlidingWindowRateLimiter:
             older_than_seconds: Remove data older than this (default: 1 hour)
         """
         with self._lock:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             cutoff = now - timedelta(seconds=older_than_seconds)
 
             for limit_type in list(self._windows.keys()):

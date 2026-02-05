@@ -3,7 +3,7 @@
 Contains models for users and sessions used in the authentication system.
 """
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 
@@ -26,9 +26,9 @@ class User:
     oauth_subject: str = ""  # Provider's user ID
 
     # Timestamps
-    created_at: datetime = field(default_factory=datetime.utcnow)
-    updated_at: datetime = field(default_factory=datetime.utcnow)
-    last_login: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_login: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Status
     is_active: bool = True  # Account status
@@ -87,7 +87,7 @@ class Session:
 
     # Authentication metadata
     provider: str = "google"
-    authenticated_at: datetime = field(default_factory=datetime.utcnow)
+    authenticated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: Optional[datetime] = None
 
     # Security metadata
@@ -129,4 +129,4 @@ class Session:
         """Check if session has expired."""
         if not self.expires_at:
             return False
-        return datetime.utcnow() > self.expires_at
+        return datetime.now(timezone.utc) > self.expires_at

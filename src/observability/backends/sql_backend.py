@@ -832,6 +832,85 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         return counts
 
+    # ========== Extracted Query Methods ==========
+
+    def get_agent_execution(self, agent_id: str) -> Optional[AgentExecution]:
+        """Fetch a single agent execution record by ID.
+
+        Args:
+            agent_id: Agent execution ID
+
+        Returns:
+            AgentExecution or None if not found
+        """
+        session = self._get_or_create_session()
+        statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+        return session.exec(statement).first()
+
+    def aggregate_workflow_metrics(self, workflow_id: str) -> Dict[str, Any]:
+        """Aggregate metrics across all agents in a workflow.
+
+        Args:
+            workflow_id: Workflow execution ID
+
+        Returns:
+            Dict with total_llm_calls, total_tool_calls, total_tokens, total_cost_usd
+        """
+        session = self._get_or_create_session()
+        metrics_statement = select(
+            func.sum(AgentExecution.num_llm_calls).label('total_llm_calls'),  # type: ignore[arg-type]
+            func.sum(AgentExecution.num_tool_calls).label('total_tool_calls'),  # type: ignore[arg-type]
+            func.sum(AgentExecution.total_tokens).label('total_tokens'),  # type: ignore[arg-type]
+            func.sum(AgentExecution.estimated_cost_usd).label('total_cost_usd')  # type: ignore[arg-type]
+        ).join(
+            StageExecution,
+            AgentExecution.stage_execution_id == StageExecution.id
+        ).where(StageExecution.workflow_execution_id == workflow_id)
+
+        metrics = session.exec(metrics_statement).first()
+        if metrics:
+            return {
+                'total_llm_calls': int(metrics.total_llm_calls or 0),
+                'total_tool_calls': int(metrics.total_tool_calls or 0),
+                'total_tokens': int(metrics.total_tokens or 0),
+                'total_cost_usd': float(metrics.total_cost_usd or 0.0),
+            }
+        return {
+            'total_llm_calls': 0,
+            'total_tool_calls': 0,
+            'total_tokens': 0,
+            'total_cost_usd': 0.0,
+        }
+
+    def aggregate_stage_metrics(self, stage_id: str) -> Dict[str, int]:
+        """Aggregate agent metrics within a stage.
+
+        Args:
+            stage_id: Stage execution ID
+
+        Returns:
+            Dict with num_agents_executed, num_agents_succeeded, num_agents_failed
+        """
+        session = self._get_or_create_session()
+        metrics_statement = select(
+            func.count(AgentExecution.id).label('total'),  # type: ignore[arg-type]
+            func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
+            func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
+        ).where(AgentExecution.stage_execution_id == stage_id)
+
+        metrics = session.exec(metrics_statement).first()
+        if metrics:
+            return {
+                'num_agents_executed': int(metrics.total or 0),
+                'num_agents_succeeded': int(metrics.succeeded or 0),
+                'num_agents_failed': int(metrics.failed or 0),
+            }
+        return {
+            'num_agents_executed': 0,
+            'num_agents_succeeded': 0,
+            'num_agents_failed': 0,
+        }
+
     def get_stats(self) -> Dict[str, Any]:
         """Get backend statistics and health information."""
         with get_session() as session:

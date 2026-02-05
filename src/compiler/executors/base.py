@@ -5,12 +5,48 @@ plus the ParallelRunner abstraction for engine-agnostic parallel execution,
 and shared methods for synthesis, dialogue, and agent name extraction.
 """
 from abc import ABC, abstractmethod
-from typing import Callable, Dict, Any, List, Optional
+from typing import Callable, Dict, Any, List, Optional, TYPE_CHECKING
+from typing_extensions import TypedDict, NotRequired
 import uuid
 import time
 import logging
 
+if TYPE_CHECKING:
+    from src.observability.tracker import ExecutionTracker
+
 logger = logging.getLogger(__name__)
+
+
+class WorkflowStateDict(TypedDict, total=False):
+    """Type hints for the workflow state dictionary passed between executors.
+
+    All keys are optional (total=False) since different executors populate
+    different subsets of the state.
+    """
+
+    # Core workflow identity
+    workflow_id: str
+    current_stage: str
+
+    # Accumulated stage outputs: stage_name -> stage output dict
+    stage_outputs: Dict[str, Any]
+
+    # Observability
+    tracker: Optional["ExecutionTracker"]
+
+    # UI/display
+    show_details: bool
+    detail_console: Any  # Rich Console or None
+
+    # Quality gate retry tracking (parallel executor)
+    stage_retry_counts: Dict[str, int]
+
+    # Parallel executor internal state
+    agent_outputs: Dict[str, Any]
+    agent_statuses: Dict[str, Any]
+    agent_metrics: Dict[str, Any]
+    errors: Dict[str, Any]
+    stage_input: Dict[str, Any]
 
 
 class ParallelRunner(ABC):

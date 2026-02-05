@@ -6,7 +6,7 @@ don't corrupt internal dictionaries or indexes.
 
 import asyncio
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from src.auth.models import Session, User
 from src.auth.session import SessionStore, UserStore
@@ -107,7 +107,7 @@ class TestSessionStoreConcurrency:
                     user_id=user.user_id,
                     email=user.email,
                     name=user.name,
-                    expires_at=datetime.utcnow() - timedelta(seconds=10),
+                    expires_at=datetime.now(timezone.utc) - timedelta(seconds=10),
                 )
 
         # Also create 5 valid sessions
@@ -148,7 +148,7 @@ class TestSessionStoreConcurrency:
                 user_id=user.user_id,
                 email=user.email,
                 name=user.name,
-                expires_at=datetime.utcnow() - timedelta(seconds=10),
+                expires_at=datetime.now(timezone.utc) - timedelta(seconds=10),
             )
 
         result = await store.get_session(session.session_id)

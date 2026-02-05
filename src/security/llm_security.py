@@ -491,14 +491,19 @@ class OutputSanitizer:
 
 
 class RateLimiter:
-    """
-    Rate limit LLM calls per agent/workflow to prevent abuse.
+    """Rate limit LLM calls per agent/workflow to prevent abuse.
 
     Features:
     - Per-agent rate limiting
     - Per-workflow rate limiting
     - Sliding window algorithm
     - Burst protection
+    - Optional Redis backend for distributed rate limiting
+
+    For simpler single-tier rate limiting, see
+    :class:`~src.safety.token_bucket.TokenBucket` which provides a canonical
+    token bucket implementation. This class is specifically designed for
+    multi-tier LLM call limiting with optional Redis backend.
     """
 
     def __init__(

@@ -163,7 +163,9 @@ class ParallelStageExecutor(StageExecutor):
                     }
                 }
 
-            logger.info("Stage '%s' starting parallel execution with %d agent(s)", stage_name, len(agents))
+            prior_stages = list(state.get("stage_outputs", {}).keys())
+            input_info = f"prior stages: {prior_stages}" if prior_stages else "workflow inputs only"
+            logger.info("Stage '%s' starting parallel execution with %d agent(s) (%s)", stage_name, len(agents), input_info)
 
             show_details = state.get("show_details", False)
             detail_console = state.get("detail_console")

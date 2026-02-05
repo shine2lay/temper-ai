@@ -12,7 +12,7 @@ Security Features:
 - No memory exhaustion risk (Redis TTL handles cleanup)
 """
 from typing import Dict, Any, Optional
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
 import asyncio
 import json
 import logging
@@ -111,7 +111,7 @@ class InMemoryStateStore(StateStore):
             data_with_expiry = {
                 **data,
                 'expires_at': (
-                    datetime.utcnow() + timedelta(seconds=ttl_seconds)
+                    datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
                 ).isoformat()
             }
             self._store[state] = data_with_expiry
@@ -131,7 +131,7 @@ class InMemoryStateStore(StateStore):
 
         # Check expiration
         expires_at = datetime.fromisoformat(data['expires_at'])
-        if datetime.utcnow() > expires_at:
+        if datetime.now(timezone.utc) > expires_at:
             return None
 
         # Remove expires_at before returning
@@ -154,7 +154,7 @@ class InMemoryStateStore(StateStore):
         Returns:
             Number of states cleaned up
         """
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expired_keys = [
             state for state, data in self._store.items()
             if now > datetime.fromisoformat(data['expires_at'])

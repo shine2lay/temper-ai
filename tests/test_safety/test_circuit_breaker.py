@@ -145,13 +145,10 @@ class TestCircuitBreaker:
         breaker.record_failure()
         assert breaker.state == CircuitBreakerState.OPEN
 
-        # Mock time to advance past timeout (no flaky sleep)
-        with patch('src.safety.circuit_breaker.datetime') as mock_datetime:
-            # Advance time 1.1 seconds past when breaker opened
-            future_time = breaker._opened_at + timedelta(seconds=1.1)
-            mock_datetime.now.return_value = future_time
-            mock_datetime.UTC = UTC  # Pass through UTC constant
-
+        # Mock time.time to advance past timeout (no flaky sleep)
+        original_time = breaker._last_failure_time
+        with patch('src.core.circuit_breaker.time') as mock_time:
+            mock_time.time.return_value = original_time + 1.1
             # Check state (should transition to HALF_OPEN)
             assert breaker.state == CircuitBreakerState.HALF_OPEN
             assert breaker.can_execute() is True
@@ -168,12 +165,10 @@ class TestCircuitBreaker:
         # Open circuit
         breaker.record_failure()
 
-        # Mock time to advance past timeout (no flaky sleep)
-        with patch('src.safety.circuit_breaker.datetime') as mock_datetime:
-            future_time = breaker._opened_at + timedelta(seconds=1.1)
-            mock_datetime.now.return_value = future_time
-            mock_datetime.UTC = UTC
-
+        # Mock time.time to advance past timeout (no flaky sleep)
+        original_time = breaker._last_failure_time
+        with patch('src.core.circuit_breaker.time') as mock_time:
+            mock_time.time.return_value = original_time + 1.1
             # Now in HALF_OPEN
             assert breaker.state == CircuitBreakerState.HALF_OPEN
 
@@ -196,12 +191,10 @@ class TestCircuitBreaker:
         # Open circuit
         breaker.record_failure()
 
-        # Mock time to advance past timeout (no flaky sleep)
-        with patch('src.safety.circuit_breaker.datetime') as mock_datetime:
-            future_time = breaker._opened_at + timedelta(seconds=1.1)
-            mock_datetime.now.return_value = future_time
-            mock_datetime.UTC = UTC
-
+        # Mock time.time to advance past timeout (no flaky sleep)
+        original_time = breaker._last_failure_time
+        with patch('src.core.circuit_breaker.time') as mock_time:
+            mock_time.time.return_value = original_time + 1.1
             # Now in HALF_OPEN
             assert breaker.state == CircuitBreakerState.HALF_OPEN
 

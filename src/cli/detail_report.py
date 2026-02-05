@@ -2,33 +2,110 @@
 
 Renders per-stage panels showing input context, agent outputs,
 synthesis results, and final stage output using Rich formatting.
+
+All LLM/tool-generated content is rendered via plain Text() objects
+to prevent Rich markup injection. Only framework labels use
+Text.from_markup().
 """
-from typing import Any
+import json
+from typing import Any, List
 
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+# Infrastructure keys filtered from input display
+_INFRA_KEYS = frozenset({
+    "tracker", "config_loader", "tool_registry", "workflow_id",
+    "tool_executor", "show_details", "detail_console", "visualizer",
+})
 
-def _truncate(text: str, max_len: int) -> str:
-    """Truncate text to max_len, adding ellipsis if needed."""
-    if text is None:
-        return ""
-    text = str(text)
-    if len(text) <= max_len:
-        return text
-    return text[:max_len - 3] + "..."
+
+def _tool_calls_count(tool_calls: Any) -> int:
+    """Get tool call count from either list (new) or int (legacy)."""
+    if isinstance(tool_calls, list):
+        return len(tool_calls)
+    if isinstance(tool_calls, int):
+        return tool_calls
+    return 0
+
+
+def _tool_calls_list(tool_calls: Any) -> List[dict]:
+    """Get tool calls as a list, returning empty list for legacy int format."""
+    if isinstance(tool_calls, list):
+        return tool_calls
+    return []
+
+
+def _render_agent_detail(agent_name: str, output_data: dict) -> List[Any]:
+    """Render full detail section for a single agent.
+
+    Returns a list of Rich renderables.
+    """
+    renderables: list[Any] = []
+
+    # Header
+    renderables.append(Text(""))
+    renderables.append(Text.from_markup(f"  [bold cyan]{agent_name}[/bold cyan]"))
+
+    # Full output
+    output_text = str(output_data.get("output", "") or "")
+    if output_text:
+        renderables.append(Text.from_markup("  [dim]Output:[/dim]"))
+        renderables.append(Text(f"  {output_text}"))
+
+    # Full reasoning
+    reasoning = str(output_data.get("reasoning", "") or "")
+    if reasoning:
+        renderables.append(Text.from_markup("  [dim]Reasoning:[/dim]"))
+        renderables.append(Text(f"  {reasoning}"))
+
+    # Tool calls detail
+    tc_list = _tool_calls_list(output_data.get("tool_calls", []))
+    if tc_list:
+        renderables.append(Text.from_markup(f"  [dim]Tool Calls ({len(tc_list)}):[/dim]"))
+        for i, tc in enumerate(tc_list, 1):
+            tc_name = tc.get("name", "unknown")
+            tc_success = tc.get("success", None)
+            status_str = "ok" if tc_success else "error" if tc_success is False else "?"
+            line = Text("    ")
+            line.append(f"{i}. {tc_name}", style="bold")
+            line.append(f" [{status_str}]")
+            renderables.append(line)
+
+            # Parameters
+            tc_params = tc.get("parameters", tc.get("arguments", {}))
+            if tc_params:
+                try:
+                    params_str = json.dumps(tc_params, indent=4, default=str)
+                except (TypeError, ValueError):
+                    params_str = str(tc_params)
+                renderables.append(Text.from_markup("    [dim]Parameters:[/dim]"))
+                renderables.append(Text(f"      {params_str}"))
+
+            # Result or error
+            if tc.get("result") is not None:
+                result_str = str(tc["result"])
+                renderables.append(Text.from_markup("    [dim]Result:[/dim]"))
+                renderables.append(Text(f"      {result_str}"))
+            if tc.get("error"):
+                error_str = str(tc["error"])
+                renderables.append(Text.from_markup("    [dim]Error:[/dim]"))
+                renderables.append(Text(f"      {error_str}"))
+
+    return renderables
 
 
 def print_detailed_report(result: dict, console: Console) -> None:
     """Print a detailed post-execution report.
 
     Iterates stage_outputs and renders per-stage panels with:
-    - Input context (keys available from prior stages)
-    - Agent outputs table (name, output preview, confidence, tokens, cost)
-    - Synthesis result (method, confidence, votes)
-    - Stage output (final output preview)
+    - Input context (prior stage names or filtered workflow input keys)
+    - Agent summary table (name, output preview, confidence, tokens, cost, tool count)
+    - Per-agent detail sections (full output, reasoning, tool calls)
+    - Synthesis section (method, confidence, votes)
+    - Stage output (full untruncated final output)
 
     Args:
         result: Workflow execution result dict
@@ -47,17 +124,21 @@ def print_detailed_report(result: dict, console: Console) -> None:
         if not isinstance(stage_data, dict):
             continue
 
-        lines: list[str] = []
+        renderables: list[Any] = []
 
-        # Input context: show what keys were available from prior stages
+        # ── Input context ──
         prior_stages = stage_names[:idx]
         if prior_stages:
-            lines.append(f"[bold]Input:[/bold] {', '.join(prior_stages)}")
+            renderables.append(Text.from_markup(
+                f"[bold]Input:[/bold] {', '.join(prior_stages)}"
+            ))
         else:
-            lines.append("[bold]Input:[/bold] (workflow inputs)")
-        lines.append("")
+            renderables.append(Text.from_markup(
+                "[bold]Input:[/bold] (workflow inputs)"
+            ))
+        renderables.append(Text(""))
 
-        # Agent outputs table
+        # ── Agent summary table ──
         agent_outputs = stage_data.get("agent_outputs", {})
         if agent_outputs:
             table = Table(
@@ -67,21 +148,23 @@ def print_detailed_report(result: dict, console: Console) -> None:
                 padding=(0, 1),
             )
             table.add_column("Agent", style="cyan", max_width=20)
-            table.add_column("Output", ratio=3)
-            table.add_column("Confidence", justify="right", max_width=12)
+            table.add_column("Output Preview", ratio=3)
+            table.add_column("Conf", justify="right", max_width=8)
             table.add_column("Tokens", justify="right", max_width=10)
             table.add_column("Cost", justify="right", max_width=10)
+            table.add_column("Tools", justify="right", max_width=8)
 
             for agent_name, output_data in agent_outputs.items():
                 if not isinstance(output_data, dict):
                     continue
-                # Skip internal sentinel keys
                 if agent_name.startswith("__") and agent_name.endswith("__"):
                     continue
 
-                output_preview = _truncate(
-                    output_data.get("output", ""), 500
-                )
+                # Output preview (200 chars)
+                raw_output = str(output_data.get("output", "") or "")
+                preview = raw_output[:200] + "..." if len(raw_output) > 200 else raw_output
+                output_cell = Text(preview)
+
                 confidence = output_data.get("confidence")
                 conf_str = f"{confidence:.2f}" if confidence is not None else "-"
                 tokens = output_data.get("tokens")
@@ -89,37 +172,34 @@ def print_detailed_report(result: dict, console: Console) -> None:
                 cost = output_data.get("cost_usd") or output_data.get("cost")
                 cost_str = f"${cost:.4f}" if cost else "-"
 
+                tc = output_data.get("tool_calls", 0)
+                tc_count = _tool_calls_count(tc)
+                tc_str = str(tc_count) if tc_count else "-"
+
                 table.add_row(
                     agent_name,
-                    output_preview,
+                    output_cell,
                     conf_str,
                     tokens_str,
                     cost_str,
+                    tc_str,
                 )
 
-            lines.append("[bold]Agents:[/bold]")
+            renderables.append(Text.from_markup("[bold]Agents:[/bold]"))
+            renderables.append(table)
 
-        # Agent reasoning (shown below table)
-        reasoning_lines: list[Text] = []
+        # ── Per-agent detail sections ──
         for agent_name, output_data in agent_outputs.items():
             if not isinstance(output_data, dict):
                 continue
             if agent_name.startswith("__") and agent_name.endswith("__"):
                 continue
-            reasoning = output_data.get("reasoning", "")
-            if reasoning:
-                # Use plain Text to avoid Rich markup injection from LLM output
-                label = Text.from_markup(f"  [dim]{agent_name}:[/dim] ")
-                content = Text(_truncate(str(reasoning), 300))
-                combined = Text()
-                combined.append_text(label)
-                combined.append_text(content)
-                reasoning_lines.append(combined)
+            renderables.extend(_render_agent_detail(agent_name, output_data))
 
-        # Synthesis result
+        # ── Synthesis section ──
         synthesis = stage_data.get("synthesis_result") or stage_data.get("synthesis")
-        synthesis_lines: list[str] = []
         if synthesis and isinstance(synthesis, dict):
+            renderables.append(Text(""))
             method = synthesis.get("method", "")
             conf = synthesis.get("confidence")
             votes = synthesis.get("votes", {})
@@ -130,39 +210,16 @@ def print_detailed_report(result: dict, console: Console) -> None:
                 parts.append(f"confidence={conf:.2f}")
             if votes:
                 parts.append(f"votes={votes}")
-            synthesis_lines.append(
+            renderables.append(Text.from_markup(
                 f"[bold]Synthesis:[/bold] {', '.join(parts)}"
-            )
+            ))
 
-        # Stage final output
+        # ── Stage output ──
         final_output = stage_data.get("output") or stage_data.get("decision", "")
-
-        # Build panel content as a list of renderables
-        renderables: list[Any] = [Text.from_markup("\n".join(lines))]
-
-        if agent_outputs:
-            renderables.append(table)
-
-        if reasoning_lines:
-            renderables.append(Text(""))
-            renderables.append(
-                Text.from_markup("[bold]Reasoning:[/bold]")
-            )
-            for rl in reasoning_lines:
-                renderables.append(rl)
-
-        if synthesis_lines:
-            renderables.append(Text(""))
-            for sl in synthesis_lines:
-                renderables.append(Text.from_markup(sl))
-
         if final_output:
             renderables.append(Text(""))
-            renderables.append(
-                Text.from_markup("[bold]Stage Output:[/bold]")
-            )
-            # Use plain Text for agent-generated content
-            renderables.append(Text(_truncate(str(final_output), 500)))
+            renderables.append(Text.from_markup("[bold]Stage Output:[/bold]"))
+            renderables.append(Text(str(final_output)))
 
         panel = Panel(
             Group(*renderables),

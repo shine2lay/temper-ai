@@ -14,10 +14,13 @@ from src.compiler.config_loader import (
 )
 from src.compiler.domain_state import (
     WorkflowDomainState,
-    ExecutionContext,
+    InfrastructureContext,
     create_initial_domain_state,
     merge_domain_states,
 )
+
+# Backward-compatible alias
+ExecutionContext = InfrastructureContext
 from src.compiler.checkpoint_manager import (
     CheckpointManager,
     CheckpointStrategy,
@@ -36,7 +39,8 @@ from src.compiler.checkpoint_backends import (
 # Import directly: from src.compiler.langgraph_compiler import LangGraphCompiler
 
 # Note: WorkflowState in src/compiler/state.py is deprecated.
-# Use WorkflowDomainState + ExecutionContext from src/compiler/domain_state.py.
+# Use WorkflowDomainState + InfrastructureContext from src/compiler/domain_state.py.
+# ExecutionContext is a backward-compatible alias for InfrastructureContext.
 
 __all__ = [
     "ConfigLoader",

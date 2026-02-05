@@ -52,7 +52,7 @@ class InMemoryStorage:
 @pytest.fixture
 def mock_httpx_client():
     """Create a mock httpx.Client for testing."""
-    with patch('src.agents.llm_providers.httpx.Client') as mock_client_class:
+    with patch('src.agents.llm.base.httpx.Client') as mock_client_class:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
         yield mock_client

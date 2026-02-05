@@ -5,6 +5,7 @@ from src.agents.standard_agent import StandardAgent, validate_input_data
 from src.agents.base_agent import AgentResponse, ExecutionContext
 from src.agents.llm_providers import LLMResponse, LLMError
 from src.tools.base import ToolResult
+from src.tools.executor import ToolExecutor
 
 
 # Tests for validate_input_data() helper function
@@ -161,7 +162,8 @@ def test_standard_agent_execute_with_tool_calls(minimal_agent_config):
         agent.llm.complete.side_effect = [tool_call_response, final_response]
 
         # Create mock tool_executor that delegates to the tool registry
-        mock_executor = Mock()
+        mock_executor = Mock(spec=ToolExecutor)
+        mock_executor.policy_engine = None
         mock_executor.execute.return_value = ToolResult(success=True, result="42")
 
         # Execute
@@ -208,7 +210,8 @@ def test_standard_agent_execute_tool_not_found(minimal_agent_config):
         agent.llm.complete.side_effect = [tool_call_response, final_response]
 
         # Create mock tool_executor that returns "not found" for unknown tools
-        mock_executor = Mock()
+        mock_executor = Mock(spec=ToolExecutor)
+        mock_executor.policy_engine = None
         mock_executor.execute.return_value = ToolResult(
             success=False, result=None, error="Tool 'nonexistent_tool' not found"
         )

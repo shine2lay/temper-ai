@@ -58,23 +58,21 @@ class TestRateLimiter:
         wait_time = limiter.wait_time()
         assert 0 < wait_time <= 60
 
-    def test_prevents_unbounded_memory_growth(self):
-        """Test that old requests are cleaned up to prevent memory leak."""
+    def test_tokens_refill_after_window(self):
+        """Test that rate limiter allows requests again after window expires."""
         limiter = RateLimiter(max_requests=10, time_window=1)  # 1 second window
 
-        # Record many requests
-        for _ in range(100):
+        # Exhaust all tokens
+        for _ in range(10):
             limiter.record_request()
-            time.sleep(0.01)  # Small delay
 
-        # Wait for window to expire
+        assert limiter.can_proceed() is False
+
+        # Wait for window to expire (tokens should refill)
         time.sleep(1.1)
 
-        # Record one more request - should clean up old entries
-        limiter.record_request()
-
-        # Should only have recent request, not all 101
-        assert len(limiter.requests) == 1
+        # Should be able to proceed again
+        assert limiter.can_proceed() is True
 
 
 class TestWebScraperMetadata:

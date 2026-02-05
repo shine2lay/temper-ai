@@ -25,7 +25,7 @@ import uuid
 from src.auth.oauth.service import OAuthService, OAuthError, OAuthStateError, OAuthProviderError
 from src.auth.oauth.config import OAuthConfig
 from src.auth.oauth.rate_limiter import RateLimitExceeded
-from src.auth.session import SessionStore, UserStore
+from src.auth.session import SessionStore, SessionStoreProtocol, UserStore
 from src.auth.models import User, Session
 
 logger = logging.getLogger(__name__)
@@ -65,7 +65,7 @@ class OAuthRouteHandlers:
     def __init__(
         self,
         oauth_service: OAuthService,
-        session_store: Optional[SessionStore] = None,
+        session_store: Optional[SessionStoreProtocol] = None,
         user_store: Optional[UserStore] = None,
         allowed_redirect_urls: Optional[list] = None,
     ):
@@ -172,6 +172,8 @@ class OAuthRouteHandlers:
             "X-Content-Type-Options": "nosniff",
             # XSS protection (legacy browsers)
             "X-XSS-Protection": "1; mode=block",
+            # Content Security Policy
+            "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
             # Cache control (don't cache OAuth responses)
             "Cache-Control": "no-store, no-cache, must-revalidate, private",
             "Pragma": "no-cache",

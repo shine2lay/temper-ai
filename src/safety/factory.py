@@ -6,17 +6,40 @@ including ActionPolicyEngine, ApprovalWorkflow, RollbackManager, and ToolExecuto
 import os
 import yaml
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Type
 from pathlib import Path
 
 from src.safety.policy_registry import PolicyRegistry
 from src.safety.action_policy_engine import ActionPolicyEngine
 from src.safety.approval import ApprovalWorkflow, NoOpApprover
 from src.safety.rollback import RollbackManager
+from src.safety.base import BaseSafetyPolicy
+from src.safety.secret_detection import SecretDetectionPolicy
+from src.safety.file_access import FileAccessPolicy
+from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+from src.safety.blast_radius import BlastRadiusPolicy
+from src.safety.rate_limiter import RateLimiterPolicy
+from src.safety.config_change_policy import ConfigChangePolicy
+from src.safety.policies.rate_limit_policy import RateLimitPolicy
+from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
 from src.tools.executor import ToolExecutor
 from src.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+
+# Mapping from YAML config policy names to their implementation classes.
+# Each class accepts an optional config dict in its constructor.
+BUILTIN_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {
+    "secret_detection_policy": SecretDetectionPolicy,
+    "file_access_policy": FileAccessPolicy,
+    "forbidden_ops_policy": ForbiddenOperationsPolicy,
+    "blast_radius_policy": BlastRadiusPolicy,
+    "rate_limiter_policy": RateLimiterPolicy,
+    "config_change_policy": ConfigChangePolicy,
+    "rate_limit_policy": RateLimitPolicy,
+    "resource_limit_policy": ResourceLimitPolicy,
+}
 
 
 def load_safety_config(config_path: Optional[str] = None, environment: str = "development") -> Dict[str, Any]:
@@ -81,24 +104,78 @@ def _merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, 
 def create_policy_registry(config: Dict[str, Any]) -> PolicyRegistry:
     """Create and populate PolicyRegistry from config.
 
+    Reads ``policy_mappings``, ``global_policies``, and ``policy_config``
+    from the safety configuration and registers all available built-in
+    policies.  Unknown policy names (e.g. policies that haven't been
+    implemented yet) are logged as warnings and skipped.
+
     Args:
-        config: Safety configuration dict
+        config: Safety configuration dict (from ``load_safety_config()``)
 
     Returns:
-        PolicyRegistry with registered policies
-
-    Note:
-        Currently creates empty registry. Full policy loading from config
-        will be implemented in future iteration. Policies can be registered
-        manually after creation.
+        PolicyRegistry with built-in policies registered
     """
     registry = PolicyRegistry()
 
-    # TODO: Load and register policies from config['policy_mappings']
-    # For now, return empty registry - policies can be registered manually
-    # or in a future enhancement
+    policy_mappings: Dict[str, list] = config.get("policy_mappings", {})
+    global_policy_names: list = config.get("global_policies", [])
+    policy_configs: Dict[str, Any] = config.get("policy_config", {})
 
-    logger.info("Created PolicyRegistry (empty - policies can be registered manually)")
+    # Collect all unique policy names referenced in the config, together
+    # with the action types they should be registered for.
+    # Key: policy config name  →  Value: set of action types (empty = global)
+    policy_action_map: Dict[str, set] = {}
+
+    for action_type, policy_names in policy_mappings.items():
+        for pname in policy_names:
+            policy_action_map.setdefault(pname, set()).add(action_type)
+
+    for pname in global_policy_names:
+        # None sentinel will be handled below to register as global
+        policy_action_map.setdefault(pname, set())
+
+    # Instantiate and register each policy
+    for pname, action_types in policy_action_map.items():
+        policy_cls = BUILTIN_POLICIES.get(pname)
+        if policy_cls is None:
+            logger.warning(
+                "Policy '%s' referenced in config but no built-in implementation found — skipping",
+                pname,
+            )
+            continue
+
+        # Build per-policy config.  BaseSafetyPolicy validates that values
+        # are primitives (no nested dicts), so we filter out nested dicts.
+        # Policies fall back to their built-in defaults for any omitted keys.
+        raw_pcfg = policy_configs.get(pname, {})
+        pcfg = {k: v for k, v in raw_pcfg.items() if not isinstance(v, dict)}
+
+        try:
+            policy_instance = policy_cls(config=pcfg)
+        except Exception:
+            logger.exception("Failed to instantiate policy '%s' — skipping", pname)
+            continue
+
+        # Determine registration mode
+        is_global = pname in global_policy_names
+        if is_global:
+            # Register as global (applies to all action types)
+            registry.register_policy(policy_instance, action_types=None)
+            logger.debug("Registered global policy: %s", pname)
+        else:
+            registry.register_policy(policy_instance, action_types=list(action_types))
+            logger.debug(
+                "Registered policy '%s' for action types: %s",
+                pname,
+                sorted(action_types),
+            )
+
+    logger.info(
+        "Created PolicyRegistry with %d policies (%d global, %d action-specific)",
+        registry.policy_count(),
+        len([p for p in global_policy_names if p in BUILTIN_POLICIES]),
+        registry.policy_count() - len([p for p in global_policy_names if p in BUILTIN_POLICIES]),
+    )
     return registry
 
 

@@ -124,9 +124,24 @@ class TestBasicValidation:
     """Test basic action validation."""
 
     @pytest.mark.asyncio
-    async def test_no_policies_allows_action(self, engine, context):
-        """Test that action is allowed when no policies registered."""
+    async def test_no_policies_denies_action_by_default(self, engine, context):
+        """Test that action is denied when no policies registered (fail-closed)."""
         result = await engine.validate_action(
+            action={"command": "test"},
+            context=context
+        )
+
+        assert result.allowed is False
+        assert len(result.violations) == 0
+        assert len(result.policies_executed) == 0
+        assert result.metadata['reason'] == 'no_policies_registered'
+        assert result.metadata['mode'] == 'fail_closed'
+
+    @pytest.mark.asyncio
+    async def test_no_policies_allows_action_when_fail_open(self, registry, context):
+        """Test that action is allowed with fail_open=True when no policies registered."""
+        fail_open_engine = ActionPolicyEngine(registry, config={'fail_open': True})
+        result = await fail_open_engine.validate_action(
             action={"command": "test"},
             context=context
         )
@@ -135,6 +150,7 @@ class TestBasicValidation:
         assert len(result.violations) == 0
         assert len(result.policies_executed) == 0
         assert result.metadata['reason'] == 'no_policies_registered'
+        assert result.metadata['mode'] == 'fail_open'
 
     @pytest.mark.asyncio
     async def test_policy_with_no_violations_allows_action(self, registry, engine, context):

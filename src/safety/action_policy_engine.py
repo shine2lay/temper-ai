@@ -146,6 +146,9 @@ class ActionPolicyEngine:
         self.enable_caching = self.config.get('enable_caching', True)
         self.short_circuit_critical = self.config.get('short_circuit_critical', True)
         self.log_violations = self.config.get('log_violations', True)
+        # SECURITY: Default to fail-closed when no policies match.
+        # Set fail_open=True only for development/testing.
+        self.fail_open = self.config.get('fail_open', False)
 
         # Policy result cache: cache_key -> (result, timestamp)
         self._cache: Dict[str, Tuple[ValidationResult, float]] = {}
@@ -198,13 +201,28 @@ class ActionPolicyEngine:
         policies = self.registry.get_policies_for_action(context.action_type)
 
         if not policies:
-            # No policies for this action type - allow by default
+            if self.fail_open:
+                # Explicit opt-in: allow when no policies registered (dev/test only)
+                return EnforcementResult(
+                    allowed=True,
+                    violations=[],
+                    policies_executed=[],
+                    execution_time_ms=0.0,
+                    metadata={'reason': 'no_policies_registered', 'mode': 'fail_open'},
+                    cache_hit=False
+                )
+            # SECURITY: Fail-closed — deny action when no policies can validate it
+            logger.warning(
+                "No policies registered for action type '%s' — denying action (fail-closed). "
+                "Register policies or set fail_open=True for development.",
+                context.action_type,
+            )
             return EnforcementResult(
-                allowed=True,
+                allowed=False,
                 violations=[],
                 policies_executed=[],
                 execution_time_ms=0.0,
-                metadata={'reason': 'no_policies_registered'},
+                metadata={'reason': 'no_policies_registered', 'mode': 'fail_closed'},
                 cache_hit=False
             )
 

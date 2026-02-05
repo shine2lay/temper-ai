@@ -1,0 +1,153 @@
+"""Merit score service for agent reputation tracking.
+
+Handles agent merit score computation including Bayesian updates,
+exponential moving averages, and time-windowed success rates.
+This is business logic extracted from ExecutionTracker.
+"""
+import uuid
+import logging
+from datetime import datetime, timedelta
+from typing import Any, Optional
+
+from src.observability.datetime_utils import utcnow
+
+logger = logging.getLogger(__name__)
+
+
+class MeritScoreService:
+    """Service for updating agent merit scores based on decision outcomes.
+
+    Manages cumulative and time-windowed metrics for agent reputation tracking.
+    Requires SQL session access for persistence.
+
+    Usage:
+        service = MeritScoreService()
+        service.update(session, agent_name="researcher", domain="analysis",
+                       decision_outcome="success", confidence=0.85)
+    """
+
+    def update(
+        self,
+        session: Any,
+        agent_name: str,
+        domain: str,
+        decision_outcome: str,
+        confidence: Optional[float] = None
+    ) -> None:
+        """Update agent merit score based on decision outcome.
+
+        Args:
+            session: Database session for persistence
+            agent_name: Name of the agent
+            domain: Domain of expertise
+            decision_outcome: Outcome ("success", "failure", "neutral", "mixed")
+            confidence: Confidence score (0.0-1.0)
+        """
+        from src.observability.models import AgentMeritScore
+        from sqlmodel import select
+
+        statement = select(AgentMeritScore).where(
+            AgentMeritScore.agent_name == agent_name,
+            AgentMeritScore.domain == domain
+        )
+        merit_score = session.exec(statement).first()
+
+        if not merit_score:
+            merit_score = AgentMeritScore(
+                id=f"merit-{uuid.uuid4().hex[:12]}",
+                agent_name=agent_name,
+                domain=domain,
+                total_decisions=0,
+                successful_decisions=0,
+                failed_decisions=0,
+                overridden_decisions=0,
+                first_decision_date=utcnow(),
+                last_decision_date=utcnow(),
+                last_updated=utcnow()
+            )
+            session.add(merit_score)
+
+        # Update decision counts
+        merit_score.total_decisions += 1
+        merit_score.last_decision_date = utcnow()
+        merit_score.last_updated = utcnow()
+
+        if decision_outcome == "success":
+            merit_score.successful_decisions += 1
+        elif decision_outcome == "failure":
+            merit_score.failed_decisions += 1
+        elif decision_outcome == "mixed":
+            merit_score.successful_decisions += 0.5
+            merit_score.failed_decisions += 0.5
+
+        # Update cumulative metrics
+        if merit_score.total_decisions > 0:
+            merit_score.success_rate = merit_score.successful_decisions / merit_score.total_decisions
+
+        # Update average confidence (exponential moving average, alpha=0.1)
+        if confidence is not None:
+            if merit_score.average_confidence is None:
+                merit_score.average_confidence = confidence
+            else:
+                merit_score.average_confidence = 0.9 * merit_score.average_confidence + 0.1 * confidence
+
+        # Compute expertise score (weighted: 70% success rate, 30% confidence)
+        if merit_score.success_rate is not None:
+            confidence_component = merit_score.average_confidence or 0.5
+            merit_score.expertise_score = 0.7 * merit_score.success_rate + 0.3 * confidence_component
+
+        # Update time-windowed metrics
+        self._update_time_windowed_metrics(session, merit_score, agent_name)
+
+        session.commit()
+
+        logger.info(
+            f"Updated merit score for {agent_name} in {domain}: "
+            f"total={merit_score.total_decisions}, "
+            f"success_rate={merit_score.success_rate:.3f if merit_score.success_rate else 0:.3f}, "
+            f"expertise={merit_score.expertise_score:.3f if merit_score.expertise_score else 0:.3f}"
+        )
+
+    def _update_time_windowed_metrics(
+        self,
+        session: Any,
+        merit_score: Any,
+        agent_name: str
+    ) -> None:
+        """Update 30-day and 90-day success rates from DecisionOutcome records."""
+        try:
+            from src.observability.models import DecisionOutcome
+            from sqlalchemy import func
+            from sqlmodel import select
+
+            thirty_days_ago = utcnow() - timedelta(days=30)
+            ninety_days_ago = utcnow() - timedelta(days=90)
+
+            # 30-day success rate
+            recent_statement = select(
+                func.count(DecisionOutcome.id).label('total'),
+                func.sum(func.case((DecisionOutcome.outcome == 'success', 1), else_=0)).label('successful')
+            ).where(
+                DecisionOutcome.decision_data['agent_name'].astext == agent_name,
+                DecisionOutcome.validation_timestamp >= thirty_days_ago
+            )
+
+            recent_result = session.exec(recent_statement).first()
+            if recent_result and recent_result.total > 0:
+                merit_score.last_30_days_success_rate = recent_result.successful / recent_result.total
+
+            # 90-day success rate
+            ninety_statement = select(
+                func.count(DecisionOutcome.id).label('total'),
+                func.sum(func.case((DecisionOutcome.outcome == 'success', 1), else_=0)).label('successful')
+            ).where(
+                DecisionOutcome.decision_data['agent_name'].astext == agent_name,
+                DecisionOutcome.validation_timestamp >= ninety_days_ago
+            )
+
+            ninety_result = session.exec(ninety_statement).first()
+            if ninety_result and ninety_result.total > 0:
+                merit_score.last_90_days_success_rate = ninety_result.successful / ninety_result.total
+
+        except Exception as e:
+            logger.debug(f"Could not compute time-windowed metrics: {e}")

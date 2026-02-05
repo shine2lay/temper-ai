@@ -8,21 +8,17 @@ import uuid
 import logging
 import threading
 import contextvars
-from datetime import datetime, timezone
+from datetime import datetime
 from contextlib import contextmanager
 from typing import Optional, Dict, Any, List, Generator
 
 from src.core.context import ExecutionContext
 from src.observability.backend import ObservabilityBackend
+from src.observability.datetime_utils import utcnow
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
 from src.utils.config_helpers import sanitize_config_for_display
 
 logger = logging.getLogger(__name__)
-
-
-def utcnow() -> datetime:
-    """Get current UTC time with timezone awareness."""
-    return datetime.now(timezone.utc)
 
 
 class ExecutionTracker:

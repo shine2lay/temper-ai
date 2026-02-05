@@ -5,13 +5,10 @@ Contains models for agent configuration, performance profiles, improvement propo
 experiments, and deployment tracking.
 """
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Dict, Any, List
 
-
-def utcnow() -> datetime:
-    """Get current UTC time with timezone awareness."""
-    return datetime.now(timezone.utc)
+from src.observability.datetime_utils import utcnow
 
 
 @dataclass

@@ -8,16 +8,13 @@ Models:
 - ExperimentResult: Statistical analysis results
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Dict, Any, List, Literal
 from enum import Enum
 from sqlmodel import Field, SQLModel, Relationship, Column, Index
 from sqlalchemy import JSON
 
-
-def utcnow() -> datetime:
-    """Get current UTC time with timezone awareness."""
-    return datetime.now(timezone.utc)
+from src.observability.datetime_utils import utcnow
 
 
 # Enum types for type safety

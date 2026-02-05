@@ -4,15 +4,12 @@ Observability database models.
 Full schema for tracking workflow, stage, agent, LLM, tool executions
 and learning/merit systems.
 """
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Dict, Any, List
 from sqlmodel import Field, SQLModel, Relationship, Column
 from sqlalchemy import Index, JSON, ForeignKey, String
 
-
-def utcnow() -> datetime:
-    """Get current UTC time with timezone awareness."""
-    return datetime.now(timezone.utc)
+from src.observability.datetime_utils import utcnow
 
 
 class WorkflowExecution(SQLModel, table=True):

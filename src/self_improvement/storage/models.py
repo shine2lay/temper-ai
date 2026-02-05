@@ -4,15 +4,12 @@ M5 Self-Improvement System Database Models.
 This module defines database schema for the M5 self-improvement system,
 including custom metrics storage and agent configuration history.
 """
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, Dict, Any
 from sqlmodel import Field, SQLModel, Column
 from sqlalchemy import JSON, Index
 
-
-def utcnow() -> datetime:
-    """Get current UTC time with timezone awareness."""
-    return datetime.now(timezone.utc)
+from src.observability.datetime_utils import utcnow
 
 
 class CustomMetric(SQLModel, table=True):

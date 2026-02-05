@@ -1,16 +1,13 @@
 """Parallel stage executor.
 
-Executes multiple agents concurrently using nested LangGraph subgraphs.
+Executes multiple agents concurrently via a pluggable ParallelRunner.
 """
 from typing import Dict, Any, Optional, List, Callable, cast
-from typing_extensions import TypedDict as TD, Annotated
 import uuid
 import time
 import logging
 
-from langgraph.graph import StateGraph, START, END
-
-from src.compiler.executors.base import StageExecutor
+from src.compiler.executors.base import StageExecutor, ParallelRunner
 from src.compiler.utils import extract_agent_name
 from src.agents.agent_factory import AgentFactory
 from src.core.context import ExecutionContext
@@ -27,15 +24,26 @@ class ParallelStageExecutor(StageExecutor):
     collects outputs, and delegates to synthesis coordinator.
     """
 
-    def __init__(self, synthesis_coordinator: Optional[Any] = None, quality_gate_validator: Optional[Any] = None) -> None:
+    def __init__(
+        self,
+        synthesis_coordinator: Optional[Any] = None,
+        quality_gate_validator: Optional[Any] = None,
+        parallel_runner: Optional[ParallelRunner] = None,
+    ) -> None:
         """Initialize parallel executor.
 
         Args:
             synthesis_coordinator: Coordinator for synthesizing agent outputs
             quality_gate_validator: Validator for quality gates
+            parallel_runner: Runner for parallel node execution (defaults to
+                LangGraphParallelRunner)
         """
         self.synthesis_coordinator = synthesis_coordinator
         self.quality_gate_validator = quality_gate_validator
+        if parallel_runner is None:
+            from src.compiler.executors.langgraph_runner import LangGraphParallelRunner
+            parallel_runner = LangGraphParallelRunner()
+        self.parallel_runner = parallel_runner
 
     def execute_stage(
         self,
@@ -66,46 +74,17 @@ class ParallelStageExecutor(StageExecutor):
         Raises:
             RuntimeError: If stage execution fails
         """
-        # Custom reducer for merging dict updates
-        def merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
-            """Merge two dicts for concurrent updates.
-
-            Optimization: Avoid unnecessary dictionary copies when one dict is empty.
-            - If left is empty, return right directly (no copy needed)
-            - If right is empty, return left as-is (no merge needed)
-            - Otherwise, copy left and update with right
-            """
-            if not left:
-                return right if right else {}
-            if not right:
-                return left
-            result = left.copy()
-            result.update(right)
-            return result
-
-        # Define state for parallel execution subgraph
-        # Use Annotated with custom merge function for concurrent dict writes
-        class ParallelStageState(TD, total=False):
-            agent_outputs: Annotated[Dict[str, Any], merge_dicts]
-            agent_statuses: Annotated[Dict[str, str], merge_dicts]
-            agent_metrics: Annotated[Dict[str, Any], merge_dicts]
-            errors: Annotated[Dict[str, str], merge_dicts]
-            stage_input: Dict[str, Any]
-
         # Iterative retry loop — replaces former recursive self.execute_stage() call.
         # Stack depth stays constant regardless of max_retries.
         while True:
-            # Create subgraph for parallel execution
-            subgraph = StateGraph(ParallelStageState)
-
             # Get agents for this stage
             if hasattr(stage_config, 'stage'):
                 agents = stage_config.stage.agents
             else:
                 agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
 
-            # Add initialization node
-            def init_parallel(s: ParallelStageState) -> Dict[str, Any]:
+            # Build init node
+            def init_parallel(s: Dict[str, Any]) -> Dict[str, Any]:
                 """Initialize parallel state with empty collections."""
                 return {
                     "agent_outputs": {},
@@ -118,14 +97,11 @@ class ParallelStageExecutor(StageExecutor):
                     }
                 }
 
-            subgraph.add_node("init", init_parallel)  # type: ignore[call-overload]
-
-            # Create node for each agent
+            # Build agent nodes
+            agent_nodes: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
             for agent_ref in agents:
                 agent_name = self._extract_agent_name(agent_ref)
-
-                # Create agent execution node
-                agent_node = self._create_agent_node(
+                agent_nodes[agent_name] = self._create_agent_node(
                     agent_name=agent_name,
                     agent_ref=agent_ref,
                     stage_name=stage_name,
@@ -133,17 +109,13 @@ class ParallelStageExecutor(StageExecutor):
                     config_loader=config_loader
                 )
 
-                subgraph.add_node(agent_name, agent_node)  # type: ignore[call-overload]
-
-            # Create collection node (waits for all agents)
-            def collect_outputs(s: ParallelStageState) -> Dict[str, Any]:
+            # Build collection node
+            def collect_outputs(s: Dict[str, Any]) -> Dict[str, Any]:
                 """Collect and validate agent outputs, calculate aggregate metrics."""
-                # Get min_successful_agents from config
                 stage_dict = stage_config if isinstance(stage_config, dict) else {}
                 error_handling = stage_dict.get("error_handling", {})
                 min_successful = error_handling.get("min_successful_agents", 1)
 
-                # Count successful agents
                 agent_statuses = s.get("agent_statuses", {})
                 successful = [
                     name for name, status in agent_statuses.items()
@@ -156,7 +128,6 @@ class ParallelStageExecutor(StageExecutor):
                         f"Minimum required: {min_successful}"
                     )
 
-                # Calculate aggregate metrics
                 agent_metrics = s.get("agent_metrics", {})
                 agent_outputs_dict = s.get("agent_outputs", {})
 
@@ -172,14 +143,12 @@ class ParallelStageExecutor(StageExecutor):
                         total_cost += metrics.get("cost_usd", 0.0)
                         max_duration = max(max_duration, metrics.get("duration_seconds", 0.0))
 
-                        # Get confidence from output
                         output = agent_outputs_dict.get(agent_name, {})
                         total_confidence += output.get("confidence", 0.0)
                         num_successful += 1
 
                 avg_confidence = total_confidence / num_successful if num_successful > 0 else 0.0
 
-                # Store aggregate metrics in a special key
                 return {
                     "agent_outputs": {
                         "__aggregate_metrics__": {
@@ -194,23 +163,7 @@ class ParallelStageExecutor(StageExecutor):
                     }
                 }
 
-            subgraph.add_node("collect", collect_outputs)  # type: ignore[call-overload]
-
-            # Add edges: init → all agents (parallel) → collect
-            subgraph.add_edge(START, "init")
-
-            for agent_ref in agents:
-                agent_name = self._extract_agent_name(agent_ref)
-                subgraph.add_edge("init", agent_name)  # Parallel branches
-                subgraph.add_edge(agent_name, "collect")  # All → collect
-
-            subgraph.add_edge("collect", END)
-
-            # Set entry point
-            subgraph.set_entry_point("init")
-
-            # Compile and execute subgraph
-            compiled_subgraph = subgraph.compile()
+            logger.info("Stage '%s' starting parallel execution with %d agent(s)", stage_name, len(agents))
 
             show_details = state.get("show_details", False)
             detail_console = state.get("detail_console")
@@ -218,7 +171,6 @@ class ParallelStageExecutor(StageExecutor):
                 detail_console.print(f"\n[bold cyan]── Stage: {stage_name} ──[/bold cyan]")
 
             try:
-                # Execute parallel subgraph with initial state
                 initial_state: Dict[str, Any] = {
                     "agent_outputs": {},
                     "agent_statuses": {},
@@ -226,7 +178,12 @@ class ParallelStageExecutor(StageExecutor):
                     "errors": {},
                     "stage_input": {}
                 }
-                parallel_result = compiled_subgraph.invoke(initial_state)  # type: ignore[arg-type]
+                parallel_result = self.parallel_runner.run_parallel(
+                    nodes=agent_nodes,
+                    initial_state=initial_state,
+                    init_node=init_parallel,
+                    collect_node=collect_outputs,
+                )
 
                 # Extract agent outputs
                 agent_outputs_dict = parallel_result["agent_outputs"]
@@ -252,6 +209,8 @@ class ParallelStageExecutor(StageExecutor):
                             detail_console.print(
                                 f"  {connector} [red]{aname} ✗[/red] ({duration:.1f}s)"
                             )
+
+                logger.info("Stage '%s' parallel execution complete", stage_name)
 
                 # Extract aggregate metrics (stored with special key)
                 aggregate_metrics = agent_outputs_dict.pop("__aggregate_metrics__", {})
@@ -519,9 +478,7 @@ class ParallelStageExecutor(StageExecutor):
                             "confidence": response.confidence,
                             "tokens": response.tokens,
                             "cost": response.estimated_cost_usd,
-                            "metadata": {
-                                "tool_calls": len(response.tool_calls) if response.tool_calls else 0
-                            }
+                            "tool_calls": response.tool_calls if response.tool_calls else [],
                         }
                     },
                     "agent_statuses": {agent_name: "success"},

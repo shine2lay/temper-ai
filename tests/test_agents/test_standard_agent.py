@@ -160,8 +160,12 @@ def test_standard_agent_execute_with_tool_calls(minimal_agent_config):
         agent.llm = Mock()
         agent.llm.complete.side_effect = [tool_call_response, final_response]
 
+        # Create mock tool_executor that delegates to the tool registry
+        mock_executor = Mock()
+        mock_executor.execute.return_value = ToolResult(success=True, result="42")
+
         # Execute
-        response = agent.execute({"input": "What is 2+2?"})
+        response = agent.execute({"input": "What is 2+2?", "tool_executor": mock_executor})
 
         # Verify response
         assert isinstance(response, AgentResponse)
@@ -203,8 +207,14 @@ def test_standard_agent_execute_tool_not_found(minimal_agent_config):
         agent.llm = Mock()
         agent.llm.complete.side_effect = [tool_call_response, final_response]
 
+        # Create mock tool_executor that returns "not found" for unknown tools
+        mock_executor = Mock()
+        mock_executor.execute.return_value = ToolResult(
+            success=False, result=None, error="Tool 'nonexistent_tool' not found"
+        )
+
         # Execute
-        response = agent.execute({"input": "Use missing tool"})
+        response = agent.execute({"input": "Use missing tool", "tool_executor": mock_executor})
 
         # Should handle missing tool gracefully
         assert isinstance(response, AgentResponse)

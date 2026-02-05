@@ -424,7 +424,7 @@ class StandardAgent(BaseAgent):
         if len(tool_calls) <= 1:
             return [self._execute_single_tool(tool_call) for tool_call in tool_calls]
 
-        parallel_enabled = self.config.agent.safety.get("parallel_tool_calls", True)
+        parallel_enabled = getattr(self.config.agent.safety, "parallel_tool_calls", True)
 
         if not parallel_enabled:
             return [self._execute_single_tool(tool_call) for tool_call in tool_calls]
@@ -473,74 +473,8 @@ class StandardAgent(BaseAgent):
         if not isinstance(tool_params, dict):
             raise TypeError(f"tool_call 'parameters' must be a dictionary, got {type(tool_params).__name__}")
 
-        # Route through ToolExecutor if available (safety-integrated execution)
-        if hasattr(self, 'tool_executor') and self.tool_executor is not None:
-            return self._execute_via_tool_executor(tool_name, tool_params)
-
-        # Fallback: Direct tool execution with inline safety checks
-        return self._execute_direct(tool_name, tool_params)
-
-    def _execute_via_tool_executor(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute tool through the safety-integrated ToolExecutor."""
-        tool_start_time = time.time()
-        try:
-            result = self.tool_executor.execute(tool_name, tool_params)
-            duration_seconds = time.time() - tool_start_time
-            logger.info(
-                "[%s] Tool '%s' %s (%.1fs)",
-                self.name, tool_name,
-                "succeeded" if result.success else "failed",
-                duration_seconds,
-            )
-
-            self._observer.track_tool_call(
-                tool_name=tool_name,
-                input_params=tool_params,
-                output_data={"result": result.result} if result.success else {},
-                duration_seconds=duration_seconds,
-                status="success" if result.success else "failed",
-                error_message=result.error if not result.success else None
-            )
-
-            return {
-                "name": tool_name,
-                "parameters": tool_params,
-                "result": result.result if result.success else None,
-                "error": result.error if not result.success else None,
-                "success": result.success
-            }
-        except Exception as e:
-            duration_seconds = time.time() - tool_start_time
-
-            self._observer.track_tool_call(
-                tool_name=tool_name,
-                input_params=tool_params,
-                output_data={},
-                duration_seconds=duration_seconds,
-                status="failed",
-                error_message=f"Tool execution error: {str(e)}"
-            )
-
-            return {
-                "name": tool_name,
-                "parameters": tool_params,
-                "result": None,
-                "error": f"Tool execution error: {str(e)}",
-                "success": False
-            }
-
-    def _execute_direct(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute tool directly (fallback when ToolExecutor not available)."""
-        tool = self.tool_registry.get(tool_name) if tool_name else None
-        if not tool:
-            return {
-                "name": tool_name,
-                "parameters": tool_params,
-                "result": None,
-                "error": f"Tool '{tool_name}' not found",
-                "success": False
-            }
-
+        # Defense-in-depth: Agent-level SafetyConfig pre-checks before tool execution.
+        # These run regardless of whether tool_executor is configured.
         safety = self.config.agent.safety
 
         if safety.mode == "require_approval":
@@ -570,9 +504,34 @@ class StandardAgent(BaseAgent):
                 "success": True
             }
 
+        # Route through ToolExecutor (safety-integrated execution)
+        if hasattr(self, 'tool_executor') and self.tool_executor is not None:
+            return self._execute_via_tool_executor(tool_name, tool_params)
+
+        # SECURITY: No silent fallback — tool_executor is required for safe execution.
+        # Without it, the full safety stack (PolicyRegistry, ActionPolicyEngine,
+        # ApprovalWorkflow, RollbackManager) is bypassed.
+        logger.critical(
+            "SECURITY: No tool_executor configured for agent '%s'. "
+            "Tool '%s' execution blocked to prevent safety bypass.",
+            self.name, tool_name
+        )
+        return {
+            "name": tool_name,
+            "parameters": tool_params,
+            "result": None,
+            "error": (
+                f"Tool '{tool_name}' execution blocked: no tool_executor configured. "
+                f"The safety stack is required for tool execution."
+            ),
+            "success": False
+        }
+
+    def _execute_via_tool_executor(self, tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute tool through the safety-integrated ToolExecutor."""
         tool_start_time = time.time()
         try:
-            result = tool.execute(**tool_params)
+            result = self.tool_executor.execute(tool_name, tool_params)
             duration_seconds = time.time() - tool_start_time
             logger.info(
                 "[%s] Tool '%s' %s (%.1fs)",

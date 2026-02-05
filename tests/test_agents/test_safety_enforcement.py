@@ -55,6 +55,14 @@ def _make_agent(safety: SafetyConfig = None) -> StandardAgent:
         success=True, result="tool output"
     )
     agent.tool_registry.get = lambda name: mock_tool if name == "bash" else None
+
+    # Provide a mock tool_executor so execution doesn't block on missing safety stack
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = ToolResult(success=True, result="tool output")
+    agent.tool_executor = mock_executor
+
+    # Provide a mock observer (normally set in execute(), needed for direct calls)
+    agent._observer = MagicMock()
     return agent
 
 

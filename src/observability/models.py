@@ -436,10 +436,12 @@ Index("idx_llm_status", LLMCall.status, LLMCall.start_time)  # type: ignore[arg-
 Index("idx_tool_agent", ToolExecution.agent_execution_id, ToolExecution.tool_name)
 Index("idx_tool_name", ToolExecution.tool_name, ToolExecution.start_time)  # type: ignore[arg-type]
 Index("idx_tool_status", ToolExecution.status, ToolExecution.start_time)  # type: ignore[arg-type]
+Index("idx_tool_approval", ToolExecution.approval_required)  # For querying approval-required executions
 Index("idx_collab_stage", CollaborationEvent.stage_execution_id, CollaborationEvent.event_type)
 Index("idx_merit_agent", AgentMeritScore.agent_name, AgentMeritScore.domain)
 Index("idx_outcome_agent", DecisionOutcome.agent_execution_id, DecisionOutcome.outcome)  # type: ignore[arg-type]
 Index("idx_outcome_type", DecisionOutcome.decision_type, DecisionOutcome.outcome)
+Index("idx_outcome_validation_ts", DecisionOutcome.validation_timestamp)  # type: ignore[arg-type]  # For time-range queries
 Index("idx_metrics_name", SystemMetric.metric_name, SystemMetric.timestamp)  # type: ignore[arg-type]
 Index("idx_metrics_workflow", SystemMetric.workflow_name, SystemMetric.timestamp)  # type: ignore[arg-type]
 
@@ -494,3 +496,4 @@ class RollbackEvent(SQLModel, table=True):
 Index("idx_rollback_snapshots_workflow", RollbackSnapshotDB.workflow_execution_id, RollbackSnapshotDB.created_at)  # type: ignore[arg-type]
 Index("idx_rollback_events_snapshot", RollbackEvent.snapshot_id, RollbackEvent.executed_at)  # type: ignore[arg-type]
 Index("idx_rollback_events_trigger", RollbackEvent.trigger, RollbackEvent.executed_at)  # type: ignore[arg-type]
+Index("idx_rollback_snapshots_expires", RollbackSnapshotDB.expires_at)  # type: ignore[arg-type]  # For cleanup of expired snapshots

@@ -60,10 +60,10 @@ from .formatters import (
 )
 
 # Tracker
-from .tracker import (
-    ExecutionTracker,
-    ExecutionContext,
-)
+from .tracker import ExecutionTracker
+
+# Canonical ExecutionContext (re-exported for backward compatibility)
+from src.core.context import ExecutionContext
 
 # Hooks
 from .hooks import (

@@ -11,8 +11,8 @@ import contextvars
 from datetime import datetime, timezone
 from contextlib import contextmanager
 from typing import Optional, Dict, Any, List, Generator
-from dataclasses import dataclass
 
+from src.core.context import ExecutionContext
 from src.observability.backend import ObservabilityBackend
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
 from src.utils.config_helpers import sanitize_config_for_display
@@ -23,14 +23,6 @@ logger = logging.getLogger(__name__)
 def utcnow() -> datetime:
     """Get current UTC time with timezone awareness."""
     return datetime.now(timezone.utc)
-
-
-@dataclass
-class ExecutionContext:
-    """Context for current execution."""
-    workflow_id: Optional[str] = None
-    stage_id: Optional[str] = None
-    agent_id: Optional[str] = None
 
 
 class ExecutionTracker:

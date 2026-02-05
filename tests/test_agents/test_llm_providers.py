@@ -2154,22 +2154,20 @@ class TestConnectionPoolCleanup:
         assert llm._client is None
         assert llm._async_client is None
 
-    def test_close_inside_event_loop_raises(self):
-        """Calling sync close() inside a running event loop must raise RuntimeError.
+    def test_close_inside_event_loop_graceful(self):
+        """Calling sync close() inside a running event loop degrades gracefully.
 
-        Previously the RuntimeError was silently swallowed because the try/except
-        caught both the 'no loop' RuntimeError from get_running_loop() and the
-        intentionally raised RuntimeError for the 'loop is running' case.
+        Previously this raised RuntimeError, but now it closes the sync client
+        directly and schedules async client cleanup as a background task.
         """
         import asyncio
 
         async def try_sync_close():
             llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
             llm._get_client()
-            with pytest.raises(RuntimeError, match="Cannot call sync close"):
-                llm.close()
-            # Clean up properly using aclose
-            await llm.aclose()
+            # Should NOT raise — graceful degradation
+            llm.close()
+            assert llm._closed is True
 
         asyncio.run(try_sync_close())
 

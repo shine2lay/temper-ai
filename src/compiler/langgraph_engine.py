@@ -327,23 +327,56 @@ class LangGraphExecutionEngine(ExecutionEngine):
             raise NotImplementedError("STREAM mode not supported in M2")
 
         if mode == ExecutionMode.ASYNC:
-            # For ASYNC mode, run async coroutine from sync context (CO-01)
-            # asyncio.run() crashes inside an already-running event loop
-            # (Jupyter, FastAPI, etc.), so detect and handle that case.
+            # CO-01: asyncio.run() is only safe when no event loop is running.
+            # If called from an async context (FastAPI, Jupyter, etc.), raise
+            # a clear error directing callers to async_execute() instead.
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = None
             if loop and loop.is_running():
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                    future = pool.submit(asyncio.run, compiled_workflow.ainvoke(input_data))
-                    return future.result()
-            else:
-                return asyncio.run(compiled_workflow.ainvoke(input_data))
+                raise RuntimeError(
+                    "Cannot use execute(mode=ASYNC) from an async context. "
+                    "Use 'await engine.async_execute(compiled, data)' instead."
+                )
+            return asyncio.run(compiled_workflow.ainvoke(input_data))
 
         # SYNC mode (default)
         return compiled_workflow.invoke(input_data)
+
+    async def async_execute(
+        self,
+        compiled_workflow: CompiledWorkflow,
+        input_data: Dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.ASYNC
+    ) -> Dict[str, Any]:
+        """Execute compiled workflow asynchronously.
+
+        Use from async contexts (FastAPI, Jupyter, pytest-asyncio).
+
+        Args:
+            compiled_workflow: Compiled workflow from compile()
+            input_data: Input data for the workflow
+            mode: ASYNC (default) or SYNC (runs invoke in executor)
+
+        Returns:
+            Final workflow state
+        """
+        if not isinstance(compiled_workflow, LangGraphCompiledWorkflow):
+            raise TypeError(
+                f"Expected LangGraphCompiledWorkflow, got {type(compiled_workflow).__name__}"
+            )
+
+        if mode == ExecutionMode.STREAM:
+            raise NotImplementedError("STREAM mode not supported in M2")
+
+        if mode == ExecutionMode.SYNC:
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(
+                None, compiled_workflow.invoke, input_data
+            )
+
+        return await compiled_workflow.ainvoke(input_data)
 
     def supports_feature(self, feature: str) -> bool:
         """Check if engine supports specific feature.

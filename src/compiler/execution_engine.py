@@ -230,6 +230,34 @@ class ExecutionEngine(ABC):
         pass
 
     @abstractmethod
+    async def async_execute(
+        self,
+        compiled_workflow: CompiledWorkflow,
+        input_data: Dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.ASYNC
+    ) -> Dict[str, Any]:
+        """Execute compiled workflow asynchronously.
+
+        Use this method when calling from an async context (FastAPI, Jupyter,
+        pytest-asyncio, etc.) instead of ``execute(mode=ASYNC)``.
+
+        Args:
+            compiled_workflow: Previously compiled workflow from compile()
+            input_data: Input data for workflow execution
+            mode: Execution mode (ASYNC or SYNC). Defaults to ASYNC.
+                  When SYNC is requested, runs synchronously via
+                  ``run_in_executor``.
+
+        Returns:
+            Final workflow state
+
+        Raises:
+            TypeError: If compiled_workflow is wrong type for this engine
+            NotImplementedError: If execution mode not supported
+        """
+        pass
+
+    @abstractmethod
     def supports_feature(self, feature: str) -> bool:
         """Check if engine supports specific feature.
 

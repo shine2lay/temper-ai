@@ -290,23 +290,40 @@ class BaseLLM(ABC):
         RELIABILITY FIX (code-crit-async-race-04): Thread-safe idempotent cleanup
         to prevent race conditions. Uses existing event loop or creates new one.
 
-        Note: Prefer async context manager (`async with`) over manual close().
+        When called from an async context, closes only the sync client and
+        schedules async client cleanup as a background task. Prefer
+        ``async with`` or ``await aclose()`` for complete async cleanup.
         """
         with self._sync_cleanup_lock:
             if self._closed:
                 return  # Idempotent - already closed
 
             try:
-                asyncio.get_running_loop()
+                loop = asyncio.get_running_loop()
             except RuntimeError:
-                # No running loop - safe to create new one
+                loop = None
+
+            if loop is None or not loop.is_running():
+                # No running loop - safe to create new one for full cleanup
                 asyncio.run(self.aclose())
             else:
-                # Event loop is running - sync close would deadlock
-                raise RuntimeError(
-                    "Cannot call sync close() from async context. "
-                    "Use await aclose() instead to prevent event loop conflicts."
+                # Event loop is running - do sync cleanup only, schedule async
+                logger.warning(
+                    "close() called from async context; "
+                    "closing sync client only. Use 'await aclose()' for "
+                    "complete cleanup."
                 )
+                try:
+                    if self._client is not None:
+                        self._client.close()
+                        self._client = None
+                    if self._async_client is not None:
+                        loop.create_task(self._async_client.aclose())
+                        self._async_client = None
+                except Exception as e:
+                    logger.warning("Error during sync-only cleanup: %s", e)
+                finally:
+                    self._closed = True
 
     async def aclose(self) -> None:
         """Async close for HTTPx clients and release resources.

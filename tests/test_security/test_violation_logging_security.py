@@ -7,7 +7,7 @@ in application logs or observability database when safety violations occur.
 import logging
 import pytest
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
-from src.core.service import _sanitize_violation_context
+from src.safety.service_mixin import _sanitize_violation_context
 
 
 class TestViolationContextSanitization:
@@ -223,7 +223,7 @@ class TestLoggingSecurityIntegration:
 
     def test_violation_logging_sanitizes_context(self, caplog):
         """Ensure safety violations log sanitized context, not raw secrets."""
-        from src.core.service import SafetyServiceMixin
+        from src.safety.service_mixin import SafetyServiceMixin
         from src.safety import SafetyViolation, ViolationSeverity
 
         # Setup
@@ -261,7 +261,7 @@ class TestLoggingSecurityIntegration:
 
     def test_multiple_violations_all_sanitized(self, caplog):
         """Ensure multiple violations all have sanitized contexts."""
-        from src.core.service import SafetyServiceMixin
+        from src.safety.service_mixin import SafetyServiceMixin
         from src.safety import SafetyViolation, ViolationSeverity
 
         # Setup

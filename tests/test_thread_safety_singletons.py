@@ -308,13 +308,13 @@ class TestServiceSanitizerThreadSafety:
 
     @pytest.fixture(autouse=True)
     def reset_sanitizer(self):
-        import src.core.service as svc
+        import src.safety.service_mixin as svc
         svc._sanitizer = None
         yield
         svc._sanitizer = None
 
     def test_concurrent_get_sanitizer_single_instance(self):
-        from src.core.service import _get_sanitizer
+        from src.safety.service_mixin import _get_sanitizer
 
         instances = []
         barrier = threading.Barrier(10)

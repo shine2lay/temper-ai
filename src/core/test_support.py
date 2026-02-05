@@ -104,7 +104,7 @@ def _get_all_reset_functions() -> List[Callable[[], None]]:
 
     # Core
     try:
-        from src.core.service import reset_sanitizer
+        from src.safety.service_mixin import reset_sanitizer
         fns.append(reset_sanitizer)
     except ImportError:
         pass

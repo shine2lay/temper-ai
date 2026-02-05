@@ -109,6 +109,9 @@ from src.safety.policies.rate_limit_policy import RateLimitPolicy as RateLimitPo
 # Resource consumption limits
 from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
 
+# Service mixin
+from src.safety.service_mixin import SafetyServiceMixin
+
 # Exception hierarchy
 from src.safety.exceptions import (
     SafetyViolationException,
@@ -191,6 +194,9 @@ __all__ = [
 
     # Resource consumption limits
     "ResourceLimitPolicy",
+
+    # Service mixin
+    "SafetyServiceMixin",
 
     # Exceptions
     "SafetyViolationException",

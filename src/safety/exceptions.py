@@ -136,7 +136,7 @@ class SafetyViolationException(Exception):
         """
         # SECURITY: Sanitize context defensively in case violation was created
         # with unsanitized data. This provides defense-in-depth protection.
-        from src.core.service import _sanitize_violation_context
+        from src.safety.service_mixin import _sanitize_violation_context
         sanitized_context = _sanitize_violation_context(violation.context)
         sanitized_metadata = _sanitize_violation_context(violation.metadata) if violation.metadata else None
 

@@ -18,7 +18,8 @@ from src.safety import (
     ViolationSeverity,
     Validator
 )
-from src.core.service import SafetyServiceMixin, Service
+from src.core.service import Service
+from src.safety.service_mixin import SafetyServiceMixin
 
 
 # ============================================

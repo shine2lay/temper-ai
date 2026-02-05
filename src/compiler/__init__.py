@@ -35,8 +35,8 @@ from src.compiler.checkpoint_backends import (
 # Note: LangGraphCompiler not imported here to avoid circular imports
 # Import directly: from src.compiler.langgraph_compiler import LangGraphCompiler
 
-# Note: WorkflowState is deprecated, use WorkflowDomainState + ExecutionContext
-# Import directly: from src.compiler.state import WorkflowState
+# Note: WorkflowState in src/compiler/state.py is deprecated.
+# Use WorkflowDomainState + ExecutionContext from src/compiler/domain_state.py.
 
 __all__ = [
     "ConfigLoader",

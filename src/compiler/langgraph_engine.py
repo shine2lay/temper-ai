@@ -22,7 +22,6 @@ from src.compiler.execution_engine import (
     WorkflowCancelledError
 )
 from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.compiler.state import WorkflowState
 
 
 class LangGraphCompiledWorkflow(CompiledWorkflow):
@@ -106,7 +105,7 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
         if self.tracker:
             state_dict["tracker"] = self.tracker
 
-        # Execute graph (pass dict, validated against WorkflowState schema)
+        # Execute graph (pass dict, validated against LangGraphWorkflowState schema)
         result = self.graph.invoke(state_dict)
         return cast(Dict[str, Any], result)
 
@@ -133,7 +132,7 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
         if self.tracker:
             state_dict["tracker"] = self.tracker
 
-        # Execute graph asynchronously (pass dict, validated against WorkflowState schema)
+        # Execute graph asynchronously (pass dict, validated against LangGraphWorkflowState schema)
         result = await self.graph.ainvoke(state_dict)
         return cast(Dict[str, Any], result)
 

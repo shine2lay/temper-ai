@@ -4,7 +4,7 @@ Verifies state initialization, validation, and utility methods.
 """
 import pytest
 from src.compiler.state_manager import StateManager
-from src.compiler.state import WorkflowState
+from src.compiler.langgraph_state import LangGraphWorkflowState
 
 
 class TestStateInitialization:
@@ -16,10 +16,10 @@ class TestStateInitialization:
 
         state = manager.initialize_state({"input": "test data"})
 
-        assert isinstance(state, WorkflowState)
-        assert state.input == "test data"
-        assert state.workflow_id.startswith("wf-")
-        assert state.stage_outputs == {}
+        assert isinstance(state, dict)
+        assert state["input"] == "test data"
+        assert state["workflow_id"].startswith("wf-")
+        assert state["stage_outputs"] == {}
 
     def test_initialize_state_with_workflow_id(self):
         """Test initialization with custom workflow ID."""
@@ -30,7 +30,7 @@ class TestStateInitialization:
             workflow_id="wf-custom-123"
         )
 
-        assert state.workflow_id == "wf-custom-123"
+        assert state["workflow_id"] == "wf-custom-123"
 
     def test_initialize_state_with_tracker(self):
         """Test initialization with tracker."""
@@ -42,7 +42,7 @@ class TestStateInitialization:
             tracker=mock_tracker
         )
 
-        assert state.tracker is mock_tracker
+        assert state["tracker"] is mock_tracker
 
     def test_initialize_state_with_infrastructure(self):
         """Test initialization with all infrastructure components."""
@@ -58,9 +58,9 @@ class TestStateInitialization:
             config_loader=mock_loader
         )
 
-        assert state.tracker is mock_tracker
-        assert state.tool_registry is mock_registry
-        assert state.config_loader is mock_loader
+        assert state["tracker"] is mock_tracker
+        assert state["tool_registry"] is mock_registry
+        assert state["config_loader"] is mock_loader
 
 
 class TestInitNode:
@@ -74,18 +74,17 @@ class TestInitNode:
 
         assert callable(init_node)
 
-    def test_init_node_ensures_stage_outputs(self):
-        """Test init node ensures stage_outputs exists."""
+    def test_init_node_sets_stage_outputs_when_none(self):
+        """Test init node creates stage_outputs when None."""
         manager = StateManager()
         init_node = manager.create_init_node()
 
-        # Create state (stage_outputs is auto-created by default_factory)
-        state = WorkflowState(input="test")
+        # Create state and force stage_outputs to None (bypassing __post_init__)
+        state = LangGraphWorkflowState(input="test")
+        state.stage_outputs = None
 
-        # Run init node
         result = init_node(state)
 
-        # Should preserve existing empty dict
         assert "stage_outputs" in result
         assert isinstance(result["stage_outputs"], dict)
 
@@ -94,11 +93,10 @@ class TestInitNode:
         manager = StateManager()
         init_node = manager.create_init_node()
 
-        # Create state without workflow_id
-        state = WorkflowState(input="test")
-        state.workflow_id = None
+        # Create state with empty workflow_id
+        state = LangGraphWorkflowState(input="test")
+        state.workflow_id = ""
 
-        # Run init node
         result = init_node(state)
 
         assert "workflow_id" in result
@@ -109,18 +107,18 @@ class TestInitNode:
         manager = StateManager()
         init_node = manager.create_init_node()
 
-        # Create state with values
-        state = WorkflowState(
+        # Create state with values already set
+        state = LangGraphWorkflowState(
             input="test",
             workflow_id="wf-existing-123",
             stage_outputs={"stage1": "output1"}
         )
 
-        # Run init node
+        # Run init node — should return empty updates since nothing needs initialization
         result = init_node(state)
 
-        assert result["workflow_id"] == "wf-existing-123"
-        assert result["stage_outputs"] == {"stage1": "output1"}
+        assert "workflow_id" not in result
+        assert "stage_outputs" not in result
 
 
 class TestStateValidation:
@@ -136,16 +134,15 @@ class TestStateValidation:
         assert valid is True
         assert errors == []
 
-    def test_validate_state_delegates_to_state(self):
-        """Test that validation delegates to WorkflowState.validate()."""
+    def test_validate_state_missing_stage_outputs(self):
+        """Test that validation catches missing stage_outputs."""
         manager = StateManager()
-        state = manager.initialize_state({"input": "test"})
+        state = {"input": "test"}  # No stage_outputs
 
-        # Validation should match state's own validation
-        manager_result = manager.validate_state(state)
-        state_result = state.validate()
+        valid, errors = manager.validate_state(state)
 
-        assert manager_result == state_result
+        assert valid is False
+        assert "Missing stage_outputs" in errors
 
 
 class TestStageInput:
@@ -182,7 +179,7 @@ class TestStageInput:
         """Test that previous stage outputs are included by default."""
         manager = StateManager()
         state = manager.initialize_state({"input": "test"})
-        state.set_stage_output("stage1", "output1")
+        state["stage_outputs"]["stage1"] = "output1"
 
         stage_input = manager.prepare_stage_input(state)
 
@@ -193,7 +190,7 @@ class TestStageInput:
         """Test excluding previous stage outputs."""
         manager = StateManager()
         state = manager.initialize_state({"input": "test"})
-        state.set_stage_output("stage1", "output1")
+        state["stage_outputs"]["stage1"] = "output1"
 
         stage_input = manager.prepare_stage_input(
             state,
@@ -217,8 +214,8 @@ class TestStageOutput:
             {"findings": ["finding1", "finding2"]}
         )
 
-        assert updated_state.stage_outputs["research"]["findings"] == ["finding1", "finding2"]
-        assert updated_state.current_stage == "research"
+        assert updated_state["stage_outputs"]["research"]["findings"] == ["finding1", "finding2"]
+        assert updated_state["current_stage"] == "research"
 
     def test_merge_multiple_stage_outputs(self):
         """Test merging multiple stage outputs."""
@@ -228,9 +225,9 @@ class TestStageOutput:
         state = manager.merge_stage_output(state, "stage1", "output1")
         state = manager.merge_stage_output(state, "stage2", "output2")
 
-        assert state.stage_outputs["stage1"] == "output1"
-        assert state.stage_outputs["stage2"] == "output2"
-        assert state.current_stage == "stage2"
+        assert state["stage_outputs"]["stage1"] == "output1"
+        assert state["stage_outputs"]["stage2"] == "output2"
+        assert state["current_stage"] == "stage2"
 
 
 class TestStateSnapshot:
@@ -240,7 +237,7 @@ class TestStateSnapshot:
         """Test creating state snapshot."""
         manager = StateManager()
         state = manager.initialize_state({"input": "test", "topic": "research"})
-        state.set_stage_output("stage1", "output1")
+        state["stage_outputs"]["stage1"] = "output1"
 
         snapshot = manager.get_state_snapshot(state)
 
@@ -253,11 +250,10 @@ class TestStateSnapshot:
         """Test that snapshot excludes None values."""
         manager = StateManager()
         state = manager.initialize_state({"input": "test"})
-        # depth, focus_areas, etc. are None by default
 
         snapshot = manager.get_state_snapshot(state)
 
-        # None values should be excluded
+        # Keys not present in dict won't appear in snapshot
         assert "depth" not in snapshot
         assert "focus_areas" not in snapshot
 
@@ -290,11 +286,11 @@ class TestStateSnapshot:
 
         state = manager.restore_state_from_snapshot(snapshot)
 
-        assert isinstance(state, WorkflowState)
-        assert state.input == "test data"
-        assert state.topic == "research"
-        assert state.workflow_id == "wf-snapshot-123"
-        assert state.stage_outputs == {"stage1": "output1"}
+        assert isinstance(state, dict)
+        assert state["input"] == "test data"
+        assert state["topic"] == "research"
+        assert state["workflow_id"] == "wf-snapshot-123"
+        assert state["stage_outputs"] == {"stage1": "output1"}
 
     def test_snapshot_roundtrip(self):
         """Test snapshot and restore roundtrip."""
@@ -304,16 +300,16 @@ class TestStateSnapshot:
         original_state = manager.initialize_state(
             {"input": "test", "topic": "research"}
         )
-        original_state.set_stage_output("stage1", "output1")
+        original_state["stage_outputs"]["stage1"] = "output1"
 
         # Create snapshot and restore
         snapshot = manager.get_state_snapshot(original_state)
         restored_state = manager.restore_state_from_snapshot(snapshot)
 
         # Values should match
-        assert restored_state.input == original_state.input
-        assert restored_state.topic == original_state.topic
-        assert restored_state.stage_outputs == original_state.stage_outputs
+        assert restored_state["input"] == original_state["input"]
+        assert restored_state["topic"] == original_state["topic"]
+        assert restored_state["stage_outputs"] == original_state["stage_outputs"]
 
 
 if __name__ == "__main__":

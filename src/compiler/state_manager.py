@@ -6,7 +6,6 @@ for LangGraph compiler and executors.
 from typing import Dict, Any, Optional, Callable
 import uuid
 
-from src.compiler.state import WorkflowState, create_initial_state
 from src.compiler.langgraph_state import LangGraphWorkflowState
 
 
@@ -37,8 +36,8 @@ class StateManager:
         tracker: Optional[Any] = None,
         tool_registry: Optional[Any] = None,
         config_loader: Optional[Any] = None
-    ) -> WorkflowState:
-        """Create and initialize workflow state.
+    ) -> Dict[str, Any]:
+        """Create and initialize workflow state as a plain dict.
 
         Args:
             input_data: Input data for workflow (topic, query, etc.)
@@ -48,31 +47,23 @@ class StateManager:
             config_loader: Optional ConfigLoader instance
 
         Returns:
-            Initialized WorkflowState ready for execution
-
-        Example:
-            >>> state = manager.initialize_state(
-            ...     {"input": "Analyze market trends"},
-            ...     workflow_id="wf-custom-123"
-            ... )
+            Initialized state dict ready for LangGraph execution
         """
-        # Prepare state kwargs
-        state_kwargs = {**input_data}
+        state: Dict[str, Any] = {
+            "stage_outputs": {},
+            "current_stage": "",
+            **input_data,
+        }
 
-        # Set workflow ID
-        if workflow_id:
-            state_kwargs["workflow_id"] = workflow_id
-
-        # Set infrastructure components
+        state["workflow_id"] = workflow_id or f"wf-{uuid.uuid4().hex[:12]}"
         if tracker:
-            state_kwargs["tracker"] = tracker
+            state["tracker"] = tracker
         if tool_registry:
-            state_kwargs["tool_registry"] = tool_registry
+            state["tool_registry"] = tool_registry
         if config_loader:
-            state_kwargs["config_loader"] = config_loader
+            state["config_loader"] = config_loader
 
-        # Create state using factory function
-        return create_initial_state(**state_kwargs)
+        return state
 
     def create_init_node(self) -> Callable[[LangGraphWorkflowState], Dict[str, Any]]:
         """Create LangGraph initialization node.
@@ -114,30 +105,28 @@ class StateManager:
 
         return init_node
 
-    def validate_state(self, state: WorkflowState) -> tuple[bool, list[str]]:
+    def validate_state(self, state: Dict[str, Any]) -> tuple[bool, list[str]]:
         """Validate workflow state consistency.
 
         Args:
-            state: Workflow state to validate
+            state: Workflow state dict to validate
 
         Returns:
             Tuple of (is_valid, error_messages)
-
-        Example:
-            >>> valid, errors = manager.validate_state(state)
-            >>> if not valid:
-            ...     print(f"State validation failed: {errors}")
         """
-        return state.validate()
+        errors: list[str] = []
+        if "stage_outputs" not in state:
+            errors.append("Missing stage_outputs")
+        if hasattr(state, "validate"):
+            return state.validate()  # type: ignore[union-attr]
+        return (len(errors) == 0, errors)
 
     def prepare_stage_input(
         self,
-        state: WorkflowState,
+        state: Dict[str, Any],
         include_previous_outputs: bool = True
     ) -> Dict[str, Any]:
         """Prepare input data for stage execution.
-
-        Extracts relevant data from state for passing to stage executors.
 
         Args:
             state: Current workflow state
@@ -145,15 +134,11 @@ class StateManager:
 
         Returns:
             Dictionary of input data for stage
-
-        Example:
-            >>> input_data = manager.prepare_stage_input(state)
-            >>> executor.execute_stage(..., input_data=input_data)
         """
-        # Convert state to dict, excluding internal objects
-        stage_input = state.to_dict(exclude_internal=True)
+        # Exclude infrastructure keys
+        internal_keys = {"tracker", "tool_registry", "config_loader", "visualizer"}
+        stage_input = {k: v for k, v in state.items() if k not in internal_keys}
 
-        # Optionally exclude previous stage outputs for isolation
         if not include_previous_outputs:
             stage_input.pop("stage_outputs", None)
 
@@ -161,13 +146,11 @@ class StateManager:
 
     def merge_stage_output(
         self,
-        state: WorkflowState,
+        state: Dict[str, Any],
         stage_name: str,
         output: Any
-    ) -> WorkflowState:
+    ) -> Dict[str, Any]:
         """Merge stage output into workflow state.
-
-        Updates state with output from a completed stage.
 
         Args:
             state: Current workflow state
@@ -176,51 +159,34 @@ class StateManager:
 
         Returns:
             Updated workflow state
-
-        Example:
-            >>> state = manager.merge_stage_output(
-            ...     state,
-            ...     "research",
-            ...     {"findings": [...]}
-            ... )
         """
-        state.set_stage_output(stage_name, output)
+        state.setdefault("stage_outputs", {})[stage_name] = output
+        state["current_stage"] = stage_name
         return state
 
-    def get_state_snapshot(self, state: WorkflowState) -> Dict[str, Any]:
+    def get_state_snapshot(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """Get serializable snapshot of workflow state.
-
-        Creates a JSON-serializable snapshot for persistence,
-        logging, or debugging.
 
         Args:
             state: Workflow state
 
         Returns:
-            Serializable state snapshot
-
-        Example:
-            >>> snapshot = manager.get_state_snapshot(state)
-            >>> json.dump(snapshot, file)
+            Serializable state snapshot (infrastructure keys excluded)
         """
-        return state.to_dict(exclude_none=True, exclude_internal=True)
+        internal_keys = {"tracker", "tool_registry", "config_loader", "visualizer"}
+        return {k: v for k, v in state.items() if k not in internal_keys and v is not None}
 
     def restore_state_from_snapshot(
         self,
         snapshot: Dict[str, Any]
-    ) -> WorkflowState:
+    ) -> Dict[str, Any]:
         """Restore workflow state from snapshot.
-
-        Recreates WorkflowState from a previously saved snapshot.
 
         Args:
             snapshot: State snapshot dictionary
 
         Returns:
-            Restored WorkflowState instance
-
-        Example:
-            >>> snapshot = json.load(file)
-            >>> state = manager.restore_state_from_snapshot(snapshot)
+            Restored state dict
         """
-        return WorkflowState.from_dict(snapshot)
+        state = {"stage_outputs": {}, "current_stage": "", **snapshot}
+        return state

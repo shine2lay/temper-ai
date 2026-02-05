@@ -12,6 +12,7 @@ import re
 import json
 import logging
 import sys
+from collections import OrderedDict
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List, Match, cast
 import yaml
@@ -72,11 +73,15 @@ class ConfigLoader:
     - M5 Integration: Checks ConfigDeployer for improved configs before YAML fallback
     """
 
+    # Default maximum number of cached configs before LRU eviction
+    DEFAULT_MAX_CACHE_SIZE = 128
+
     def __init__(
         self,
         config_root: Optional[Union[str, Path]] = None,
         cache_enabled: bool = True,
-        config_deployer=None
+        config_deployer=None,
+        max_cache_size: int = DEFAULT_MAX_CACHE_SIZE
     ):
         """
         Initialize config loader.
@@ -85,6 +90,7 @@ class ConfigLoader:
             config_root: Root directory for configs (defaults to ./configs)
             cache_enabled: Whether to cache loaded configs
             config_deployer: Optional ConfigDeployer for M5 integration (closes feedback loop)
+            max_cache_size: Maximum number of cached configs (LRU eviction when exceeded)
         """
         self.config_deployer = config_deployer
         self._config_deployer_initialized = False  # Lazy init flag
@@ -111,7 +117,8 @@ class ConfigLoader:
             )
 
         self.cache_enabled = cache_enabled
-        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._max_cache_size = max_cache_size
+        self._cache: OrderedDict[str, Dict[str, Any]] = OrderedDict()
 
         # Subdirectories for each config type
         self.agents_dir = self.config_root / "agents"
@@ -146,6 +153,7 @@ class ConfigLoader:
         """
         cache_key = f"{config_type}:{name}"
         if self.cache_enabled and cache_key in self._cache:
+            self._cache.move_to_end(cache_key)
             return self._cache[cache_key]
 
         config = self._load_config_file(directory, name)
@@ -160,6 +168,9 @@ class ConfigLoader:
 
         if self.cache_enabled:
             self._cache[cache_key] = config
+            # Evict least-recently-used entries when cache exceeds max size
+            while len(self._cache) > self._max_cache_size:
+                self._cache.popitem(last=False)
 
         return cast(Dict[str, Any], config)
 

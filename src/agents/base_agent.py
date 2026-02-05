@@ -3,12 +3,15 @@
 Defines the abstract BaseAgent class that all agent implementations must inherit from,
 along with AgentResponse and ExecutionContext data classes.
 """
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from datetime import datetime, timezone
 
-from src.compiler.schemas import AgentConfig
+if TYPE_CHECKING:
+    from src.compiler.schemas import AgentConfig
 from src.core.context import ExecutionContext  # canonical definition; re-exported here
 
 

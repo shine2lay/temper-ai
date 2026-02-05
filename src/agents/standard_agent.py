@@ -8,11 +8,16 @@ StandardAgent is the default agent type that executes a multi-turn loop:
 5. Inject tool results back into prompt
 6. Repeat until no more tool calls or max iterations reached
 """
+from __future__ import annotations
+
 import json
 import logging
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 from datetime import datetime, timezone
+
+if TYPE_CHECKING:
+    from src.compiler.schemas import AgentConfig
 
 from src.agents.base_agent import BaseAgent, AgentResponse, ExecutionContext
 from src.agents.llm_providers import (
@@ -41,7 +46,6 @@ from src.agents.response_parser import (
     _TOOL_RESULT_SANITIZE_PATTERN,
 )
 from src.agents.agent_observer import AgentObserver
-from src.compiler.schemas import AgentConfig
 from src.tools.registry import ToolRegistry
 from src.tools.base import BaseTool, ToolResult
 
@@ -181,6 +185,7 @@ class StandardAgent(BaseAgent):
         self.tool_executor = input_data.get('tool_executor', None)
         self.tracker = input_data.get('tracker', None)
         self._observer = AgentObserver(self.tracker, self._execution_context)
+        logger.info("[%s] Starting execution", self.name)
 
         start_time = time.time()
         tool_calls_made: list[dict[str, Any]] = []
@@ -309,6 +314,11 @@ class StandardAgent(BaseAgent):
                 if native_tools:
                     llm_kwargs["tools"] = native_tools
                 llm_response = self.llm.complete(prompt, **llm_kwargs)
+                logger.info(
+                    "[%s] LLM responded (%s tokens)",
+                    self.name,
+                    llm_response.total_tokens or "?",
+                )
                 break
             except LLMError as e:
                 last_error = e
@@ -361,6 +371,10 @@ class StandardAgent(BaseAgent):
 
         # Parse tool calls
         tool_calls = parse_tool_calls(llm_response.content)
+
+        if tool_calls:
+            tool_names = ", ".join(tc.get("name", "?") for tc in tool_calls)
+            logger.info("[%s] Calling %d tool(s): %s", self.name, len(tool_calls), tool_names)
 
         if not tool_calls:
             return {
@@ -472,6 +486,12 @@ class StandardAgent(BaseAgent):
         try:
             result = self.tool_executor.execute(tool_name, tool_params)
             duration_seconds = time.time() - tool_start_time
+            logger.info(
+                "[%s] Tool '%s' %s (%.1fs)",
+                self.name, tool_name,
+                "succeeded" if result.success else "failed",
+                duration_seconds,
+            )
 
             self._observer.track_tool_call(
                 tool_name=tool_name,
@@ -554,6 +574,12 @@ class StandardAgent(BaseAgent):
         try:
             result = tool.execute(**tool_params)
             duration_seconds = time.time() - tool_start_time
+            logger.info(
+                "[%s] Tool '%s' %s (%.1fs)",
+                self.name, tool_name,
+                "succeeded" if result.success else "failed",
+                duration_seconds,
+            )
 
             self._observer.track_tool_call(
                 tool_name=tool_name,
@@ -603,6 +629,11 @@ class StandardAgent(BaseAgent):
         metadata: Optional[Dict[str, Any]] = None
     ) -> AgentResponse:
         """Build final AgentResponse."""
+        duration = time.time() - start_time
+        logger.info(
+            "[%s] Execution complete (%d tokens, $%.4f, %.1fs)",
+            self.name, tokens, cost, duration,
+        )
         return AgentResponse(
             output=output,
             reasoning=reasoning,

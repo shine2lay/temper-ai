@@ -6,12 +6,16 @@ the 'type' field in agent config to concrete agent implementations.
 This supports the "radical modularity" vision by allowing multiple agent types
 (standard, debate, human, custom) to be used interchangeably.
 """
+from __future__ import annotations
+
 import threading
-from typing import Dict, Type
+from typing import Dict, Type, TYPE_CHECKING
 
 from src.agents.base_agent import BaseAgent
 from src.agents.standard_agent import StandardAgent
-from src.compiler.schemas import AgentConfig
+
+if TYPE_CHECKING:
+    from src.compiler.schemas import AgentConfig
 
 
 class AgentFactory:

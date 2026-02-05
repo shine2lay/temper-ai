@@ -102,6 +102,22 @@ class ExecutionTracker:
             alert_manager = AlertManager()
         self.alert_manager = alert_manager
 
+    @staticmethod
+    def ensure_database(db_url: str) -> None:
+        """Ensure observability database is initialized.
+
+        Idempotent — safe to call multiple times. If the database is
+        already initialized, this is a no-op.
+
+        Args:
+            db_url: SQLAlchemy database URL (e.g., "sqlite:///path/to/db.sqlite")
+        """
+        from src.observability.database import get_database, init_database
+        try:
+            get_database()
+        except RuntimeError:
+            init_database(db_url)
+
     @property
     def context(self) -> ExecutionContext:
         """Per-thread/task ExecutionContext (backward-compatible property)."""

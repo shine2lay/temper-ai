@@ -141,17 +141,13 @@ def run(
     try:
         from src.compiler.config_loader import ConfigLoader
         from src.compiler.engine_registry import EngineRegistry
-        from src.observability.database import get_database, init_database
         from src.observability.tracker import ExecutionTracker
         from src.tools.registry import ToolRegistry
 
         # 5. Init database
         db_path = db or DEFAULT_DB_PATH
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        try:
-            get_database()
-        except RuntimeError:
-            init_database(f"sqlite:///{db_path}")
+        ExecutionTracker.ensure_database(f"sqlite:///{db_path}")
 
         # 6. Create infrastructure
         config_loader = ConfigLoader(config_root=config_root)

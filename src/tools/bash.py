@@ -211,32 +211,58 @@ class Bash(BaseTool):
         # --- Shell mode vs strict mode ---
         if self.shell_mode:
             # Shell mode: allow metacharacters, use shell=True later.
-            # SECURITY (TO-01): Even in shell mode, validate the base command
-            # against the allowlist. Shell mode only relaxes metacharacter
-            # restrictions, not the command allowlist.
-            try:
-                import shlex as _shlex
-                shell_parts = _shlex.split(command)
-                if shell_parts:
-                    cmd_name = shell_parts[0]
-                    if '/' in cmd_name:
-                        return ToolResult(
-                            success=False,
-                            error=(
-                                f"Command must be a bare name, not a path: '{cmd_name}'. "
-                                f"Allowed commands: {sorted(self.allowed_commands)}"
-                            ),
-                        )
-                    if cmd_name not in self.allowed_commands:
-                        return ToolResult(
-                            success=False,
-                            error=(
-                                f"Command '{cmd_name}' is not in the allowed list. "
-                                f"Allowed commands: {sorted(self.allowed_commands)}"
-                            ),
-                        )
-            except ValueError:
-                pass  # Unparseable - will be caught by shell execution
+            # SECURITY: Validate ALL commands in a pipeline/chain against the
+            # allowlist. Shell operators (;, |, &&, ||) can chain arbitrary
+            # commands, so every sub-command must be validated.
+            import re as _re
+            import shlex as _shlex
+
+            # Split on shell operators to get individual commands
+            sub_commands = _re.split(r'\s*(?:;|\|\||&&|\|)\s*', command)
+
+            # Also reject command substitution ($(...) and backticks)
+            if '`' in command or '$(' in command:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Command substitution ($() and backticks) is not allowed. "
+                        f"Allowed commands: {sorted(self.allowed_commands)}"
+                    ),
+                )
+
+            for sub_cmd in sub_commands:
+                sub_cmd = sub_cmd.strip()
+                if not sub_cmd:
+                    continue
+                try:
+                    shell_parts = _shlex.split(sub_cmd)
+                except ValueError:
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            f"Could not parse command: '{sub_cmd}'. "
+                            "Ensure commands are properly quoted."
+                        ),
+                    )
+                if not shell_parts:
+                    continue
+                cmd_name = shell_parts[0]
+                if '/' in cmd_name:
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            f"Command must be a bare name, not a path: '{cmd_name}'. "
+                            f"Allowed commands: {sorted(self.allowed_commands)}"
+                        ),
+                    )
+                if cmd_name not in self.allowed_commands:
+                    return ToolResult(
+                        success=False,
+                        error=(
+                            f"Command '{cmd_name}' is not in the allowed list. "
+                            f"Allowed commands: {sorted(self.allowed_commands)}"
+                        ),
+                    )
             parts = None  # Signal to use shell=True with the raw command string
         else:
             # Strict mode: block metacharacters and enforce allowlist

@@ -120,18 +120,21 @@ class MeritScoreService:
         """Update 30-day and 90-day success rates from DecisionOutcome records."""
         try:
             from src.observability.models import DecisionOutcome
-            from sqlalchemy import func
+            from sqlalchemy import func, cast, String
             from sqlmodel import select
 
             thirty_days_ago = utcnow() - timedelta(days=30)
             ninety_days_ago = utcnow() - timedelta(days=90)
+
+            # Use cast() for portable JSON field access (works on both SQLite and PostgreSQL)
+            agent_name_field = cast(DecisionOutcome.decision_data['agent_name'], String)
 
             # 30-day success rate
             recent_statement = select(
                 func.count(DecisionOutcome.id).label('total'),
                 func.sum(func.case((DecisionOutcome.outcome == 'success', 1), else_=0)).label('successful')
             ).where(
-                DecisionOutcome.decision_data['agent_name'].astext == agent_name,
+                agent_name_field == agent_name,
                 DecisionOutcome.validation_timestamp >= thirty_days_ago
             )
 
@@ -144,7 +147,7 @@ class MeritScoreService:
                 func.count(DecisionOutcome.id).label('total'),
                 func.sum(func.case((DecisionOutcome.outcome == 'success', 1), else_=0)).label('successful')
             ).where(
-                DecisionOutcome.decision_data['agent_name'].astext == agent_name,
+                agent_name_field == agent_name,
                 DecisionOutcome.validation_timestamp >= ninety_days_ago
             )
 

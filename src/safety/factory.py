@@ -227,18 +227,29 @@ def create_safety_stack(
     logger.info(f"Created ActionPolicyEngine with config: {engine_config}")
 
     # Create ApprovalWorkflow
-    # For development, use NoOpApprover (auto-approves everything)
-    # For staging/production, this should be replaced with real approver
-    if environment == "development":
+    approval_mode = config.get("approval_mode", None)
+    if approval_mode == "noop":
+        # Explicit opt-in to auto-approve in any environment
+        approval_workflow = NoOpApprover()
+        if environment != "development":
+            logger.warning(
+                "Using NoOpApprover in '%s' environment (explicit opt-in). "
+                "All approval requests will be auto-approved.",
+                environment,
+            )
+        else:
+            logger.info("Created NoOpApprover approval workflow (auto-approve for dev)")
+    elif environment == "development":
+        # Development default: auto-approve
         approval_workflow = NoOpApprover()
         logger.info("Created NoOpApprover approval workflow (auto-approve for dev)")
     else:
-        # In staging/production, use NoOpApprover but log warning
-        # Real approver implementation should be added for production use
-        approval_workflow = NoOpApprover()
-        logger.warning(
-            f"Using NoOpApprover in {environment} environment. "
-            "Replace with real approver for production use."
+        # Non-dev default: real approval workflow requiring human review
+        approval_workflow = ApprovalWorkflow()
+        logger.info(
+            "Created ApprovalWorkflow for '%s' environment — "
+            "high-risk actions will require human approval",
+            environment,
         )
 
     # Create RollbackManager

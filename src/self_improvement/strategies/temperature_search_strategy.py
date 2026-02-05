@@ -9,7 +9,7 @@ from typing import List, Dict
 
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
-    AgentConfig,
+    OptimizationConfig,
     LearnedPattern,
 )
 
@@ -26,7 +26,7 @@ class TemperatureSearchStrategy(ImprovementStrategy):
 
     Example:
         >>> strategy = TemperatureSearchStrategy()
-        >>> current = AgentConfig(
+        >>> current = OptimizationConfig(
         ...     inference={'temperature': 0.7, 'top_p': 0.9}
         ... )
         >>> variants = strategy.generate_variants(current, [])
@@ -65,8 +65,8 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         return "temperature_search"
 
     def generate_variants(
-        self, current_config: AgentConfig, patterns: List[LearnedPattern]
-    ) -> List[AgentConfig]:
+        self, current_config: OptimizationConfig, patterns: List[LearnedPattern]
+    ) -> List[OptimizationConfig]:
         """Generate improved configuration variants.
 
         Generates 3-4 variants:

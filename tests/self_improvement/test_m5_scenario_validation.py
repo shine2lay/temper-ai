@@ -21,7 +21,7 @@ sys.path.insert(0, str(coord_path))
 from coord_service.database import Database as CoordDatabase
 
 from src.self_improvement.loop import M5SelfImprovementLoop, LoopConfig, Phase
-from src.self_improvement.data_models import AgentConfig
+from src.self_improvement.data_models import OptimizationConfig
 from src.observability.database import init_database, reset_database
 from src.observability.models import AgentExecution
 

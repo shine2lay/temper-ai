@@ -30,7 +30,7 @@ from examples.run_erc721_generator import (
     run_agent_with_input,
 )
 from src.self_improvement.strategies.erc721_strategy import ERC721WorkflowStrategy
-from src.self_improvement.strategies.strategy import AgentConfig, LearnedPattern
+from src.self_improvement.strategies.strategy import OptimizationConfig, LearnedPattern
 
 logging.basicConfig(
     level=logging.INFO,

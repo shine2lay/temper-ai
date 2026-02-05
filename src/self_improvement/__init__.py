@@ -2,7 +2,7 @@
 
 from .data_models import (
     AgentPerformanceProfile,
-    AgentConfig,
+    OptimizationConfig,
     Experiment,
     ExperimentResult,
     utcnow,
@@ -20,7 +20,7 @@ from .experiment_orchestrator import (
 
 __all__ = [
     "AgentPerformanceProfile",
-    "AgentConfig",
+    "OptimizationConfig",
     "Experiment",
     "ExperimentResult",
     "utcnow",

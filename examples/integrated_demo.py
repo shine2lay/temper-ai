@@ -82,7 +82,7 @@ from src.observability.models import (
     WorkflowExecution,
 )
 from src.safety import CircuitBreaker, SecretDetectionPolicy
-from src.self_improvement.data_models import AgentConfig
+from src.self_improvement.data_models import OptimizationConfig
 from src.self_improvement.deployment.rollback_monitor import RegressionThresholds
 from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
@@ -454,8 +454,8 @@ def _make_id(prefix: str = "ae") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
-def _make_config(model: str, strategy: str, temperature: float = 0.5) -> AgentConfig:
-    """Create an AgentConfig for a given model+prompt strategy."""
+def _make_config(model: str, strategy: str, temperature: float = 0.5) -> OptimizationConfig:
+    """Create an OptimizationConfig for a given model+prompt strategy."""
     prompt_cfg: Dict[str, Any] = {"template": f"{strategy}_v1"}
     if strategy == "chain-of-thought":
         prompt_cfg["include_reasoning_guide"] = True
@@ -465,7 +465,7 @@ def _make_config(model: str, strategy: str, temperature: float = 0.5) -> AgentCo
     elif strategy == "structured":
         prompt_cfg["sections"] = ["input", "extraction", "validation"]
 
-    return AgentConfig(
+    return OptimizationConfig(
         agent_name=AGENT_NAME,
         inference={
             "provider": "ollama",

@@ -9,7 +9,7 @@ from typing import List
 
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
-    AgentConfig,
+    OptimizationConfig,
     LearnedPattern,
 )
 from src.self_improvement.model_registry import ModelRegistry, ModelMetadata
@@ -31,7 +31,7 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
     Example:
         >>> registry = ModelRegistry()
         >>> strategy = OllamaModelSelectionStrategy(registry)
-        >>> current = AgentConfig(inference={'model': 'phi3:mini'})
+        >>> current = OptimizationConfig(inference={'model': 'phi3:mini'})
         >>> patterns = []
         >>> variants = strategy.generate_variants(current, patterns)
         >>> len(variants)
@@ -56,8 +56,8 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         return "ollama_model_selection"
 
     def generate_variants(
-        self, current_config: AgentConfig, patterns: List[LearnedPattern]
-    ) -> List[AgentConfig]:
+        self, current_config: OptimizationConfig, patterns: List[LearnedPattern]
+    ) -> List[OptimizationConfig]:
         """
         Generate config variants with different Ollama models.
 

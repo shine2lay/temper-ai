@@ -32,7 +32,7 @@ from src.self_improvement.performance_comparison import compare_profiles
 from src.self_improvement.data_models import AgentPerformanceProfile
 from src.self_improvement.strategies.registry import StrategyRegistry
 from src.self_improvement.strategies.ollama_model_strategy import OllamaModelSelectionStrategy
-from src.self_improvement.strategies.strategy import AgentConfig
+from src.self_improvement.strategies.strategy import OptimizationConfig
 from src.self_improvement.model_registry import ModelRegistry
 from src.observability.database import init_database, get_session
 from src.observability.tracker import ExecutionTracker
@@ -199,7 +199,7 @@ class TestM5Phase3Validation:
         strategy = OllamaModelSelectionStrategy(model_registry)
 
         # Create current config
-        current_config = AgentConfig(
+        current_config = OptimizationConfig(
             agent_name="test_agent",
             inference={"model": "phi3:mini"},
             prompt={"template": "Extract product information"},

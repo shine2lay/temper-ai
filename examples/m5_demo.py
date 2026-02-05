@@ -29,7 +29,7 @@ sys.path.insert(0, str(project_root))
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 from src.self_improvement.performance_comparison import compare_profiles
 from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
-from src.self_improvement.data_models import AgentConfig
+from src.self_improvement.data_models import OptimizationConfig
 from src.observability.database import init_database, reset_database, get_database
 from src.observability.models import (
     WorkflowExecution,
@@ -208,16 +208,16 @@ def demo_part2_experiment_creation():
         print(f"   ✓ Orchestrator ready\n")
 
         # Define configurations
-        control_config = AgentConfig(
+        control_config = OptimizationConfig(
             model="llama3.1:8b",
             temperature=0.7,
             max_tokens=500,
         )
 
         variant_configs = [
-            AgentConfig(model="gemma2:2b", temperature=0.7, max_tokens=500),
-            AgentConfig(model="phi3:mini", temperature=0.7, max_tokens=500),
-            AgentConfig(model="mistral:7b", temperature=0.7, max_tokens=500),
+            OptimizationConfig(model="gemma2:2b", temperature=0.7, max_tokens=500),
+            OptimizationConfig(model="phi3:mini", temperature=0.7, max_tokens=500),
+            OptimizationConfig(model="mistral:7b", temperature=0.7, max_tokens=500),
         ]
 
         print("📋 Experiment Configuration:")

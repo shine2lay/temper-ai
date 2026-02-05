@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.self_improvement.data_models import (
-    AgentConfig,
+    OptimizationConfig,
     ConfigDeployment,
     utcnow,
 )
@@ -77,7 +77,7 @@ class ConfigDeployer:
     def deploy(
         self,
         agent_name: str,
-        new_config: AgentConfig,
+        new_config: OptimizationConfig,
         experiment_id: Optional[str] = None,
         workflow_id: Optional[str] = None,
         deployed_by: str = "m5_system"
@@ -203,7 +203,7 @@ class ConfigDeployer:
             f"Rolled back config for {agent_name} (reason: {rollback_reason})"
         )
 
-    def get_agent_config(self, agent_name: str) -> AgentConfig:
+    def get_agent_config(self, agent_name: str) -> OptimizationConfig:
         """
         Get current agent configuration.
 
@@ -227,10 +227,10 @@ class ConfigDeployer:
 
         if rows:
             config_dict = json.loads(rows[0]["new_config"])
-            return AgentConfig.from_dict(config_dict)
+            return OptimizationConfig.from_dict(config_dict)
 
         # Return default config if no deployments
-        return AgentConfig(agent_name=agent_name)
+        return OptimizationConfig(agent_name=agent_name)
 
     def get_last_deployment(self, agent_name: str) -> Optional[ConfigDeployment]:
         """
@@ -260,8 +260,8 @@ class ConfigDeployer:
         return ConfigDeployment(
             id=row["id"],
             agent_name=row["agent_name"],
-            previous_config=AgentConfig.from_dict(json.loads(row["previous_config"])),
-            new_config=AgentConfig.from_dict(json.loads(row["new_config"])),
+            previous_config=OptimizationConfig.from_dict(json.loads(row["previous_config"])),
+            new_config=OptimizationConfig.from_dict(json.loads(row["new_config"])),
             experiment_id=row["experiment_id"],
             deployed_at=(
                 datetime.fromisoformat(row["deployed_at"])
@@ -280,8 +280,8 @@ class ConfigDeployer:
     def _validate_through_safety_stack(
         self,
         agent_name: str,
-        old_config: AgentConfig,
-        new_config: AgentConfig,
+        old_config: OptimizationConfig,
+        new_config: OptimizationConfig,
         workflow_id: str,
         deployed_by: str
     ):
@@ -343,8 +343,8 @@ class ConfigDeployer:
     def _request_and_wait_for_approval(
         self,
         agent_name: str,
-        old_config: AgentConfig,
-        new_config: AgentConfig,
+        old_config: OptimizationConfig,
+        new_config: OptimizationConfig,
         enforcement_result,
         deployed_by: str,
         approval_timeout_minutes: int = 60
@@ -414,7 +414,7 @@ class ConfigDeployer:
         )
         return False
 
-    def _validate_config(self, config: AgentConfig) -> bool:
+    def _validate_config(self, config: OptimizationConfig) -> bool:
         """
         Validate config has required fields.
 
@@ -455,7 +455,7 @@ class ConfigDeployer:
             ),
         )
 
-    def _update_agent_config(self, conn, agent_name: str, config: AgentConfig):
+    def _update_agent_config(self, conn, agent_name: str, config: OptimizationConfig):
         """
         Update agent configuration (atomic operation).
 

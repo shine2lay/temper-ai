@@ -99,8 +99,8 @@ class AnalysisResult:
 @dataclass
 class StrategyResult:
     """Result from Phase 3: Strategy Generation."""
-    control_config: Any  # AgentConfig
-    variant_configs: List[Any]  # List[AgentConfig]
+    control_config: Any  # OptimizationConfig
+    variant_configs: List[Any]  # List[OptimizationConfig]
     strategy_name: str
     strategy_metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -110,7 +110,7 @@ class ExperimentResult:
     """Result from Phase 4: Experimentation."""
     experiment_id: str
     winner_variant_id: Optional[str]
-    winner_config: Optional[Any] = None  # AgentConfig
+    winner_config: Optional[Any] = None  # OptimizationConfig
     statistical_significance: Optional[float] = None
     metrics_comparison: Optional[Dict[str, Any]] = None
 
@@ -119,8 +119,8 @@ class ExperimentResult:
 class DeploymentResult:
     """Result from Phase 5: Deployment."""
     deployment_id: str
-    deployed_config: Any  # AgentConfig
-    previous_config: Any  # AgentConfig
+    deployed_config: Any  # OptimizationConfig
+    previous_config: Any  # OptimizationConfig
     deployment_timestamp: datetime
     rollback_monitoring_enabled: bool
 

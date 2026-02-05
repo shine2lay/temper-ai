@@ -16,9 +16,9 @@ Example:
     ...
     ...     def generate_variants(
     ...         self,
-    ...         current_config: AgentConfig,
+    ...         current_config: OptimizationConfig,
     ...         patterns: List[LearnedPattern]
-    ...     ) -> List[AgentConfig]:
+    ...     ) -> List[OptimizationConfig]:
     ...         # Generate 2-4 prompt variations
     ...         variants = []
     ...         for template in self._generate_templates(current_config.prompt):
@@ -35,7 +35,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict
 from dataclasses import dataclass, field
 
-from src.self_improvement.data_models import AgentConfig
+from src.self_improvement.data_models import OptimizationConfig
 
 
 @dataclass
@@ -130,8 +130,8 @@ class ImprovementStrategy(ABC):
 
     @abstractmethod
     def generate_variants(
-        self, current_config: AgentConfig, patterns: List[LearnedPattern]
-    ) -> List[AgentConfig]:
+        self, current_config: OptimizationConfig, patterns: List[LearnedPattern]
+    ) -> List[OptimizationConfig]:
         """
         Generate improved configuration variants to test.
 
@@ -145,10 +145,10 @@ class ImprovementStrategy(ABC):
 
         Returns:
             List of 2-4 configuration variants to experiment with. Each variant
-            should be a complete AgentConfig with modifications applied.
+            should be a complete OptimizationConfig with modifications applied.
 
         Example:
-            >>> current = AgentConfig(
+            >>> current = OptimizationConfig(
             ...     agent_name='test',
             ...     inference={'model': 'gpt-4', 'temperature': 0.7},
             ...     prompt={'template': 'default'}

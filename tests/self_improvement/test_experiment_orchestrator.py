@@ -9,7 +9,7 @@ from src.self_improvement.experiment_orchestrator import (
     ExperimentNotCompleteError,
     InvalidVariantError,
 )
-from src.self_improvement.data_models import AgentConfig
+from src.self_improvement.data_models import OptimizationConfig
 from src.observability.database import init_database, reset_database
 
 
@@ -35,7 +35,7 @@ def orchestrator(db_session):
 @pytest.fixture
 def control_config():
     """Create control configuration."""
-    return AgentConfig(
+    return OptimizationConfig(
         agent_name="test_agent",
         inference={"model": "llama3.1:8b", "temperature": 0.7}
     )
@@ -45,11 +45,11 @@ def control_config():
 def variant_configs():
     """Create variant configurations."""
     return [
-        AgentConfig(
+        OptimizationConfig(
             agent_name="test_agent",
             inference={"model": "phi3:mini", "temperature": 0.7}
         ),
-        AgentConfig(
+        OptimizationConfig(
             agent_name="test_agent",
             inference={"model": "gemma2:2b", "temperature": 0.7}
         ),
@@ -120,7 +120,7 @@ class TestExperimentCreation:
     ):
         """Verify creating experiment with >3 variants raises error."""
         too_many_variants = [
-            AgentConfig(agent_name="test_agent", inference={"model": f"model-{i}"})
+            OptimizationConfig(agent_name="test_agent", inference={"model": f"model-{i}"})
             for i in range(4)
         ]
 
@@ -135,7 +135,7 @@ class TestExperimentCreation:
         self, orchestrator, control_config
     ):
         """Verify mismatched agent names raises error."""
-        bad_variant = AgentConfig(
+        bad_variant = OptimizationConfig(
             agent_name="different_agent",  # Different!
             inference={"model": "phi3:mini"}
         )
@@ -187,7 +187,7 @@ class TestVariantAssignment:
         assert assignment.variant_id in ["control", "variant_0", "variant_1"]
         assert assignment.experiment_id == experiment.id
         assert assignment.execution_id == "exec-456"
-        assert isinstance(assignment.config, AgentConfig)
+        assert isinstance(assignment.config, OptimizationConfig)
 
     def test_assign_variant_uniform_distribution(
         self, orchestrator, control_config, variant_configs
@@ -700,16 +700,16 @@ class TestExperimentListing:
         # Create experiments for different agents
         exp1 = orchestrator.create_experiment(
             agent_name="agent1",
-            control_config=AgentConfig(agent_name="agent1"),
+            control_config=OptimizationConfig(agent_name="agent1"),
             variant_configs=[
-                AgentConfig(agent_name="agent1", inference={"model": "phi3:mini"})
+                OptimizationConfig(agent_name="agent1", inference={"model": "phi3:mini"})
             ]
         )
         exp2 = orchestrator.create_experiment(
             agent_name="agent2",
-            control_config=AgentConfig(agent_name="agent2"),
+            control_config=OptimizationConfig(agent_name="agent2"),
             variant_configs=[
-                AgentConfig(agent_name="agent2", inference={"model": "gemma2:2b"})
+                OptimizationConfig(agent_name="agent2", inference={"model": "gemma2:2b"})
             ]
         )
 

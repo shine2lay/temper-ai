@@ -32,7 +32,7 @@ from src.self_improvement.deployment.rollback_monitor import (
     RollbackMonitor,
     RegressionThresholds,
 )
-from src.self_improvement.data_models import AgentConfig, StrategyOutcome
+from src.self_improvement.data_models import OptimizationConfig, StrategyOutcome
 from src.self_improvement.strategy_learning import StrategyLearningStore
 from src.self_improvement.pattern_mining import PatternMiner
 

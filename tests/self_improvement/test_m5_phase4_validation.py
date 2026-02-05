@@ -21,7 +21,7 @@ from src.self_improvement.experiment_orchestrator import (
     ExperimentOrchestrator,
     ExperimentError,
 )
-from src.self_improvement.data_models import AgentConfig
+from src.self_improvement.data_models import OptimizationConfig
 from src.observability.database import init_database, reset_database
 
 
@@ -60,21 +60,21 @@ def four_way_configs():
     - Variant 1: gemma2:2b (best quality, slightly slower)
     - Variant 2: mistral:7b (balanced)
     """
-    control = AgentConfig(
+    control = OptimizationConfig(
         agent_name="product_extractor",
         inference={"model": "llama3.1:8b", "temperature": 0.7}
     )
 
     variants = [
-        AgentConfig(
+        OptimizationConfig(
             agent_name="product_extractor",
             inference={"model": "phi3:mini", "temperature": 0.7}
         ),
-        AgentConfig(
+        OptimizationConfig(
             agent_name="product_extractor",
             inference={"model": "gemma2:2b", "temperature": 0.7}
         ),
-        AgentConfig(
+        OptimizationConfig(
             agent_name="product_extractor",
             inference={"model": "mistral:7b", "temperature": 0.7}
         ),
@@ -433,15 +433,15 @@ class TestFourWayExperimentValidation:
         """
         # Modify configs to make all variants worse
         worse_variants = [
-            AgentConfig(
+            OptimizationConfig(
                 agent_name="product_extractor",
                 inference={"model": "bad_model_1", "temperature": 0.7}
             ),
-            AgentConfig(
+            OptimizationConfig(
                 agent_name="product_extractor",
                 inference={"model": "bad_model_2", "temperature": 0.7}
             ),
-            AgentConfig(
+            OptimizationConfig(
                 agent_name="product_extractor",
                 inference={"model": "bad_model_3", "temperature": 0.7}
             ),

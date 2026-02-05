@@ -11,7 +11,7 @@ from typing import List, Dict
 
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
-    AgentConfig,
+    OptimizationConfig,
     LearnedPattern,
 )
 
@@ -28,7 +28,7 @@ class ERC721WorkflowStrategy(ImprovementStrategy):
 
     Example:
         >>> strategy = ERC721WorkflowStrategy()
-        >>> current = AgentConfig(
+        >>> current = OptimizationConfig(
         ...     inference={'model': 'llama3:8b', 'temperature': 0.7},
         ...     prompt={'template': 'default'}
         ... )
@@ -85,8 +85,8 @@ contract MyNFT is ERC721, Ownable {
         return "erc721_workflow"
 
     def generate_variants(
-        self, current_config: AgentConfig, patterns: List[LearnedPattern]
-    ) -> List[AgentConfig]:
+        self, current_config: OptimizationConfig, patterns: List[LearnedPattern]
+    ) -> List[OptimizationConfig]:
         """Generate improved configuration variants.
 
         Generates 3 variants:

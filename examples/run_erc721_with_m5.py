@@ -26,7 +26,7 @@ from src.self_improvement.metrics.erc721_quality import (
     score_erc721_workflow,
 )
 from src.self_improvement.strategies.erc721_strategy import ERC721WorkflowStrategy
-from src.self_improvement.strategies.strategy import AgentConfig, LearnedPattern
+from src.self_improvement.strategies.strategy import OptimizationConfig, LearnedPattern
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,8 +99,8 @@ def generate_improvement_variants(
     """
     strategy = ERC721WorkflowStrategy()
 
-    # Build AgentConfig from dict
-    config = AgentConfig(
+    # Build OptimizationConfig from dict
+    config = OptimizationConfig(
         inference=current_config.get("inference", {}),
         prompt=current_config.get("prompt", {}),
         metadata=current_config.get("metadata", {}),

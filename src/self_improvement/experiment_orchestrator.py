@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from src.self_improvement.data_models import (
     Experiment,
     ExperimentResult,
-    AgentConfig,
+    OptimizationConfig,
     utcnow
 )
 from src.self_improvement.statistical_analyzer import (
@@ -60,7 +60,7 @@ class VariantAssignment:
     experiment_id: str
     execution_id: str
     variant_id: str  # "control", "variant_0", "variant_1", etc.
-    config: AgentConfig
+    config: OptimizationConfig
     assigned_at: Any = field(default_factory=utcnow)
 
 
@@ -82,7 +82,7 @@ class WinnerResult:
     """Experiment winner analysis result."""
     experiment_id: str
     variant_id: str
-    winning_config: AgentConfig
+    winning_config: OptimizationConfig
 
     # Performance improvements
     quality_improvement: float  # Percentage vs control
@@ -223,8 +223,8 @@ class ExperimentOrchestrator:
     def create_experiment(
         self,
         agent_name: str,
-        control_config: AgentConfig,
-        variant_configs: List[AgentConfig],
+        control_config: OptimizationConfig,
+        variant_configs: List[OptimizationConfig],
         proposal_id: Optional[str] = None,
         target_executions_per_variant: Optional[int] = None,
         extra_metadata: Optional[Dict[str, Any]] = None
@@ -345,9 +345,9 @@ class ExperimentOrchestrator:
             id=result.id,
             agent_name=result.agent_name,
             status=result.status,
-            control_config=AgentConfig.from_dict(json.loads(result.control_config)),
+            control_config=OptimizationConfig.from_dict(json.loads(result.control_config)),
             variant_configs=[
-                AgentConfig.from_dict(v)
+                OptimizationConfig.from_dict(v)
                 for v in json.loads(result.variant_configs)
             ],
             proposal_id=result.proposal_id,
@@ -382,9 +382,9 @@ class ExperimentOrchestrator:
                 id=row.id,
                 agent_name=row.agent_name,
                 status=row.status,
-                control_config=AgentConfig.from_dict(json.loads(row.control_config)),
+                control_config=OptimizationConfig.from_dict(json.loads(row.control_config)),
                 variant_configs=[
-                    AgentConfig.from_dict(v)
+                    OptimizationConfig.from_dict(v)
                     for v in json.loads(row.variant_configs)
                 ],
                 proposal_id=row.proposal_id,
@@ -484,7 +484,7 @@ class ExperimentOrchestrator:
         else:
             return f"variant_{variant_index - 1}"
 
-    def get_variant_config(self, experiment_id: str, variant_id: str) -> AgentConfig:
+    def get_variant_config(self, experiment_id: str, variant_id: str) -> OptimizationConfig:
         """
         Get configuration for a specific variant.
 
@@ -493,7 +493,7 @@ class ExperimentOrchestrator:
             variant_id: Variant identifier ("control", "variant_0", etc.)
 
         Returns:
-            AgentConfig: Configuration for the variant
+            OptimizationConfig: Configuration for the variant
 
         Raises:
             ExperimentNotFoundError: If experiment not found
@@ -923,7 +923,7 @@ class ExperimentOrchestrator:
 
         logger.info(f"Stopped experiment {experiment_id}, reason: {reason}")
 
-    def get_winning_config(self, experiment_id: str) -> Optional[AgentConfig]:
+    def get_winning_config(self, experiment_id: str) -> Optional[OptimizationConfig]:
         """
         Get winning configuration after experiment completes.
 
@@ -933,7 +933,7 @@ class ExperimentOrchestrator:
             experiment_id: Experiment identifier
 
         Returns:
-            AgentConfig: Winning configuration, or None if no winner
+            OptimizationConfig: Winning configuration, or None if no winner
         """
         self._validate_experiment_id(experiment_id)
 

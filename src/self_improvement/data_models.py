@@ -104,7 +104,7 @@ class AgentPerformanceProfile:
 
 
 @dataclass
-class AgentConfig:
+class OptimizationConfig:
     """
     Agent configuration data model.
 
@@ -167,10 +167,10 @@ class AgentConfig:
     # Metadata
     extra_metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def copy(self) -> "AgentConfig":
+    def copy(self) -> "OptimizationConfig":
         """Create a deep copy of this config for generating variants."""
         import copy
-        return AgentConfig(
+        return OptimizationConfig(
             agent_name=self.agent_name,
             agent_version=self.agent_version,
             inference=copy.deepcopy(self.inference),
@@ -195,7 +195,7 @@ class AgentConfig:
         }
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AgentConfig":
+    def from_dict(cls, data: Dict[str, Any]) -> "OptimizationConfig":
         """Load from dictionary (e.g., from database)."""
         return cls(
             agent_name=data["agent_name"],
@@ -231,8 +231,8 @@ class Experiment:
     status: str  # 'running', 'completed', 'failed'
 
     # Configuration being tested
-    control_config: AgentConfig
-    variant_configs: List[AgentConfig]
+    control_config: OptimizationConfig
+    variant_configs: List[OptimizationConfig]
 
     # Metadata
     proposal_id: Optional[str] = None
@@ -240,16 +240,16 @@ class Experiment:
     completed_at: Optional[datetime] = None
     extra_metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def get_all_configs(self) -> Dict[str, AgentConfig]:
+    def get_all_configs(self) -> Dict[str, OptimizationConfig]:
         """
         Get all configurations (control + variants) as a dictionary.
 
         Returns:
             Dict mapping variant_id to config:
             {
-                "control": <AgentConfig>,
-                "variant_0": <AgentConfig>,
-                "variant_1": <AgentConfig>,
+                "control": <OptimizationConfig>,
+                "variant_0": <OptimizationConfig>,
+                "variant_1": <OptimizationConfig>,
                 ...
             }
         """
@@ -291,8 +291,8 @@ class Experiment:
             id=data["id"],
             agent_name=data["agent_name"],
             status=data["status"],
-            control_config=AgentConfig.from_dict(data["control_config"]),
-            variant_configs=[AgentConfig.from_dict(v) for v in data.get("variant_configs", [])],
+            control_config=OptimizationConfig.from_dict(data["control_config"]),
+            variant_configs=[OptimizationConfig.from_dict(v) for v in data.get("variant_configs", [])],
             proposal_id=data.get("proposal_id"),
             created_at=datetime.fromisoformat(data["created_at"]),
             completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
@@ -379,8 +379,8 @@ class ConfigDeployment:
     agent_name: str
 
     # Configurations
-    previous_config: AgentConfig
-    new_config: AgentConfig
+    previous_config: OptimizationConfig
+    new_config: OptimizationConfig
 
     # Deployment metadata
     experiment_id: Optional[str] = None
@@ -415,8 +415,8 @@ class ConfigDeployment:
         return cls(
             id=data["id"],
             agent_name=data["agent_name"],
-            previous_config=AgentConfig.from_dict(data["previous_config"]),
-            new_config=AgentConfig.from_dict(data["new_config"]),
+            previous_config=OptimizationConfig.from_dict(data["previous_config"]),
+            new_config=OptimizationConfig.from_dict(data["new_config"]),
             experiment_id=data.get("experiment_id"),
             deployed_at=datetime.fromisoformat(data["deployed_at"]),
             deployed_by=data.get("deployed_by", "m5_system"),

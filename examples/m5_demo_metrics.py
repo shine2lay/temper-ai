@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 sys.path.insert(0, "/home/shinelay/meta-autonomous-framework")
 
 from src.observability.models import AgentExecution
-from src.self_improvement.data_models import AgentConfig, ExperimentConfig
+from src.self_improvement.data_models import OptimizationConfig, ExperimentConfig
 from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 from src.self_improvement.storage.observability_store import ObservabilityStore
@@ -113,7 +113,7 @@ def main():
 
     # Create experiment
     print("\n  Creating experiment...")
-    agent_config = AgentConfig(
+    agent_config = OptimizationConfig(
         agent_name="product_extractor",
         model_name="llama3.1:8b",
         system_prompt="Extract product information",
@@ -132,7 +132,7 @@ def main():
 
     # Add variants
     for variant_id, config in list(variants.items())[1:]:  # Skip control
-        variant_config = AgentConfig(
+        variant_config = OptimizationConfig(
             agent_name="product_extractor",
             model_name=config["model"],
             system_prompt="Extract product information",

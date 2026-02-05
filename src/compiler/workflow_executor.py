@@ -3,6 +3,7 @@
 Wraps compiled StateGraph and provides execution interface with observability.
 Supports checkpoint/resume capability for fault tolerance and long-running workflows.
 """
+import dataclasses
 from typing import Dict, Any, Optional, Iterator, cast
 from langgraph.graph import StateGraph
 
@@ -382,12 +383,8 @@ class WorkflowExecutor:
         Returns:
             WorkflowDomainState containing only serializable domain data
         """
-        # Filter to domain fields only
-        domain_fields = {
-            "stage_outputs", "current_stage", "workflow_id",
-            "topic", "depth", "focus_areas", "query", "input",
-            "context", "data", "version", "created_at", "metadata"
-        }
+        # Filter to domain fields only (derived from WorkflowDomainState dataclass)
+        domain_fields = {f.name for f in dataclasses.fields(WorkflowDomainState)}
 
         domain_dict = {
             k: v for k, v in state_dict.items()

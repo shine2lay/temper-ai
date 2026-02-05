@@ -99,7 +99,10 @@ class MeritScoreService:
         # Update time-windowed metrics
         self._update_time_windowed_metrics(session, merit_score, agent_name)
 
-        session.commit()
+        # NOTE: Caller is responsible for session.commit().
+        # This allows atomic transactions when merit updates are part of
+        # a larger operation (e.g., DecisionTracker.track()).
+        session.flush()
 
         logger.info(
             f"Updated merit score for {agent_name} in {domain}: "

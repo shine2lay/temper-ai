@@ -104,16 +104,6 @@ class DecisionTracker:
                 extra_metadata=extra_metadata
             )
             session.add(decision_record)
-            session.commit()
-
-            logger.info(
-                f"Tracked decision outcome: {decision_type} -> {outcome}",
-                extra={
-                    "decision_id": decision_id,
-                    "decision_type": decision_type,
-                    "outcome": outcome
-                }
-            )
 
             # Update agent merit score if agent_name present in decision_data
             if decision_data and 'agent_name' in decision_data:
@@ -133,6 +123,18 @@ class DecisionTracker:
                     )
                 except Exception as merit_e:
                     logger.warning(f"Failed to update merit score for decision {decision_id}: {merit_e}")
+
+            # Single commit for both decision record and merit score update
+            session.commit()
+
+            logger.info(
+                f"Tracked decision outcome: {decision_type} -> {outcome}",
+                extra={
+                    "decision_id": decision_id,
+                    "decision_type": decision_type,
+                    "outcome": outcome
+                }
+            )
 
             return decision_id
 

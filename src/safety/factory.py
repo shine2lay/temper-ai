@@ -3,10 +3,12 @@
 This module provides factory functions to create a fully-wired safety stack
 including ActionPolicyEngine, ApprovalWorkflow, RollbackManager, and ToolExecutor.
 """
+from __future__ import annotations
+
 import os
 import yaml
 import logging
-from typing import Dict, Any, Optional, Type
+from typing import Dict, Any, Optional, Type, TYPE_CHECKING
 from pathlib import Path
 
 from src.safety.policy_registry import PolicyRegistry
@@ -22,8 +24,10 @@ from src.safety.rate_limiter import RateLimiterPolicy
 from src.safety.config_change_policy import ConfigChangePolicy
 from src.safety.policies.rate_limit_policy import RateLimitPolicy
 from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
-from src.tools.executor import ToolExecutor
-from src.tools.registry import ToolRegistry
+
+if TYPE_CHECKING:
+    from src.tools.executor import ToolExecutor
+    from src.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -256,8 +260,10 @@ def create_safety_stack(
     rollback_manager = RollbackManager()
     logger.info("Created RollbackManager")
 
-    # Create ToolExecutor with all safety components
-    tool_executor = ToolExecutor(
+    # Create ToolExecutor with all safety components (lazy import to avoid
+    # module-level coupling between safety and tools packages)
+    from src.tools.executor import ToolExecutor as _ToolExecutor
+    tool_executor = _ToolExecutor(
         registry=tool_registry,
         policy_engine=policy_engine,
         approval_workflow=approval_workflow,

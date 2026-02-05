@@ -4,20 +4,24 @@ Tool executor with safety checks and error handling.
 Provides robust thread pool management with guaranteed cleanup
 using weakref.finalize() to prevent thread leaks.
 """
+from __future__ import annotations
+
 import time
 import weakref
 import threading
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, TYPE_CHECKING
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from collections import deque, defaultdict
 
 from src.tools.base import BaseTool, ToolResult
 from src.tools.registry import ToolRegistry
 from src.utils.logging import get_logger
-from src.safety.rollback import RollbackManager
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
-from src.safety.approval import ApprovalWorkflow
 from src.observability.rollback_logger import log_rollback_event
+
+if TYPE_CHECKING:
+    from src.safety.rollback import RollbackManager
+    from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+    from src.safety.approval import ApprovalWorkflow
 
 # Module logger
 logger = get_logger(__name__)
@@ -281,9 +285,10 @@ class ToolExecutor:
         # Policy validation (if engine provided)
         try:
             if self.policy_engine:
+                from src.safety.action_policy_engine import PolicyExecutionContext as _PEC
                 enforcement = self.policy_engine.validate_action(
                     action={"tool": tool_name, "params": params},
-                    context=PolicyExecutionContext(
+                    context=_PEC(
                         agent_id=context.get("agent_id", "unknown"),
                         workflow_id=context.get("workflow_id", "unknown"),
                         stage_id=context.get("stage_id", "unknown"),

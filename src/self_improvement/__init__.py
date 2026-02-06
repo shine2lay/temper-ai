@@ -2,31 +2,31 @@
 
 from .data_models import (
     AgentPerformanceProfile,
-    OptimizationConfig,
-    Experiment,
     ExecutionResult,
+    SelfImprovementExperiment,
+    SIOptimizationConfig,
     utcnow,
 )
 from .experiment_orchestrator import (
-    ExperimentOrchestrator,
-    VariantAssignment,
-    ExperimentStatus,
-    WinnerResult,
     ExperimentError,
-    ExperimentNotFoundError,
     ExperimentNotCompleteError,
+    ExperimentNotFoundError,
+    ExperimentOrchestrator,
     InvalidVariantError,
+    SIExperimentStatus,
+    SIVariantAssignment,
+    WinnerResult,
 )
 
 __all__ = [
     "AgentPerformanceProfile",
-    "OptimizationConfig",
-    "Experiment",
+    "SIOptimizationConfig",
+    "SelfImprovementExperiment",
     "ExecutionResult",
     "utcnow",
     "ExperimentOrchestrator",
-    "VariantAssignment",
-    "ExperimentStatus",
+    "SIVariantAssignment",
+    "SIExperimentStatus",
     "WinnerResult",
     "ExperimentError",
     "ExperimentNotFoundError",

@@ -4,9 +4,9 @@ Verifies that tool results containing <tool_call> tags are escaped
 before injection into the prompt, preventing prompt injection attacks.
 """
 
-import json
-import pytest
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.agents.standard_agent import StandardAgent
 

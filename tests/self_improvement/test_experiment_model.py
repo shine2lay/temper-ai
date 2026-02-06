@@ -1,13 +1,8 @@
 """Tests for Experiment and ExperimentResult data models."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from src.self_improvement.data_models import (
-    Experiment,
-    ExperimentResult,
-    AgentConfig,
-    utcnow
-)
+from datetime import datetime, timezone
+
+from src.self_improvement.data_models import AgentConfig, Experiment, ExperimentResult
 
 
 def test_experiment_creation():

@@ -4,12 +4,11 @@ Records decisions made by the M5 self-improvement system and their outcomes,
 enabling audit trails and learning from past decisions. Extracted from
 ExecutionTracker to separate SQL model manipulation from observability tracking.
 """
-import uuid
 import logging
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.observability.datetime_utils import utcnow
 from src.observability.merit_score_service import MeritScoreService
 
 logger = logging.getLogger(__name__)

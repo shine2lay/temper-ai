@@ -1,14 +1,15 @@
 """Tests for checkpoint/resume functionality."""
 import json
-import pytest
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, UTC
+
+import pytest
 
 from src.compiler.checkpoint import (
     CheckpointManager,
-    FileCheckpointStorage,
     CheckpointMetadata,
+    FileCheckpointStorage,
 )
 from src.compiler.domain_state import WorkflowDomainState
 

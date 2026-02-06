@@ -40,95 +40,93 @@ Example usage:
     ...         return ValidationResult(valid=True, policy_name=self.name)
 """
 
-from src.safety.interfaces import (
-    SafetyPolicy,
-    Validator,
-    SafetyViolation,
-    ValidationResult,
-    ViolationSeverity
-)
-from src.safety.base import BaseSafetyPolicy
-from src.safety.blast_radius import BlastRadiusPolicy
-from src.safety.secret_detection import SecretDetectionPolicy
-from src.safety.rate_limiter import RateLimiterPolicy
-from src.safety.file_access import FileAccessPolicy
+# Lazy-loading: imports are deferred until first access to reduce startup cost.
+# Map attribute names to (module_path, object_name) for lazy resolution.
+_LAZY_IMPORTS = {
+    # Core interfaces (src.safety.interfaces)
+    "SafetyPolicy": ("src.safety.interfaces", "SafetyPolicy"),
+    "Validator": ("src.safety.interfaces", "Validator"),
+    "SafetyViolation": ("src.safety.interfaces", "SafetyViolation"),
+    "ValidationResult": ("src.safety.interfaces", "ValidationResult"),
+    "ViolationSeverity": ("src.safety.interfaces", "ViolationSeverity"),
+    # Base implementation
+    "BaseSafetyPolicy": ("src.safety.base", "BaseSafetyPolicy"),
+    # Concrete policies
+    "BlastRadiusPolicy": ("src.safety.blast_radius", "BlastRadiusPolicy"),
+    "SecretDetectionPolicy": ("src.safety.secret_detection", "SecretDetectionPolicy"),
+    "RateLimiterPolicy": ("src.safety.rate_limiter", "RateLimiterPolicy"),
+    "FileAccessPolicy": ("src.safety.file_access", "FileAccessPolicy"),
+    "ForbiddenOperationsPolicy": ("src.safety.forbidden_operations", "ForbiddenOperationsPolicy"),
+    # Policy composition
+    "PolicyComposer": ("src.safety.composition", "PolicyComposer"),
+    "CompositeValidationResult": ("src.safety.composition", "CompositeValidationResult"),
+    # Approval workflow
+    "ApprovalWorkflow": ("src.safety.approval", "ApprovalWorkflow"),
+    "ApprovalRequest": ("src.safety.approval", "ApprovalRequest"),
+    "ApprovalStatus": ("src.safety.approval", "ApprovalStatus"),
+    # Action Policy Engine
+    "ActionPolicyEngine": ("src.safety.action_policy_engine", "ActionPolicyEngine"),
+    "PolicyExecutionContext": ("src.safety.action_policy_engine", "PolicyExecutionContext"),
+    "EnforcementResult": ("src.safety.action_policy_engine", "EnforcementResult"),
+    # Policy Registry
+    "PolicyRegistry": ("src.safety.policy_registry", "PolicyRegistry"),
+    # Rollback mechanism
+    "RollbackManager": ("src.safety.rollback", "RollbackManager"),
+    "RollbackSnapshot": ("src.safety.rollback", "RollbackSnapshot"),
+    "RollbackResult": ("src.safety.rollback", "RollbackResult"),
+    "RollbackStatus": ("src.safety.rollback", "RollbackStatus"),
+    "RollbackStrategy": ("src.safety.rollback", "RollbackStrategy"),
+    "FileRollbackStrategy": ("src.safety.rollback", "FileRollbackStrategy"),
+    "StateRollbackStrategy": ("src.safety.rollback", "StateRollbackStrategy"),
+    "CompositeRollbackStrategy": ("src.safety.rollback", "CompositeRollbackStrategy"),
+    # Circuit breakers and safety gates
+    "CircuitBreaker": ("src.safety.circuit_breaker", "CircuitBreaker"),
+    "CircuitBreakerState": ("src.safety.circuit_breaker", "CircuitBreakerState"),
+    "CircuitBreakerOpen": ("src.safety.circuit_breaker", "CircuitBreakerOpen"),
+    "CircuitBreakerMetrics": ("src.safety.circuit_breaker", "CircuitBreakerMetrics"),
+    "SafetyGate": ("src.safety.circuit_breaker", "SafetyGate"),
+    "SafetyGateBlocked": ("src.safety.circuit_breaker", "SafetyGateBlocked"),
+    "CircuitBreakerManager": ("src.safety.circuit_breaker", "CircuitBreakerManager"),
+    # Token bucket rate limiting
+    "TokenBucket": ("src.safety.token_bucket", "TokenBucket"),
+    "TokenBucketManager": ("src.safety.token_bucket", "TokenBucketManager"),
+    "RateLimit": ("src.safety.token_bucket", "RateLimit"),
+    "RateLimitPolicy": ("src.safety.policies.rate_limit_policy", "RateLimitPolicy"),
+    "RateLimitPolicyV2": ("src.safety.policies.rate_limit_policy", "RateLimitPolicy"),  # backward-compat alias
+    # Resource consumption limits
+    "ResourceLimitPolicy": ("src.safety.policies.resource_limit_policy", "ResourceLimitPolicy"),
+    # Service mixin
+    "SafetyServiceMixin": ("src.safety.service_mixin", "SafetyServiceMixin"),
+    # Exceptions
+    "SafetyViolationException": ("src.safety.exceptions", "SafetyViolationException"),
+    "BlastRadiusViolation": ("src.safety.exceptions", "BlastRadiusViolation"),
+    "ActionPolicyViolation": ("src.safety.exceptions", "ActionPolicyViolation"),
+    "RateLimitViolation": ("src.safety.exceptions", "RateLimitViolation"),
+    "ResourceLimitViolation": ("src.safety.exceptions", "ResourceLimitViolation"),
+    "ForbiddenOperationViolation": ("src.safety.exceptions", "ForbiddenOperationViolation"),
+    "AccessDeniedViolation": ("src.safety.exceptions", "AccessDeniedViolation"),
+    # Models (aliases for compatibility)
+    "SafetyViolationModel": ("src.safety.interfaces", "SafetyViolation"),
+    "ValidationResultModel": ("src.safety.interfaces", "ValidationResult"),
+    "ViolationSeverityEnum": ("src.safety.interfaces", "ViolationSeverity"),
+    # LLM Security boundary protocols
+    "PromptInjectionDetectorProtocol": ("src.safety.interfaces", "PromptInjectionDetectorProtocol"),
+    "OutputSanitizerProtocol": ("src.safety.interfaces", "OutputSanitizerProtocol"),
+    "LLMRateLimiterProtocol": ("src.safety.interfaces", "LLMRateLimiterProtocol"),
+}
 
-# Policy composition
-from src.safety.composition import (
-    PolicyComposer,
-    CompositeValidationResult
-)
 
-# Approval workflow
-from src.safety.approval import (
-    ApprovalWorkflow,
-    ApprovalRequest,
-    ApprovalStatus
-)
+def __getattr__(name: str):
+    if name in _LAZY_IMPORTS:
+        module_path, obj_name = _LAZY_IMPORTS[name]
+        import importlib
+        module = importlib.import_module(module_path)
+        obj = getattr(module, obj_name)
+        # Cache in module namespace for subsequent fast access
+        globals()[name] = obj
+        return obj
+    raise AttributeError(f"module 'src.safety' has no attribute {name!r}")
 
-# Action Policy Engine
-from src.safety.action_policy_engine import (
-    ActionPolicyEngine,
-    PolicyExecutionContext,
-    EnforcementResult
-)
-
-# Policy Registry
-from src.safety.policy_registry import PolicyRegistry
-
-# Forbidden Operations
-from src.safety.forbidden_operations import ForbiddenOperationsPolicy
-
-# Rollback mechanism
-from src.safety.rollback import (
-    RollbackManager,
-    RollbackSnapshot,
-    RollbackResult,
-    RollbackStatus,
-    RollbackStrategy,
-    FileRollbackStrategy,
-    StateRollbackStrategy,
-    CompositeRollbackStrategy
-)
-
-# Circuit breakers and safety gates
-from src.safety.circuit_breaker import (
-    CircuitBreaker,
-    CircuitBreakerState,
-    CircuitBreakerOpen,
-    CircuitBreakerMetrics,
-    SafetyGate,
-    SafetyGateBlocked,
-    CircuitBreakerManager
-)
-
-# Token bucket rate limiting
-from src.safety.token_bucket import TokenBucket, TokenBucketManager, RateLimit
-from src.safety.policies.rate_limit_policy import RateLimitPolicy as RateLimitPolicyV2
-
-# Resource consumption limits
-from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
-
-# Service mixin
-from src.safety.service_mixin import SafetyServiceMixin
-
-# Exception hierarchy
-from src.safety.exceptions import (
-    SafetyViolationException,
-    BlastRadiusViolation,
-    ActionPolicyViolation,
-    RateLimitViolation,
-    ResourceLimitViolation,
-    ForbiddenOperationViolation,
-    AccessDeniedViolation,
-)
-
-# Models (re-export from interfaces for convenience)
-from src.safety.models import (
-    SafetyViolation as SafetyViolationModel,
-    ValidationResult as ValidationResultModel,
-    ViolationSeverity as ViolationSeverityEnum,
-)
 
 __all__ = [
     # Core interfaces
@@ -190,7 +188,8 @@ __all__ = [
     "TokenBucket",
     "TokenBucketManager",
     "RateLimit",
-    "RateLimitPolicyV2",
+    "RateLimitPolicy",
+    "RateLimitPolicyV2",  # backward-compat alias
 
     # Resource consumption limits
     "ResourceLimitPolicy",
@@ -211,6 +210,11 @@ __all__ = [
     "SafetyViolationModel",
     "ValidationResultModel",
     "ViolationSeverityEnum",
+
+    # LLM Security boundary protocols
+    "PromptInjectionDetectorProtocol",
+    "OutputSanitizerProtocol",
+    "LLMRateLimiterProtocol",
 ]
 
 __version__ = "1.0.0"

@@ -1,20 +1,20 @@
 """Tests for rollback mechanism system."""
-import pytest
 import os
 import tempfile
+from datetime import datetime
 from pathlib import Path
-from datetime import datetime, UTC
+
+import pytest
 
 from src.safety.rollback import (
-    RollbackSnapshot,
-    RollbackResult,
-    RollbackStatus,
-    RollbackStrategy,
-    FileRollbackStrategy,
-    StateRollbackStrategy,
     CompositeRollbackStrategy,
+    FileRollbackStrategy,
     RollbackManager,
+    RollbackResult,
     RollbackSecurityError,
+    RollbackSnapshot,
+    RollbackStatus,
+    StateRollbackStrategy,
     validate_rollback_path,
 )
 

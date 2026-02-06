@@ -11,12 +11,15 @@ memory leaks in long-running processes. Use reset() for production cleanup,
 reset_for_testing() in test fixtures.
 """
 
+import logging
 import threading
-from typing import Dict, Any, Type, List, Optional, Set
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional, Set, Type
 
 from src.strategies.base import CollaborationStrategy
 from src.strategies.conflict_resolution import ConflictResolutionStrategy
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -115,33 +118,30 @@ class StrategyRegistry:
             from src.strategies.consensus import ConsensusStrategy
             self._strategies["consensus"] = ConsensusStrategy
             self._default_strategies.add("consensus")
-        except ImportError:
-            pass  # Consensus not yet implemented
+        except ImportError as exc:
+            logger.warning("Could not import ConsensusStrategy: %s", exc)
 
         try:
             from src.strategies.debate import DebateAndSynthesize
             self._strategies["debate"] = DebateAndSynthesize
             self._default_strategies.add("debate")
-        except ImportError:
-            pass  # Debate not yet implemented
+        except ImportError as exc:
+            logger.warning("Could not import DebateAndSynthesize: %s", exc)
 
         try:
             from src.strategies.dialogue import DialogueOrchestrator
             self._strategies["dialogue"] = DialogueOrchestrator
             self._default_strategies.add("dialogue")
-        except ImportError:
-            pass  # Dialogue orchestrator not yet implemented
+        except ImportError as exc:
+            logger.warning("Could not import DialogueOrchestrator: %s", exc)
 
         # Register default resolvers
         try:
             from src.strategies.conflict_resolution import (
                 HighestConfidenceResolver,
-                RandomTiebreakerResolver
+                RandomTiebreakerResolver,
             )
-            from src.strategies.merit_weighted import (
-                MeritWeightedResolver,
-                HumanEscalationResolver
-            )
+            from src.strategies.merit_weighted import HumanEscalationResolver, MeritWeightedResolver
             self._resolvers["merit_weighted"] = MeritWeightedResolver
             self._resolvers["highest_confidence"] = HighestConfidenceResolver
             self._resolvers["random_tiebreaker"] = RandomTiebreakerResolver
@@ -153,8 +153,8 @@ class StrategyRegistry:
                 "random_tiebreaker",
                 "human_escalation"
             ])
-        except ImportError:
-            pass  # Resolvers not yet implemented
+        except ImportError as exc:
+            logger.warning("Could not import default resolvers: %s", exc)
 
     def register_strategy(
         self,
@@ -262,7 +262,11 @@ class StrategyRegistry:
                     capabilities=capabilities,
                     config_schema=meta.get("config_schema", {})
                 ))
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "Failed to instantiate strategy %r for metadata: %s",
+                    name, exc,
+                )
                 # Skip strategies that can't be instantiated without config
                 metadata_list.append(StrategyMetadata(
                     name=name,
@@ -372,7 +376,11 @@ class StrategyRegistry:
                     capabilities=capabilities,
                     config_schema=meta.get("config_schema", {})
                 ))
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "Failed to instantiate resolver %r for metadata: %s",
+                    name, exc,
+                )
                 metadata_list.append(ResolverMetadata(
                     name=name,
                     class_name=resolver_class.__name__,

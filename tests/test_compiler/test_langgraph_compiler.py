@@ -1,16 +1,16 @@
 """Tests for LangGraph compiler."""
-import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock
 
+import pytest
+
+from src.compiler.domain_state import WorkflowDomainState
 from src.compiler.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
-from src.compiler.state import WorkflowState
-from src.compiler.schemas import WorkflowConfig
-from tests.fixtures.realistic_data import REALISTIC_CONFIG_LOADER, create_realistic_stage_config
+from tests.fixtures.realistic_data import REALISTIC_CONFIG_LOADER
 
 
 def test_workflow_state_creation():
-    """Test WorkflowState can be created and used."""
-    state = WorkflowState()
+    """Test workflow state dict can be created and used."""
+    state = {}
     state["key"] = "value"
     assert state["key"] == "value"
 
@@ -37,6 +37,7 @@ def test_compile_validates_workflow_config():
     compiler = LangGraphCompiler()
     # Use realistic config loader instead of mock
     compiler.config_loader = REALISTIC_CONFIG_LOADER
+    compiler.node_builder.config_loader = REALISTIC_CONFIG_LOADER
 
     # Create minimal workflow config with no stages
     workflow_config = {
@@ -58,6 +59,7 @@ def test_compile_creates_state_graph():
     compiler = LangGraphCompiler()
     # Use realistic config loader with pre-configured stages
     compiler.config_loader = REALISTIC_CONFIG_LOADER
+    compiler.node_builder.config_loader = REALISTIC_CONFIG_LOADER
 
     # Create simple workflow config (using name field)
     workflow_config = {
@@ -85,6 +87,8 @@ def test_compile_sequential_stages():
     compiler = LangGraphCompiler()
     # Use realistic config loader with pre-configured stages
     compiler.config_loader = REALISTIC_CONFIG_LOADER
+    compiler.node_builder.config_loader = REALISTIC_CONFIG_LOADER
+    compiler.node_builder.config_loader = REALISTIC_CONFIG_LOADER
 
     # Create workflow with multiple stages using pre-configured stages
     workflow_config = {
@@ -156,22 +160,25 @@ def test_workflow_executor_execute_adds_tracker():
 
 
 def test_start_node_initialization():
-    """Test start node initializes state correctly via StateManager."""
+    """Test start node returns no updates when state is already initialized.
+
+    WorkflowDomainState always initializes stage_outputs={} and workflow_id
+    in __post_init__, so the init_node returns empty updates (no changes needed).
+    """
     compiler = LangGraphCompiler()
     start_node = compiler.state_manager.create_init_node()
 
-    # Create empty state
-    state = WorkflowState()
+    # WorkflowDomainState auto-initializes all fields
+    state = WorkflowDomainState()
 
     # Call start node
     result = start_node(state)
 
-    # Should initialize stage_outputs
-    assert "stage_outputs" in result
-    assert isinstance(result["stage_outputs"], dict)
-    # Should add workflow_id
-    assert "workflow_id" in result
-    assert result["workflow_id"].startswith("wf-")
+    # State is already initialized, so no updates needed
+    assert isinstance(result, dict)
+    # stage_outputs already exists as {}, workflow_id already has a value
+    assert "stage_outputs" not in result
+    assert "workflow_id" not in result
 
 
 def test_start_node_preserves_existing_workflow_id():
@@ -180,20 +187,18 @@ def test_start_node_preserves_existing_workflow_id():
     start_node = compiler.state_manager.create_init_node()
 
     # Create state with existing workflow_id
-    state = WorkflowState()
-    state["workflow_id"] = "existing-id"
+    state = WorkflowDomainState(workflow_id="existing-id")
 
     # Call start node
     result = start_node(state)
 
-    # Should preserve existing workflow_id
-    assert result["workflow_id"] == "existing-id"
+    # Should NOT include workflow_id in updates (preserving existing)
+    assert "workflow_id" not in result
 
 
 @pytest.mark.asyncio
 async def test_workflow_executor_async_execute():
     """Test async execute method."""
-    import asyncio
 
     mock_graph = Mock()
     # Create a coroutine that returns the expected result

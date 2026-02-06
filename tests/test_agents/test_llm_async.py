@@ -2,26 +2,23 @@
 
 Tests async completion, parallel execution, and context manager support.
 """
-import pytest
 import asyncio
 import time
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, Mock, patch
+
 import httpx
+import pytest
 
 from src.agents.llm_providers import (
-    BaseLLM,
+    AnthropicLLM,
+    LLMAuthenticationError,
+    LLMProvider,
+    LLMRateLimitError,
+    LLMResponse,
+    LLMTimeoutError,
     OllamaLLM,
     OpenAILLM,
-    AnthropicLLM,
-    LLMResponse,
-    LLMProvider,
-    LLMError,
-    LLMTimeoutError,
-    LLMRateLimitError,
-    LLMAuthenticationError
 )
-from src.llm.circuit_breaker import CircuitState, CircuitBreakerError
-
 
 # ============================================================================
 # Fixtures
@@ -302,7 +299,7 @@ async def test_async_performance_baseline(mock_async_client_class, ollama_config
     # Test 1: Sequential execution (baseline)
     start_time = time.time()
     for _ in range(3):
-        await llm.acomplete(f"Prompt sequential")
+        await llm.acomplete("Prompt sequential")
     sequential_time = time.time() - start_time
 
     # Test 2: Parallel execution

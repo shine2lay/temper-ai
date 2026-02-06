@@ -12,7 +12,8 @@ Usage:
 """
 
 from typing import Optional
-from src.agents.llm_providers import OllamaLLM, LLMResponse
+
+from src.agents.llm_providers import LLMResponse, OllamaLLM
 
 
 class OllamaClient:

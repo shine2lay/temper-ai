@@ -11,14 +11,9 @@ This test module verifies:
 """
 
 import pytest
-from src.strategies.consensus import ConsensusStrategy
-from src.strategies.base import AgentOutput, SynthesisResult
-from tests.fixtures.realistic_data import (
-    REALISTIC_AGENT_OUTPUTS_UNANIMOUS,
-    REALISTIC_AGENT_OUTPUTS_MAJORITY,
-    REALISTIC_AGENT_OUTPUTS_SPLIT
-)
 
+from src.strategies.base import AgentOutput
+from src.strategies.consensus import ConsensusStrategy
 
 # Realistic metadata for agent outputs (replacing empty dicts)
 REALISTIC_METADATA_RESEARCH = {

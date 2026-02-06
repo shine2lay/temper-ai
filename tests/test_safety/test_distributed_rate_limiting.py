@@ -18,10 +18,11 @@ Reference:
 - DISTRIBUTED_RATE_LIMITING_TEST_DESIGN.md
 - DISTRIBUTED_RATE_LIMITING_SECURITY_ANALYSIS.md
 """
+from multiprocessing import Barrier, Process, Queue
+from typing import Any, Dict
+
 import pytest
-import time
-from multiprocessing import Process, Queue, Barrier
-from typing import List, Dict, Any
+
 from src.safety import RateLimiterPolicy
 
 # Try to import redis, but mark as optional dependency
@@ -242,7 +243,7 @@ class TestBasicDistributedRateLimiting:
         processes = [
             Process(
                 target=worker_make_requests,
-                args=(f"agent-1", "test_op", 40, redis_config, results_queue, barrier)
+                args=("agent-1", "test_op", 40, redis_config, results_queue, barrier)
             )
             for _ in range(3)
         ]

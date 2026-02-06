@@ -7,43 +7,40 @@ Supports environment variable substitution, secret references, and prompt templa
 M5 Integration: Automatically checks ConfigDeployer for M5-improved configs before
 falling back to YAML files. This closes the self-improvement feedback loop.
 """
-import os
-import re
 import json
 import logging
+import os
+import re
 import sys
 from collections import OrderedDict
 from pathlib import Path
-from typing import Dict, Any, Optional, Union, List, Match, cast
+from typing import Any, Dict, List, Match, Optional, Union, cast
+
 import yaml
 from pydantic import ValidationError
-
-# Import schemas for validation
-from src.compiler.schemas import (
-    AgentConfig,
-    StageConfig,
-    WorkflowConfig,
-    ToolConfig,
-    EventTrigger,
-    CronTrigger,
-    ThresholdTrigger
-)
-
-# Import secrets management
-from src.utils.secrets import SecretReference, resolve_secret
-
-# Import enhanced exceptions
-from src.utils.exceptions import (
-    ConfigNotFoundError,
-    ConfigValidationError,
-    ExecutionContext
-)
 
 # Import context-aware environment variable validator
 from src.compiler.env_var_validator import EnvVarValidator
 
+# Import schemas for validation
+from src.compiler.schemas import (
+    AgentConfig,
+    CronTrigger,
+    EventTrigger,
+    StageConfig,
+    ThresholdTrigger,
+    ToolConfig,
+    WorkflowConfig,
+)
+
 # Import security limits from shared configuration
 from src.compiler.security_limits import CONFIG_SECURITY
+
+# Import enhanced exceptions
+from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError
+
+# Import secrets management
+from src.utils.secrets import SecretReference, resolve_secret
 
 # Security limit constants (imported from security_limits.py for consistency)
 MAX_CONFIG_SIZE = CONFIG_SECURITY.MAX_CONFIG_SIZE
@@ -364,7 +361,7 @@ class ConfigLoader:
         # Prevents null byte injection attacks where attacker provides: "safe.txt\x00../../etc/passwd"
         if '\x00' in template_path:
             logger.warning(
-                f"Security violation: Null byte detected in template path",
+                "Security violation: Null byte detected in template path",
                 extra={
                     "template_path": repr(template_path),
                     "attack_type": "null_byte_injection"
@@ -379,7 +376,7 @@ class ConfigLoader:
         # Control characters can bypass validation or cause unexpected behavior
         if any(ord(c) < 32 and c not in '\n\r\t' for c in template_path):
             logger.warning(
-                f"Security violation: Control characters detected in template path",
+                "Security violation: Control characters detected in template path",
                 extra={
                     "template_path": repr(template_path),
                     "attack_type": "control_character_injection"
@@ -398,7 +395,7 @@ class ConfigLoader:
             full_path.relative_to(self.prompts_dir.resolve())
         except ValueError:
             logger.warning(
-                f"Security violation: Path traversal attempt detected",
+                "Security violation: Path traversal attempt detected",
                 extra={
                     "template_path": repr(template_path),
                     "resolved_path": str(full_path),

@@ -2,12 +2,13 @@
 Tests for performance instrumentation and metrics tracking.
 """
 import time
+from datetime import datetime
+
 import pytest
-from datetime import datetime, timedelta
-from unittest.mock import patch
+
 from src.observability.performance import (
-    PerformanceTracker,
     LatencyMetrics,
+    PerformanceTracker,
     SlowOperation,
     get_performance_tracker,
     reset_performance_tracker,
@@ -272,7 +273,6 @@ class TestSlowOperation:
 
     def test_to_dict(self):
         """Test conversion to dictionary."""
-        from datetime import datetime
 
         slow_op = SlowOperation(
             operation="test_op",

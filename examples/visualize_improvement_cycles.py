@@ -8,9 +8,9 @@ Shows iterative improvement cycles:
   ...and so on
 """
 
-import json
 import random
 from datetime import datetime, timedelta
+
 
 # ANSI colors
 class Colors:
@@ -264,7 +264,7 @@ for cycle in range(1, 4):  # Run 3 cycles
     # PHASE 4: EXPERIMENT - Run A/B test
     print(f"\n{Colors.BOLD}Phase 4: EXPERIMENT{Colors.RESET} - Running A/B test")
     print(f"  Testing: {current_model} (control) + {len(candidates)} variant(s)")
-    print(f"  Samples per variant: 50")
+    print("  Samples per variant: 50")
 
     experiment_results = run_experiment(current_model, candidates)
 
@@ -348,7 +348,7 @@ for i, cycle_data in enumerate(cycle_history):
             arrow = f"{Colors.YELLOW}↓ NO CHANGE{Colors.RESET}"
 
     print(f"  {arrow}")
-    print(f"  │")
+    print("  │")
     print(f"  ├─ {Colors.BOLD}Cycle {cycle_num}: {model}{Colors.RESET}")
     print(f"  │  Quality: {metrics['avg_quality']:.3f} | Cost: ${metrics['avg_cost']:.4f} | Speed: {metrics['avg_duration']:.2f}s")
 
@@ -357,7 +357,7 @@ for i, cycle_data in enumerate(cycle_history):
     else:
         print(f"  │  {Colors.GREEN}✓ Optimal - No problems{Colors.RESET}")
 
-    print(f"  │")
+    print("  │")
 
 print(f"  {Colors.GREEN}✓ OPTIMIZATION COMPLETE{Colors.RESET}\n")
 

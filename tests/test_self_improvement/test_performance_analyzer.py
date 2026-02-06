@@ -9,17 +9,17 @@ Tests cover:
 - Baseline calculation
 """
 
-import pytest
 from datetime import datetime, timedelta, timezone
-from sqlmodel import Session, create_engine, SQLModel, select
 
-from src.observability.models import AgentExecution, WorkflowExecution, StageExecution
+import pytest
+from sqlmodel import Session, SQLModel, create_engine
+
+from src.observability.models import AgentExecution, StageExecution, WorkflowExecution
+from src.self_improvement.data_models import AgentPerformanceProfile
 from src.self_improvement.performance_analyzer import (
     PerformanceAnalyzer,
-    InsufficientDataError,
-    DatabaseQueryError
+    PerformanceDataError,
 )
-from src.self_improvement.data_models import AgentPerformanceProfile
 
 
 @pytest.fixture
@@ -136,7 +136,7 @@ class TestAnalyzeAgentPerformance:
 
         analyzer = PerformanceAnalyzer(session)
 
-        with pytest.raises(InsufficientDataError) as exc_info:
+        with pytest.raises(PerformanceDataError) as exc_info:
             analyzer.analyze_agent_performance("sparse_agent", min_executions=10)
 
         assert "Insufficient data" in str(exc_info.value)
@@ -147,7 +147,7 @@ class TestAnalyzeAgentPerformance:
         """Test error when no executions exist."""
         analyzer = PerformanceAnalyzer(session)
 
-        with pytest.raises(InsufficientDataError):
+        with pytest.raises(PerformanceDataError):
             analyzer.analyze_agent_performance("nonexistent_agent")
 
     def test_empty_agent_name_error(self, session):

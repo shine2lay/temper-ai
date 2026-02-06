@@ -17,12 +17,12 @@ The metric normalizes to [0.0, 1.0] range:
     - 1.0 = All fields correctly extracted
 """
 
-import logging
-from typing import Optional, Dict, Any
 import json
+import logging
+from typing import Any, Dict, Optional
 
-from src.self_improvement.metrics.collector import MetricCollector, ExecutionProtocol
-from src.self_improvement.metrics.types import MetricType
+from src.self_improvement.metrics.collector import ExecutionProtocol, MetricCollector
+from src.self_improvement.metrics.types import SIMetricType
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +72,14 @@ class ExtractionQualityCollector(MetricCollector):
         return "extraction_quality"
 
     @property
-    def metric_type(self) -> MetricType:
+    def metric_type(self) -> SIMetricType:
         """Return the metric type classification.
 
         Returns:
-            MetricType: Always returns MetricType.CUSTOM since quality
+            SIMetricType: Always returns SIMetricType.CUSTOM since quality
                         evaluation requires custom comparison logic
         """
-        return MetricType.CUSTOM
+        return SIMetricType.CUSTOM
 
     def is_applicable(self, execution: ExecutionProtocol) -> bool:
         """Check if this metric applies to the given execution.

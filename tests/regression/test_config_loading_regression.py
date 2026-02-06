@@ -10,8 +10,13 @@ Each test documents:
 - How it was fixed
 - What systems were affected
 """
-import pytest
-from src.compiler.schemas import AgentConfig, AgentConfigInner, PromptConfig, InferenceConfig, ErrorHandlingConfig
+from src.compiler.schemas import (
+    AgentConfig,
+    AgentConfigInner,
+    ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
+)
 
 
 class TestSchemaValidation:

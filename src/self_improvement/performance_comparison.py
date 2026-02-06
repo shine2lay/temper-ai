@@ -11,9 +11,9 @@ Design Principles:
 - Handles missing metrics gracefully
 """
 
-from typing import Dict, Any, Optional, List
-from dataclasses import dataclass, field
 import logging
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 
 from src.self_improvement.data_models import AgentPerformanceProfile
 

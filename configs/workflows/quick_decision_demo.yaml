@@ -33,7 +33,7 @@ workflow:
 
   # Fast execution
   config:
-    timeout_seconds: 300
+    timeout_seconds: 3000
     convergence_detection: false
 
   # Error handling

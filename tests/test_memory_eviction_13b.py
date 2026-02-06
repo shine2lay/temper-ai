@@ -7,16 +7,14 @@ Verifies:
 """
 
 import time
-import pytest
 from collections import deque
-from unittest.mock import patch
 
+import pytest
 from cryptography.fernet import Fernet
 
-from src.auth.oauth.token_store import SecureTokenStore
 from src.auth.oauth.state_store import InMemoryStateStore
+from src.auth.oauth.token_store import SecureTokenStore
 from src.observability.buffer import ObservabilityBuffer
-
 
 # ── SecureTokenStore access log eviction ──────────────────────────────────
 

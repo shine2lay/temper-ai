@@ -1,15 +1,16 @@
 """Database connection and session management."""
-from contextlib import contextmanager
-from typing import Generator, Optional
-from enum import Enum
 import logging
+import os
 import threading
 import urllib.parse
-from sqlmodel import SQLModel, create_engine, Session
+from contextlib import contextmanager
+from enum import Enum
+from typing import Generator, Optional
+
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
-from sqlalchemy import text, event
-import os
+from sqlmodel import Session, SQLModel, create_engine
 
 logger = logging.getLogger(__name__)
 
@@ -91,7 +92,7 @@ class DatabaseManager:
             # SECURITY FIX (test-crit-foreign-keys-01): Enable foreign key constraints
             # SQLite disables foreign keys by default - must enable per connection
             @event.listens_for(engine, "connect")
-            def set_sqlite_pragma(dbapi_connection, connection_record):
+            def set_sqlite_pragma(dbapi_connection, _connection_record):
                 """Enable foreign keys and verify on every connection.
 
                 CRITICAL: This prevents orphaned records and enforces referential integrity.
@@ -112,8 +113,11 @@ class DatabaseManager:
                         "Database integrity cannot be guaranteed."
                     )
 
+                # Enable WAL mode for better concurrent read performance
+                cursor.execute("PRAGMA journal_mode=WAL")
+
                 cursor.close()
-                logger.debug("SQLite foreign keys enabled for connection")
+                logger.debug("SQLite foreign keys and WAL mode enabled for connection")
 
         else:
             # PostgreSQL settings

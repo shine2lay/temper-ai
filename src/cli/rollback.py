@@ -23,9 +23,10 @@ Example:
         --reason "Manual recovery from failed deployment" \
         --operator alice
 """
-import click
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from typing import Optional
+
+import click
 
 from src.safety.rollback import RollbackManager
 from src.safety.rollback_api import RollbackAPI

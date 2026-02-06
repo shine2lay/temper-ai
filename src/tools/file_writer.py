@@ -4,12 +4,11 @@ FileWriter tool for safely writing content to files.
 Includes safety checks for path traversal and dangerous system paths.
 Uses centralized path_safety module for validation.
 """
-import os
 from pathlib import Path
-from typing import Dict, Any, Set, Optional
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.utils.path_safety import PathSafetyValidator, PathSafetyError
+from typing import Any, Dict, Optional, Set
 
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from src.utils.path_safety import PathSafetyError, PathSafetyValidator
 
 # Dangerous file extensions
 FORBIDDEN_EXTENSIONS: Set[str] = {

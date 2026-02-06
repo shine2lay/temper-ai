@@ -28,13 +28,13 @@ Example:
     'yes'  # a1 has higher confidence
 """
 
+import random
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, field
 from enum import Enum
-import random
+from typing import Any, Dict, List, Optional
 
-from src.strategies.base import Conflict, AgentOutput
+from src.strategies.base import AgentOutput, Conflict
 
 
 class ResolutionMethod(Enum):
@@ -304,7 +304,7 @@ class RandomTiebreakerResolver(ConflictResolutionStrategy):
             seed: Random seed for reproducibility (None for non-deterministic)
         """
         self.seed = seed
-        self.rng = random.Random(seed)
+        self.rng = random.Random(seed)  # noqa: S311 — deterministic seed, not crypto
 
     def resolve(
         self,
@@ -682,7 +682,3 @@ def get_highest_weighted_decision(
 
     winning_decision = max(decision_scores.items(), key=lambda x: x[1])
     return winning_decision[0], winning_decision[1]
-
-
-# Type alias for backward compatibility
-ConflictResolver = ConflictResolutionStrategy

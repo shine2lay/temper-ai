@@ -9,16 +9,16 @@ This is a simplified implementation suitable for moderate traffic.
 For high-scale production, consider using redis-based rate limiting
 with libraries like slowapi or limits.
 """
-from typing import Dict, Tuple, Optional
-from datetime import datetime, timedelta, timezone
-from collections import defaultdict, deque
 import logging
 import threading
+from collections import defaultdict, deque
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
 
-class RateLimitExceeded(Exception):
+class RateLimitExceeded(Exception):  # noqa: N818 — public API name
     """Raised when rate limit is exceeded."""
 
     def __init__(self, message: str, retry_after: int):

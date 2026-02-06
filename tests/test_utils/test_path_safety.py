@@ -1,14 +1,16 @@
 """Tests for path_safety module."""
-import pytest
-import tempfile
 import os
+import tempfile
 from pathlib import Path
+
+import pytest
+
 from src.utils.path_safety import (
-    PathSafetyValidator,
     PathSafetyError,
+    PathSafetyValidator,
     validate_path,
     validate_read,
-    validate_write
+    validate_write,
 )
 
 
@@ -453,7 +455,6 @@ class TestSymlinkSecurity:
         SECURITY: Verifies /tmp exception doesn't create symlink vulnerability.
         Attack: Create symlink in /tmp pointing to sensitive location.
         """
-        import tempfile
 
         # Create symlink in /tmp pointing to attack target
         with tempfile.TemporaryDirectory() as tmpdir:

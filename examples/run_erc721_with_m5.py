@@ -10,23 +10,17 @@ Usage:
     python examples/run_erc721_with_m5.py --model llama3:8b --iterations 3
 """
 import argparse
-import json
 import logging
 import sys
-import time
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.self_improvement.metrics.erc721_quality import (
-    score_erc721_workflow,
-)
 from src.self_improvement.strategies.erc721_strategy import ERC721WorkflowStrategy
-from src.self_improvement.strategies.strategy import OptimizationConfig, LearnedPattern
+from src.self_improvement.strategies.strategy import LearnedPattern, SIOptimizationConfig
 
 logging.basicConfig(
     level=logging.INFO,
@@ -99,8 +93,8 @@ def generate_improvement_variants(
     """
     strategy = ERC721WorkflowStrategy()
 
-    # Build OptimizationConfig from dict
-    config = OptimizationConfig(
+    # Build SIOptimizationConfig from dict
+    config = SIOptimizationConfig(
         inference=current_config.get("inference", {}),
         prompt=current_config.get("prompt", {}),
         metadata=current_config.get("metadata", {}),

@@ -9,13 +9,18 @@ This test module verifies:
 - Performance characteristics
 """
 
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+
+from src.agents.base_agent import AgentResponse
+from src.compiler.domain_state import WorkflowDomainState
+from src.compiler.executors import (
+    AdaptiveStageExecutor,
+    ParallelStageExecutor,
+    SequentialStageExecutor,
+)
 from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.compiler.state import WorkflowState
-from src.compiler.executors import SequentialStageExecutor, ParallelStageExecutor, AdaptiveStageExecutor
-from src.agents.base_agent import AgentResponse, ExecutionContext
-from src.strategies.base import AgentOutput, SynthesisResult
 
 
 class TestAgentModeDetection:
@@ -98,10 +103,10 @@ class TestExecutorRegistry:
         with patch.object(compiler.config_loader, 'load_stage') as mock_load:
             with patch.object(compiler.executors['sequential'], 'execute_stage') as mock_exec:
                 mock_load.return_value = stage_config
-                mock_exec.return_value = WorkflowState(stage_outputs={})
+                mock_exec.return_value = {"stage_outputs": {}, "current_stage": ""}
 
                 stage_node = compiler.node_builder.create_stage_node("research", {})
-                state = WorkflowState(stage_outputs={})
+                state = WorkflowDomainState(stage_outputs={})
 
                 stage_node(state)
 

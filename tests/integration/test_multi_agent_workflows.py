@@ -5,18 +5,17 @@ Tests workflows with multiple agents coordinating, reaching consensus,
 and handing off tasks between stages.
 """
 import uuid
-import pytest
-from datetime import datetime, UTC, timedelta
+from datetime import UTC, datetime
 
-from src.observability.database import init_database, get_session
+import pytest
+
+from src.observability.database import get_session, init_database
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
-    ToolExecution,
+    StageExecution,
+    WorkflowExecution,
 )
 from src.observability.tracker import ExecutionTracker
-
 
 pytestmark = [pytest.mark.integration]
 

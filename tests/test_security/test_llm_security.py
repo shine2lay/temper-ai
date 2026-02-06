@@ -7,18 +7,14 @@ Tests for:
 - Tool abuse via LLM
 - Output sanitization
 """
-import pytest
 import time
-from src.agents.llm_providers import LLMResponse
-from src.agents.standard_agent import StandardAgent
-from src.tools.base import ToolResult
+
 from src.security.llm_security import (
-    PromptInjectionDetector,
+    LLMSecurityRateLimiter,
     OutputSanitizer,
-    RateLimiter,
-    SecurityViolation,
-    get_prompt_detector,
+    PromptInjectionDetector,
     get_output_sanitizer,
+    get_prompt_detector,
     get_rate_limiter,
     reset_security_components,
 )
@@ -191,7 +187,7 @@ class TestToolAbuseViaLLM:
     def test_tool_chaining_attack(self):
         """Test that LLM can't chain tools maliciously."""
         sanitizer = OutputSanitizer()
-        rate_limiter = RateLimiter()
+        rate_limiter = LLMSecurityRateLimiter()
 
         # Simulate rapid tool calls (part of chaining attack)
         agent_id = "tool_abuse_test"
@@ -520,7 +516,6 @@ class TestOutputSanitizationComprehensive:
 
     def test_sanitizer_performance_10kb(self):
         """Test sanitizer performs well on 10KB output."""
-        import time
         from src.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
@@ -540,6 +535,7 @@ class TestOutputSanitizationComprehensive:
     def test_sanitizer_memory_efficiency(self):
         """Test sanitizer is memory efficient for large outputs."""
         import sys
+
         from src.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
@@ -777,7 +773,7 @@ class TestRateLimiting:
 
     def test_request_rate_limit(self):
         """Test that excessive requests are rate limited."""
-        limiter = RateLimiter(max_calls_per_minute=10, max_calls_per_hour=100)
+        limiter = LLMSecurityRateLimiter(max_calls_per_minute=10, max_calls_per_hour=100)
         agent_id = "test_agent"
 
         # Make 10 requests (should succeed)
@@ -793,7 +789,7 @@ class TestRateLimiting:
 
     def test_burst_protection(self):
         """Test that burst requests are limited."""
-        limiter = RateLimiter(max_calls_per_minute=100, burst_size=5)
+        limiter = LLMSecurityRateLimiter(max_calls_per_minute=100, burst_size=5)
         agent_id = "burst_test"
 
         # Make 5 rapid requests (should succeed)
@@ -809,7 +805,7 @@ class TestRateLimiting:
 
     def test_rate_limit_stats(self):
         """Test rate limit statistics."""
-        limiter = RateLimiter(max_calls_per_minute=60)
+        limiter = LLMSecurityRateLimiter(max_calls_per_minute=60)
         agent_id = "stats_test"
 
         # Make 5 requests
@@ -823,7 +819,7 @@ class TestRateLimiting:
 
     def test_rate_limit_reset(self):
         """Test rate limit reset functionality."""
-        limiter = RateLimiter(max_calls_per_minute=10)
+        limiter = LLMSecurityRateLimiter(max_calls_per_minute=10)
         agent_id = "reset_test"
 
         # Make some requests
@@ -870,7 +866,6 @@ class TestInputValidation:
 
     def test_entropy_dos_protection_small_input(self):
         """Test entropy calculation works correctly for small inputs."""
-        import time
         detector = PromptInjectionDetector()
 
         # Small input should have entropy calculated
@@ -885,7 +880,6 @@ class TestInputValidation:
 
     def test_entropy_dos_protection_medium_input(self):
         """Test entropy calculation for medium inputs (just under MAX_ENTROPY_LENGTH)."""
-        import time
         detector = PromptInjectionDetector()
 
         # Medium input just under 10KB limit
@@ -906,7 +900,6 @@ class TestInputValidation:
         SECURITY: Prevents memory exhaustion from large Unicode character dictionaries.
         Reference: code-crit-19 - Entropy Calculation DoS
         """
-        import time
         detector = PromptInjectionDetector()
 
         # Large input over 10KB limit - entropy should be skipped
@@ -935,7 +928,6 @@ class TestInputValidation:
         Protection: MAX_ENTROPY_LENGTH = 10KB limit skips entropy calculation for large inputs.
         Reference: code-crit-19 - Entropy Calculation DoS
         """
-        import time
         detector = PromptInjectionDetector()
 
         # Huge Unicode input (1MB+ with multibyte characters)
@@ -964,8 +956,6 @@ class TestInputValidation:
         Fix: MAX_ENTROPY_LENGTH = 10KB prevents entropy calculation on large inputs.
         Reference: code-crit-19 - Entropy Calculation DoS
         """
-        import time
-        import sys
         detector = PromptInjectionDetector()
 
         # Simulate attack: Multiple MB of diverse Unicode characters
@@ -1048,7 +1038,7 @@ class TestWorkflowSecurity:
 
     def test_workflow_rate_limiting(self):
         """Test that workflows are rate limited."""
-        limiter = RateLimiter(max_calls_per_hour=100)
+        limiter = LLMSecurityRateLimiter(max_calls_per_hour=100)
         workflow_id = "test_workflow"
 
         # Make some calls
@@ -1111,7 +1101,7 @@ class TestSingletonThreadSafety:
         # All should be same instance
         assert detector1 is detector2, "PromptInjectionDetector should be singleton"
         assert sanitizer1 is sanitizer2, "OutputSanitizer should be singleton"
-        assert limiter1 is limiter2, "RateLimiter should be singleton"
+        assert limiter1 is limiter2, "LLMSecurityRateLimiter should be singleton"
 
     def test_concurrent_initialization_race_safe_prompt_detector(self):
         """Test no race condition with concurrent PromptInjectionDetector initialization."""
@@ -1172,7 +1162,7 @@ class TestSingletonThreadSafety:
             "All threads should get same instance (no race condition)"
 
     def test_concurrent_initialization_race_safe_rate_limiter(self):
-        """Test no race condition with concurrent RateLimiter initialization."""
+        """Test no race condition with concurrent LLMSecurityRateLimiter initialization."""
         import threading
 
         instances = []
@@ -1242,7 +1232,7 @@ class TestSingletonThreadSafety:
 
         assert len(limiter_instances) == 100
         assert all(inst is limiter_instances[0] for inst in limiter_instances), \
-            "All RateLimiter instances should be same"
+            "All LLMSecurityRateLimiter instances should be same"
 
     def test_reset_thread_safety(self):
         """Test that reset_security_components is thread-safe."""
@@ -1276,7 +1266,6 @@ class TestSingletonThreadSafety:
 
     def test_singleton_performance_minimal_overhead(self):
         """Test that double-check locking has minimal performance overhead."""
-        import time
 
         # Reset singleton
         reset_security_components()
@@ -1311,7 +1300,7 @@ Modules Implemented:
 - src/security/llm_security.py - Core security module with:
   * PromptInjectionDetector - Pattern-based + entropy detection
   * OutputSanitizer - Secret detection + dangerous content filtering
-  * RateLimiter - Sliding window + burst protection
+  * LLMSecurityRateLimiter - Sliding window + burst protection
 
 Test Coverage:
 1. ✅ TestPromptInjection - Detects ignore instructions, role confusion, delimiter injection
@@ -1364,7 +1353,7 @@ class TestTOCTOURaceCondition:
         import threading
 
         # Use high burst size to avoid hitting burst limit
-        limiter = RateLimiter(
+        limiter = LLMSecurityRateLimiter(
             max_calls_per_minute=100,
             burst_size=200  # Higher than test threads to not interfere
         )
@@ -1407,7 +1396,7 @@ class TestTOCTOURaceCondition:
         import threading
 
         # Use high burst size to avoid hitting burst limit
-        limiter = RateLimiter(
+        limiter = LLMSecurityRateLimiter(
             max_calls_per_minute=100,
             burst_size=200,  # Higher than test threads to not interfere
             fallback_mode='in_memory'
@@ -1447,7 +1436,7 @@ class TestTOCTOURaceCondition:
         """
         SECURITY TEST: Verify limit is enforced exactly (no off-by-one error).
         """
-        limiter = RateLimiter(max_calls_per_minute=10, fallback_mode='in_memory')
+        limiter = LLMSecurityRateLimiter(max_calls_per_minute=10, fallback_mode='in_memory')
 
         # Make exactly 10 requests
         for i in range(10):
@@ -1463,13 +1452,13 @@ class TestTOCTOURaceCondition:
         """
         SECURITY TEST: Verify entity ID normalization prevents Unicode/case bypass.
         """
-        limiter = RateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
+        limiter = LLMSecurityRateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
 
         # Make 5 requests as "admin"
         for i in range(5):
             allowed, reason = limiter.check_and_record_rate_limit("admin")
             assert allowed, f"Request {i+1}/5 should be allowed within limit"
-            assert reason is None, f"No error reason should be provided when allowed"
+            assert reason is None, "No error reason should be provided when allowed"
 
         # Try bypass with case variation
         allowed, _ = limiter.check_and_record_rate_limit("Admin")
@@ -1487,7 +1476,7 @@ class TestTOCTOURaceCondition:
         """
         SECURITY TEST: Verify different entities have independent rate limits.
         """
-        limiter = RateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
+        limiter = LLMSecurityRateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
 
         # Entity 1: Use full limit
         for i in range(5):
@@ -1511,7 +1500,7 @@ class TestTOCTOURaceCondition:
         """
         SECURITY TEST: Verify empty entity IDs are rejected.
         """
-        limiter = RateLimiter(fallback_mode='in_memory')
+        limiter = LLMSecurityRateLimiter(fallback_mode='in_memory')
 
         # Test empty string
         allowed, reason = limiter.check_and_record_rate_limit("")
@@ -1530,7 +1519,7 @@ class TestTOCTOURaceCondition:
         SECURITY TEST: Verify rate limiter fails closed when Redis is unavailable.
         """
         # Create limiter with invalid Redis URL
-        limiter = RateLimiter(
+        limiter = LLMSecurityRateLimiter(
             redis_url="redis://invalid-host:9999",
             fallback_mode='fail_closed'
         )
@@ -1548,7 +1537,7 @@ class TestTOCTOURaceCondition:
         SECURITY TEST: Verify in-memory fallback works when Redis is unavailable.
         """
         # Create limiter with invalid Redis URL
-        limiter = RateLimiter(
+        limiter = LLMSecurityRateLimiter(
             max_calls_per_minute=5,
             redis_url="redis://invalid-host:9999",
             fallback_mode='in_memory'
@@ -1572,7 +1561,7 @@ class TestTOCTOURaceCondition:
         """
         import threading
 
-        limiter = RateLimiter(
+        limiter = LLMSecurityRateLimiter(
             max_calls_per_minute=1000,  # High minute limit
             max_calls_per_hour=100,     # Low hour limit
             fallback_mode='in_memory'
@@ -1606,7 +1595,7 @@ class TestTOCTOURaceCondition:
         """
         import threading
 
-        limiter = RateLimiter(
+        limiter = LLMSecurityRateLimiter(
             max_calls_per_minute=1000,  # High minute limit
             burst_size=10,              # Low burst limit
             fallback_mode='in_memory'
@@ -1638,7 +1627,7 @@ class TestTOCTOURaceCondition:
         """
         TEST: Verify normalization preserves legitimate Unicode characters.
         """
-        limiter = RateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
+        limiter = LLMSecurityRateLimiter(max_calls_per_minute=5, fallback_mode='in_memory')
 
         # Use legitimate Unicode entity ID
         entity_id = "用户123"  # Chinese characters + numbers
@@ -1658,7 +1647,7 @@ class TestTOCTOURaceCondition:
         """
         import logging
 
-        limiter = RateLimiter(fallback_mode='in_memory')
+        limiter = LLMSecurityRateLimiter(fallback_mode='in_memory')
 
         # Test check_rate_limit deprecation
         with caplog.at_level(logging.WARNING):

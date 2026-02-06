@@ -4,22 +4,43 @@ Executes agents one after another in the order specified in the stage config.
 Each agent's output is accumulated and passed to subsequent agents, enabling
 agent-to-agent context sharing within a stage.
 """
-from typing import Dict, Any, Optional, cast, List
-import time
-import uuid
-import traceback
 import logging
+import time
+import traceback
+import uuid
+from typing import Any, Dict, Optional, cast
 
-from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message
 from src.llm.circuit_breaker import CircuitBreakerError
+from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
-from src.compiler.executors.base import StageExecutor
-from src.compiler.utils import extract_agent_name
 from src.agents.agent_factory import AgentFactory
+from src.compiler.executors.base import StageExecutor
 from src.core.context import ExecutionContext
 from src.utils.config_helpers import get_nested_value, sanitize_config_for_display
+
+# Error types classified as transient (worth retrying)
+_TRANSIENT_ERROR_TYPES: frozenset[str] = frozenset({
+    ErrorCode.LLM_CONNECTION_ERROR.value,
+    ErrorCode.LLM_TIMEOUT.value,
+    ErrorCode.LLM_RATE_LIMIT.value,
+    ErrorCode.SYSTEM_TIMEOUT.value,
+    ErrorCode.SYSTEM_RESOURCE_ERROR.value,
+    ErrorCode.TOOL_TIMEOUT.value,
+    ErrorCode.AGENT_TIMEOUT.value,
+    ErrorCode.WORKFLOW_TIMEOUT.value,
+})
+
+
+def _is_transient_error(error_type: str) -> bool:
+    """Classify an error type as transient (retriable) vs permanent.
+
+    Transient errors are network/timeout/rate-limit issues that may
+    resolve on retry.  Everything else (config, auth, validation,
+    safety) is permanent and should not be retried.
+    """
+    return error_type in _TRANSIENT_ERROR_TYPES
 
 
 class SequentialStageExecutor(StageExecutor):
@@ -317,14 +338,51 @@ class SequentialStageExecutor(StageExecutor):
 
                 elif policy == "retry_agent":
                     max_retries = error_handling.max_agent_retries
-                    logger.warning(
-                        "Agent %s failed in stage %s (policy: retry_agent), retries not yet implemented: %s",
-                        agent_name, stage_name, agent_result["output_data"].get("error", "")
-                    )
-                    # TODO: Implement retry_agent policy in future PR
-                    # For now, treat as continue_with_remaining
-                    agent_outputs[agent_name] = agent_result["output_data"]
-                    agent_metrics[agent_name] = agent_result["metrics"]
+                    error_type = agent_result["output_data"].get("error_type", "")
+
+                    if _is_transient_error(error_type) and max_retries > 0:
+                        retry_result = self._retry_agent_with_backoff(
+                            agent_ref=agent_ref,
+                            stage_id=stage_id,
+                            stage_name=stage_name,
+                            workflow_id=workflow_id,
+                            state=state,
+                            tracker=tracker,
+                            config_loader=config_loader,
+                            prior_agent_outputs=agent_outputs,
+                            max_retries=max_retries,
+                            agent_name=agent_name,
+                        )
+                        # Use retry result (may be success or final failure)
+                        agent_name = retry_result["agent_name"]
+                        if retry_result["status"] == "success":
+                            agent_statuses[agent_name] = retry_result["status"]
+                        else:
+                            agent_statuses[agent_name] = {
+                                "status": "failed",
+                                "error": retry_result["output_data"].get("error", ""),
+                                "error_type": retry_result["output_data"].get("error_type", ""),
+                            }
+                        agent_outputs[agent_name] = retry_result["output_data"]
+                        agent_metrics[agent_name] = retry_result["metrics"]
+                    else:
+                        # Permanent error or retries disabled — do not retry
+                        if not _is_transient_error(error_type):
+                            logger.warning(
+                                "Agent %s failed with permanent error type '%s' in stage %s "
+                                "(policy: retry_agent, not retrying): %s",
+                                agent_name, error_type, stage_name,
+                                agent_result["output_data"].get("error", ""),
+                            )
+                        else:
+                            logger.warning(
+                                "Agent %s failed in stage %s (policy: retry_agent, "
+                                "max_retries=0): %s",
+                                agent_name, stage_name,
+                                agent_result["output_data"].get("error", ""),
+                            )
+                        agent_outputs[agent_name] = agent_result["output_data"]
+                        agent_metrics[agent_name] = agent_result["metrics"]
 
                 elif policy == "continue_with_remaining":
                     logger.warning(
@@ -342,6 +400,91 @@ class SequentialStageExecutor(StageExecutor):
                 agent_metrics[agent_name] = agent_result["metrics"]
 
         return agent_outputs, agent_statuses, agent_metrics
+
+    def _retry_agent_with_backoff(
+        self,
+        agent_ref: Any,
+        stage_id: str,
+        stage_name: str,
+        workflow_id: str,
+        state: Dict[str, Any],
+        tracker: Optional[Any],
+        config_loader: Any,
+        prior_agent_outputs: Dict[str, Any],
+        max_retries: int,
+        agent_name: str,
+    ) -> Dict[str, Any]:
+        """Retry a failed agent with exponential backoff.
+
+        Only retries on transient errors.  Stops immediately if a
+        permanent error is encountered during a retry attempt.
+
+        Args:
+            agent_ref: Agent reference from stage config
+            stage_id: Stage execution ID
+            stage_name: Stage name
+            workflow_id: Workflow execution ID
+            state: Current workflow state
+            tracker: ExecutionTracker instance (optional)
+            config_loader: ConfigLoader for loading agent configs
+            prior_agent_outputs: Outputs from prior agents in the same stage
+            max_retries: Maximum number of retry attempts
+            agent_name: Agent name (for logging)
+
+        Returns:
+            Dict with keys: agent_name, output_data, status, metrics
+        """
+        base_delay = 1.0  # seconds
+        last_result: Dict[str, Any] = {}
+
+        for attempt in range(1, max_retries + 1):
+            delay = min(base_delay * (2 ** (attempt - 1)), 30.0)
+            logger.info(
+                "Retrying agent %s in stage %s (attempt %d/%d, backoff %.1fs)",
+                agent_name, stage_name, attempt, max_retries, delay,
+            )
+            time.sleep(delay)
+
+            last_result = self._execute_agent(
+                agent_ref=agent_ref,
+                stage_id=stage_id,
+                stage_name=stage_name,
+                workflow_id=workflow_id,
+                state=state,
+                tracker=tracker,
+                config_loader=config_loader,
+                prior_agent_outputs=prior_agent_outputs,
+            )
+
+            if last_result["status"] == "success":
+                logger.info(
+                    "Agent %s succeeded on retry attempt %d/%d in stage %s",
+                    agent_name, attempt, max_retries, stage_name,
+                )
+                # Record retries in metrics
+                last_result["metrics"]["retries"] = attempt
+                return last_result
+
+            # Check if this retry's error is still transient
+            retry_error_type = last_result["output_data"].get("error_type", "")
+            if not _is_transient_error(retry_error_type):
+                logger.warning(
+                    "Agent %s retry %d/%d hit permanent error type '%s' in stage %s, "
+                    "stopping retries: %s",
+                    agent_name, attempt, max_retries, retry_error_type, stage_name,
+                    last_result["output_data"].get("error", ""),
+                )
+                last_result["metrics"]["retries"] = attempt
+                return last_result
+
+        # All retries exhausted
+        logger.warning(
+            "Agent %s exhausted all %d retries in stage %s",
+            agent_name, max_retries, stage_name,
+        )
+        if last_result:
+            last_result["metrics"]["retries"] = max_retries
+        return last_result
 
     def _execute_agent(
         self,

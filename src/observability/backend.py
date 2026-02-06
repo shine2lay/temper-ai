@@ -5,8 +5,8 @@ Defines the contract that all observability backends must implement,
 enabling pluggable storage backends (SQL, Prometheus, S3, etc.).
 """
 from abc import ABC, abstractmethod
-from typing import Optional, Dict, Any, List, ContextManager
 from datetime import datetime
+from typing import Any, ContextManager, Dict, List, Optional
 
 
 class ObservabilityBackend(ABC):

@@ -1,13 +1,12 @@
 """Tests for ExtractionQualityCollector."""
 
-import pytest
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Any, Dict
 
-from src.self_improvement.metrics.extraction_quality import (
-    ExtractionQualityCollector
-)
-from src.self_improvement.metrics.types import MetricType
+import pytest
+
+from src.self_improvement.metrics.extraction_quality import ExtractionQualityCollector
+from src.self_improvement.metrics.types import SIMetricType
 
 
 @dataclass
@@ -30,7 +29,7 @@ class TestExtractionQualityCollector:
     def test_metric_type(self):
         """Test metric type is CUSTOM."""
         collector = ExtractionQualityCollector()
-        assert collector.metric_type == MetricType.CUSTOM
+        assert collector.metric_type == SIMetricType.CUSTOM
 
     def test_not_applicable_missing_input_data(self):
         """Test not applicable when execution missing input_data."""

@@ -6,34 +6,34 @@ for garbage collection verification.
 
 Run with: pytest tests/test_memory_leaks.py -v
 """
-import pytest
+import asyncio
 import gc
 import os
 import time
-import asyncio
-from itertools import count
-from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime
+from itertools import count
 from typing import List, Tuple
+from unittest.mock import Mock, patch
+
+import pytest
 
 try:
     import psutil
 except ImportError:
     pytest.skip("psutil not installed (optional for memory leak tests)", allow_module_level=True)
 
+from src.agents.llm_providers import LLMResponse
 from src.agents.standard_agent import StandardAgent
 from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.agents.llm_providers import LLMResponse
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
-    PromptConfig,
-    InferenceConfig,
     ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
 )
 from src.observability.database import DatabaseManager
 from src.observability.tracker import ExecutionTracker
-
 
 # ============================================================================
 # Constants
@@ -206,7 +206,7 @@ def test_agent_execution_no_memory_leak(minimal_agent_config, mock_llm_response)
 
         # Log results
         print(f"\n{'='*70}")
-        print(f"Agent Execution Memory Leak Test")
+        print("Agent Execution Memory Leak Test")
         print(f"{'='*70}")
         print(f"Baseline memory:  {baseline:.2f} MB")
         print(f"Final memory:     {final:.2f} MB")
@@ -256,7 +256,7 @@ def test_workflow_compilation_no_memory_leak(simple_workflow_config):
 
         # Log results
         print(f"\n{'='*70}")
-        print(f"Workflow Compilation Memory Leak Test")
+        print("Workflow Compilation Memory Leak Test")
         print(f"{'='*70}")
         print(f"Baseline memory:  {baseline:.2f} MB")
         print(f"Final memory:     {final:.2f} MB")
@@ -315,7 +315,7 @@ def test_llm_provider_no_memory_leak(minimal_agent_config):
 
         # Log results
         print(f"\n{'='*70}")
-        print(f"LLM Provider Connection Memory Leak Test")
+        print("LLM Provider Connection Memory Leak Test")
         print(f"{'='*70}")
         print(f"Baseline memory:  {baseline:.2f} MB")
         print(f"Final memory:     {final:.2f} MB")
@@ -368,7 +368,7 @@ def test_observability_tracking_no_memory_leak(test_db):
 
     # Log results
     print(f"\n{'='*70}")
-    print(f"Observability Tracking Memory Leak Test")
+    print("Observability Tracking Memory Leak Test")
     print(f"{'='*70}")
     print(f"Baseline memory:  {baseline:.2f} MB")
     print(f"Final memory:     {final:.2f} MB")
@@ -444,7 +444,7 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
 
         # Log results
         print(f"\n{'='*70}")
-        print(f"Long-Running Agent Session Stability Test")
+        print("Long-Running Agent Session Stability Test")
         print(f"{'='*70}")
         print(f"Baseline memory:             {baseline_memory:.2f} MB")
         print(f"Final memory:                {final_memory:.2f} MB")
@@ -452,7 +452,7 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
         print(f"Max growth between samples:  {max_growth_between_samples:.2f} MB")
         print(f"P95 growth between samples:  {p95_growth:.2f} MB")
         print(f"Memory samples:              {[f'{m:.1f}' for m in memory_samples]}")
-        print(f"Target:                      <50 MB total growth")
+        print("Target:                      <50 MB total growth")
         print(f"Status:                      {'✓ PASS' if total_growth < 50 else '✗ FAIL'}")
         print(f"{'='*70}\n")
 
@@ -516,7 +516,7 @@ async def test_async_llm_provider_no_memory_leak():
 
     # Log results
     print(f"\n{'='*70}")
-    print(f"Async LLM Provider Memory Leak Test")
+    print("Async LLM Provider Memory Leak Test")
     print(f"{'='*70}")
     print(f"Baseline memory:  {baseline_memory:.2f} MB")
     print(f"Final memory:     {final_memory:.2f} MB")
@@ -587,14 +587,14 @@ async def test_concurrent_workflows_no_memory_leak(simple_workflow_config):
 
         # Log results
         print(f"\n{'='*70}")
-        print(f"Concurrent Workflow Execution Memory Leak Test")
+        print("Concurrent Workflow Execution Memory Leak Test")
         print(f"{'='*70}")
         print(f"Baseline memory:  {baseline_memory:.2f} MB")
         print(f"Final memory:     {final_memory:.2f} MB")
         print(f"Memory growth:    {growth:.2f} MB")
         print(f"Total workflows:  {TEST_ITERATIONS * 5}")
         print(f"Growth per batch: {growth / TEST_ITERATIONS:.3f} MB")
-        print(f"Target:           <20 MB per 100 batches")
+        print("Target:           <20 MB per 100 batches")
         print(f"Status:           {'✓ PASS' if growth < 20 else '✗ FAIL'}")
         print(f"{'='*70}\n")
 
@@ -617,7 +617,6 @@ def test_database_connection_pool_no_memory_leak(test_db):
     - Memory growth <10MB per 100 connection cycles
     - Connections properly returned to pool
     """
-    from sqlmodel import Session
     from src.observability.models import WorkflowExecution
 
     # Define operation
@@ -640,7 +639,7 @@ def test_database_connection_pool_no_memory_leak(test_db):
 
     # Log results
     print(f"\n{'='*70}")
-    print(f"Database Connection Pool Memory Leak Test")
+    print("Database Connection Pool Memory Leak Test")
     print(f"{'='*70}")
     print(f"Baseline memory:  {baseline:.2f} MB")
     print(f"Final memory:     {final:.2f} MB")
@@ -717,5 +716,5 @@ def test_memory_leak_summary():
 
     print(summary)
 
-    # Always pass
-    assert True
+    # Verify summary was generated
+    assert isinstance(summary, str) and len(summary) > 0

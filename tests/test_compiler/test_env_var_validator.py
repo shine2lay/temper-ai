@@ -19,13 +19,10 @@ Reference:
 - CWE-77 (Command Injection), CWE-22 (Path Traversal), CWE-89 (SQL Injection)
 """
 import os
-import pytest
-from src.compiler.env_var_validator import (
-    EnvVarValidator,
-    ValidationLevel,
-    ValidationRule
-)
 
+import pytest
+
+from src.compiler.env_var_validator import EnvVarValidator, ValidationLevel
 
 # ============================================================================
 # Test Class 1: EXECUTABLE Level (Command Injection Prevention)
@@ -580,7 +577,6 @@ class TestWindowsPathTraversal:
 
     def test_complex_windows_path_traversal_blocked(self):
         """Test complex Windows path traversal patterns."""
-        import os
         validator = EnvVarValidator()
 
         # These should all be blocked regardless of OS

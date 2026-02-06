@@ -4,10 +4,9 @@ Error propagation tests for agent → stage → workflow chain.
 Tests error propagation, context preservation, partial failures, cascading control,
 and metadata sanitization to prevent secret leakage.
 """
+from typing import Any, Dict, List, Optional
+
 import pytest
-import asyncio
-from typing import Dict, Any, List, Optional
-from unittest.mock import Mock, AsyncMock
 
 
 class AgentError(Exception):
@@ -581,7 +580,7 @@ class TestErrorSanitizationIntegration:
 
     def test_aws_key_redacted_in_llm_error(self):
         """Test AWS keys are redacted in LLMError messages."""
-        from src.utils.exceptions import LLMError, ErrorCode
+        from src.utils.exceptions import ErrorCode, LLMError
 
         aws_key = "AKIAIOSFODNN7EXAMPLE"
 
@@ -616,7 +615,7 @@ class TestErrorSanitizationIntegration:
 
     def test_bearer_token_redacted_in_tool_error(self):
         """Test Bearer tokens are redacted in ToolError messages."""
-        from src.utils.exceptions import ToolError, ErrorCode
+        from src.utils.exceptions import ErrorCode, ToolError
 
         token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature"
 
@@ -634,7 +633,7 @@ class TestErrorSanitizationIntegration:
 
     def test_jwt_token_redacted_in_workflow_error(self):
         """Test JWT tokens are redacted in WorkflowError messages."""
-        from src.utils.exceptions import WorkflowError, ErrorCode
+        from src.utils.exceptions import ErrorCode, WorkflowError
 
         jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
 
@@ -651,7 +650,7 @@ class TestErrorSanitizationIntegration:
 
     def test_connection_string_redacted_in_safety_error(self):
         """Test database connection strings are redacted in SafetyError."""
-        from src.utils.exceptions import SafetyError, ErrorCode
+        from src.utils.exceptions import ErrorCode, SafetyError
 
         conn_str = "postgresql://admin:secret123@localhost:5432/mydb"
 
@@ -668,7 +667,7 @@ class TestErrorSanitizationIntegration:
 
     def test_multiple_secrets_redacted_in_validation_error(self):
         """Test multiple secrets in same error are all redacted."""
-        from src.utils.exceptions import ValidationError, ErrorCode
+        from src.utils.exceptions import ErrorCode, ValidationError
 
         api_key = "sk-prod-key-xyz"
         password = "MyP@ssw0rd!"
@@ -689,7 +688,7 @@ class TestErrorSanitizationIntegration:
 
     def test_secrets_redacted_in_repr(self):
         """Test secrets are redacted in error repr()."""
-        from src.utils.exceptions import LLMError, ErrorCode
+        from src.utils.exceptions import ErrorCode, LLMError
 
         api_key = "sk-test-secret-key"
 
@@ -723,7 +722,7 @@ class TestErrorSanitizationIntegration:
 
     def test_secrets_redacted_in_cause(self):
         """Test secrets are redacted when error wraps another exception."""
-        from src.utils.exceptions import ToolError, ErrorCode
+        from src.utils.exceptions import ErrorCode, ToolError
 
         api_key = "api-key-1234567890"
 
@@ -745,8 +744,8 @@ class TestErrorSanitizationIntegration:
 
     def test_secrets_redacted_in_traceback(self):
         """Test secrets are redacted in error traceback."""
-        from src.utils.exceptions import WorkflowError, ErrorCode
-        import traceback as tb_module
+
+        from src.utils.exceptions import ErrorCode, WorkflowError
 
         password = "p@ssw0rd!"
 
@@ -774,7 +773,7 @@ class TestErrorSanitizationIntegration:
 
     def test_api_key_formats_all_redacted(self):
         """Test various API key formats are all redacted."""
-        from src.utils.exceptions import LLMError, ErrorCode
+        from src.utils.exceptions import ErrorCode, LLMError
 
         test_keys = [
             ("sk-test-key", "sk- prefix"),
@@ -826,6 +825,7 @@ class TestErrorSanitizationIntegration:
     def test_sanitization_performance(self):
         """Test that error sanitization has minimal performance overhead."""
         import time
+
         from src.utils.exceptions import AgentError, ErrorCode
 
         # Test with message containing secrets
@@ -850,7 +850,7 @@ class TestErrorSanitizationIntegration:
 
     def test_no_false_positives(self):
         """Test that sanitization doesn't redact non-secret data."""
-        from src.utils.exceptions import ToolError, ErrorCode
+        from src.utils.exceptions import ErrorCode, ToolError
 
         # Message with words that contain trigger patterns but aren't secrets
         message = (

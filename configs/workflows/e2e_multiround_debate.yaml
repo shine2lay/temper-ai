@@ -68,7 +68,7 @@ workflow:
 
   # Execution settings
   execution:
-    timeout_seconds: 600
+    timeout_seconds: 6000
     parallel_execution: false
     allow_early_termination: true
 

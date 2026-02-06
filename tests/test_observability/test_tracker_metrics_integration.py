@@ -1,12 +1,13 @@
 """Tests for ExecutionTracker integration with MetricRegistry."""
 
-import pytest
 from typing import Optional
 
-from src.observability.tracker import ExecutionTracker
+import pytest
+
 from src.observability.backends import SQLObservabilityBackend
 from src.observability.database import init_database
-from src.self_improvement.metrics import MetricRegistry, MetricCollector, MetricType
+from src.observability.tracker import ExecutionTracker
+from src.self_improvement.metrics import MetricCollector, MetricRegistry, SIMetricType
 from src.self_improvement.metrics.collector import ExecutionProtocol
 
 
@@ -24,8 +25,8 @@ class MockMetricCollector(MetricCollector):
         return self._name
 
     @property
-    def metric_type(self) -> MetricType:
-        return MetricType.CUSTOM
+    def metric_type(self) -> SIMetricType:
+        return SIMetricType.CUSTOM
 
     def collect(self, execution: ExecutionProtocol) -> Optional[float]:
         self.collect_called = True
@@ -43,8 +44,8 @@ class TestExecutionTrackerMetricsIntegration:
     def db(self):
         """Initialize in-memory database for testing."""
         # Reset global database before each test
-        from src.observability.database import _db_manager, _db_lock
         import src.observability.database as db_module
+        from src.observability.database import _db_lock
         with _db_lock:
             db_module._db_manager = None
 
@@ -149,8 +150,8 @@ class TestExecutionTrackerMetricsIntegration:
                 return "failing_metric"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 raise RuntimeError("Intentional collection failure")
@@ -233,8 +234,8 @@ class TestExecutionTrackerMetricsIntegration:
                 return "never_applicable"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.5

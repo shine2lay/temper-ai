@@ -9,13 +9,13 @@ This supports the "radical modularity" vision by allowing multiple agent types
 from __future__ import annotations
 
 import threading
-from typing import Dict, Type, TYPE_CHECKING
+from typing import TYPE_CHECKING, Dict, Type
 
 from src.agents.base_agent import BaseAgent
 from src.agents.standard_agent import StandardAgent
 
 if TYPE_CHECKING:
-    from src.compiler.schemas import AgentConfig
+    from src.schemas import AgentConfig
 
 
 class AgentFactory:

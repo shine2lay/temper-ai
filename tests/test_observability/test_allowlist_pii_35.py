@@ -4,7 +4,6 @@ Verifies that the full-text allowlist check no longer bypasses PII
 redaction when allowlisted patterns appear alongside real PII.
 """
 
-import pytest
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
 
 

@@ -5,13 +5,13 @@ Represents a single improvement opportunity linking a detected problem
 to an applicable improvement strategy.
 """
 
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, Any
-import uuid
+from typing import Any, Dict
 
-from src.self_improvement.detection.problem_models import PerformanceProblem
 from src.self_improvement.data_models import AgentPerformanceProfile
+from src.self_improvement.detection.problem_models import PerformanceProblem
 
 
 @dataclass

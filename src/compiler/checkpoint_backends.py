@@ -22,9 +22,6 @@ Example:
     >>> # Load checkpoint
     >>> loaded_domain = backend.load_checkpoint("wf-123", checkpoint_id)
 """
-from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List, cast
-from pathlib import Path
 import json
 import logging
 import os
@@ -32,7 +29,10 @@ import re
 import secrets
 import tempfile
 import time
-from datetime import datetime, UTC
+from abc import ABC, abstractmethod
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -476,7 +476,12 @@ class RedisCheckpointBackend(CheckpointBackend):
                 "Install with: pip install redis"
             )
 
-        self.redis_client = redis.from_url(redis_url, decode_responses=True)
+        self.redis_client = redis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+        )
         self.ttl = ttl
 
     @staticmethod

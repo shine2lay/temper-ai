@@ -7,12 +7,12 @@ the detected performance problem (quality, cost, speed).
 import copy
 from typing import List
 
+from src.self_improvement.model_registry import ModelMetadata, ModelRegistry
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
-    OptimizationConfig,
     LearnedPattern,
+    SIOptimizationConfig,
 )
-from src.self_improvement.model_registry import ModelRegistry, ModelMetadata
 
 
 class OllamaModelSelectionStrategy(ImprovementStrategy):
@@ -31,7 +31,7 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
     Example:
         >>> registry = ModelRegistry()
         >>> strategy = OllamaModelSelectionStrategy(registry)
-        >>> current = OptimizationConfig(inference={'model': 'phi3:mini'})
+        >>> current = SIOptimizationConfig(inference={'model': 'phi3:mini'})
         >>> patterns = []
         >>> variants = strategy.generate_variants(current, patterns)
         >>> len(variants)
@@ -56,8 +56,8 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         return "ollama_model_selection"
 
     def generate_variants(
-        self, current_config: OptimizationConfig, patterns: List[LearnedPattern]
-    ) -> List[OptimizationConfig]:
+        self, current_config: SIOptimizationConfig, patterns: List[LearnedPattern]
+    ) -> List[SIOptimizationConfig]:
         """
         Generate config variants with different Ollama models.
 

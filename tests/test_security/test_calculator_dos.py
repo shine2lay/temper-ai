@@ -9,6 +9,7 @@ Attack Example:
 """
 
 import pytest
+
 from src.tools.calculator import Calculator
 
 

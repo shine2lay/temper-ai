@@ -16,27 +16,19 @@ Focus areas:
 This file implements 150+ LOC of error propagation tests based on the
 qa-engineer specialist's test strategy.
 """
-import pytest
 import uuid
-import asyncio
-from typing import Dict, Any
 
 from src.utils.exceptions import (
-    ToolError,
-    ToolExecutionError,
     AgentError,
-    WorkflowError,
     ErrorCode,
     ExecutionContext,
-    sanitize_error_message,
+    ToolError,
+    ToolExecutionError,
+    WorkflowError,
 )
 from tests.fixtures.error_helpers import (
-    FailingTool,
-    TimeoutTool,
-    FlakyTool,
-    assert_error_chain,
     assert_context_preserved,
-    assert_secrets_sanitized,
+    assert_error_chain,
 )
 
 

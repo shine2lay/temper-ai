@@ -1,14 +1,9 @@
 """Tests for safety policy composition layer."""
-import pytest
-from unittest.mock import Mock
 
-from src.safety.composition import PolicyComposer, CompositeValidationResult
-from src.safety.interfaces import (
-    SafetyPolicy,
-    ValidationResult,
-    SafetyViolation,
-    ViolationSeverity
-)
+import pytest
+
+from src.safety.composition import CompositeValidationResult, PolicyComposer
+from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 
 class MockPolicy(SafetyPolicy):

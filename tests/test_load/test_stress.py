@@ -5,21 +5,17 @@ Validates scalability, resource management, and graceful degradation.
 
 Run with: pytest tests/test_load/test_stress.py -v
 """
-import pytest
 import asyncio
-import time
 import gc
-import psutil
 import os
-from unittest.mock import Mock, MagicMock, AsyncMock
-from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import List, Dict, Any
+import time
 
-from src.tools.registry import ToolRegistry
-from src.tools.base import BaseTool, ToolResult
+import psutil
+import pytest
+
 from src.observability.database import DatabaseManager
-
+from src.tools.base import BaseTool, ToolResult
+from src.tools.registry import ToolRegistry
 
 # ============================================================================
 # Fixtures

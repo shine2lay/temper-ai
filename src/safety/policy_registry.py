@@ -13,7 +13,8 @@ Example:
     >>> policies = registry.get_policies_for_action("file_write")
 """
 import threading
-from typing import Dict, List, Set, Optional, Any
+from typing import Any, Dict, List, Optional, Set
+
 from src.safety.interfaces import SafetyPolicy
 
 

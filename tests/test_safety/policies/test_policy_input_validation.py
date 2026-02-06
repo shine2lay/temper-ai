@@ -5,9 +5,9 @@ validated to prevent negative values, type errors, and extreme values that
 could bypass safety limits or cause undefined behavior.
 """
 import pytest
+
 from src.safety.policies.rate_limit_policy import RateLimitPolicy
 from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
-from src.safety.token_bucket import RateLimit
 
 
 class TestRateLimitPolicyValidation:
@@ -40,7 +40,7 @@ class TestRateLimitPolicyValidation:
 
     def test_reject_non_string_limit_type(self):
         """Test that rate limit type keys must be strings."""
-        with pytest.raises(ValueError, match="Rate limit type must be string"):
+        with pytest.raises(ValueError, match="config keys must be strings"):
             RateLimitPolicy({"rate_limits": {123: {"max_tokens": 10, "refill_rate": 1.0}}})
 
     def test_reject_missing_required_fields(self):
@@ -333,21 +333,21 @@ class TestSecretDetectionPolicyValidation:
         """Test that negative entropy threshold is rejected."""
         from src.safety.secret_detection import SecretDetectionPolicy
 
-        with pytest.raises(ValueError, match="entropy_threshold must be >="):
+        with pytest.raises(ValueError, match="entropy_threshold must be between 0.0 and 8.0"):
             SecretDetectionPolicy({"entropy_threshold": -1.0})
 
     def test_reject_extreme_entropy_threshold(self):
         """Test that entropy threshold > 8.0 is rejected (max Shannon entropy)."""
         from src.safety.secret_detection import SecretDetectionPolicy
 
-        with pytest.raises(ValueError, match="entropy_threshold must be <="):
+        with pytest.raises(ValueError, match="entropy_threshold must be between 0.0 and 8.0"):
             SecretDetectionPolicy({"entropy_threshold": 10.0})
 
     def test_reject_string_entropy_threshold(self):
         """Test that string entropy threshold is rejected."""
         from src.safety.secret_detection import SecretDetectionPolicy
 
-        with pytest.raises(ValueError, match="entropy_threshold must be numeric"):
+        with pytest.raises(ValueError, match="entropy_threshold must be a number"):
             SecretDetectionPolicy({"entropy_threshold": "high"})
 
     def test_reject_non_list_excluded_paths(self):
@@ -370,14 +370,14 @@ class TestSecretDetectionPolicyValidation:
         from src.safety.secret_detection import SecretDetectionPolicy
 
         many_paths = [f"path_{i}" for i in range(1001)]
-        with pytest.raises(ValueError, match="excluded_paths must have <= 1000"):
+        with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
             SecretDetectionPolicy({"excluded_paths": many_paths})
 
     def test_reject_string_allow_test_secrets(self):
         """Test that string boolean is rejected (prevents 'false' -> True bug)."""
         from src.safety.secret_detection import SecretDetectionPolicy
 
-        with pytest.raises(ValueError, match="allow_test_secrets must be boolean"):
+        with pytest.raises(ValueError, match="must be a boolean"):
             SecretDetectionPolicy({"allow_test_secrets": "false"})
 
     def test_accept_valid_configuration(self):
@@ -428,7 +428,7 @@ class TestFileAccessPolicyValidation:
         from src.safety.file_access import FileAccessPolicy
 
         many_paths = [f"/path{i}" for i in range(1001)]
-        with pytest.raises(ValueError, match="allowed_paths must have <= 1000"):
+        with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
             FileAccessPolicy({"allowed_paths": many_paths})
 
     def test_reject_string_allow_parent_traversal(self):
@@ -436,14 +436,14 @@ class TestFileAccessPolicyValidation:
         from src.safety.file_access import FileAccessPolicy
 
         # This is CRITICAL: "false" would evaluate to True, enabling parent traversal!
-        with pytest.raises(ValueError, match="allow_parent_traversal must be boolean"):
+        with pytest.raises(ValueError, match="must be a boolean"):
             FileAccessPolicy({"allow_parent_traversal": "false"})
 
     def test_reject_string_allow_symlinks(self):
         """Test that string boolean is rejected for allow_symlinks."""
         from src.safety.file_access import FileAccessPolicy
 
-        with pytest.raises(ValueError, match="allow_symlinks must be boolean"):
+        with pytest.raises(ValueError, match="must be a boolean"):
             FileAccessPolicy({"allow_symlinks": "true"})
 
     def test_auto_add_dot_to_extensions(self):
@@ -504,7 +504,7 @@ class TestForbiddenOperationsPolicyValidation:
         """Test that string boolean is rejected."""
         from src.safety.forbidden_operations import ForbiddenOperationsPolicy
 
-        with pytest.raises(ValueError, match="check_file_writes must be boolean"):
+        with pytest.raises(ValueError, match="must be a boolean"):
             ForbiddenOperationsPolicy({"check_file_writes": "yes"})
 
     def test_reject_non_dict_custom_patterns(self):
@@ -557,7 +557,7 @@ class TestForbiddenOperationsPolicyValidation:
         from src.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         many_cmds = [f"cmd{i}" for i in range(1001)]
-        with pytest.raises(ValueError, match="whitelist_commands must have <= 1000"):
+        with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
             ForbiddenOperationsPolicy({"whitelist_commands": many_cmds})
 
     def test_accept_valid_configuration(self):

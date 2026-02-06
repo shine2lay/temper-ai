@@ -1,11 +1,12 @@
 """Tests for OAuth rate limiting."""
-import pytest
-import asyncio
 import time
+
+import pytest
+
 from src.auth.oauth.rate_limiter import (
-    SlidingWindowRateLimiter,
     OAuthRateLimiter,
-    RateLimitExceeded
+    RateLimitExceeded,
+    SlidingWindowRateLimiter,
 )
 
 

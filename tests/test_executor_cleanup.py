@@ -12,12 +12,12 @@ Tests cover:
 import gc
 import threading
 import time
-import pytest
-from unittest.mock import Mock, MagicMock
 
+import pytest
+
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.executor import ToolExecutor
 from src.tools.registry import ToolRegistry
-from src.tools.base import BaseTool, ToolResult, ToolMetadata
 
 
 class DummyTool(BaseTool):
@@ -79,7 +79,6 @@ class TestExplicitShutdown:
         executor = ToolExecutor(registry, max_workers=1)
 
         # Submit a task
-        import concurrent.futures
         future = executor._executor.submit(slow_tool.execute)
 
         # Shutdown with wait=True

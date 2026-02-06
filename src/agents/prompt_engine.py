@@ -6,10 +6,10 @@ and tool schema formatting for LLM function calling.
 """
 import json
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Union
-from functools import lru_cache
-from jinja2 import Template, Environment, FileSystemLoader, TemplateNotFound
-from jinja2.sandbox import ImmutableSandboxedEnvironment, SandboxedEnvironment
+from typing import Any, Dict, List, Optional, Union
+
+from jinja2 import FileSystemLoader, Template, TemplateNotFound
+from jinja2.sandbox import ImmutableSandboxedEnvironment
 
 
 class PromptRenderError(Exception):
@@ -186,7 +186,7 @@ class PromptEngine:
 
         if not self.jinja_env:
             raise PromptRenderError(
-                f"Cannot load template file: templates directory not configured"
+                "Cannot load template file: templates directory not configured"
             )
 
         try:

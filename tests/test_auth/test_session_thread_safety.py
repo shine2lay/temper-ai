@@ -5,8 +5,9 @@ don't corrupt internal dictionaries or indexes.
 """
 
 import asyncio
-import pytest
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from src.auth.models import Session, User
 from src.auth.session import SessionStore, UserStore

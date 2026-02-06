@@ -14,7 +14,7 @@ stage:
     consensus_threshold: 0.75
     enable_summarization: true
 
-  timeout_seconds: 300
+  timeout_seconds: 3000
 
   error_handling:
     on_agent_failure: continue_with_remaining

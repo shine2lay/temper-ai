@@ -4,15 +4,17 @@ Regression tests for tool execution bugs.
 Tests for previously discovered bugs in tool execution to ensure
 they don't reappear.
 """
-import pytest
 import os
-import tempfile
 import shutil
+import tempfile
+
+import pytest
+
 from src.tools.calculator import Calculator
-from src.tools.file_writer import FileWriter
-from src.tools.web_scraper import WebScraper
-from src.tools.registry import ToolRegistry
 from src.tools.executor import ToolExecutor
+from src.tools.file_writer import FileWriter
+from src.tools.registry import ToolRegistry
+from src.tools.web_scraper import WebScraper
 
 
 class TestCalculator:

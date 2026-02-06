@@ -5,8 +5,9 @@ Implements methods for stopping experiments early when sufficient evidence
 is gathered, reducing experiment runtime while maintaining statistical rigor.
 """
 
+from typing import Any, Dict, List, Tuple
+
 import numpy as np  # type: ignore[import-not-found]
-from typing import Dict, List, Tuple, Optional, Any
 from scipy import stats  # type: ignore[import-untyped]
 
 

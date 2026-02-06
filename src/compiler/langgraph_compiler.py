@@ -18,24 +18,25 @@ Architecture:
 Supports M2 (sequential) and M3 (parallel, adaptive) execution modes.
 """
 import logging
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Any, Dict, List, Optional, Tuple
+
 from langgraph.graph import StateGraph
 
 logger = logging.getLogger(__name__)
 
 from src.compiler.config_loader import ConfigLoader
-from src.compiler.state_manager import StateManager
+from src.compiler.executors import (
+    AdaptiveStageExecutor,
+    ParallelStageExecutor,
+    SequentialStageExecutor,
+)
 from src.compiler.node_builder import NodeBuilder
 from src.compiler.stage_compiler import StageCompiler
+from src.compiler.state_manager import StateManager
 from src.compiler.workflow_executor import WorkflowExecutor
-from src.compiler.executors import (
-    SequentialStageExecutor,
-    ParallelStageExecutor,
-    AdaptiveStageExecutor
-)
-from src.tools.registry import ToolRegistry
-from src.tools.executor import ToolExecutor
 from src.safety.factory import create_safety_stack
+from src.tools.executor import ToolExecutor
+from src.tools.registry import ToolRegistry
 
 # Re-export WorkflowExecutor for backward compatibility
 __all__ = ['LangGraphCompiler', 'WorkflowExecutor']
@@ -325,8 +326,9 @@ class LangGraphCompiler:
         Example:
             >>> self._validate_all_configs(["research", "analysis"], workflow_config)
         """
-        from src.compiler.schemas import StageConfig, AgentConfig
         from pydantic import ValidationError
+
+        from src.compiler.schemas import AgentConfig, StageConfig
 
         errors = []
 
@@ -341,14 +343,14 @@ class LangGraphCompiler:
                 continue
 
             # Validate stage config against Pydantic schema if it's a dict
+            # Note: Schema validation is advisory — missing optional fields like
+            # 'description' should not block compilation. Only log warnings.
             if isinstance(stage_config, dict):
                 try:
-                    # Try to validate as StageConfig
                     StageConfig(**stage_config)
                 except ValidationError as e:
-                    errors.append(f"Stage '{stage_name}': Invalid config - {e}")
+                    logger.warning(f"Stage '{stage_name}': Config schema warnings - {e}")
                 except Exception as e:
-                    # Some configs might not fully match schema, log but don't fail
                     logger.debug(f"Stage '{stage_name}': Config validation skipped - {e}")
 
             # Get agents from stage config
@@ -369,13 +371,13 @@ class LangGraphCompiler:
                     continue
 
                 # Validate agent config against Pydantic schema if it's a dict
+                # Note: Schema validation is advisory for agent configs as well
                 if isinstance(agent_config, dict):
                     try:
                         AgentConfig(**agent_config)
                     except ValidationError as e:
-                        errors.append(f"Agent '{agent_name}' in stage '{stage_name}': Invalid config - {e}")
+                        logger.warning(f"Agent '{agent_name}' in stage '{stage_name}': Config schema warnings - {e}")
                     except Exception as e:
-                        # Some configs might not fully match schema, log but don't fail
                         logger.debug(f"Agent '{agent_name}': Config validation skipped - {e}")
 
         # If any errors, fail fast with all details

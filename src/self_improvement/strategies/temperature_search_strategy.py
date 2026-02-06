@@ -5,12 +5,12 @@ Systematically varies temperature and other sampling parameters to optimize
 the quality/consistency/creativity tradeoff for agent outputs.
 """
 import copy
-from typing import List, Dict
+from typing import Dict, List
 
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
-    OptimizationConfig,
     LearnedPattern,
+    SIOptimizationConfig,
 )
 
 
@@ -26,7 +26,7 @@ class TemperatureSearchStrategy(ImprovementStrategy):
 
     Example:
         >>> strategy = TemperatureSearchStrategy()
-        >>> current = OptimizationConfig(
+        >>> current = SIOptimizationConfig(
         ...     inference={'temperature': 0.7, 'top_p': 0.9}
         ... )
         >>> variants = strategy.generate_variants(current, [])
@@ -65,8 +65,8 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         return "temperature_search"
 
     def generate_variants(
-        self, current_config: OptimizationConfig, patterns: List[LearnedPattern]
-    ) -> List[OptimizationConfig]:
+        self, current_config: SIOptimizationConfig, patterns: List[LearnedPattern]
+    ) -> List[SIOptimizationConfig]:
         """Generate improved configuration variants.
 
         Generates 3-4 variants:
@@ -85,8 +85,6 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         variants = []
         current_temp = current_config.inference.get("temperature", 0.7)
         current_top_p = current_config.inference.get("top_p", 0.9)
-        current_top_k = current_config.inference.get("top_k")
-
         # Infer problem type from patterns (if available)
         problem_type = self._infer_problem_type(patterns)
 

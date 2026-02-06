@@ -2,16 +2,16 @@
 
 Tests loading tools from YAML/JSON configuration files into the ToolRegistry.
 """
-import pytest
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
 import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 import yaml
 
-from src.tools.registry import ToolRegistry, ToolRegistryError
-from src.tools.base import BaseTool, ToolResult, ToolMetadata
 from src.compiler.config_loader import ConfigLoader
-
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from src.tools.registry import ToolRegistry, ToolRegistryError
 
 # ============================================================================
 # Test Tools

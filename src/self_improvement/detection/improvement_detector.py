@@ -5,21 +5,26 @@ Coordinates problem detection and strategy selection to generate improvement pro
 """
 
 import logging
-from typing import List, Optional, Dict, Any
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 from sqlmodel import Session
 
-from src.self_improvement.performance_analyzer import (
-    PerformanceAnalyzer,
-    InsufficientDataError as AnalyzerInsufficientDataError,
+from src.self_improvement.detection.improvement_proposal import ImprovementProposal
+from src.self_improvement.detection.problem_detector import (
+    ProblemDetectionDataError as DetectorInsufficientDataError,
 )
-from src.self_improvement.performance_comparison import compare_profiles
 from src.self_improvement.detection.problem_detector import (
     ProblemDetector,
-    InsufficientDataError as DetectorInsufficientDataError,
 )
 from src.self_improvement.detection.problem_models import PerformanceProblem, ProblemSeverity
-from src.self_improvement.detection.improvement_proposal import ImprovementProposal
+from src.self_improvement.performance_analyzer import (
+    PerformanceAnalyzer,
+)
+from src.self_improvement.performance_analyzer import (
+    PerformanceDataError as AnalyzerInsufficientDataError,
+)
+from src.self_improvement.performance_comparison import compare_profiles
 from src.self_improvement.strategies.registry import StrategyRegistry
 
 logger = logging.getLogger(__name__)
@@ -35,7 +40,7 @@ class NoBaselineError(ImprovementDetectionError):
     pass
 
 
-class InsufficientDataError(ImprovementDetectionError):
+class ImprovementDataError(ImprovementDetectionError):
     """Raised when too few executions for reliable detection."""
     pass
 
@@ -125,7 +130,7 @@ class ImprovementDetector:
 
         Raises:
             NoBaselineError: If no baseline exists for the agent
-            InsufficientDataError: If too few executions for reliable detection
+            ImprovementDataError: If too few executions for reliable detection
             ComponentError: If dependent component fails
 
         Example:
@@ -168,7 +173,7 @@ class ImprovementDetector:
                     min_executions=min_executions,
                 )
             except AnalyzerInsufficientDataError as e:
-                raise InsufficientDataError(
+                raise ImprovementDataError(
                     f"Cannot detect improvements for {agent_name}: {e}"
                 ) from e
 
@@ -193,7 +198,7 @@ class ImprovementDetector:
                     min_executions=min_executions,
                 )
             except DetectorInsufficientDataError as e:
-                raise InsufficientDataError(
+                raise ImprovementDataError(
                     f"Problem detection failed for {agent_name}: {e}"
                 ) from e
 
@@ -221,7 +226,7 @@ class ImprovementDetector:
 
             return proposals
 
-        except (NoBaselineError, InsufficientDataError):
+        except (NoBaselineError, ImprovementDataError):
             # Re-raise these as-is
             raise
         except Exception as e:

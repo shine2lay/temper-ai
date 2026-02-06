@@ -23,20 +23,19 @@ Reference:
 Performance Target: <100ms per validation (including DNS resolution)
 Success Criteria: 100% attack blocking, zero false negatives
 """
-import pytest
 import socket
-import time
 import threading
-from unittest.mock import patch, MagicMock
-from src.tools.web_scraper import (
-    validate_url_safety,
-    resolve_hostname_with_timeout,
-    DNSCache,
-    DNS_RESOLUTION_TIMEOUT_SECONDS,
-    DNS_CACHE_TTL_SECONDS,
-    _dns_cache
-)
+import time
+from unittest.mock import patch
 
+import pytest
+
+from src.tools.web_scraper import (
+    DNSCache,
+    _dns_cache,
+    resolve_hostname_with_timeout,
+    validate_url_safety,
+)
 
 # ============================================================================
 # Test Fixtures

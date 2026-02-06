@@ -25,16 +25,17 @@ M3 Feature Checklist:
 - ✅ m3-13: Configuration Schema
 - ✅ m3-14: Example Workflows
 """
-import pytest
-import time
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+import pytest
+
+from src.agents.base_agent import AgentResponse
+
 # Core components
 from src.compiler.config_loader import ConfigLoader
+from src.compiler.domain_state import WorkflowDomainState
 from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.compiler.state import WorkflowState
-from src.agents.base_agent import AgentResponse, ExecutionContext
 from src.strategies.base import AgentOutput, SynthesisResult
 from src.strategies.consensus import ConsensusStrategy
 from src.strategies.debate import DebateAndSynthesize
@@ -49,8 +50,8 @@ except ImportError:
 
 # Check for observability
 try:
-    from src.observability.tracker import ExecutionTracker
     from src.observability.database import init_database
+    from src.observability.tracker import ExecutionTracker
     OBSERVABILITY_AVAILABLE = True
 except ImportError:
     OBSERVABILITY_AVAILABLE = False
@@ -293,7 +294,7 @@ class TestParallelExecution:
             "error_handling": {"min_successful_agents": 2}
         }
 
-        state = WorkflowState(
+        state = WorkflowDomainState(
             workflow_id="test-wf",
             stage_outputs={}
         )
@@ -345,7 +346,7 @@ class TestParallelExecution:
             "error_handling": {"min_successful_agents": 2}  # 2/3 is OK
         }
 
-        state = WorkflowState(workflow_id="test-wf", stage_outputs={})
+        state = WorkflowDomainState(workflow_id="test-wf", stage_outputs={})
 
         def mock_load_agent(name):
             return {"name": name}
@@ -394,7 +395,7 @@ class TestParallelExecution:
             "error_handling": {"min_successful_agents": 2}  # Need 2, only 1 succeeds
         }
 
-        state = WorkflowState(workflow_id="test-wf", stage_outputs={})
+        state = WorkflowDomainState(workflow_id="test-wf", stage_outputs={})
 
         def mock_load_agent(name):
             return {"name": name}
@@ -618,7 +619,6 @@ class TestQualityGates:
     def test_quality_gates_confidence_failure_escalate(self):
         """Test quality gate failure with escalate action."""
         from src.compiler.langgraph_compiler import LangGraphCompiler
-        from src.strategies.base import SynthesisResult
 
         compiler = LangGraphCompiler()
 
@@ -656,7 +656,6 @@ class TestQualityGates:
     def test_quality_gates_proceed_with_warning(self):
         """Test quality gate failure with proceed_with_warning action."""
         from src.compiler.langgraph_compiler import LangGraphCompiler
-        from src.strategies.base import SynthesisResult
 
         compiler = LangGraphCompiler()
 
@@ -691,7 +690,6 @@ class TestQualityGates:
     def test_quality_gates_all_checks_pass(self):
         """Test quality gates with all checks passing."""
         from src.compiler.langgraph_compiler import LangGraphCompiler
-        from src.strategies.base import SynthesisResult
 
         compiler = LangGraphCompiler()
 

@@ -4,9 +4,9 @@ Data models for M5 Self-Improvement Loop.
 Contains models for loop state, iteration results, configuration, and progress tracking.
 """
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
 
 class Phase(Enum):
@@ -47,8 +47,8 @@ class LoopState:
     iteration_number: int
     phase_data: Dict[str, Any] = field(default_factory=dict)
     last_error: Optional[str] = None
-    started_at: datetime = field(default_factory=lambda: datetime.utcnow())
-    updated_at: datetime = field(default_factory=lambda: datetime.utcnow())
+    started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for database storage."""
@@ -99,8 +99,8 @@ class AnalysisResult:
 @dataclass
 class StrategyResult:
     """Result from Phase 3: Strategy Generation."""
-    control_config: Any  # OptimizationConfig
-    variant_configs: List[Any]  # List[OptimizationConfig]
+    control_config: Any  # SIOptimizationConfig
+    variant_configs: List[Any]  # List[SIOptimizationConfig]
     strategy_name: str
     strategy_metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -110,7 +110,7 @@ class ExperimentPhaseResult:
     """Result from Phase 4: Experimentation."""
     experiment_id: str
     winner_variant_id: Optional[str]
-    winner_config: Optional[Any] = None  # OptimizationConfig
+    winner_config: Optional[Any] = None  # SIOptimizationConfig
     statistical_significance: Optional[float] = None
     metrics_comparison: Optional[Dict[str, Any]] = None
 
@@ -119,8 +119,8 @@ class ExperimentPhaseResult:
 class DeploymentResult:
     """Result from Phase 5: Deployment."""
     deployment_id: str
-    deployed_config: Any  # OptimizationConfig
-    previous_config: Any  # OptimizationConfig
+    deployed_config: Any  # SIOptimizationConfig
+    previous_config: Any  # SIOptimizationConfig
     deployment_timestamp: datetime
     rollback_monitoring_enabled: bool
 
@@ -144,7 +144,7 @@ class IterationResult:
     error: Optional[Exception] = None
     error_phase: Optional[Phase] = None
     duration_seconds: float = 0.0
-    timestamp: datetime = field(default_factory=lambda: datetime.utcnow())
+    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for storage."""

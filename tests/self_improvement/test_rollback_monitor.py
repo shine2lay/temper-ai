@@ -15,19 +15,20 @@ Test coverage:
 - Rollback failure handling
 """
 
+from datetime import timedelta
+from unittest.mock import Mock
+
 import pytest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, MagicMock, patch
 
 from src.self_improvement.data_models import (
     AgentConfig,
-    ConfigDeployment,
     AgentPerformanceProfile,
+    ConfigDeployment,
     utcnow,
 )
 from src.self_improvement.deployment.rollback_monitor import (
-    RollbackMonitor,
     RegressionThresholds,
+    RollbackMonitor,
 )
 
 

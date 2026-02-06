@@ -5,18 +5,19 @@ Ensures that prompts and responses are sanitized before storage to prevent
 PII and secret exposure in the observability database.
 """
 import pytest
-from src.observability.tracker import ExecutionTracker
-from src.observability.sanitization import SanitizationConfig
+
 from src.observability.backends import SQLObservabilityBackend
-from src.observability.models import LLMCall
 from src.observability.database import init_database
+from src.observability.models import LLMCall
+from src.observability.sanitization import SanitizationConfig
+from src.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture
 def sql_backend():
     """Create SQL backend for testing."""
-    from src.observability.database import _db_manager, _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
 
     # Clean up any existing instance
     with _db_lock:

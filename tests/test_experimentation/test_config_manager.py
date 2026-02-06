@@ -5,11 +5,12 @@ Tests deep merge logic, security validation, and Pydantic schema validation.
 """
 
 import pytest
+
 from src.experimentation.config_manager import (
-    ConfigManager,
-    ConfigValidationError,
-    SecurityViolationError,
     PROTECTED_CONFIG_FIELDS,
+    ConfigManager,
+    ExperimentConfigValidationError,
+    SecurityViolationError,
     merge_agent_config,
     merge_stage_config,
     merge_workflow_config,
@@ -436,7 +437,7 @@ class TestApplyOverridesSafely:
 
     def test_apply_overrides_safely_with_schema(self):
         """Test safe apply with Pydantic schema validation."""
-        from pydantic import BaseModel, ValidationError
+        from pydantic import BaseModel
 
         class AgentConfig(BaseModel):
             model: str
@@ -468,7 +469,7 @@ class TestApplyOverridesSafely:
         base = {"model": "gpt-4"}
         overrides = {"temperature": "invalid"}  # Should be float
 
-        with pytest.raises(ConfigValidationError):
+        with pytest.raises(ExperimentConfigValidationError):
             manager.apply_overrides_safely(
                 base, overrides,
                 schema_class=AgentConfig

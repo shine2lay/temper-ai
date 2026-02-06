@@ -6,9 +6,8 @@ Tests more variants including bigger models to find optimal configuration.
 Runs multiple cycles to see continuous improvement.
 """
 
-import json
 import random
-from datetime import datetime, timedelta
+
 
 # ANSI colors
 class Colors:
@@ -408,14 +407,14 @@ for i, cycle_data in enumerate(cycle_history):
             arrow = f"{Colors.YELLOW}↓ NO CHANGE{Colors.RESET}"
 
     print(f"  {arrow}")
-    print(f"  │")
+    print("  │")
     print(f"  ├─ {Colors.BOLD}Cycle {cycle_data['cycle']}: {model} ({params}){Colors.RESET}")
     print(f"  │  Q: {metrics['avg_quality']:.3f} | C: ${metrics['avg_cost']:.4f} | S: {metrics['avg_duration']:.2f}s")
 
     if cycle_data.get("improvement", 0) > 0:
         print(f"  │  {Colors.GREEN}Improvement: +{cycle_data['improvement']:.1f}%{Colors.RESET}")
 
-    print(f"  │")
+    print("  │")
 
 print(f"  {Colors.GREEN}✓ OPTIMIZATION COMPLETE{Colors.RESET}\n")
 

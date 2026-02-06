@@ -5,7 +5,7 @@ Maintains registry of available LLM models (primarily Ollama models for MVP).
 Used by strategies like OllamaModelSelectionStrategy to generate config variants.
 """
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, List, Optional
 
 
 @dataclass

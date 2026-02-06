@@ -11,8 +11,9 @@ Tests multi-round debate with convergence detection, including:
 """
 
 import pytest
-from src.strategies.debate import DebateAndSynthesize, DebateRound, DebateHistory
+
 from src.strategies.base import AgentOutput
+from src.strategies.debate import DebateAndSynthesize, DebateHistory, DebateRound
 
 
 class TestDebateAndSynthesize:

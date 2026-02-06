@@ -5,9 +5,9 @@ dashboards, and SLO monitoring.
 """
 import logging
 import uuid
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional
+from datetime import datetime, timedelta, timezone
 from enum import Enum
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +69,10 @@ class MetricAggregator:
         Returns:
             List of created SystemMetric IDs
         """
-        from src.observability.models import WorkflowExecution, SystemMetric
-        from sqlmodel import select, func
         from sqlalchemy import case
+        from sqlmodel import func, select
+
+        from src.observability.models import WorkflowExecution
 
         # Default time window
         if end_time is None:
@@ -194,9 +195,10 @@ class MetricAggregator:
         Returns:
             List of created SystemMetric IDs
         """
-        from src.observability.models import AgentExecution, SystemMetric
-        from sqlmodel import select, func
         from sqlalchemy import case
+        from sqlmodel import func, select
+
+        from src.observability.models import AgentExecution
 
         # Default time window
         if end_time is None:
@@ -319,9 +321,10 @@ class MetricAggregator:
         Returns:
             List of created SystemMetric IDs
         """
-        from src.observability.models import LLMCall, SystemMetric
-        from sqlmodel import select, func
         from sqlalchemy import case
+        from sqlmodel import func, select
+
+        from src.observability.models import LLMCall
 
         # Default time window
         if end_time is None:
@@ -353,7 +356,6 @@ class MetricAggregator:
             for result in results:
                 provider = result.provider or "unknown"
                 model = result.model or "unknown"
-                dimension = f"{provider}/{model}"
                 total = int(result.total or 0)
                 successful = int(result.successful or 0)
                 avg_latency = float(result.avg_latency or 0)

@@ -9,8 +9,10 @@ Tests cover:
 - Security validations
 - Error handling
 """
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
+
 from src.self_improvement.agents import ProductExtractorAgent
 
 

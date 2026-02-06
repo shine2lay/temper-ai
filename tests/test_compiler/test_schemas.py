@@ -7,58 +7,25 @@ import pytest
 from pydantic import ValidationError
 
 from src.compiler.schemas import (
-    # Agent schemas
-    InferenceConfig,
-    SafetyConfig,
-    MemoryConfig,
-    ErrorHandlingConfig,
-    MeritTrackingConfig,
-    ObservabilityConfig,
-    PromptConfig,
-    ToolReference,
     AgentConfig,
-    AgentConfigInner,
-    # Tool schemas
-    ToolConfig,
-    ToolConfigInner,
-    RateLimits,
-    ToolErrorHandlingConfig,
-    ToolObservabilityConfig,
-    ToolRequirements,
-    SafetyCheck,
-    # Stage schemas
-    StageConfig,
-    StageConfigInner,
-    StageExecutionConfig,
     CollaborationConfig,
     ConflictResolutionConfig,
-    StageSafetyConfig,
-    StageErrorHandlingConfig,
-    QualityGatesConfig,
-    # Workflow schemas
-    WorkflowConfig,
-    WorkflowConfigInner,
-    WorkflowStageReference,
-    BudgetConfig,
-    WorkflowConfigOptions,
-    WorkflowSafetyConfig,
-    OptimizationConfig,
-    WorkflowObservabilityConfig,
-    WorkflowErrorHandlingConfig,
-    # Trigger schemas
-    EventTrigger,
     CronTrigger,
+    EventTrigger,
+    InferenceConfig,
+    MemoryConfig,
+    PromptConfig,
+    SafetyConfig,
+    # Stage schemas
+    StageConfig,
+    StageExecutionConfig,
     ThresholdTrigger,
-    EventTriggerInner,
-    CronTriggerInner,
-    ThresholdTriggerInner,
-    EventSourceConfig,
-    EventFilter,
-    EventFilterCondition,
-    ConcurrencyConfig,
-    MetricConfig,
+    ToolConfig,
+    ToolReference,
+    WorkflowConfig,
+    WorkflowErrorHandlingConfig,
+    WorkflowObservabilityConfig,
 )
-
 
 # ============================================
 # AGENT SCHEMA TESTS

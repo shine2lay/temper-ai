@@ -6,21 +6,21 @@ get_experiment_summary avoids the double-query by passing pre-fetched
 assignments to aggregate_metrics_by_variant.
 """
 
+from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
 import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, MagicMock
 
 from src.experimentation.metrics_collector import ExperimentMetricsCollector
-from src.experimentation.models import VariantAssignment, ExecutionStatus
+from src.observability.database import get_session, init_database
 from src.observability.models import WorkflowExecution
-from src.observability.database import init_database, get_session
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
-    from src.observability.database import _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 

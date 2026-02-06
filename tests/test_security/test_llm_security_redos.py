@@ -8,8 +8,10 @@ This test suite ensures that:
 4. Entropy calculation doesn't cause memory exhaustion
 """
 import time
+
 import pytest
-from src.security.llm_security import PromptInjectionDetector, SecurityViolation
+
+from src.security.llm_security import PromptInjectionDetector
 
 
 class TestReDoSProtection:

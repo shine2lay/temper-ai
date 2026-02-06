@@ -4,12 +4,11 @@ Concurrent execution safety tests.
 Tests for concurrent workflow execution, multi-agent safety,
 and async resource management.
 """
-import pytest
 import asyncio
-import time
-from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 import tempfile
+from pathlib import Path
+
+import pytest
 
 
 class TestConcurrentWorkflowExecution:

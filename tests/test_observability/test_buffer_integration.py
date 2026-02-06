@@ -2,15 +2,13 @@
 
 Tests buffer performance, query reduction, and flush strategies.
 """
-import pytest
 import time
 from datetime import datetime
-from unittest.mock import Mock, patch, call
+
+import pytest
+
 from src.observability.buffer import (
     ObservabilityBuffer,
-    BufferedLLMCall,
-    BufferedToolCall,
-    AgentMetricUpdate,
 )
 
 

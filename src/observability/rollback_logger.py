@@ -14,13 +14,14 @@ Example:
     ...     operator="agent-123"
     ... )
 """
+from datetime import UTC, datetime
 from typing import Optional
-from datetime import datetime, UTC
 from uuid import uuid4
 
 from src.observability.database import DatabaseManager, get_database
-from src.observability.models import RollbackSnapshotDB, RollbackEvent
-from src.safety.rollback import RollbackSnapshot as SnapshotData, RollbackResult
+from src.observability.models import RollbackEvent, RollbackSnapshotDB
+from src.safety.rollback import RollbackResult
+from src.safety.rollback import RollbackSnapshot as SnapshotData
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)

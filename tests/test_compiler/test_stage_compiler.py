@@ -2,15 +2,15 @@
 
 Verifies graph construction, edge creation, and delegation to NodeBuilder.
 """
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, MagicMock, patch
-from src.compiler.stage_compiler import StageCompiler
-from src.compiler.state import WorkflowState
-from src.compiler.state_manager import StateManager
+
 from src.compiler.node_builder import NodeBuilder
+from src.compiler.stage_compiler import StageCompiler
+from src.compiler.state_manager import StateManager
 from tests.fixtures.realistic_data import (
     create_realistic_workflow_config,
-    REALISTIC_COMPLEX_METADATA
 )
 
 
@@ -318,8 +318,9 @@ class TestIntegrationWithRealGraph:
 
         # Mock the node builder's stage node creation
         def mock_stage_node(state):
-            state["stage_outputs"] = state.get("stage_outputs", {})
-            state["stage_outputs"]["test_stage"] = "output"
+            if not hasattr(state, 'stage_outputs') or state.stage_outputs is None:
+                state.stage_outputs = {}
+            state.stage_outputs["test_stage"] = "output"
             return state
 
         with patch.object(node_builder, 'create_stage_node', return_value=mock_stage_node):
@@ -367,8 +368,9 @@ class TestIntegrationWithRealGraph:
         def create_stage_node_tracker(stage_name, workflow_config):
             def stage_node(state):
                 execution_order.append(stage_name)
-                state["stage_outputs"] = state.get("stage_outputs", {})
-                state["stage_outputs"][stage_name] = f"output_{stage_name}"
+                if not hasattr(state, 'stage_outputs') or state.stage_outputs is None:
+                    state.stage_outputs = {}
+                state.stage_outputs[stage_name] = f"output_{stage_name}"
                 return state
             return stage_node
 

@@ -12,7 +12,6 @@ Tests cover:
 - Pattern matching (wildcards, recursive)
 - Case sensitivity
 """
-import pytest
 from src.safety.file_access import FileAccessPolicy
 from src.safety.interfaces import ViolationSeverity
 
@@ -123,7 +122,13 @@ class TestPathTraversalPrevention:
         assert not violations_are_traversal
 
     def test_dot_dot_in_filename(self):
-        """Test that .. in filename is flagged."""
+        """Test that ..hidden (not ..) in filename is allowed.
+
+        The path '/project/..hidden/file.txt' contains '..hidden' which is a
+        valid directory name starting with two dots -- it is NOT a parent
+        traversal ('..').  After os.path.normpath it stays unchanged, so the
+        policy correctly allows it.
+        """
         policy = FileAccessPolicy()
 
         result = policy.validate(
@@ -131,8 +136,8 @@ class TestPathTraversalPrevention:
             context={}
         )
 
-        # Contains .. so should be flagged
-        assert not result.valid
+        # '..hidden' is a valid directory name, not a traversal -- should pass
+        assert result.valid
 
 
 class TestForbiddenDirectories:

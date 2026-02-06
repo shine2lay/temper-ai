@@ -3,10 +3,10 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 
-class MetricType(Enum):
+class SIMetricType(Enum):
     """Classification of metric collection methods.
 
     Attributes:
@@ -41,7 +41,7 @@ class MetricValue:
     """
     metric_name: str
     value: float
-    metric_type: MetricType
+    metric_type: SIMetricType
     collected_at: datetime
     collector_version: str = "1.0"
     metadata: Optional[Dict[str, Any]] = field(default_factory=dict)

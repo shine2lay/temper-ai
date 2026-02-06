@@ -1,8 +1,8 @@
 """Observability backend implementations."""
 
-from .sql_backend import SQLObservabilityBackend
 from .prometheus_backend import PrometheusObservabilityBackend
 from .s3_backend import S3ObservabilityBackend
+from .sql_backend import SQLObservabilityBackend
 
 __all__ = [
     "SQLObservabilityBackend",

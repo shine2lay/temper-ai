@@ -1,16 +1,17 @@
 """Tests for M5 MetricCollector interface and MetricRegistry."""
 
-import pytest
 from datetime import datetime
 from threading import Thread
 from typing import Optional
 
+import pytest
+
 from src.self_improvement.metrics import (
+    ExecutionProtocol,
     MetricCollector,
     MetricRegistry,
-    MetricType,
     MetricValue,
-    ExecutionProtocol,
+    SIMetricType,
 )
 
 
@@ -40,8 +41,8 @@ class TestMetricCollectorABC:
                 return "test"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
         with pytest.raises(TypeError, match="Can't instantiate abstract class"):
             IncompleteCollector()
@@ -55,8 +56,8 @@ class TestMetricCollectorABC:
                 return "complete"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.5
@@ -66,7 +67,7 @@ class TestMetricCollectorABC:
 
         collector = CompleteCollector()
         assert collector.metric_name == "complete"
-        assert collector.metric_type == MetricType.AUTOMATIC
+        assert collector.metric_type == SIMetricType.AUTOMATIC
         assert collector.collector_version == "1.0"  # Default version
 
 
@@ -78,7 +79,7 @@ class TestMetricValue:
         mv = MetricValue(
             metric_name="test",
             value=0.0,
-            metric_type=MetricType.AUTOMATIC,
+            metric_type=SIMetricType.AUTOMATIC,
             collected_at=datetime.now(),
         )
         assert mv.value == 0.0
@@ -88,7 +89,7 @@ class TestMetricValue:
         mv = MetricValue(
             metric_name="test",
             value=1.0,
-            metric_type=MetricType.AUTOMATIC,
+            metric_type=SIMetricType.AUTOMATIC,
             collected_at=datetime.now(),
         )
         assert mv.value == 1.0
@@ -98,7 +99,7 @@ class TestMetricValue:
         mv = MetricValue(
             metric_name="test",
             value=0.5,
-            metric_type=MetricType.AUTOMATIC,
+            metric_type=SIMetricType.AUTOMATIC,
             collected_at=datetime.now(),
         )
         assert mv.value == 0.5
@@ -109,7 +110,7 @@ class TestMetricValue:
             MetricValue(
                 metric_name="test",
                 value=-0.1,
-                metric_type=MetricType.AUTOMATIC,
+                metric_type=SIMetricType.AUTOMATIC,
                 collected_at=datetime.now(),
             )
 
@@ -119,7 +120,7 @@ class TestMetricValue:
             MetricValue(
                 metric_name="test",
                 value=1.1,
-                metric_type=MetricType.AUTOMATIC,
+                metric_type=SIMetricType.AUTOMATIC,
                 collected_at=datetime.now(),
             )
 
@@ -129,7 +130,7 @@ class TestMetricValue:
             MetricValue(
                 metric_name="test",
                 value=-999.0,
-                metric_type=MetricType.AUTOMATIC,
+                metric_type=SIMetricType.AUTOMATIC,
                 collected_at=datetime.now(),
             )
 
@@ -139,7 +140,7 @@ class TestMetricValue:
             MetricValue(
                 metric_name="test",
                 value=999.0,
-                metric_type=MetricType.AUTOMATIC,
+                metric_type=SIMetricType.AUTOMATIC,
                 collected_at=datetime.now(),
             )
 
@@ -148,7 +149,7 @@ class TestMetricValue:
         mv = MetricValue(
             metric_name="test",
             value=0.5,
-            metric_type=MetricType.AUTOMATIC,
+            metric_type=SIMetricType.AUTOMATIC,
             collected_at=datetime.now(),
         )
         assert mv.metadata == {}
@@ -159,7 +160,7 @@ class TestMetricValue:
         mv = MetricValue(
             metric_name="test",
             value=0.5,
-            metric_type=MetricType.AUTOMATIC,
+            metric_type=SIMetricType.AUTOMATIC,
             collected_at=datetime.now(),
             metadata=metadata,
         )
@@ -184,8 +185,8 @@ class TestMetricRegistry:
                 return "mock_metric"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.8
@@ -255,8 +256,8 @@ class TestMetricRegistry:
                 return "zzz_last"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.5
@@ -270,8 +271,8 @@ class TestMetricRegistry:
                 return "aaa_first"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.5
@@ -302,8 +303,8 @@ class TestMetricRegistry:
                 return "metric1"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.7
@@ -317,8 +318,8 @@ class TestMetricRegistry:
                 return "metric2"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.9
@@ -344,8 +345,8 @@ class TestMetricRegistry:
                 return "failing"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 raise RuntimeError("Collector failure")
@@ -359,8 +360,8 @@ class TestMetricRegistry:
                 return "working"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.9
@@ -388,8 +389,8 @@ class TestMetricRegistry:
                 return "invalid"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 1.5  # Invalid: > 1.0
@@ -403,8 +404,8 @@ class TestMetricRegistry:
                 return "valid"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.5
@@ -431,8 +432,8 @@ class TestMetricRegistry:
                 return "applicable"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.8
@@ -446,8 +447,8 @@ class TestMetricRegistry:
                 return "non_applicable"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.6
@@ -473,8 +474,8 @@ class TestMetricRegistry:
                 return "none_metric"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return None  # Cannot compute metric
@@ -501,8 +502,8 @@ class TestMetricRegistry:
                     return f"metric_{n}"
 
                 @property
-                def metric_type(self) -> MetricType:
-                    return MetricType.AUTOMATIC
+                def metric_type(self) -> SIMetricType:
+                    return SIMetricType.AUTOMATIC
 
                 def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                     return 0.5
@@ -544,8 +545,8 @@ class TestExecutionProtocol:
                 return "test"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 # Should be able to access id and status
@@ -578,8 +579,8 @@ class TestExecutionProtocol:
                 return "test"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.AUTOMATIC
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.AUTOMATIC
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 0.5
@@ -595,17 +596,17 @@ class TestExecutionProtocol:
         assert value == 0.5
 
 
-class TestMetricType:
-    """Test MetricType enum."""
+class TestSIMetricType:
+    """Test SIMetricType enum."""
 
     def test_metric_type_values(self):
-        """Test MetricType enum has correct values."""
-        assert MetricType.AUTOMATIC.value == "automatic"
-        assert MetricType.DERIVED.value == "derived"
-        assert MetricType.CUSTOM.value == "custom"
+        """Test SIMetricType enum has correct values."""
+        assert SIMetricType.AUTOMATIC.value == "automatic"
+        assert SIMetricType.DERIVED.value == "derived"
+        assert SIMetricType.CUSTOM.value == "custom"
 
     def test_metric_type_membership(self):
-        """Test MetricType enum membership."""
-        assert MetricType.AUTOMATIC in MetricType
-        assert MetricType.DERIVED in MetricType
-        assert MetricType.CUSTOM in MetricType
+        """Test SIMetricType enum membership."""
+        assert SIMetricType.AUTOMATIC in SIMetricType
+        assert SIMetricType.DERIVED in SIMetricType
+        assert SIMetricType.CUSTOM in SIMetricType

@@ -3,23 +3,24 @@ WebScraper tool for fetching and extracting text from web pages.
 
 Uses httpx for HTTP requests and BeautifulSoup for HTML parsing.
 """
-import time
-import httpx
 import ipaddress
 import socket
-import urllib.parse
 import threading
-from typing import Dict, Any, Optional, Tuple, Type, Union, List
-from bs4 import BeautifulSoup
-from pydantic import BaseModel, Field, field_validator, HttpUrl
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
+import time
+import urllib.parse
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
+import httpx
+from bs4 import BeautifulSoup
+from pydantic import BaseModel, Field, field_validator
+
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
 
 # SSRF Protection: Blocked hosts and networks
 BLOCKED_HOSTS = [
     "localhost",
     "127.0.0.1",
-    "0.0.0.0",
+    "0.0.0.0",  # noqa: S104  # nosec B104 — in BLOCKED_HOSTS list (SSRF protection)
     "169.254.169.254",  # AWS/Azure metadata
     "metadata.google.internal",  # GCP metadata
     "::1",
@@ -254,12 +255,12 @@ def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optiona
             # Using cached resolution - already validated as safe
             return True, None
 
-    except Exception as e:
+    except Exception:
         # Log unexpected errors for debugging (don't expose to user)
         return False, "URL validation failed"
 
 
-class RateLimiter:
+class ScraperRateLimiter:
     """Rate limiter for web requests backed by :class:`~src.safety.token_bucket.TokenBucket`.
 
     Wraps the canonical TokenBucket implementation with a simpler API
@@ -275,7 +276,7 @@ class RateLimiter:
             max_requests: Maximum requests allowed in time window
             time_window: Time window in seconds
         """
-        from src.safety.token_bucket import TokenBucket, RateLimit
+        from src.safety.token_bucket import RateLimit, TokenBucket
 
         self.max_requests = max_requests
         self.time_window = time_window
@@ -382,7 +383,7 @@ class WebScraper(BaseTool):
             config: Optional configuration dict (currently unused)
         """
         super().__init__(config)
-        self.rate_limiter = RateLimiter(
+        self.rate_limiter = ScraperRateLimiter(
             max_requests=self.DEFAULT_RATE_LIMIT,
             time_window=RATE_LIMIT_WINDOW_SECONDS
         )

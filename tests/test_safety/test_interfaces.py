@@ -8,19 +8,19 @@ Tests cover:
 - BaseSafetyPolicy composition
 - SafetyServiceMixin functionality
 """
+
 import pytest
-from datetime import datetime
+
+from src.core.service import Service
 from src.safety import (
-    SafetyPolicy,
     BaseSafetyPolicy,
+    SafetyPolicy,
     SafetyViolation,
     ValidationResult,
+    Validator,
     ViolationSeverity,
-    Validator
 )
-from src.core.service import Service
 from src.safety.service_mixin import SafetyServiceMixin
-
 
 # ============================================
 # VIOLATION SEVERITY TESTS

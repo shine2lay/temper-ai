@@ -10,9 +10,10 @@ Tests weighted voting based on agent merit scores:
 """
 
 import pytest
-from src.strategies.merit_weighted import MeritWeightedResolver, HumanEscalationResolver
-from src.strategies.conflict_resolution import AgentMerit, ResolutionContext, Resolution
-from src.strategies.base import Conflict, AgentOutput
+
+from src.strategies.base import AgentOutput, Conflict
+from src.strategies.conflict_resolution import AgentMerit, Resolution, ResolutionContext
+from src.strategies.merit_weighted import HumanEscalationResolver, MeritWeightedResolver
 
 
 class TestMeritWeightedResolver:

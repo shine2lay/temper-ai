@@ -6,10 +6,11 @@ This test suite verifies:
 3. Excluded contexts (comments, test, if, while, pipes) work correctly
 4. Performance is acceptable even with large inputs
 """
-import pytest
 import time
+
+import pytest
+
 from src.safety.forbidden_operations import ForbiddenOperationsPolicy
-from src.safety.interfaces import ViolationSeverity
 
 
 class TestReDoSFix:

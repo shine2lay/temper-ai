@@ -4,13 +4,13 @@ Execution tracker for observability.
 Tracks workflow, stage, agent, LLM, and tool executions in real-time,
 writing to pluggable observability backends (SQL, Prometheus, S3, etc.).
 """
-import uuid
+import contextvars
 import logging
 import threading
-import contextvars
-from datetime import datetime
+import uuid
 from contextlib import contextmanager
-from typing import Optional, Dict, Any, List, Generator
+from datetime import datetime
+from typing import Any, Dict, Generator, List, Optional
 
 from src.core.context import ExecutionContext
 from src.observability.backend import ObservabilityBackend
@@ -62,7 +62,7 @@ class ExecutionTracker:
         self,
         backend: Optional[ObservabilityBackend] = None,
         sanitization_config: Optional[SanitizationConfig] = None,
-        metric_registry: Optional['MetricRegistry'] = None,
+        metric_registry: Optional[Any] = None,
         alert_manager: Optional[Any] = None
     ):
         """

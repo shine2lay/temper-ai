@@ -22,18 +22,16 @@ Example:
     >>> if not result.allowed:
     ...     print(f"Action blocked: {result.violations[0].message}")
 """
-import asyncio
-import time
 import hashlib
 import json
 import logging
-from typing import Dict, List, Any, Optional, Tuple
+import time
+from collections import OrderedDict
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from typing import Any, Dict, List, Optional, Tuple
 
-from src.safety.interfaces import SafetyPolicy, ValidationResult, SafetyViolation, ViolationSeverity
+from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.policy_registry import PolicyRegistry
-
 
 logger = logging.getLogger(__name__)
 
@@ -151,7 +149,7 @@ class ActionPolicyEngine:
         self.fail_open = self.config.get('fail_open', False)
 
         # Policy result cache: cache_key -> (result, timestamp)
-        self._cache: Dict[str, Tuple[ValidationResult, float]] = {}
+        self._cache: OrderedDict[str, Tuple[ValidationResult, float]] = OrderedDict()
 
         # SECURITY: Initialize sanitizer for defense-in-depth violation message sanitization
         # Lazy loaded to avoid import overhead if sanitization is not needed
@@ -548,6 +546,8 @@ class ActionPolicyEngine:
 
             # Check if expired
             if time.time() - timestamp < self.cache_ttl:
+                # Move to end (most recently used) for O(1) LRU
+                self._cache.move_to_end(cache_key)
                 return cached_result
             else:
                 # Expired - remove from cache
@@ -556,19 +556,17 @@ class ActionPolicyEngine:
         return None
 
     def _cache_result(self, cache_key: str, result: ValidationResult) -> None:
-        """Cache validation result with timestamp."""
+        """Cache validation result with timestamp.
+
+        Uses OrderedDict for O(1) LRU eviction instead of O(n log n) sorted eviction.
+        """
         self._cache[cache_key] = (result, time.time())
+        self._cache.move_to_end(cache_key)
 
-        # Limit cache size (simple LRU eviction)
-        if len(self._cache) > self.max_cache_size:
-            # Remove oldest 10% of entries
-            num_to_remove = max(1, self.max_cache_size // 10)
-            oldest = sorted(self._cache.items(), key=lambda x: x[1][1])[:num_to_remove]
-
-            for key, _ in oldest:
-                del self._cache[key]
-
-            logger.debug(f"Cache eviction: removed {num_to_remove} oldest entries")
+        # Evict LRU entries (oldest are at the front of the OrderedDict)
+        while len(self._cache) > self.max_cache_size:
+            evicted_key, _ = self._cache.popitem(last=False)
+            logger.debug("Cache eviction: removed LRU entry %s", evicted_key)
 
     def _get_policy_snapshot(self) -> str:
         """Get a fingerprint of the current set of registered policies."""

@@ -9,23 +9,23 @@ Establishes baseline metrics for:
 Run with: pytest tests/test_benchmarks/test_benchmarks_database.py --benchmark-only
 """
 
-import pytest
-import time
 import asyncio
+import time
 
-from src.observability.database import DatabaseManager
+import pytest
+
 from src.agents.llm_providers import LLMResponse
-from .conftest import (
-    NUM_PARALLEL_CALLS,
-    MIN_SPEEDUP,
-    MAX_SPEEDUP,
-    NUM_OPERATIONS,
-    DEFAULT_BATCH_SIZE,
-    NUM_CONCURRENT_WORKFLOWS,
-    WORKFLOW_STAGES,
-    WORKFLOW_LLM_LATENCY,
-)
 
+from .conftest import (
+    DEFAULT_BATCH_SIZE,
+    MAX_SPEEDUP,
+    MIN_SPEEDUP,
+    NUM_CONCURRENT_WORKFLOWS,
+    NUM_OPERATIONS,
+    NUM_PARALLEL_CALLS,
+    WORKFLOW_LLM_LATENCY,
+    WORKFLOW_STAGES,
+)
 
 # ============================================================================
 # Benchmark Tests: Database and Async Operations
@@ -103,7 +103,7 @@ async def test_async_llm_speedup_verification(mock_async_llm):
                 for i in range(NUM_PARALLEL_CALLS)
             ])
     except asyncio.TimeoutError:
-        pytest.fail(f"Parallel execution timed out (>5s)")
+        pytest.fail("Parallel execution timed out (>5s)")
     except Exception as e:
         pytest.fail(f"Parallel execution failed: {e}")
     parallel_time = time.perf_counter() - start_par
@@ -125,12 +125,12 @@ async def test_async_llm_speedup_verification(mock_async_llm):
 
     # Log results
     print(f"\n{'='*70}")
-    print(f"M3.3-01 Async LLM Speedup Verification")
+    print("M3.3-01 Async LLM Speedup Verification")
     print(f"{'='*70}")
     print(f"Sequential execution ({NUM_PARALLEL_CALLS} calls): {sequential_time:.4f}s")
     print(f"Parallel execution ({NUM_PARALLEL_CALLS} calls):   {parallel_time:.4f}s")
     print(f"Speedup:                                            {speedup:.2f}x")
-    print(f"Target:                                             2-3x")
+    print("Target:                                             2-3x")
     print(f"Expected range:                                     {MIN_SPEEDUP}-{MAX_SPEEDUP}x")
     print(f"Status:                                             {'✓ PASS' if MIN_SPEEDUP <= speedup <= MAX_SPEEDUP else '✗ FAIL'}")
     print(f"{'='*70}\n")
@@ -176,22 +176,22 @@ def test_query_reduction_verification():
 
     # Log results
     print(f"\n{'='*70}")
-    print(f"M3.3-02 Query Reduction Verification (Theoretical)")
+    print("M3.3-02 Query Reduction Verification (Theoretical)")
     print(f"{'='*70}")
     print(f"Operations tracked:                {num_operations}")
     print(f"Batch size:                        {batch_size}")
-    print(f"")
+    print("")
     print(f"Unbuffered queries (N+1 pattern): {queries_unbuffered}")
     print(f"Buffered queries (batched):        {queries_buffered}")
-    print(f"")
+    print("")
     print(f"Reduction:                         {reduction_percentage:.1f}%")
-    print(f"Target:                            90%+")
+    print("Target:                            90%+")
     print(f"Status:                            {'✓ PASS' if reduction_percentage >= 90 else '✗ FAIL'}")
-    print(f"")
-    print(f"NOTE: This test validates the mathematical reduction.")
-    print(f"Implementation: ObservabilityBuffer in src/observability/buffer.py")
-    print(f"Integration tests: tests/test_observability/test_buffer.py")
-    print(f"Evidence: changes/0127-m3.3-02-n-plus-one-query-optimization.md")
+    print("")
+    print("NOTE: This test validates the mathematical reduction.")
+    print("Implementation: ObservabilityBuffer in src/observability/buffer.py")
+    print("Integration tests: tests/test_observability/test_buffer.py")
+    print("Evidence: changes/0127-m3.3-02-n-plus-one-query-optimization.md")
     print(f"{'='*70}\n")
 
     # Verify reduction meets target
@@ -270,7 +270,7 @@ async def test_concurrent_workflow_execution_with_async_llm():
                 for i in range(NUM_CONCURRENT_WORKFLOWS)
             ])
     except asyncio.TimeoutError:
-        pytest.fail(f"Concurrent workflow execution timed out (>10s)")
+        pytest.fail("Concurrent workflow execution timed out (>10s)")
     except Exception as e:
         pytest.fail(f"Concurrent workflow execution failed: {e}")
     execution_time = time.perf_counter() - start_time
@@ -294,15 +294,15 @@ async def test_concurrent_workflow_execution_with_async_llm():
 
     # Log results
     print(f"\n{'='*70}")
-    print(f"Concurrent Workflow Execution")
+    print("Concurrent Workflow Execution")
     print(f"{'='*70}")
     print(f"Workflows:             {NUM_CONCURRENT_WORKFLOWS}")
     print(f"Stages per workflow:   {WORKFLOW_STAGES}")
     print(f"Stage latency:         {WORKFLOW_LLM_LATENCY * 1000:.0f}ms")
-    print(f"")
+    print("")
     print(f"Execution time:        {execution_time:.3f}s")
     print(f"Throughput:            {workflows_per_second:.2f} workflows/second")
-    print(f"")
+    print("")
     print(f"Expected (parallel):   ~{expected_parallel_time:.1f}s ({WORKFLOW_STAGES} stages × {WORKFLOW_LLM_LATENCY}s)")
     print(f"Sequential would be:   ~{expected_sequential_time:.1f}s ({NUM_CONCURRENT_WORKFLOWS} × {WORKFLOW_STAGES} × {WORKFLOW_LLM_LATENCY}s)")
     print(f"Speedup vs sequential: {speedup_vs_sequential:.2f}x")

@@ -8,16 +8,17 @@ execution traces in a format suitable for creating waterfall charts.
 import json
 import sys
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
-from sqlmodel import select, Session
+from sqlmodel import select
+
 from src.observability.database import get_session
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
     LLMCall,
-    ToolExecution
+    StageExecution,
+    ToolExecution,
+    WorkflowExecution,
 )
 
 

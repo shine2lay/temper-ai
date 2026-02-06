@@ -1,13 +1,10 @@
 """Tests for approval workflow system."""
-import pytest
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from time import sleep
 
-from src.safety.approval import (
-    ApprovalWorkflow,
-    ApprovalRequest,
-    ApprovalStatus
-)
+import pytest
+
+from src.safety.approval import ApprovalRequest, ApprovalStatus, ApprovalWorkflow
 from src.safety.interfaces import SafetyViolation, ViolationSeverity
 
 

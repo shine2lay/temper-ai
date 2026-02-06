@@ -31,15 +31,11 @@ Example:
     >>> final_result.decision  # Consensus from final round
 """
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
 import logging
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
-from src.strategies.base import (
-    CollaborationStrategy,
-    AgentOutput,
-    SynthesisResult
-)
+from src.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
 
 logger = logging.getLogger(__name__)
 
@@ -286,9 +282,10 @@ class DialogueOrchestrator(CollaborationStrategy):
 
         try:
             # Try to import and query observability tracker
-            from src.observability.tracker import ObservabilityTracker
-            from src.observability.models import AgentMeritScore
             from sqlmodel import Session, select
+
+            from src.observability.models import AgentMeritScore
+            from src.observability.tracker import ObservabilityTracker
 
             tracker = ObservabilityTracker()
             if not tracker.engine:
@@ -354,8 +351,9 @@ class DialogueOrchestrator(CollaborationStrategy):
         Returns:
             SynthesisResult with merit-weighted decision
         """
-        from src.strategies.base import Conflict
         from collections import defaultdict
+
+        from src.strategies.base import Conflict
 
         # Get merit weights
         merit_weights = self._get_merit_weights(agent_outputs)

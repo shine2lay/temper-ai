@@ -3,15 +3,21 @@ Regression tests for integration bugs.
 
 Tests for bugs that appear in end-to-end scenarios and component interactions.
 """
+from unittest.mock import patch
+
 import pytest
-import os
-import tempfile
-from unittest.mock import Mock, patch, MagicMock
+
 from src.agents.agent_factory import AgentFactory
 from src.agents.standard_agent import StandardAgent
-from src.compiler.schemas import AgentConfig, AgentConfigInner, PromptConfig, InferenceConfig, ErrorHandlingConfig
-from src.tools.registry import ToolRegistry
+from src.compiler.schemas import (
+    AgentConfig,
+    AgentConfigInner,
+    ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
+)
 from src.tools.calculator import Calculator
+from src.tools.registry import ToolRegistry
 
 
 class TestAgentToolIntegration:
@@ -176,8 +182,9 @@ class TestConcurrency:
         registry = ToolRegistry()
         registry.register(Calculator())
 
-        from src.tools.executor import ToolExecutor
         import concurrent.futures
+
+        from src.tools.executor import ToolExecutor
 
         executor = ToolExecutor(registry, max_workers=4)
 

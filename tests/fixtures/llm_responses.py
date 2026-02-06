@@ -10,16 +10,15 @@ This replaces over-mocking in integration tests with realistic fixtures that:
 - Can simulate retry scenarios for testing error handling
 """
 
-from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from typing import Optional
+
 from src.agents.llm_providers import LLMResponse
 from src.utils.exceptions import (
+    LLMAuthenticationError,
     LLMError,
-    LLMTimeoutError,
     LLMRateLimitError,
-    LLMAuthenticationError
+    LLMTimeoutError,
 )
-
 
 # ============================================================================
 # PRE-RECORDED SUCCESSFUL RESPONSES

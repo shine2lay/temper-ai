@@ -14,10 +14,10 @@ References:
 - OWASP: https://cheatsheetseries.owasp.org/cheatsheets/Unvalidated_Redirects_and_Forwards_Cheat_Sheet.html
 - OAuth 2.0 Security: https://datatracker.ietf.org/doc/html/rfc6749#section-10.15
 """
-from typing import List, Optional, Tuple
-from urllib.parse import urlparse, urlunparse
 import ipaddress
 import os
+from typing import List, Optional, Tuple
+from urllib.parse import urlparse, urlunparse
 
 
 class CallbackURLValidator:

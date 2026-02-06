@@ -9,20 +9,20 @@ Tests cover:
 - Secret redaction in logs
 """
 import os
-import pytest
 import warnings
-from unittest.mock import patch, MagicMock
 
-from src.utils.secrets import (
-    SecretReference,
-    ObfuscatedCredential,
-    SecureCredential,  # Deprecated alias
-    resolve_secret,
-    detect_secret_patterns
-)
-from src.compiler.schemas import InferenceConfig
+import pytest
+
 from src.compiler.config_loader import ConfigLoader
+from src.compiler.schemas import InferenceConfig
 from src.utils.config_helpers import sanitize_config_for_display
+from src.utils.secrets import (
+    ObfuscatedCredential,
+    SecretReference,
+    SecureCredential,  # Deprecated alias
+    detect_secret_patterns,
+    resolve_secret,
+)
 
 
 class TestSecretReference:

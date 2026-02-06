@@ -3,20 +3,20 @@
 Provides centralized pricing configuration for LLM cost estimation.
 Supports per-model pricing, runtime updates, and graceful fallbacks.
 """
-import yaml
 import logging
 import threading
-from pathlib import Path
-from typing import Dict, Optional, Any
 from datetime import date
-from pydantic import BaseModel, Field, field_validator, ValidationError
+from pathlib import Path
+from typing import Any, Dict, Optional
+
+import yaml
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 logger = logging.getLogger(__name__)
 
 
-class SecurityError(Exception):
-    """Raised for security-related pricing configuration errors."""
-    pass
+# Consolidated: canonical definition in src/utils/exceptions.py
+from src.utils.exceptions import SecurityError  # noqa: F401
 
 
 class PricingConfigNotFoundError(Exception):

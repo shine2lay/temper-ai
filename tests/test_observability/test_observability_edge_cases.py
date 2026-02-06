@@ -8,28 +8,24 @@ Tests resilience of observability under edge conditions:
 - Missing metrics
 - Long error traces
 """
-import pytest
 import uuid
 from datetime import datetime
-from unittest.mock import Mock, patch
 
-from src.observability.database import init_database, get_session
-from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
-    AgentExecution,
-    LLMCall,
-    ToolExecution
-)
+import pytest
+
+from src.observability.database import get_session, init_database
 from src.observability.hooks import (
+    ExecutionHook,
     get_tracker,
     reset_tracker,
     track_workflow,
-    track_stage,
-    track_agent,
-    ExecutionHook
 )
-from src.observability.tracker import ExecutionTracker
+from src.observability.models import (
+    AgentExecution,
+    LLMCall,
+    StageExecution,
+    WorkflowExecution,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -43,8 +39,8 @@ def reset_global_tracker():
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
-    from src.observability.database import _db_manager, _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 
@@ -66,7 +62,7 @@ class TestHookFailureResilience:
             return "workflow_success"
 
         # Close database to simulate failure
-        from src.observability.database import _db_manager, _db_lock
+        from src.observability.database import _db_lock, _db_manager
         with _db_lock:
             if _db_manager:
                 _db_manager.engine.dispose()
@@ -131,9 +127,10 @@ class TestCircularDependencies:
         hook_b.dependencies = [hook_c]
         hook_c.dependencies = [hook_a]
 
-        # In a production system, this should be detected
-        # For now, document the edge case
-        assert True, "Circular dependency detection documented"
+        # Verify the circular structure was actually created
+        assert hook_a.dependencies == [hook_b]
+        assert hook_b.dependencies == [hook_c]
+        assert hook_c.dependencies == [hook_a]
 
 
 class TestLargeOutputHandling:
@@ -340,7 +337,7 @@ class TestLongErrorTraces:
         long_trace = ""
         try:
             deeply_nested_function(100)  # Create deep call stack
-        except ValueError as e:
+        except ValueError:
             import traceback
             long_trace = traceback.format_exc()
 

@@ -3,12 +3,19 @@
 Tests boundary conditions, extreme values, Unicode attacks, and unusual inputs
 that could cause crashes or security issues.
 """
-import pytest
 import math
 import sys
-from pathlib import Path
 from datetime import datetime
-from src.compiler.schemas import AgentConfig, AgentConfigInner, PromptConfig, InferenceConfig, ErrorHandlingConfig
+
+import pytest
+
+from src.compiler.schemas import (
+    AgentConfig,
+    AgentConfigInner,
+    ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
+)
 
 
 class TestNumericEdgeCases:

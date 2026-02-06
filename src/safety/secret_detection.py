@@ -41,12 +41,13 @@ truffleHog, gitleaks), consider:
             all_violations = result.violations + external_violations
             return ValidationResult(valid=len(all_violations) == 0, violations=all_violations)
 """
-import re
 import hashlib
-from typing import Dict, Any, List, Optional
+import re
+from typing import Any, Dict, List, Optional
+
 from src.safety.base import BaseSafetyPolicy
+from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
-from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
 
 
 class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
@@ -103,8 +104,10 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
     # Import patterns from centralized registry (single source of truth)
     # SECURITY: All patterns use bounded quantifiers to prevent ReDoS attacks
     from src.utils.secret_patterns import (
-        SECRET_PATTERNS as _SECRET_PATTERNS,
         GENERIC_SECRET_PATTERNS as _GENERIC_SECRET_PATTERNS,
+    )
+    from src.utils.secret_patterns import (
+        SECRET_PATTERNS as _SECRET_PATTERNS,
     )
     SECRET_PATTERNS = {**_SECRET_PATTERNS, **_GENERIC_SECRET_PATTERNS}
 

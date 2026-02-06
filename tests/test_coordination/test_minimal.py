@@ -1,18 +1,18 @@
 """Minimal test to debug daemon issues."""
 
 import os
+import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
-import sys
 
 coord_service_path = Path(__file__).parent.parent.parent / '.claude-coord'
 sys.path.insert(0, str(coord_service_path))
 
-from coord_service.daemon import CoordinationDaemon
 from coord_service.client import CoordinationClient
+from coord_service.daemon import CoordinationDaemon
 
 
 class TestMinimal(unittest.TestCase):

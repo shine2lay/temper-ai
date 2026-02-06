@@ -18,8 +18,8 @@ Requirements:
 """
 
 import sys
-import os
 from pathlib import Path
+
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
@@ -30,9 +30,10 @@ sys.path.insert(0, str(project_root))
 
 from src.compiler.config_loader import ConfigLoader
 from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.observability.tracker import ExecutionTracker
 from src.observability.database import init_database
-from src.observability.visualize_trace import create_hierarchical_gantt as create_gantt_chart, print_console_gantt
+from src.observability.tracker import ExecutionTracker
+from src.observability.visualize_trace import create_hierarchical_gantt as create_gantt_chart
+from src.observability.visualize_trace import print_console_gantt
 
 console = Console()
 

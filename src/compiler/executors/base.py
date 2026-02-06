@@ -4,12 +4,12 @@ Defines the contract that all stage execution strategies must implement,
 plus the ParallelRunner abstraction for engine-agnostic parallel execution,
 and shared methods for synthesis, dialogue, and agent name extraction.
 """
-from abc import ABC, abstractmethod
-from typing import Callable, Dict, Any, List, Optional, TYPE_CHECKING
-from typing_extensions import TypedDict, NotRequired
-import uuid
-import time
 import logging
+import uuid
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
+from typing_extensions import TypedDict
 
 if TYPE_CHECKING:
     from src.observability.tracker import ExecutionTracker
@@ -412,10 +412,10 @@ class StageExecutor(ABC):
         Returns:
             List of AgentOutput objects
         """
-        from src.strategies.base import AgentOutput
-        from src.compiler.schemas import AgentConfig
         from src.agents.agent_factory import AgentFactory
+        from src.compiler.schemas import AgentConfig
         from src.core.context import ExecutionContext
+        from src.strategies.base import AgentOutput
 
         agent_outputs = []
 

@@ -1,10 +1,10 @@
 """
 Tests for prompt template rendering engine.
 """
-import pytest
-from pathlib import Path
 import tempfile
-import os
+from pathlib import Path
+
+import pytest
 
 from src.agents.prompt_engine import PromptEngine, PromptRenderError
 
@@ -1225,7 +1225,6 @@ class TestLargeTemplatePerformance:
         or result during rendering.
         """
         import gc
-        import sys
         engine = PromptEngine()
 
         # Create large template

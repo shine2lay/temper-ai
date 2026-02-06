@@ -10,13 +10,13 @@ This module prevents documentation from diverging from actual code by:
 Run with: pytest tests/test_documentation_examples.py -v
 """
 
-import re
 import ast
 import inspect
+import re
 from pathlib import Path
-from typing import List, Dict, Tuple
-import pytest
+from typing import Dict, List, Tuple
 
+import pytest
 
 # ==============================================================================
 # Code Block Extraction
@@ -173,7 +173,7 @@ class TestAPIReferenceExamples:
             except SyntaxError as e:
                 errors.append(f"Line {line_num}: {e}")
 
-        assert not errors, f"Syntax errors in code blocks:\n" + "\n".join(errors)
+        assert not errors, "Syntax errors in code blocks:\n" + "\n".join(errors)
 
     @pytest.mark.skip(reason="Requires imports to be available - run in full test suite")
     def test_method_calls_match_signatures(self, api_doc):
@@ -191,8 +191,8 @@ class TestAPIReferenceExamples:
                     # Actual validation would import and check
                     pass
 
-        # Placeholder for actual signature checking
-        assert True
+        # Verify no mismatches found in known methods
+        assert len(mismatches) == 0, f"Signature mismatches: {mismatches}"
 
 
 class TestM4APIReferenceExamples:

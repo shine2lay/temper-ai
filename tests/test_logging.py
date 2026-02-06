@@ -8,21 +8,21 @@ Tests cover:
 - Log context management
 - Configuration from environment
 """
-import os
-import logging
 import json
-import pytest
-from io import StringIO
+import logging
+import os
 from unittest.mock import patch
 
+import pytest
+
 from src.utils.logging import (
-    setup_logging,
-    get_logger,
-    SecretRedactingFormatter,
-    StructuredFormatter,
     ConsoleFormatter,
     LogContext,
-    log_function_call
+    SecretRedactingFormatter,
+    StructuredFormatter,
+    get_logger,
+    log_function_call,
+    setup_logging,
 )
 
 
@@ -789,6 +789,7 @@ class TestLogInjectionPrevention:
     def test_performance_on_large_input(self):
         """Test that large inputs don't cause DoS."""
         import time
+
         from src.utils.logging import _sanitize_for_logging
 
         # 50KB input with injection attempts

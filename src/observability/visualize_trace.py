@@ -20,8 +20,7 @@ Usage:
 import json
 import sys
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 try:
     import plotly.graph_objects as go
@@ -168,7 +167,7 @@ def _flatten_trace_with_tree(
         node: Dict[str, Any],
         depth: int = 0,
         is_last_child: Optional[List[bool]] = None,
-        parent_name: str = ""
+        _parent_name: str = ""
     ) -> None:
         if is_last_child is None:
             is_last_child = []
@@ -277,19 +276,17 @@ def _flatten_trace_with_tree(
     return flat
 
 
-def print_console_gantt(trace: Dict[str, Any], max_width: int = 80) -> None:
+def print_console_gantt(trace: Dict[str, Any], _max_width: int = 80) -> None:
     """
     Print a text-based Gantt chart to console.
 
     Args:
         trace: Hierarchical trace dict
-        max_width: Maximum width for timeline bars
+        _max_width: Maximum width for timeline bars
     """
     try:
         from rich.console import Console
         from rich.tree import Tree
-        from rich.table import Table
-        from rich import box
 
         console = Console()
 
@@ -335,8 +332,6 @@ def print_console_gantt(trace: Dict[str, Any], max_width: int = 80) -> None:
 
             # Parse timing
             start = datetime.fromisoformat(node["start"])
-            end_str = node.get("end")
-            end = datetime.fromisoformat(end_str) if end_str else start
             duration = node.get("duration") or 0
 
             # Calculate offset from workflow start
@@ -515,10 +510,11 @@ def main() -> int:
     else:
         # Load from database
         try:
+            from sqlmodel import select
+
+            from examples.export_waterfall import export_waterfall_trace
             from src.observability.database import get_session
             from src.observability.models import WorkflowExecution
-            from examples.export_waterfall import export_waterfall_trace
-            from sqlmodel import select
         except ImportError as e:
             print(f"ERROR: Cannot import observability modules: {e}")
             print("Use --file to load from JSON instead")

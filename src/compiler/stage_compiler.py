@@ -3,13 +3,14 @@
 Handles compilation of stage configurations into executable LangGraph StateGraph.
 Separated from main compiler to isolate LangGraph-specific graph construction logic.
 """
-from typing import Dict, Any, List, Union
-from langgraph.graph import StateGraph, START, END
+from typing import Any, Dict, List
+
+from langgraph.graph import END, START, StateGraph
 from langgraph.pregel import Pregel
 
 from src.compiler.langgraph_state import LangGraphWorkflowState
-from src.compiler.state_manager import StateManager
 from src.compiler.node_builder import NodeBuilder
+from src.compiler.state_manager import StateManager
 
 
 class StageCompiler:
@@ -165,7 +166,7 @@ class StageCompiler:
         self,
         stage_names: List[str],
         workflow_config: Dict[str, Any],
-        conditions: Dict[str, Any]
+        _conditions: Dict[str, Any]
     ) -> Pregel[Any, Any]:
         """Compile stages with conditional branching (M4+ feature).
 
@@ -175,7 +176,7 @@ class StageCompiler:
         Args:
             stage_names: List of stage names
             workflow_config: Full workflow configuration
-            conditions: Conditional branching rules
+            _conditions: Conditional branching rules
 
         Returns:
             Compiled StateGraph

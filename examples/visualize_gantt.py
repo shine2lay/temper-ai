@@ -2,10 +2,11 @@
 """Create Gantt chart visualization of M5.1 experiment metrics."""
 
 import json
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
 from datetime import datetime
+
 import matplotlib.dates as mdates
+import matplotlib.patches as mpatches
+import matplotlib.pyplot as plt
 
 # Load metrics
 with open("/tmp/m5_demo_metrics.json") as f:

@@ -55,7 +55,7 @@ workflow:
 
   # Execution settings
   execution:
-    timeout_seconds: 1800  # 30 minutes for debate
+    timeout_seconds: 18000  # 300 minutes for debate
     parallel_execution: false  # Debate is sequential by nature
     allow_early_termination: true  # Stop if converged
 

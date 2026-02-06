@@ -1,20 +1,20 @@
 """Tests for observability database models."""
+
 import pytest
-from datetime import datetime
 from sqlmodel import Session, select
 
-from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
-    AgentExecution,
-    LLMCall,
-    ToolExecution,
-    CollaborationEvent,
-    AgentMeritScore,
-    DecisionOutcome,
-    SystemMetric,
-)
 from src.observability.database import DatabaseManager
+from src.observability.models import (
+    AgentExecution,
+    AgentMeritScore,
+    CollaborationEvent,
+    DecisionOutcome,
+    LLMCall,
+    StageExecution,
+    SystemMetric,
+    ToolExecution,
+    WorkflowExecution,
+)
 
 
 @pytest.fixture

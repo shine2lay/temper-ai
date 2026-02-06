@@ -3,12 +3,13 @@ Shared utilities for demo scripts.
 
 Common formatting, display, and helper functions used across demo scripts.
 """
-from typing import Dict, Any, Optional
 from pathlib import Path
-from rich.console import Console
-from rich.table import Table
-from rich.panel import Panel
+from typing import Any, Dict, Optional
+
 from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 
 console = Console()
 

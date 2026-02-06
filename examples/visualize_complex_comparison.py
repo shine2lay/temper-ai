@@ -6,9 +6,9 @@ Simulates different types of tasks (simple, medium, complex, edge cases)
 and shows how different models perform across task types.
 """
 
-import json
 import random
 from collections import defaultdict
+
 
 # ANSI colors
 class Colors:
@@ -213,9 +213,9 @@ print("=" * 110)
 
 print(f"\n{Colors.BOLD}Enhanced Input Simulation:{Colors.RESET}")
 print(f"  • Task Types: {len(TASK_TYPES)} (simple, medium, complex, edge cases)")
-print(f"  • Distribution: 30% simple, 40% medium, 20% complex, 10% edge cases")
-print(f"  • Complexity Impact: Smaller models struggle more on complex tasks")
-print(f"  • Realistic: Large models handle all tasks well but are slower/expensive")
+print("  • Distribution: 30% simple, 40% medium, 20% complex, 10% edge cases")
+print("  • Complexity Impact: Smaller models struggle more on complex tasks")
+print("  • Realistic: Large models handle all tasks well but are slower/expensive")
 
 print(f"\n{Colors.BOLD}Task Type Details:{Colors.RESET}")
 for task_type, config in TASK_TYPES.items():
@@ -267,7 +267,7 @@ for cycle in range(1, 6):
     print(f"    Overall: Quality {baseline_metrics['avg_quality']:.3f} | "
           f"Duration {baseline_metrics['avg_duration']:.2f}s | Cost ${baseline_metrics['avg_cost']:.4f}")
 
-    print(f"    By Task Type:")
+    print("    By Task Type:")
     for task_type in ["simple", "medium", "complex", "edge_case"]:
         if task_type in baseline_task_analysis:
             analysis = baseline_task_analysis[task_type]
@@ -379,8 +379,8 @@ for rank, (model, data) in enumerate(sorted_all, 1):
           f"{simple_q:>8.3f} {complex_q:>8.3f} {gap:>8.3f}")
 
 print(f"\n{Colors.BOLD}Key Insight - Complexity Handling:{Colors.RESET}")
-print(f"  Gap = Quality on Simple tasks - Quality on Complex tasks")
-print(f"  Smaller gap = Better at handling complex tasks")
+print("  Gap = Quality on Simple tasks - Quality on Complex tasks")
+print("  Smaller gap = Better at handling complex tasks")
 
 # Find models with best complexity handling
 complexity_gaps = [(m, all_task_breakdowns.get(m, {}).get("simple", {}).get("avg_quality", 0) -

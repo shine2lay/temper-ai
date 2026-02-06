@@ -8,6 +8,7 @@ Verifies that template injection attacks are blocked by:
 """
 
 import pytest
+
 from src.agents.prompt_engine import PromptEngine, PromptRenderError
 
 

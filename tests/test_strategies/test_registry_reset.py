@@ -3,12 +3,14 @@
 RELIABILITY FIX (code-high-05): Tests for reset methods that prevent
 unbounded memory growth in long-running processes.
 """
-import pytest
 import threading
 import time
-from src.strategies.registry import StrategyRegistry
+
+import pytest
+
 from src.strategies.base import CollaborationStrategy
 from src.strategies.conflict_resolution import ConflictResolutionStrategy
+from src.strategies.registry import StrategyRegistry
 
 
 class CustomTestStrategy(CollaborationStrategy):

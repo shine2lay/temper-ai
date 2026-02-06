@@ -4,8 +4,8 @@ Validates config changes before deployment to prevent unsafe modifications
 that could degrade system performance or violate safety constraints.
 """
 import logging
-from typing import Dict, Any, List
 from dataclasses import dataclass
+from typing import Any, Dict, List
 
 from src.safety.base import BaseSafetyPolicy
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity

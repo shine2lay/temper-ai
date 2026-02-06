@@ -3,16 +3,14 @@ Integration tests for agent + tool execution.
 
 Tests end-to-end integration of agents calling tools with real tool implementations.
 """
-import pytest
-import asyncio
 import time
-from pathlib import Path
-import tempfile
+
+import pytest
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.calculator import Calculator
-from src.tools.registry import ToolRegistry
 from src.tools.executor import ToolExecutor
+from src.tools.registry import ToolRegistry
 
 
 class SlowTool(BaseTool):
@@ -330,7 +328,7 @@ class TestConcurrentToolExecution:
         executor = ToolExecutor(registry)
 
         # Run 50 concurrent calculator calls
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor
 
         with ThreadPoolExecutor(max_workers=10) as pool:
             futures = []

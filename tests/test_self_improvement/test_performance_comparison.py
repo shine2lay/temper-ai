@@ -9,18 +9,19 @@ Tests cover:
 - Edge cases (missing metrics, zero baseline)
 """
 
-import pytest
 from datetime import datetime, timedelta, timezone
+
+import pytest
 
 from src.self_improvement.data_models import AgentPerformanceProfile
 from src.self_improvement.performance_comparison import (
-    compare_profiles,
+    IncomparableProfilesError,
     MetricChange,
     PerformanceComparison,
-    IncomparableProfilesError,
-    _is_improvement,
     _calculate_improvement_score,
-    _find_common_metrics
+    _find_common_metrics,
+    _is_improvement,
+    compare_profiles,
 )
 
 

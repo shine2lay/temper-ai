@@ -16,9 +16,8 @@ import logging
 import subprocess
 import sys
 import time
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Any, Dict, List
 
 # Add project root to path
 PROJECT_ROOT = Path(__file__).parent.parent
@@ -29,8 +28,7 @@ from examples.run_erc721_generator import (
     create_workspace,
     run_agent_with_input,
 )
-from src.self_improvement.strategies.erc721_strategy import ERC721WorkflowStrategy
-from src.self_improvement.strategies.strategy import OptimizationConfig, LearnedPattern
+from src.self_improvement.strategies.strategy import LearnedPattern
 
 logging.basicConfig(
     level=logging.INFO,
@@ -890,7 +888,7 @@ def main():
     print("=" * 60)
     print(f"  Model: {args.model}")
     print(f"  Contract: {args.contract_name}")
-    print(f"  Features: Enumerable, URIStorage, Pausable, MintPrice, MaxSupply, Withdraw")
+    print("  Features: Enumerable, URIStorage, Pausable, MintPrice, MaxSupply, Withdraw")
     print(f"  Iterations: {args.iterations}")
     print(f"  LLM: {'Disabled' if args.no_llm else 'Enabled'}")
     print("=" * 60)

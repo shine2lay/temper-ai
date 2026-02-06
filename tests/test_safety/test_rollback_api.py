@@ -2,13 +2,13 @@
 
 Tests the high-level API for manual rollback operations with safety checks.
 """
-import pytest
-import tempfile
 import os
-from datetime import datetime, timedelta, UTC
-from pathlib import Path
+import tempfile
+from datetime import UTC, datetime, timedelta
 
-from src.safety.rollback import RollbackManager, RollbackStatus
+import pytest
+
+from src.safety.rollback import RollbackManager
 from src.safety.rollback_api import RollbackAPI
 
 

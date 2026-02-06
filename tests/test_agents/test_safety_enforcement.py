@@ -4,19 +4,19 @@ Tests verify that SafetyConfig fields (mode, require_approval_for_tools,
 max_execution_time_seconds) are actually enforced during tool execution.
 """
 import time
-import pytest
-from unittest.mock import patch, MagicMock
-from src.agents.standard_agent import StandardAgent
+from unittest.mock import MagicMock, patch
+
 from src.agents.llm_providers import LLMResponse
-from src.tools.base import ToolResult
+from src.agents.standard_agent import StandardAgent
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
-    PromptConfig,
-    InferenceConfig,
     ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
     SafetyConfig,
 )
+from src.tools.base import ToolResult
 
 
 def _make_config(safety: SafetyConfig = None) -> AgentConfig:

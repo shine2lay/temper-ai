@@ -3,26 +3,23 @@
 Tests async workflow execution, parallel processing, race conditions,
 and deadlock prevention to ensure thread-safety and proper async handling.
 """
-import pytest
 import asyncio
 import time
-from unittest.mock import Mock, MagicMock, patch
-from datetime import datetime
-from threading import Lock
-from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import Mock, patch
 
-from src.compiler.langgraph_engine import LangGraphExecutionEngine, LangGraphCompiledWorkflow
-from src.agents.standard_agent import StandardAgent
+import pytest
+
 from src.agents.llm_providers import LLMResponse
-from src.observability.database import DatabaseManager
+from src.agents.standard_agent import StandardAgent
+from src.compiler.langgraph_engine import LangGraphExecutionEngine
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
-    PromptConfig,
-    InferenceConfig,
     ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
 )
-
+from src.observability.database import DatabaseManager
 
 # ============================================================================
 # Fixtures
@@ -298,7 +295,7 @@ async def test_database_transaction_isolation(test_db):
     Requires: SERIALIZABLE isolation level for correctness
     """
     from sqlalchemy import text
-    from src.observability.database import IsolationLevel
+
 
     # Setup test table
     with test_db.session() as session:

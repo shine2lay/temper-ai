@@ -1,23 +1,21 @@
 """Shared fixtures and configuration for performance benchmarks."""
 
-import pytest
 import asyncio
 import os
 import time
-from unittest.mock import Mock, MagicMock
-from datetime import datetime
+from unittest.mock import MagicMock, Mock
 
-from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.observability.database import DatabaseManager
-from src.agents.llm_providers import LLMResponse, BaseLLM
+import pytest
+
+from src.agents.llm_providers import BaseLLM, LLMResponse
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
-    PromptConfig,
-    InferenceConfig,
     ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
 )
-
+from src.observability.database import DatabaseManager
 
 # ============================================================================
 # Test Configuration Constants

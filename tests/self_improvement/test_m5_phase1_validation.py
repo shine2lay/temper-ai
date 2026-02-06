@@ -10,15 +10,16 @@ This script validates that Phase 1 components work end-to-end:
 NOTE: Mocked tests run by default. Full validation with Ollama requires:
   pytest tests/self_improvement/test_m5_phase1_validation.py --run-ollama-tests
 """
-import pytest
 import logging
 from unittest.mock import Mock, patch
 
-from src.self_improvement.agents import ProductExtractorAgent
-from src.self_improvement.metrics import MetricRegistry, ExtractionQualityCollector
-from src.observability.tracker import ExecutionTracker
+import pytest
+
 from src.observability.backends import SQLObservabilityBackend
 from src.observability.database import init_database
+from src.observability.tracker import ExecutionTracker
+from src.self_improvement.agents import ProductExtractorAgent
+from src.self_improvement.metrics import ExtractionQualityCollector, MetricRegistry
 from tests.fixtures.product_extraction_data import PRODUCT_TEST_CASES
 
 logger = logging.getLogger(__name__)
@@ -35,8 +36,8 @@ class TestM5Phase1Validation:
     def setup_database(self):
         """Initialize in-memory database for testing."""
         # Reset global database before each test
-        from src.observability.database import _db_manager, _db_lock
         import src.observability.database as db_module
+        from src.observability.database import _db_lock
         with _db_lock:
             db_module._db_manager = None
 

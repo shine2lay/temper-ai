@@ -39,17 +39,16 @@ Example:
     >>> print(f"Winner: {results.recommended_winner}")
 """
 
+from src.experimentation.metrics_collector import ExperimentMetricsCollector
 from src.experimentation.models import (
+    AssignmentStrategyType,
     Experiment,
-    Variant,
-    VariantAssignment,
     ExperimentResult,
     ExperimentStatus,
-    AssignmentStrategyType,
+    Variant,
+    VariantAssignment,
 )
-
 from src.experimentation.service import ExperimentService
-from src.experimentation.metrics_collector import ExperimentMetricsCollector
 
 __all__ = [
     "Experiment",

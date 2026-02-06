@@ -17,34 +17,28 @@ Test Coverage:
 - Verify no race conditions or data corruption
 """
 
-import pytest
-import time
 import os
-import signal
 import tempfile
-import sqlite3
+import time
 from datetime import datetime, timedelta, timezone
-from typing import List, Dict, Any, Optional
-from multiprocessing import Process, Queue, Manager
-from pathlib import Path
-from sqlmodel import select, func
+from multiprocessing import Process, Queue
+from typing import Optional
 
-from src.observability.tracker import ExecutionTracker
+import pytest
+from sqlmodel import select
+
 from src.observability.database import (
-    DatabaseManager,
+    IsolationLevel,
     init_database,
-    get_database,
     reset_database,
-    IsolationLevel
 )
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
     LLMCall,
-    ToolExecution
+    StageExecution,
+    WorkflowExecution,
 )
-
+from src.observability.tracker import ExecutionTracker
 
 # ========================================
 # Test Fixtures

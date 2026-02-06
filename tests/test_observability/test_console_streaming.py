@@ -1,17 +1,17 @@
 """Tests for streaming console visualization."""
-import pytest
 import time
-from threading import Thread
 from io import StringIO
+
+import pytest
 from rich.console import Console
 
 from src.observability.console import StreamingVisualizer
-from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
-    AgentExecution,
-)
 from src.observability.database import DatabaseManager
+from src.observability.models import (
+    AgentExecution,
+    StageExecution,
+    WorkflowExecution,
+)
 
 
 @pytest.fixture
@@ -26,8 +26,8 @@ def db_manager():
 @pytest.fixture
 def sample_workflow(db_manager):
     """Create a sample workflow in database."""
-    from src.observability.database import init_database, get_session
     import src.observability.database as db_module
+    from src.observability.database import get_session
 
     # Set db_manager as the global database
     db_module._db_manager = db_manager

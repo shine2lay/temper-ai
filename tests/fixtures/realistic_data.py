@@ -5,16 +5,16 @@ and empty configurations. Using realistic data helps catch more edge cases
 and makes tests more representative of actual usage.
 """
 
-from typing import Dict, List, Any, Optional
 import copy
+from typing import Any, Dict, List, Optional
+
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
-    PromptConfig,
+    ErrorHandlingConfig,
     InferenceConfig,
-    ErrorHandlingConfig
+    PromptConfig,
 )
-
 
 # Realistic agent configurations
 REALISTIC_RESEARCH_AGENT = AgentConfig(
@@ -863,7 +863,6 @@ REALISTIC_EDGE_CASES = {
 # HELPER FUNCTIONS (for test performance and convenience)
 # ============================================================================
 
-import copy
 
 def get_realistic_agent_outputs_unanimous():
     """Get a fresh copy of unanimous agent outputs.

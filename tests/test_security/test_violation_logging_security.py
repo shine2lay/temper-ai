@@ -5,7 +5,7 @@ Tests verify that detected secrets, PII, and credentials are not exposed
 in application logs or observability database when safety violations occur.
 """
 import logging
-import pytest
+
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
 from src.safety.service_mixin import _sanitize_violation_context
 
@@ -223,8 +223,8 @@ class TestLoggingSecurityIntegration:
 
     def test_violation_logging_sanitizes_context(self, caplog):
         """Ensure safety violations log sanitized context, not raw secrets."""
-        from src.safety.service_mixin import SafetyServiceMixin
         from src.safety import SafetyViolation, ViolationSeverity
+        from src.safety.service_mixin import SafetyServiceMixin
 
         # Setup
         service = SafetyServiceMixin()
@@ -261,8 +261,8 @@ class TestLoggingSecurityIntegration:
 
     def test_multiple_violations_all_sanitized(self, caplog):
         """Ensure multiple violations all have sanitized contexts."""
-        from src.safety.service_mixin import SafetyServiceMixin
         from src.safety import SafetyViolation, ViolationSeverity
+        from src.safety.service_mixin import SafetyServiceMixin
 
         # Setup
         service = SafetyServiceMixin()

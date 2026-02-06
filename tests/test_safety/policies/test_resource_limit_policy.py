@@ -9,13 +9,13 @@ Tests cover:
 - Resource usage reporting
 - Custom configuration
 """
-import pytest
 import os
 import tempfile
 import time
-from unittest.mock import Mock, patch, MagicMock
-from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
+from unittest.mock import Mock, patch
+
 from src.safety.interfaces import ViolationSeverity
+from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
 
 
 class TestResourceLimitPolicyBasics:

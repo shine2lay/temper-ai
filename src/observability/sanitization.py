@@ -16,13 +16,13 @@ Example:
     >>> result.sanitized_text
     'Contact [EMAIL_REDACTED] with API key [GENERIC_API_KEY_REDACTED]'
 """
-import re
 import hashlib
-import logging
 import hmac
+import logging
 import os
-from typing import Optional, Dict, Any, List, Tuple
+import re
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -107,9 +107,13 @@ class DataSanitizer:
 
     # Import patterns from centralized registry (single source of truth)
     from src.utils.secret_patterns import (
-        PII_PATTERNS as _PII_PATTERNS,
-        SECRET_PATTERNS as _SECRET_PATTERNS,
         GENERIC_SECRET_PATTERNS as _GENERIC_SECRET_PATTERNS,
+    )
+    from src.utils.secret_patterns import (
+        PII_PATTERNS as _PII_PATTERNS,
+    )
+    from src.utils.secret_patterns import (
+        SECRET_PATTERNS as _SECRET_PATTERNS,
     )
     PII_PATTERNS = _PII_PATTERNS
     SECRET_PATTERNS = {**_SECRET_PATTERNS, **_GENERIC_SECRET_PATTERNS}

@@ -8,10 +8,10 @@ Verifies:
 - Agent failures are recorded in agent_statuses
 """
 
-import pytest
 from unittest.mock import Mock, patch
-from src.compiler.executors import SequentialStageExecutor
+
 from src.agents.base_agent import AgentResponse
+from src.compiler.executors import SequentialStageExecutor
 
 
 def _make_agent_response(output="test output", reasoning="test reasoning",

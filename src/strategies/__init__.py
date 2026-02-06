@@ -29,23 +29,22 @@ Example:
 """
 
 from src.strategies.base import (
-    CollaborationStrategy,
     AgentOutput,
-    SynthesisResult,
+    CollaborationStrategy,
     Conflict,
     SynthesisMethod,
+    SynthesisResult,
     calculate_consensus_confidence,
-    extract_majority_decision,
     calculate_vote_distribution,
+    extract_majority_decision,
 )
-
 from src.strategies.conflict_resolution import (
     ConflictResolutionStrategy,
-    ResolutionResult,
-    ResolutionMethod,
     HighestConfidenceResolver,
-    RandomTiebreakerResolver,
     MeritWeightedResolver,
+    RandomTiebreakerResolver,
+    ResolutionMethod,
+    ResolutionResult,
     create_resolver,
 )
 

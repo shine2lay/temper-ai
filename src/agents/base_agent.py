@@ -7,11 +7,10 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
-from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from src.compiler.schemas import AgentConfig
+    from src.schemas import AgentConfig
 from src.core.context import ExecutionContext  # canonical definition; re-exported here
 
 

@@ -4,13 +4,14 @@ LLM provider with automatic failover to backup providers.
 Provides resilient LLM access by automatically switching to backup providers
 when the primary provider fails due to transient errors.
 """
+import asyncio
 import logging
 import threading
-from typing import List, Optional, Any
 from dataclasses import dataclass
+from typing import Any, List, Optional
 
-from src.agents.llm_providers import BaseLLM, LLMResponse, LLMError
-from src.utils.exceptions import LLMTimeoutError, LLMRateLimitError, LLMAuthenticationError
+from src.agents.llm_providers import BaseLLM, LLMError, LLMResponse
+from src.utils.exceptions import LLMAuthenticationError, LLMRateLimitError, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ class FailoverProvider:
         self.providers = providers
         self.config = config or FailoverConfig()
         self._state_lock = threading.Lock()
+        self._async_state_lock: Optional[asyncio.Lock] = None  # Lazy init (needs event loop)
         self.last_successful_index = 0
         self.backup_success_count = 0
 
@@ -161,9 +163,18 @@ class FailoverProvider:
             f"All {len(self.providers)} providers failed. Errors: {error_summary}"
         )
 
+    def _get_async_state_lock(self) -> asyncio.Lock:
+        """Get or create the async state lock (lazy init to avoid event loop issues)."""
+        if self._async_state_lock is None:
+            self._async_state_lock = asyncio.Lock()
+        return self._async_state_lock
+
     async def acomplete(self, prompt: str, **kwargs: Any) -> LLMResponse:
         """
         Async version: Generate completion with automatic failover.
+
+        Uses asyncio.Lock instead of threading.Lock to avoid blocking the
+        event loop during state reads/writes.
 
         Args:
             prompt: Input prompt
@@ -176,9 +187,10 @@ class FailoverProvider:
             LLMError: If all providers fail
         """
         errors = []
+        async_lock = self._get_async_state_lock()
 
-        # Determine starting index (read state under lock)
-        with self._state_lock:
+        # Determine starting index (read state under async lock)
+        async with async_lock:
             if self.config.sticky_session and self.backup_success_count < self.config.retry_primary_after:
                 start_index = self.last_successful_index
                 logger.debug(f"Using sticky session, starting at provider {start_index}")
@@ -195,11 +207,11 @@ class FailoverProvider:
 
             try:
                 logger.info(f"Attempting provider [{index}]: {provider.model}")
-                # LLM call outside lock to avoid blocking other threads
+                # LLM call outside lock to avoid blocking other coroutines
                 result = await provider.acomplete(prompt, **kwargs)
 
                 # Success - update state atomically
-                with self._state_lock:
+                async with async_lock:
                     if index != self.last_successful_index:
                         logger.info(
                             f"Failover successful: switched from provider {self.last_successful_index} "

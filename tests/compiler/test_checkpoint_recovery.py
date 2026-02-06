@@ -1,9 +1,11 @@
 """Tests for resuming from checkpoints."""
-import pytest
 from unittest.mock import Mock
-from src.compiler.workflow_executor import WorkflowExecutor
+
+import pytest
+
 from src.compiler.checkpoint import CheckpointManager
 from src.compiler.domain_state import WorkflowDomainState
+from src.compiler.workflow_executor import WorkflowExecutor
 
 
 def test_resume_from_checkpoint_continues_execution(tmp_path):

@@ -1,11 +1,13 @@
 """Tests for WorkflowExecutor class."""
+from unittest.mock import Mock
+
 import pytest
-from unittest.mock import Mock, MagicMock
 from langgraph.graph import StateGraph
 
-from src.compiler.workflow_executor import WorkflowExecutor
-from src.compiler.state import WorkflowState
+from src.compiler.domain_state import WorkflowDomainState
 from src.compiler.state_manager import StateManager
+from src.compiler.workflow_executor import WorkflowExecutor
+from src.observability.tracker import ExecutionTracker
 
 
 class TestWorkflowExecutorInitialization:
@@ -24,7 +26,7 @@ class TestWorkflowExecutorInitialization:
     def test_init_with_tracker(self):
         """Test initialization with tracker."""
         mock_graph = Mock(spec=StateGraph)
-        mock_tracker = Mock()
+        mock_tracker = Mock(spec=ExecutionTracker)
 
         executor = WorkflowExecutor(mock_graph, tracker=mock_tracker)
 
@@ -82,7 +84,7 @@ class TestExecute:
         mock_graph.invoke = Mock(return_value={})
 
         mock_state_manager = Mock(spec=StateManager)
-        mock_state_manager.initialize_state.return_value = WorkflowState(
+        mock_state_manager.initialize_state.return_value = WorkflowDomainState(
             workflow_id="wf-456"
         )
 
@@ -97,9 +99,9 @@ class TestExecute:
         mock_graph = Mock()
         mock_graph.invoke = Mock(return_value={})
 
-        mock_tracker = Mock()
+        mock_tracker = Mock(spec=ExecutionTracker)
         mock_state_manager = Mock(spec=StateManager)
-        mock_state_manager.initialize_state.return_value = WorkflowState()
+        mock_state_manager.initialize_state.return_value = WorkflowDomainState()
 
         executor = WorkflowExecutor(
             mock_graph,
@@ -164,7 +166,7 @@ class TestExecuteAsync:
         mock_graph.ainvoke = AsyncMock(return_value={})
 
         mock_state_manager = Mock(spec=StateManager)
-        mock_state_manager.initialize_state.return_value = WorkflowState(
+        mock_state_manager.initialize_state.return_value = WorkflowDomainState(
             workflow_id="wf-async-789"
         )
 
@@ -205,7 +207,7 @@ class TestStream:
         mock_graph.stream = Mock(return_value=iter([]))
 
         mock_state_manager = Mock(spec=StateManager)
-        mock_state_manager.initialize_state.return_value = WorkflowState(
+        mock_state_manager.initialize_state.return_value = WorkflowDomainState(
             workflow_id="wf-stream-123"
         )
 
@@ -233,8 +235,9 @@ class TestCheckpointSupport:
 
     def test_init_with_checkpoint_manager(self):
         """Test initialization with checkpoint manager."""
-        from src.compiler.checkpoint import CheckpointManager
         import tempfile
+
+        from src.compiler.checkpoint import CheckpointManager
 
         mock_graph = Mock()
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -260,9 +263,9 @@ class TestCheckpointSupport:
 
     def test_execute_with_checkpoints_basic(self):
         """Test basic execution with checkpointing."""
-        from src.compiler.checkpoint import CheckpointManager
-        from src.compiler.domain_state import WorkflowDomainState
         import tempfile
+
+        from src.compiler.checkpoint import CheckpointManager
 
         mock_graph = Mock()
         # Mock stream to return chunks (updated to use streaming)
@@ -302,9 +305,10 @@ class TestCheckpointSupport:
 
     def test_resume_from_checkpoint_basic(self):
         """Test resuming execution from checkpoint."""
+        import tempfile
+
         from src.compiler.checkpoint import CheckpointManager
         from src.compiler.domain_state import WorkflowDomainState
-        import tempfile
 
         # Create and save a checkpoint
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -361,11 +365,14 @@ class TestCheckpointSupport:
 
     def test_resume_from_checkpoint_not_found_raises(self):
         """Test that resume raises error if checkpoint not found."""
-        from src.compiler.checkpoint import CheckpointManager
         import tempfile
 
+        from src.compiler.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
+        from src.compiler.checkpoint_manager import CheckpointManager
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_manager = CheckpointManager(storage_path=tmpdir)
+            backend = FileCheckpointBackend(checkpoint_dir=tmpdir)
+            checkpoint_manager = CheckpointManager(backend=backend)
             mock_graph = Mock()
 
             executor = WorkflowExecutor(
@@ -373,17 +380,20 @@ class TestCheckpointSupport:
                 checkpoint_manager=checkpoint_manager
             )
 
-            with pytest.raises(FileNotFoundError, match="No checkpoint found"):
+            with pytest.raises(CheckpointNotFoundError):
                 executor.resume_from_checkpoint("wf-nonexistent")
 
     def test_extract_domain_state(self):
         """Test extracting domain state from workflow state dict."""
-        from src.compiler.checkpoint import CheckpointManager
         import tempfile
+
+        from src.compiler.checkpoint_backends import FileCheckpointBackend
+        from src.compiler.checkpoint_manager import CheckpointManager
 
         mock_graph = Mock()
         with tempfile.TemporaryDirectory() as tmpdir:
-            checkpoint_manager = CheckpointManager(storage_path=tmpdir)
+            backend = FileCheckpointBackend(checkpoint_dir=tmpdir)
+            checkpoint_manager = CheckpointManager(backend=backend)
             executor = WorkflowExecutor(
                 mock_graph,
                 checkpoint_manager=checkpoint_manager

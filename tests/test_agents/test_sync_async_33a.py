@@ -4,19 +4,16 @@ Verifies that the refactored complete/acomplete share logic through
 _check_cache, _cache_response, and _execute_and_parse helpers.
 """
 
-import pytest
-import asyncio
 import json
 import time
-from unittest.mock import MagicMock, AsyncMock, patch, PropertyMock
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from src.agents.llm_providers import (
     BaseLLM,
-    LLMResponse,
-    LLMError,
-    LLMTimeoutError,
-    LLMRateLimitError,
     LLMAuthenticationError,
+    LLMResponse,
 )
 
 

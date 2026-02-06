@@ -5,10 +5,9 @@ Implements intelligent retry logic, backoff, and recovery actions.
 """
 import logging
 import time
-from typing import Optional
 
-from .models import Phase, RecoveryAction
 from .config import LoopConfig
+from .models import Phase, RecoveryAction
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,9 @@ class ErrorRecoveryStrategy:
 
     # Errors that are safe to retry
     TRANSIENT_ERRORS = {
-        "InsufficientDataError",  # Not enough data yet, may appear later
+        "PerformanceDataError",  # Not enough data yet, may appear later
+        "ProblemDetectionDataError",  # Not enough data for problem detection
+        "ImprovementDataError",  # Not enough data for improvement detection
         "DatabaseQueryError",  # Temporary DB issue
         "TimeoutError",  # Temporary timeout
         "ConnectionError",  # Network issue
@@ -63,8 +64,6 @@ class ErrorRecoveryStrategy:
         Returns:
             RecoveryAction to take
         """
-        error_type = type(error).__name__
-
         # Check if error is transient and retries remaining
         if self.should_retry(error, attempt):
             logger.info(

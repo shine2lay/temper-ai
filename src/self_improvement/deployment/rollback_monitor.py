@@ -7,13 +7,13 @@ rollback if performance degrades below acceptable thresholds.
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from src.self_improvement.data_models import (
     AgentPerformanceProfile,
     ConfigDeployment,
 )
-from src.self_improvement.performance_analyzer import InsufficientDataError
+from src.self_improvement.performance_analyzer import PerformanceDataError
 
 logger = logging.getLogger(__name__)
 
@@ -181,7 +181,7 @@ class RollbackMonitor:
         window_end = deployment.deployed_at
         window_start = window_end - timedelta(hours=24)
 
-        # SI-05: Handle InsufficientDataError gracefully instead of letting
+        # SI-05: Handle PerformanceDataError gracefully instead of letting
         # it propagate as an unhandled exception.
         try:
             return self.performance_analyzer.analyze_agent_performance(
@@ -189,7 +189,7 @@ class RollbackMonitor:
                 window_start=window_start,
                 window_end=window_end,
             )
-        except InsufficientDataError:
+        except PerformanceDataError:
             logger.info(f"Insufficient baseline data for {agent_name}")
             return None
 
@@ -212,7 +212,7 @@ class RollbackMonitor:
                 window_start=window_start,
                 window_end=now,
             )
-        except InsufficientDataError:
+        except PerformanceDataError:
             logger.info(f"Insufficient current data for {agent_name}")
             return None
 

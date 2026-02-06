@@ -1,13 +1,14 @@
 """Tests for product extraction test dataset."""
 
 import pytest
+
 from tests.fixtures.product_extraction_data import (
     PRODUCT_TEST_CASES,
     TEST_DATASET_INFO,
-    get_test_case,
     get_all_test_cases,
+    get_test_case,
     get_test_cases_by_category,
-    get_test_cases_by_price_range
+    get_test_cases_by_price_range,
 )
 
 

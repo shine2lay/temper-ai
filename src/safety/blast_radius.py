@@ -10,9 +10,10 @@ widespread damage. Enforces constraints on:
 This policy helps prevent "blast radius" issues where a single malfunction
 or malicious action could affect many resources.
 """
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 from src.safety.base import BaseSafetyPolicy
-from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
+from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
 
 
@@ -187,7 +188,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
                         message=f"Too many lines changed in {file_path}: {line_count} > {self.max_lines_per_file}",
                         action=str(action),
                         context=context,
-                        remediation_hint=f"Split changes across multiple operations"
+                        remediation_hint="Split changes across multiple operations"
                     ))
 
         # Check total lines limit
@@ -199,7 +200,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
                 message=f"Too many total lines changed: {total_lines} > {self.max_total_lines}",
                 action=str(action),
                 context=context,
-                remediation_hint=f"Break operation into smaller batches"
+                remediation_hint="Break operation into smaller batches"
             ))
 
         # Check entities affected limit

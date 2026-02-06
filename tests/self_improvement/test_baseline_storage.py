@@ -1,14 +1,15 @@
 """
 Tests for baseline storage and retrieval in PerformanceAnalyzer.
 """
-import pytest
-from pathlib import Path
-from datetime import datetime, timezone, timedelta
-import tempfile
 import shutil
+import tempfile
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from src.self_improvement.performance_analyzer import PerformanceAnalyzer, InsufficientDataError
+import pytest
+
 from src.self_improvement.data_models import AgentPerformanceProfile
+from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 
 
 class TestBaselineStorage:

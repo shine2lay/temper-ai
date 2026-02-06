@@ -5,12 +5,11 @@ instead of the predictable Mersenne Twister random module.
 """
 
 import threading
-import pytest
-from unittest.mock import patch
 from collections import Counter
+from unittest.mock import patch
 
 from src.experimentation.assignment import RandomAssignment
-from src.experimentation.models import Experiment, Variant, AssignmentStrategyType
+from src.experimentation.models import AssignmentStrategyType, Experiment, Variant
 
 
 def _make_experiment():
@@ -40,7 +39,6 @@ class TestCryptographicPRNG:
 
     def test_uses_system_random(self):
         """Assignment should use secrets.SystemRandom, not random module."""
-        import secrets
         strategy = RandomAssignment()
         experiment = _make_experiment()
         variants = _make_variants()

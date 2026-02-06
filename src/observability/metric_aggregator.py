@@ -4,7 +4,7 @@ Extracted from ExecutionTracker to separate metric collection/storage
 concerns from core execution tracking.
 """
 import logging
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
 
 from src.observability.backend import ObservabilityBackend
 

@@ -5,8 +5,9 @@ iterative loop instead of recursion, preventing stack overflow.
 """
 
 import sys
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock, call
 
 from src.compiler.executors.parallel import ParallelStageExecutor
 from src.strategies.base import SynthesisResult
@@ -79,7 +80,7 @@ class TestIterativeRetry:
             "current_stage": None,
         }
 
-    @patch("src.compiler.executors.parallel.StateGraph")
+    @patch("src.compiler.executors.langgraph_runner.StateGraph")
     def test_no_recursion_with_high_max_retries(self, mock_sg_class):
         """With max_retries=100, no RecursionError should occur."""
         # All 100 attempts fail, then exhausted
@@ -132,7 +133,7 @@ class TestIterativeRetry:
 
         assert result["stage_outputs"]["test_stage"]["decision"] == "test_decision"
 
-    @patch("src.compiler.executors.parallel.StateGraph")
+    @patch("src.compiler.executors.langgraph_runner.StateGraph")
     def test_pass_on_nth_retry(self, mock_sg_class):
         """Quality gate passes on the 3rd attempt (after 2 failures)."""
         fail_result = _make_synthesis_result(confidence=0.5)
@@ -181,7 +182,7 @@ class TestIterativeRetry:
         # Synthesis was called 3 times
         assert executor.synthesis_coordinator.synthesize.call_count == 3
 
-    @patch("src.compiler.executors.parallel.StateGraph")
+    @patch("src.compiler.executors.langgraph_runner.StateGraph")
     def test_retries_exhausted_raises(self, mock_sg_class):
         """All retries exhausted should raise RuntimeError."""
         fail_result = _make_synthesis_result(confidence=0.3)
@@ -223,7 +224,7 @@ class TestIterativeRetry:
         # 1 initial + 2 retries = 3 calls
         assert executor.synthesis_coordinator.synthesize.call_count == 3
 
-    @patch("src.compiler.executors.parallel.StateGraph")
+    @patch("src.compiler.executors.langgraph_runner.StateGraph")
     def test_max_retries_zero_no_retries(self, mock_sg_class):
         """max_retries=0 means no retries, immediate escalation."""
         fail_result = _make_synthesis_result(confidence=0.3)
@@ -265,7 +266,7 @@ class TestIterativeRetry:
         # Only 1 call (no retries)
         assert executor.synthesis_coordinator.synthesize.call_count == 1
 
-    @patch("src.compiler.executors.parallel.StateGraph")
+    @patch("src.compiler.executors.langgraph_runner.StateGraph")
     def test_max_retries_one(self, mock_sg_class):
         """max_retries=1 allows exactly one retry attempt."""
         fail_result = _make_synthesis_result(confidence=0.3)
@@ -307,7 +308,7 @@ class TestIterativeRetry:
         # 1 initial + 1 retry = 2 calls
         assert executor.synthesis_coordinator.synthesize.call_count == 2
 
-    @patch("src.compiler.executors.parallel.StateGraph")
+    @patch("src.compiler.executors.langgraph_runner.StateGraph")
     def test_retry_count_tracked_in_state(self, mock_sg_class):
         """Retry count is correctly tracked in state['stage_retry_counts']."""
         fail_result = _make_synthesis_result(confidence=0.3)
@@ -353,7 +354,7 @@ class TestIterativeRetry:
         # Retry counter should be cleaned up after success
         assert "test_stage" not in state.get("stage_retry_counts", {})
 
-    @patch("src.compiler.executors.parallel.StateGraph")
+    @patch("src.compiler.executors.langgraph_runner.StateGraph")
     def test_stack_depth_constant(self, mock_sg_class):
         """Stack depth should not increase with retry count."""
         stack_depths = []

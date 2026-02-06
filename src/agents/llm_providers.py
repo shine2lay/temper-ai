@@ -7,11 +7,13 @@ has been split into src/agents/llm/ package:
 - ollama.py: OllamaLLM
 - openai_provider.py: OpenAILLM
 - anthropic_provider.py: AnthropicLLM
-- vllm_provider.py: vLLMLLM
+- vllm_provider.py: VllmLLM
 - factory.py: create_llm_client
 """
 # Preserve module-level names that tests mock (e.g., src.agents.llm_providers.httpx)
 import httpx  # noqa: F401
+
+from src.agents.llm.anthropic_provider import AnthropicLLM
 
 # Re-export everything from the new package
 from src.agents.llm.base import (
@@ -20,18 +22,17 @@ from src.agents.llm.base import (
     LLMResponse,
     LLMStreamChunk,
 )
+from src.agents.llm.factory import create_llm_client
 from src.agents.llm.ollama import OllamaLLM
 from src.agents.llm.openai_provider import OpenAILLM
-from src.agents.llm.anthropic_provider import AnthropicLLM
-from src.agents.llm.vllm_provider import vLLMLLM
-from src.agents.llm.factory import create_llm_client
+from src.agents.llm.vllm_provider import VllmLLM
 
 # Re-export exceptions (many imports reference these from here)
 from src.utils.exceptions import (
-    LLMError,
-    LLMTimeoutError,
-    LLMRateLimitError,
     LLMAuthenticationError,
+    LLMError,
+    LLMRateLimitError,
+    LLMTimeoutError,
 )
 
 __all__ = [
@@ -50,7 +51,7 @@ __all__ = [
     "OllamaLLM",
     "OpenAILLM",
     "AnthropicLLM",
-    "vLLMLLM",
+    "VllmLLM",
     # Factory
     "create_llm_client",
 ]

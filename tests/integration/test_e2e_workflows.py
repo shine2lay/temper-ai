@@ -10,25 +10,21 @@ Validates:
 - Tool execution in workflow context
 """
 import uuid
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
-from typing import Dict, Any
 
-from src.observability.database import init_database, get_session
+import pytest
+
+from src.compiler.config_loader import ConfigLoader
+from src.observability.database import get_session, init_database
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
     LLMCall,
+    StageExecution,
     ToolExecution,
+    WorkflowExecution,
 )
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.workflow_executor import WorkflowExecutor
-from src.compiler.stage_compiler import StageCompiler
 from src.observability.tracker import ExecutionTracker
-
 
 pytestmark = [pytest.mark.integration, pytest.mark.critical_path]
 
@@ -744,7 +740,6 @@ class TestSingleAgentWorkflows:
                 )
 
         # Complete workflow
-        from datetime import timedelta
         workflow_exec.end_time = datetime.now(UTC)
         workflow_exec.duration_seconds = 3.5
         workflow_exec.status = "completed"

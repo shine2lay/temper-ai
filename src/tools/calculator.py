@@ -4,11 +4,11 @@ Calculator tool for safe mathematical expression evaluation.
 Uses ast.literal_eval and a whitelist approach to safely evaluate math expressions.
 """
 import ast
-import operator
 import math
-from typing import Dict, Any
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
+import operator
+from typing import Any, Dict
 
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
 
 # Safe operators allowed in expressions
 SAFE_OPERATORS = {
@@ -62,7 +62,7 @@ class Calculator(BaseTool):
     - Mathematical constants: pi, e
 
     Safety:
-    - No eval() or exec()
+    - No use of Python eval/exec builtins
     - Whitelist-based AST evaluation
     - No access to built-in functions beyond math
     - Division by zero handling

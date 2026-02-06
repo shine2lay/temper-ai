@@ -4,7 +4,8 @@ Base class for all tools.
 Defines the interface that all tools must implement.
 """
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Type, Union, Tuple
+from typing import Any, Dict, Optional, Tuple, Type, Union
+
 from pydantic import BaseModel, Field, ValidationError
 
 
@@ -37,7 +38,7 @@ class ToolResult(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
-class ValidationResult(BaseModel):
+class ParameterValidationResult(BaseModel):
     """Parameter validation result."""
     valid: bool
     errors: list[str] = Field(default_factory=list)
@@ -226,7 +227,7 @@ class BaseTool(ABC):
         """
         pass
 
-    def validate_params(self, params: Dict[str, Any]) -> ValidationResult:
+    def validate_params(self, params: Dict[str, Any]) -> ParameterValidationResult:
         """
         Validate parameters against schema using Pydantic if available.
 
@@ -234,7 +235,7 @@ class BaseTool(ABC):
             params: Parameters to validate
 
         Returns:
-            ValidationResult with validation status and error messages
+            ParameterValidationResult with validation status and error messages
         """
         # Try Pydantic validation first (comprehensive)
         params_model = self.get_parameters_model()
@@ -248,7 +249,7 @@ class BaseTool(ABC):
         self,
         params: Dict[str, Any],
         model: Type[BaseModel]
-    ) -> ValidationResult:
+    ) -> ParameterValidationResult:
         """
         Validate parameters using Pydantic model.
 
@@ -264,12 +265,12 @@ class BaseTool(ABC):
             model: Pydantic model class
 
         Returns:
-            ValidationResult with detailed error messages
+            ParameterValidationResult with detailed error messages
         """
         try:
             # Validate using Pydantic model
             model(**params)
-            return ValidationResult(valid=True, errors=[])
+            return ParameterValidationResult(valid=True, errors=[])
         except ValidationError as e:
             # Extract readable error messages
             errors = []
@@ -277,14 +278,14 @@ class BaseTool(ABC):
                 field = ".".join(str(loc) for loc in error['loc'])
                 msg = error['msg']
                 errors.append(f"{field}: {msg}")
-            return ValidationResult(valid=False, errors=errors)
+            return ParameterValidationResult(valid=False, errors=errors)
         except Exception as e:
-            return ValidationResult(
+            return ParameterValidationResult(
                 valid=False,
                 errors=[f"Validation error: {str(e)}"]
             )
 
-    def _validate_with_json_schema(self, params: Dict[str, Any]) -> ValidationResult:
+    def _validate_with_json_schema(self, params: Dict[str, Any]) -> ParameterValidationResult:
         """
         Validate parameters using JSON Schema (fallback for tools without Pydantic models).
 
@@ -292,7 +293,7 @@ class BaseTool(ABC):
             params: Parameters to validate
 
         Returns:
-            ValidationResult with error messages
+            ParameterValidationResult with error messages
         """
         schema = self.get_parameters_schema()
         required_params = schema.get("required", [])
@@ -319,7 +320,7 @@ class BaseTool(ABC):
                     f"{param_name}: expected {expected_type}, got {type(param_value).__name__}"
                 )
 
-        return ValidationResult(
+        return ParameterValidationResult(
             valid=len(errors) == 0,
             errors=errors
         )
@@ -369,9 +370,8 @@ class BaseTool(ABC):
         return f"{self.__class__.__name__}(name='{self.name}', version='{self.version}')"
 
 
-class SecurityError(Exception):
-    """Raised when security violation detected in tool parameters."""
-    pass
+# Consolidated: canonical definition in src/utils/exceptions.py
+from src.utils.exceptions import SecurityError  # noqa: F401
 
 
 class ParameterSanitizer:
@@ -493,8 +493,8 @@ class ParameterSanitizer:
             >>> sanitizer.sanitize_command("ls; rm -rf /")
             SecurityError: Dangerous character ';' in command
         """
-        import unicodedata
         import re
+        import unicodedata
 
         if not command:
             raise ValueError("Command cannot be empty")

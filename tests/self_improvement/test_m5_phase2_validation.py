@@ -9,21 +9,21 @@ This script validates that Phase 2 components work end-to-end:
 
 NOTE: Mocked tests run by default for speed.
 """
-import pytest
 import logging
-from unittest.mock import Mock, patch
-from datetime import datetime, timezone, timedelta
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
+from unittest.mock import Mock, patch
 
+import pytest
+
+from src.observability.backends import SQLObservabilityBackend
+from src.observability.database import get_session, init_database
+from src.observability.tracker import ExecutionTracker
 from src.self_improvement.agents import ProductExtractorAgent
-from src.self_improvement.metrics import MetricRegistry, ExtractionQualityCollector
+from src.self_improvement.metrics import ExtractionQualityCollector, MetricRegistry
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 from src.self_improvement.performance_comparison import compare_profiles
-from src.observability.tracker import ExecutionTracker
-from src.observability.backends import SQLObservabilityBackend
-from src.observability.database import init_database, get_session
 from tests.fixtures.product_extraction_data import PRODUCT_TEST_CASES
 
 logger = logging.getLogger(__name__)
@@ -40,8 +40,8 @@ class TestM5Phase2Validation:
     def setup_database(self):
         """Initialize in-memory database for testing."""
         # Reset global database before each test
-        from src.observability.database import _db_manager, _db_lock
         import src.observability.database as db_module
+        from src.observability.database import _db_lock
         with _db_lock:
             db_module._db_manager = None
 
@@ -78,17 +78,10 @@ class TestM5Phase2Validation:
 
     def test_phase2_components_exist(self):
         """Verify all Phase 2 components can be imported."""
-        # Performance analyzer
-        from src.self_improvement.performance_analyzer import PerformanceAnalyzer
-
-        # Performance comparison
-        from src.self_improvement.performance_comparison import compare_profiles
-
-        # Data models
-        from src.self_improvement.data_models import AgentPerformanceProfile
-
-        # All imports successful
-        assert True
+        # Verify the module-level imports resolved to real classes
+        assert callable(PerformanceAnalyzer), "PerformanceAnalyzer should be importable"
+        assert callable(compare_profiles), "compare_profiles should be importable"
+        assert callable(ExtractionQualityCollector), "ExtractionQualityCollector should be importable"
 
     def test_performance_analysis_workflow(self, tracker, temp_baseline_dir):
         """

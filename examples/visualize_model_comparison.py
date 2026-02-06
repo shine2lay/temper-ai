@@ -5,10 +5,9 @@ M5 Extended Model Comparison - Test MANY models
 Comprehensive testing of different model sizes and families.
 """
 
-import json
 import random
-from datetime import datetime, timedelta
 from collections import defaultdict
+
 
 # ANSI colors
 class Colors:
@@ -139,9 +138,9 @@ for family, models in sorted(by_family.items()):
     print(f"    • {family}: {len(models)} models")
 
 print(f"\n{Colors.BOLD}Strategy:{Colors.RESET}")
-print(f"  • Pure quality optimization (100% quality, 0% cost, 0% speed)")
-print(f"  • Test 5-6 variants per cycle")
-print(f"  • Run 5 cycles to test ~30 total experiments")
+print("  • Pure quality optimization (100% quality, 0% cost, 0% speed)")
+print("  • Test 5-6 variants per cycle")
+print("  • Run 5 cycles to test ~30 total experiments")
 
 # Track all tested models
 tested_models = set()

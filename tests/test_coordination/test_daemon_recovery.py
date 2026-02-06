@@ -7,19 +7,19 @@ Critical for ensuring no data loss and consistent agent operation.
 
 import os
 import signal
+import sys
 import tempfile
 import threading
 import time
 import unittest
 from pathlib import Path
-import sys
 
 # Add coord_service to path
 coord_service_path = Path(__file__).parent.parent.parent / '.claude-coord'
 sys.path.insert(0, str(coord_service_path))
 
-from coord_service.daemon import CoordinationDaemon
 from coord_service.client import CoordinationClient
+from coord_service.daemon import CoordinationDaemon
 from coord_service.database import Database
 
 

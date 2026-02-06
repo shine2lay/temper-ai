@@ -2,9 +2,10 @@
 """Quick test: verify which Ollama models support native tool calling via /api/chat."""
 
 import json
-import time
-import requests
 import sys
+import time
+
+import requests
 
 OLLAMA_URL = "http://localhost:11434"
 

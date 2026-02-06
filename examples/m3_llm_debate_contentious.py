@@ -14,10 +14,9 @@ from pathlib import Path
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from examples.m3_llm_debate_demo import (
-    DebateAgent, LLMDebateSimulator, console
-)
 from rich.panel import Panel
+
+from examples.m3_llm_debate_demo import DebateAgent, LLMDebateSimulator, console
 
 
 def main():

@@ -4,19 +4,19 @@ Tests for ProblemDetector.
 Tests problem detection logic for quality, cost, and speed issues.
 """
 
+
 import pytest
-from datetime import datetime, timezone, timedelta
 
 from src.self_improvement.detection import (
-    ProblemDetector,
     ProblemDetectionConfig,
-    ProblemType,
+    ProblemDetectionDataError,
+    ProblemDetector,
     ProblemSeverity,
-    InsufficientDataError,
+    ProblemType,
 )
 from src.self_improvement.performance_comparison import (
-    PerformanceComparison,
     MetricChange,
+    PerformanceComparison,
 )
 
 
@@ -160,7 +160,7 @@ class TestProblemDetector:
             baseline_executions=100,
         )
 
-        with pytest.raises(InsufficientDataError, match="Insufficient current executions"):
+        with pytest.raises(ProblemDetectionDataError, match="Insufficient current executions"):
             detector.detect_problems(comparison)
 
     def test_improvement_not_detected_as_problem(self, detector):

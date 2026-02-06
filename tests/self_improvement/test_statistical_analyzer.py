@@ -1,11 +1,10 @@
-"""Tests for StatisticalAnalyzer."""
-import pytest
+"""Tests for SIStatisticalAnalyzer."""
 import numpy as np
+import pytest
+
 from src.self_improvement.statistical_analyzer import (
-    StatisticalAnalyzer,
+    SIStatisticalAnalyzer,
     VariantResults,
-    ComparisonResult,
-    ExperimentAnalysis,
     create_variant_results,
 )
 
@@ -46,12 +45,12 @@ class TestVariantResults:
         assert variant.quality_std == 0.0
 
 
-class TestStatisticalAnalyzer:
-    """Test StatisticalAnalyzer."""
+class TestSIStatisticalAnalyzer:
+    """Test SIStatisticalAnalyzer."""
 
     def test_initialization(self):
         """Test analyzer initialization."""
-        analyzer = StatisticalAnalyzer(
+        analyzer = SIStatisticalAnalyzer(
             significance_level=0.05,
             quality_weight=0.7,
             speed_weight=0.2,
@@ -66,7 +65,7 @@ class TestStatisticalAnalyzer:
     def test_invalid_weights(self):
         """Test that weights must sum to 1.0."""
         with pytest.raises(ValueError, match="must sum to 1.0"):
-            StatisticalAnalyzer(
+            SIStatisticalAnalyzer(
                 quality_weight=0.5,
                 speed_weight=0.3,
                 cost_weight=0.3,  # Sum > 1.0
@@ -74,7 +73,7 @@ class TestStatisticalAnalyzer:
 
     def test_analyze_clear_winner(self):
         """Test analysis with clear winner."""
-        analyzer = StatisticalAnalyzer()
+        analyzer = SIStatisticalAnalyzer()
 
         # Control: mediocre quality
         control = create_variant_results(
@@ -118,7 +117,7 @@ class TestStatisticalAnalyzer:
 
     def test_analyze_no_winner(self):
         """Test analysis with quality regression (no winner)."""
-        analyzer = StatisticalAnalyzer()
+        analyzer = SIStatisticalAnalyzer()
 
         # Control
         control = create_variant_results(
@@ -147,7 +146,7 @@ class TestStatisticalAnalyzer:
 
     def test_compare_metric_higher_is_better(self):
         """Test metric comparison for quality (higher is better)."""
-        analyzer = StatisticalAnalyzer()
+        analyzer = SIStatisticalAnalyzer()
 
         control_scores = [0.7, 0.72, 0.68, 0.71, 0.69]
         variant_scores = [0.9, 0.92, 0.88, 0.91, 0.89]  # Clear improvement
@@ -164,7 +163,7 @@ class TestStatisticalAnalyzer:
 
     def test_compare_metric_lower_is_better(self):
         """Test metric comparison for speed (lower is better)."""
-        analyzer = StatisticalAnalyzer()
+        analyzer = SIStatisticalAnalyzer()
 
         control_scores = [3.0, 3.2, 2.8, 3.1, 2.9]
         variant_scores = [2.0, 2.2, 1.8, 2.1, 1.9]  # Clear improvement (faster)
@@ -181,7 +180,7 @@ class TestStatisticalAnalyzer:
 
     def test_composite_score_calculation(self):
         """Test composite score calculation."""
-        analyzer = StatisticalAnalyzer(
+        analyzer = SIStatisticalAnalyzer(
             quality_weight=0.7,
             speed_weight=0.2,
             cost_weight=0.1
@@ -200,7 +199,7 @@ class TestStatisticalAnalyzer:
 
     def test_recommendation_generation(self):
         """Test recommendation text generation."""
-        analyzer = StatisticalAnalyzer()
+        analyzer = SIStatisticalAnalyzer()
 
         # Winner with improvements
         rec = analyzer._generate_recommendation(
@@ -233,7 +232,7 @@ class TestStatisticalAnalyzer:
     def test_realistic_scenario(self):
         """Test with realistic experiment data."""
         np.random.seed(42)
-        analyzer = StatisticalAnalyzer()
+        analyzer = SIStatisticalAnalyzer()
 
         # Control: llama3.1:8b with 72% quality
         control = create_variant_results(

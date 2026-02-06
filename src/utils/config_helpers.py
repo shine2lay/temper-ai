@@ -3,8 +3,8 @@ Configuration helper utilities.
 
 Shared utilities for configuration parsing, merging, and validation.
 """
-from typing import Dict, Any, Optional, List, Callable, Tuple, cast
 from pathlib import Path
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
 # Import secrets management for detection
 SecretReference: Optional[Any] = None

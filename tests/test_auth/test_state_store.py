@@ -1,12 +1,9 @@
 """Tests for OAuth state storage implementations."""
-import pytest
 import asyncio
-from datetime import datetime
-from src.auth.oauth.state_store import (
-    InMemoryStateStore,
-    RedisStateStore,
-    create_state_store
-)
+
+import pytest
+
+from src.auth.oauth.state_store import InMemoryStateStore, RedisStateStore, create_state_store
 
 
 @pytest.mark.asyncio

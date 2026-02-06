@@ -1,10 +1,10 @@
 """vLLM provider (self-hosted inference)."""
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 
 from src.agents.llm.base import BaseLLM, LLMProvider, LLMResponse
 
 
-class vLLMLLM(BaseLLM):
+class VllmLLM(BaseLLM):
     """vLLM provider (self-hosted inference)."""
 
     def _get_endpoint(self) -> str:

@@ -1,18 +1,18 @@
 """
 Tool registry for managing and discovering tools.
 """
-from typing import Dict, List, Optional, Any, Tuple, Type, cast
 import importlib
 import inspect
-import pkgutil
 import logging
+import pkgutil
 import threading
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Type, cast
 
 from src.tools.base import BaseTool
 
 # Import enhanced exceptions
-from src.utils.exceptions import ToolRegistryError, ToolNotFoundError
+from src.utils.exceptions import ToolRegistryError
 
 logger = logging.getLogger(__name__)
 
@@ -699,7 +699,7 @@ class ToolRegistry:
             raise ToolRegistryError(
                 f"Failed to import tool class '{class_path}': {e}"
             )
-        except AttributeError as e:
+        except AttributeError:
             raise ToolRegistryError(
                 f"Tool class not found in module '{module_name}': {class_name}"
             )

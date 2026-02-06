@@ -9,21 +9,13 @@ and cascade properly through the execution hierarchy. Timeout failures can
 cause production hangs, resource leaks, and lost context.
 """
 
-import pytest
 import asyncio
 import time
-import uuid
-from unittest.mock import Mock, AsyncMock
-from pathlib import Path
 
-from src.observability.database import init_database, get_database
+import pytest
+
+from src.observability.database import get_database, init_database
 from src.observability.tracker import ExecutionTracker
-
-from tests.fixtures.timeout_helpers import (
-    ResourceTracker,
-    TIMEOUT_CONFIGS,
-)
-
 
 # ============================================================================
 # Fixtures

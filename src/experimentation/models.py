@@ -9,10 +9,11 @@ Models:
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any, List, Literal
 from enum import Enum
-from sqlmodel import Field, SQLModel, Relationship, Column, Index
-from sqlalchemy import JSON
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import JSON, DateTime, func
+from sqlmodel import Column, Field, Index, Relationship, SQLModel
 
 from src.observability.datetime_utils import utcnow
 
@@ -136,7 +137,10 @@ class Experiment(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow, index=True)
     started_at: Optional[datetime] = None
     stopped_at: Optional[datetime] = None
-    updated_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(
+        default_factory=utcnow,
+        sa_column=Column(DateTime, default=utcnow, onupdate=func.now()),
+    )
 
     # Relationships
     variants: List["Variant"] = Relationship(back_populates="experiment", cascade_delete=True)

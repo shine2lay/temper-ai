@@ -3,14 +3,11 @@ Property-based tests for consensus strategy using Hypothesis.
 
 Tests invariants that should hold for all possible inputs.
 """
-from dataclasses import dataclass
-from typing import Any, Dict
-import pytest
-from hypothesis import given, strategies as st, assume, settings
-from hypothesis import HealthCheck
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
 
-from src.strategies.consensus import ConsensusStrategy
 from src.strategies.base import AgentOutput
+from src.strategies.consensus import ConsensusStrategy
 
 
 # Custom strategies for generating test data

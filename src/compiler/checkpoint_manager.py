@@ -30,16 +30,16 @@ Example:
     >>> restored_domain = manager.load_checkpoint("wf-123")
     >>> print(restored_domain.stage_outputs)  # {"research": {"findings": ["data"]}}
 """
-from typing import Optional, Dict, Any, List, Callable
-from enum import Enum
 import logging
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
-from src.compiler.domain_state import WorkflowDomainState
 from src.compiler.checkpoint_backends import (
     CheckpointBackend,
+    CheckpointNotFoundError,
     FileCheckpointBackend,
-    CheckpointNotFoundError
 )
+from src.compiler.domain_state import WorkflowDomainState
 
 logger = logging.getLogger(__name__)
 

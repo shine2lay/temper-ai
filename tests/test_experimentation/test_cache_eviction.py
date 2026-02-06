@@ -6,7 +6,6 @@ Verifies that:
 3. Cache access promotes entries (move_to_end)
 """
 
-import pytest
 from collections import OrderedDict
 
 from src.experimentation.service import ExperimentService

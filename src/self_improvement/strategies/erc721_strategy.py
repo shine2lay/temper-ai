@@ -7,12 +7,12 @@ Generates configuration variants for improving ERC721 code generation:
 - Variant 3: Enhanced prompts with inline Solidity examples
 """
 import copy
-from typing import List, Dict
+from typing import Dict, List
 
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
-    OptimizationConfig,
     LearnedPattern,
+    SIOptimizationConfig,
 )
 
 
@@ -28,7 +28,7 @@ class ERC721WorkflowStrategy(ImprovementStrategy):
 
     Example:
         >>> strategy = ERC721WorkflowStrategy()
-        >>> current = OptimizationConfig(
+        >>> current = SIOptimizationConfig(
         ...     inference={'model': 'llama3:8b', 'temperature': 0.7},
         ...     prompt={'template': 'default'}
         ... )
@@ -85,8 +85,8 @@ contract MyNFT is ERC721, Ownable {
         return "erc721_workflow"
 
     def generate_variants(
-        self, current_config: OptimizationConfig, patterns: List[LearnedPattern]
-    ) -> List[OptimizationConfig]:
+        self, current_config: SIOptimizationConfig, patterns: List[LearnedPattern]
+    ) -> List[SIOptimizationConfig]:
         """Generate improved configuration variants.
 
         Generates 3 variants:

@@ -10,20 +10,20 @@ These tests validate the entire M5 system working together:
 Phase 1 (DETECT) → Phase 2 (ANALYZE) → Phase 3 (STRATEGY) →
 Phase 4 (EXPERIMENT) → Phase 5 (DEPLOY)
 """
-import pytest
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import sys
+
+import pytest
 
 # Add coordination DB to path
 coord_path = Path(__file__).parent.parent.parent / ".claude-coord"
 sys.path.insert(0, str(coord_path))
 from coord_service.database import Database as CoordDatabase
 
-from src.self_improvement.loop import M5SelfImprovementLoop, LoopConfig, Phase
-from src.self_improvement.data_models import OptimizationConfig
 from src.observability.database import init_database, reset_database
 from src.observability.models import AgentExecution
+from src.self_improvement.loop import LoopConfig, M5SelfImprovementLoop, Phase
 
 
 @pytest.fixture
@@ -83,7 +83,7 @@ def create_agent_execution(
         model: Model name
     """
     # Create workflow execution
-    from src.observability.models import WorkflowExecution, StageExecution
+    from src.observability.models import StageExecution, WorkflowExecution
 
     workflow = WorkflowExecution(
         id=f"workflow-{timestamp.timestamp()}",
@@ -174,16 +174,16 @@ class TestM5ScenarioValidation:
                 timestamp=timestamp,
                 model="llama3.1:8b",
             )
-        print(f"   ✓ Created 50 baseline executions (quality=0.70)")
+        print("   ✓ Created 50 baseline executions (quality=0.70)")
 
         # Step 2: Initialize M5 loop
         print("\n🔄 Initializing M5 Self-Improvement Loop...")
         loop = M5SelfImprovementLoop(coord_db, obs_session, loop_config)
-        print(f"   ✓ Loop initialized")
+        print("   ✓ Loop initialized")
 
         # Step 3: Run improvement iteration
         print("\n🚀 Running improvement iteration...")
-        print(f"   Expected: Detect problem → Analyze → Generate variants → Experiment → Deploy")
+        print("   Expected: Detect problem → Analyze → Generate variants → Experiment → Deploy")
 
         # Note: This will fail because we don't have real Ollama models
         # But we can validate the loop structure and error handling
@@ -195,7 +195,7 @@ class TestM5ScenarioValidation:
             assert result.iteration_number == 1
 
             # Check phases attempted
-            print(f"\n📋 Iteration Result:")
+            print("\n📋 Iteration Result:")
             print(f"   Success: {result.success}")
             print(f"   Phases completed: {[p.value for p in result.phases_completed]}")
             print(f"   Duration: {result.duration_seconds:.1f}s")
@@ -206,22 +206,22 @@ class TestM5ScenarioValidation:
 
             # Expected phases (at minimum, Phase 1 and 2 should complete)
             assert Phase.DETECT in result.phases_completed or not result.success
-            print(f"   ✓ Phase 1 (DETECT) attempted")
+            print("   ✓ Phase 1 (DETECT) attempted")
 
             if Phase.ANALYZE in result.phases_completed:
                 assert result.analysis_result is not None
-                print(f"   ✓ Phase 2 (ANALYZE) completed")
+                print("   ✓ Phase 2 (ANALYZE) completed")
                 print(f"     - Total executions: {result.analysis_result.performance_profile.total_executions}")
 
             # Phase 3-5 may not complete without real models, but structure is validated
             if result.success:
                 assert Phase.DEPLOY in result.phases_completed
                 assert result.deployment_result is not None
-                print(f"   ✓ Phase 5 (DEPLOY) completed")
+                print("   ✓ Phase 5 (DEPLOY) completed")
                 print(f"     - Deployment ID: {result.deployment_result.deployment_id}")
                 print(f"     - Rollback monitoring: {result.deployment_result.rollback_monitoring_enabled}")
             else:
-                print(f"   ℹ️  Iteration incomplete (expected without real models)")
+                print("   ℹ️  Iteration incomplete (expected without real models)")
 
         except Exception as e:
             # Expected to fail without real experiment data
@@ -230,7 +230,7 @@ class TestM5ScenarioValidation:
             # Validate error handling worked
             state = loop.get_state(agent_name)
             assert state is not None
-            print(f"   ✓ Error handling preserved state")
+            print("   ✓ Error handling preserved state")
             print(f"     - Current phase: {state['current_phase']}")
             print(f"     - Status: {state['status']}")
 
@@ -240,14 +240,14 @@ class TestM5ScenarioValidation:
         assert state is not None
         assert state["agent_name"] == agent_name
         assert state["iteration_number"] == 1
-        print(f"   ✓ State persisted correctly")
+        print("   ✓ State persisted correctly")
 
         # Step 5: Validate metrics collection
         print("\n📊 Validating metrics collection...")
         metrics = loop.get_metrics(agent_name)
         assert metrics is not None
         assert metrics["total_iterations"] == 1
-        print(f"   ✓ Metrics collected")
+        print("   ✓ Metrics collected")
         print(f"     - Total iterations: {metrics['total_iterations']}")
         print(f"     - Success rate: {metrics['success_rate']:.1%}")
 
@@ -257,16 +257,16 @@ class TestM5ScenarioValidation:
         assert progress is not None
         assert progress.agent_name == agent_name
         assert progress.current_iteration == 1
-        print(f"   ✓ Progress tracked")
+        print("   ✓ Progress tracked")
         print(f"     - Health: {progress.health_status}")
 
         print("\n✅ Scenario validation complete!")
-        print(f"   Summary:")
-        print(f"   - Loop structure validated")
-        print(f"   - Phase orchestration working")
-        print(f"   - State management functional")
-        print(f"   - Error handling robust")
-        print(f"   - Metrics collection active")
+        print("   Summary:")
+        print("   - Loop structure validated")
+        print("   - Phase orchestration working")
+        print("   - State management functional")
+        print("   - Error handling robust")
+        print("   - Metrics collection active")
 
     def test_scenario_no_problems_detected(
         self, obs_session, coord_db, loop_config
@@ -303,7 +303,7 @@ class TestM5ScenarioValidation:
                 timestamp=timestamp,
                 model="excellent-model",
             )
-        print(f"   ✓ Created 50 excellent executions (quality=0.95)")
+        print("   ✓ Created 50 excellent executions (quality=0.95)")
 
         # Run iteration
         print("\n🔄 Running iteration...")
@@ -312,15 +312,15 @@ class TestM5ScenarioValidation:
         result = loop.run_iteration(agent_name)
 
         # Validate
-        print(f"\n📋 Result:")
+        print("\n📋 Result:")
         print(f"   Success: {result.success}")
         print(f"   Phases: {[p.value for p in result.phases_completed]}")
 
         # Note: May fail due to missing baseline (expected)
         if not result.success and result.error:
             if "baseline" in str(result.error).lower():
-                print(f"   ℹ️  Baseline required (expected limitation)")
-                print(f"   ✓ Error handling validated")
+                print("   ℹ️  Baseline required (expected limitation)")
+                print("   ✓ Error handling validated")
             else:
                 print(f"   Error: {result.error}")
         else:
@@ -329,9 +329,9 @@ class TestM5ScenarioValidation:
 
             if result.detection_result:
                 if not result.detection_result.has_problem:
-                    print(f"   ✓ No problems detected (as expected)")
+                    print("   ✓ No problems detected (as expected)")
                     assert result.deployment_result is None
-                    print(f"   ✓ No deployment (as expected)")
+                    print("   ✓ No deployment (as expected)")
                 else:
                     print(f"   ℹ️  Problem detected: {result.detection_result.problem_type}")
 
@@ -387,7 +387,7 @@ class TestM5ScenarioValidation:
         loop.pause(agent_name)
         state = loop.get_state(agent_name)
         assert state["status"] == "paused"
-        print(f"   ✓ Loop paused")
+        print("   ✓ Loop paused")
 
         # Try to run while paused (should fail)
         print("\n🚫 Attempting to run while paused...")
@@ -396,20 +396,20 @@ class TestM5ScenarioValidation:
             assert False, "Should not run while paused"
         except ValueError as e:
             assert "paused" in str(e).lower()
-            print(f"   ✓ Run blocked while paused (as expected)")
+            print("   ✓ Run blocked while paused (as expected)")
 
         # Resume
         print("\n▶️  Resuming loop...")
         loop.resume(agent_name)
         state = loop.get_state(agent_name)
         assert state["status"] == "running"
-        print(f"   ✓ Loop resumed")
+        print("   ✓ Loop resumed")
 
         # Can run again
         print("\n🔄 Running after resume...")
         try:
             result = loop.run_iteration(agent_name)
-            print(f"   ✓ Can run after resume")
+            print("   ✓ Can run after resume")
         except Exception as e:
             print(f"   Iteration failed: {e} (acceptable)")
 
@@ -461,7 +461,7 @@ class TestM5ScenarioValidation:
         # Verify state exists
         state = loop.get_state(agent_name)
         assert state is not None
-        print(f"   ✓ State created")
+        print("   ✓ State created")
 
         # Reset
         print("\n🔄 Resetting state...")
@@ -470,18 +470,18 @@ class TestM5ScenarioValidation:
         # Verify cleared
         state = loop.get_state(agent_name)
         assert state is None
-        print(f"   ✓ State cleared")
+        print("   ✓ State cleared")
 
         metrics = loop.get_metrics(agent_name)
         assert metrics is None
-        print(f"   ✓ Metrics cleared")
+        print("   ✓ Metrics cleared")
 
         # Can start fresh
         print("\n🔄 Starting fresh iteration...")
         try:
             result = loop.run_iteration(agent_name)
             assert result.iteration_number == 1
-            print(f"   ✓ Fresh start successful")
+            print("   ✓ Fresh start successful")
         except Exception as e:
             print(f"   Fresh iteration failed: {e} (acceptable)")
 
@@ -507,7 +507,7 @@ class TestM5ScenarioValidation:
 
         health = loop.health_check()
 
-        print(f"\n📋 Health Report:")
+        print("\n📋 Health Report:")
         print(f"   Overall: {health['status']}")
         for component, status in health['components'].items():
             print(f"   - {component}: {status}")
@@ -517,7 +517,7 @@ class TestM5ScenarioValidation:
         assert health['components']['observability_db'] == 'healthy'
         assert health['components']['configuration'] == 'healthy'
 
-        print(f"\n✅ Health check validated!")
+        print("\n✅ Health check validated!")
 
 
 class TestM5ConfigurationScenarios:
@@ -537,7 +537,7 @@ class TestM5ConfigurationScenarios:
         health = loop.health_check()
 
         assert health['status'] == 'healthy'
-        print(f"✓ Aggressive config validated")
+        print("✓ Aggressive config validated")
 
     def test_conservative_config(self, obs_session, coord_db):
         """Test with conservative improvement settings."""
@@ -553,7 +553,7 @@ class TestM5ConfigurationScenarios:
         health = loop.health_check()
 
         assert health['status'] == 'healthy'
-        print(f"✓ Conservative config validated")
+        print("✓ Conservative config validated")
 
 
 if __name__ == '__main__':

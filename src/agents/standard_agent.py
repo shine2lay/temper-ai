@@ -10,44 +10,39 @@ StandardAgent is the default agent type that executes a multi-turn loop:
 """
 from __future__ import annotations
 
+import atexit
+import concurrent.futures
 import json
 import logging
 import time
-from typing import Dict, Any, List, Optional, TYPE_CHECKING
-from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from src.compiler.schemas import AgentConfig
+    from src.schemas import AgentConfig
 
-from src.agents.base_agent import BaseAgent, AgentResponse, ExecutionContext
+from src.agents.agent_observer import AgentObserver
+from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
+from src.agents.cost_estimator import estimate_cost
+from src.agents.llm.factory import create_llm_provider
 from src.agents.llm_providers import (
-    BaseLLM,
+    AnthropicLLM,
+    LLMError,
+    LLMResponse,
     OllamaLLM,
     OpenAILLM,
-    AnthropicLLM,
-    LLMResponse,
-    LLMError,
-    LLMProvider
 )
 from src.agents.prompt_engine import PromptEngine, PromptRenderError
-from src.agents.llm_factory import create_llm_provider
-from src.agents.cost_estimator import estimate_cost
 from src.agents.response_parser import (
-    parse_tool_calls,
-    sanitize_tool_output,
-    extract_final_answer,
-    extract_reasoning,
-    TOOL_CALL_TAG,
     ANSWER_TAG,
     REASONING_TAGS,
-    TOOL_CALL_PATTERN,
-    ANSWER_PATTERN,
-    REASONING_PATTERNS,
-    _TOOL_RESULT_SANITIZE_PATTERN,
+    TOOL_CALL_TAG,
+    extract_final_answer,
+    extract_reasoning,
+    parse_tool_calls,
+    sanitize_tool_output,
 )
-from src.agents.agent_observer import AgentObserver
 from src.tools.registry import ToolRegistry
-from src.tools.base import BaseTool, ToolResult
+from src.utils.exceptions import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +54,14 @@ _SANITIZE_TAGS = [TOOL_CALL_TAG, ANSWER_TAG] + REASONING_TAGS
 
 # Default port numbers for LLM providers (kept for backward compatibility)
 OLLAMA_DEFAULT_PORT = 11434
+
+# Shared thread pool for parallel tool execution (M-28).
+# Avoids creating a new ThreadPoolExecutor per tool-call batch.
+_TOOL_EXECUTOR_POOL = concurrent.futures.ThreadPoolExecutor(
+    max_workers=8,
+    thread_name_prefix="agent-tool"
+)
+atexit.register(_TOOL_EXECUTOR_POOL.shutdown, wait=False)
 
 
 def validate_input_data(
@@ -210,8 +213,14 @@ class StandardAgent(BaseAgent):
         total_cost = 0.0
         llm_response = None
 
+        # Sliding-window state for prompt management (C-01).
+        # _system_prompt is pinned at the start and never truncated.
+        # _conversation_turns holds (llm_response, tool_results_text) pairs.
+        self._conversation_turns: List[str] = []
+
         try:
             prompt = self._render_prompt(input_data, context)
+            self._system_prompt = prompt  # Pin the original prompt
             # Log input preview (last 200 chars of prompt shows injected context)
             prompt_preview = prompt[-200:].replace('\n', ' ').strip()
             logger.info("[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), prompt_preview)
@@ -258,7 +267,8 @@ class StandardAgent(BaseAgent):
             )
 
         except Exception as e:
-            logger.warning("Agent execution error: %s", str(e), exc_info=True)
+            safe_msg = sanitize_error_message(str(e))
+            logger.warning("Agent execution error: %s", safe_msg, exc_info=True)
             return self._build_final_response(
                 output="",
                 reasoning=None,
@@ -266,7 +276,7 @@ class StandardAgent(BaseAgent):
                 tokens=total_tokens,
                 cost=total_cost,
                 start_time=start_time,
-                error=f"Agent execution error: {str(e)}"
+                error=f"Agent execution error: {safe_msg}"
             )
 
     def _execute_iteration(
@@ -342,17 +352,18 @@ class StandardAgent(BaseAgent):
                 break
             except LLMError as e:
                 last_error = e
+                safe_err = sanitize_error_message(str(e))
                 if attempt < max_agent_retries:
                     backoff_delay = retry_delay * (2.0 ** attempt)
                     logger.warning(
                         "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
-                        attempt + 1, max_agent_retries + 1, str(e), backoff_delay
+                        attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
                     )
                     time.sleep(backoff_delay)
                 else:
                     logger.error(
                         "LLM call failed after %d attempts: %s",
-                        max_agent_retries + 1, str(e), exc_info=True
+                        max_agent_retries + 1, safe_err, exc_info=True
                     )
 
         if llm_response is None:
@@ -365,7 +376,7 @@ class StandardAgent(BaseAgent):
                     tokens=total_tokens,
                     cost=total_cost,
                     start_time=start_time,
-                    error=f"LLM call failed after {max_agent_retries + 1} attempts: {str(last_error)}"
+                    error=f"LLM call failed after {max_agent_retries + 1} attempts: {sanitize_error_message(str(last_error))}"
                 )
             }
 
@@ -449,30 +460,27 @@ class StandardAgent(BaseAgent):
         if not parallel_enabled:
             return [self._execute_single_tool(tool_call) for tool_call in tool_calls]
 
-        import concurrent.futures
+        tool_results: List[Any] = [None] * len(tool_calls)
 
-        tool_results = [None] * len(tool_calls)
+        future_to_index = {
+            _TOOL_EXECUTOR_POOL.submit(self._execute_single_tool, tool_call): i
+            for i, tool_call in enumerate(tool_calls)
+        }
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(len(tool_calls), 4)) as executor:
-            future_to_index = {
-                executor.submit(self._execute_single_tool, tool_call): i
-                for i, tool_call in enumerate(tool_calls)
-            }
-
-            for future in concurrent.futures.as_completed(future_to_index):
-                index = future_to_index[future]
-                try:
-                    result = future.result()
-                    tool_results[index] = result
-                except Exception as e:
-                    logger.error(f"Tool execution failed in parallel mode: {e}")
-                    tool_results[index] = {
-                        "name": tool_calls[index].get("name", "unknown"),
-                        "parameters": tool_calls[index].get("parameters", {}),
-                        "success": False,
-                        "result": None,
-                        "error": f"Parallel execution error: {str(e)}"
-                    }
+        for future in concurrent.futures.as_completed(future_to_index):
+            index = future_to_index[future]
+            try:
+                result = future.result()
+                tool_results[index] = result
+            except Exception as e:
+                logger.error(f"Tool execution failed in parallel mode: {e}")
+                tool_results[index] = {
+                    "name": tool_calls[index].get("name", "unknown"),
+                    "parameters": tool_calls[index].get("parameters", {}),
+                    "success": False,
+                    "result": None,
+                    "error": f"Parallel execution error: {str(e)}"
+                }
 
         return tool_results
 
@@ -757,8 +765,18 @@ class StandardAgent(BaseAgent):
         tool_results: List[Dict[str, Any]],
         remaining_tool_calls: Optional[int] = None
     ) -> str:
-        """Inject tool results into prompt for next iteration."""
-        MAX_TOOL_RESULT_SIZE = 10_000
+        """Inject tool results into prompt for next iteration.
+
+        Uses a sliding-window approach (C-01) to prevent unbounded prompt growth:
+        1. The system/original prompt is pinned at the start and never truncated.
+        2. Each iteration's (LLM response + tool results) is stored as a turn.
+        3. When total length exceeds max_prompt_length, the OLDEST turns are
+           dropped from the middle, preserving the system prompt and most
+           recent turns.
+        4. Truncated content is re-sanitized through the injection detector.
+        """
+        max_tool_result_size = 10_000
+        max_prompt_length = 32_000
 
         results_parts = ["\n\nTool Results:\n"]
         for result in tool_results:
@@ -767,19 +785,19 @@ class StandardAgent(BaseAgent):
             if result['success']:
                 safe_result = sanitize_tool_output(str(result['result']))
 
-                if len(safe_result) > MAX_TOOL_RESULT_SIZE:
+                if len(safe_result) > max_tool_result_size:
                     original_size = len(safe_result)
-                    safe_result = safe_result[:MAX_TOOL_RESULT_SIZE]
-                    safe_result += f"\n[truncated — {original_size:,} total chars, showing first {MAX_TOOL_RESULT_SIZE:,}]"
+                    safe_result = safe_result[:max_tool_result_size]
+                    safe_result += f"\n[truncated — {original_size:,} total chars, showing first {max_tool_result_size:,}]"
 
                 results_parts.append(f"Result: {safe_result}\n")
             else:
                 safe_error = sanitize_tool_output(str(result['error']))
 
-                if len(safe_error) > MAX_TOOL_RESULT_SIZE:
+                if len(safe_error) > max_tool_result_size:
                     original_size = len(safe_error)
-                    safe_error = safe_error[:MAX_TOOL_RESULT_SIZE]
-                    safe_error += f"\n[truncated — {original_size:,} total chars, showing first {MAX_TOOL_RESULT_SIZE:,}]"
+                    safe_error = safe_error[:max_tool_result_size]
+                    safe_error += f"\n[truncated — {original_size:,} total chars, showing first {max_tool_result_size:,}]"
 
                 results_parts.append(f"Error: {safe_error}\n")
 
@@ -795,11 +813,49 @@ class StandardAgent(BaseAgent):
 
         results_text = ''.join(results_parts)
 
-        MAX_PROMPT_CHARS = 100_000
-        new_prompt = original_prompt + "\n\nAssistant: " + llm_response + results_text + "\n\nPlease continue:"
-        if len(new_prompt) > MAX_PROMPT_CHARS:
-            new_prompt = "...(truncated)...\n" + new_prompt[-MAX_PROMPT_CHARS:]
-        return new_prompt
+        # Build this iteration's turn text
+        turn_text = "\n\nAssistant: " + llm_response + results_text
+
+        # Append to conversation history
+        if not hasattr(self, '_conversation_turns'):
+            self._conversation_turns = []
+        self._conversation_turns.append(turn_text)
+
+        # Use the pinned system prompt (set in execute())
+        system_prompt = getattr(self, '_system_prompt', original_prompt)
+
+        # Build full prompt with sliding window
+        suffix = "\n\nPlease continue:"
+        budget = max_prompt_length - len(system_prompt) - len(suffix)
+
+        if budget <= 0:
+            # System prompt itself exceeds budget; include only most recent turn
+            recent_turn = sanitize_tool_output(self._conversation_turns[-1])
+            return system_prompt + recent_turn + suffix
+
+        # Include as many recent turns as fit within the budget
+        included_turns: List[str] = []
+        total_turn_chars = 0
+        for turn in reversed(self._conversation_turns):
+            if total_turn_chars + len(turn) > budget:
+                break
+            included_turns.append(turn)
+            total_turn_chars += len(turn)
+
+        included_turns.reverse()
+
+        # If we dropped any turns, add a truncation marker and count
+        dropped_count = len(self._conversation_turns) - len(included_turns)
+        truncation_marker = ""
+        if dropped_count > 0:
+            truncation_marker = f"\n\n[...{dropped_count} earlier iteration(s) omitted for brevity...]\n"
+
+        # Re-sanitize the assembled turns to catch any injection attempts
+        # that might span across turn boundaries after truncation
+        assembled_turns = truncation_marker + ''.join(included_turns)
+        assembled_turns = sanitize_tool_output(assembled_turns)
+
+        return system_prompt + assembled_turns + suffix
 
     def get_capabilities(self) -> Dict[str, Any]:
         """Get agent capabilities."""

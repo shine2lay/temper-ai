@@ -1,25 +1,26 @@
 """
 Tests for observability backend abstraction.
 """
-import pytest
 from datetime import datetime, timezone
+
+import pytest
 
 from src.observability.backend import ObservabilityBackend
 from src.observability.backends import (
-    SQLObservabilityBackend,
     PrometheusObservabilityBackend,
     S3ObservabilityBackend,
+    SQLObservabilityBackend,
 )
-from src.observability.tracker import ExecutionTracker
 from src.observability.database import init_database
+from src.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    from src.observability.database import _db_manager, _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 
@@ -251,12 +252,16 @@ class TestCascadeDelete:
 
     def test_delete_workflow_cascades_to_all_children(self, db):
         """Deleting a workflow removes all stages, agents, llm_calls, tool_executions."""
+        from sqlmodel import delete, func, select
+
         from src.observability.database import get_session
         from src.observability.models import (
-            WorkflowExecution, StageExecution, AgentExecution,
-            LLMCall, ToolExecution
+            AgentExecution,
+            LLMCall,
+            StageExecution,
+            ToolExecution,
+            WorkflowExecution,
         )
-        from sqlmodel import select, func, delete
 
         now = datetime.now(timezone.utc)
 
@@ -363,9 +368,10 @@ class TestCascadeDelete:
             start_time=now,
         )
 
+        from sqlmodel import delete, func, select
+
         from src.observability.database import get_session
-        from src.observability.models import WorkflowExecution, StageExecution
-        from sqlmodel import select, func, delete
+        from src.observability.models import StageExecution, WorkflowExecution
 
         # Delete stage
         with get_session() as session:
@@ -416,9 +422,10 @@ class TestCascadeDelete:
         assert counts["workflows"] == 1
 
         # Verify no orphans remain
+        from sqlmodel import func, select
+
         from src.observability.database import get_session
-        from src.observability.models import StageExecution, AgentExecution
-        from sqlmodel import select, func
+        from src.observability.models import AgentExecution, StageExecution
 
         with get_session() as session:
             assert session.exec(select(func.count(StageExecution.id)).where(

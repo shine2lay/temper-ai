@@ -37,6 +37,9 @@ workflow:
       - solution_options
       - risk_assessment
 
+  config:
+    timeout_seconds: 3000
+
   error_handling:
     on_stage_failure: halt
     max_stage_retries: 2

@@ -13,17 +13,16 @@ Compare with regression detection:
     pytest tests/test_benchmarks/test_performance_cache_network.py --benchmark-only \
         --benchmark-compare=cache-network --benchmark-compare-fail=mean:10%
 """
-import pytest
+import hashlib
+import json
+import threading
 import time
+from contextlib import contextmanager
 from functools import lru_cache
 from threading import Lock
-import threading
-import json
-import hashlib
-from typing import Dict, Any, List
-from contextlib import contextmanager
-from unittest.mock import MagicMock
+from typing import Any, Dict, List
 
+import pytest
 
 # ============================================================================
 # CATEGORY 9: Cache Performance (6 benchmarks)
@@ -36,7 +35,6 @@ def test_cache_llm_response_hit_rate(benchmark):
     Target: >95% hit rate for repeated queries
     Measures: Cache effectiveness
     """
-    from functools import lru_cache
 
     # Simulate LLM cache with LRU
     @lru_cache(maxsize=100)
@@ -92,7 +90,6 @@ def test_cache_eviction_lru_performance(benchmark):
     Target: <5ms for 1000-item eviction
     Measures: Eviction algorithm efficiency
     """
-    from functools import lru_cache
 
     # Create cache with size limit
     @lru_cache(maxsize=1000)
@@ -117,8 +114,6 @@ def test_cache_concurrent_access_contention(benchmark):
     Target: <20ms P95 with 10 concurrent threads
     Measures: Lock contention and concurrent scalability
     """
-    from threading import Lock
-    import threading
 
     cache = {}
     cache_lock = Lock()
@@ -154,8 +149,6 @@ def test_cache_serialization_overhead(benchmark):
     Target: <2ms for 10KB object serialization
     Measures: Serialization efficiency
     """
-    import json
-    import hashlib
 
     # Create 10KB object
     large_object = {
@@ -209,7 +202,6 @@ def test_network_http_connection_pooling(benchmark):
     Target: <10ms per request with connection reuse
     Measures: Connection pool efficiency
     """
-    from unittest.mock import MagicMock
 
     # Mock HTTP session with connection pooling
     class MockHTTPSession:
@@ -270,8 +262,6 @@ def test_network_timeout_handling(benchmark):
     Target: <5ms overhead for timeout checks
     Measures: Timeout handling overhead
     """
-    import signal
-    from contextlib import contextmanager
 
     @contextmanager
     def timeout_context(seconds: float):

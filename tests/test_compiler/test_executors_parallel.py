@@ -6,14 +6,13 @@ observability tracking.
 
 Target: 80%+ code coverage of src/compiler/executors/parallel.py
 """
-import pytest
 import time
-from unittest.mock import Mock, MagicMock, patch, PropertyMock
-from typing import Dict, Any, List
+from unittest.mock import Mock, patch
 
-from src.compiler.executors.parallel import ParallelStageExecutor
+import pytest
+
 from src.agents.base_agent import AgentResponse
-
+from src.compiler.executors.parallel import ParallelStageExecutor
 
 # ============================================================================
 # Test Fixtures
@@ -690,8 +689,13 @@ class TestSynthesisIntegration:
              patch('src.compiler.schemas.AgentConfig'), \
              patch('src.strategies.registry.get_strategy_from_config') as mock_get_strategy:
 
-            # Configure mock strategy
+            # Configure mock strategy with required attributes
             mock_strategy = Mock()
+            mock_strategy.cost_budget_usd = None
+            mock_strategy.max_rounds = 1
+            mock_strategy.min_rounds = 1
+            mock_strategy.convergence_threshold = 0.8
+            mock_strategy.requires_requery = False
             synthesis_result = Mock()
             synthesis_result.decision = "registry_decision"
             synthesis_result.confidence = 0.85
@@ -860,6 +864,11 @@ class TestQualityGates:
 
             # Mock strategy to return synthesis result
             mock_strategy = Mock()
+            mock_strategy.cost_budget_usd = None
+            mock_strategy.max_rounds = 1
+            mock_strategy.min_rounds = 1
+            mock_strategy.convergence_threshold = 0.8
+            mock_strategy.requires_requery = False
             mock_strategy.synthesize.side_effect = create_synthesis_result
             mock_get_strategy.return_value = mock_strategy
 

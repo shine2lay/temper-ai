@@ -9,18 +9,12 @@ Tests cover:
 - Exception handling
 - CompositeValidationResult helper methods
 """
+from typing import Any, Dict
+
 import pytest
-from typing import Dict, Any
-from unittest.mock import Mock
 
-from src.safety.composition import PolicyComposer, CompositeValidationResult
-from src.safety.interfaces import (
-    SafetyPolicy,
-    ValidationResult,
-    SafetyViolation,
-    ViolationSeverity
-)
-
+from src.safety.composition import CompositeValidationResult, PolicyComposer
+from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 # ============================================================================
 # Mock Policies for Testing

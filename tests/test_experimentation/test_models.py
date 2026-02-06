@@ -2,18 +2,16 @@
 Tests for experimentation database models.
 """
 
-import pytest
-from datetime import datetime
 from src.experimentation.models import (
-    Experiment,
-    Variant,
-    VariantAssignment,
-    ExperimentResult,
-    ExperimentStatus,
     AssignmentStrategyType,
     ConfigType,
     ExecutionStatus,
+    Experiment,
+    ExperimentResult,
+    ExperimentStatus,
     RecommendationType,
+    Variant,
+    VariantAssignment,
 )
 
 

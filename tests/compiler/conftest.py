@@ -1,7 +1,8 @@
 """Test fixtures for compiler tests."""
-import pytest
-from pathlib import Path
 from unittest.mock import Mock
+
+import pytest
+
 from src.compiler.checkpoint import CheckpointManager
 from src.compiler.domain_state import WorkflowDomainState
 

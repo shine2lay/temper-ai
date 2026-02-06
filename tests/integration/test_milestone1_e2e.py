@@ -8,22 +8,23 @@ Tests all M1 components working together:
 - Example configurations
 """
 import uuid
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-import pytest
-from sqlmodel import select, delete
 
-from src.observability.database import init_database, get_session
+import pytest
+from sqlmodel import delete, select
+
+from src.compiler.config_loader import ConfigLoader
+from src.compiler.schemas import AgentConfig, ToolConfig, WorkflowConfig
+from src.observability.console import WorkflowVisualizer
+from src.observability.database import get_session, init_database
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
     LLMCall,
+    StageExecution,
     ToolExecution,
+    WorkflowExecution,
 )
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.schemas import WorkflowConfig, AgentConfig, ToolConfig
-from src.observability.console import WorkflowVisualizer
 
 
 class TestMilestone1Integration:

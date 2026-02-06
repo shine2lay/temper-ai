@@ -6,12 +6,13 @@ Tests for LLM prompt injection vulnerabilities including:
 - Delimiter injection
 - System prompt extraction
 """
-import pytest
 import time
 from unittest.mock import Mock, patch
+
+import pytest
+
 from src.agents.llm_providers import LLMResponse
 from src.agents.standard_agent import StandardAgent
-from src.compiler.schemas import AgentConfig
 
 
 class TestPromptInjectionDetection:
@@ -244,7 +245,6 @@ class TestPromptInjectionPolicy:
 
     def test_prompt_injection_policy_interface(self):
         """Test that prompt injection policy implements SafetyPolicy interface."""
-        from src.safety.interfaces import SafetyPolicy
 
         # In full implementation, create PromptInjectionPolicy class
         # assert issubclass(PromptInjectionPolicy, SafetyPolicy)
@@ -448,6 +448,7 @@ class TestPromptInjectionDetectorComprehensive:
     def test_base64_encoding_bypass_detection(self):
         """Test detection of Base64 encoding bypass attempts."""
         import base64
+
         from src.security.llm_security import PromptInjectionDetector
 
         detector = PromptInjectionDetector()
@@ -743,6 +744,7 @@ class TestDetectionPerformance:
     def test_memory_efficiency(self):
         """Test memory usage of detector instance."""
         import sys
+
         from src.security.llm_security import PromptInjectionDetector
 
         detector = PromptInjectionDetector()

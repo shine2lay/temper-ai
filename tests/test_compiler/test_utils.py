@@ -1,5 +1,4 @@
 """Tests for compiler utility functions."""
-import pytest
 from src.compiler.utils import extract_agent_name
 
 

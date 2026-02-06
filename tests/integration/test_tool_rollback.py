@@ -3,19 +3,22 @@
 Tests the integration of RollbackManager with ToolExecutor for
 automatic rollback on tool failures, approval rejection, and policy violations.
 """
-import pytest
-import tempfile
 import os
-from pathlib import Path
-from unittest.mock import Mock, MagicMock
+import tempfile
+from unittest.mock import Mock
 
+import pytest
+
+from src.safety.action_policy_engine import (
+    ActionPolicyEngine,
+    EnforcementResult,
+)
+from src.safety.approval import ApprovalWorkflow
+from src.safety.interfaces import SafetyViolation, ViolationSeverity
+from src.safety.rollback import RollbackManager, RollbackStatus
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.executor import ToolExecutor
 from src.tools.registry import ToolRegistry
-from src.tools.base import BaseTool, ToolResult, ToolMetadata
-from src.safety.rollback import RollbackManager, RollbackStatus
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext, EnforcementResult
-from src.safety.approval import ApprovalWorkflow, ApprovalStatus
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
 
 
 class FileWriteTool(BaseTool):

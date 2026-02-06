@@ -5,12 +5,13 @@ Detects performance problems by analyzing PerformanceComparison results
 using configurable threshold-based rules.
 """
 
-from typing import List, Optional
 import logging
+from typing import List, Optional
 
 from src.self_improvement.performance_comparison import PerformanceComparison
-from .problem_models import PerformanceProblem, ProblemType, ProblemSeverity
+
 from .problem_config import ProblemDetectionConfig
+from .problem_models import PerformanceProblem, ProblemSeverity, ProblemType
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class ProblemDetectionError(Exception):
     pass
 
 
-class InsufficientDataError(ProblemDetectionError):
+class ProblemDetectionDataError(ProblemDetectionError):
     """Raised when insufficient data for reliable detection."""
     pass
 
@@ -85,7 +86,7 @@ class ProblemDetector:
             List of PerformanceProblem, sorted by severity (CRITICAL first)
 
         Raises:
-            InsufficientDataError: If too few executions for reliable detection
+            ProblemDetectionDataError: If too few executions for reliable detection
 
         Example:
             >>> problems = detector.detect_problems(comparison)
@@ -99,12 +100,12 @@ class ProblemDetector:
         # Validate data sufficiency
         min_exec = min_executions or self.config.min_executions_for_detection
         if comparison.current_executions < min_exec:
-            raise InsufficientDataError(
+            raise ProblemDetectionDataError(
                 f"Insufficient current executions: {comparison.current_executions} "
                 f"(minimum {min_exec} required)"
             )
         if comparison.baseline_executions < min_exec:
-            raise InsufficientDataError(
+            raise ProblemDetectionDataError(
                 f"Insufficient baseline executions: {comparison.baseline_executions} "
                 f"(minimum {min_exec} required)"
             )

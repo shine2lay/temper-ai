@@ -4,7 +4,6 @@ Verifies that to_dict() returns independent copies so callers
 cannot corrupt the internal cache by mutating the returned dict.
 """
 
-import pytest
 from src.compiler.langgraph_state import LangGraphWorkflowState
 
 

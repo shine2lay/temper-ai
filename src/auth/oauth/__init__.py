@@ -9,11 +9,16 @@ defense-in-depth security measures including:
 - Redis-backed state storage for production
 """
 from .callback_validator import CallbackURLValidator
-from .token_store import SecureTokenStore
-from .config import OAuthConfig, OAuthProviderConfig, get_provider_endpoints, ConfigurationError
-from .service import OAuthService, OAuthError, OAuthStateError, OAuthProviderError
-from .state_store import StateStore, RedisStateStore, InMemoryStateStore, create_state_store
+from .config import (
+    OAuthConfig,
+    OAuthConfigurationError,
+    OAuthProviderConfig,
+    get_provider_endpoints,
+)
 from .rate_limiter import OAuthRateLimiter, RateLimitExceeded
+from .service import OAuthError, OAuthProviderError, OAuthService, OAuthStateError
+from .state_store import InMemoryStateStore, RedisStateStore, StateStore, create_state_store
+from .token_store import SecureTokenStore
 
 __all__ = [
     # Core components
@@ -22,7 +27,7 @@ __all__ = [
     "OAuthConfig",
     "OAuthProviderConfig",
     "get_provider_endpoints",
-    "ConfigurationError",
+    "OAuthConfigurationError",
     "OAuthService",
     # Exceptions
     "OAuthError",

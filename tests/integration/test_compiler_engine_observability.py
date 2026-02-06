@@ -9,25 +9,24 @@ Tests the full pipeline:
 
 These tests use real database (in-memory) and verify end-to-end integrity.
 """
-import pytest
-from unittest.mock import Mock, patch
-from pathlib import Path
-import tempfile
 import json
+import tempfile
+from pathlib import Path
+from unittest.mock import Mock, patch
 
+import pytest
+
+from src.compiler.checkpoint_backends import FileCheckpointBackend
+from src.compiler.checkpoint_manager import CheckpointManager, CheckpointStrategy
 from src.compiler.config_loader import ConfigLoader
+from src.compiler.domain_state import InfrastructureContext, WorkflowDomainState
 from src.compiler.langgraph_compiler import LangGraphCompiler
 from src.compiler.langgraph_engine import LangGraphExecutionEngine
 from src.compiler.state_manager import StateManager
-from src.compiler.domain_state import WorkflowDomainState, InfrastructureContext
-from src.compiler.checkpoint_manager import CheckpointManager, CheckpointStrategy
-from src.compiler.checkpoint_backends import FileCheckpointBackend
-from src.compiler.workflow_executor import WorkflowExecutor
 from src.observability.database import DatabaseManager, init_database
 from src.observability.tracker import ExecutionTracker
-from src.tools.registry import ToolRegistry
 from src.tools.calculator import Calculator
-
+from src.tools.registry import ToolRegistry
 
 # ============================================================================
 # Fixtures

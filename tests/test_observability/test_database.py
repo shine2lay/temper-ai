@@ -1,15 +1,15 @@
 """Tests for database connection and session management."""
-import pytest
 import os
+
+import pytest
 from sqlmodel import select
 
 from src.observability.database import (
     DatabaseManager,
-    init_database,
+    _mask_database_url,
     get_database,
     get_session,
-    _db_manager,
-    _mask_database_url,
+    init_database,
 )
 from src.observability.models import WorkflowExecution
 
@@ -281,10 +281,8 @@ class TestDatabaseFailureRecovery:
         CRITICAL: Verifies system handles pool exhaustion gracefully.
         Simulates 100 concurrent requests with pool_size=5.
         """
-        import asyncio
         import concurrent.futures
         import threading
-        from unittest.mock import patch
 
         # Create manager with small pool for testing
         manager = DatabaseManager("sqlite:///:memory:")
@@ -356,9 +354,6 @@ class TestDatabaseFailureRecovery:
 
         CRITICAL: Verifies rollback occurs and no partial state persists.
         """
-        from unittest.mock import patch, MagicMock, PropertyMock
-        from sqlalchemy.exc import OperationalError, DBAPIError
-        import sqlite3
 
         manager = DatabaseManager("sqlite:///:memory:")
         manager.create_all_tables()
@@ -404,9 +399,8 @@ class TestDatabaseFailureRecovery:
 
         CRITICAL: Verifies that transaction conflicts are detected and handled.
         """
-        import asyncio
         import concurrent.futures
-        from sqlalchemy import text
+
 
         manager = DatabaseManager("sqlite:///:memory:")
         manager.create_all_tables()
@@ -450,7 +444,7 @@ class TestDatabaseFailureRecovery:
 
                 update_successes["count"] += 1
 
-            except Exception as e:
+            except Exception:
                 update_failures["count"] += 1
                 # Conflict or lock error is acceptable
 
@@ -633,7 +627,8 @@ class TestDatabaseFailureRecovery:
 
         CRITICAL: Verifies resilience - system can continue after failures.
         """
-        from unittest.mock import patch, MagicMock
+        from unittest.mock import patch
+
         from sqlalchemy.exc import OperationalError
 
         manager = DatabaseManager("sqlite:///:memory:")
@@ -762,7 +757,6 @@ class TestDatabaseFailureRecovery:
 
         CRITICAL: Verifies no corruption from concurrent DDL operations.
         """
-        import concurrent.futures
 
         # Create multiple managers pointing to the same in-memory database
         # Note: This is primarily for testing the pattern, SQLite :memory: is per-connection
@@ -894,8 +888,8 @@ class TestDatabaseFailureRecovery:
         with manager.session() as session:
             pass  # No operations
 
-        # Should complete successfully
-        assert True
+        # Should complete successfully — verify manager is still functional
+        assert manager.engine is not None
 
     def test_rapid_connection_cycling(self):
         """Test rapid opening and closing of database connections.

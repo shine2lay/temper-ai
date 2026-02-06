@@ -3,7 +3,7 @@ Configuration for M5 Self-Improvement Loop.
 
 Provides sensible defaults while allowing customization of all loop parameters.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Optional
 
 

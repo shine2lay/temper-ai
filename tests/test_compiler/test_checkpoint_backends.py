@@ -6,16 +6,14 @@ Tests both FileCheckpointBackend and RedisCheckpointBackend to ensure:
 - Checkpoint listing and deletion
 - Error handling
 """
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
 
+import pytest
+
+from src.compiler.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
 from src.compiler.domain_state import WorkflowDomainState
-from src.compiler.checkpoint_backends import (
-    FileCheckpointBackend,
-    CheckpointNotFoundError
-)
 
 
 class TestFileCheckpointBackend:

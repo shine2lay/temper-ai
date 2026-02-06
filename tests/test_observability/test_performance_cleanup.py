@@ -5,10 +5,10 @@ Tests the time-based expiration of metrics to prevent unbounded memory growth
 in long-running applications.
 """
 import time
-import pytest
 from datetime import datetime, timedelta
 from unittest.mock import patch
-from src.observability.performance import PerformanceTracker, LatencyMetrics
+
+from src.observability.performance import LatencyMetrics, PerformanceTracker
 
 
 class TestMemoryCleanup:

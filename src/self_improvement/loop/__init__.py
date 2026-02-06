@@ -26,22 +26,22 @@ Example:
     ...         print("Improvement cycle completed!")
 """
 
-from .orchestrator import M5SelfImprovementLoop
 from .config import LoopConfig
+from .metrics import LoopMetrics
 from .models import (
-    Phase,
-    LoopStatus,
-    LoopState,
-    IterationResult,
-    DetectionResult,
     AnalysisResult,
-    StrategyResult,
-    ExperimentPhaseResult,
     DeploymentResult,
+    DetectionResult,
+    ExperimentPhaseResult,
+    IterationResult,
+    LoopState,
+    LoopStatus,
+    Phase,
     ProgressReport,
     RecoveryAction,
+    StrategyResult,
 )
-from .metrics import LoopMetrics
+from .orchestrator import M5SelfImprovementLoop
 
 __all__ = [
     # Main API

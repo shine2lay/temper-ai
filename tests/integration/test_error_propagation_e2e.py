@@ -9,20 +9,18 @@ Tests:
 - Timeout cascading through layers
 """
 import uuid
-import pytest
-from datetime import datetime, UTC, timedelta
-from unittest.mock import Mock, patch
-import time
+from datetime import UTC, datetime, timedelta
 
-from src.observability.database import init_database, get_session
+import pytest
+
+from src.observability.database import get_session, init_database
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
+    StageExecution,
     ToolExecution,
+    WorkflowExecution,
 )
 from src.observability.tracker import ExecutionTracker
-
 
 pytestmark = [pytest.mark.integration, pytest.mark.critical_path]
 

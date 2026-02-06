@@ -4,25 +4,24 @@ Performance instrumentation and metrics tracking.
 Tracks latency percentiles (p50, p95, p99) and detects slow operations
 across critical execution paths: stage execution, LLM calls, and tool execution.
 """
-import time
+import logging
 import statistics
 import threading
-from typing import Dict, List, Optional, Any, Generator
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+import time
 from collections import defaultdict
 from contextlib import contextmanager
-import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import Any, Dict, Generator, List, Optional
 
-from src.observability.datetime_utils import utcnow
 from src.observability.constants import (
-    MAX_LATENCY_SAMPLES,
-    MAX_SLOW_OPERATIONS,
     DEFAULT_CLEANUP_INTERVAL,
     DEFAULT_SLOW_THRESHOLD_MS,
-    MS_PER_SECOND,
     DEFAULT_THRESHOLDS_MS,
+    MAX_LATENCY_SAMPLES,
+    MAX_SLOW_OPERATIONS,
 )
+from src.observability.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 

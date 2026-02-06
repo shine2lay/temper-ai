@@ -6,18 +6,17 @@ This module contains 10 benchmarks covering:
 
 Run with: pytest tests/test_benchmarks/test_performance_strategies.py --benchmark-only
 """
-import pytest
-from unittest.mock import Mock
 
-from src.strategies.consensus import ConsensusStrategy
-from src.strategies.debate import DebateAndSynthesize
-from src.strategies.conflict_resolution import MeritWeightedResolver
-from src.strategies.base import AgentOutput
+import pytest
+
 from src.safety.action_policy_engine import ActionPolicyEngine
 from src.safety.rollback import RollbackManager
-from src.tools.executor import ToolExecutor
+from src.strategies.base import AgentOutput
+from src.strategies.conflict_resolution import MeritWeightedResolver
+from src.strategies.consensus import ConsensusStrategy
+from src.strategies.debate import DebateAndSynthesize
 from src.tools.calculator import Calculator
-
+from src.tools.executor import ToolExecutor
 
 # ============================================================================
 # CATEGORY 6: Collaboration Strategies (6 benchmarks)

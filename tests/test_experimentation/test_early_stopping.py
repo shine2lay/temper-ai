@@ -4,23 +4,23 @@ Tests sequential testing, Bayesian analysis, guardrail protection,
 and performance of assignment/analysis operations.
 """
 
-import pytest
-import numpy as np
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
+import numpy as np
+
+from src.experimentation.analyzer import StatisticalAnalyzer
+from src.experimentation.assignment import VariantAssigner
 from src.experimentation.models import (
-    Experiment,
-    Variant,
-    VariantAssignment,
-    ExperimentStatus,
     AssignmentStrategyType,
     ConfigType,
     ExecutionStatus,
+    Experiment,
+    ExperimentStatus,
     RecommendationType,
+    Variant,
+    VariantAssignment,
 )
-from src.experimentation.analyzer import StatisticalAnalyzer
-from src.experimentation.sequential_testing import SequentialTester, BayesianAnalyzer
-from src.experimentation.assignment import VariantAssigner
+from src.experimentation.sequential_testing import BayesianAnalyzer, SequentialTester
 
 
 class TestSequentialTesting:

@@ -6,27 +6,26 @@ if performance regressions are detected. Integrates with M4 safety stack for
 policy validation and approval workflows.
 """
 
-import asyncio
 import json
 import logging
+
+# Import coordination database
+import sys
 import time
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from src.self_improvement.data_models import (
-    OptimizationConfig,
-    ConfigDeployment,
-    utcnow,
-)
-
 # Import M4 safety stack
 from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 from src.safety.approval import ApprovalWorkflow
+from src.self_improvement.data_models import (
+    ConfigDeployment,
+    SIOptimizationConfig,
+    utcnow,
+)
 
-# Import coordination database
-import sys
 coord_service_path = Path(__file__).parent.parent.parent.parent / ".claude-coord"
 sys.path.insert(0, str(coord_service_path))
 from coord_service.database import Database
@@ -77,7 +76,7 @@ class ConfigDeployer:
     def deploy(
         self,
         agent_name: str,
-        new_config: OptimizationConfig,
+        new_config: SIOptimizationConfig,
         experiment_id: Optional[str] = None,
         workflow_id: Optional[str] = None,
         deployed_by: str = "m5_system"
@@ -203,7 +202,7 @@ class ConfigDeployer:
             f"Rolled back config for {agent_name} (reason: {rollback_reason})"
         )
 
-    def get_agent_config(self, agent_name: str) -> OptimizationConfig:
+    def get_agent_config(self, agent_name: str) -> SIOptimizationConfig:
         """
         Get current agent configuration.
 
@@ -227,10 +226,10 @@ class ConfigDeployer:
 
         if rows:
             config_dict = json.loads(rows[0]["new_config"])
-            return OptimizationConfig.from_dict(config_dict)
+            return SIOptimizationConfig.from_dict(config_dict)
 
         # Return default config if no deployments
-        return OptimizationConfig(agent_name=agent_name)
+        return SIOptimizationConfig(agent_name=agent_name)
 
     def get_last_deployment(self, agent_name: str) -> Optional[ConfigDeployment]:
         """
@@ -260,8 +259,8 @@ class ConfigDeployer:
         return ConfigDeployment(
             id=row["id"],
             agent_name=row["agent_name"],
-            previous_config=OptimizationConfig.from_dict(json.loads(row["previous_config"])),
-            new_config=OptimizationConfig.from_dict(json.loads(row["new_config"])),
+            previous_config=SIOptimizationConfig.from_dict(json.loads(row["previous_config"])),
+            new_config=SIOptimizationConfig.from_dict(json.loads(row["new_config"])),
             experiment_id=row["experiment_id"],
             deployed_at=(
                 datetime.fromisoformat(row["deployed_at"])
@@ -280,8 +279,8 @@ class ConfigDeployer:
     def _validate_through_safety_stack(
         self,
         agent_name: str,
-        old_config: OptimizationConfig,
-        new_config: OptimizationConfig,
+        old_config: SIOptimizationConfig,
+        new_config: SIOptimizationConfig,
         workflow_id: str,
         deployed_by: str
     ):
@@ -326,25 +325,16 @@ class ConfigDeployer:
             }
         )
 
-        # Validate through policy engine (async)
-        # Run in event loop if available, otherwise create new loop
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-        enforcement_result = loop.run_until_complete(
-            self.policy_engine.validate_action(action, context)  # type: ignore[union-attr]
-        )
+        # Validate through policy engine (sync)
+        enforcement_result = self.policy_engine.validate_action_sync(action, context)  # type: ignore[union-attr]
 
         return enforcement_result
 
     def _request_and_wait_for_approval(
         self,
         agent_name: str,
-        old_config: OptimizationConfig,
-        new_config: OptimizationConfig,
+        old_config: SIOptimizationConfig,
+        new_config: SIOptimizationConfig,
         enforcement_result,
         deployed_by: str,
         approval_timeout_minutes: int = 60
@@ -414,7 +404,7 @@ class ConfigDeployer:
         )
         return False
 
-    def _validate_config(self, config: OptimizationConfig) -> bool:
+    def _validate_config(self, config: SIOptimizationConfig) -> bool:
         """
         Validate config has required fields.
 
@@ -455,7 +445,7 @@ class ConfigDeployer:
             ),
         )
 
-    def _update_agent_config(self, conn, agent_name: str, config: OptimizationConfig):
+    def _update_agent_config(self, conn, agent_name: str, config: SIOptimizationConfig):
         """
         Update agent configuration (atomic operation).
 

@@ -4,6 +4,7 @@ Unit tests for Calculator tool.
 Tests safe mathematical expression evaluation.
 """
 import pytest
+
 from src.tools.calculator import Calculator
 
 

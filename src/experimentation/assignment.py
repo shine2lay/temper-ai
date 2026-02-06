@@ -8,11 +8,12 @@ Provides different strategies for assigning workflow executions to experiment va
 - BanditAssignment: Multi-armed bandit optimization (future)
 """
 
-import secrets
 import hashlib
+import secrets
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Any
-from src.experimentation.models import Experiment, Variant, AssignmentStrategyType
+from typing import Any, Dict, List, Optional
+
+from src.experimentation.models import AssignmentStrategyType, Experiment, Variant
 
 
 class AssignmentStrategy(ABC):

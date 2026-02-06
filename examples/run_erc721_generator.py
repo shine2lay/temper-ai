@@ -17,7 +17,6 @@ Usage:
 import argparse
 import json
 import logging
-import shutil
 import subprocess
 import sys
 import time
@@ -30,8 +29,8 @@ import jinja2
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.compiler.schemas import AgentConfig as SchemaAgentConfig
 from src.agents.standard_agent import StandardAgent
+from src.compiler.schemas import AgentConfig as SchemaAgentConfig
 from src.self_improvement.metrics.erc721_quality import score_erc721_workflow
 
 logging.basicConfig(
@@ -171,7 +170,7 @@ def run_agent_with_input(
     #
     # Strategy: replace ONLY the inference.model Jinja2 expression in the raw
     # YAML, then let the agent's PromptEngine handle prompt-level variables.
-    from jinja2 import Environment, BaseLoader
+    from jinja2 import BaseLoader, Environment
 
     env = Environment(loader=BaseLoader(), undefined=jinja2.Undefined)
     template = env.from_string(raw_yaml)
@@ -202,7 +201,7 @@ def run_agent_with_input(
     logger.info(f"Model: {agent_inner.inference.provider}:{agent_inner.inference.model}")
     logger.info(f"Temperature: {agent_inner.inference.temperature}")
     logger.info(f"{prompt_text[:3000]}")
-    logger.info(f"--- END PROMPT ---")
+    logger.info("--- END PROMPT ---")
 
     agent = StandardAgent(config)
     response = agent.execute(input_data)
@@ -219,7 +218,7 @@ def run_agent_with_input(
     if response.error:
         logger.info(f"Error: {response.error}")
     logger.info(f"Tokens: {response.tokens}, Latency: {response.latency_seconds:.1f}s")
-    logger.info(f"--- END RESPONSE ---")
+    logger.info("--- END RESPONSE ---")
 
     return {
         "output": response.output,

@@ -4,11 +4,10 @@ Provides the concrete graph-building logic that uses LangGraph StateGraph
 for parallel node execution. This is the only file in the executors package
 that imports from langgraph.
 """
-from typing import Callable, Dict, Any, Optional
+from typing import Any, Callable, Dict, Optional
 
-from typing_extensions import TypedDict as TD, Annotated
-
-from langgraph.graph import StateGraph, START, END
+from langgraph.graph import END, START, StateGraph
+from typing_extensions import Annotated, TypedDict
 
 from src.compiler.executors.base import ParallelRunner
 
@@ -20,7 +19,7 @@ def _merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
     return merged
 
 
-class _ParallelState(TD, total=False):
+class _ParallelState(TypedDict, total=False):
     """Internal state schema for parallel subgraphs."""
     agent_outputs: Annotated[Dict[str, Any], _merge_dicts]
     agent_statuses: Annotated[Dict[str, str], _merge_dicts]

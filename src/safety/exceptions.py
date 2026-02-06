@@ -19,11 +19,13 @@ All exceptions support:
 - Clear error messages with remediation hints
 - Integration with SafetyViolation data models
 """
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
+
 from src.safety.interfaces import SafetyViolation, ViolationSeverity
+from src.utils.exceptions import FrameworkException
 
 
-class SafetyViolationException(Exception):
+class SafetyViolationException(FrameworkException):  # noqa: N818 — public API, many subclasses
     """Base exception for all safety policy violations.
 
     This exception wraps a SafetyViolation data model and provides

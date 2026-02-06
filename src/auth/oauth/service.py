@@ -10,20 +10,21 @@ Security Features:
 - Callback URL validation
 - Token expiry tracking and refresh
 """
-from typing import Dict, Any, Optional, Tuple
-from datetime import datetime, timedelta, timezone
-import secrets
-import hashlib
 import base64
-import httpx
-from urllib.parse import urlencode
+import hashlib
 import logging
+import secrets
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Tuple
+from urllib.parse import urlencode
 
-from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig, get_provider_endpoints
-from src.auth.oauth.token_store import SecureTokenStore
+import httpx
+
 from src.auth.oauth.callback_validator import CallbackURLValidator
-from src.auth.oauth.state_store import StateStore, create_state_store
+from src.auth.oauth.config import OAuthConfig, get_provider_endpoints
 from src.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
+from src.auth.oauth.state_store import StateStore, create_state_store
+from src.auth.oauth.token_store import SecureTokenStore
 
 logger = logging.getLogger(__name__)
 
@@ -183,7 +184,7 @@ class OAuthService:
         if ip_address:
             try:
                 self._rate_limiter.check_oauth_init(ip_address, user_id)
-            except RateLimitExceeded as e:
+            except RateLimitExceeded:
                 logger.warning(
                     f"Rate limit exceeded for OAuth init: ip={ip_address}, user={user_id}"
                 )
@@ -306,7 +307,7 @@ class OAuthService:
         if ip_address:
             try:
                 self._rate_limiter.check_token_exchange(ip_address)
-            except RateLimitExceeded as e:
+            except RateLimitExceeded:
                 logger.warning(
                     f"Rate limit exceeded for token exchange: ip={ip_address}"
                 )
@@ -496,7 +497,7 @@ class OAuthService:
         # Rate limiting
         try:
             self._rate_limiter.check_userinfo(user_id)
-        except RateLimitExceeded as e:
+        except RateLimitExceeded:
             logger.warning(
                 f"Rate limit exceeded for user info: user={user_id}"
             )

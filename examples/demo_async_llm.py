@@ -8,15 +8,16 @@ This demonstrates:
 3. Performance improvement from async (2-3x speedup)
 """
 import asyncio
-import time
 import sys
+import time
 from pathlib import Path
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Mock dependencies to avoid import errors
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
+
 
 # Create proper exception classes
 class LLMError(Exception):
@@ -67,13 +68,15 @@ sys.modules['src.llm.circuit_breaker'] = circuit_breaker_mock
 
 # Now import after mocking
 import importlib.util
+
 spec = importlib.util.spec_from_file_location('llm_providers', 'src/agents/llm_providers.py')
 llm_providers = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(llm_providers)
 
 # Mock httpx for demo
-import httpx
 from unittest.mock import patch
+
+import httpx
 
 
 async def mock_async_post(*args, **kwargs):

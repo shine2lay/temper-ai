@@ -5,14 +5,12 @@ error handling, and thread safety.
 """
 
 import threading
+from typing import Any, Dict
+
 import pytest
+
 from src.compiler.engine_registry import EngineRegistry
-from src.compiler.execution_engine import (
-    ExecutionEngine,
-    CompiledWorkflow,
-    ExecutionMode
-)
-from typing import Dict, Any
+from src.compiler.execution_engine import CompiledWorkflow, ExecutionEngine, ExecutionMode
 
 
 # Mock engine for testing
@@ -33,6 +31,15 @@ class MockExecutionEngine(ExecutionEngine):
         mode: ExecutionMode = ExecutionMode.SYNC
     ) -> Dict[str, Any]:
         """Mock execute - not used in registry tests."""
+        pass
+
+    async def async_execute(
+        self,
+        compiled_workflow: CompiledWorkflow,
+        input_data: Dict[str, Any],
+        mode: ExecutionMode = ExecutionMode.ASYNC
+    ) -> Dict[str, Any]:
+        """Mock async execute - not used in registry tests."""
         pass
 
     def supports_feature(self, feature: str) -> bool:

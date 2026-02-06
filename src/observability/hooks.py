@@ -7,9 +7,9 @@ and automatically tracking to the observability database.
 import inspect
 import threading
 from functools import wraps
-from typing import Callable, Optional, Dict, Any, cast
-from src.observability.tracker import ExecutionTracker
+from typing import Any, Callable, Dict, Optional, cast
 
+from src.observability.tracker import ExecutionTracker
 
 # Global tracker instance (OB-06: double-check locking for thread safety)
 _global_tracker: Optional[ExecutionTracker] = None

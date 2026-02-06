@@ -11,23 +11,25 @@ Demonstrates the key features delivered in Milestone 1:
 This script creates a mock workflow execution and displays it.
 """
 import uuid
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-# Import M1 components
-from src.observability.database import init_database, get_session
-from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
-    AgentExecution,
-    LLMCall,
-    ToolExecution,
-)
+from sqlmodel import select
+
+from examples.demo_utils import print_section, print_warning
 from src.compiler.config_loader import ConfigLoader
 from src.compiler.schemas import WorkflowConfig
 from src.observability.console import WorkflowVisualizer
-from sqlmodel import select
-from examples.demo_utils import print_section, print_success, print_warning, print_info
+
+# Import M1 components
+from src.observability.database import get_session, init_database
+from src.observability.models import (
+    AgentExecution,
+    LLMCall,
+    StageExecution,
+    ToolExecution,
+    WorkflowExecution,
+)
 
 
 def demo_config_loading():
@@ -64,9 +66,9 @@ def demo_config_loading():
             print(f"   Stages: {len(workflow_config.workflow.stages)}")
             print("   ✓ Schema validation passed")
             return workflow_config
-        except Exception as e:
+        except Exception:
             # Example configs may not be fully compliant yet
-            print(f"   ⚠️  Schema validation skipped (example config in progress)")
+            print("   ⚠️  Schema validation skipped (example config in progress)")
             print(f"   Name: {workflow_dict.get('workflow', {}).get('name', 'N/A')}")
             print(f"   Version: {workflow_dict.get('workflow', {}).get('version', 'N/A')}")
             return None
@@ -278,7 +280,7 @@ def demo_gantt_chart(workflow_id):
 
     try:
         from examples.export_waterfall import export_waterfall_trace
-        from src.observability.visualize_trace import visualize_trace, print_console_gantt
+        from src.observability.visualize_trace import print_console_gantt, visualize_trace
 
         # Export trace data
         print("   Exporting execution trace...")

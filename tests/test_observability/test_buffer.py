@@ -1,23 +1,23 @@
 """
 Tests for ObservabilityBuffer batch operations.
 """
-import pytest
-import time
 from datetime import datetime, timezone
 
-from src.observability.buffer import ObservabilityBuffer, BufferedLLMCall, BufferedToolCall
+import pytest
+
 from src.observability.backends import SQLObservabilityBackend
-from src.observability.tracker import ExecutionTracker
-from src.observability.database import init_database, get_session
+from src.observability.buffer import ObservabilityBuffer
+from src.observability.database import get_session, init_database
 from src.observability.models import AgentExecution, LLMCall, ToolExecution
+from src.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    from src.observability.database import _db_manager, _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 

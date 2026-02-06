@@ -4,7 +4,7 @@ Extracted from ExecutionTracker to separate collaboration/safety
 concerns from core execution tracking.
 """
 import logging
-from typing import Optional, Dict, Any, List, Callable
+from typing import Any, Callable, Dict, List, Optional
 
 from src.observability.backend import ObservabilityBackend
 from src.observability.datetime_utils import utcnow

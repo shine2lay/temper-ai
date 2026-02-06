@@ -8,12 +8,18 @@ Tests cover:
 - Performance improvements
 """
 import time
-from unittest.mock import Mock, patch, MagicMock
-import pytest
+from unittest.mock import Mock, patch
 
 from src.agents.standard_agent import StandardAgent
-from src.compiler.schemas import AgentConfig, AgentConfigInner, InferenceConfig, PromptConfig, SafetyConfig, ErrorHandlingConfig
-from src.tools.base import BaseTool, ToolResult, ToolMetadata
+from src.compiler.schemas import (
+    AgentConfig,
+    AgentConfigInner,
+    ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
+    SafetyConfig,
+)
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
 
 
 class DummyTool(BaseTool):

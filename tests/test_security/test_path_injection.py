@@ -10,18 +10,16 @@ Tests cover OWASP path traversal vectors and advanced bypass techniques:
 - Null byte injection
 - Mixed path separators
 """
-import pytest
-import tempfile
 import os
 import sys
-import time
 import threading
 from pathlib import Path
+
+import pytest
+
 from src.utils.path_safety import (
-    PathSafetyValidator,
     PathSafetyError,
-    validate_path,
-    validate_write
+    PathSafetyValidator,
 )
 
 

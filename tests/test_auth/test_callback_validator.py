@@ -7,6 +7,7 @@ SECURITY: These tests verify protection against:
 - Parameter pollution
 """
 import pytest
+
 from src.auth.oauth.callback_validator import CallbackURLValidator
 
 

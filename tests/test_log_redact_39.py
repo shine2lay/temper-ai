@@ -8,7 +8,7 @@ Verifies that log_function_call decorator:
 """
 
 import logging
-import pytest
+
 from src.utils.logging import log_function_call
 
 

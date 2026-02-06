@@ -3,10 +3,11 @@ Unit tests for FileWriter tool.
 
 Tests file writing with safety checks.
 """
-import pytest
 import tempfile
-import os
 from pathlib import Path
+
+import pytest
+
 from src.tools.file_writer import FileWriter
 
 

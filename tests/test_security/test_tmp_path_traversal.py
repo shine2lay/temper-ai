@@ -7,11 +7,11 @@ Ensures that /tmp access is blocked and dedicated temp directory prevents:
 - Path traversal outside allowed_root
 - TOCTOU vulnerabilities
 """
-import os
-import pytest
-import stat
 from pathlib import Path
-from src.utils.path_safety import PathSafetyValidator, PathSafetyError
+
+import pytest
+
+from src.utils.path_safety import PathSafetyError, PathSafetyValidator
 
 
 class TestTmpAccessBlocked:

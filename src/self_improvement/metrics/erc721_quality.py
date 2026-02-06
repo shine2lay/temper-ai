@@ -12,10 +12,10 @@ import logging
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Any, Dict, Optional
 
-from src.self_improvement.metrics.collector import MetricCollector, ExecutionProtocol
-from src.self_improvement.metrics.types import MetricType
+from src.self_improvement.metrics.collector import ExecutionProtocol, MetricCollector
+from src.self_improvement.metrics.types import SIMetricType
 
 logger = logging.getLogger(__name__)
 
@@ -142,7 +142,7 @@ def score_compilation(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
 
     try:
         result = subprocess.run(
-            ["npx", "hardhat", "compile"],
+            ["npx", "hardhat", "compile"],  # noqa: S607 — known CLI tool
             cwd=str(workspace),
             capture_output=True,
             text=True,
@@ -187,7 +187,7 @@ def score_tests(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
 
     try:
         result = subprocess.run(
-            ["npx", "hardhat", "test"],
+            ["npx", "hardhat", "test"],  # noqa: S607 — known CLI tool
             cwd=str(workspace),
             capture_output=True,
             text=True,
@@ -305,7 +305,7 @@ def score_deployment(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
 
     try:
         result = subprocess.run(
-            ["npx", "hardhat", "run", "scripts/deploy.js"],
+            ["npx", "hardhat", "run", "scripts/deploy.js"],  # noqa: S607 — known CLI tool
             cwd=str(workspace),
             capture_output=True,
             text=True,
@@ -413,8 +413,8 @@ class ERC721QualityCollector(MetricCollector):
         return "erc721_quality"
 
     @property
-    def metric_type(self) -> MetricType:
-        return MetricType.CUSTOM
+    def metric_type(self) -> SIMetricType:
+        return SIMetricType.CUSTOM
 
     def collect(self, execution: ExecutionProtocol) -> Optional[float]:
         """Collect quality score from an execution.

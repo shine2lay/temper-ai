@@ -4,11 +4,11 @@ Verifies that llm_cache.py uses specific exception types instead of broad
 `except Exception:`, and that KeyboardInterrupt / SystemExit propagate.
 """
 
-import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
-from threading import Lock
+from unittest.mock import MagicMock
 
-from src.cache.llm_cache import LLMCache, RedisCache, InMemoryCache, CacheStats
+import pytest
+
+from src.cache.llm_cache import LLMCache
 
 
 class TestLLMCacheSpecificExceptions:
@@ -193,6 +193,7 @@ class TestNoExceptException:
     def test_no_except_exception_in_source(self):
         """The llm_cache module should not contain 'except Exception'."""
         import inspect
+
         import src.cache.llm_cache as mod
 
         source = inspect.getsource(mod)
@@ -209,6 +210,7 @@ class TestNoExceptException:
     def test_no_bare_except_in_source(self):
         """The llm_cache module should not contain bare 'except:'."""
         import inspect
+
         import src.cache.llm_cache as mod
 
         source = inspect.getsource(mod)

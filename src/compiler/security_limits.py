@@ -7,8 +7,8 @@ This module defines security-related constants to prevent various attacks:
 
 All limits are designed to allow legitimate use cases while blocking malicious inputs.
 """
-from typing import Final
 from dataclasses import dataclass
+from typing import Final
 
 
 @dataclass(frozen=True)

@@ -4,8 +4,10 @@ Security tests for ReDoS vulnerability fix in secret detection (code-crit-14).
 Ensures that the base64 pattern does not cause catastrophic backtracking
 when processing malicious input designed to trigger exponential regex behavior.
 """
-import pytest
 import time
+
+import pytest
+
 from src.utils.secrets import detect_secret_patterns
 
 
@@ -222,11 +224,11 @@ class TestAdditionalReDoSPatterns:
         """Verify Anthropic API key pattern doesn't cause ReDoS."""
         # Attack payload: valid prefix + many digits + long key + invalid char
         attack = "sk-ant-api" + "9" * 10 + "-" + "A" * 150 + "!"
-        
+
         start = time.time()
         result = detect_secret_patterns(attack)
         elapsed = time.time() - start
-        
+
         # Should complete quickly (bounded quantifiers prevent catastrophic backtracking)
         assert elapsed < 0.01, f"Anthropic pattern ReDoS: {elapsed:.3f}s"
 
@@ -234,11 +236,11 @@ class TestAdditionalReDoSPatterns:
         """Verify Google OAuth pattern doesn't cause ReDoS."""
         # Attack payload: valid prefix + many valid chars + invalid char
         attack = "ya29." + "A" * 600 + "!"
-        
+
         start = time.time()
         result = detect_secret_patterns(attack)
         elapsed = time.time() - start
-        
+
         # Should complete quickly (bounded quantifiers prevent catastrophic backtracking)
         assert elapsed < 0.01, f"Google OAuth pattern ReDoS: {elapsed:.3f}s"
 
@@ -246,7 +248,7 @@ class TestAdditionalReDoSPatterns:
         """Verify legitimate Anthropic keys are still detected."""
         # Valid Anthropic API key format
         valid_key = "sk-ant-api03-" + "A" * 50
-        
+
         is_secret, confidence = detect_secret_patterns(valid_key)
         assert is_secret is True
         assert confidence == "high"
@@ -255,7 +257,7 @@ class TestAdditionalReDoSPatterns:
         """Verify legitimate Google OAuth tokens are still detected."""
         # Valid Google OAuth token format
         valid_token = "ya29." + "a" * 100
-        
+
         is_secret, confidence = detect_secret_patterns(valid_token)
         assert is_secret is True
         assert confidence == "high"
@@ -267,14 +269,14 @@ class TestInputValidation:
     def test_oversized_input_rejected(self):
         """Verify inputs over 10KB are rejected."""
         huge_input = "A" * 11000  # 11KB
-        
+
         with pytest.raises(ValueError, match="too long"):
             detect_secret_patterns(huge_input)
 
     def test_exactly_10kb_accepted(self):
         """Verify 10KB input is accepted."""
         max_input = "A" * (10 * 1024)  # Exactly 10KB
-        
+
         # Should not raise ValueError
         result = detect_secret_patterns(max_input)
         # Result doesn't matter, just verify it doesn't raise
@@ -282,7 +284,7 @@ class TestInputValidation:
     def test_input_validation_error_message(self):
         """Verify error message is clear and informative."""
         huge_input = "A" * 15000
-        
+
         try:
             detect_secret_patterns(huge_input)
             assert False, "Should have raised ValueError"

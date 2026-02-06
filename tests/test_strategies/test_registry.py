@@ -5,14 +5,15 @@ of collaboration strategies and conflict resolvers.
 """
 
 import pytest
+
+from src.strategies.base import CollaborationStrategy, SynthesisResult
 from src.strategies.registry import (
-    StrategyRegistry,
-    StrategyMetadata,
     ResolverMetadata,
+    StrategyMetadata,
+    StrategyRegistry,
+    get_resolver_from_config,
     get_strategy_from_config,
-    get_resolver_from_config
 )
-from src.strategies.base import CollaborationStrategy, AgentOutput, SynthesisResult
 
 
 # Mock strategy for testing

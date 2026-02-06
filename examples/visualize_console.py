@@ -2,7 +2,6 @@
 """Create console-based Gantt chart visualization of M5.1 experiment metrics."""
 
 import json
-from datetime import datetime
 
 # Load metrics
 with open("/tmp/m5_demo_metrics.json") as f:
@@ -174,8 +173,8 @@ print(f"{Colors.BOLD}Key Insights:{Colors.RESET}")
 print(f"  • gemma2:2b achieved {Colors.GREEN}25.7% higher quality{Colors.RESET} than baseline")
 print(f"  • gemma2:2b is also {Colors.GREEN}9% faster{Colors.RESET} (4.55s vs 4.99s)")
 print(f"  • gemma2:2b costs {Colors.GREEN}25% less{Colors.RESET} ($0.754 vs $1.016)")
-print(f"  • phi3:mini is fastest but quality is only moderate (0.751)")
-print(f"  • mistral:7b has good quality (0.821) but is slowest and most expensive")
+print("  • phi3:mini is fastest but quality is only moderate (0.751)")
+print("  • mistral:7b has good quality (0.821) but is slowest and most expensive")
 
 print(f"\n{Colors.BOLD}Recommendation:{Colors.RESET}")
 print(f"  {Colors.GREEN}✓ Deploy gemma2:2b to production{Colors.RESET}")

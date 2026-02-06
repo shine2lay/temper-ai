@@ -50,7 +50,7 @@ workflow:
 
   # Multi-agent execution
   execution:
-    timeout_seconds: 1200  # 20 minutes
+    timeout_seconds: 12000  # 200 minutes
     parallel_execution: true  # M3 feature
     max_concurrent_agents: 3
 

@@ -4,11 +4,11 @@ Tests for sequential testing and early stopping.
 Tests SPRT boundaries, sample size calculations, and Bayesian analysis.
 """
 
-import pytest
 import numpy as np
+
 from src.experimentation.sequential_testing import (
-    SequentialTester,
     BayesianAnalyzer,
+    SequentialTester,
     calculate_sample_size,
 )
 

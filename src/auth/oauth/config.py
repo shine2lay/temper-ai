@@ -3,15 +3,16 @@
 Handles OAuth provider configuration with secure credential management
 and validation. Supports ${env:VAR} reference resolution.
 """
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, Field, field_validator, model_validator
-from pathlib import Path
 import os
 import re
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
 import yaml
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
-class ConfigurationError(Exception):
+class OAuthConfigurationError(Exception):
     """Raised when OAuth configuration is invalid."""
 
     def __init__(self, message: str, config_path: Optional[str] = None):
@@ -104,7 +105,7 @@ class OAuthProviderConfig(BaseModel):
             New config with resolved environment variables
 
         Raises:
-            ConfigurationError: If environment variable not found
+            OAuthConfigurationError: If environment variable not found
         """
         def resolve_value(value: str) -> str:
             """Resolve ${env:VAR} pattern in a string."""
@@ -118,7 +119,7 @@ class OAuthProviderConfig(BaseModel):
                 var_name = match.group(1)
                 env_value = os.getenv(var_name)
                 if env_value is None:
-                    raise ConfigurationError(
+                    raise OAuthConfigurationError(
                         f"Environment variable '{var_name}' not found for OAuth config",
                         config_path=f"oauth.{self.provider}.{var_name}"
                     )
@@ -239,7 +240,7 @@ class OAuthConfig(BaseModel):
             New config with all environment variables resolved
 
         Raises:
-            ConfigurationError: If environment variable not found
+            OAuthConfigurationError: If environment variable not found
         """
         def resolve_value(value: str) -> str:
             """Resolve ${env:VAR} pattern."""
@@ -252,7 +253,7 @@ class OAuthConfig(BaseModel):
                 var_name = match.group(1)
                 env_value = os.getenv(var_name)
                 if env_value is None:
-                    raise ConfigurationError(
+                    raise OAuthConfigurationError(
                         f"Environment variable '{var_name}' not found",
                         config_path=f"oauth.{var_name}"
                     )
@@ -288,7 +289,7 @@ class OAuthConfig(BaseModel):
 
         Raises:
             FileNotFoundError: If config file not found
-            ConfigurationError: If config validation fails
+            OAuthConfigurationError: If config validation fails
         """
         if not config_path.exists():
             raise FileNotFoundError(f"OAuth config file not found: {config_path}")
@@ -304,7 +305,7 @@ class OAuthConfig(BaseModel):
             return config.resolve_env_references()
 
         except Exception as e:
-            raise ConfigurationError(
+            raise OAuthConfigurationError(
                 f"Failed to load OAuth config: {e}",
                 config_path=str(config_path)
             ) from e
@@ -343,7 +344,7 @@ def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, str]:
         Dict with authorization_endpoint, token_endpoint, userinfo_endpoint
 
     Raises:
-        ConfigurationError: If provider not supported and no custom endpoints
+        OAuthConfigurationError: If provider not supported and no custom endpoints
     """
     defaults = PROVIDER_DEFAULTS.get(config.provider, {})
 
@@ -353,7 +354,7 @@ def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, str]:
     userinfo_endpoint = defaults.get('userinfo_endpoint')
 
     if not auth_endpoint or not token_endpoint:
-        raise ConfigurationError(
+        raise OAuthConfigurationError(
             f"Provider '{config.provider}' requires custom endpoints "
             f"(authorization_endpoint and token_endpoint)",
             config_path=f"oauth.providers.{config.provider}"

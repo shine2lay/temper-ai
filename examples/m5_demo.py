@@ -19,23 +19,22 @@ the full automated improvement loop.
 """
 
 import sys
-from pathlib import Path
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 # Add project to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.self_improvement.performance_analyzer import PerformanceAnalyzer
-from src.self_improvement.performance_comparison import compare_profiles
-from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
-from src.self_improvement.data_models import OptimizationConfig
-from src.observability.database import init_database, reset_database, get_database
+from src.observability.database import init_database, reset_database
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
+    StageExecution,
+    WorkflowExecution,
 )
+from src.self_improvement.data_models import SIOptimizationConfig
+from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
+from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 
 
 def print_header(text: str):
@@ -127,11 +126,11 @@ def demo_part1_performance_tracking():
         now = datetime.now(timezone.utc)
 
         # Create baseline performance data (50 executions over 48 hours)
-        print(f"📝 Creating baseline performance data...")
+        print("📝 Creating baseline performance data...")
         print(f"   - Agent: {agent_name}")
-        print(f"   - Model: llama3.1:8b")
-        print(f"   - Time window: Last 48 hours")
-        print(f"   - Executions: 50")
+        print("   - Model: llama3.1:8b")
+        print("   - Time window: Last 48 hours")
+        print("   - Executions: 50")
 
         baseline_start = now - timedelta(hours=48)
         for i in range(50):
@@ -146,7 +145,7 @@ def demo_part1_performance_tracking():
                 model="llama3.1:8b",
             )
 
-        print(f"   ✓ Created 50 execution records\n")
+        print("   ✓ Created 50 execution records\n")
 
         # Analyze performance
         print("📈 Analyzing agent performance...\n")
@@ -160,9 +159,9 @@ def demo_part1_performance_tracking():
         # Display results
         print("📊 Performance Analysis Results:")
         print(f"\n   Agent: {agent_name}")
-        print(f"   Analysis window: 48 hours")
+        print("   Analysis window: 48 hours")
         print(f"   Total executions: {profile.total_executions}")
-        print(f"\n   Metrics:")
+        print("\n   Metrics:")
         print(f"   ├─ Quality Score: {profile.quality_score:.3f} (±{profile.quality_score_std:.3f})")
         print(f"   ├─ Success Rate:  {profile.success_rate:.1%}")
         print(f"   ├─ Avg Cost:      ${profile.cost_usd:.4f} per execution")
@@ -170,15 +169,15 @@ def demo_part1_performance_tracking():
         print(f"   └─ Total Tokens:  {profile.total_tokens:.0f} avg")
 
         # Store baseline for comparison
-        print(f"\n💾 Storing baseline for future comparison...")
+        print("\n💾 Storing baseline for future comparison...")
         analyzer.store_baseline(agent_name, profile)
-        print(f"   ✓ Baseline stored\n")
+        print("   ✓ Baseline stored\n")
 
         # Analysis
         print("🔍 Analysis:")
-        print(f"   Quality score of 0.70 is moderate but has room for improvement.")
-        print(f"   This agent is a good candidate for model optimization.")
-        print(f"   Let's test alternative models to see if we can improve quality.\n")
+        print("   Quality score of 0.70 is moderate but has room for improvement.")
+        print("   This agent is a good candidate for model optimization.")
+        print("   Let's test alternative models to see if we can improve quality.\n")
 
     return profile
 
@@ -205,29 +204,29 @@ def demo_part2_experiment_creation():
         # Initialize experiment orchestrator
         print("🔧 Initializing Experiment Orchestrator...")
         orchestrator = ExperimentOrchestrator(session)
-        print(f"   ✓ Orchestrator ready\n")
+        print("   ✓ Orchestrator ready\n")
 
         # Define configurations
-        control_config = OptimizationConfig(
+        control_config = SIOptimizationConfig(
             model="llama3.1:8b",
             temperature=0.7,
             max_tokens=500,
         )
 
         variant_configs = [
-            OptimizationConfig(model="gemma2:2b", temperature=0.7, max_tokens=500),
-            OptimizationConfig(model="phi3:mini", temperature=0.7, max_tokens=500),
-            OptimizationConfig(model="mistral:7b", temperature=0.7, max_tokens=500),
+            SIOptimizationConfig(model="gemma2:2b", temperature=0.7, max_tokens=500),
+            SIOptimizationConfig(model="phi3:mini", temperature=0.7, max_tokens=500),
+            SIOptimizationConfig(model="mistral:7b", temperature=0.7, max_tokens=500),
         ]
 
         print("📋 Experiment Configuration:")
-        print(f"\n   Control (current):")
+        print("\n   Control (current):")
         print(f"   └─ Model: {control_config.model}")
-        print(f"\n   Variants (to test):")
+        print("\n   Variants (to test):")
         for i, config in enumerate(variant_configs, 1):
             print(f"   {i}. Model: {config.model}")
 
-        print(f"\n   Target: 50 samples per variant")
+        print("\n   Target: 50 samples per variant")
         print(f"   Total executions needed: {50 * (1 + len(variant_configs))} (50 × 4 variants)\n")
 
         # Create experiment
@@ -307,9 +306,9 @@ def demo_part3_experiment_execution(orchestrator, experiment_id, session):
         print(f"      ✓ {variant_progress['current_samples']}/{variant_progress['target_samples']} samples collected")
         print(f"        Avg quality: {perf['quality']:.2f}, speed: {perf['speed']:.1f}s, cost: ${perf['cost']:.3f}")
 
-    print(f"\n✅ Experiment execution complete!")
+    print("\n✅ Experiment execution complete!")
     print(f"   Total samples: {50 * len(experiment.variant_ids)}")
-    print(f"   Ready for statistical analysis\n")
+    print("   Ready for statistical analysis\n")
 
 
 def demo_part4_statistical_analysis(orchestrator, experiment_id):
@@ -332,7 +331,7 @@ def demo_part4_statistical_analysis(orchestrator, experiment_id):
         print("   ⚠️  No statistically significant winner found")
         return
 
-    print(f"   ✓ Winner determined with statistical significance\n")
+    print("   ✓ Winner determined with statistical significance\n")
 
     # Display winner details
     experiment = orchestrator.get_experiment(experiment_id)
@@ -348,14 +347,14 @@ def demo_part4_statistical_analysis(orchestrator, experiment_id):
     print("🏆 Winner Selected:")
     print(f"\n   Model: {winner_model}")
     print(f"   Variant ID: {winner.winner_variant_id}")
-    print(f"\n   Performance Improvement:")
+    print("\n   Performance Improvement:")
     print(f"   ├─ Quality improvement: +{winner.improvement_percentage:.1f}%")
     print(f"   ├─ Confidence level: {winner.confidence_level:.1%}")
     print(f"   ├─ Statistical significance: {winner.statistical_significance}")
     print(f"   └─ Sample size: {winner.sample_size}")
 
     # Show all variants for comparison
-    print(f"\n📈 All Variants Comparison:")
+    print("\n📈 All Variants Comparison:")
     print(f"\n   {'Model':<20} {'Quality':<10} {'Speed (s)':<12} {'Cost ($)':<10} {'Status'}")
     print(f"   {'-'*70}")
 
@@ -370,10 +369,10 @@ def demo_part4_statistical_analysis(orchestrator, experiment_id):
         status = perf["status"]
         print(f"   {model:<20} {perf['quality']:<10.2f} {perf['speed']:<12.1f} {perf['cost']:<10.3f} {status}")
 
-    print(f"\n✅ Statistical analysis complete!")
-    print(f"\n🎯 Recommendation:")
+    print("\n✅ Statistical analysis complete!")
+    print("\n🎯 Recommendation:")
     print(f"   Deploy {winner_model} to production for {winner.improvement_percentage:.1f}% quality improvement")
-    print(f"   Expected impact: Quality 0.70 → 0.88 (+26%)\n")
+    print("   Expected impact: Quality 0.70 → 0.88 (+26%)\n")
 
     return winner
 

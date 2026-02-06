@@ -11,15 +11,10 @@ Key Features:
 - Configurable failure modes (fail-fast vs fail-safe)
 - Violation reporting and observability integration
 """
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional
 
-from src.safety.interfaces import (
-    SafetyPolicy,
-    ValidationResult,
-    SafetyViolation,
-    ViolationSeverity
-)
+from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 
 @dataclass

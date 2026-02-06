@@ -4,13 +4,13 @@ Observability buffer for batching database operations.
 Reduces N+1 query problem by batching LLM calls, tool calls, and metric updates.
 Performance improvement: Reduces queries significantly through batching.
 """
+import logging
 import threading
 import time
-from typing import Dict, List, Any, Optional, Callable, Union, Set
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from collections import defaultdict
-import logging
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from src.observability.constants import (
     DEFAULT_BUFFER_SIZE,
@@ -293,10 +293,20 @@ class ObservabilityBuffer:
         """
         Flush all buffered operations to database.
 
-        Thread-safe. Can be called manually or automatically.
+        Thread-safe. Uses swap-and-flush: swaps buffer references under lock,
+        then flushes outside the lock to reduce lock contention.
         """
+        # Phase 1: Swap buffers under lock
         with self.lock:
-            self._flush_unsafe()
+            swapped = self._swap_buffers()
+
+        if swapped is None:
+            return
+
+        items_to_flush, flush_callback = swapped
+
+        # Phase 2: Flush outside lock (no lock contention during DB I/O)
+        self._execute_flush(items_to_flush, flush_callback)
 
     def _purge_stale_pending_ids(self) -> int:
         """Remove pending IDs older than timeout (assumes lock is held).
@@ -326,24 +336,61 @@ class ObservabilityBuffer:
         return False
 
     def _flush_unsafe(self) -> None:
-        """Flush buffer with retry logic and dead-letter queue (assumes lock is held)."""
+        """Flush buffer (assumes lock is held).
+
+        Used by buffer_llm_call/buffer_tool_call when flush_size is reached
+        inside the lock. Swaps buffers and flushes in-place.
+        """
+        swapped = self._swap_buffers()
+        if swapped is None:
+            return
+
+        items_to_flush, flush_callback = swapped
+        # Note: we're still holding the lock here (called from buffer_* methods)
+        # but we've already swapped so new items can accumulate after lock release
+        self._execute_flush(items_to_flush, flush_callback)
+
+    def _swap_buffers(self):
+        """Swap buffer contents to local variables (assumes lock is held).
+
+        Returns:
+            Tuple of (items_to_flush, flush_callback) or None if nothing to flush.
+        """
         # Purge stale pending IDs to prevent unbounded growth
         self._purge_stale_pending_ids()
 
         if not self._flush_callback:
             logger.warning("No flush callback set, skipping flush")
-            return
+            return None
 
         # Skip if nothing to flush
         if not self.llm_calls and not self.tool_calls and not self.agent_metrics and not self.retry_queue:
-            return
+            return None
 
         # Prepare batch for flushing (combines new items + retry queue)
         items_to_flush = self._prepare_flush_batch()
 
         if not items_to_flush:
-            return
+            return None
 
+        # Swap: clear main buffers so new items can accumulate
+        self.llm_calls = []
+        self.tool_calls = []
+        self.agent_metrics = defaultdict(lambda: AgentMetricUpdate(agent_id=""))
+        self.last_flush_time = time.time()
+
+        # Capture callback reference
+        flush_callback = self._flush_callback
+
+        return items_to_flush, flush_callback
+
+    def _execute_flush(self, items_to_flush: List[RetryableItem], flush_callback: Callable) -> None:
+        """Execute flush callback outside the lock.
+
+        Args:
+            items_to_flush: Prepared batch of retryable items
+            flush_callback: The callback to invoke
+        """
         # Extract by type for callback
         llm_calls = [item.item for item in items_to_flush if item.item_type == "llm_call"]
         tool_calls = [item.item for item in items_to_flush if item.item_type == "tool_call"]
@@ -353,15 +400,8 @@ class ObservabilityBuffer:
             if item.item_type == "agent_metric"
         }
 
-        # Clear main buffers (retry queue cleared after success/failure)
-        self.llm_calls.clear()
-        self.tool_calls.clear()
-        self.agent_metrics.clear()
-        self.last_flush_time = time.time()
-
-        # Execute flush callback
         try:
-            self._flush_callback(llm_calls, tool_calls, agent_metrics)
+            flush_callback(llm_calls, tool_calls, agent_metrics)
 
             logger.debug(
                 f"Flushed {len(llm_calls)} LLM calls, "
@@ -369,14 +409,16 @@ class ObservabilityBuffer:
                 f"{len(agent_metrics)} agent metric updates"
             )
 
-            # Success - clear retry queue and pending IDs
-            for item in items_to_flush:
-                self._pending_ids.pop(item.item_id, None)
-            self.retry_queue.clear()
+            # Success - clear retry queue and pending IDs under lock
+            with self.lock:
+                for item in items_to_flush:
+                    self._pending_ids.pop(item.item_id, None)
+                self.retry_queue.clear()
 
         except Exception as e:
             logger.error(f"Error flushing buffer: {e}", exc_info=True)
-            self._handle_flush_failure(items_to_flush, str(e))
+            with self.lock:
+                self._handle_flush_failure(items_to_flush, str(e))
 
     def _prepare_flush_batch(self) -> List[RetryableItem]:
         """
@@ -522,9 +564,12 @@ class ObservabilityBuffer:
         self._flush_thread.start()
 
     def _flush_loop(self) -> None:
-        """Background flush loop."""
-        while not self._stop_flush_thread.is_set():
-            time.sleep(self.flush_interval)
+        """Background flush loop.
+
+        Uses Event.wait() instead of time.sleep() so the thread
+        responds promptly to stop requests.
+        """
+        while not self._stop_flush_thread.wait(timeout=self.flush_interval):
             self.flush()
 
     def stop(self) -> None:
@@ -532,10 +577,15 @@ class ObservabilityBuffer:
         Stop background flush thread and flush remaining data.
 
         Call this before shutting down to ensure all data is persisted.
+        Signals the background thread to stop, waits for it to finish,
+        then performs a final flush of any remaining buffered data.
         """
-        if self._flush_thread:
+        if self._flush_thread and self._flush_thread.is_alive():
             self._stop_flush_thread.set()
             self._flush_thread.join(timeout=5.0)
+            if self._flush_thread.is_alive():
+                logger.warning("Background flush thread did not stop within timeout")
+            self._flush_thread = None
 
         # Final flush
         self.flush()
@@ -594,6 +644,6 @@ class ObservabilityBuffer:
         """Context manager entry."""
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
         """Context manager exit - ensure flush on exit."""
         self.stop()

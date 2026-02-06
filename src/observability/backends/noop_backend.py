@@ -3,9 +3,9 @@
 This backend implements the ObservabilityBackend interface but doesn't actually
 persist any data. Useful for demos and testing when you don't want database overhead.
 """
-from typing import Dict, Any, List, Optional, ContextManager
-from datetime import datetime
 from contextlib import contextmanager
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from src.observability.backend import ObservabilityBackend
 

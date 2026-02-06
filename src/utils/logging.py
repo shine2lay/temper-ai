@@ -8,18 +8,17 @@ Provides centralized logging with:
 - Multiple output formats (console, file, JSON)
 - Log level configuration from environment
 """
-import os
-import sys
-import logging
-import json
-import re
 import functools
+import json
+import logging
+import os
+import re
+import sys
 import unicodedata
-from urllib.parse import unquote
-from typing import Any, Dict, Optional, Callable, Tuple
-from pathlib import Path
 from datetime import datetime
-
+from pathlib import Path
+from typing import Any, Callable, Dict, Optional, Tuple
+from urllib.parse import unquote
 
 # Import secret detection for redaction
 detect_secret_patterns: Optional[Callable[[str], Tuple[bool, Optional[str]]]] = None
@@ -534,7 +533,7 @@ class LogContext:
         logging.setLogRecordFactory(record_factory)
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
         """Exit context and restore old factory."""
         if self.old_factory is not None:
             logging.setLogRecordFactory(self.old_factory)

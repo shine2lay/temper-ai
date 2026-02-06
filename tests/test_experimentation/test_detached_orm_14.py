@@ -8,13 +8,14 @@ database session has closed.
 
 import os
 import uuid
+
 import pytest
 
 # Set TESTING env var before importing service
 os.environ['TESTING'] = '1'
 
-from src.experimentation.service import ExperimentService
 from src.experimentation.models import ExperimentStatus
+from src.experimentation.service import ExperimentService
 from src.observability.database import init_database, reset_database
 
 

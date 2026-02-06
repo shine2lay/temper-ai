@@ -21,11 +21,12 @@ Total: 35+ tests
 Performance Target: <1ms per normalization
 Success Criteria: 100% Unicode bypasses blocked
 """
-import pytest
 import time
 import unicodedata
-from src.safety.file_access import FileAccessPolicy
 
+import pytest
+
+from src.safety.file_access import FileAccessPolicy
 
 # ============================================================================
 # Test Fixtures
@@ -227,7 +228,7 @@ class TestZeroWidthCharacters:
         )
 
         # After removing zero-width chars, /etc/passwd should be blocked
-        assert not result.valid, f"Zero-width character attack should be blocked"
+        assert not result.valid, "Zero-width character attack should be blocked"
         assert any(
             "forbidden" in v.message.lower() or "/etc" in v.message.lower() or "passwd" in v.message.lower()
             for v in result.violations

@@ -4,12 +4,13 @@ Wraps compiled StateGraph and provides execution interface with observability.
 Supports checkpoint/resume capability for fault tolerance and long-running workflows.
 """
 import dataclasses
-from typing import Dict, Any, Optional, Iterator, cast
+from typing import Any, Dict, Iterator, Optional, cast
+
 from langgraph.graph import StateGraph
 
+from src.compiler.checkpoint_manager import CheckpointManager
+from src.compiler.domain_state import WorkflowDomainState
 from src.compiler.state_manager import StateManager
-from src.compiler.checkpoint import CheckpointManager
-from src.compiler.domain_state import WorkflowDomainState, InfrastructureContext
 
 
 class WorkflowExecutor:
@@ -210,7 +211,6 @@ class WorkflowExecutor:
                     if stage_count % checkpoint_interval == 0:
                         domain_state = self._extract_domain_state(final_state)
                         self.checkpoint_manager.save_checkpoint(
-                            domain_state.workflow_id,
                             domain_state
                         )
 
@@ -231,7 +231,6 @@ class WorkflowExecutor:
             # Save final checkpoint
             domain_state = self._extract_domain_state(final_state)
             self.checkpoint_manager.save_checkpoint(
-                domain_state.workflow_id,
                 domain_state
             )
 
@@ -243,7 +242,6 @@ class WorkflowExecutor:
                 try:
                     domain_state = self._extract_domain_state(final_state)
                     self.checkpoint_manager.save_checkpoint(
-                        domain_state.workflow_id,
                         domain_state
                     )
                     if self.tracker:
@@ -296,7 +294,7 @@ class WorkflowExecutor:
             raise RuntimeError("Checkpoint manager not configured")
 
         # Load checkpoint
-        domain_state = self.checkpoint_manager.resume(workflow_id)
+        domain_state = self.checkpoint_manager.load_checkpoint(workflow_id)
 
         if self.tracker:
             self.tracker.log_event(
@@ -337,7 +335,6 @@ class WorkflowExecutor:
                     # Checkpoint after each new stage
                     domain_state_updated = self._extract_domain_state(final_state)
                     self.checkpoint_manager.save_checkpoint(
-                        domain_state_updated.workflow_id,
                         domain_state_updated
                     )
 
@@ -353,19 +350,17 @@ class WorkflowExecutor:
             # Save final checkpoint
             final_domain_state = self._extract_domain_state(final_state)
             self.checkpoint_manager.save_checkpoint(
-                final_domain_state.workflow_id,
                 final_domain_state
             )
 
             return cast(Dict[str, Any], final_state)
 
-        except Exception as e:
+        except Exception:
             # On error, checkpoint at failure point
             if final_state is not None:
                 try:
                     domain_state_updated = self._extract_domain_state(final_state)
                     self.checkpoint_manager.save_checkpoint(
-                        domain_state_updated.workflow_id,
                         domain_state_updated
                     )
                 except Exception:

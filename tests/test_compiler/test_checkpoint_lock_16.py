@@ -7,15 +7,16 @@ or crashes mid-write.
 
 import json
 import os
-import threading
-import pytest
-import tempfile
 import shutil
+import tempfile
+import threading
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-from src.compiler.domain_state import WorkflowDomainState
+import pytest
+
 from src.compiler.checkpoint_backends import FileCheckpointBackend
+from src.compiler.domain_state import WorkflowDomainState
 
 
 @pytest.fixture

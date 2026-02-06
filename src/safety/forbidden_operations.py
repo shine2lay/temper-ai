@@ -17,10 +17,11 @@ This policy enforces the rule that file operations MUST use dedicated tools
 Reference: CLAUDE.md file operation rules
 """
 import re
-from typing import Dict, Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
+
 from src.safety.base import BaseSafetyPolicy
+from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
-from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
 
 
 class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
@@ -170,7 +171,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         },
         "eval_command": {
             "pattern": r"\beval\s+",
-            "message": "eval() can execute arbitrary code - use with extreme caution",
+            "message": "eval can execute arbitrary code - use with extreme caution",
             "severity": ViolationSeverity.HIGH
         },
         "fork_bomb": {

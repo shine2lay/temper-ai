@@ -5,7 +5,8 @@ validation, and violation handling. Moved from src.core.service
 to maintain proper layer separation (core should not import safety).
 """
 import threading
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
 from src.safety import SafetyPolicy, ValidationResult
 from src.utils.logging import get_logger
 
@@ -148,7 +149,7 @@ class SafetyServiceMixin:
         Returns:
             ValidationResult with aggregated violations
         """
-        from src.safety import ValidationResult, SafetyViolation
+        from src.safety import SafetyViolation, ValidationResult
 
         violations: List[SafetyViolation] = []
         metadata: Dict[str, Any] = {"policies_checked": []}
@@ -192,7 +193,7 @@ class SafetyServiceMixin:
         Returns:
             ValidationResult
         """
-        from src.safety import ValidationResult, SafetyViolation, ViolationSeverity
+        from src.safety import SafetyViolation, ValidationResult, ViolationSeverity
 
         violations: List[SafetyViolation] = []
         metadata: Dict[str, Any] = {"policies_checked": []}

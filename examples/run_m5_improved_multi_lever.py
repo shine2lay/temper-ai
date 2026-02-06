@@ -13,9 +13,10 @@ Improvements:
 import asyncio
 import json
 import time
-from collections import defaultdict
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
+
 import httpx
+
 
 # ANSI colors
 class Colors:
@@ -434,10 +435,10 @@ async def main():
     print("=" * 100)
 
     print(f"\n{Colors.BOLD}Improvements:{Colors.RESET}")
-    print(f"  • Testing proven models (mistral:7b, llama3.2:3b scored 0.958, 0.940 earlier)")
-    print(f"  • More samples (15 per config for statistical significance)")
-    print(f"  • Improved prompt strategies")
-    print(f"  • Debug output to see actual extractions")
+    print("  • Testing proven models (mistral:7b, llama3.2:3b scored 0.958, 0.940 earlier)")
+    print("  • More samples (15 per config for statistical significance)")
+    print("  • Improved prompt strategies")
+    print("  • Debug output to see actual extractions")
 
     # Get available models
     import subprocess

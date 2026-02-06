@@ -11,12 +11,12 @@ Security Features:
 - Automatic expiration after 10 minutes
 - No memory exhaustion risk (Redis TTL handles cleanup)
 """
-from typing import Dict, Any, Optional
-from datetime import timedelta, datetime, timezone
 import asyncio
 import json
 import logging
 import os
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -260,7 +260,8 @@ class RedisStateStore(StateStore):
                 )
                 # Test connection
                 await self._redis.ping()
-                logger.info(f"Connected to Redis: {self.redis_url}")
+                from src.utils.secrets import mask_url_password
+                logger.info(f"Connected to Redis: {mask_url_password(self.redis_url)}")
             except Exception as e:
                 logger.error(f"Failed to connect to Redis: {e}")
                 self._redis = None
@@ -391,7 +392,7 @@ def create_state_store(redis_url: Optional[str] = None) -> StateStore:
     """
     # Check if Redis is available
     try:
-        import redis.asyncio
+        import redis.asyncio  # noqa: F401 — availability check
         # Try to create Redis store
         store = RedisStateStore(redis_url=redis_url)
         return store

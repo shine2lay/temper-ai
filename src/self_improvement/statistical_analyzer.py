@@ -5,9 +5,10 @@ Provides statistical analysis of experiment results to determine winning configu
 using t-tests and confidence intervals.
 """
 from dataclasses import dataclass
-from typing import List, Optional, Dict, Any
-from scipy import stats
+from typing import List, Optional
+
 import numpy as np
+from scipy import stats
 
 
 @dataclass
@@ -80,7 +81,7 @@ class ExperimentAnalysis:
     confidence_level: float = 0.95
 
 
-class StatisticalAnalyzer:
+class SIStatisticalAnalyzer:
     """
     Analyzes experiment results using statistical tests.
 

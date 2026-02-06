@@ -4,19 +4,18 @@ Verifies that the refactored validate/validate_async in composition.py and
 base.py share logic through extracted helpers and produce identical results.
 """
 
-import pytest
-from unittest.mock import MagicMock, AsyncMock
-from typing import Dict, Any, List
+from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from src.safety.base import BaseSafetyPolicy
+from src.safety.composition import CompositeValidationResult, PolicyComposer
 from src.safety.interfaces import (
     SafetyPolicy,
-    ValidationResult,
     SafetyViolation,
+    ValidationResult,
     ViolationSeverity,
 )
-from src.safety.composition import PolicyComposer, CompositeValidationResult
-from src.safety.base import BaseSafetyPolicy
-
 
 # ─── helpers ──────────────────────────────────────────────────────────
 

@@ -4,37 +4,39 @@ Loop executor for M5 Self-Improvement Loop.
 Orchestrates phase execution with error handling and state management.
 """
 import logging
-from datetime import datetime, timezone, timedelta
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Any, Optional
+
 from sqlmodel import Session
 
-from .models import (
-    Phase,
-    DetectionResult,
-    AnalysisResult,
-    StrategyResult,
-    ExperimentPhaseResult,
-    DeploymentResult,
-    IterationResult,
-    RecoveryAction,
+from src.self_improvement.data_models import StrategyOutcome
+from src.self_improvement.deployment.deployer import ConfigDeployer
+from src.self_improvement.deployment.rollback_monitor import (
+    RegressionThresholds,
+    RollbackMonitor,
 )
-from .config import LoopConfig
-from .state_manager import LoopStateManager
-from .error_recovery import ErrorRecoveryStrategy
-from .metrics import MetricsCollector
+from src.self_improvement.detection.improvement_detector import ImprovementDetector
+from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
+from src.self_improvement.pattern_mining import PatternMiner
 
 # Import M5 phase components
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
-from src.self_improvement.detection.improvement_detector import ImprovementDetector
-from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
-from src.self_improvement.deployment.deployer import ConfigDeployer
-from src.self_improvement.deployment.rollback_monitor import (
-    RollbackMonitor,
-    RegressionThresholds,
-)
-from src.self_improvement.data_models import OptimizationConfig, StrategyOutcome
 from src.self_improvement.strategy_learning import StrategyLearningStore
-from src.self_improvement.pattern_mining import PatternMiner
+
+from .config import LoopConfig
+from .error_recovery import ErrorRecoveryStrategy
+from .metrics import MetricsCollector
+from .models import (
+    AnalysisResult,
+    DeploymentResult,
+    DetectionResult,
+    ExperimentPhaseResult,
+    IterationResult,
+    Phase,
+    RecoveryAction,
+    StrategyResult,
+)
+from .state_manager import LoopStateManager
 
 logger = logging.getLogger(__name__)
 

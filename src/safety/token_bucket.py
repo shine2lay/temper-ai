@@ -10,12 +10,13 @@ Implements the classic token bucket algorithm with:
 The token bucket algorithm allows for bursty traffic while maintaining
 an average rate limit over time.
 """
-import time
-import threading
 import functools
 import math
-from typing import Optional, Dict, Any, Tuple, Callable
+import threading
+import time
+from collections import OrderedDict
 from dataclasses import dataclass
+from typing import Any, Callable, Dict, Optional, Tuple
 
 
 def requires_lock(method: Callable) -> Callable:
@@ -383,13 +384,24 @@ class TokenBucketManager:
         >>> wait = manager.get_wait_time('agent-123', 'deploy', 1)
     """
 
-    def __init__(self) -> None:
-        """Initialize token bucket manager."""
+    def __init__(self, max_buckets: int = 10000) -> None:
+        """Initialize token bucket manager.
+
+        Args:
+            max_buckets: Maximum number of buckets to store. When exceeded,
+                least-recently-used buckets are evicted. Default 10000.
+        """
+        if max_buckets < 1:
+            raise ValueError(f"max_buckets must be >= 1, got {max_buckets}")
+
+        self.max_buckets = max_buckets
+
         # Rate limit configurations: {limit_type: RateLimit}
         self.limits: Dict[str, RateLimit] = {}
 
-        # Token buckets: {(entity_id, limit_type): TokenBucket}
-        self.buckets: Dict[Tuple[str, str], TokenBucket] = {}
+        # Token buckets with LRU ordering: {(entity_id, limit_type): TokenBucket}
+        # OrderedDict maintains insertion/access order for O(1) LRU eviction
+        self.buckets: OrderedDict[Tuple[str, str], TokenBucket] = OrderedDict()
 
         # Thread safety for bucket creation
         self.lock = threading.Lock()
@@ -411,6 +423,9 @@ class TokenBucketManager:
     def get_bucket(self, entity_id: str, limit_type: str) -> Optional[TokenBucket]:
         """Get or create token bucket for entity and limit type.
 
+        Uses LRU eviction: accessed buckets are moved to end, and when the
+        max_buckets limit is exceeded, the least-recently-used bucket is evicted.
+
         Args:
             entity_id: Entity identifier (agent ID, user ID, etc.)
             limit_type: Type of limit
@@ -428,19 +443,20 @@ class TokenBucketManager:
 
         bucket_key = (entity_id, limit_type)
 
-        # Fast path: bucket already exists
-        if bucket_key in self.buckets:
-            return self.buckets[bucket_key]
-
-        # Slow path: create new bucket (with lock)
         with self.lock:
-            # Double-check after acquiring lock
             if bucket_key in self.buckets:
+                # Move to end (most recently used)
+                self.buckets.move_to_end(bucket_key)
                 return self.buckets[bucket_key]
 
             # Create new bucket
             bucket = TokenBucket(self.limits[limit_type])
             self.buckets[bucket_key] = bucket
+
+            # Evict LRU entries if over capacity
+            while len(self.buckets) > self.max_buckets:
+                self.buckets.popitem(last=False)
+
             return bucket
 
     def consume(self, entity_id: str, limit_type: str, tokens: int = 1) -> bool:

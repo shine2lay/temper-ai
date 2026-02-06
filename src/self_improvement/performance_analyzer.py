@@ -11,16 +11,17 @@ Design Principles:
 - Clear error messages
 """
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional, List, Dict, Any
-from pathlib import Path
-import logging
 import json
+import logging
 import os
 import re
 import uuid
-from sqlmodel import Session, select, func
-from sqlalchemy import case, and_
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import and_, case
+from sqlmodel import Session, func, select
 
 from src.observability.models import AgentExecution
 from src.self_improvement.data_models import AgentPerformanceProfile
@@ -33,7 +34,7 @@ class PerformanceAnalysisError(Exception):
     pass
 
 
-class InsufficientDataError(PerformanceAnalysisError):
+class PerformanceDataError(PerformanceAnalysisError):
     """Raised when too few executions for reliable analysis."""
     pass
 
@@ -152,7 +153,7 @@ class PerformanceAnalyzer:
             AgentPerformanceProfile with aggregated metrics
 
         Raises:
-            InsufficientDataError: If fewer than min_executions found
+            PerformanceDataError: If fewer than min_executions found
             DatabaseQueryError: If database query fails
             ValueError: If invalid parameters
 
@@ -196,7 +197,7 @@ class PerformanceAnalyzer:
             total_executions = metrics_data.pop("total_executions", 0)
 
             if total_executions < min_executions:
-                raise InsufficientDataError(
+                raise PerformanceDataError(
                     f"Insufficient data for {agent_name}: "
                     f"{total_executions} executions found "
                     f"(minimum {min_executions} required)"
@@ -219,7 +220,7 @@ class PerformanceAnalyzer:
 
             return profile
 
-        except InsufficientDataError:
+        except PerformanceDataError:
             raise
         except ValueError:
             raise
@@ -350,7 +351,7 @@ class PerformanceAnalyzer:
                 window_hours=window_days * 24,
                 min_executions=50  # Higher threshold for baseline
             )
-        except InsufficientDataError:
+        except PerformanceDataError:
             logger.warning(
                 f"Insufficient data for baseline: agent={agent_name}, "
                 f"window_days={window_days}"
@@ -377,7 +378,7 @@ class PerformanceAnalyzer:
             The stored AgentPerformanceProfile
 
         Raises:
-            InsufficientDataError: If insufficient data to create baseline
+            PerformanceDataError: If insufficient data to create baseline
             IOError: If storage fails
 
         Example:
@@ -593,7 +594,7 @@ class PerformanceAnalyzer:
                     min_executions=min_executions
                 )
                 profiles.append(profile)
-            except InsufficientDataError:
+            except PerformanceDataError:
                 logger.debug(
                     f"Skipping {agent_name}: insufficient data "
                     f"(< {min_executions} executions)"

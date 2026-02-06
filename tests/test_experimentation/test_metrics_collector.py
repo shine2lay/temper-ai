@@ -5,21 +5,22 @@ Tests the integration between the A/B testing framework and the
 observability system for metrics collection and reporting.
 """
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
-from datetime import datetime, timezone, timedelta
 
 from src.experimentation.metrics_collector import ExperimentMetricsCollector
-from src.experimentation.models import VariantAssignment, ExecutionStatus
+from src.experimentation.models import ExecutionStatus, VariantAssignment
+from src.observability.database import get_session, init_database
 from src.observability.models import WorkflowExecution
-from src.observability.database import init_database, get_session
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    from src.observability.database import _db_manager, _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 

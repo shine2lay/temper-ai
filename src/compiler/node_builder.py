@@ -3,9 +3,10 @@
 Handles creation of execution nodes for stages, with proper configuration
 loading and executor delegation.
 """
-from typing import Dict, Any, Callable, Optional, cast
-from src.compiler.langgraph_state import LangGraphWorkflowState
+from typing import Any, Callable, Dict, Optional, cast
+
 from src.compiler.config_loader import ConfigLoader
+from src.compiler.langgraph_state import LangGraphWorkflowState
 from src.compiler.utils import extract_agent_name
 from src.tools.registry import ToolRegistry
 

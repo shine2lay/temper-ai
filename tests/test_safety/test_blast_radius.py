@@ -14,8 +14,8 @@ Tests cover:
 
 Target Coverage: 95%+ for blast_radius.py
 """
-import pytest
 import time
+
 from src.safety.blast_radius import BlastRadiusPolicy
 from src.safety.interfaces import ViolationSeverity
 
@@ -55,7 +55,7 @@ class TestBlastRadiusPolicyBasics:
         assert policy.max_entities == 50
         assert policy.max_ops_per_minute == 10
         assert len(policy.forbidden_patterns) == 2
-        assert "DELETE FROM" in policy.forbidden_patterns
+        assert any(p.pattern == "DELETE FROM" for p in policy.forbidden_patterns)
 
     def test_partial_configuration(self):
         """Test that unspecified config values use defaults."""
@@ -881,35 +881,34 @@ class TestEdgeCases:
         assert result.valid
 
     def test_all_limits_at_zero(self):
-        """Test policy with all limits set to zero (extreme case)."""
-        policy = BlastRadiusPolicy({
-            "max_files_per_operation": 0,
-            "max_lines_per_file": 0,
-            "max_total_lines": 0,
-            "max_entities_affected": 0
-        })
-
-        # Any non-zero action should violate
-        result = policy.validate(
-            action={
-                "files": ["a.py"],
-                "total_lines": 1,
-                "entities": ["user1"]
-            },
-            context={}
-        )
-
-        assert not result.valid
-        # Should have multiple violations
-        assert len(result.violations) >= 1
+        """Test policy rejects zero limits via validation."""
+        import pytest
+        with pytest.raises(ValueError, match="must be >= 1"):
+            BlastRadiusPolicy({
+                "max_files_per_operation": 0,
+                "max_lines_per_file": 0,
+                "max_total_lines": 0,
+                "max_entities_affected": 0
+            })
 
     def test_very_large_limits(self):
-        """Test policy with very large limits."""
+        """Test policy rejects limits above maximum via validation."""
+        import pytest
+        with pytest.raises(ValueError, match="must be <="):
+            BlastRadiusPolicy({
+                "max_files_per_operation": 1000000,
+                "max_lines_per_file": 1000000,
+                "max_total_lines": 10000000,
+                "max_entities_affected": 1000000
+            })
+
+    def test_max_allowed_limits(self):
+        """Test policy with maximum allowed limits."""
         policy = BlastRadiusPolicy({
-            "max_files_per_operation": 1000000,
-            "max_lines_per_file": 1000000,
-            "max_total_lines": 10000000,
-            "max_entities_affected": 1000000
+            "max_files_per_operation": 10000,
+            "max_lines_per_file": 10000,
+            "max_total_lines": 10000,
+            "max_entities_affected": 10000
         })
 
         # Normal action should pass

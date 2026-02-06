@@ -5,13 +5,11 @@ Tests the three main safety policies:
 - SecretDetectionPolicy
 - RateLimiterPolicy
 """
-import pytest
-import time
 from src.safety import (
     BlastRadiusPolicy,
-    SecretDetectionPolicy,
     RateLimiterPolicy,
-    ViolationSeverity
+    SecretDetectionPolicy,
+    ViolationSeverity,
 )
 
 

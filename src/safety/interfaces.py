@@ -6,10 +6,10 @@ including validation results, violation reporting, and severity levels.
 Interfaces are designed for both synchronous and asynchronous execution contexts.
 """
 from abc import ABC, abstractmethod
-from enum import Enum
-from typing import List, Optional, Dict, Any
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+from enum import Enum
+from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
 
 
 class ViolationSeverity(Enum):
@@ -313,3 +313,58 @@ class Validator(ABC):
             ValidationResult
         """
         pass
+
+
+# -- LLM Security Protocols --
+# These define the boundary between src/security/ and src/safety/.
+# Classes in src/security/llm_security.py satisfy these protocols,
+# allowing the safety layer to depend on the interface rather than
+# the concrete security implementation.
+
+
+@runtime_checkable
+class PromptInjectionDetectorProtocol(Protocol):
+    """Protocol for prompt injection / jailbreak detection."""
+
+    def detect(self, prompt: str) -> Tuple[bool, list]:
+        """Detect prompt injection attacks.
+
+        Args:
+            prompt: User or agent prompt to scan.
+
+        Returns:
+            (is_injection, violations) tuple.
+        """
+        ...
+
+
+@runtime_checkable
+class OutputSanitizerProtocol(Protocol):
+    """Protocol for sanitizing LLM output."""
+
+    def sanitize(self, output: str) -> Tuple[str, list]:
+        """Sanitize LLM output by removing secrets and dangerous content.
+
+        Args:
+            output: Raw LLM output.
+
+        Returns:
+            (sanitized_output, violations) tuple.
+        """
+        ...
+
+
+@runtime_checkable
+class LLMRateLimiterProtocol(Protocol):
+    """Protocol for LLM-layer rate limiting."""
+
+    def check_rate_limit(self, entity_id: str) -> Tuple[bool, Optional[str]]:
+        """Check whether the entity is within rate limits.
+
+        Args:
+            entity_id: Caller identifier (agent id, user id, etc.).
+
+        Returns:
+            (allowed, reason) -- reason is None when allowed.
+        """
+        ...

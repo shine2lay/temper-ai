@@ -4,22 +4,22 @@ Tests complete experiment execution with various configurations including
 multi-variant experiments, config overrides, and protected field validation.
 """
 
-import pytest
-import numpy as np
-from datetime import datetime, UTC
 
+import numpy as np
+import pytest
+
+from src.experimentation.analyzer import StatisticalAnalyzer
+from src.experimentation.config_manager import ConfigManager, SecurityViolationError
 from src.experimentation.models import (
-    Experiment,
-    Variant,
-    VariantAssignment,
-    ExperimentStatus,
     AssignmentStrategyType,
     ConfigType,
     ExecutionStatus,
+    Experiment,
+    ExperimentStatus,
     RecommendationType,
+    Variant,
+    VariantAssignment,
 )
-from src.experimentation.config_manager import ConfigManager, SecurityViolationError
-from src.experimentation.analyzer import StatisticalAnalyzer
 
 
 class TestCompleteExperimentLifecycle:

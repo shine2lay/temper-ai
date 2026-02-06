@@ -13,10 +13,11 @@ need to be optimized simultaneously.
 import asyncio
 import json
 import time
-from datetime import datetime
 from collections import defaultdict
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
+
 import httpx
+
 
 # ANSI colors
 class Colors:
@@ -520,8 +521,8 @@ async def main():
     print("=" * 100)
 
     print(f"\n{Colors.BOLD}Optimization Levers:{Colors.RESET}")
-    print(f"  1. LLM Model Selection")
-    print(f"  2. Prompt Engineering Strategy")
+    print("  1. LLM Model Selection")
+    print("  2. Prompt Engineering Strategy")
 
     print(f"\n{Colors.BOLD}Prompt Strategies:{Colors.RESET}")
     for key, strategy in PROMPT_STRATEGIES.items():

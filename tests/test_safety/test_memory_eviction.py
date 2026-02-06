@@ -6,12 +6,9 @@ Verifies that:
 3. RollbackManager evicts oldest history entries when over max_history
 """
 
-import pytest
-from datetime import datetime, timedelta, UTC
 
-from src.safety.approval import ApprovalWorkflow, ApprovalStatus
-from src.safety.rollback import RollbackManager, RollbackResult, RollbackStatus
-
+from src.safety.approval import ApprovalWorkflow
+from src.safety.rollback import RollbackManager
 
 # ── ApprovalWorkflow eviction tests ──────────────────────────────────────
 

@@ -22,12 +22,12 @@ Example:
     >>> result = workflow.get_result(request.id)
 """
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, UTC
+from datetime import UTC, datetime, timedelta
 from enum import Enum
-from typing import Dict, Any, Optional, List, Callable
+from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
+from src.safety.interfaces import SafetyViolation
 
 
 class ApprovalStatus(Enum):

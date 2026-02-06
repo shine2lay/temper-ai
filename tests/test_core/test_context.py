@@ -4,7 +4,6 @@ Verifies the unified ExecutionContext class covers all fields from the
 previously separate definitions and maintains backward compatibility.
 """
 
-import pytest
 from src.core.context import ExecutionContext
 
 

@@ -13,9 +13,9 @@ Tests models across 5 complexity levels:
 import asyncio
 import json
 import time
-from datetime import datetime
-from collections import defaultdict
+
 import httpx
+
 
 # ANSI colors
 class Colors:
@@ -385,9 +385,9 @@ async def main():
     print("=" * 100)
 
     print(f"\n{Colors.BOLD}Test Configuration:{Colors.RESET}")
-    print(f"  • Complexity Levels: 5 (SIMPLE → EXTREME)")
-    print(f"  • Tests per level: 2")
-    print(f"  • Total tests per model: 10")
+    print("  • Complexity Levels: 5 (SIMPLE → EXTREME)")
+    print("  • Tests per level: 2")
+    print("  • Total tests per model: 10")
 
     # Get available models
     import subprocess

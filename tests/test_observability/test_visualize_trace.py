@@ -3,11 +3,9 @@ Tests for visualize_trace module.
 
 Tests Gantt chart generation, trace flattening, and visualization functions.
 """
-import pytest
-import json
 from datetime import datetime, timedelta
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+
+import pytest
 
 # Check if plotly is available
 try:
@@ -17,8 +15,8 @@ except ImportError:
     PLOTLY_AVAILABLE = False
 
 from src.observability.visualize_trace import (
-    create_hierarchical_gantt,
     _flatten_trace_with_tree,
+    create_hierarchical_gantt,
     visualize_trace,
 )
 

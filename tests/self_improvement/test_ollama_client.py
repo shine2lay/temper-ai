@@ -5,10 +5,12 @@ Tests the simplified Ollama API wrapper used by M5 self-improvement system
 for model selection experiments.
 """
 
+from unittest.mock import patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+
+from src.agents.llm_providers import LLMProvider, LLMResponse
 from src.self_improvement.ollama_client import OllamaClient
-from src.agents.llm_providers import LLMResponse, LLMProvider
 from src.utils.exceptions import LLMError, LLMTimeoutError
 
 

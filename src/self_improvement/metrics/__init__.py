@@ -7,7 +7,7 @@ a plugin architecture.
 Key Components:
     - MetricCollector: Abstract base class for all metric collectors
     - MetricRegistry: Central registry for managing collectors
-    - MetricType: Enum classifying metric collection methods
+    - SIMetricType: Enum classifying metric collection methods
     - MetricValue: Dataclass representing collected metric values
 
 Example Usage:
@@ -20,8 +20,8 @@ Example Usage:
     ...         return "my_metric"
     ...
     ...     @property
-    ...     def metric_type(self) -> MetricType:
-    ...         return MetricType.CUSTOM
+    ...     def metric_type(self) -> SIMetricType:
+    ...         return SIMetricType.CUSTOM
     ...
     ...     def collect(self, execution) -> Optional[float]:
     ...         # Compute metric...
@@ -37,25 +37,25 @@ Example Usage:
 """
 
 from src.self_improvement.metrics.collector import (
+    ExecutionProtocol,
     MetricCollector,
     MetricRegistry,
-    ExecutionProtocol,
-)
-from src.self_improvement.metrics.types import MetricType, MetricValue
-from src.self_improvement.metrics.extraction_quality import (
-    ExtractionQualityCollector,
 )
 from src.self_improvement.metrics.erc721_quality import (
     ERC721QualityCollector,
     ERC721QualityScore,
     score_erc721_workflow,
 )
+from src.self_improvement.metrics.extraction_quality import (
+    ExtractionQualityCollector,
+)
+from src.self_improvement.metrics.types import MetricValue, SIMetricType
 
 __all__ = [
     "MetricCollector",
     "MetricRegistry",
     "ExecutionProtocol",
-    "MetricType",
+    "SIMetricType",
     "MetricValue",
     "ExtractionQualityCollector",
     "ERC721QualityCollector",

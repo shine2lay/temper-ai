@@ -9,26 +9,21 @@ This test suite validates that all M4 components work together correctly:
 The tests demonstrate real-world scenarios where multiple safety mechanisms
 coordinate to protect the system.
 """
+
 import pytest
-import tempfile
-from pathlib import Path
-from unittest.mock import Mock
 
 from src.safety import (
-    PolicyComposer,
-    FileAccessPolicy,
-    RateLimiterPolicy,
     ApprovalWorkflow,
-    ApprovalStatus,
-    RollbackManager,
-    FileRollbackStrategy,
     CircuitBreaker,
-    CircuitBreakerState,
+    CircuitBreakerManager,
     CircuitBreakerOpen,
+    CircuitBreakerState,
+    FileAccessPolicy,
+    PolicyComposer,
+    RollbackManager,
     SafetyGate,
     SafetyGateBlocked,
-    CircuitBreakerManager,
-    ViolationSeverity
+    ViolationSeverity,
 )
 
 
@@ -441,7 +436,7 @@ class TestRealWorldDeploymentWorkflow:
                 # Simulate deployment
                 deploy_file.write_text("version: 2.0\nenv: production")
                 deployment_success = True
-        except Exception as e:
+        except Exception:
             deployment_success = False
             # Rollback on failure
             rollback_mgr.execute_rollback(snapshot.id)

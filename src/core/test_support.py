@@ -23,9 +23,9 @@ Usage as a pytest fixture (see tests/conftest.py)::
         yield
         reset_all_globals()
 """
-from contextlib import contextmanager
-from typing import List, Callable
 import logging
+from contextlib import contextmanager
+from typing import Callable, List
 
 logger = logging.getLogger(__name__)
 

@@ -12,10 +12,10 @@ Example:
         "features": ["256GB storage", "A17 Pro chip"]
     }
 """
-from typing import Dict, Any, Optional
 import json
-import re
 import logging
+from typing import Any, Dict
+
 from src.self_improvement.ollama_client import OllamaClient
 
 # Configure logging

@@ -35,8 +35,8 @@ import logging
 import random
 import sys
 import time
-from dataclasses import dataclass, asdict
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import httpx
@@ -44,16 +44,15 @@ import httpx
 # Add project root to path
 sys.path.insert(0, "/home/shinelay/meta-autonomous-framework")
 
+from src.self_improvement.storage.observability_store import ObservabilityStore
+
 from src.observability.models import AgentExecutionRecord
 from src.self_improvement.data_models import (
     AgentConfig,
-    AgentPerformanceProfile,
     ExperimentConfig,
-    ProblemSeverity,
 )
 from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
-from src.self_improvement.storage.observability_store import ObservabilityStore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -620,7 +619,7 @@ async def demo_part3_experiment_creation(orchestrator: ExperimentOrchestrator):
 
     print(f"\n✅ Experiment created: {experiment.id}")
     print(f"   Status: {experiment.status}")
-    print(f"   Variants: 4 (control + 3 alternatives)")
+    print("   Variants: 4 (control + 3 alternatives)")
 
     return experiment.id
 

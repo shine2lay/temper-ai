@@ -19,11 +19,10 @@ Usage:
 """
 import argparse
 import json
-import sys
 import logging
+import sys
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
 
 # Add project root and coord service to path
 project_root = Path(__file__).parent.parent.parent
@@ -31,8 +30,9 @@ sys.path.insert(0, str(project_root))
 sys.path.insert(0, str(project_root / ".claude-coord"))
 
 from coord_service.database import Database
-from src.observability.database import get_session, init_database, get_database
-from src.self_improvement.loop import M5SelfImprovementLoop, LoopConfig, Phase
+
+from src.observability.database import get_database, get_session, init_database
+from src.self_improvement.loop import LoopConfig, M5SelfImprovementLoop
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 
 # Initialize observability database if not already initialized
@@ -90,7 +90,7 @@ class M5CLI:
 
                     # Show phase results
                     if result.detection_result and not result.detection_result.has_problem:
-                        print(f"   No problems detected - agent performing well")
+                        print("   No problems detected - agent performing well")
 
                     if result.deployment_result:
                         print(f"   Deployed: {result.deployment_result.deployment_id}")
@@ -98,7 +98,7 @@ class M5CLI:
 
                     return 0
                 else:
-                    print(f"\n❌ Iteration failed!")
+                    print("\n❌ Iteration failed!")
                     print(f"   Error: {result.error}")
                     if result.error_phase:
                         print(f"   Failed at phase: {result.error_phase.value}")
@@ -133,11 +133,11 @@ class M5CLI:
                     min_executions=10,
                 )
 
-                print(f"\n📈 Performance Analysis:")
+                print("\n📈 Performance Analysis:")
                 print(f"   Total executions: {profile.total_executions}")
                 print(f"   Time window: {profile.window_start.strftime('%Y-%m-%d %H:%M')} to {profile.window_end.strftime('%Y-%m-%d %H:%M')}")
 
-                print(f"\n   Metrics:")
+                print("\n   Metrics:")
                 for metric_name, metric_data in profile.metrics.items():
                     mean = metric_data.get('mean')
                     std = metric_data.get('std')
@@ -182,7 +182,7 @@ class M5CLI:
             # Get state
             state = loop.get_state(agent_name)
             if not state:
-                print(f"   No loop state found (not yet started)")
+                print("   No loop state found (not yet started)")
                 return 0
 
             print(f"\n   Current phase: {state['current_phase']}")
@@ -218,22 +218,22 @@ class M5CLI:
 
             metrics = loop.get_metrics(agent_name)
             if not metrics:
-                print(f"   No metrics available (no iterations run)")
+                print("   No metrics available (no iterations run)")
                 return 0
 
-            print(f"\n   Iteration Metrics:")
+            print("\n   Iteration Metrics:")
             print(f"   - Total iterations: {metrics['total_iterations']}")
             print(f"   - Successful: {metrics['successful_iterations']}")
             print(f"   - Failed: {metrics['failed_iterations']}")
             print(f"   - Success rate: {metrics['success_rate']:.1%}")
             print(f"   - Avg duration: {metrics['avg_iteration_duration']:.1f}s")
 
-            print(f"\n   Improvement Metrics:")
+            print("\n   Improvement Metrics:")
             print(f"   - Experiments run: {metrics['total_experiments']}")
             print(f"   - Successful deployments: {metrics['successful_deployments']}")
             print(f"   - Rollbacks: {metrics['rollbacks']}")
 
-            print(f"\n   Phase Success Rates:")
+            print("\n   Phase Success Rates:")
             for phase, rate in metrics['phase_success_rates'].items():
                 print(f"   - {phase}: {rate:.1%}")
 
@@ -259,7 +259,7 @@ class M5CLI:
 
             try:
                 loop.pause(agent_name)
-                print(f"   ✅ Loop paused")
+                print("   ✅ Loop paused")
                 return 0
             except Exception as e:
                 print(f"   ❌ Failed to pause: {e}")
@@ -282,7 +282,7 @@ class M5CLI:
 
             try:
                 loop.resume(agent_name)
-                print(f"   ✅ Loop resumed")
+                print("   ✅ Loop resumed")
                 return 0
             except Exception as e:
                 print(f"   ❌ Failed to resume: {e}")
@@ -311,7 +311,7 @@ class M5CLI:
 
             try:
                 loop.reset_state(agent_name)
-                print(f"   ✅ State reset")
+                print("   ✅ State reset")
                 return 0
             except Exception as e:
                 print(f"   ❌ Failed to reset: {e}")
@@ -324,7 +324,7 @@ class M5CLI:
         Returns:
             Exit code
         """
-        print(f"🏥 M5 System Health Check")
+        print("🏥 M5 System Health Check")
 
         with get_session() as session:
             loop = M5SelfImprovementLoop(self.coord_db, session)
@@ -334,7 +334,7 @@ class M5CLI:
             print(f"\n   Overall status: {health['status'].upper()}")
             print(f"   Timestamp: {health['timestamp']}")
 
-            print(f"\n   Components:")
+            print("\n   Components:")
             for component, status in health['components'].items():
                 icon = "✅" if status == "healthy" else "❌"
                 print(f"   {icon} {component}: {status}")
@@ -362,10 +362,10 @@ class M5CLI:
             experiments = session.query("SELECT * FROM experiments WHERE agent_name = ? ORDER BY created_at DESC LIMIT 5", (agent_name,))
 
             if not experiments:
-                print(f"   No experiments found")
+                print("   No experiments found")
                 return 0
 
-            print(f"\n   Recent Experiments:")
+            print("\n   Recent Experiments:")
             for exp in experiments:
                 print(f"\n   Experiment: {exp['id']}")
                 print(f"   - Status: {exp['status']}")
@@ -389,12 +389,12 @@ class M5CLI:
         Returns:
             Exit code
         """
-        print(f"📋 Agents with M5 Loop State")
+        print("📋 Agents with M5 Loop State")
 
         rows = self.coord_db.query("SELECT agent_name, current_phase, status, iteration_number FROM m5_loop_state ORDER BY updated_at DESC")
 
         if not rows:
-            print(f"   No agents found")
+            print("   No agents found")
             return 0
 
         print(f"\n   {'Agent':<30} {'Phase':<15} {'Status':<15} {'Iteration':<10}")
@@ -491,14 +491,14 @@ Examples:
     reset_parser.add_argument('agent_name', help='Name of agent')
 
     # health command
-    health_parser = subparsers.add_parser('health', help='Check system health')
+    subparsers.add_parser('health', help='Check system health')
 
     # check-experiments command
     check_exp_parser = subparsers.add_parser('check-experiments', help='Check experiments')
     check_exp_parser.add_argument('agent_name', help='Name of agent')
 
     # list-agents command
-    list_parser = subparsers.add_parser('list-agents', help='List all agents')
+    subparsers.add_parser('list-agents', help='List all agents')
 
     args = parser.parse_args()
 

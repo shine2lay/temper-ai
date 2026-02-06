@@ -23,10 +23,83 @@ Example:
     >>> domain = WorkflowDomainState.from_dict(json.load(file))
     >>> context = ExecutionContext(...) # Recreate infrastructure
 """
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List
-from datetime import datetime, UTC
 import uuid
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any, Dict, Iterator, List, Optional, runtime_checkable
+
+from typing_extensions import Protocol
+
+# ---------------------------------------------------------------------------
+# Protocol definitions for InfrastructureContext field types
+# ---------------------------------------------------------------------------
+
+@runtime_checkable
+class TrackerProtocol(Protocol):
+    """Minimal interface for an execution tracker."""
+
+    @contextmanager
+    def track_stage(
+        self,
+        stage_name: str,
+        stage_config: Dict[str, Any],
+        workflow_id: str,
+        input_data: Dict[str, Any],
+    ) -> Iterator[str]: ...
+
+    @contextmanager
+    def track_agent(
+        self,
+        agent_name: str,
+        agent_config: Dict[str, Any],
+        stage_id: str,
+        input_data: Dict[str, Any],
+    ) -> Iterator[str]: ...
+
+    def set_agent_output(
+        self,
+        agent_id: str,
+        output_data: Dict[str, Any],
+        reasoning: Optional[str] = None,
+        total_tokens: Optional[int] = None,
+        estimated_cost_usd: Optional[float] = None,
+        num_llm_calls: int = 0,
+        num_tool_calls: int = 0,
+    ) -> None: ...
+
+    def track_collaboration_event(
+        self,
+        event_type: str,
+        stage_name: str,
+        agents: List[str],
+        decision: Optional[str],
+        confidence: float,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> None: ...
+
+
+@runtime_checkable
+class ToolRegistryProtocol(Protocol):
+    """Minimal interface for a tool registry."""
+
+    def get_tool(self, name: str) -> Any: ...
+
+
+@runtime_checkable
+class ConfigLoaderProtocol(Protocol):
+    """Minimal interface for a configuration loader."""
+
+    def load_agent(self, agent_name: str) -> Dict[str, Any]: ...
+
+    def load_stage(self, stage_name: str) -> Dict[str, Any]: ...
+
+
+@runtime_checkable
+class VisualizerProtocol(Protocol):
+    """Minimal interface for a workflow visualizer."""
+
+    def update(self, state: Dict[str, Any]) -> None: ...
 
 
 @dataclass
@@ -165,13 +238,15 @@ class WorkflowDomainState:
         """
         return self.stage_outputs.copy()
 
-    def to_dict(self, exclude_none: bool = False) -> Dict[str, Any]:
+    def to_dict(self, exclude_none: bool = False, exclude_internal: bool = False) -> Dict[str, Any]:
         """Convert state to dictionary for serialization.
 
         All fields are guaranteed serializable (no infrastructure objects).
 
         Args:
             exclude_none: Exclude None values from output
+            exclude_internal: Accepted for backward compatibility (no-op,
+                domain state has no internal/infrastructure fields)
 
         Returns:
             Dictionary representation of state (JSON-serializable)
@@ -198,6 +273,16 @@ class WorkflowDomainState:
             state_dict[key] = value
 
         return state_dict
+
+    def to_typed_dict(self) -> Dict[str, Any]:
+        """Convert to dict for LangGraph node compatibility.
+
+        LangGraph nodes call ``state.to_typed_dict()`` to obtain a plain
+        dict that can be passed to stage executors.  This is an alias for
+        ``to_dict()`` so that ``WorkflowDomainState`` satisfies the same
+        duck-typing contract as ``LangGraphWorkflowState``.
+        """
+        return self.to_dict()
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'WorkflowDomainState':
@@ -333,11 +418,11 @@ class InfrastructureContext:
         ... )
     """
 
-    # Infrastructure components (all optional)
-    tracker: Optional[Any] = None
-    tool_registry: Optional[Any] = None
-    config_loader: Optional[Any] = None
-    visualizer: Optional[Any] = None
+    # Infrastructure components (all optional, typed via Protocols)
+    tracker: Optional[TrackerProtocol] = None
+    tool_registry: Optional[ToolRegistryProtocol] = None
+    config_loader: Optional[ConfigLoaderProtocol] = None
+    visualizer: Optional[VisualizerProtocol] = None
 
     def __repr__(self) -> str:
         """String representation of context."""
@@ -354,8 +439,23 @@ class InfrastructureContext:
         return f"InfrastructureContext(components=[{', '.join(components)}])"
 
 
-# Backward compatibility alias
-ExecutionContext = InfrastructureContext
+# Renamed alias — avoids collision with src.core.context.ExecutionContext
+DomainExecutionContext = InfrastructureContext
+
+
+def __getattr__(name: str) -> object:
+    """Module-level __getattr__ for backward-compatible access to ExecutionContext."""
+    if name == "ExecutionContext":
+        import warnings
+        warnings.warn(
+            "Importing ExecutionContext from src.compiler.domain_state is deprecated. "
+            "Use InfrastructureContext (or DomainExecutionContext) instead. "
+            "For the agent/tracking execution context, use src.core.context.ExecutionContext.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return InfrastructureContext
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def create_initial_domain_state(**kwargs: Any) -> WorkflowDomainState:

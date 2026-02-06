@@ -30,15 +30,14 @@ Example:
     0.567
 """
 
-from typing import Dict, Any, List
-from collections import Counter
+from typing import Any, Dict, List
 
 from src.strategies.base import (
-    CollaborationStrategy,
     AgentOutput,
+    CollaborationStrategy,
     SynthesisResult,
     calculate_consensus_confidence,
-    calculate_vote_distribution
+    calculate_vote_distribution,
 )
 
 # Constants

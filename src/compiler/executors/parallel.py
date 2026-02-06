@@ -2,14 +2,13 @@
 
 Executes multiple agents concurrently via a pluggable ParallelRunner.
 """
-from typing import Dict, Any, Optional, List, Callable, cast
-import uuid
-import time
 import logging
+import time
+import uuid
+from typing import Any, Callable, Dict, Optional, cast
 
-from src.compiler.executors.base import StageExecutor, ParallelRunner
-from src.compiler.utils import extract_agent_name
 from src.agents.agent_factory import AgentFactory
+from src.compiler.executors.base import ParallelRunner, StageExecutor
 from src.core.context import ExecutionContext
 from src.utils.config_helpers import get_nested_value
 from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError
@@ -74,6 +73,19 @@ class ParallelStageExecutor(StageExecutor):
         Raises:
             RuntimeError: If stage execution fails
         """
+        # Derive wall-clock timeout for the entire retry loop from stage config.
+        # Default to 600s (10 minutes) if not specified.
+        _wall_clock_timeout: float = 600.0
+        if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'execution'):
+            _wall_clock_timeout = float(
+                getattr(stage_config.stage.execution, 'timeout_seconds', 600)
+            )
+        elif isinstance(stage_config, dict):
+            _exec_cfg = get_nested_value(stage_config, 'stage.execution') or {}
+            _wall_clock_timeout = float(_exec_cfg.get('timeout_seconds', 600))
+
+        _wall_clock_start = time.monotonic()
+
         # Iterative retry loop — replaces former recursive self.execute_stage() call.
         # Stack depth stays constant regardless of max_retries.
         while True:
@@ -335,10 +347,22 @@ class ParallelStageExecutor(StageExecutor):
                                 }
                             )
 
+                        # Check wall-clock timeout before retrying
+                        elapsed = time.monotonic() - _wall_clock_start
+                        if elapsed >= _wall_clock_timeout:
+                            raise RuntimeError(
+                                f"Quality gate retry for stage '{stage_name}' aborted: "
+                                f"wall-clock timeout ({_wall_clock_timeout:.0f}s) exceeded "
+                                f"after {elapsed:.1f}s and {retry_count + 1} retries. "
+                                f"Violations: {'; '.join(violations)}"
+                            )
+
                         # Log retry attempt
                         logger.warning(
                             f"Quality gates failed for stage '{stage_name}', retrying "
-                            f"(attempt {retry_count + 2}/{max_retries + 1}). Violations: {'; '.join(violations)}"
+                            f"(attempt {retry_count + 2}/{max_retries + 1}, "
+                            f"elapsed {elapsed:.1f}s/{_wall_clock_timeout:.0f}s). "
+                            f"Violations: {'; '.join(violations)}"
                         )
 
                         # Iterative retry: continue the while loop instead of recursing
@@ -385,7 +409,7 @@ class ParallelStageExecutor(StageExecutor):
 
                 return state
 
-            except Exception as e:
+            except Exception:
                 # Handle stage failure
                 stage_dict = stage_config if isinstance(stage_config, dict) else {}
                 error_handling = stage_dict.get("error_handling", {})

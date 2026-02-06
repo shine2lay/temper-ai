@@ -26,14 +26,15 @@ References:
 - Cryptography lib: https://cryptography.io/en/latest/fernet/
 - Keyring lib: https://github.com/jaraco/keyring
 """
-from collections import deque
-from cryptography.fernet import Fernet, InvalidToken
-from typing import Optional, Dict, Any, List
 import json
+import logging
 import os
 import threading
-import logging
+from collections import deque
 from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional
+
+from cryptography.fernet import Fernet, InvalidToken
 
 # Optional keyring import (fallback gracefully if not available)
 try:
@@ -47,9 +48,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
-class SecurityError(Exception):
-    """Raised when security requirements cannot be met."""
-    pass
+# Consolidated: canonical definition in src/utils/exceptions.py
+from src.utils.exceptions import SecurityError  # noqa: F401
 
 
 class SecureTokenStore:
@@ -323,7 +323,7 @@ class SecureTokenStore:
             try:
                 decrypted = self.cipher.decrypt(encrypted)
                 token_data = json.loads(decrypted.decode())
-            except (InvalidToken, json.JSONDecodeError) as e:
+            except (InvalidToken, json.JSONDecodeError):
                 # Decryption failed (corrupted data, wrong key, or tampered)
                 # SECURITY: Delete corrupted token (lock is reentrant, safe to call)
                 self.delete_token(user_id)

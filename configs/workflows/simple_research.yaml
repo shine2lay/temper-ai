@@ -52,7 +52,7 @@ workflow:
 
   # Execution settings
   execution:
-    timeout_seconds: 900  # 15 minute workflow timeout
+    timeout_seconds: 9000  # 150 minute workflow timeout
     max_stages: 10  # Safety limit
     parallel_execution: false  # Sequential for M1
 

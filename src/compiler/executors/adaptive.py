@@ -2,11 +2,11 @@
 
 Starts with parallel execution, switches to sequential if disagreement is high.
 """
-from typing import Dict, Any, Optional, cast
+from typing import Any, Dict, Optional, cast
 
 from src.compiler.executors.base import StageExecutor
-from src.compiler.executors.sequential import SequentialStageExecutor
 from src.compiler.executors.parallel import ParallelStageExecutor
+from src.compiler.executors.sequential import SequentialStageExecutor
 
 
 class AdaptiveStageExecutor(StageExecutor):
@@ -99,6 +99,7 @@ class AdaptiveStageExecutor(StageExecutor):
             # Calculate disagreement rate from synthesis result
             # We need to reconstruct a minimal SynthesisResult-like object
             class MinimalSynthesisResult:
+                """Lightweight synthesis result for disagreement calculation."""
                 def __init__(self, votes: Dict[str, int]) -> None:
                     self.votes = votes
 

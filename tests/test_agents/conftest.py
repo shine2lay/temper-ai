@@ -1,12 +1,22 @@
 """Shared fixtures for agent tests."""
 import pytest
+
+from src.agents.llm.base import BaseLLM
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
-    PromptConfig,
-    InferenceConfig,
     ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_shared_circuit_breakers():
+    """Reset shared circuit breakers between tests to prevent cross-test interference."""
+    BaseLLM.reset_shared_circuit_breakers()
+    yield
+    BaseLLM.reset_shared_circuit_breakers()
 
 
 @pytest.fixture

@@ -14,10 +14,11 @@ import re
 import unicodedata
 import urllib.parse
 from pathlib import Path
-from typing import Dict, Any, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
+
 from src.safety.base import BaseSafetyPolicy
+from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
-from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
 
 
 class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
@@ -570,7 +571,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         # This prevents bypasses like /etc/%2e%2e/passwd or /etc%2fpasswd
         try:
             decoded = self._decode_url_fully(path)
-        except ValueError as e:
+        except ValueError:
             # Deeply nested encoding detected - treat as invalid/suspicious
             # Return original path which will likely fail validation
             decoded = path

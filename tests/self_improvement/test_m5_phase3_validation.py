@@ -10,33 +10,31 @@ This script validates that Phase 3 components work end-to-end:
 
 NOTE: Uses mocked components for fast, deterministic tests.
 """
-import pytest
 import logging
-from unittest.mock import Mock, patch
-from datetime import datetime, timezone, timedelta
-import tempfile
 import shutil
+import tempfile
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import Mock
 
+import pytest
+
+from src.observability.database import get_session, init_database
+from src.self_improvement.data_models import AgentPerformanceProfile
 from src.self_improvement.detection import (
     ImprovementDetector,
     ImprovementProposal,
-    ProblemDetector,
-    ProblemDetectionConfig,
     PerformanceProblem,
-    ProblemType,
+    ProblemDetector,
     ProblemSeverity,
+    ProblemType,
 )
+from src.self_improvement.model_registry import ModelRegistry
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 from src.self_improvement.performance_comparison import compare_profiles
-from src.self_improvement.data_models import AgentPerformanceProfile
-from src.self_improvement.strategies.registry import StrategyRegistry
 from src.self_improvement.strategies.ollama_model_strategy import OllamaModelSelectionStrategy
-from src.self_improvement.strategies.strategy import OptimizationConfig
-from src.self_improvement.model_registry import ModelRegistry
-from src.observability.database import init_database, get_session
-from src.observability.tracker import ExecutionTracker
-from src.observability.backends import SQLObservabilityBackend
+from src.self_improvement.strategies.registry import StrategyRegistry
+from src.self_improvement.strategies.strategy import SIOptimizationConfig
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +50,8 @@ class TestM5Phase3Validation:
     def setup_database(self):
         """Initialize in-memory database for testing."""
         # Reset global database before each test
-        from src.observability.database import _db_manager, _db_lock
         import src.observability.database as db_module
+        from src.observability.database import _db_lock
         with _db_lock:
             db_module._db_manager = None
 
@@ -82,22 +80,11 @@ class TestM5Phase3Validation:
 
     def test_phase3_components_exist(self):
         """Verify all Phase 3 components can be imported."""
-        # Problem detection
-        from src.self_improvement.detection import (
-            ImprovementDetector,
-            ProblemDetector,
-            ImprovementProposal,
-        )
-
-        # Strategy components
-        from src.self_improvement.strategies.registry import StrategyRegistry
-        from src.self_improvement.strategies.ollama_model_strategy import (
-            OllamaModelSelectionStrategy,
-        )
-
-        # All imports successful
-        assert True
-        logger.info("✓ All Phase 3 components exist and can be imported")
+        # Verify the module-level imports resolved to real classes
+        assert callable(ImprovementDetector), "ImprovementDetector should be importable"
+        assert callable(ProblemDetector), "ProblemDetector should be importable"
+        assert callable(OllamaModelSelectionStrategy), "OllamaModelSelectionStrategy should be importable"
+        logger.info("All Phase 3 components exist and can be imported")
 
     def test_improvement_detection_workflow(self, temp_baseline_dir, strategy_registry):
         """
@@ -199,7 +186,7 @@ class TestM5Phase3Validation:
         strategy = OllamaModelSelectionStrategy(model_registry)
 
         # Create current config
-        current_config = OptimizationConfig(
+        current_config = SIOptimizationConfig(
             agent_name="test_agent",
             inference={"model": "phi3:mini"},
             prompt={"template": "Extract product information"},

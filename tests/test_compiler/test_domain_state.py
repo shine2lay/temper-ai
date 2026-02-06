@@ -6,12 +6,14 @@ This module tests the fundamental separation between:
 
 Critical for checkpoint/resume capability (m3.2-06).
 """
-import pytest
 import json
 from datetime import datetime
+
+import pytest
+
 from src.compiler.domain_state import (
-    WorkflowDomainState,
     ExecutionContext,
+    WorkflowDomainState,
     create_initial_domain_state,
     merge_domain_states,
 )

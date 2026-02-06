@@ -4,10 +4,10 @@ Input validation utilities for safety policies.
 Provides validation methods for common parameter types to prevent
 security vulnerabilities from malformed configurations.
 """
+import logging
 import re
 import time
-from typing import Any, Optional, List, Dict, Pattern
-import logging
+from typing import Any, Dict, List, Optional, Pattern
 
 logger = logging.getLogger(__name__)
 

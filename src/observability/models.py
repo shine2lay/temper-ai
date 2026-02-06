@@ -5,9 +5,10 @@ Full schema for tracking workflow, stage, agent, LLM, tool executions
 and learning/merit systems.
 """
 from datetime import datetime
-from typing import Optional, Dict, Any, List
-from sqlmodel import Field, SQLModel, Relationship, Column
-from sqlalchemy import Index, JSON, ForeignKey, String
+from typing import Any, Dict, List, Optional
+
+from sqlalchemy import JSON, ForeignKey, Index, String
+from sqlmodel import Column, Field, Relationship, SQLModel
 
 from src.observability.datetime_utils import utcnow
 

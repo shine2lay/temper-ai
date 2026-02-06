@@ -2,11 +2,13 @@
 
 Verifies node creation, configuration loading, and executor delegation.
 """
+from unittest.mock import Mock
+
 import pytest
-from unittest.mock import Mock, MagicMock
-from src.compiler.node_builder import NodeBuilder
-from src.compiler.state import WorkflowState
+
 from src.compiler.config_loader import ConfigLoader
+from src.compiler.domain_state import WorkflowDomainState
+from src.compiler.node_builder import NodeBuilder
 from src.tools.registry import ToolRegistry
 
 
@@ -184,18 +186,18 @@ class TestCreateStageNode:
 
     def test_create_stage_node_returns_callable(self):
         """Test that create_stage_node returns a callable."""
-        config_loader = Mock()
+        config_loader = Mock(spec=ConfigLoader)
         config_loader.load_stage.return_value = {
             "agents": ["agent1"],
             "execution": {"agent_mode": "sequential"}
         }
 
         executor = Mock()
-        executor.execute_stage.return_value = WorkflowState()
+        executor.execute_stage.return_value = {"stage_outputs": {}, "current_stage": ""}
 
         builder = NodeBuilder(
             config_loader=config_loader,
-            tool_registry=Mock(),
+            tool_registry=Mock(spec=ToolRegistry),
             executors={'sequential': executor}
         )
 
@@ -205,7 +207,7 @@ class TestCreateStageNode:
 
     def test_stage_node_loads_config(self):
         """Test that stage node loads configuration."""
-        config_loader = Mock()
+        config_loader = Mock(spec=ConfigLoader)
         stage_config = {
             "agents": ["agent1"],
             "execution": {"agent_mode": "sequential"}
@@ -213,23 +215,23 @@ class TestCreateStageNode:
         config_loader.load_stage.return_value = stage_config
 
         executor = Mock()
-        executor.execute_stage.return_value = WorkflowState()
+        executor.execute_stage.return_value = {"stage_outputs": {}, "current_stage": ""}
 
         builder = NodeBuilder(
             config_loader=config_loader,
-            tool_registry=Mock(),
+            tool_registry=Mock(spec=ToolRegistry),
             executors={'sequential': executor}
         )
 
         node = builder.create_stage_node("research", {})
-        state = WorkflowState()
+        state = WorkflowDomainState()
         node(state)
 
         config_loader.load_stage.assert_called_once_with("research")
 
     def test_stage_node_delegates_to_executor(self):
         """Test that stage node delegates to correct executor."""
-        config_loader = Mock()
+        config_loader = Mock(spec=ConfigLoader)
         stage_config = {
             "agents": ["agent1"],
             "execution": {"agent_mode": "parallel"}
@@ -238,11 +240,11 @@ class TestCreateStageNode:
 
         sequential_executor = Mock()
         parallel_executor = Mock()
-        parallel_executor.execute_stage.return_value = WorkflowState()
+        parallel_executor.execute_stage.return_value = {"stage_outputs": {}, "current_stage": ""}
 
         builder = NodeBuilder(
             config_loader=config_loader,
-            tool_registry=Mock(),
+            tool_registry=Mock(spec=ToolRegistry),
             executors={
                 'sequential': sequential_executor,
                 'parallel': parallel_executor
@@ -250,7 +252,7 @@ class TestCreateStageNode:
         )
 
         node = builder.create_stage_node("research", {})
-        state = WorkflowState()
+        state = WorkflowDomainState()
         node(state)
 
         # Should call parallel executor, not sequential
@@ -259,8 +261,8 @@ class TestCreateStageNode:
 
     def test_stage_node_passes_correct_arguments(self):
         """Test that stage node passes correct arguments to executor."""
-        config_loader = Mock()
-        tool_registry = Mock()
+        config_loader = Mock(spec=ConfigLoader)
+        tool_registry = Mock(spec=ToolRegistry)
         stage_config = {
             "agents": ["agent1"],
             "execution": {"agent_mode": "sequential"}
@@ -268,7 +270,7 @@ class TestCreateStageNode:
         config_loader.load_stage.return_value = stage_config
 
         executor = Mock()
-        executor.execute_stage.return_value = WorkflowState()
+        executor.execute_stage.return_value = {"stage_outputs": {}, "current_stage": ""}
 
         builder = NodeBuilder(
             config_loader=config_loader,
@@ -277,30 +279,32 @@ class TestCreateStageNode:
         )
 
         node = builder.create_stage_node("research", {})
-        state = WorkflowState(workflow_id="wf-123")
+        state = WorkflowDomainState(workflow_id="wf-123")
         node(state)
 
         # Verify executor.execute_stage was called with correct args
         call_args = executor.execute_stage.call_args
         assert call_args[1]['stage_name'] == "research"
         assert call_args[1]['stage_config'] == stage_config
-        assert call_args[1]['state'] is state
+        # State is converted to dict via to_typed_dict() before passing to executor
+        assert isinstance(call_args[1]['state'], dict)
+        assert call_args[1]['state']['workflow_id'] == "wf-123"
         assert call_args[1]['config_loader'] is config_loader
         assert call_args[1]['tool_registry'] is tool_registry
 
     def test_stage_node_handles_config_load_error(self):
         """Test that stage node raises error if config cannot be loaded."""
-        config_loader = Mock()
+        config_loader = Mock(spec=ConfigLoader)
         config_loader.load_stage.side_effect = Exception("Config not found")
 
         builder = NodeBuilder(
             config_loader=config_loader,
-            tool_registry=Mock(),
+            tool_registry=Mock(spec=ToolRegistry),
             executors={'sequential': Mock()}
         )
 
         node = builder.create_stage_node("missing_stage", {})
-        state = WorkflowState()
+        state = WorkflowDomainState()
 
         with pytest.raises(ValueError, match="Cannot load stage config"):
             node(state)
@@ -311,7 +315,7 @@ class TestFindEmbeddedStage:
 
     def test_find_embedded_returns_none_currently(self):
         """Test that find_embedded_stage returns None (not yet implemented)."""
-        builder = NodeBuilder(Mock(), Mock(), {})
+        builder = NodeBuilder(Mock(spec=ConfigLoader), Mock(spec=ToolRegistry), {})
 
         # Mock workflow config with embedded stages
         workflow_config = Mock()

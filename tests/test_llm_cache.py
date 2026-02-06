@@ -12,19 +12,12 @@ Tests cover:
 - Integration with LLM providers
 """
 import time
-import hashlib
-import json
-import pytest
-from unittest.mock import Mock, patch, MagicMock
 from threading import Thread
+from unittest.mock import MagicMock, patch
 
-from src.cache.llm_cache import (
-    LLMCache,
-    InMemoryCache,
-    RedisCache,
-    CacheStats,
-    CacheBackend
-)
+import pytest
+
+from src.cache.llm_cache import CacheStats, InMemoryCache, LLMCache, RedisCache
 
 # Check if redis is available
 try:

@@ -6,30 +6,27 @@ using weakref.finalize() to prevent thread leaks.
 """
 from __future__ import annotations
 
+import threading
 import time
 import weakref
-import threading
-from typing import Dict, Any, Optional, TYPE_CHECKING
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
-from collections import deque, defaultdict
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from src.observability.rollback_logger import log_rollback_event
 from src.tools.base import BaseTool, ToolResult
 from src.tools.registry import ToolRegistry
 from src.utils.logging import get_logger
-from src.observability.rollback_logger import log_rollback_event
 
 if TYPE_CHECKING:
-    from src.safety.rollback import RollbackManager
-    from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+    from src.safety.action_policy_engine import ActionPolicyEngine
     from src.safety.approval import ApprovalWorkflow
+    from src.safety.rollback import RollbackManager
 
 # Module logger
 logger = get_logger(__name__)
 
-
-class ToolExecutionError(Exception):
-    """Raised when tool execution fails."""
-    pass
 
 
 class RateLimitError(Exception):
@@ -285,10 +282,10 @@ class ToolExecutor:
         # Policy validation (if engine provided)
         try:
             if self.policy_engine:
-                from src.safety.action_policy_engine import PolicyExecutionContext as _PEC
+                from src.safety.action_policy_engine import PolicyExecutionContext
                 enforcement = self.policy_engine.validate_action_sync(
                     action={"tool": tool_name, "params": params},
-                    context=_PEC(
+                    context=PolicyExecutionContext(
                         agent_id=context.get("agent_id", "unknown"),
                         workflow_id=context.get("workflow_id", "unknown"),
                         stage_id=context.get("stage_id", "unknown"),
@@ -310,7 +307,7 @@ class ToolExecutor:
                 if enforcement.has_blocking_violations() and self.approval_workflow:  # type: ignore
                     approval_request = self.approval_workflow.request_approval(
                         action={"tool": tool_name, "params": params},
-                        reason=f"HIGH/CRITICAL policy violations detected",
+                        reason="HIGH/CRITICAL policy violations detected",
                         context=context,
                         violations=enforcement.violations,  # type: ignore
                         metadata={"enforcement_result": enforcement.metadata}  # type: ignore
@@ -513,6 +510,10 @@ class ToolExecutor:
     ) -> bool:
         """Wait for approval request to be approved/rejected.
 
+        Uses threading.Event.wait() for efficient blocking instead of
+        busy-polling with time.sleep(). Falls back to periodic checks
+        with the Event timeout to detect approval/rejection state changes.
+
         Args:
             request_id: Approval request ID
             poll_interval: Time between status checks (seconds)
@@ -521,14 +522,21 @@ class ToolExecutor:
         Returns:
             True if approved, False if rejected/expired/timeout
         """
-        start_time = time.time()
-        while time.time() - start_time < max_wait:
+        event = threading.Event()
+        deadline = time.monotonic() + max_wait
+
+        while True:
             if self.approval_workflow.is_approved(request_id):  # type: ignore[union-attr]
                 return True
             if self.approval_workflow.is_rejected(request_id):  # type: ignore[union-attr]
                 return False
-            time.sleep(poll_interval)
-        return False
+
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+
+            # Block efficiently until timeout or next check interval
+            event.wait(timeout=min(poll_interval, remaining))
 
     def _handle_approval_rejection(self, request: Any) -> None:
         """Callback for approval rejection - trigger rollback if snapshot exists.
@@ -691,7 +699,7 @@ class ToolExecutor:
         logger.debug("Entering ToolExecutor context")
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
         """Context manager exit - ensures cleanup."""
         logger.debug("Exiting ToolExecutor context")
         self.shutdown(wait=True)

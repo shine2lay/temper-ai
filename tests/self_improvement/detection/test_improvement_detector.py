@@ -4,22 +4,21 @@ Tests for ImprovementDetector.
 Tests the orchestration of problem detection and strategy selection.
 """
 
-import pytest
-from datetime import datetime, timezone, timedelta
-from unittest.mock import Mock, MagicMock
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from unittest.mock import Mock
 
+import pytest
+
+from src.self_improvement.data_models import AgentPerformanceProfile
 from src.self_improvement.detection import (
     ImprovementDetector,
     ImprovementProposal,
     NoBaselineError,
-    InsufficientDataError,
     PerformanceProblem,
-    ProblemType,
     ProblemSeverity,
+    ProblemType,
 )
-from src.self_improvement.data_models import AgentPerformanceProfile
-from src.self_improvement.performance_comparison import PerformanceComparison, MetricChange
 from src.self_improvement.strategies.strategy import ImprovementStrategy
 
 
@@ -172,8 +171,12 @@ class TestImprovementDetector:
     @pytest.mark.skip(reason="Exception class name conflict - to be fixed")
     def test_detect_improvements_insufficient_data(self, detector):
         """Test error when insufficient current data."""
-        from src.self_improvement.performance_analyzer import InsufficientDataError as AnalyzerInsufficientDataError
-        from src.self_improvement.detection.improvement_detector import InsufficientDataError as DetectorInsufficientDataError
+        from src.self_improvement.detection.improvement_detector import (
+            ImprovementDataError as DetectorImprovementDataError,
+        )
+        from src.self_improvement.performance_analyzer import (
+            PerformanceDataError as AnalyzerInsufficientDataError,
+        )
 
         # Setup mocks
         baseline = self.create_profile()
@@ -184,7 +187,7 @@ class TestImprovementDetector:
         )
 
         # Execute & Verify
-        with pytest.raises(DetectorInsufficientDataError):
+        with pytest.raises(DetectorImprovementDataError):
             detector.detect_improvements("test_agent")
 
     def test_detect_improvements_no_problems(self, detector):

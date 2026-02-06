@@ -15,19 +15,48 @@ Supports:
 import os
 import re
 import warnings
-from typing import Optional, Dict, Any, Tuple
-from cryptography.fernet import Fernet
+from typing import Any, Optional, Tuple
 
+from cryptography.fernet import Fernet
 
 __all__ = [
     # Secret resolution
     'SecretReference',
     'resolve_secret',
     'detect_secret_patterns',
+    # URL masking
+    'mask_url_password',
     # Credential obfuscation
     'ObfuscatedCredential',
     'SecureCredential',  # Deprecated alias for ObfuscatedCredential
 ]
+
+
+def mask_url_password(url: str) -> str:
+    """Mask password in a URL for safe logging.
+
+    Replaces the password component in URLs of the form
+    ``scheme://user:password@host`` with ``***``.
+
+    Args:
+        url: URL string that may contain embedded credentials.
+
+    Returns:
+        URL with password replaced by ``***``, or the original
+        string unchanged if no password is found.
+
+    Example:
+        >>> mask_url_password("redis://:secret@localhost:6379/0")
+        'redis://:***@localhost:6379/0'
+        >>> mask_url_password("redis://localhost:6379/0")
+        'redis://localhost:6379/0'
+    """
+    # Match scheme://[user][:password]@host patterns
+    return re.sub(
+        r'(://[^:@]*:)[^@]+(@)',
+        r'\1***\2',
+        url,
+    )
 
 
 class SecretReference:
@@ -402,11 +431,11 @@ def detect_secret_patterns(text: str) -> Tuple[bool, Optional[str]]:
         (False, None)
     """
     # SECURITY: Input length validation (Defense in Depth against ReDoS)
-    MAX_INPUT_LENGTH = 10 * 1024  # 10KB
-    if len(text) > MAX_INPUT_LENGTH:
+    max_input_length = 10 * 1024  # 10KB
+    if len(text) > max_input_length:
         raise ValueError(
             f"Input too long for secret detection ({len(text)} bytes). "
-            f"Maximum {MAX_INPUT_LENGTH} bytes allowed. "
+            f"Maximum {max_input_length} bytes allowed. "
             "This protects against ReDoS attacks."
         )
 

@@ -2,9 +2,9 @@
 Tests for tool registry.
 """
 import pytest
+
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.registry import ToolRegistry, ToolRegistryError
-
 
 # ============================================
 # MOCK TOOLS FOR TESTING

@@ -1,14 +1,7 @@
 """Tests for buffer retry logic and dead-letter queue."""
-import pytest
 from datetime import datetime, timezone
-from src.observability.buffer import (
-    ObservabilityBuffer,
-    BufferedLLMCall,
-    BufferedToolCall,
-    AgentMetricUpdate,
-    RetryableItem,
-    DeadLetterItem
-)
+
+from src.observability.buffer import ObservabilityBuffer
 
 
 class TestBufferRetryLogic:

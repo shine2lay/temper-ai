@@ -3,29 +3,28 @@
 Tests integration between multiple system components without requiring
 full end-to-end workflow execution (no Ollama dependency).
 """
-import pytest
-from unittest.mock import Mock, MagicMock, patch
-from pathlib import Path
 from datetime import datetime
+from pathlib import Path
+from unittest.mock import Mock, patch
 
-from src.agents.standard_agent import StandardAgent
+import pytest
+
 from src.agents.llm_providers import LLMResponse
-from src.tools.registry import ToolRegistry
-from src.tools.calculator import Calculator
-from src.tools.base import ToolResult
+from src.agents.standard_agent import StandardAgent
 from src.compiler.config_loader import ConfigLoader
-from src.compiler.langgraph_compiler import LangGraphCompiler
 from src.compiler.langgraph_engine import LangGraphExecutionEngine
-from src.observability.database import DatabaseManager
-from src.observability.tracker import ExecutionTracker
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
-    PromptConfig,
-    InferenceConfig,
     ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
 )
-
+from src.observability.database import DatabaseManager
+from src.observability.tracker import ExecutionTracker
+from src.tools.base import ToolResult
+from src.tools.calculator import Calculator
+from src.tools.registry import ToolRegistry
 
 # ============================================================================
 # Fixtures
@@ -404,6 +403,7 @@ def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_co
 
     # Verify database persistence
     from sqlalchemy import text
+
     from src.observability.database import get_session
 
     with get_session() as session:

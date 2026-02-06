@@ -11,31 +11,25 @@ Usage:
     python examples/query_trace.py --list 10          # List last 10 executions
     python examples/query_trace.py --json <id>        # Export as JSON
 """
-import sys
 import argparse
 import json
-from typing import Optional, List
-from pathlib import Path
+import sys
+from typing import List, Optional
 
-from src.observability.database import init_database, get_session
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.tree import Tree
+
+from src.observability.database import get_session, init_database
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
     LLMCall,
+    StageExecution,
     ToolExecution,
+    WorkflowExecution,
 )
-from src.observability.formatters import (
-    format_workflow_execution,
-    format_stage_execution,
-    format_agent_execution,
-)
-from rich.console import Console
-from rich.tree import Tree
-from rich.table import Table
-from rich.panel import Panel
-from rich import box
-
 
 console = Console()
 

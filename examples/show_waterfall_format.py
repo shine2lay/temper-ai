@@ -6,7 +6,7 @@ Demonstrates the structure of the observability trace data
 and how it can be used to create waterfall/Gantt charts.
 """
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # Example trace data structure (what you'd get from the database)
 example_trace = {

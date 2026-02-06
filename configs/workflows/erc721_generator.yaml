@@ -73,7 +73,7 @@ workflow:
 
   # Execution settings
   execution:
-    timeout_seconds: 1800  # 30 minute workflow timeout
+    timeout_seconds: 18000  # 300 minute workflow timeout
     max_stages: 10
     parallel_execution: false
 

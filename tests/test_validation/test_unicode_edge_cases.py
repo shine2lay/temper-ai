@@ -12,9 +12,10 @@ Covers:
 - Combining characters
 - Control characters in Unicode range
 """
-import pytest
 import unicodedata
-from pathlib import Path
+
+import pytest
+
 from src.safety.validation import ValidationMixin
 
 

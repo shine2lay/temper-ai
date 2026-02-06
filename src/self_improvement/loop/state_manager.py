@@ -2,22 +2,63 @@
 State management for M5 Self-Improvement Loop.
 
 Manages loop state persistence, transitions, and crash recovery.
+Uses SQLModel ORM via the main database infrastructure.
 """
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional
-from pathlib import Path
-import sys
+from typing import Any, Callable, Dict, Optional
 
-# Add coordination DB to path
-coord_path = Path(__file__).parent.parent.parent.parent / ".claude-coord"
-sys.path.insert(0, str(coord_path))
-from coord_service.database import Database
+from sqlalchemy import JSON, DateTime
+from sqlmodel import Column, Field, SQLModel, select
+
+from src.observability.database import get_session
+from src.observability.datetime_utils import utcnow
 
 from .models import LoopState, LoopStatus, Phase
 
 logger = logging.getLogger(__name__)
+
+
+class M5LoopStateRecord(SQLModel, table=True):
+    """SQLModel for M5 loop state persistence.
+
+    Stores the current state of the self-improvement loop for each agent.
+    Used for crash recovery and multi-process coordination.
+    """
+    __tablename__ = "m5_loop_state"
+
+    agent_name: str = Field(primary_key=True)
+    current_phase: str  # Phase enum value
+    status: str  # LoopStatus enum value
+    iteration_number: int = Field(default=0)
+    phase_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    last_error: Optional[str] = None
+    started_at: datetime = Field(
+        default_factory=utcnow,
+        sa_column=Column(DateTime, nullable=False, default=utcnow),
+    )
+    updated_at: datetime = Field(
+        default_factory=utcnow,
+        sa_column=Column(DateTime, nullable=False, default=utcnow),
+    )
+
+
+def _record_to_state(record: M5LoopStateRecord) -> LoopState:
+    """Convert ORM record to domain LoopState."""
+    phase_data = record.phase_data
+    if isinstance(phase_data, str):
+        phase_data = json.loads(phase_data)
+    return LoopState(
+        agent_name=record.agent_name,
+        current_phase=Phase(record.current_phase),
+        status=LoopStatus(record.status),
+        iteration_number=record.iteration_number,
+        phase_data=phase_data if phase_data else {},
+        last_error=record.last_error,
+        started_at=record.started_at,
+        updated_at=record.updated_at,
+    )
 
 
 class StateTransitionError(Exception):
@@ -31,6 +72,9 @@ class LoopStateManager:
 
     Provides crash recovery by persisting state after each phase transition.
     Validates state transitions and supports pause/resume.
+
+    Uses SQLModel ORM with the main database infrastructure (get_session).
+    Accepts an optional session_factory for dependency injection (testing).
     """
 
     # Valid phase transitions
@@ -42,31 +86,18 @@ class LoopStateManager:
         Phase.DEPLOY: {Phase.DETECT},  # Loop back for next iteration
     }
 
-    def __init__(self, db: Database):
+    def __init__(
+        self,
+        session_factory: Optional[Callable[[], Any]] = None,
+    ):
         """
         Initialize state manager.
 
         Args:
-            db: Coordination database instance
+            session_factory: Optional callable returning a context manager
+                that yields a Session. Defaults to get_session.
         """
-        self.db = db
-        self._ensure_schema()
-
-    def _ensure_schema(self):
-        """Create m5_loop_state table if not exists."""
-        with self.db.transaction() as conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS m5_loop_state (
-                    agent_name TEXT PRIMARY KEY,
-                    current_phase TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    iteration_number INTEGER DEFAULT 0,
-                    phase_data TEXT,
-                    last_error TEXT,
-                    started_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL
-                )
-            """)
+        self._session_factory = session_factory or get_session
 
     def get_state(self, agent_name: str) -> Optional[LoopState]:
         """
@@ -78,25 +109,14 @@ class LoopStateManager:
         Returns:
             LoopState if exists, None otherwise
         """
-        rows = self.db.query(
-            "SELECT * FROM m5_loop_state WHERE agent_name = ?",
-            (agent_name,)
-        )
-
-        if not rows:
-            return None
-
-        row = rows[0]
-        return LoopState(
-            agent_name=row["agent_name"],
-            current_phase=Phase(row["current_phase"]),
-            status=LoopStatus(row["status"]),
-            iteration_number=row["iteration_number"],
-            phase_data=json.loads(row["phase_data"]) if row["phase_data"] else {},
-            last_error=row["last_error"],
-            started_at=datetime.fromisoformat(row["started_at"]),
-            updated_at=datetime.fromisoformat(row["updated_at"]),
-        )
+        with self._session_factory() as session:
+            stmt = select(M5LoopStateRecord).where(
+                M5LoopStateRecord.agent_name == agent_name
+            )
+            record = session.exec(stmt).first()
+            if not record:
+                return None
+            return _record_to_state(record)
 
     def create_state(self, agent_name: str) -> LoopState:
         """
@@ -131,25 +151,35 @@ class LoopStateManager:
         """
         state.updated_at = datetime.now(timezone.utc)
 
-        with self.db.transaction() as conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO m5_loop_state
-                (agent_name, current_phase, status, iteration_number, phase_data,
-                 last_error, started_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    state.agent_name,
-                    state.current_phase.value,
-                    state.status.value,
-                    state.iteration_number,
-                    json.dumps(state.phase_data) if state.phase_data else None,
-                    state.last_error,
-                    state.started_at.isoformat(),
-                    state.updated_at.isoformat(),
-                ),
+        with self._session_factory() as session:
+            # Check if record exists
+            stmt = select(M5LoopStateRecord).where(
+                M5LoopStateRecord.agent_name == state.agent_name
             )
+            record = session.exec(stmt).first()
+
+            if record:
+                record.current_phase = state.current_phase.value
+                record.status = state.status.value
+                record.iteration_number = state.iteration_number
+                record.phase_data = state.phase_data if state.phase_data else None
+                record.last_error = state.last_error
+                record.started_at = state.started_at
+                record.updated_at = state.updated_at
+            else:
+                record = M5LoopStateRecord(
+                    agent_name=state.agent_name,
+                    current_phase=state.current_phase.value,
+                    status=state.status.value,
+                    iteration_number=state.iteration_number,
+                    phase_data=state.phase_data if state.phase_data else None,
+                    last_error=state.last_error,
+                    started_at=state.started_at,
+                    updated_at=state.updated_at,
+                )
+                session.add(record)
+
+            session.commit()
 
         logger.debug(f"Updated state for {state.agent_name}: {state.current_phase.value}")
 
@@ -289,11 +319,14 @@ class LoopStateManager:
         Args:
             agent_name: Name of agent
         """
-        with self.db.transaction() as conn:
-            conn.execute(
-                "DELETE FROM m5_loop_state WHERE agent_name = ?",
-                (agent_name,)
+        with self._session_factory() as session:
+            stmt = select(M5LoopStateRecord).where(
+                M5LoopStateRecord.agent_name == agent_name
             )
+            record = session.exec(stmt).first()
+            if record:
+                session.delete(record)
+                session.commit()
         logger.info(f"Reset state for {agent_name}")
 
     def update_phase_data(self, agent_name: str, data: dict) -> None:

@@ -13,11 +13,11 @@ future lifecycle state machine implementation, testing:
 Future enhancement: Add explicit lifecycle states (pending, running, completed,
 failed, timeout, cancelled) to WorkflowDomainState or ExecutionContext.
 """
-import pytest
 from unittest.mock import Mock
 
-from src.compiler.state import WorkflowState, create_initial_state
-from src.compiler.domain_state import WorkflowDomainState
+import pytest
+
+from src.compiler.domain_state import WorkflowDomainState, create_initial_domain_state
 from src.compiler.execution_engine import WorkflowCancelledError
 from src.compiler.langgraph_engine import LangGraphCompiledWorkflow
 
@@ -27,7 +27,7 @@ class TestWorkflowStateInitialization:
 
     def test_create_initial_state(self):
         """Test creating initial workflow state."""
-        state = create_initial_state(
+        state = create_initial_domain_state(
             workflow_id="wf-001",
             input="Test input"
         )
@@ -39,14 +39,14 @@ class TestWorkflowStateInitialization:
 
     def test_state_starts_with_no_outputs(self):
         """Test new state has no stage outputs."""
-        state = WorkflowState(workflow_id="wf-002")
+        state = WorkflowDomainState(workflow_id="wf-002")
 
         assert len(state.stage_outputs) == 0
         assert not state.has_stage_output("any_stage")
 
     def test_state_fields_initialization(self):
         """Test all state fields are properly initialized."""
-        state = WorkflowState(
+        state = WorkflowDomainState(
             workflow_id="wf-003",
             topic="AI Safety",
             depth="comprehensive"
@@ -63,7 +63,7 @@ class TestWorkflowStateProgression:
 
     def test_stage_output_progression(self):
         """Test state progresses as stages complete."""
-        state = WorkflowState(workflow_id="wf-004")
+        state = WorkflowDomainState(workflow_id="wf-004")
 
         # Simulate stage progression
         state.current_stage = "research"
@@ -83,7 +83,7 @@ class TestWorkflowStateProgression:
 
     def test_multiple_stage_completion(self):
         """Test completing multiple stages in sequence."""
-        state = WorkflowState(workflow_id="wf-005")
+        state = WorkflowDomainState(workflow_id="wf-005")
 
         stages = ["stage1", "stage2", "stage3"]
         for i, stage in enumerate(stages):
@@ -100,7 +100,7 @@ class TestWorkflowStateProgression:
 
     def test_get_previous_outputs(self):
         """Test accessing all previous stage outputs."""
-        state = WorkflowState(workflow_id="wf-006")
+        state = WorkflowDomainState(workflow_id="wf-006")
 
         state.set_stage_output("stage1", {"data": "value1"})
         state.set_stage_output("stage2", {"data": "value2"})
@@ -185,7 +185,7 @@ class TestWorkflowStateValidation:
 
     def test_valid_state_passes_validation(self):
         """Test valid state passes validation."""
-        state = WorkflowState(workflow_id="wf-007")
+        state = WorkflowDomainState(workflow_id="wf-007")
         state.set_stage_output("stage1", {"data": "value"})
 
         valid, errors = state.validate()
@@ -209,7 +209,7 @@ class TestWorkflowStateConsistency:
 
     def test_state_copy_preserves_data(self):
         """Test copying state preserves all data."""
-        original = WorkflowState(
+        original = WorkflowDomainState(
             workflow_id="wf-008",
             topic="AI"
         )
@@ -224,17 +224,17 @@ class TestWorkflowStateConsistency:
 
     def test_state_to_dict_round_trip(self):
         """Test state can be serialized and deserialized."""
-        original = WorkflowState(
+        original = WorkflowDomainState(
             workflow_id="wf-009",
             input="test input"
         )
         original.set_stage_output("stage1", {"result": "success"})
 
-        # Serialize (domain only)
-        state_dict = original.to_dict(exclude_internal=True)
+        # Serialize (domain only — WorkflowDomainState has no internal fields)
+        state_dict = original.to_dict()
 
         # Deserialize
-        restored = WorkflowState.from_dict(state_dict)
+        restored = WorkflowDomainState.from_dict(state_dict)
 
         assert restored.workflow_id == original.workflow_id
         assert restored.input == original.input
@@ -242,7 +242,7 @@ class TestWorkflowStateConsistency:
 
     def test_stage_output_immutability(self):
         """Test that stage outputs are independent."""
-        state = WorkflowState(workflow_id="wf-010")
+        state = WorkflowDomainState(workflow_id="wf-010")
 
         output1 = {"data": "value1"}
         state.set_stage_output("stage1", output1)
@@ -262,7 +262,7 @@ class TestWorkflowStateMetadata:
 
     def test_metadata_storage(self):
         """Test storing metadata in state."""
-        state = WorkflowState(workflow_id="wf-011")
+        state = WorkflowDomainState(workflow_id="wf-011")
 
         state.metadata = {"key": "value", "count": 42}
 
@@ -271,7 +271,7 @@ class TestWorkflowStateMetadata:
 
     def test_metadata_updates(self):
         """Test updating metadata."""
-        state = WorkflowState(workflow_id="wf-012")
+        state = WorkflowDomainState(workflow_id="wf-012")
 
         state.metadata = {"initial": "data"}
         state.metadata["added"] = "new_value"
@@ -281,7 +281,7 @@ class TestWorkflowStateMetadata:
 
     def test_version_tracking(self):
         """Test state version is tracked."""
-        state = WorkflowState(workflow_id="wf-013")
+        state = WorkflowDomainState(workflow_id="wf-013")
 
         assert state.version == "1.0"
 
@@ -293,7 +293,7 @@ class TestWorkflowStateEdgeCases:
 
     def test_get_nonexistent_stage_output(self):
         """Test getting output from non-existent stage."""
-        state = WorkflowState(workflow_id="wf-014")
+        state = WorkflowDomainState(workflow_id="wf-014")
 
         result = state.get_stage_output("nonexistent", default="default_value")
 
@@ -315,7 +315,7 @@ class TestWorkflowStateEdgeCases:
 
     def test_stage_output_overwrite(self):
         """Test overwriting stage output."""
-        state = WorkflowState(workflow_id="wf-015")
+        state = WorkflowDomainState(workflow_id="wf-015")
 
         state.set_stage_output("stage1", {"version": 1})
         state.set_stage_output("stage1", {"version": 2})
@@ -326,7 +326,7 @@ class TestWorkflowStateEdgeCases:
 
     def test_many_stages(self):
         """Test workflow with many stages."""
-        state = WorkflowState(workflow_id="wf-016")
+        state = WorkflowDomainState(workflow_id="wf-016")
 
         # Add 100 stages
         for i in range(100):

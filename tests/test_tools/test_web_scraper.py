@@ -3,20 +3,22 @@ Unit tests for WebScraper tool.
 
 Tests web scraping with mocked HTTP responses.
 """
-import pytest
-import httpx
 import socket
-from unittest.mock import Mock, patch, MagicMock
-from src.tools.web_scraper import WebScraper, RateLimiter
 import time
+from unittest.mock import MagicMock, Mock, patch
+
+import httpx
+import pytest
+
+from src.tools.web_scraper import ScraperRateLimiter, WebScraper
 
 
-class TestRateLimiter:
+class TestScraperRateLimiter:
     """Test rate limiter."""
 
     def test_allows_requests_under_limit(self):
         """Test that requests under limit are allowed."""
-        limiter = RateLimiter(max_requests=5, time_window=60)
+        limiter = ScraperRateLimiter(max_requests=5, time_window=60)
 
         for _ in range(5):
             assert limiter.can_proceed() is True
@@ -24,7 +26,7 @@ class TestRateLimiter:
 
     def test_blocks_requests_over_limit(self):
         """Test that requests over limit are blocked."""
-        limiter = RateLimiter(max_requests=3, time_window=60)
+        limiter = ScraperRateLimiter(max_requests=3, time_window=60)
 
         # Use up the limit
         for _ in range(3):
@@ -35,7 +37,7 @@ class TestRateLimiter:
 
     def test_allows_requests_after_window(self):
         """Test that requests are allowed after time window expires."""
-        limiter = RateLimiter(max_requests=2, time_window=1)  # 1 second window
+        limiter = ScraperRateLimiter(max_requests=2, time_window=1)  # 1 second window
 
         # Use up limit
         limiter.record_request()
@@ -50,7 +52,7 @@ class TestRateLimiter:
 
     def test_wait_time(self):
         """Test wait time calculation."""
-        limiter = RateLimiter(max_requests=1, time_window=60)
+        limiter = ScraperRateLimiter(max_requests=1, time_window=60)
 
         limiter.record_request()
         assert limiter.can_proceed() is False
@@ -60,7 +62,7 @@ class TestRateLimiter:
 
     def test_tokens_refill_after_window(self):
         """Test that rate limiter allows requests again after window expires."""
-        limiter = RateLimiter(max_requests=10, time_window=1)  # 1 second window
+        limiter = ScraperRateLimiter(max_requests=10, time_window=1)  # 1 second window
 
         # Exhaust all tokens
         for _ in range(10):

@@ -3,26 +3,30 @@ SQL backend for observability system.
 
 Implements observability backend using SQLModel/SQLAlchemy for relational databases.
 Supports SQLite (dev/test) and PostgreSQL (production).
-"""
-from contextlib import contextmanager
-from typing import Optional, Dict, Any, List, ContextManager, cast
-from datetime import datetime, timezone, timedelta
-import logging
-import threading
 
-from sqlmodel import select, func, delete
-from sqlalchemy import case, Index
+Session lifecycle: Each tracking method opens a per-operation session via
+``get_session()`` (from ``src.observability.database``). This avoids long-lived
+session state and the subtle bugs that come with session-stack / standalone-session
+patterns (C-02).
+"""
+import logging
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, cast
+
+from sqlalchemy import case
+from sqlmodel import delete, func, select
 
 from src.observability.backend import ObservabilityBackend
 from src.observability.database import get_session
-from src.observability.datetime_utils import safe_duration_seconds, ensure_utc
+from src.observability.datetime_utils import ensure_utc, safe_duration_seconds
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
-    LLMCall,
-    ToolExecution,
     CollaborationEvent,
+    LLMCall,
+    StageExecution,
+    ToolExecution,
+    WorkflowExecution,
 )
 
 logger = logging.getLogger(__name__)
@@ -33,23 +37,18 @@ class SQLObservabilityBackend(ObservabilityBackend):
     SQL-based observability backend.
 
     Features:
-    - Session reuse via session stack (reduces connection overhead)
+    - Per-operation sessions via get_session() (no long-lived state)
     - Automatic metrics aggregation using SQL
     - Foreign key constraints for data integrity
     - Indexes on common query patterns
     - Retention policy support
     - Buffering enabled by default for batch operations (reduces N+1 queries)
 
-    Database Session Optimization:
-    - Reuses database session within each tracking context
-    - Reduces connection overhead from 5-50ms per operation
-    - Single session per workflow/stage/agent execution
-
     Performance Optimizations:
     - Indexed columns: workflow_name, stage_name, agent_name, status
     - Composite indexes for common joins
     - Aggregation queries use SQL instead of Python
-    - Buffering: 200 queries → ~2 queries for 100 LLM calls (90% reduction)
+    - Buffering: 200 queries -> ~2 queries for 100 LLM calls (90% reduction)
 
     Buffering Mode (Default):
     - Buffer is created automatically with default settings (100 items, 5s timeout)
@@ -68,13 +67,13 @@ class SQLObservabilityBackend(ObservabilityBackend):
                    If None, a default buffer will be created to enable buffered mode.
                    Pass buffer=False to explicitly disable buffering.
         """
-        # Thread-safe: each thread gets its own session stack and standalone session
-        self._local = threading.local()
-
         # Create default buffer if none provided (unless explicitly disabled with buffer=False)
         if buffer is None:
             from src.observability.buffer import ObservabilityBuffer
-            from src.observability.constants import DEFAULT_BUFFER_SIZE, DEFAULT_BUFFER_TIMEOUT_SECONDS
+            from src.observability.constants import (
+                DEFAULT_BUFFER_SIZE,
+                DEFAULT_BUFFER_TIMEOUT_SECONDS,
+            )
             self._buffer = ObservabilityBuffer(
                 flush_size=DEFAULT_BUFFER_SIZE,
                 flush_interval=DEFAULT_BUFFER_TIMEOUT_SECONDS,
@@ -90,24 +89,6 @@ class SQLObservabilityBackend(ObservabilityBackend):
         # Set up flush callback if buffer enabled
         if self._buffer:
             self._buffer.set_flush_callback(self._flush_buffer)
-
-    @property
-    def _session_stack(self) -> List[Any]:
-        """Per-thread session stack (backward-compatible property)."""
-        stack = getattr(self._local, 'session_stack', None)
-        if stack is None:
-            stack = []
-            self._local.session_stack = stack
-        return stack
-
-    @property
-    def _standalone_session(self) -> Optional[Any]:
-        """Per-thread standalone session (backward-compatible property)."""
-        return getattr(self._local, 'standalone_session', None)
-
-    @_standalone_session.setter
-    def _standalone_session(self, value: Optional[Any]) -> None:
-        self._local.standalone_session = value
 
     # ========== Workflow Tracking ==========
 
@@ -146,9 +127,9 @@ class SQLObservabilityBackend(ObservabilityBackend):
             total_cost_usd=0.0
         )
 
-        session = self._get_or_create_session()
-        session.add(workflow_exec)
-        self._commit_and_cleanup(session)
+        with get_session() as session:
+            session.add(workflow_exec)
+            session.commit()
 
     def track_workflow_end(
         self,
@@ -159,24 +140,23 @@ class SQLObservabilityBackend(ObservabilityBackend):
         error_stack_trace: Optional[str] = None
     ) -> None:
         """Record workflow execution completion."""
-        session = self._get_or_create_session()
+        with get_session() as session:
+            statement = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
+            wf = session.exec(statement).first()
+            if wf:
+                wf.status = status
+                wf.end_time = ensure_utc(end_time)
 
-        statement = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
-        wf = session.exec(statement).first()
-        if wf:
-            wf.status = status
-            wf.end_time = ensure_utc(end_time)
+                # Use safe duration calculation
+                wf.duration_seconds = safe_duration_seconds(
+                    wf.start_time,
+                    wf.end_time,
+                    context=f"workflow {workflow_id}"
+                )
 
-            # Use safe duration calculation
-            wf.duration_seconds = safe_duration_seconds(
-                wf.start_time,
-                wf.end_time,
-                context=f"workflow {workflow_id}"
-            )
-
-            wf.error_message = error_message
-            wf.error_stack_trace = error_stack_trace
-            self._commit_and_cleanup(session)
+                wf.error_message = error_message
+                wf.error_stack_trace = error_stack_trace
+                session.commit()
 
     def update_workflow_metrics(
         self,
@@ -187,16 +167,15 @@ class SQLObservabilityBackend(ObservabilityBackend):
         total_cost_usd: float
     ) -> None:
         """Update workflow aggregated metrics."""
-        session = self._get_or_create_session()
-
-        statement = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
-        wf = session.exec(statement).first()
-        if wf:
-            wf.total_llm_calls = total_llm_calls
-            wf.total_tool_calls = total_tool_calls
-            wf.total_tokens = total_tokens
-            wf.total_cost_usd = total_cost_usd
-            self._commit_and_cleanup(session)
+        with get_session() as session:
+            statement = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
+            wf = session.exec(statement).first()
+            if wf:
+                wf.total_llm_calls = total_llm_calls
+                wf.total_tool_calls = total_tool_calls
+                wf.total_tokens = total_tokens
+                wf.total_cost_usd = total_cost_usd
+                session.commit()
 
     # ========== Stage Tracking ==========
 
@@ -224,9 +203,9 @@ class SQLObservabilityBackend(ObservabilityBackend):
             num_agents_failed=0
         )
 
-        session = self._get_or_create_session()
-        session.add(stage_exec)
-        self._commit_and_cleanup(session)
+        with get_session() as session:
+            session.add(stage_exec)
+            session.commit()
 
     def track_stage_end(
         self,
@@ -239,43 +218,42 @@ class SQLObservabilityBackend(ObservabilityBackend):
         num_agents_failed: int = 0
     ) -> None:
         """Record stage execution completion."""
-        session = self._get_or_create_session()
+        with get_session() as session:
+            statement = select(StageExecution).where(StageExecution.id == stage_id)
+            st = session.exec(statement).first()
+            if st:
+                st.status = status
+                st.end_time = ensure_utc(end_time)
 
-        statement = select(StageExecution).where(StageExecution.id == stage_id)
-        st = session.exec(statement).first()
-        if st:
-            st.status = status
-            st.end_time = ensure_utc(end_time)
+                # Use safe duration calculation
+                st.duration_seconds = safe_duration_seconds(
+                    st.start_time,
+                    st.end_time,
+                    context=f"stage {stage_id}"
+                )
 
-            # Use safe duration calculation
-            st.duration_seconds = safe_duration_seconds(
-                st.start_time,
-                st.end_time,
-                context=f"stage {stage_id}"
-            )
+                st.error_message = error_message
 
-            st.error_message = error_message
+                # Use provided metrics or aggregate from child agents
+                if num_agents_executed > 0:
+                    st.num_agents_executed = num_agents_executed
+                    st.num_agents_succeeded = num_agents_succeeded
+                    st.num_agents_failed = num_agents_failed
+                else:
+                    # Aggregate from child agents using SQL
+                    metrics_statement = select(
+                        func.count(AgentExecution.id).label('total'),  # type: ignore[arg-type]
+                        func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
+                        func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
+                    ).where(AgentExecution.stage_execution_id == stage_id)
 
-            # Use provided metrics or aggregate from child agents
-            if num_agents_executed > 0:
-                st.num_agents_executed = num_agents_executed
-                st.num_agents_succeeded = num_agents_succeeded
-                st.num_agents_failed = num_agents_failed
-            else:
-                # Aggregate from child agents using SQL
-                metrics_statement = select(
-                    func.count(AgentExecution.id).label('total'),  # type: ignore[arg-type]
-                    func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
-                    func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
-                ).where(AgentExecution.stage_execution_id == stage_id)
+                    metrics = session.exec(metrics_statement).first()
+                    if metrics:
+                        st.num_agents_executed = int(metrics.total or 0)
+                        st.num_agents_succeeded = int(metrics.succeeded or 0)
+                        st.num_agents_failed = int(metrics.failed or 0)
 
-                metrics = session.exec(metrics_statement).first()
-                if metrics:
-                    st.num_agents_executed = int(metrics.total or 0)
-                    st.num_agents_succeeded = int(metrics.succeeded or 0)
-                    st.num_agents_failed = int(metrics.failed or 0)
-
-            self._commit_and_cleanup(session)
+                session.commit()
 
     def set_stage_output(
         self,
@@ -283,13 +261,12 @@ class SQLObservabilityBackend(ObservabilityBackend):
         output_data: Dict[str, Any]
     ) -> None:
         """Set stage output data."""
-        session = self._get_or_create_session()
-
-        statement = select(StageExecution).where(StageExecution.id == stage_id)
-        stage = session.exec(statement).first()
-        if stage:
-            stage.output_data = output_data
-            self._commit_and_cleanup(session)
+        with get_session() as session:
+            statement = select(StageExecution).where(StageExecution.id == stage_id)
+            stage = session.exec(statement).first()
+            if stage:
+                stage.output_data = output_data
+                session.commit()
 
     # ========== Agent Tracking ==========
 
@@ -321,9 +298,9 @@ class SQLObservabilityBackend(ObservabilityBackend):
             estimated_cost_usd=0.0
         )
 
-        session = self._get_or_create_session()
-        session.add(agent_exec)
-        self._commit_and_cleanup(session)
+        with get_session() as session:
+            session.add(agent_exec)
+            session.commit()
 
     def track_agent_end(
         self,
@@ -333,23 +310,22 @@ class SQLObservabilityBackend(ObservabilityBackend):
         error_message: Optional[str] = None
     ) -> None:
         """Record agent execution completion."""
-        session = self._get_or_create_session()
+        with get_session() as session:
+            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+            ag = session.exec(statement).first()
+            if ag:
+                ag.status = status
+                ag.end_time = ensure_utc(end_time)
 
-        statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-        ag = session.exec(statement).first()
-        if ag:
-            ag.status = status
-            ag.end_time = ensure_utc(end_time)
+                # Use safe duration calculation
+                ag.duration_seconds = safe_duration_seconds(
+                    ag.start_time,
+                    ag.end_time,
+                    context=f"agent {agent_id}"
+                )
 
-            # Use safe duration calculation
-            ag.duration_seconds = safe_duration_seconds(
-                ag.start_time,
-                ag.end_time,
-                context=f"agent {agent_id}"
-            )
-
-            ag.error_message = error_message
-            self._commit_and_cleanup(session)
+                ag.error_message = error_message
+                session.commit()
 
     def set_agent_output(
         self,
@@ -365,30 +341,29 @@ class SQLObservabilityBackend(ObservabilityBackend):
         num_tool_calls: Optional[int] = None
     ) -> None:
         """Set agent output data and metrics."""
-        session = self._get_or_create_session()
+        with get_session() as session:
+            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+            agent = session.exec(statement).first()
+            if agent:
+                agent.output_data = output_data
+                agent.reasoning = reasoning
+                agent.confidence_score = confidence_score
 
-        statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-        agent = session.exec(statement).first()
-        if agent:
-            agent.output_data = output_data
-            agent.reasoning = reasoning
-            agent.confidence_score = confidence_score
+                # Update metrics if provided
+                if total_tokens is not None:
+                    agent.total_tokens = total_tokens
+                if prompt_tokens is not None:
+                    agent.prompt_tokens = prompt_tokens
+                if completion_tokens is not None:
+                    agent.completion_tokens = completion_tokens
+                if estimated_cost_usd is not None:
+                    agent.estimated_cost_usd = estimated_cost_usd
+                if num_llm_calls is not None:
+                    agent.num_llm_calls = num_llm_calls
+                if num_tool_calls is not None:
+                    agent.num_tool_calls = num_tool_calls
 
-            # Update metrics if provided
-            if total_tokens is not None:
-                agent.total_tokens = total_tokens
-            if prompt_tokens is not None:
-                agent.prompt_tokens = prompt_tokens
-            if completion_tokens is not None:
-                agent.completion_tokens = completion_tokens
-            if estimated_cost_usd is not None:
-                agent.estimated_cost_usd = estimated_cost_usd
-            if num_llm_calls is not None:
-                agent.num_llm_calls = num_llm_calls
-            if num_tool_calls is not None:
-                agent.num_tool_calls = num_tool_calls
-
-            self._commit_and_cleanup(session)
+                session.commit()
 
     # ========== LLM Call Tracking ==========
 
@@ -453,20 +428,20 @@ class SQLObservabilityBackend(ObservabilityBackend):
             retry_count=0
         )
 
-        session = self._get_or_create_session()
-        session.add(llm_call)
+        with get_session() as session:
+            session.add(llm_call)
 
-        # Update parent agent metrics in the same session before commit (OB-01)
-        statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-        agent = session.exec(statement).first()
-        if agent:
-            agent.num_llm_calls = (agent.num_llm_calls or 0) + 1
-            agent.total_tokens = (agent.total_tokens or 0) + (llm_call.total_tokens or 0)
-            agent.prompt_tokens = (agent.prompt_tokens or 0) + prompt_tokens
-            agent.completion_tokens = (agent.completion_tokens or 0) + completion_tokens
-            agent.estimated_cost_usd = (agent.estimated_cost_usd or 0.0) + estimated_cost_usd
+            # Update parent agent metrics in the same session before commit (OB-01)
+            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+            agent = session.exec(statement).first()
+            if agent:
+                agent.num_llm_calls = (agent.num_llm_calls or 0) + 1
+                agent.total_tokens = (agent.total_tokens or 0) + (llm_call.total_tokens or 0)
+                agent.prompt_tokens = (agent.prompt_tokens or 0) + prompt_tokens
+                agent.completion_tokens = (agent.completion_tokens or 0) + completion_tokens
+                agent.estimated_cost_usd = (agent.estimated_cost_usd or 0.0) + estimated_cost_usd
 
-        self._commit_and_cleanup(session)
+            session.commit()
 
     # ========== Tool Call Tracking ==========
 
@@ -522,16 +497,16 @@ class SQLObservabilityBackend(ObservabilityBackend):
             retry_count=0
         )
 
-        session = self._get_or_create_session()
-        session.add(tool_exec)
+        with get_session() as session:
+            session.add(tool_exec)
 
-        # Update parent agent metrics in the same session before commit (OB-01)
-        statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-        agent = session.exec(statement).first()
-        if agent:
-            agent.num_tool_calls = (agent.num_tool_calls or 0) + 1
+            # Update parent agent metrics in the same session before commit (OB-01)
+            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+            agent = session.exec(statement).first()
+            if agent:
+                agent.num_tool_calls = (agent.num_tool_calls or 0) + 1
 
-        self._commit_and_cleanup(session)
+            session.commit()
 
     # ========== Safety Tracking ==========
 
@@ -566,49 +541,47 @@ class SQLObservabilityBackend(ObservabilityBackend):
             "timestamp": timestamp.isoformat()
         }
 
-        session = self._get_or_create_session()
+        with get_session() as session:
+            # Update agent execution with violation (if agent context exists)
+            if agent_id:
+                statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+                agent = session.exec(statement).first()
+                if agent:
+                    metadata = cast(Dict[str, Any], agent.extra_metadata or {})
+                    if "safety_violations" not in metadata:
+                        metadata["safety_violations"] = []
+                    metadata["safety_violations"].append(violation_metadata)
+                    metadata["has_safety_violations"] = True
+                    metadata["safety_violation_count"] = len(metadata["safety_violations"])
+                    agent.extra_metadata = metadata
 
-        # Update agent execution with violation (if agent context exists)
-        if agent_id:
-            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-            agent = session.exec(statement).first()
-            if agent:
-                metadata = cast(Dict[str, Any], agent.extra_metadata or {})
-                if "safety_violations" not in metadata:
-                    metadata["safety_violations"] = []
-                metadata["safety_violations"].append(violation_metadata)
-                metadata["has_safety_violations"] = True
-                metadata["safety_violation_count"] = len(metadata["safety_violations"])
-                agent.extra_metadata = metadata
-                self._commit_and_cleanup(session)
+            # Update stage execution with violation (if stage context exists)
+            if stage_id:
+                stage_stmt = select(StageExecution).where(StageExecution.id == stage_id)
+                stage = session.exec(stage_stmt).first()
+                if stage:
+                    stage_metadata = cast(Dict[str, Any], stage.extra_metadata or {})
+                    if "safety_violations" not in stage_metadata:
+                        stage_metadata["safety_violations"] = []
+                    stage_metadata["safety_violations"].append(violation_metadata)
+                    stage_metadata["has_safety_violations"] = True
+                    stage_metadata["safety_violation_count"] = len(stage_metadata["safety_violations"])
+                    stage.extra_metadata = cast(Any, stage_metadata)
 
-        # Update stage execution with violation (if stage context exists)
-        if stage_id:
-            stage_stmt = select(StageExecution).where(StageExecution.id == stage_id)
-            stage = session.exec(stage_stmt).first()
-            if stage:
-                stage_metadata = cast(Dict[str, Any], stage.extra_metadata or {})
-                if "safety_violations" not in stage_metadata:
-                    stage_metadata["safety_violations"] = []
-                stage_metadata["safety_violations"].append(violation_metadata)
-                stage_metadata["has_safety_violations"] = True
-                stage_metadata["safety_violation_count"] = len(stage_metadata["safety_violations"])
-                stage.extra_metadata = cast(Any, stage_metadata)
-                self._commit_and_cleanup(session)
+            # Update workflow execution with violation (if workflow context exists)
+            if workflow_id:
+                wf_stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
+                workflow = session.exec(wf_stmt).first()
+                if workflow:
+                    wf_metadata = cast(Dict[str, Any], workflow.extra_metadata or {})
+                    if "safety_violations" not in wf_metadata:
+                        wf_metadata["safety_violations"] = []
+                    wf_metadata["safety_violations"].append(violation_metadata)
+                    wf_metadata["has_safety_violations"] = True
+                    wf_metadata["safety_violation_count"] = len(wf_metadata["safety_violations"])
+                    workflow.extra_metadata = cast(Any, wf_metadata)
 
-        # Update workflow execution with violation (if workflow context exists)
-        if workflow_id:
-            wf_stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
-            workflow = session.exec(wf_stmt).first()
-            if workflow:
-                wf_metadata = cast(Dict[str, Any], workflow.extra_metadata or {})
-                if "safety_violations" not in wf_metadata:
-                    wf_metadata["safety_violations"] = []
-                wf_metadata["safety_violations"].append(violation_metadata)
-                wf_metadata["has_safety_violations"] = True
-                wf_metadata["safety_violation_count"] = len(wf_metadata["safety_violations"])
-                workflow.extra_metadata = cast(Any, wf_metadata)
-                self._commit_and_cleanup(session)
+            session.commit()
 
     def track_collaboration_event(
         self,
@@ -646,6 +619,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             str: ID of created collaboration event record (format: "collab-{12-char-hex}")
         """
         import uuid
+
         from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
         # Generate unique event ID
@@ -672,118 +646,61 @@ class SQLObservabilityBackend(ObservabilityBackend):
             extra_metadata=extra_metadata
         )
 
-        session = self._get_or_create_session()
-
-        try:
-            session.add(event)
-            self._commit_and_cleanup(session)
-            logger.debug(
-                f"Tracked collaboration event {event_id}: type={event_type}, stage={stage_id}"
-            )
-            return event_id
-
-        except IntegrityError as e:
-            session.rollback()
-
-            # Robust foreign key violation detection (supports multiple databases)
-            error_msg = str(e).lower()
-            orig_error = str(e.orig).lower() if hasattr(e, 'orig') else ""
-            is_fk_violation = (
-                'foreign key' in error_msg or
-                'foreign_key' in error_msg or
-                'violates foreign key constraint' in error_msg or
-                'foreign key constraint failed' in error_msg or  # SQLite
-                'foreign key' in orig_error
-            )
-
-            if is_fk_violation:
-                logger.warning(
-                    f"Foreign key violation: stage {stage_id} not found for collaboration event {event_id}",
-                    extra={"event_id": event_id, "stage_id": stage_id, "event_type": event_type}
+        with get_session() as session:
+            try:
+                session.add(event)
+                session.commit()
+                logger.debug(
+                    f"Tracked collaboration event {event_id}: type={event_type}, stage={stage_id}"
                 )
-            else:
+                return event_id
+
+            except IntegrityError as e:
+                session.rollback()
+
+                # Robust foreign key violation detection (supports multiple databases)
+                error_msg = str(e).lower()
+                orig_error = str(e.orig).lower() if hasattr(e, 'orig') else ""
+                is_fk_violation = (
+                    'foreign key' in error_msg or
+                    'foreign_key' in error_msg or
+                    'violates foreign key constraint' in error_msg or
+                    'foreign key constraint failed' in error_msg or  # SQLite
+                    'foreign key' in orig_error
+                )
+
+                if is_fk_violation:
+                    logger.warning(
+                        f"Foreign key violation: stage {stage_id} not found for collaboration event {event_id}",
+                        extra={"event_id": event_id, "stage_id": stage_id, "event_type": event_type}
+                    )
+                else:
+                    logger.error(
+                        f"Database integrity error tracking collaboration event {event_id}: {e}",
+                        exc_info=True,
+                        extra={"event_id": event_id, "event_type": event_type}
+                    )
+
+                # Return event_id anyway - tracking failures shouldn't break workflows
+                return event_id
+
+            except SQLAlchemyError as e:
+                session.rollback()
                 logger.error(
-                    f"Database integrity error tracking collaboration event {event_id}: {e}",
+                    f"Database error tracking collaboration event: {e}",
                     exc_info=True,
-                    extra={"event_id": event_id, "event_type": event_type}
+                    extra={"event_id": event_id, "event_type": event_type, "stage_id": stage_id}
                 )
-
-            # Return event_id anyway - tracking failures shouldn't break workflows
-            return event_id
-
-        except SQLAlchemyError as e:
-            session.rollback()
-            logger.error(
-                f"Database error tracking collaboration event: {e}",
-                exc_info=True,
-                extra={"event_id": event_id, "event_type": event_type, "stage_id": stage_id}
-            )
-            # Return event_id anyway - tracking failures shouldn't break workflows
-            return event_id
+                # Return event_id anyway - tracking failures shouldn't break workflows
+                return event_id
 
     # ========== Context Management ==========
 
     @contextmanager
     def get_session_context(self) -> Any:
-        """
-        Get database session context manager.
-
-        Implements session reuse pattern - if a session is already active
-        (from parent context), reuses it. Otherwise creates a new session.
-        """
-        if self._session_stack:
-            # Reuse parent session
-            yield self._session_stack[-1]
-        else:
-            # Create new session
-            with get_session() as session:
-                self._session_stack.append(session)
-                try:
-                    yield session
-                finally:
-                    self._session_stack.pop()
-
-    def _get_or_create_session(self) -> Any:
-        """
-        Get current session or create standalone session.
-
-        IMPORTANT: If this creates a standalone session, caller must ensure
-        _cleanup_standalone_session() is called after committing.
-        """
-        if self._session_stack:
-            return self._session_stack[-1]
-        else:
-            # Create standalone session for operations outside context manager
-            # Note: This session must be cleaned up via _cleanup_standalone_session()
-            if self._standalone_session is None:
-                self._standalone_session = get_session().__enter__()
-            return self._standalone_session
-
-    def _cleanup_standalone_session(self) -> None:
-        """
-        Clean up standalone session if one exists.
-
-        Call this after committing in operations that don't use context manager.
-        """
-        if self._standalone_session is not None:
-            try:
-                self._standalone_session.__exit__(None, None, None)
-            except Exception:
-                # Best effort cleanup - don't propagate exceptions
-                pass
-            finally:
-                self._standalone_session = None
-
-    def _commit_and_cleanup(self, session: Any) -> None:
-        """
-        Commit session and clean up standalone session if needed.
-
-        Use this instead of session.commit() in tracking methods.
-        """
-        session.commit()
-        # Only cleanup if we're not in a managed context
-        if not self._session_stack:
-            self._cleanup_standalone_session()
+        """Get database session context manager."""
+        with get_session() as session:
+            yield session
 
     # ========== Maintenance Operations ==========
 
@@ -825,7 +742,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                     WorkflowExecution.start_time < cutoff_date  # type: ignore[arg-type]
                 )
                 session.exec(delete_statement)
-                self._commit_and_cleanup(session)
+                session.commit()
                 logger.info(
                     f"Deleted {counts['workflows']} workflows older than {retention_days} days"
                 )
@@ -843,9 +760,13 @@ class SQLObservabilityBackend(ObservabilityBackend):
         Returns:
             AgentExecution or None if not found
         """
-        session = self._get_or_create_session()
-        statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-        return session.exec(statement).first()
+        with get_session() as session:
+            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+            agent = session.exec(statement).first()
+            if agent:
+                # Expunge so the object can be used after session closes
+                session.expunge(agent)
+            return agent
 
     def aggregate_workflow_metrics(self, workflow_id: str) -> Dict[str, Any]:
         """Aggregate metrics across all agents in a workflow.
@@ -856,31 +777,31 @@ class SQLObservabilityBackend(ObservabilityBackend):
         Returns:
             Dict with total_llm_calls, total_tool_calls, total_tokens, total_cost_usd
         """
-        session = self._get_or_create_session()
-        metrics_statement = select(
-            func.sum(AgentExecution.num_llm_calls).label('total_llm_calls'),  # type: ignore[arg-type]
-            func.sum(AgentExecution.num_tool_calls).label('total_tool_calls'),  # type: ignore[arg-type]
-            func.sum(AgentExecution.total_tokens).label('total_tokens'),  # type: ignore[arg-type]
-            func.sum(AgentExecution.estimated_cost_usd).label('total_cost_usd')  # type: ignore[arg-type]
-        ).join(
-            StageExecution,
-            AgentExecution.stage_execution_id == StageExecution.id
-        ).where(StageExecution.workflow_execution_id == workflow_id)
+        with get_session() as session:
+            metrics_statement = select(
+                func.sum(AgentExecution.num_llm_calls).label('total_llm_calls'),  # type: ignore[arg-type]
+                func.sum(AgentExecution.num_tool_calls).label('total_tool_calls'),  # type: ignore[arg-type]
+                func.sum(AgentExecution.total_tokens).label('total_tokens'),  # type: ignore[arg-type]
+                func.sum(AgentExecution.estimated_cost_usd).label('total_cost_usd')  # type: ignore[arg-type]
+            ).join(
+                StageExecution,
+                AgentExecution.stage_execution_id == StageExecution.id
+            ).where(StageExecution.workflow_execution_id == workflow_id)
 
-        metrics = session.exec(metrics_statement).first()
-        if metrics:
+            metrics = session.exec(metrics_statement).first()
+            if metrics:
+                return {
+                    'total_llm_calls': int(metrics.total_llm_calls or 0),
+                    'total_tool_calls': int(metrics.total_tool_calls or 0),
+                    'total_tokens': int(metrics.total_tokens or 0),
+                    'total_cost_usd': float(metrics.total_cost_usd or 0.0),
+                }
             return {
-                'total_llm_calls': int(metrics.total_llm_calls or 0),
-                'total_tool_calls': int(metrics.total_tool_calls or 0),
-                'total_tokens': int(metrics.total_tokens or 0),
-                'total_cost_usd': float(metrics.total_cost_usd or 0.0),
+                'total_llm_calls': 0,
+                'total_tool_calls': 0,
+                'total_tokens': 0,
+                'total_cost_usd': 0.0,
             }
-        return {
-            'total_llm_calls': 0,
-            'total_tool_calls': 0,
-            'total_tokens': 0,
-            'total_cost_usd': 0.0,
-        }
 
     def aggregate_stage_metrics(self, stage_id: str) -> Dict[str, int]:
         """Aggregate agent metrics within a stage.
@@ -891,25 +812,25 @@ class SQLObservabilityBackend(ObservabilityBackend):
         Returns:
             Dict with num_agents_executed, num_agents_succeeded, num_agents_failed
         """
-        session = self._get_or_create_session()
-        metrics_statement = select(
-            func.count(AgentExecution.id).label('total'),  # type: ignore[arg-type]
-            func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
-            func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
-        ).where(AgentExecution.stage_execution_id == stage_id)
+        with get_session() as session:
+            metrics_statement = select(
+                func.count(AgentExecution.id).label('total'),  # type: ignore[arg-type]
+                func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
+                func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
+            ).where(AgentExecution.stage_execution_id == stage_id)
 
-        metrics = session.exec(metrics_statement).first()
-        if metrics:
+            metrics = session.exec(metrics_statement).first()
+            if metrics:
+                return {
+                    'num_agents_executed': int(metrics.total or 0),
+                    'num_agents_succeeded': int(metrics.succeeded or 0),
+                    'num_agents_failed': int(metrics.failed or 0),
+                }
             return {
-                'num_agents_executed': int(metrics.total or 0),
-                'num_agents_succeeded': int(metrics.succeeded or 0),
-                'num_agents_failed': int(metrics.failed or 0),
+                'num_agents_executed': 0,
+                'num_agents_succeeded': 0,
+                'num_agents_failed': 0,
             }
-        return {
-            'num_agents_executed': 0,
-            'num_agents_succeeded': 0,
-            'num_agents_failed': 0,
-        }
 
     def get_stats(self) -> Dict[str, Any]:
         """Get backend statistics and health information."""
@@ -1011,7 +932,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                 logger.debug(f"Batch inserted {len(tool_models)} tool calls")
 
             # Commit inserts
-            self._commit_and_cleanup(session)
+            session.commit()
 
             # Batch update agent metrics
             if agent_metrics:
@@ -1025,7 +946,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                         agent.prompt_tokens = (agent.prompt_tokens or 0) + metrics.prompt_tokens
                         agent.completion_tokens = (agent.completion_tokens or 0) + metrics.completion_tokens
                         agent.estimated_cost_usd = (agent.estimated_cost_usd or 0) + metrics.estimated_cost_usd
-                self._commit_and_cleanup(session)
+                session.commit()
                 logger.debug(f"Batch updated {len(agent_metrics)} agent metrics")
 
     # ========== Performance Optimizations ==========

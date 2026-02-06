@@ -7,17 +7,13 @@ Tests edge cases and boundary conditions for:
 
 These tests verify graceful handling of unusual or extreme inputs.
 """
-import pytest
-from typing import Dict, Any
 
-from src.strategies.base import AgentOutput, SynthesisResult, Conflict
+import pytest
+
+from src.strategies.base import AgentOutput, Conflict, SynthesisResult
+from src.strategies.conflict_resolution import AgentMerit, ResolutionContext
 from src.strategies.consensus import ConsensusStrategy
 from src.strategies.merit_weighted import MeritWeightedResolver
-from src.strategies.conflict_resolution import (
-    ResolutionContext,
-    AgentMerit,
-    Resolution
-)
 
 
 class TestConsensusEdgeCases:

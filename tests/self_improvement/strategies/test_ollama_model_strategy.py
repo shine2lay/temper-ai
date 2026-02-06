@@ -2,12 +2,12 @@
 
 import pytest
 
+from src.self_improvement.model_registry import ModelRegistry
 from src.self_improvement.strategies import (
-    OllamaModelSelectionStrategy,
     AgentConfig,
     LearnedPattern,
+    OllamaModelSelectionStrategy,
 )
-from src.self_improvement.model_registry import ModelRegistry
 
 
 class TestOllamaModelSelectionStrategy:

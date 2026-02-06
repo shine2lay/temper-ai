@@ -7,11 +7,11 @@ Provides base exception classes that include:
 - Structured error messages
 - Automatic sanitization of sensitive data (API keys, passwords, tokens)
 """
-from typing import Optional, Dict, Any
-from enum import Enum
+import re
 import traceback
 from datetime import datetime, timezone
-import re
+from enum import Enum
+from typing import Any, Dict, Optional
 
 from src.core.context import ExecutionContext  # canonical definition; re-exported here
 
@@ -180,7 +180,23 @@ class ErrorCode(str, Enum):
     UNKNOWN_ERROR = "UNKNOWN_ERROR"
 
 
-class BaseError(Exception):
+class FrameworkException(Exception):  # noqa: N818 — intentional: base exception, not a specific error
+    """Root exception for the entire meta-autonomous framework.
+
+    All framework-specific exceptions should ultimately inherit from this class,
+    providing a single catch-all base for framework error handling.
+
+    Example:
+        >>> try:
+        ...     run_workflow()
+        ... except FrameworkException:
+        ...     # Catches any framework-originated error
+        ...     handle_error()
+    """
+    pass
+
+
+class BaseError(FrameworkException):
     """Base exception class with execution context and error codes.
 
     All custom exceptions should inherit from this class to get
@@ -543,6 +559,16 @@ class WorkflowError(BaseError):
 
 
 # Safety Exceptions
+
+class SecurityError(Exception):
+    """Raised when a security requirement or constraint is violated.
+
+    A lightweight exception for security violations across modules
+    (tools, auth, pricing, etc.). Unlike SafetyError, this does not
+    require ExecutionContext or ErrorCode.
+    """
+    pass
+
 
 class SafetyError(BaseError):
     """Base class for safety-related errors."""

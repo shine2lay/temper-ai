@@ -5,7 +5,7 @@ from LLM response text, plus sanitization of tool output to prevent prompt injec
 """
 import json
 import re
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 # XML tag constants for parsing LLM responses
 TOOL_CALL_TAG = "tool_call"

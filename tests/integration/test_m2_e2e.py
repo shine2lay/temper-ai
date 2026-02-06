@@ -21,16 +21,16 @@ This file contains tests at multiple levels:
 1. Component-level tests (work now with completed components)
 2. Full workflow tests (require m2-05 + m2-06, marked as pending)
 """
-import pytest
-import time
 from pathlib import Path
-from datetime import datetime, timezone
+
+import pytest
 from sqlmodel import select
 
-# Agent components (should be ready after m2-04 + m2-04b)
-from src.agents.base_agent import BaseAgent, AgentResponse, ExecutionContext
-from src.agents.standard_agent import StandardAgent
 from src.agents.agent_factory import AgentFactory
+
+# Agent components (should be ready after m2-04 + m2-04b)
+from src.agents.base_agent import AgentResponse, ExecutionContext
+from src.agents.standard_agent import StandardAgent
 
 # Check for optional engine registry (m2.5-03)
 try:
@@ -49,19 +49,17 @@ except ImportError:
 FULL_WORKFLOW_READY = ENGINE_REGISTRY_READY and TRACKER_READY
 
 from src.compiler.config_loader import ConfigLoader
-from src.tools.registry import ToolRegistry
-from src.tools.calculator import Calculator
-from src.tools.web_scraper import WebScraper
-from src.tools.file_writer import FileWriter
-from src.observability.database import init_database, get_session, DatabaseManager
 from src.observability.console import StreamingVisualizer, WorkflowVisualizer
+from src.observability.database import get_session, init_database
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
-    LLMCall,
-    ToolExecution,
+    StageExecution,
+    WorkflowExecution,
 )
+from src.tools.calculator import Calculator
+from src.tools.file_writer import FileWriter
+from src.tools.registry import ToolRegistry
+from src.tools.web_scraper import WebScraper
 
 
 @pytest.fixture
@@ -185,6 +183,7 @@ def test_agent_execution_mocked(config_loader):
     Validates core agent execution flow without requiring Ollama.
     """
     from unittest.mock import Mock, patch
+
     from src.agents.llm_providers import LLMResponse
     from src.compiler.schemas import AgentConfig
 
@@ -377,14 +376,15 @@ def test_console_visualization(test_db):
         # Create visualizer and display (doesn't actually print in test)
         visualizer = WorkflowVisualizer(verbosity="standard")
         from io import StringIO
+
         from rich.console import Console
 
         # Mock console to capture output
         visualizer.console = Console(file=StringIO(), force_terminal=False)
         visualizer.display_execution(workflow_exec)
 
-        # If we got here without error, visualization works
-        assert True
+        # Verify visualization produced output
+        assert len(visualizer.console.file.getvalue()) > 0, "Expected non-empty visualization output"
 
     print("✅ CONSOLE VISUALIZATION TEST PASSED")
 

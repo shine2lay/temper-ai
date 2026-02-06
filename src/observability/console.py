@@ -1,16 +1,15 @@
 """Console visualization for workflow execution using Rich."""
 import logging
-from typing import Optional, Any
-from threading import Thread, Event
 import time
-from rich.tree import Tree
+from datetime import datetime, timezone
+from threading import Event, Thread
+from typing import Any, Optional
+
+from rich import box
 from rich.console import Console
 from rich.live import Live
 from rich.panel import Panel
-from rich import box
-from rich.spinner import Spinner
-from datetime import datetime, timezone
-
+from rich.tree import Tree
 
 logger = logging.getLogger(__name__)
 
@@ -339,8 +338,9 @@ class StreamingVisualizer(WorkflowVisualizer):
             >>> visualizer.stop()
         """
         # Get initial state
-        from src.observability.database import get_session
         from sqlmodel import select
+
+        from src.observability.database import get_session
         from src.observability.models import WorkflowExecution
 
         with get_session() as session:
@@ -391,8 +391,9 @@ class StreamingVisualizer(WorkflowVisualizer):
 
     def _update_loop(self) -> None:
         """Poll database and update display continuously."""
-        from src.observability.database import get_session
         from sqlmodel import select
+
+        from src.observability.database import get_session
         from src.observability.models import WorkflowExecution
 
         while not self.stop_event.is_set():
@@ -460,6 +461,6 @@ class StreamingVisualizer(WorkflowVisualizer):
         self.start()
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(self, _exc_type: Any, _exc_val: Any, _exc_tb: Any) -> None:
         """Context manager exit."""
         self.stop()

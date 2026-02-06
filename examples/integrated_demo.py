@@ -68,12 +68,12 @@ import httpx
 import numpy as np
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 from sqlalchemy import text
 
 # Framework imports
-from src.agents.llm_providers import OllamaLLM, LLMResponse, LLMError, LLMTimeoutError
+from src.agents.llm_providers import LLMError, LLMResponse, LLMTimeoutError, OllamaLLM
 from src.observability.database import init_database, reset_database
 from src.observability.models import (
     AgentExecution,
@@ -82,7 +82,7 @@ from src.observability.models import (
     WorkflowExecution,
 )
 from src.safety import CircuitBreaker, SecretDetectionPolicy
-from src.self_improvement.data_models import OptimizationConfig
+from src.self_improvement.data_models import SIOptimizationConfig
 from src.self_improvement.deployment.rollback_monitor import RegressionThresholds
 from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
@@ -454,8 +454,8 @@ def _make_id(prefix: str = "ae") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
-def _make_config(model: str, strategy: str, temperature: float = 0.5) -> OptimizationConfig:
-    """Create an OptimizationConfig for a given model+prompt strategy."""
+def _make_config(model: str, strategy: str, temperature: float = 0.5) -> SIOptimizationConfig:
+    """Create an SIOptimizationConfig for a given model+prompt strategy."""
     prompt_cfg: Dict[str, Any] = {"template": f"{strategy}_v1"}
     if strategy == "chain-of-thought":
         prompt_cfg["include_reasoning_guide"] = True
@@ -465,7 +465,7 @@ def _make_config(model: str, strategy: str, temperature: float = 0.5) -> Optimiz
     elif strategy == "structured":
         prompt_cfg["sections"] = ["input", "extraction", "validation"]
 
-    return OptimizationConfig(
+    return SIOptimizationConfig(
         agent_name=AGENT_NAME,
         inference={
             "provider": "ollama",
@@ -1346,7 +1346,7 @@ async def async_main() -> None:
 
     temp_dir = tempfile.mkdtemp(prefix="m5_demo_")
     console.print(f"  Temp directory: {temp_dir}")
-    console.print(f"  Random seed: 42 (for product selection only)")
+    console.print("  Random seed: 42 (for product selection only)")
     console.print()
 
     demo_start = time.time()

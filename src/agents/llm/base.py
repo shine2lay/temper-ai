@@ -3,19 +3,20 @@ Base LLM provider: abstract class, response types, and provider enum.
 
 This module contains the core abstractions shared by all LLM providers.
 """
-import httpx
+import asyncio
 import ipaddress
 import json
-import time
-import asyncio
-import threading
 import logging
+import threading
+import time
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, List, AsyncIterator, Union, Tuple, Type, Literal
-from types import TracebackType
 from dataclasses import dataclass
 from enum import Enum
+from types import TracebackType
+from typing import Any, Dict, Literal, Optional, Tuple, Type
 from urllib.parse import urlparse
+
+import httpx
 
 # Optional caching support
 try:
@@ -25,22 +26,20 @@ except ImportError:
     CACHE_AVAILABLE = False
     LLMCache = None  # type: ignore
 
-from src.utils.error_handling import retry_with_backoff, RetryStrategy
-from src.utils.exceptions import sanitize_error_message
-
 # Import canonical execution context for cache isolation
 from src.core.context import ExecutionContext
 
+# Import circuit breaker for resilience
+from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+
 # Import enhanced exceptions
 from src.utils.exceptions import (
-    LLMError,
-    LLMTimeoutError,
-    LLMRateLimitError,
     LLMAuthenticationError,
+    LLMError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+    sanitize_error_message,
 )
-
-# Import circuit breaker for resilience
-from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError
 
 # Module logger for connection management warnings
 logger = logging.getLogger(__name__)
@@ -93,6 +92,13 @@ class BaseLLM(ABC):
     - Error handling and status code mapping
     """
 
+    # Shared circuit breaker instances keyed by (provider_class, model, base_url).
+    # This ensures all LLM instances targeting the same endpoint share one
+    # circuit breaker, so failures on one instance correctly trip the breaker
+    # for all instances pointing at that endpoint.
+    _circuit_breakers: Dict[Tuple[str, str, str], CircuitBreaker] = {}
+    _circuit_breaker_lock = threading.Lock()
+
     def __init__(
         self,
         model: str,
@@ -140,15 +146,33 @@ class BaseLLM(ABC):
                     RuntimeWarning
                 )
 
-        # Circuit breaker for resilience (per-provider isolation)
-        provider_name = self.__class__.__name__.replace("LLM", "").lower()
-        self._circuit_breaker = CircuitBreaker(
-            name=provider_name,
-            config=CircuitBreakerConfig()
-        )
+        # Circuit breaker for resilience — shared across instances targeting
+        # the same (provider, model, endpoint) combination.
+        self._circuit_breaker = self._get_shared_circuit_breaker()
 
-        # Rate limiter (optional, from src.security.llm_security.RateLimiter)
+        # Rate limiter (optional, from src.security.llm_security.LLMSecurityRateLimiter)
         self._rate_limiter = rate_limiter
+
+    def _get_shared_circuit_breaker(self) -> CircuitBreaker:
+        """Get or create a shared circuit breaker for this provider+model+endpoint."""
+        provider_name = self.__class__.__name__.replace("LLM", "").lower()
+        key = (provider_name, self.model, self.base_url)
+
+        with BaseLLM._circuit_breaker_lock:
+            if key not in BaseLLM._circuit_breakers:
+                BaseLLM._circuit_breakers[key] = CircuitBreaker(
+                    name=f"{provider_name}:{self.model}",
+                    config=CircuitBreakerConfig()
+                )
+            return BaseLLM._circuit_breakers[key]
+
+    @classmethod
+    def reset_shared_circuit_breakers(cls) -> None:
+        """Reset all shared circuit breakers. Primarily useful for testing."""
+        with cls._circuit_breaker_lock:
+            for cb in cls._circuit_breakers.values():
+                cb.reset()
+            cls._circuit_breakers.clear()
 
     @staticmethod
     def _validate_base_url(url: str) -> str:
@@ -298,9 +322,9 @@ class BaseLLM(ABC):
 
     def __exit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType]
+        _exc_type: Optional[Type[BaseException]],
+        _exc_val: Optional[BaseException],
+        _exc_tb: Optional[TracebackType]
     ) -> Literal[False]:
         self.close()
         return False
@@ -310,9 +334,9 @@ class BaseLLM(ABC):
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[TracebackType]
+        _exc_type: Optional[Type[BaseException]],
+        _exc_val: Optional[BaseException],
+        _exc_tb: Optional[TracebackType]
     ) -> Literal[False]:
         await self.aclose()
         return False

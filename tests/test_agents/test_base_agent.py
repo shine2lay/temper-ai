@@ -1,8 +1,10 @@
 """Tests for base agent interface."""
-import pytest
 import threading
 import time
-from src.agents.base_agent import BaseAgent, AgentResponse, ExecutionContext
+
+import pytest
+
+from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
 from src.compiler.schemas import AgentConfig
 
 
@@ -174,9 +176,9 @@ def test_base_agent_validate_config_missing_name():
     """Test validation fails with missing name."""
     from src.compiler.schemas import (
         AgentConfigInner,
-        PromptConfig,
-        InferenceConfig,
         ErrorHandlingConfig,
+        InferenceConfig,
+        PromptConfig,
     )
 
     config = AgentConfig(

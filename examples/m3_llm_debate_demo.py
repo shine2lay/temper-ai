@@ -13,20 +13,18 @@ Usage:
     python3 examples/m3_llm_debate_demo.py --quiet      # Quiet mode (no prompts/responses)
 """
 
-import sys
 import json
 import time
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console
 from rich.panel import Panel
+from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.tree import Tree
-from rich.progress import Progress, SpinnerColumn, TextColumn
 
-from src.agents.llm_providers import OllamaLLM, LLMResponse
-from src.strategies.base import AgentOutput
+from src.agents.llm_providers import LLMResponse, OllamaLLM
 
 console = Console()
 
@@ -279,7 +277,7 @@ Your response (JSON only, no other text):"""
                     console.print(f"[bold green]RESPONSE FROM {agent.name.upper()}:[/bold green]")
                     console.print("[green]" + "="*80 + "[/green]")
                     console.print(f"[dim]{response.content}[/dim]")
-                    console.print(f"\n[cyan]Metadata:[/cyan]")
+                    console.print("\n[cyan]Metadata:[/cyan]")
                     console.print(f"  Model: {response.model}")
                     console.print(f"  Provider: {response.provider}")
                     console.print(f"  Latency: {response.latency_ms}ms")
@@ -296,7 +294,7 @@ Your response (JSON only, no other text):"""
 
                 if decision_data is None:
                     # Fallback: keep current position
-                    console.print(f"[yellow]   ⚠️ Parse failed, maintaining position[/yellow]")
+                    console.print("[yellow]   ⚠️ Parse failed, maintaining position[/yellow]")
                     new_positions[agent.name] = current_positions[agent.name]
                     new_reasoning[agent.name] = current_reasoning[agent.name]
                     changed_map[agent.name] = False
@@ -521,7 +519,7 @@ def main(
             distribution[pos] = distribution.get(pos, 0) + 1
 
         if idx == 0:
-            node = tree.add(f"Round 0: Initial Positions")
+            node = tree.add("Round 0: Initial Positions")
         else:
             node = tree.add(f"Round {idx}: Reconsideration")
 

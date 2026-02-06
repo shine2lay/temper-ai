@@ -8,25 +8,20 @@ Integrates A/B testing framework with observability system to:
 """
 
 import logging
-from typing import Dict, List, Any, Optional, Tuple, Generator, ContextManager
-from datetime import datetime, timedelta
-from sqlmodel import Session, select, func
-from sqlalchemy import and_, or_, text
+from datetime import datetime
+from typing import Any, ContextManager, Dict, List, Optional, Tuple
 
+from sqlalchemy import and_, text
+from sqlmodel import Session, select
+
+from src.experimentation.models import (
+    ExecutionStatus,
+    VariantAssignment,
+)
 from src.observability.database import get_session
 from src.observability.models import (
     WorkflowExecution,
-    AgentExecution,
-    LLMCall,
-    ToolExecution,
 )
-from src.experimentation.models import (
-    Experiment,
-    Variant,
-    VariantAssignment,
-    ExecutionStatus,
-)
-
 
 logger = logging.getLogger(__name__)
 
@@ -327,7 +322,7 @@ class ExperimentMetricsCollector:
         self,
         experiment_id: str,
         metric_name: str,
-        interval: str = "hour"
+        _interval: str = "hour"
     ) -> Dict[str, List[Tuple[datetime, float]]]:
         """
         Get time-series metrics for experiment.
@@ -335,7 +330,7 @@ class ExperimentMetricsCollector:
         Args:
             experiment_id: Experiment ID
             metric_name: Metric to track over time
-            interval: Time interval (hour, day)
+            _interval: Time interval (hour, day)
 
         Returns:
             Dictionary mapping variant_id to list of (timestamp, value) tuples

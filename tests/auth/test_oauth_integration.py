@@ -14,21 +14,20 @@ Tests cover:
 - Expired state cleanup
 """
 import asyncio
-import pytest
-import httpx
-from datetime import datetime
-from pathlib import Path
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
 import secrets
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-from src.auth.routes import OAuthRouteHandlers
-from src.auth.models import User, Session
-from src.auth.session import SessionStore, UserStore
-from src.auth.oauth.service import OAuthService, OAuthError, OAuthStateError
+import httpx
+import pytest
+
+from src.auth.models import Session, User
 from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig
+from src.auth.oauth.service import OAuthService
 from src.auth.oauth.state_store import InMemoryStateStore
 from src.auth.oauth.token_store import SecureTokenStore
-
+from src.auth.routes import OAuthRouteHandlers
+from src.auth.session import SessionStore, UserStore
 
 # Test Fixtures
 

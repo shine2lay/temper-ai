@@ -3,12 +3,11 @@ Timeout scenario tests for LLM calls, tool execution, workflows, and agents.
 
 Tests timeout enforcement, error handling, resource cleanup, and partial result capture.
 """
-import pytest
 import asyncio
-import time
-from unittest.mock import Mock, AsyncMock, patch
-from pathlib import Path
 import tempfile
+import time
+
+import pytest
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 
@@ -85,8 +84,8 @@ class TestToolExecutionTimeouts:
         Tool sleeps for 60s but timeout is 2s.
         Must verify execution stops at ~2s, NOT at 60s.
         """
-        from src.tools.registry import ToolRegistry
         from src.tools.executor import ToolExecutor
+        from src.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
         tool = SlowTool(sleep_seconds=60)  # Tool would take 60s
@@ -141,8 +140,8 @@ class TestToolExecutionTimeouts:
 
     def test_tool_timeout_cleanup(self):
         """Test that resources are cleaned up on tool timeout."""
-        from src.tools.registry import ToolRegistry
         from src.tools.executor import ToolExecutor
+        from src.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
         tool = SlowTool(sleep_seconds=10)
@@ -159,8 +158,8 @@ class TestToolExecutionTimeouts:
     @pytest.mark.asyncio
     async def test_multiple_tool_timeouts_no_resource_leak(self):
         """Test that multiple timeouts don't leak resources."""
-        from src.tools.registry import ToolRegistry
         from src.tools.executor import ToolExecutor
+        from src.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
         tool = SlowTool(sleep_seconds=60)
@@ -234,7 +233,7 @@ class TestLLMTimeouts:
 
                     return await asyncio.wait_for(func(), timeout=remaining)
 
-                except Exception as e:
+                except Exception:
                     if attempt == max_retries - 1:
                         raise
                     continue

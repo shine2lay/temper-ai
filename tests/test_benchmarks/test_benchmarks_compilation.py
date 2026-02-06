@@ -11,13 +11,13 @@ Establishes baseline metrics for:
 Run with: pytest tests/test_benchmarks/test_benchmarks_compilation.py --benchmark-only
 """
 
-import pytest
 import time
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
-from src.compiler.langgraph_compiler import LangGraphCompiler
+import pytest
+
 from src.agents.standard_agent import StandardAgent
-
+from src.compiler.langgraph_compiler import LangGraphCompiler
 
 # ============================================================================
 # Benchmark Tests: Compilation and Execution

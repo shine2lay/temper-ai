@@ -5,16 +5,17 @@ Provides hypothesis testing, confidence intervals, and winner determination
 using scipy statistical methods.
 """
 
+from typing import Any, Dict, List, Optional, Tuple
+
 import numpy as np  # type: ignore[import-not-found]
-from typing import Dict, List, Any, Optional, Tuple
 from scipy import stats  # type: ignore[import-untyped]
+
 from src.experimentation.models import (
+    ExecutionStatus,
     Experiment,
+    RecommendationType,
     Variant,
     VariantAssignment,
-    ExperimentResult,
-    RecommendationType,
-    ExecutionStatus,
 )
 
 

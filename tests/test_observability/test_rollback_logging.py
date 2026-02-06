@@ -2,18 +2,19 @@
 
 Tests the database logging of rollback snapshots and events for audit trail.
 """
-import pytest
-from datetime import datetime, UTC
-from unittest.mock import Mock, MagicMock, patch
+from datetime import UTC, datetime
+from unittest.mock import MagicMock, Mock, patch
 
-from src.safety.rollback import RollbackManager, RollbackSnapshot, RollbackResult, RollbackStatus
+import pytest
+
+from src.observability.models import RollbackEvent, RollbackSnapshotDB
 from src.observability.rollback_logger import (
-    log_rollback_snapshot,
-    log_rollback_event,
     get_rollback_events,
-    get_rollback_snapshots
+    get_rollback_snapshots,
+    log_rollback_event,
+    log_rollback_snapshot,
 )
-from src.observability.models import RollbackSnapshotDB, RollbackEvent
+from src.safety.rollback import RollbackResult, RollbackSnapshot, RollbackStatus
 
 
 class TestRollbackLogging:

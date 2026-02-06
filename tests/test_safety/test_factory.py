@@ -4,16 +4,18 @@ Verifies that create_policy_registry() correctly loads and registers
 built-in policies, and that create_safety_stack() selects the correct
 approver based on environment.
 """
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
+
+from src.safety.approval import ApprovalWorkflow, NoOpApprover
 from src.safety.factory import (
-    create_policy_registry,
-    create_safety_stack,
     BUILTIN_POLICIES,
     _get_default_config,
+    create_policy_registry,
+    create_safety_stack,
 )
 from src.safety.policy_registry import PolicyRegistry
-from src.safety.approval import ApprovalWorkflow, NoOpApprover
 
 
 class TestCreatePolicyRegistryWithDefaults:

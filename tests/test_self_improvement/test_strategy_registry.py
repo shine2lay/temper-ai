@@ -1,14 +1,15 @@
 """Tests for StrategyRegistry."""
 
-import pytest
 from threading import Thread
-from typing import List, Dict, Any, Optional
+from typing import Dict, List, Optional
+
+import pytest
 
 from src.self_improvement.strategies import (
-    StrategyRegistry,
-    ImprovementStrategy,
     AgentConfig,
+    ImprovementStrategy,
     LearnedPattern,
+    StrategyRegistry,
 )
 
 

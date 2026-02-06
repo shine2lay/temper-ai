@@ -16,36 +16,29 @@ This script shows a complete agent execution with:
 - Observability tracking
 """
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, UTC
 
 # Check Ollama availability
 import httpx
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
 
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.schemas import AgentConfig
-from src.agents.agent_factory import AgentFactory
-from src.agents.base_agent import ExecutionContext
-from src.tools.registry import ToolRegistry
-from src.tools.calculator import Calculator
-from src.tools.web_scraper import WebScraper
-from src.tools.file_writer import FileWriter
-from src.observability.database import init_database
 from examples.demo_utils import (
     console,
-    print_rich_section as print_section,
-    print_success,
-    print_error,
-    print_warning,
-    print_info,
-    create_metrics_table,
-    format_duration,
-    format_cost
 )
+from examples.demo_utils import print_rich_section as print_section
+from src.agents.agent_factory import AgentFactory
+from src.agents.base_agent import ExecutionContext
+from src.compiler.config_loader import ConfigLoader
+from src.compiler.schemas import AgentConfig
+from src.observability.database import init_database
+from src.tools.calculator import Calculator
+from src.tools.file_writer import FileWriter
+from src.tools.registry import ToolRegistry
+from src.tools.web_scraper import WebScraper
 
 
 def check_ollama_available() -> bool:
@@ -109,8 +102,8 @@ def demo_agent_creation(agent_config: AgentConfig, tool_registry: ToolRegistry):
 
     console.print(f"[green]✓[/green] Agent created: {agent.__class__.__name__}")
     console.print(f"   Name: {agent_config.agent.name}")
-    console.print(f"   Type: StandardAgent")
-    console.print(f"   Capabilities: LLM inference, Tool calling")
+    console.print("   Type: StandardAgent")
+    console.print("   Capabilities: LLM inference, Tool calling")
 
     return agent
 
@@ -191,7 +184,7 @@ def demo_agent_execution(agent):
         return response
 
     except Exception as e:
-        console.print(f"[bold red]✗ Agent execution failed![/bold red]")
+        console.print("[bold red]✗ Agent execution failed![/bold red]")
         console.print(f"[red]Error: {e}[/red]")
         import traceback
         console.print(f"\n[dim]{traceback.format_exc()}[/dim]")
@@ -210,7 +203,7 @@ def demo_direct_tool_execution(tool_registry):
         "expression": "150 * 49 * (1.15 ** 6)"
     }
     console.print(f"   Expression: {calc_input['expression']}")
-    console.print(f"   (Calculate revenue after 6 months of 15% growth)\n")
+    console.print("   (Calculate revenue after 6 months of 15% growth)\n")
 
     try:
         calc_tool = tool_registry.get("Calculator")
@@ -235,7 +228,7 @@ def demo_direct_tool_execution(tool_registry):
         "expression": "(150 * 49 * (1.15 ** 6)) * 12"
     }
     console.print(f"   Expression: {arr_input['expression']}")
-    console.print(f"   (Calculate Annual Recurring Revenue)\n")
+    console.print("   (Calculate Annual Recurring Revenue)\n")
 
     try:
         calc_tool = tool_registry.get("Calculator")
@@ -300,7 +293,7 @@ def demo_simple_calculator(agent):
         response = agent.execute(input_data, context)
         duration = (datetime.now(UTC) - start_time).total_seconds()
 
-        console.print(f"[bold green]✓ Execution completed![/bold green]")
+        console.print("[bold green]✓ Execution completed![/bold green]")
         console.print(f"   Tool Calls Made: [bold cyan]{len(response.tool_calls)}[/bold cyan]")
         console.print(f"   Duration: {duration:.2f}s")
         console.print(f"   Tokens: {response.tokens}\n")
@@ -418,7 +411,7 @@ def demo_tool_calling(agent):
         return response
 
     except Exception as e:
-        console.print(f"[bold red]✗ Agent execution with tools failed![/bold red]")
+        console.print("[bold red]✗ Agent execution with tools failed![/bold red]")
         console.print(f"[red]Error: {e}[/red]")
         import traceback
         console.print(f"\n[dim]{traceback.format_exc()}[/dim]")
@@ -427,7 +420,6 @@ def demo_tool_calling(agent):
 
 def demo_gantt_visualization():
     """Demonstrate hierarchical Gantt chart for latest execution."""
-    from rich.console import Console
     console = Console()
 
     console.print("\n[bold cyan]" + "─" * 30 + "[/bold cyan]")
@@ -437,17 +429,19 @@ def demo_gantt_visualization():
     console.print("\n📊 Generating interactive Gantt chart for latest execution...\n")
 
     try:
+        import uuid
+
+        from sqlmodel import select
+
         from examples.export_waterfall import export_waterfall_trace
-        from src.observability.visualize_trace import visualize_trace
         from src.observability.database import get_session
         from src.observability.models import (
-            WorkflowExecution,
-            StageExecution,
             AgentExecution,
-            LLMCall
+            LLMCall,
+            StageExecution,
+            WorkflowExecution,
         )
-        from sqlmodel import select
-        import uuid
+        from src.observability.visualize_trace import visualize_trace
 
         # Get latest workflow execution, or create a mock one
         with get_session() as session:

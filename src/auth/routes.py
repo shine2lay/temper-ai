@@ -14,19 +14,17 @@ SECURITY NOTES:
 - All cookies use HttpOnly, Secure, SameSite flags
 - Referrer-Policy prevents code leakage
 """
-from typing import Optional, Dict, Any, Tuple
-from datetime import datetime
-from pathlib import Path
-from urllib.parse import quote
-import secrets
 import logging
 import uuid
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+from urllib.parse import quote
 
-from src.auth.oauth.service import OAuthService, OAuthError, OAuthStateError, OAuthProviderError
+from src.auth.models import User
 from src.auth.oauth.config import OAuthConfig
 from src.auth.oauth.rate_limiter import RateLimitExceeded
+from src.auth.oauth.service import OAuthError, OAuthProviderError, OAuthService, OAuthStateError
 from src.auth.session import SessionStore, SessionStoreProtocol, UserStore
-from src.auth.models import User, Session
 
 logger = logging.getLogger(__name__)
 
@@ -240,7 +238,7 @@ class OAuthRouteHandlers:
 
             return auth_url, headers
 
-        except RateLimitExceeded as e:
+        except RateLimitExceeded:
             logger.warning(f"Rate limit exceeded on login: IP={client_ip}")
             raise
 
@@ -299,7 +297,7 @@ class OAuthRouteHandlers:
         try:
             # Exchange code for tokens (validates state internally)
             # SECURITY: State is validated and deleted (single-use)
-            tokens = await self.oauth_service.exchange_code_for_tokens(
+            await self.oauth_service.exchange_code_for_tokens(
                 provider=provider,
                 code=code,
                 state=state,
@@ -389,7 +387,7 @@ class OAuthRouteHandlers:
             logger.error(f"OAuth provider error: {e}, IP={client_ip}")
             return "/login?error=oauth_error", self._get_security_headers()
 
-        except RateLimitExceeded as e:
+        except RateLimitExceeded:
             logger.warning(f"Rate limit exceeded on callback: IP={client_ip}")
             # Don't redirect, return error status (handled by framework)
             raise

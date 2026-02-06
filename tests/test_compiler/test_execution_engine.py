@@ -5,15 +5,15 @@ cannot be instantiated directly. Concrete implementations should be tested
 separately.
 """
 
-import pytest
-import asyncio
 import time
-from concurrent.futures import ThreadPoolExecutor
+
+import pytest
+
 from src.compiler.execution_engine import (
-    ExecutionEngine,
     CompiledWorkflow,
+    ExecutionEngine,
     ExecutionMode,
-    WorkflowCancelledError
+    WorkflowCancelledError,
 )
 
 
@@ -174,7 +174,7 @@ class TestWorkflowCancellation:
 
     def test_compiled_workflow_is_not_cancelled_initially(self, engine, minimal_workflow_config):
         """Newly compiled workflows are not cancelled."""
-        from unittest.mock import Mock, MagicMock
+        from unittest.mock import MagicMock, Mock
 
         # Mock the compiler to return a simple graph
         engine.compiler = Mock()
@@ -187,7 +187,7 @@ class TestWorkflowCancellation:
 
     def test_cancel_sets_cancelled_flag(self, engine, minimal_workflow_config):
         """Calling cancel() sets the cancelled flag."""
-        from unittest.mock import Mock, MagicMock
+        from unittest.mock import MagicMock, Mock
 
         # Mock the compiler
         engine.compiler = Mock()
@@ -207,7 +207,7 @@ class TestWorkflowCancellation:
 
     def test_cancel_is_idempotent(self, engine, minimal_workflow_config):
         """Calling cancel() multiple times is safe."""
-        from unittest.mock import Mock, MagicMock
+        from unittest.mock import MagicMock, Mock
 
         # Mock the compiler
         engine.compiler = Mock()
@@ -226,7 +226,7 @@ class TestWorkflowCancellation:
 
     def test_invoke_raises_error_after_cancellation(self, engine, minimal_workflow_config):
         """invoke() raises WorkflowCancelledError after cancel()."""
-        from unittest.mock import Mock, MagicMock
+        from unittest.mock import MagicMock, Mock
 
         # Mock the compiler
         engine.compiler = Mock()
@@ -245,7 +245,7 @@ class TestWorkflowCancellation:
     @pytest.mark.asyncio
     async def test_ainvoke_raises_error_after_cancellation(self, engine, minimal_workflow_config):
         """ainvoke() raises WorkflowCancelledError after cancel()."""
-        from unittest.mock import Mock, MagicMock
+        from unittest.mock import MagicMock, Mock
 
         # Mock the compiler
         engine.compiler = Mock()
@@ -263,8 +263,8 @@ class TestWorkflowCancellation:
 
     def test_cancellation_during_background_execution(self, engine, minimal_workflow_config):
         """Test cancelling workflow during background execution."""
-        from unittest.mock import Mock, MagicMock
         import threading
+        from unittest.mock import MagicMock, Mock
 
         # Mock the compiler with a slow execution
         engine.compiler = Mock()
@@ -312,7 +312,7 @@ class TestWorkflowCancellation:
 
     def test_cancellation_between_stages(self, engine, minimal_workflow_config):
         """Test that cancellation prevents next stage from executing."""
-        from unittest.mock import Mock, MagicMock
+        from unittest.mock import MagicMock, Mock
 
         # Mock the compiler
         engine.compiler = Mock()

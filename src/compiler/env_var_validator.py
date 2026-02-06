@@ -12,12 +12,12 @@ SECURITY PRINCIPLES:
 5. Principle of Least Privilege: Strictest validation by default
 """
 
-import re
 import os
-from pathlib import Path
-from typing import Dict, Pattern, Optional, Tuple
+import re
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
+from typing import Dict, Optional, Pattern, Tuple
 
 
 class ValidationLevel(Enum):
@@ -126,7 +126,7 @@ class EnvVarValidator:
                 "./configs/agents",  # Valid (Unix)
                 "data\\config.yml",  # Valid (Windows)
                 "../../../passwd",   # BLOCKED (traversal check)
-                "/tmp; rm -rf /",    # BLOCKED (semicolon)
+                "/tmp; rm -rf /",    # BLOCKED (semicolon)  # noqa: S108  # nosec B108
             ]
         ),
 

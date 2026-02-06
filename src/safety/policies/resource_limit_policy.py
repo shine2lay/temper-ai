@@ -19,12 +19,14 @@ This policy integrates with system resource monitoring to track:
 - Available disk space
 """
 import os
-import psutil  # type: ignore[import-untyped]
 import time
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
+
+import psutil  # type: ignore[import-untyped]
+
 from src.safety.base import BaseSafetyPolicy
-from src.safety.interfaces import ValidationResult, SafetyViolation, ViolationSeverity
+from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 
 
 class ResourceLimitPolicy(BaseSafetyPolicy):
@@ -380,7 +382,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
             return None
 
-        except (OSError, IOError) as e:
+        except (OSError, IOError):
             # File doesn't exist or can't be accessed - not a resource limit issue
             return None
 
@@ -419,8 +421,8 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             # - Other processes writing to disk between check and write
             # - File system metadata overhead
             # - Buffer space needed for atomic writes
-            SAFETY_MARGIN = 1.2
-            required_space_with_margin = int(self.min_free_disk_space * SAFETY_MARGIN)
+            safety_margin = 1.2
+            required_space_with_margin = int(self.min_free_disk_space * safety_margin)
 
             if free_space < required_space_with_margin:
                 return SafetyViolation(
@@ -444,7 +446,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
             return None
 
-        except Exception as e:
+        except Exception:
             # Error checking disk space - don't block operation
             return None
 
@@ -493,7 +495,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
             return None
 
-        except Exception as e:
+        except Exception:
             # Error checking memory - don't block operation
             return None
 

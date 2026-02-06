@@ -7,6 +7,7 @@ Tests for SQL injection prevention, input validation, and timing attack mitigati
 import os
 import statistics
 import time
+
 import pytest
 
 from src.experimentation.service import (
@@ -14,7 +15,6 @@ from src.experimentation.service import (
     validate_experiment_name,
     validate_variant_name,
 )
-
 
 # Set testing environment variable to skip timing delays
 os.environ['TESTING'] = '1'

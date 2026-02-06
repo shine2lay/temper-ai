@@ -1,24 +1,26 @@
 """
 Tests for ExecutionTracker.
 """
-import pytest
-import uuid
-from datetime import datetime
 
-from src.observability.tracker import ExecutionTracker, ExecutionContext
-from src.observability.database import init_database, get_session
+import pytest
+
+from src.observability.database import get_session, init_database
 from src.observability.models import (
-    WorkflowExecution, StageExecution, AgentExecution,
-    LLMCall, ToolExecution
+    AgentExecution,
+    LLMCall,
+    StageExecution,
+    ToolExecution,
+    WorkflowExecution,
 )
+from src.observability.tracker import ExecutionContext, ExecutionTracker
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    from src.observability.database import _db_manager, _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 
@@ -580,9 +582,10 @@ class TestHighVolumePerformance:
     @pytest.mark.slow
     def test_track_10k_workflows_throughput(self, tracker):
         """Test throughput of tracking 10,000 workflows."""
-        import time
-        import psutil
         import os
+        import time
+
+        import psutil
 
         # Measure initial memory
         process = psutil.Process(os.getpid())
@@ -618,7 +621,7 @@ class TestHighVolumePerformance:
             count = session.query(WorkflowExecution).count()
             assert count == 10000, f"Expected 10000 workflows, got {count}"
 
-        print(f"\nPerformance Results:")
+        print("\nPerformance Results:")
         print(f"  Throughput: {throughput:.0f} events/sec")
         print(f"  Total time: {elapsed_time:.2f}s")
         print(f"  Memory increase: {memory_increase_mb:.1f}MB")
@@ -729,9 +732,10 @@ class TestHighVolumePerformance:
 
     def test_memory_usage_stable_under_load(self, tracker):
         """Test that memory usage stays stable under continuous load."""
-        import psutil
-        import os
         import gc
+        import os
+
+        import psutil
 
         process = psutil.Process(os.getpid())
 
@@ -763,7 +767,7 @@ class TestHighVolumePerformance:
         final_memory_mb = process.memory_info().rss / 1024 / 1024
         total_increase = final_memory_mb - baseline_memory_mb
 
-        print(f"\nMemory stability test:")
+        print("\nMemory stability test:")
         print(f"  Baseline: {baseline_memory_mb:.1f}MB")
         print(f"  Final: {final_memory_mb:.1f}MB")
         print(f"  Increase: {total_increase:.1f}MB")

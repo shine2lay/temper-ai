@@ -21,18 +21,16 @@ Example:
     ... except CircuitBreakerOpen:
     ...     print("Circuit breaker is open - too many failures")
 """
-from typing import Dict, Any, Optional, List, Generator
-from contextlib import contextmanager
 import threading
+from contextlib import contextmanager
+from typing import Any, Dict, Generator, List, Optional
 
 # Re-export core circuit breaker classes
 from src.core.circuit_breaker import (
     CircuitBreaker,
-    CircuitBreakerConfig,
     CircuitBreakerError,
     CircuitBreakerMetrics,
     CircuitState,
-    StateStorage,
 )
 
 # Backward-compatible aliases
@@ -40,7 +38,7 @@ CircuitBreakerState = CircuitState
 CircuitBreakerOpen = CircuitBreakerError
 
 
-class SafetyGateBlocked(Exception):
+class SafetyGateBlocked(Exception):  # noqa: N818 — public API name
     """Exception raised when safety gate blocks execution."""
     pass
 

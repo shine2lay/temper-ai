@@ -1,8 +1,10 @@
 """Tests for streaming execution with checkpointing."""
+from unittest.mock import Mock
+
 import pytest
-from unittest.mock import Mock, MagicMock
-from src.compiler.workflow_executor import WorkflowExecutor
+
 from src.compiler.checkpoint import CheckpointManager
+from src.compiler.workflow_executor import WorkflowExecutor
 
 
 def test_checkpoint_saved_after_each_stage(tmp_path):

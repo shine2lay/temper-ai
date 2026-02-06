@@ -1,17 +1,17 @@
 """Shared test utilities for experimentation tests."""
 
-import pytest
+from datetime import UTC, datetime
+
 import numpy as np
-from datetime import datetime, UTC
 
 from src.experimentation.models import (
-    Experiment,
-    Variant,
-    VariantAssignment,
-    ExperimentStatus,
     AssignmentStrategyType,
     ConfigType,
     ExecutionStatus,
+    Experiment,
+    ExperimentStatus,
+    Variant,
+    VariantAssignment,
 )
 
 

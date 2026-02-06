@@ -8,30 +8,29 @@ Database access uses SQLModel ORM via M5Experiment and M5ExecutionResult
 models (no raw SQL).
 """
 import hashlib
-import json
 import logging
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
+
 from sqlalchemy.orm import Session
-from sqlmodel import select, func
+from sqlmodel import func, select
 
 from src.self_improvement.data_models import (
-    Experiment,
     ExecutionResult,
-    OptimizationConfig,
-    utcnow
-)
-from src.self_improvement.storage.experiment_models import (
-    M5Experiment,
-    M5ExecutionResult,
+    SelfImprovementExperiment,
+    SIOptimizationConfig,
+    utcnow,
 )
 from src.self_improvement.statistical_analyzer import (
-    StatisticalAnalyzer,
-    VariantResults,
     ExperimentAnalysis,
-    ComparisonResult
+    SIStatisticalAnalyzer,
+    VariantResults,
+)
+from src.self_improvement.storage.experiment_models import (
+    M5ExecutionResult,
+    M5Experiment,
 )
 
 logger = logging.getLogger(__name__)
@@ -62,17 +61,17 @@ class InvalidVariantError(ExperimentError):
 # ========== Supporting Data Classes ==========
 
 @dataclass
-class VariantAssignment:
+class SIVariantAssignment:
     """Assignment of execution to experiment variant."""
     experiment_id: str
     execution_id: str
     variant_id: str  # "control", "variant_0", "variant_1", etc.
-    config: OptimizationConfig
+    config: SIOptimizationConfig
     assigned_at: Any = field(default_factory=utcnow)
 
 
 @dataclass
-class ExperimentStatus:
+class SIExperimentStatus:
     """Experiment progress status."""
     experiment_id: str
     status: str  # "running", "completed", "failed"
@@ -89,7 +88,7 @@ class WinnerResult:
     """Experiment winner analysis result."""
     experiment_id: str
     variant_id: str
-    winning_config: OptimizationConfig
+    winning_config: SIOptimizationConfig
 
     # Performance improvements
     quality_improvement: float  # Percentage vs control
@@ -111,18 +110,18 @@ class WinnerResult:
 
 # ========== Conversion helpers ==========
 
-def _db_to_experiment(db_exp: M5Experiment) -> Experiment:
-    """Convert M5Experiment ORM model to data_models.Experiment."""
-    return Experiment(
+def _db_to_experiment(db_exp: M5Experiment) -> SelfImprovementExperiment:
+    """Convert M5Experiment ORM model to data_models.SelfImprovementExperiment."""
+    return SelfImprovementExperiment(
         id=db_exp.id,
         agent_name=db_exp.agent_name,
         status=db_exp.status,
-        control_config=OptimizationConfig.from_dict(
-            json.loads(db_exp.control_config)
+        control_config=SIOptimizationConfig.from_dict(
+            db_exp.get_control_config_dict()
         ),
         variant_configs=[
-            OptimizationConfig.from_dict(v)
-            for v in json.loads(db_exp.variant_configs)
+            SIOptimizationConfig.from_dict(v)
+            for v in db_exp.get_variant_configs_dicts()
         ],
         proposal_id=db_exp.proposal_id,
         created_at=db_exp.created_at,
@@ -198,7 +197,7 @@ class ExperimentOrchestrator:
     def __init__(
         self,
         session: Session,
-        statistical_analyzer: Optional[StatisticalAnalyzer] = None,
+        statistical_analyzer: Optional[SIStatisticalAnalyzer] = None,
         target_executions_per_variant: int = 50,
     ):
         """
@@ -210,7 +209,7 @@ class ExperimentOrchestrator:
             target_executions_per_variant: Default sample size per variant (default: 50)
         """
         self.session = session
-        self.statistical_analyzer = statistical_analyzer or StatisticalAnalyzer(
+        self.statistical_analyzer = statistical_analyzer or SIStatisticalAnalyzer(
             significance_level=0.05,
             quality_weight=0.7,
             speed_weight=0.2,
@@ -282,12 +281,12 @@ class ExperimentOrchestrator:
     def create_experiment(
         self,
         agent_name: str,
-        control_config: OptimizationConfig,
-        variant_configs: List[OptimizationConfig],
+        control_config: SIOptimizationConfig,
+        variant_configs: List[SIOptimizationConfig],
         proposal_id: Optional[str] = None,
         target_executions_per_variant: Optional[int] = None,
         extra_metadata: Optional[Dict[str, Any]] = None
-    ) -> Experiment:
+    ) -> SelfImprovementExperiment:
         """
         Create new A/B/C/D experiment for M5 self-improvement.
 
@@ -303,7 +302,7 @@ class ExperimentOrchestrator:
             extra_metadata: Additional metadata to store
 
         Returns:
-            Experiment: Created experiment with all variants configured
+            SelfImprovementExperiment: Created experiment with all variants configured
 
         Raises:
             ValueError: If variant_configs is empty or exceeds 3 variants
@@ -336,18 +335,18 @@ class ExperimentOrchestrator:
             id=experiment_id,
             agent_name=agent_name,
             status="running",
-            control_config=json.dumps(control_config.to_dict()),
-            variant_configs=json.dumps([v.to_dict() for v in variant_configs]),
+            control_config=control_config.to_dict(),
+            variant_configs=[v.to_dict() for v in variant_configs],
             target_samples_per_variant=target,
             proposal_id=proposal_id,
-            created_at=now.isoformat(),
-            extra_metadata=json.dumps(extra_metadata or {}),
+            created_at=now,
+            extra_metadata=extra_metadata or {},
         )
         self.session.add(db_exp)
         self.session.commit()
 
         # Build domain model for return value
-        experiment = Experiment(
+        experiment = SelfImprovementExperiment(
             id=experiment_id,
             agent_name=agent_name,
             status="running",
@@ -367,7 +366,7 @@ class ExperimentOrchestrator:
 
     # ========== Experiment Retrieval ==========
 
-    def get_experiment(self, experiment_id: str) -> Experiment:
+    def get_experiment(self, experiment_id: str) -> SelfImprovementExperiment:
         """
         Get experiment by ID.
 
@@ -375,7 +374,7 @@ class ExperimentOrchestrator:
             experiment_id: Experiment identifier
 
         Returns:
-            Experiment: Experiment object
+            SelfImprovementExperiment: Experiment object
 
         Raises:
             ExperimentNotFoundError: If experiment doesn't exist
@@ -384,7 +383,7 @@ class ExperimentOrchestrator:
         db_exp = self._get_db_experiment(experiment_id)
         return _db_to_experiment(db_exp)
 
-    def list_active_experiments(self, agent_name: Optional[str] = None) -> List[Experiment]:
+    def list_active_experiments(self, agent_name: Optional[str] = None) -> List[SelfImprovementExperiment]:
         """
         List active (running) experiments.
 
@@ -408,7 +407,7 @@ class ExperimentOrchestrator:
         experiment_id: str,
         execution_id: str,
         context: Optional[Dict[str, Any]] = None
-    ) -> VariantAssignment:
+    ) -> SIVariantAssignment:
         """
         Assign execution to a variant using hash-based deterministic assignment.
 
@@ -423,7 +422,7 @@ class ExperimentOrchestrator:
             context: Optional context for assignment (e.g., {"user_id": "123"})
 
         Returns:
-            VariantAssignment: Assignment with variant_id and config
+            SIVariantAssignment: Assignment with variant_id and config
 
         Raises:
             ExperimentNotFoundError: If experiment not found
@@ -453,7 +452,7 @@ class ExperimentOrchestrator:
         config = self.get_variant_config(experiment_id, variant_id)
 
         # Create assignment
-        assignment = VariantAssignment(
+        assignment = SIVariantAssignment(
             experiment_id=experiment_id,
             execution_id=execution_id,
             variant_id=variant_id,
@@ -490,7 +489,7 @@ class ExperimentOrchestrator:
         else:
             return f"variant_{variant_index - 1}"
 
-    def get_variant_config(self, experiment_id: str, variant_id: str) -> OptimizationConfig:
+    def get_variant_config(self, experiment_id: str, variant_id: str) -> SIOptimizationConfig:
         """
         Get configuration for a specific variant.
 
@@ -499,7 +498,7 @@ class ExperimentOrchestrator:
             variant_id: Variant identifier ("control", "variant_0", etc.)
 
         Returns:
-            OptimizationConfig: Configuration for the variant
+            SIOptimizationConfig: Configuration for the variant
 
         Raises:
             ExperimentNotFoundError: If experiment not found
@@ -585,8 +584,8 @@ class ExperimentOrchestrator:
             speed_seconds=speed_seconds,
             cost_usd=cost_usd,
             success=success,
-            recorded_at=utcnow().isoformat(),
-            extra_metrics=json.dumps(extra_metrics or {}),
+            recorded_at=utcnow(),
+            extra_metrics=extra_metrics or {},
         )
         self.session.add(db_result)
         self.session.commit()
@@ -700,7 +699,7 @@ class ExperimentOrchestrator:
 
         Runs statistical analysis comparing variants to control:
         1. Check minimum sample size reached (unless force=True)
-        2. Run StatisticalAnalyzer
+        2. Run SIStatisticalAnalyzer
         3. Apply M5 winner criteria (quality + composite score)
         4. Return winner or None
 
@@ -830,7 +829,7 @@ class ExperimentOrchestrator:
 
         db_exp = self._get_db_experiment(experiment_id)
         db_exp.status = "completed"
-        db_exp.completed_at = utcnow().isoformat()
+        db_exp.completed_at = utcnow()
         db_exp.winner_variant_id = winner_variant_id
         self.session.commit()
 
@@ -855,13 +854,13 @@ class ExperimentOrchestrator:
         metadata["stop_reason"] = reason
 
         db_exp.status = "stopped"
-        db_exp.completed_at = utcnow().isoformat()
-        db_exp.extra_metadata = json.dumps(metadata)
+        db_exp.completed_at = utcnow()
+        db_exp.extra_metadata = metadata
         self.session.commit()
 
         logger.info(f"Stopped experiment {experiment_id}, reason: {reason}")
 
-    def get_winning_config(self, experiment_id: str) -> Optional[OptimizationConfig]:
+    def get_winning_config(self, experiment_id: str) -> Optional[SIOptimizationConfig]:
         """
         Get winning configuration after experiment completes.
 
@@ -871,7 +870,7 @@ class ExperimentOrchestrator:
             experiment_id: Experiment identifier
 
         Returns:
-            OptimizationConfig: Winning configuration, or None if no winner
+            SIOptimizationConfig: Winning configuration, or None if no winner
         """
         self._validate_experiment_id(experiment_id)
 

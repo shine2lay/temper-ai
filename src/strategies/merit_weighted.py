@@ -8,18 +8,18 @@ Resolves conflicts by weighting votes based on agent merit:
 Higher-merit agents have more influence in close decisions.
 """
 
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, List, Optional
 
+from src.strategies.base import AgentOutput, Conflict
 from src.strategies.conflict_resolution import (
+    AgentMerit,
     ConflictResolver,
     Resolution,
     ResolutionContext,
     ResolutionResult,
-    AgentMerit,
     calculate_merit_weighted_votes,
-    get_highest_weighted_decision
+    get_highest_weighted_decision,
 )
-from src.strategies.base import Conflict, AgentOutput
 
 
 class MeritWeightedResolver(ConflictResolver):

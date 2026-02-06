@@ -1,19 +1,17 @@
 """Tests for circuit breaker and safety gate system."""
-import pytest
-import time
 from unittest.mock import Mock, patch
-from datetime import datetime, timedelta, UTC
+
+import pytest
 
 from src.safety.circuit_breaker import (
     CircuitBreaker,
-    CircuitBreakerState,
-    CircuitBreakerOpen,
+    CircuitBreakerManager,
     CircuitBreakerMetrics,
+    CircuitBreakerOpen,
+    CircuitBreakerState,
     SafetyGate,
     SafetyGateBlocked,
-    CircuitBreakerManager
 )
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
 
 
 class TestCircuitBreakerMetrics:

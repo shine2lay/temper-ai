@@ -13,8 +13,8 @@ Design Philosophy:
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Iterator
 from enum import Enum
+from typing import Any, Dict
 
 
 class WorkflowCancelledError(Exception):

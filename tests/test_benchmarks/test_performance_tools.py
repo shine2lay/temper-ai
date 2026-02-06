@@ -18,14 +18,13 @@ Compare with regression detection:
     pytest tests/test_benchmarks/test_performance_tools.py --benchmark-only \
         --benchmark-compare=tools --benchmark-compare-fail=mean:10%
 """
-import pytest
 from concurrent.futures import ThreadPoolExecutor, wait
 
-from src.tools.registry import ToolRegistry
+import pytest
+
+from src.tools.base import ToolResult
 from src.tools.calculator import Calculator
 from src.tools.executor import ToolExecutor
-from src.tools.base import BaseTool, ToolResult
-
 
 # ============================================================================
 # CATEGORY 4: Tool Execution (8 benchmarks)
@@ -89,7 +88,6 @@ def test_tool_concurrent_execution_4_workers(tool_registry, benchmark):
     executor = ToolExecutor(registry=tool_registry, max_workers=4)
 
     def execute_concurrent():
-        from concurrent.futures import ThreadPoolExecutor, wait
 
         futures = []
         with ThreadPoolExecutor(max_workers=4) as pool:
@@ -122,7 +120,6 @@ def test_tool_concurrent_execution_10_workers(tool_registry, benchmark):
     executor = ToolExecutor(registry=tool_registry, max_workers=10)
 
     def execute_concurrent():
-        from concurrent.futures import ThreadPoolExecutor, wait
 
         futures = []
         with ThreadPoolExecutor(max_workers=10) as pool:

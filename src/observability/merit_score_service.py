@@ -4,9 +4,9 @@ Handles agent merit score computation including Bayesian updates,
 exponential moving averages, and time-windowed success rates.
 This is business logic extracted from ExecutionTracker.
 """
-import uuid
 import logging
-from datetime import datetime, timedelta
+import uuid
+from datetime import timedelta
 from typing import Any, Optional
 
 from src.observability.datetime_utils import utcnow
@@ -43,8 +43,9 @@ class MeritScoreService:
             decision_outcome: Outcome ("success", "failure", "neutral", "mixed")
             confidence: Confidence score (0.0-1.0)
         """
-        from src.observability.models import AgentMeritScore
         from sqlmodel import select
+
+        from src.observability.models import AgentMeritScore
 
         statement = select(AgentMeritScore).where(
             AgentMeritScore.agent_name == agent_name,
@@ -119,9 +120,10 @@ class MeritScoreService:
     ) -> None:
         """Update 30-day and 90-day success rates from DecisionOutcome records."""
         try:
-            from src.observability.models import DecisionOutcome
-            from sqlalchemy import func, cast, String
+            from sqlalchemy import String, cast, func
             from sqlmodel import select
+
+            from src.observability.models import DecisionOutcome
 
             thirty_days_ago = utcnow() - timedelta(days=30)
             ninety_days_ago = utcnow() - timedelta(days=90)

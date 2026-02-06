@@ -4,7 +4,6 @@ Tests for secret sanitization in violation messages.
 Ensures that detected secrets are never exposed in logs, violation messages,
 or metadata. This is a CRITICAL security requirement.
 """
-import pytest
 from src.safety.secret_detection import SecretDetectionPolicy
 
 

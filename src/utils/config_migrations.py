@@ -4,10 +4,11 @@ Configuration migration framework for schema versioning.
 Provides utilities for migrating configuration files between schema versions,
 enabling backward compatibility and safe schema evolution.
 """
-from typing import Dict, Any, Callable, Optional, List
-from dataclasses import dataclass
-from packaging import version
 import logging
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
+
+from packaging import version
 
 logger = logging.getLogger(__name__)
 
@@ -265,7 +266,7 @@ def ensure_current_version(
     # If no schema_version field, assume oldest version (1.0)
     if "schema_version" not in config:
         logger.warning(
-            f"Config missing schema_version field, assuming 1.0"
+            "Config missing schema_version field, assuming 1.0"
         )
         config["schema_version"] = "1.0"
 

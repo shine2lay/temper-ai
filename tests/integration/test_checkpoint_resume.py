@@ -8,18 +8,15 @@ Tests:
 - Recovery after failures
 """
 import uuid
-import pytest
-import json
-from datetime import datetime, UTC
-from pathlib import Path
-from unittest.mock import Mock, patch
+from datetime import UTC, datetime
 
-from src.observability.database import init_database, get_session
-from src.observability.models import WorkflowExecution, StageExecution, AgentExecution
+import pytest
+
 from src.compiler.checkpoint import CheckpointManager, FileCheckpointBackend
 from src.compiler.domain_state import WorkflowDomainState
+from src.observability.database import get_session, init_database
+from src.observability.models import StageExecution, WorkflowExecution
 from src.observability.tracker import ExecutionTracker
-
 
 pytestmark = [pytest.mark.integration, pytest.mark.critical_path]
 

@@ -6,16 +6,15 @@ Comprehensive edge case testing for tools including:
 - Resource limit testing
 - Error handling validation
 """
-import pytest
 import os
-import tempfile
 import shutil
-from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+import tempfile
+from unittest.mock import MagicMock, Mock, patch
+
+from src.tools.base import ToolResult
 from src.tools.calculator import Calculator
 from src.tools.file_writer import FileWriter
 from src.tools.web_scraper import WebScraper, validate_url_safety
-from src.tools.base import ToolResult
 
 
 class TestCalculatorEdgeCases:

@@ -4,20 +4,17 @@ Comprehensive tests for database failure scenarios and resilience.
 Tests database connection failures, transaction rollbacks, data integrity,
 and recovery mechanisms.
 """
-import pytest
 import asyncio
 import tempfile
-from pathlib import Path
 from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock
-from contextlib import contextmanager
+from pathlib import Path
+
+import pytest
 
 from src.observability.database import DatabaseManager
 from src.observability.models import (
-    WorkflowExecution,
     StageExecution,
-    AgentExecution,
-    LLMCall,
+    WorkflowExecution,
 )
 
 
@@ -84,10 +81,11 @@ class TestConnectionFailures:
         with db_manager.session() as session:
             # May succeed (auto-reconnect) or fail
             try:
-                session.query(WorkflowExecution).first()
-                assert True  # Auto-reconnect worked
+                result = session.query(WorkflowExecution).first()
+                # Auto-reconnect worked: result is None (empty table) or a row
+                assert result is None or hasattr(result, "id")
             except Exception:
-                # Also acceptable if it fails
+                # Also acceptable if it fails after dispose
                 pass
 
     def test_connection_timeout(self):

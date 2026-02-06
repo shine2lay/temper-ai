@@ -20,11 +20,12 @@ Total: 30+ tests
 Performance Target: <1ms per decode
 Success Criteria: 100% URL encoding bypasses blocked
 """
-import pytest
 import time
 import urllib.parse
-from src.safety.file_access import FileAccessPolicy
 
+import pytest
+
+from src.safety.file_access import FileAccessPolicy
 
 # ============================================================================
 # Test Fixtures

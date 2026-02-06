@@ -10,10 +10,10 @@ Future M6 work:
 - Add counters, gauges, histograms for workflow/stage/agent metrics
 - Support labels for workflow_name, stage_name, agent_name, status
 """
-from contextlib import contextmanager
-from typing import Optional, Dict, Any, List
-from datetime import datetime
 import logging
+from contextlib import contextmanager
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from src.observability.backend import ObservabilityBackend
 

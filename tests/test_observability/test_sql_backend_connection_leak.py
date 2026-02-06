@@ -1,109 +1,41 @@
 """
-Test for SQL backend connection leak fix.
+Test for SQL backend per-operation session lifecycle (C-02).
 
-Verifies that standalone sessions (created outside context manager) are properly cleaned up.
+Verifies that each tracking method uses a per-operation session via
+get_session() and does not leak connections. The old standalone-session
+and session-stack patterns have been removed.
 """
-import pytest
 from datetime import datetime, timezone
-from src.observability.backends.sql_backend import SQLObservabilityBackend
+
+import pytest
+
 from src.observability import init_database
+from src.observability.backends.sql_backend import SQLObservabilityBackend
 
 
 @pytest.fixture
 def backend():
     """Create SQL backend with in-memory database."""
-    init_database(connection_string="sqlite:///:memory:")
-    return SQLObservabilityBackend()
+    init_database(database_url="sqlite:///:memory:")
+    return SQLObservabilityBackend(buffer=False)
 
 
-def test_standalone_session_cleanup(backend):
-    """Test that standalone sessions are cleaned up after operations."""
-    # Initially, no standalone session should exist
-    assert backend._standalone_session is None
-
-    # Call tracking method that creates standalone session
-    backend.track_workflow_start(
-        workflow_id="test-wf-1",
-        workflow_name="test_workflow",
-        workflow_config={"workflow": {"version": "1.0"}},
-        start_time=datetime.now(timezone.utc)
-    )
-
-    # After operation, standalone session should be cleaned up
-    assert backend._standalone_session is None
+def test_no_session_stack_or_standalone(backend):
+    """Backend should not have _session_stack, _standalone_session, or _local."""
+    assert not hasattr(backend, "_session_stack")
+    assert not hasattr(backend, "_standalone_session")
+    assert not hasattr(backend, "_local")
 
 
-def test_multiple_operations_without_context(backend):
-    """Test that multiple operations don't leak connections."""
-    # Track multiple workflow starts
-    for i in range(10):
-        backend.track_workflow_start(
-            workflow_id=f"test-wf-{i}",
-            workflow_name="test_workflow",
-            workflow_config={"workflow": {"version": "1.0"}},
-            start_time=datetime.now(timezone.utc)
-        )
-        # Verify cleanup happens after each operation
-        assert backend._standalone_session is None
+def test_no_get_or_create_session(backend):
+    """Backend should not have _get_or_create_session or _commit_and_cleanup."""
+    assert not hasattr(backend, "_get_or_create_session")
+    assert not hasattr(backend, "_commit_and_cleanup")
+    assert not hasattr(backend, "_cleanup_standalone_session")
 
 
-def test_context_manager_no_cleanup(backend):
-    """Test that context-managed sessions are not cleaned up prematurely."""
-    # Use context manager
-    with backend.get_session_context() as session:
-        # Session stack should have one session
-        assert len(backend._session_stack) == 1
-
-        # Track workflow within context
-        backend.track_workflow_start(
-            workflow_id="test-wf-ctx",
-            workflow_name="test_workflow",
-            workflow_config={"workflow": {"version": "1.0"}},
-            start_time=datetime.now(timezone.utc)
-        )
-
-        # No standalone session should be created
-        assert backend._standalone_session is None
-        # Session stack should still have the context session
-        assert len(backend._session_stack) == 1
-
-    # After context, stack should be empty
-    assert len(backend._session_stack) == 0
-
-
-def test_mixed_context_and_standalone(backend):
-    """Test that context-managed and standalone operations don't interfere."""
-    # Standalone operation
-    backend.track_workflow_start(
-        workflow_id="test-wf-standalone",
-        workflow_name="test_workflow",
-        workflow_config={"workflow": {"version": "1.0"}},
-        start_time=datetime.now(timezone.utc)
-    )
-    assert backend._standalone_session is None
-
-    # Context-managed operation
-    with backend.get_session_context():
-        backend.track_workflow_start(
-            workflow_id="test-wf-context",
-            workflow_name="test_workflow",
-            workflow_config={"workflow": {"version": "1.0"}},
-            start_time=datetime.now(timezone.utc)
-        )
-        assert backend._standalone_session is None
-
-    # Another standalone operation
-    backend.track_workflow_start(
-        workflow_id="test-wf-standalone-2",
-        workflow_name="test_workflow",
-        workflow_config={"workflow": {"version": "1.0"}},
-        start_time=datetime.now(timezone.utc)
-    )
-    assert backend._standalone_session is None
-
-
-def test_all_tracking_methods_cleanup(backend):
-    """Test that all tracking methods properly clean up standalone sessions."""
+def test_all_tracking_methods_succeed(backend):
+    """Test that all tracking methods succeed with per-operation sessions."""
     workflow_id = "test-wf"
     stage_id = "test-stage"
     agent_id = "test-agent"
@@ -115,7 +47,6 @@ def test_all_tracking_methods_cleanup(backend):
         workflow_config={},
         start_time=datetime.now(timezone.utc)
     )
-    assert backend._standalone_session is None
 
     backend.update_workflow_metrics(
         workflow_id=workflow_id,
@@ -124,7 +55,6 @@ def test_all_tracking_methods_cleanup(backend):
         total_tokens=100,
         total_cost_usd=0.01
     )
-    assert backend._standalone_session is None
 
     # Stage tracking
     backend.track_stage_start(
@@ -134,13 +64,11 @@ def test_all_tracking_methods_cleanup(backend):
         stage_config={},
         start_time=datetime.now(timezone.utc)
     )
-    assert backend._standalone_session is None
 
     backend.set_stage_output(
         stage_id=stage_id,
         output_data={"result": "success"}
     )
-    assert backend._standalone_session is None
 
     # Agent tracking
     backend.track_agent_start(
@@ -150,16 +78,14 @@ def test_all_tracking_methods_cleanup(backend):
         agent_config={},
         start_time=datetime.now(timezone.utc)
     )
-    assert backend._standalone_session is None
 
     backend.set_agent_output(
         agent_id=agent_id,
         output_data={"result": "success"},
         total_tokens=50
     )
-    assert backend._standalone_session is None
 
-    # LLM call tracking
+    # LLM call tracking (unbuffered since buffer=False)
     backend.track_llm_call(
         llm_call_id="llm-1",
         agent_id=agent_id,
@@ -173,9 +99,8 @@ def test_all_tracking_methods_cleanup(backend):
         estimated_cost_usd=0.001,
         start_time=datetime.now(timezone.utc)
     )
-    assert backend._standalone_session is None
 
-    # Tool call tracking
+    # Tool call tracking (unbuffered since buffer=False)
     backend.track_tool_call(
         tool_execution_id="tool-1",
         agent_id=agent_id,
@@ -185,7 +110,6 @@ def test_all_tracking_methods_cleanup(backend):
         start_time=datetime.now(timezone.utc),
         duration_seconds=0.1
     )
-    assert backend._standalone_session is None
 
     # End tracking
     backend.track_agent_end(
@@ -193,36 +117,65 @@ def test_all_tracking_methods_cleanup(backend):
         end_time=datetime.now(timezone.utc),
         status="completed"
     )
-    assert backend._standalone_session is None
 
     backend.track_stage_end(
         stage_id=stage_id,
         end_time=datetime.now(timezone.utc),
         status="completed"
     )
-    assert backend._standalone_session is None
 
     backend.track_workflow_end(
         workflow_id=workflow_id,
         end_time=datetime.now(timezone.utc),
         status="completed"
     )
-    assert backend._standalone_session is None
 
 
-def test_cleanup_exception_handling(backend):
-    """Test that cleanup handles exceptions gracefully."""
-    # Create a standalone session
-    backend._standalone_session = backend._get_or_create_session()
+def test_get_session_context_works(backend):
+    """Test that get_session_context provides a usable session."""
+    with backend.get_session_context() as session:
+        assert session is not None
 
-    # Mock __exit__ to raise exception
-    original_exit = backend._standalone_session.__exit__
 
-    def failing_exit(*args):
-        raise RuntimeError("Simulated cleanup failure")
+def test_get_agent_execution_returns_detached(backend):
+    """Test that get_agent_execution returns a detached (expunged) object."""
+    # Set up workflow -> stage -> agent
+    backend.track_workflow_start(
+        workflow_id="wf-1",
+        workflow_name="test",
+        workflow_config={},
+        start_time=datetime.now(timezone.utc)
+    )
+    backend.track_stage_start(
+        stage_id="st-1",
+        workflow_id="wf-1",
+        stage_name="test_stage",
+        stage_config={},
+        start_time=datetime.now(timezone.utc)
+    )
+    backend.track_agent_start(
+        agent_id="ag-1",
+        stage_id="st-1",
+        agent_name="test_agent",
+        agent_config={},
+        start_time=datetime.now(timezone.utc)
+    )
 
-    backend._standalone_session.__exit__ = failing_exit
+    # Fetch agent - should be usable after session closes
+    agent = backend.get_agent_execution("ag-1")
+    assert agent is not None
+    assert agent.id == "ag-1"
+    assert agent.agent_name == "test_agent"
 
-    # Cleanup should handle exception and still set session to None
-    backend._cleanup_standalone_session()
-    assert backend._standalone_session is None
+
+def test_multiple_operations_do_not_leak(backend):
+    """Test that many operations don't accumulate sessions."""
+    for i in range(20):
+        backend.track_workflow_start(
+            workflow_id=f"test-wf-{i}",
+            workflow_name="test_workflow",
+            workflow_config={"workflow": {"version": "1.0"}},
+            start_time=datetime.now(timezone.utc)
+        )
+    # No assertion on internals needed - if we get here without error,
+    # sessions are being properly opened and closed

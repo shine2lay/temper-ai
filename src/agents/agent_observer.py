@@ -5,7 +5,7 @@ to eliminate boilerplate. Each tracking call is safe to call even when
 tracker or execution context is unavailable.
 """
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 

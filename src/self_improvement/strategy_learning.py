@@ -5,10 +5,8 @@ to learn from past experiments and refine their impact estimates over time.
 """
 import json
 import logging
-import uuid
-from pathlib import Path
-from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from src.self_improvement.data_models import StrategyOutcome
 
@@ -187,7 +185,8 @@ class StrategyLearningStore:
         query += " ORDER BY recorded_at DESC"
 
         if limit:
-            query += f" LIMIT {limit}"
+            query += " LIMIT ?"
+            params.append(limit)
 
         rows = self.db.query(query, tuple(params))
 
@@ -217,6 +216,13 @@ class StrategyLearningStore:
         Returns:
             Weighted average improvement, or None if no data
         """
+        # Whitelist valid metric column names to prevent SQL injection
+        allowed_metrics = {
+            "composite_score", "actual_quality_improvement",
+            "predicted_improvement", "confidence",
+        }
+        if metric not in allowed_metrics:
+            raise ValueError(f"Invalid metric '{metric}'. Must be one of: {allowed_metrics}")
         query = f"""
             SELECT
                 SUM({metric} * confidence) / SUM(confidence) as weighted_avg,
@@ -225,7 +231,7 @@ class StrategyLearningStore:
             WHERE strategy_name = ?
               AND problem_type = ?
               AND confidence >= ?
-        """
+        """  # noqa: S608  # nosec B608 — metric validated against whitelist above
         params: List[Any] = [strategy_name, problem_type, min_confidence]
 
         if days_back:

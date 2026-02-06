@@ -1,6 +1,6 @@
 """Formatting utilities for console visualization."""
+from datetime import datetime
 from typing import Optional
-from datetime import datetime, timezone
 
 
 def format_duration(seconds: Optional[float]) -> str:

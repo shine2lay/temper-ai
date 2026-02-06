@@ -12,12 +12,11 @@ Test coverage:
 """
 
 import json
-import pytest
-from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import MagicMock, Mock
 
-from src.self_improvement.data_models import OptimizationConfig, ConfigDeployment, utcnow
+import pytest
+
+from src.self_improvement.data_models import SIOptimizationConfig, utcnow
 from src.self_improvement.deployment.deployer import ConfigDeployer, generate_id
 
 
@@ -58,7 +57,7 @@ def deployer(mock_db):
 @pytest.fixture
 def valid_config():
     """Create valid agent config."""
-    return OptimizationConfig(
+    return SIOptimizationConfig(
         agent_name="test_agent",
         inference={"model": "llama3.1:8b", "temperature": 0.7},
         prompt={"template": "You are a helpful assistant"},
@@ -68,7 +67,7 @@ def valid_config():
 @pytest.fixture
 def invalid_config():
     """Create invalid config (missing required fields)."""
-    config = OptimizationConfig(agent_name="test_agent")
+    config = SIOptimizationConfig(agent_name="test_agent")
     # Remove required fields
     delattr(config, "inference")
     return config
@@ -83,13 +82,13 @@ class TestConfigValidation:
 
     def test_validate_invalid_config_missing_inference(self, deployer):
         """Test validation fails when inference is missing."""
-        config = OptimizationConfig(agent_name="test", prompt={})
+        config = SIOptimizationConfig(agent_name="test", prompt={})
         delattr(config, "inference")
         assert deployer._validate_config(config) is False
 
     def test_validate_invalid_config_missing_prompt(self, deployer):
         """Test validation fails when prompt is missing."""
-        config = OptimizationConfig(agent_name="test", inference={})
+        config = SIOptimizationConfig(agent_name="test", inference={})
         delattr(config, "prompt")
         assert deployer._validate_config(config) is False
 
@@ -103,7 +102,7 @@ class TestDeploy:
         deployer = ConfigDeployer(db)
 
         # Mock get_agent_config to return default config
-        current_config = OptimizationConfig(agent_name="test_agent")
+        current_config = SIOptimizationConfig(agent_name="test_agent")
         db.query.return_value = []  # No previous deployments
 
         # Deploy new config
@@ -124,7 +123,7 @@ class TestDeploy:
 
     def test_deploy_with_invalid_config_raises_error(self, deployer):
         """Test deploy with invalid config raises ValueError."""
-        invalid_config = OptimizationConfig(agent_name="test")
+        invalid_config = SIOptimizationConfig(agent_name="test")
         delattr(invalid_config, "inference")
 
         with pytest.raises(ValueError, match="Invalid config"):
@@ -136,7 +135,7 @@ class TestDeploy:
         deployer = ConfigDeployer(db)
 
         # Mock existing deployment
-        previous_config = OptimizationConfig(
+        previous_config = SIOptimizationConfig(
             agent_name="test_agent",
             inference={"model": "old_model"},
             prompt={"template": "old template"},
@@ -166,7 +165,7 @@ class TestRollback:
         deployer = ConfigDeployer(db)
 
         # Mock deployment history
-        previous_config = OptimizationConfig(
+        previous_config = SIOptimizationConfig(
             agent_name="test_agent",
             inference={"model": "old_model"},
             prompt={"template": "old template"},
@@ -208,7 +207,7 @@ class TestRollback:
     def test_double_rollback_raises_error(self, deployer, valid_config):
         """Test rolling back already-rolled-back deployment raises ValueError."""
         # Mock already-rolled-back deployment
-        previous_config = OptimizationConfig(agent_name="test_agent")
+        previous_config = SIOptimizationConfig(agent_name="test_agent")
 
         deployer.db.query.return_value = [
             {
@@ -249,11 +248,11 @@ class TestDeploymentRecords:
         config = deployer.get_agent_config("test_agent")
 
         assert config.agent_name == "test_agent"
-        assert isinstance(config, OptimizationConfig)
+        assert isinstance(config, SIOptimizationConfig)
 
     def test_get_last_deployment_returns_most_recent(self, deployer, valid_config):
         """Test get_last_deployment returns most recent deployment."""
-        previous_config = OptimizationConfig(agent_name="test_agent")
+        previous_config = SIOptimizationConfig(agent_name="test_agent")
 
         deployer.db.query.return_value = [
             {

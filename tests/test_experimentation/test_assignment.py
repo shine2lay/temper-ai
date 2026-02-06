@@ -4,21 +4,23 @@ Tests for variant assignment strategies.
 Tests assignment consistency, traffic allocation accuracy, and edge cases.
 """
 
-import pytest
 from collections import Counter
+
+import pytest
+
+from src.experimentation.assignment import (
+    BanditAssignment,
+    HashAssignment,
+    RandomAssignment,
+    StratifiedAssignment,
+    VariantAssigner,
+)
 from src.experimentation.models import (
-    Experiment,
-    Variant,
-    ExperimentStatus,
     AssignmentStrategyType,
     ConfigType,
-)
-from src.experimentation.assignment import (
-    RandomAssignment,
-    HashAssignment,
-    StratifiedAssignment,
-    BanditAssignment,
-    VariantAssigner,
+    Experiment,
+    ExperimentStatus,
+    Variant,
 )
 
 

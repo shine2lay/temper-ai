@@ -13,27 +13,27 @@ Compare with regression detection:
     pytest tests/test_benchmarks/test_performance_benchmarks.py --benchmark-only \
         --benchmark-compare=baseline --benchmark-compare-fail=mean:10%
 """
-import pytest
 import time
 from unittest.mock import Mock, patch
+
+import pytest
 from sqlalchemy import text
 
-from src.compiler.langgraph_compiler import LangGraphCompiler
 from src.compiler.config_loader import ConfigLoader
-from src.compiler.state_manager import StateManager
+from src.compiler.langgraph_compiler import LangGraphCompiler
 from src.compiler.node_builder import NodeBuilder
-from src.compiler.stage_compiler import StageCompiler
-from src.tools.registry import ToolRegistry
-from src.observability.database import DatabaseManager, IsolationLevel
-from src.observability.buffer import ObservabilityBuffer
-from src.observability.performance import PerformanceTracker
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
-    PromptConfig,
     InferenceConfig,
-    ErrorHandlingConfig,
+    PromptConfig,
 )
+from src.compiler.stage_compiler import StageCompiler
+from src.compiler.state_manager import StateManager
+from src.observability.buffer import ObservabilityBuffer
+from src.observability.database import DatabaseManager, IsolationLevel
+from src.observability.performance import PerformanceTracker
+from src.tools.registry import ToolRegistry
 from tests.fixtures.realistic_data import (
     REALISTIC_RESEARCH_WORKFLOW_AGENTS,
 )
@@ -303,9 +303,9 @@ def test_compiler_node_builder_creation(benchmark):
 
     def create_node_builder():
         from src.compiler.executors import (
-            SequentialStageExecutor,
+            AdaptiveStageExecutor,
             ParallelStageExecutor,
-            AdaptiveStageExecutor
+            SequentialStageExecutor,
         )
         return NodeBuilder(
             config_loader=config_loader,

@@ -23,11 +23,11 @@ Example:
     ...     reason="Manual recovery from failed deployment"
     ... )
 """
-from typing import List, Optional, Dict, Any, Tuple
-from datetime import datetime, timedelta, UTC
 import os
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional, Tuple
 
-from src.safety.rollback import RollbackManager, RollbackSnapshot, RollbackResult, RollbackStatus
+from src.safety.rollback import RollbackManager, RollbackResult, RollbackSnapshot
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)

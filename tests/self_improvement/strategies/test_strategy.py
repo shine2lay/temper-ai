@@ -8,12 +8,13 @@ Verifies that:
 4. Default estimate_impact works
 """
 
-import pytest
 from typing import List
 
+import pytest
+
 from src.self_improvement.strategies.strategy import (
-    ImprovementStrategy,
     AgentConfig,
+    ImprovementStrategy,
     LearnedPattern,
 )
 

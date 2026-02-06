@@ -4,11 +4,11 @@ Property-based tests for validation and invariants using Hypothesis.
 Tests validation properties across different components.
 """
 import pytest
-from hypothesis import given, strategies as st, assume, settings
-from hypothesis import HealthCheck
+from hypothesis import assume, given, settings
+from hypothesis import strategies as st
 
-from src.strategies.base import AgentOutput, Conflict
 from src.compiler.schemas import InferenceConfig
+from src.strategies.base import AgentOutput, Conflict
 
 
 class TestAgentOutputValidation:

@@ -22,17 +22,25 @@ States:
 - OPEN: Too many failures, fast-fail without calling provider
 - HALF_OPEN: Testing if service recovered, allow limited requests
 """
-from enum import Enum
-from dataclasses import dataclass, asdict, field
-from typing import (
-    Callable, Any, TypeVar, Optional, Type, Protocol, Dict, List, Generator,
-)
-from contextlib import contextmanager
-from datetime import datetime, UTC
-import time
-import threading
 import json
 import logging
+import threading
+import time
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
+from enum import Enum
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    Generator,
+    List,
+    Optional,
+    Protocol,
+    Type,
+    TypeVar,
+)
 
 T = TypeVar('T')
 logger = logging.getLogger(__name__)
@@ -354,7 +362,8 @@ class CircuitBreaker:
         reserved_state = self._reserve_execution()
 
         if reserved_state is None:
-            self.metrics.rejected_calls += 1
+            with self.lock:
+                self.metrics.rejected_calls += 1
             raise CircuitBreakerError(
                 f"Circuit breaker OPEN for {self.name}. "
                 f"Retry after {self._time_until_retry():.0f}s"
@@ -378,7 +387,8 @@ class CircuitBreaker:
         reserved_state = self._reserve_execution()
 
         if reserved_state is None:
-            self.metrics.rejected_calls += 1
+            with self.lock:
+                self.metrics.rejected_calls += 1
             raise CircuitBreakerError(
                 f"Circuit breaker OPEN for {self.name}. "
                 f"Retry after {self._time_until_retry():.0f}s"
@@ -402,7 +412,8 @@ class CircuitBreaker:
             CircuitBreakerError: If circuit breaker is open
         """
         if not self.can_execute():
-            self.metrics.rejected_calls += 1
+            with self.lock:
+                self.metrics.rejected_calls += 1
             raise CircuitBreakerError(
                 f"Circuit breaker '{self.name}' is {self.state.value}"
             )
@@ -604,33 +615,37 @@ class CircuitBreaker:
         except ImportError:
             return True  # If httpx not available, count all errors
 
-        LLMError: Optional[Type[Exception]]
-        LLMTimeoutError: Optional[Type[Exception]]
-        LLMRateLimitError: Optional[Type[Exception]]
-        LLMAuthenticationError: Optional[Type[Exception]]
+        exc_llm: Optional[Type[Exception]]
+        exc_timeout: Optional[Type[Exception]]
+        exc_rate_limit: Optional[Type[Exception]]
+        exc_auth: Optional[Type[Exception]]
 
         try:
             from src.utils.exceptions import (
-                LLMError,
-                LLMTimeoutError,
-                LLMRateLimitError,
                 LLMAuthenticationError,
+                LLMError,
+                LLMRateLimitError,
+                LLMTimeoutError,
             )
+            exc_llm = LLMError
+            exc_timeout = LLMTimeoutError
+            exc_rate_limit = LLMRateLimitError
+            exc_auth = LLMAuthenticationError
         except ImportError:
-            LLMError = None
-            LLMTimeoutError = None
-            LLMRateLimitError = None
-            LLMAuthenticationError = None
+            exc_llm = None
+            exc_timeout = None
+            exc_rate_limit = None
+            exc_auth = None
 
         if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
             return True
-        if LLMTimeoutError and isinstance(error, LLMTimeoutError):
+        if exc_timeout and isinstance(error, exc_timeout):
             return True
-        if LLMRateLimitError and isinstance(error, LLMRateLimitError):
+        if exc_rate_limit and isinstance(error, exc_rate_limit):
             return True
-        if LLMAuthenticationError and isinstance(error, LLMAuthenticationError):
+        if exc_auth and isinstance(error, exc_auth):
             return False
-        if LLMError and isinstance(error, LLMError):
+        if exc_llm and isinstance(error, exc_llm):
             return True
         if isinstance(error, httpx.HTTPStatusError):
             status = error.response.status_code

@@ -3,10 +3,58 @@
 Provides centralized state initialization, validation, and utilities
 for LangGraph compiler and executors.
 """
-from typing import Dict, Any, Optional, Callable
 import uuid
+from typing import Any, Callable, Dict, List, Optional
 
+from typing_extensions import TypedDict
+
+from src.compiler.domain_state import (
+    ConfigLoaderProtocol,
+    ToolRegistryProtocol,
+    TrackerProtocol,
+)
 from src.compiler.langgraph_state import LangGraphWorkflowState
+
+
+class WorkflowStateDict(TypedDict, total=False):
+    """Type-safe definition for the workflow state dictionary.
+
+    This TypedDict documents the expected shape of the plain-dict state
+    produced by ``StateManager.initialize_state`` and consumed by
+    executors, LangGraph nodes, and checkpoint logic.
+
+    All keys are optional (``total=False``) because different lifecycle
+    phases populate different subsets of the state.
+    """
+
+    # Core identity
+    workflow_id: str
+    current_stage: str
+
+    # Accumulated stage outputs: stage_name -> output dict
+    stage_outputs: Dict[str, Any]
+
+    # Common workflow inputs
+    topic: Optional[str]
+    depth: Optional[str]
+    focus_areas: Optional[List[str]]
+    query: Optional[str]
+    input: Optional[str]
+    context: Optional[str]
+    data: Any
+
+    # Infrastructure (non-serializable)
+    tracker: TrackerProtocol
+    tool_registry: ToolRegistryProtocol
+    config_loader: ConfigLoaderProtocol
+    visualizer: Any
+
+    # UI / display
+    show_details: bool
+    detail_console: Any
+
+    # Quality gate retry tracking (parallel executor)
+    stage_retry_counts: Dict[str, int]
 
 
 class StateManager:
@@ -33,10 +81,10 @@ class StateManager:
         self,
         input_data: Dict[str, Any],
         workflow_id: Optional[str] = None,
-        tracker: Optional[Any] = None,
-        tool_registry: Optional[Any] = None,
-        config_loader: Optional[Any] = None
-    ) -> Dict[str, Any]:
+        tracker: Optional[TrackerProtocol] = None,
+        tool_registry: Optional[ToolRegistryProtocol] = None,
+        config_loader: Optional[ConfigLoaderProtocol] = None,
+    ) -> WorkflowStateDict:
         """Create and initialize workflow state as a plain dict.
 
         Args:
@@ -63,7 +111,7 @@ class StateManager:
         if config_loader:
             state["config_loader"] = config_loader
 
-        return state
+        return state  # type: ignore[return-value]
 
     def create_init_node(self) -> Callable[[LangGraphWorkflowState], Dict[str, Any]]:
         """Create LangGraph initialization node.

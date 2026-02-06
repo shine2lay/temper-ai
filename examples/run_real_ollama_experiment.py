@@ -8,10 +8,10 @@ Uses actual Ollama models to test product extraction with real quality scoring.
 import asyncio
 import json
 import time
-import re
-from datetime import datetime
 from collections import defaultdict
+
 import httpx
+
 
 # ANSI colors
 class Colors:
@@ -363,10 +363,10 @@ async def main():
     print("=" * 100)
 
     print(f"\n{Colors.BOLD}Configuration:{Colors.RESET}")
-    print(f"  • Real Ollama API calls")
+    print("  • Real Ollama API calls")
     print(f"  • Test products: {len(TEST_PRODUCTS)}")
-    print(f"  • Samples per model: 5")
-    print(f"  • Quality scoring: Actual extraction vs expected")
+    print("  • Samples per model: 5")
+    print("  • Quality scoring: Actual extraction vs expected")
 
     # Get available models
     import subprocess

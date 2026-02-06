@@ -1,5 +1,5 @@
 """Anthropic LLM provider (Claude models)."""
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 
 from src.agents.llm.base import BaseLLM, LLMProvider, LLMResponse
 

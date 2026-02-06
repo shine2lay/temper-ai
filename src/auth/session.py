@@ -6,10 +6,10 @@ Provides a protocol-based abstraction for pluggable session storage backends.
 import abc
 import asyncio
 import json
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict, Any
-import logging
+from typing import Any, Dict, Optional
 
 from src.auth.models import Session, User
 
@@ -343,7 +343,12 @@ class RedisSessionStore(SessionStoreProtocol):
                 "RedisSessionStore requires the 'redis' package. "
                 "Install it with: pip install redis"
             )
-        self._redis = aioredis.from_url(redis_url, decode_responses=True)
+        self._redis = aioredis.from_url(
+            redis_url,
+            decode_responses=True,
+            socket_connect_timeout=5,
+            socket_timeout=5,
+        )
         self._key_prefix = key_prefix
 
     def _key(self, session_id: str) -> str:
@@ -397,26 +402,41 @@ class RedisSessionStore(SessionStoreProtocol):
             ip_address=ip_address,
             user_agent=user_agent,
         )
-        await self._redis.setex(
-            self._key(session_id),
-            session_max_age,
-            json.dumps(self._session_to_dict(session)),
-        )
+        try:
+            await self._redis.setex(
+                self._key(session_id),
+                session_max_age,
+                json.dumps(self._session_to_dict(session)),
+            )
+        except Exception as e:
+            logger.error(f"Redis error creating session: {e}")
+            raise
         logger.info(f"Session created (Redis): session_id={session_id[:16]}..., user={user.user_id}")
         return session
 
     async def get_session(self, session_id: str) -> Optional[Session]:
-        data = await self._redis.get(self._key(session_id))
+        try:
+            data = await self._redis.get(self._key(session_id))
+        except Exception as e:
+            logger.error(f"Redis error getting session {session_id[:16]}...: {e}")
+            return None
         if not data:
             return None
         session = self._dict_to_session(json.loads(data))
         if session.is_expired():
-            await self._redis.delete(self._key(session_id))
+            try:
+                await self._redis.delete(self._key(session_id))
+            except Exception:
+                pass  # Best-effort cleanup
             return None
         return session
 
     async def delete_session(self, session_id: str) -> bool:
-        result = await self._redis.delete(self._key(session_id))
+        try:
+            result = await self._redis.delete(self._key(session_id))
+        except Exception as e:
+            logger.error(f"Redis error deleting session {session_id[:16]}...: {e}")
+            return False
         if result:
             logger.info(f"Session deleted (Redis): {session_id[:16]}...")
         return bool(result)

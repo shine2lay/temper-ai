@@ -12,11 +12,11 @@ This is the foundation for multi-agent workflows.
 import asyncio
 import json
 import time
-import sys
-from datetime import datetime
 from collections import defaultdict
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
+
 import httpx
+
 
 # ANSI colors
 class Colors:
@@ -573,7 +573,7 @@ class M5SelfImprovementOrchestrator:
         improvement = (winner_score["quality"] - scores[control]["quality"]) / scores[control]["quality"] * 100
 
         print(f"  {Colors.BOLD}Composite Scoring:{Colors.RESET}")
-        print(f"    Formula: 70% quality + 20% success_rate + 10% speed\n")
+        print("    Formula: 70% quality + 20% success_rate + 10% speed\n")
 
         for model, score_data in sorted(scores.items(), key=lambda x: x[1]["composite"], reverse=True):
             is_winner = model == winner_model
@@ -608,15 +608,15 @@ async def main():
     print("=" * 100)
 
     print(f"\n{Colors.BOLD}Configuration:{Colors.RESET}")
-    print(f"  • Real Ollama API calls")
-    print(f"  • Complexity-aware strategy")
-    print(f"  • Statistical A/B testing")
-    print(f"  • Iterative improvement cycles")
-    print(f"  • Foundation for multi-agent workflows")
+    print("  • Real Ollama API calls")
+    print("  • Complexity-aware strategy")
+    print("  • Statistical A/B testing")
+    print("  • Iterative improvement cycles")
+    print("  • Foundation for multi-agent workflows")
 
     print(f"\n{Colors.BOLD}Thresholds:{Colors.RESET}")
-    print(f"  • Quality: ≥ 0.85")
-    print(f"  • Success Rate: ≥ 80%")
+    print("  • Quality: ≥ 0.85")
+    print("  • Success Rate: ≥ 80%")
 
     # Initialize
     client = OllamaClient()
@@ -720,7 +720,7 @@ async def main():
                 arrow = f"{Colors.YELLOW}↓ NO CHANGE{Colors.RESET}"
 
         print(f"  {arrow}")
-        print(f"  │")
+        print("  │")
         print(f"  ├─ {Colors.BOLD}Cycle {cycle_data['cycle']}: {cycle_data['model']}{Colors.RESET}")
 
         if "metrics" in cycle_data:
@@ -730,7 +730,7 @@ async def main():
         if cycle_data.get("winner") and cycle_data["winner"] != cycle_data["model"]:
             print(f"  │  Winner: {cycle_data['winner']} (improvement: {cycle_data['improvement']:+.1f}%)")
 
-        print(f"  │")
+        print("  │")
 
     if orchestrator.cycle_history:
         final = orchestrator.cycle_history[-1]

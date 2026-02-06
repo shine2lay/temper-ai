@@ -14,15 +14,13 @@ import tempfile
 from pathlib import Path
 
 from src.safety import (
-    PolicyComposer,
-    FileAccessPolicy,
     ApprovalWorkflow,
-    RollbackManager,
-    CircuitBreaker,
-    SafetyGate,
     CircuitBreakerManager,
     CircuitBreakerOpen,
-    SafetyGateBlocked
+    FileAccessPolicy,
+    PolicyComposer,
+    RollbackManager,
+    SafetyGateBlocked,
 )
 
 
@@ -170,7 +168,7 @@ def production_database_migration_workflow():
                 migration_success = True  # Simulated success
 
             print("✓ Migration executed successfully")
-            print(f"  Circuit breaker metrics:")
+            print("  Circuit breaker metrics:")
             print(f"    - State: {db_breaker.state.value}")
             print(f"    - Successful calls: {db_breaker.metrics.successful_calls}")
             print(f"    - Total calls: {db_breaker.metrics.total_calls}\n")
@@ -191,7 +189,7 @@ def production_database_migration_workflow():
                 print("✓ Rollback completed successfully")
                 print(f"  Reverted items: {len(result.reverted_items)}")
             else:
-                print(f"✗ Rollback failed")
+                print("✗ Rollback failed")
                 print(f"  Errors: {result.errors}")
 
         # === SCENARIO 2: Rejected Migration ===

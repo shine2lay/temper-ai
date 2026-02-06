@@ -13,7 +13,7 @@ import os
 import shlex
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, Optional, Set
+from typing import Any, Dict, Optional, Set
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 
@@ -253,6 +253,28 @@ class Bash(BaseTool):
                     ),
                 )
 
+            # SECURITY: Block process substitution (<() and >()) which can
+            # execute arbitrary commands outside the allowlist
+            if '<(' in command or '>(' in command:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Process substitution (<() and >()) is not allowed. "
+                        f"Allowed commands: {sorted(self.allowed_commands)}"
+                    ),
+                )
+
+            # SECURITY: Block stderr redirection operators that could write
+            # to arbitrary paths bypassing argument validation
+            if _re.search(r'(?:^|[^<>])(?:2>|&>)', command):
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Stderr redirection (2>, &>) is not allowed in shell mode. "
+                        "Use stdout redirection only."
+                    ),
+                )
+
             for sub_cmd in sub_commands:
                 sub_cmd = sub_cmd.strip()
                 if not sub_cmd:
@@ -433,13 +455,13 @@ class Bash(BaseTool):
         try:
             use_shell = self.shell_mode
             cmd_arg = command if use_shell else parts
-            result = subprocess.run(
+            result = subprocess.run(  # noqa: S603 — bash tool requires subprocess  # nosec B602
                 cmd_arg,
                 cwd=str(resolved_cwd),
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                shell=use_shell,
+                shell=use_shell,  # noqa: S602  # nosec B602
                 env=self._get_safe_env(),
             )
 

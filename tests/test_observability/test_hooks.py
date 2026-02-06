@@ -3,18 +3,18 @@ Tests for observability hooks.
 """
 import pytest
 
+from src.observability.database import get_session, init_database
 from src.observability.hooks import (
+    ExecutionHook,
     get_tracker,
-    set_tracker,
     reset_tracker,
-    track_workflow,
-    track_stage,
+    set_tracker,
     track_agent,
-    ExecutionHook
+    track_stage,
+    track_workflow,
 )
+from src.observability.models import AgentExecution, StageExecution, WorkflowExecution
 from src.observability.tracker import ExecutionTracker
-from src.observability.database import init_database, get_session
-from src.observability.models import WorkflowExecution, StageExecution, AgentExecution
 
 
 @pytest.fixture(autouse=True)
@@ -29,8 +29,8 @@ def reset_global_tracker():
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    from src.observability.database import _db_manager, _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 

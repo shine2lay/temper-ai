@@ -8,8 +8,7 @@ Each test case includes:
 - ground_truth: Expected structured JSON output
 """
 
-from typing import List, Dict, Any
-
+from typing import Any, Dict, List
 
 # Product extraction test dataset (50 test cases)
 PRODUCT_TEST_CASES: List[Dict[str, Any]] = [

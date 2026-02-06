@@ -34,10 +34,10 @@ Example:
 
 import json
 from abc import ABC, abstractmethod
-from typing import Dict, Any, List, Optional
+from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
-from collections import Counter
+from typing import Any, Dict, List, Optional
 
 
 class SynthesisMethod(Enum):

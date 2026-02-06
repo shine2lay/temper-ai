@@ -36,16 +36,15 @@ Example:
     ...     if result.success:
     ...         print("Successfully rolled back changes")
 """
+import logging
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Callable
+from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
-import os
-import shutil
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -185,8 +184,8 @@ def validate_rollback_path(
         if allowed_directories is None:
             # Safe defaults: temporary directories and workspace
             allowed_directories = [
-                "/tmp",
-                "/var/tmp",
+                "/tmp",  # noqa: S108  # nosec B108 — safe default for rollback
+                "/var/tmp",  # noqa: S108  # nosec B108
                 os.path.expanduser("~/.cache"),
                 os.getcwd(),  # Current working directory
             ]
@@ -196,9 +195,6 @@ def validate_rollback_path(
             temp_dir = tempfile.gettempdir()
             if temp_dir not in allowed_directories:
                 allowed_directories.append(temp_dir)
-
-        # Convert to Path for easier handling
-        path_obj = Path(file_path)
 
         # Check for null bytes (security bypass technique)
         if "\x00" in str(file_path):

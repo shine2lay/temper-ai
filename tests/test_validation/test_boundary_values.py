@@ -15,6 +15,7 @@ Tests critical boundaries for:
 """
 
 import pytest
+
 from tests.fixtures.boundary_values import (
     BOUNDARY_VALUES,
     get_boundary_test_cases,
@@ -23,8 +24,8 @@ from tests.fixtures.boundary_values import (
 # Import components to test
 try:
     from src.strategies.base import AgentOutput, SynthesisResult
-    from src.strategies.consensus import ConsensusStrategy
     from src.strategies.conflict_resolution import ResolutionResult
+    from src.strategies.consensus import ConsensusStrategy
 except ImportError:
     pytest.skip("Strategy modules not available", allow_module_level=True)
 

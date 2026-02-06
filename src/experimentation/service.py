@@ -12,30 +12,29 @@ import time
 import unicodedata
 import uuid
 from collections import OrderedDict
-from datetime import datetime
-from typing import Dict, List, Any, Optional
+from typing import Any, Dict, List, Optional
+
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
-from sqlmodel import Session, select
+from sqlmodel import select
 
 from src.core.service import Service
-from src.observability.database import get_session
-from src.experimentation.models import (
-    Experiment,
-    Variant,
-    VariantAssignment,
-    ExperimentResult,
-    ExperimentStatus,
-    AssignmentStrategyType,
-    ExecutionStatus,
-    RecommendationType,
-    utcnow,
-)
+from src.experimentation.analyzer import StatisticalAnalyzer
 from src.experimentation.assignment import VariantAssigner
 from src.experimentation.config_manager import ConfigManager
-from src.experimentation.analyzer import StatisticalAnalyzer
+from src.experimentation.models import (
+    AssignmentStrategyType,
+    ExecutionStatus,
+    Experiment,
+    ExperimentResult,
+    ExperimentStatus,
+    RecommendationType,
+    Variant,
+    VariantAssignment,
+    utcnow,
+)
+from src.observability.database import get_session
 from src.utils.logging import get_logger
-
 
 logger = get_logger(__name__)
 
@@ -327,7 +326,7 @@ class ExperimentService(Service):
         except IntegrityError as e:
             # SECURITY: Don't reveal which constraint failed (timing attack mitigation)
             logger.warning(
-                f"Experiment creation failed due to constraint violation",
+                "Experiment creation failed due to constraint violation",
                 extra={
                     "security_event": "DATABASE_CONSTRAINT_VIOLATION",
                     "experiment_name": name,
@@ -557,7 +556,7 @@ class ExperimentService(Service):
     def get_experiment_results(
         self,
         experiment_id: str,
-        include_raw_data: bool = False
+        _include_raw_data: bool = False
     ) -> Dict[str, Any]:
         """Run statistical analysis and return results."""
         with get_session() as session:

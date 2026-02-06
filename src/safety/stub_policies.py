@@ -7,7 +7,7 @@ config section but perform no validation (always allow).
 When a real implementation is needed, replace the stub with a full policy
 class and remove the corresponding entry from this file.
 """
-from typing import Dict, Any
+from typing import Any, Dict
 
 from src.safety.base import BaseSafetyPolicy
 from src.safety.interfaces import ValidationResult

@@ -1,29 +1,30 @@
 """Tests for console visualization."""
-import pytest
 import re
-from io import StringIO
-from rich.console import Console
 from datetime import datetime, timezone
+from io import StringIO
 
-from src.observability.console import WorkflowVisualizer, print_workflow_tree
+import pytest
+from rich.console import Console
+
+from src.observability.console import WorkflowVisualizer
 from src.observability.formatters import (
+    format_bytes,
+    format_cost,
     format_duration,
+    format_percentage,
     format_timestamp,
     format_tokens,
-    format_cost,
     status_to_color,
     status_to_icon,
-    format_percentage,
     truncate_text,
-    format_bytes,
 )
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
-    LLMCall,
-    ToolExecution,
     CollaborationEvent,
+    LLMCall,
+    StageExecution,
+    ToolExecution,
+    WorkflowExecution,
 )
 
 
@@ -305,16 +306,14 @@ def test_print_workflow_tree_convenience_function(mock_workflow):
     """Test the convenience function print_workflow_tree."""
     # Should not raise an error
     # We can't easily capture Rich output in tests, but we can verify it runs
-    try:
-        # Create a StringIO console to avoid actual printing
-        console = Console(file=StringIO(), force_terminal=True)
-        visualizer = WorkflowVisualizer()
-        visualizer.console = console
-        visualizer.display_execution(mock_workflow)
-        # If we get here, it worked
-        assert True
-    except Exception as e:
-        pytest.fail(f"print_workflow_tree raised an exception: {e}")
+    # Create a StringIO console to capture output
+    output = StringIO()
+    console = Console(file=output, force_terminal=True)
+    visualizer = WorkflowVisualizer()
+    visualizer.console = console
+    visualizer.display_execution(mock_workflow)
+    # Verify output was actually produced
+    assert len(output.getvalue()) > 0, "Expected non-empty visualization output"
 
 
 def test_synthesis_node_in_verbose_mode(mock_workflow):

@@ -12,12 +12,13 @@ Wide search space:
 
 import asyncio
 import json
+import sys
 import time
 from datetime import datetime, timedelta
-from collections import defaultdict
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
+
 import httpx
-import sys
+
 
 # ANSI colors
 class Colors:
@@ -352,7 +353,7 @@ class WideSearchOptimizer:
         print(f"    {Colors.YELLOW}Estimated Time: ~{estimated_minutes:.0f} minutes{Colors.RESET}")
 
         print(f"\n  {Colors.BOLD}Progress:{Colors.RESET}")
-        print(f"    [Num] %     | Model                     | Prompt                | Quality | Time  | ETA")
+        print("    [Num] %     | Model                     | Prompt                | Quality | Time  | ETA")
         print(f"    {'-' * 95}")
 
         self.start_time = time.time()

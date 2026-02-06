@@ -13,12 +13,10 @@ states. These tests establish the foundation for future state management:
 Future enhancement: Add explicit agent states (idle, executing, tool_call,
 waiting, completed, failed, retry) for better observability and control.
 """
-import pytest
-from unittest.mock import Mock, MagicMock
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
-from src.agents.base_agent import BaseAgent, AgentResponse, ExecutionContext
-from src.compiler.schemas import AgentConfig, AgentConfigInner, InferenceConfig, PromptConfig
+from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
+from src.compiler.schemas import AgentConfig
 
 
 def create_mock_config(name: str = "test_agent", **kwargs) -> AgentConfig:

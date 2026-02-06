@@ -4,11 +4,11 @@ Centralized error handling utilities.
 Provides common error handling patterns including retry strategies,
 exponential backoff, and standardized error result creation.
 """
-import time
 import logging
-from typing import Callable, TypeVar, Optional, Any, Dict, Type, Tuple
-from functools import wraps
+import time
 from enum import Enum
+from functools import wraps
+from typing import Any, Callable, Dict, Optional, Tuple, Type, TypeVar
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,7 @@ class RetryStrategy(Enum):
     LINEAR_BACKOFF = "linear"
 
 
-class RetryConfig:
+class RetryParams:
     """Configuration for retry behavior.
 
     Attributes:
@@ -110,7 +110,7 @@ def retry_with_backoff(
         ... def network_operation():
         ...     pass
     """
-    config = RetryConfig(
+    config = RetryParams(
         max_retries=max_retries,
         initial_delay=initial_delay,
         max_delay=max_delay,

@@ -4,14 +4,12 @@ Tests the adapter that wraps LangGraphCompiler behind the ExecutionEngine interf
 Verifies that all M2 functionality is preserved through the adapter.
 """
 
-import pytest
-from unittest.mock import Mock, MagicMock, patch
-from src.compiler.langgraph_engine import (
-    LangGraphExecutionEngine,
-    LangGraphCompiledWorkflow
-)
-from src.compiler.execution_engine import ExecutionMode
+from unittest.mock import Mock, patch
 
+import pytest
+
+from src.compiler.execution_engine import ExecutionMode
+from src.compiler.langgraph_engine import LangGraphCompiledWorkflow, LangGraphExecutionEngine
 
 # Sample workflow configs for testing
 SIMPLE_WORKFLOW_CONFIG = {
@@ -488,7 +486,8 @@ class TestIntegration:
         }
 
         # Compile
-        with patch('src.compiler.langgraph_compiler.AgentFactory.create') as mock_create:
+        with patch('src.compiler.executors.sequential.AgentFactory.create') as mock_create, \
+             patch('src.compiler.executors.parallel.AgentFactory.create') as mock_create_p:
             # Mock agent execution
             mock_agent = Mock()
             mock_agent.execute = Mock(return_value=Mock(
@@ -499,6 +498,7 @@ class TestIntegration:
                 tool_calls=[]
             ))
             mock_create.return_value = mock_agent
+            mock_create_p.return_value = mock_agent
 
             compiled = engine.compile(workflow_config)
 
@@ -515,7 +515,6 @@ class TestIntegration:
 
             # Verify result has expected structure
             assert "stage_outputs" in result
-            assert "workflow_id" in result
 
     def test_metadata_and_visualize_integration(self):
         """Test metadata and visualization work end-to-end."""

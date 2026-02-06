@@ -6,7 +6,7 @@ prevents self-approval when authorized_approvers is configured.
 
 import pytest
 
-from src.safety.approval import ApprovalWorkflow, ApprovalStatus
+from src.safety.approval import ApprovalWorkflow
 
 
 @pytest.fixture

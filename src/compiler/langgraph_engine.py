@@ -12,14 +12,14 @@ Design:
 - Preserves all M2 functionality (tracking, tools, config loading)
 """
 
-from typing import Dict, Any, Optional, List, cast
 import asyncio
+from typing import Any, Dict, List, Optional, cast
 
 from src.compiler.execution_engine import (
-    ExecutionEngine,
     CompiledWorkflow,
+    ExecutionEngine,
     ExecutionMode,
-    WorkflowCancelledError
+    WorkflowCancelledError,
 )
 from src.compiler.langgraph_compiler import LangGraphCompiler
 
@@ -370,9 +370,8 @@ class LangGraphExecutionEngine(ExecutionEngine):
             raise NotImplementedError("STREAM mode not supported in M2")
 
         if mode == ExecutionMode.SYNC:
-            loop = asyncio.get_event_loop()
-            return await loop.run_in_executor(
-                None, compiled_workflow.invoke, input_data
+            return await asyncio.to_thread(
+                compiled_workflow.invoke, input_data
             )
 
         return await compiled_workflow.ainvoke(input_data)
@@ -404,15 +403,6 @@ class LangGraphExecutionEngine(ExecutionEngine):
             "conditional_routing",    # ✓ Conditional edges in LangGraph
             "checkpointing",          # ✓ LangGraph memory/checkpointing
             "state_persistence",      # ✓ State passed between nodes
-        }
-
-        # M3+ features not yet implemented
-        unsupported = {
-            "convergence_detection",   # ✗ Requires custom logic
-            "dynamic_stage_injection", # ✗ Requires graph modification at runtime
-            "nested_workflows",        # ✗ Not implemented in M2
-            "streaming_execution",     # ✗ STREAM mode not implemented in M2
-            "distributed_execution",   # ✗ Not implemented in M2
         }
 
         return feature in supported

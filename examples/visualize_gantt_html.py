@@ -63,70 +63,70 @@ for variant_id in ["control", "variant_1", "variant_2", "variant_3"]:
         })
 
 # Create HTML
-html = f"""<!DOCTYPE html>
+html = """<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
     <title>M5.1 Experiment Gantt Chart</title>
     <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
     <style>
-        body {{
+        body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
             margin: 20px;
             background: #f8fafc;
-        }}
-        .container {{
+        }
+        .container {
             max-width: 1400px;
             margin: 0 auto;
             background: white;
             padding: 30px;
             border-radius: 8px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-        }}
-        h1 {{
+        }
+        h1 {
             color: #1e293b;
             margin-bottom: 10px;
-        }}
-        .subtitle {{
+        }
+        .subtitle {
             color: #64748b;
             margin-bottom: 30px;
-        }}
-        .stats {{
+        }
+        .stats {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
             margin-top: 30px;
-        }}
-        .stat-card {{
+        }
+        .stat-card {
             background: #f1f5f9;
             padding: 20px;
             border-radius: 6px;
             border-left: 4px solid;
-        }}
-        .stat-card.control {{ border-left-color: #3b82f6; }}
-        .stat-card.variant_1 {{ border-left-color: #22c55e; }}
-        .stat-card.variant_2 {{ border-left-color: #f59e0b; }}
-        .stat-card.variant_3 {{ border-left-color: #ef4444; }}
-        .stat-card h3 {{
+        }
+        .stat-card.control { border-left-color: #3b82f6; }
+        .stat-card.variant_1 { border-left-color: #22c55e; }
+        .stat-card.variant_2 { border-left-color: #f59e0b; }
+        .stat-card.variant_3 { border-left-color: #ef4444; }
+        .stat-card h3 {
             margin: 0 0 15px 0;
             color: #1e293b;
             font-size: 14px;
             font-weight: 600;
-        }}
-        .stat-row {{
+        }
+        .stat-row {
             display: flex;
             justify-content: space-between;
             margin-bottom: 8px;
             font-size: 13px;
-        }}
-        .stat-label {{
+        }
+        .stat-label {
             color: #64748b;
-        }}
-        .stat-value {{
+        }
+        .stat-value {
             font-weight: 600;
             color: #1e293b;
-        }}
-        .winner-badge {{
+        }
+        .winner-badge {
             background: #22c55e;
             color: white;
             padding: 6px 12px;
@@ -135,26 +135,26 @@ html = f"""<!DOCTYPE html>
             font-weight: 600;
             display: inline-block;
             margin-top: 10px;
-        }}
-        .legend {{
+        }
+        .legend {
             display: flex;
             gap: 20px;
             margin: 20px 0;
             padding: 15px;
             background: #f8fafc;
             border-radius: 6px;
-        }}
-        .legend-item {{
+        }
+        .legend-item {
             display: flex;
             align-items: center;
             gap: 8px;
             font-size: 13px;
-        }}
-        .legend-color {{
+        }
+        .legend-color {
             width: 20px;
             height: 20px;
             border-radius: 3px;
-        }}
+        }
     </style>
 </head>
 <body>

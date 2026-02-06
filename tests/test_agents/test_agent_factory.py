@@ -1,8 +1,10 @@
 """Tests for AgentFactory."""
-import pytest
 import threading
+
+import pytest
+
 from src.agents.agent_factory import AgentFactory
-from src.agents.base_agent import BaseAgent, AgentResponse
+from src.agents.base_agent import AgentResponse, BaseAgent
 from src.agents.standard_agent import StandardAgent
 from src.compiler.schemas import AgentConfig
 
@@ -31,9 +33,9 @@ def test_agent_factory_unknown_type():
     """Test factory raises error for unknown agent type."""
     from src.compiler.schemas import (
         AgentConfigInner,
-        PromptConfig,
-        InferenceConfig,
         ErrorHandlingConfig,
+        InferenceConfig,
+        PromptConfig,
     )
 
     config = AgentConfig(
@@ -261,8 +263,8 @@ class TestAgentFactoryThreadSafety:
     def test_concurrent_creation_no_race_conditions(self, minimal_agent_config):
         """Test that concurrent creation doesn't cause race conditions in initialization."""
         import concurrent.futures
-        from unittest.mock import patch
         import time
+        from unittest.mock import patch
 
         created_agents = []
         creation_times = []
@@ -354,12 +356,13 @@ class TestAgentFactoryThreadSafety:
         """Test concurrent creation with varying configurations."""
         import concurrent.futures
         from unittest.mock import patch
+
         from src.compiler.schemas import (
             AgentConfig,
             AgentConfigInner,
-            PromptConfig,
-            InferenceConfig,
             ErrorHandlingConfig,
+            InferenceConfig,
+            PromptConfig,
         )
 
         def create_agent_with_config(agent_id):
@@ -431,8 +434,8 @@ class TestAgentFactoryThreadSafety:
     def test_concurrent_creation_memory_safety(self, minimal_agent_config):
         """Test that concurrent creation doesn't cause memory issues."""
         import concurrent.futures
-        from unittest.mock import patch
         import gc
+        from unittest.mock import patch
 
         def create_and_discard_agent():
             """Create agent and let it be garbage collected."""

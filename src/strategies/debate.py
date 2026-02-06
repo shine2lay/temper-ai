@@ -10,17 +10,15 @@ This strategy produces higher-quality decisions than simple voting
 by allowing agents to consider counter-arguments and refine reasoning.
 """
 
-from typing import Dict, Any, List, Tuple, Optional
-from dataclasses import dataclass, field
 from collections import Counter
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.strategies.base import (
-    CollaborationStrategy,
     AgentOutput,
-    SynthesisResult,
+    CollaborationStrategy,
     Conflict,
-    calculate_consensus_confidence,
-    extract_majority_decision
+    SynthesisResult,
 )
 
 

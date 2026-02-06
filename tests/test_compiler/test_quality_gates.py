@@ -3,7 +3,6 @@ Tests for M3-12: Quality Gates and Confidence Thresholds.
 
 Tests quality gate validation after synthesis.
 """
-import pytest
 from unittest.mock import Mock
 
 from src.compiler.langgraph_compiler import LangGraphCompiler

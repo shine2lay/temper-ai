@@ -1,9 +1,11 @@
 """Tests for StandardAgent."""
+from unittest.mock import Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from src.agents.standard_agent import StandardAgent, validate_input_data
+
 from src.agents.base_agent import AgentResponse, ExecutionContext
-from src.agents.llm_providers import LLMResponse, LLMError
+from src.agents.llm_providers import LLMError, LLMResponse
+from src.agents.standard_agent import StandardAgent, validate_input_data
 from src.tools.base import ToolResult
 from src.tools.executor import ToolExecutor
 
@@ -545,8 +547,13 @@ class TestInputValidation:
 
 def test_tool_loading_with_configuration():
     """Test that tools can be loaded with configuration passed to constructor."""
-    from src.compiler.schemas import AgentConfig, AgentConfigInner, InferenceConfig, ErrorHandlingConfig, PromptConfig
-    from src.tools.calculator import Calculator
+    from src.compiler.schemas import (
+        AgentConfig,
+        AgentConfigInner,
+        ErrorHandlingConfig,
+        InferenceConfig,
+        PromptConfig,
+    )
 
     # Create minimal config with tools
     config = AgentConfig(
@@ -589,8 +596,15 @@ def test_tool_loading_with_configuration():
 
 def test_tool_loading_with_custom_config():
     """Test that custom tool configuration is passed to tool constructor."""
-    from src.compiler.schemas import AgentConfig, AgentConfigInner, InferenceConfig, ErrorHandlingConfig, PromptConfig
     from pydantic import BaseModel
+
+    from src.compiler.schemas import (
+        AgentConfig,
+        AgentConfigInner,
+        ErrorHandlingConfig,
+        InferenceConfig,
+        PromptConfig,
+    )
 
     class ToolReference(BaseModel):
         """Tool reference with config."""

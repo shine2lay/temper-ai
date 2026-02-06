@@ -10,16 +10,16 @@ Creates an interactive timeline showing:
 - Interactive tooltips with metrics
 """
 import json
-from datetime import datetime, timedelta, UTC
-from typing import Dict, Any, List
 import sys
+from datetime import UTC, datetime, timedelta
+from typing import Any, Dict, List
 
 # Check if plotly is installed
 try:
-    import plotly.graph_objects as go
     import plotly.express as px
+    import plotly.graph_objects as go
 except ImportError as e:
-    print(f"ERROR: Plotly not installed. Install with: pip install plotly")
+    print("ERROR: Plotly not installed. Install with: pip install plotly")
     print(f"Import error: {e}")
     sys.exit(1)
 

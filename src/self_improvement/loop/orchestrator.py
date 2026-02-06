@@ -7,22 +7,23 @@ error recovery, and observability.
 import logging
 import signal
 import time
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+
 from sqlmodel import Session
 
-from .models import (
-    Phase,
-    IterationResult,
-    ProgressReport,
-    PhaseProgress,
-    LoopStatus,
-)
 from .config import LoopConfig
-from .state_manager import LoopStateManager
 from .error_recovery import ErrorRecoveryStrategy
-from .metrics import MetricsCollector, LoopMetrics
 from .executor import LoopExecutor
+from .metrics import MetricsCollector
+from .models import (
+    IterationResult,
+    LoopStatus,
+    Phase,
+    PhaseProgress,
+    ProgressReport,
+)
+from .state_manager import LoopStateManager
 
 logger = logging.getLogger(__name__)
 
@@ -68,7 +69,7 @@ class M5SelfImprovementLoop:
         self.config.validate()
 
         # Initialize components
-        self.state_manager = LoopStateManager(coord_db)
+        self.state_manager = LoopStateManager()
         self.error_recovery = ErrorRecoveryStrategy(self.config)
         self.metrics_collector = MetricsCollector()
 
@@ -182,7 +183,7 @@ class M5SelfImprovementLoop:
         # Setup signal handler for graceful shutdown
         shutdown_requested = {"flag": False}
 
-        def signal_handler(signum, frame):
+        def signal_handler(signum, _frame):
             logger.info(f"Received signal {signum}, requesting graceful shutdown...")
             shutdown_requested["flag"] = True
 
@@ -348,7 +349,7 @@ class M5SelfImprovementLoop:
             logger.info(f"Failed: {stats['failed_iterations']}")
             logger.info(f"Total deployments: {stats['total_deployments']}")
             logger.info(f"Final no-deploy streak: {stats['iterations_without_deployment']}")
-            logger.info(f"\nPer-agent stats:")
+            logger.info("\nPer-agent stats:")
             for agent_name, agent_stats in stats["agents"].items():
                 logger.info(
                     f"  {agent_name}: {agent_stats['iterations']} iterations, "
@@ -357,7 +358,7 @@ class M5SelfImprovementLoop:
 
         return stats
 
-    def run_scheduled(self, cron_expression: str) -> None:
+    def run_scheduled(self, _cron_expression: str) -> None:
         """
         Run improvement loop on schedule (not implemented).
 

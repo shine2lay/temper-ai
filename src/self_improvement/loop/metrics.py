@@ -4,11 +4,11 @@ Metrics collection for M5 Self-Improvement Loop.
 Tracks phase execution times, success/failure rates, and iteration metrics.
 """
 import logging
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
-from .models import Phase, IterationResult
+from .models import IterationResult, Phase
 
 logger = logging.getLogger(__name__)
 

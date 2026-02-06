@@ -5,16 +5,16 @@ Verifies that:
 1. CustomMetric model can be created with all fields
 2. Default values are applied correctly
 3. Indexes are defined for query performance
-4. Schema SQL is valid and complete
+4. Raw SQL migration was removed in favor of Alembic
 """
 
-import pytest
 from datetime import datetime, timezone
-from sqlmodel import create_engine, Session, SQLModel, select
+
+import pytest
+from sqlmodel import Session, SQLModel, create_engine, select
 
 from src.self_improvement.storage.models import (
     CustomMetric,
-    CUSTOM_METRICS_SCHEMA_SQL,
 )
 
 
@@ -266,59 +266,12 @@ class TestCustomMetricDatabase:
             assert all(m.execution_id == "exec-multi" for m in results)
 
 
-class TestCustomMetricSchemaSQL:
-    """Test CUSTOM_METRICS_SCHEMA_SQL constant."""
+class TestCustomMetricSchemaRemoved:
+    """Verify raw SQL migration was removed in favor of Alembic."""
 
-    def test_schema_sql_contains_table_creation(self):
-        """Schema SQL contains CREATE TABLE statement."""
-        assert "CREATE TABLE" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "custom_metrics" in CUSTOM_METRICS_SCHEMA_SQL
-
-    def test_schema_sql_contains_all_columns(self):
-        """Schema SQL defines all required columns."""
-        required_columns = [
-            "id",
-            "execution_id",
-            "metric_name",
-            "value",
-            "metric_type",
-            "collector_version",
-            "collected_at",
-            "extra_metadata",
-            "created_at",
-        ]
-
-        for column in required_columns:
-            assert column in CUSTOM_METRICS_SCHEMA_SQL, \
-                f"Column '{column}' missing from schema SQL"
-
-    def test_schema_sql_contains_indexes(self):
-        """Schema SQL defines performance indexes."""
-        assert "CREATE INDEX" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "ix_custom_metrics_execution_id" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "ix_custom_metrics_metric_name" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "ix_custom_metrics_metric_type" in CUSTOM_METRICS_SCHEMA_SQL
-
-    def test_schema_sql_contains_constraints(self):
-        """Schema SQL defines data integrity constraints."""
-        # Value range constraint
-        assert "CHECK" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "value >= 0.0" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "value <= 1.0" in CUSTOM_METRICS_SCHEMA_SQL
-
-        # Metric type constraint
-        assert "metric_type IN" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "'automatic'" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "'derived'" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "'custom'" in CUSTOM_METRICS_SCHEMA_SQL
-
-    def test_schema_sql_is_valid_sqlite(self):
-        """Schema SQL contains valid SQLite syntax."""
-        # Just verify SQL is well-formed - actual execution tested via SQLModel
-        assert "CREATE TABLE" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "IF NOT EXISTS" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "PRIMARY KEY" in CUSTOM_METRICS_SCHEMA_SQL
-        assert "AUTOINCREMENT" in CUSTOM_METRICS_SCHEMA_SQL
-
-        # Verify has documentation comments
-        assert "--" in CUSTOM_METRICS_SCHEMA_SQL
+    def test_raw_sql_schema_removed(self):
+        """CUSTOM_METRICS_SCHEMA_SQL should no longer exist (M-17)."""
+        import src.self_improvement.storage.models as models_mod
+        assert not hasattr(models_mod, "CUSTOM_METRICS_SCHEMA_SQL"), (
+            "CUSTOM_METRICS_SCHEMA_SQL should be removed; use Alembic migrations instead"
+        )

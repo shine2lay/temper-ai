@@ -6,9 +6,9 @@ validation against schemas, and security checks to prevent sensitive field overr
 """
 
 import copy
-from typing import Dict, Any, List, Set, Optional
-from pydantic import ValidationError
+from typing import Any, Dict, Optional, Set
 
+from pydantic import ValidationError
 
 # Protected fields that cannot be overridden by experiment variants
 # for security and safety reasons
@@ -28,7 +28,7 @@ PROTECTED_CONFIG_FIELDS = {
 }
 
 
-class ConfigValidationError(Exception):
+class ExperimentConfigValidationError(Exception):
     """Raised when variant config validation fails."""
     pass
 
@@ -165,12 +165,12 @@ class ConfigManager:
             schema_class: Pydantic model class to validate against
 
         Raises:
-            ConfigValidationError: If validation fails
+            ExperimentConfigValidationError: If validation fails
         """
         try:
             schema_class(**merged_config)
         except ValidationError as e:
-            raise ConfigValidationError(
+            raise ExperimentConfigValidationError(
                 f"Merged config validation failed: {e}"
             ) from e
 
@@ -228,7 +228,7 @@ class ConfigManager:
 
         Raises:
             SecurityViolationError: If protected fields are overridden
-            ConfigValidationError: If merged config is invalid
+            ExperimentConfigValidationError: If merged config is invalid
         """
         # Merge with security check
         merged = self.merge_config(

@@ -5,17 +5,16 @@ Tests token generation, loading, verification, and end-to-end authentication flo
 """
 
 import os
-import pytest
 import secrets
 import sys
-import time
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+
+import pytest
 
 # Add .claude-coord to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / '.claude-coord'))
 
-from coord_service.auth import TokenManager, AuthenticationLayer
+from coord_service.auth import AuthenticationLayer, TokenManager
 
 
 class TestTokenManager:
@@ -193,7 +192,6 @@ class TestAuthenticationLayer:
         at nanosecond scale due to CPU scheduling, caching, etc.)
         """
         import inspect
-        import hmac
 
         auth_token = secrets.token_urlsafe(32)
         auth_layer = AuthenticationLayer(auth_token)

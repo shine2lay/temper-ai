@@ -7,11 +7,18 @@ Tests verify that:
 3. No execution occurs when circuit is OPEN
 4. State reservation is atomic and thread-safe
 """
-import pytest
 import threading
 import time
+
 import httpx
-from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerError, CircuitState, CircuitBreakerConfig
+import pytest
+
+from src.llm.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerConfig,
+    CircuitBreakerError,
+    CircuitState,
+)
 
 
 def create_counted_error():
@@ -62,7 +69,7 @@ class TestCircuitBreakerRaceCondition:
             try:
                 # Thread 2 will be rejected because thread 1 holds semaphore
                 breaker.call(lambda: (_ for _ in ()).throw(create_counted_error()))
-            except (CircuitBreakerError, httpx.TimeoutException) as e:
+            except (CircuitBreakerError, httpx.TimeoutException):
                 # Expected - either rejected by semaphore or timeout error
                 pass
             execution_continue.set()

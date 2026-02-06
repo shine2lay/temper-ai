@@ -7,8 +7,8 @@ future improvement decisions. Patterns include:
 - Agent-specific optimization strategies
 """
 import logging
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from src.self_improvement.strategies.strategy import LearnedPattern
 from src.self_improvement.strategy_learning import StrategyLearningStore

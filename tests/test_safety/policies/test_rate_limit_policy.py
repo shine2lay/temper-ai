@@ -8,11 +8,11 @@ Tests cover:
 - Violation handling
 - Status reporting
 """
+
 import pytest
-import time
-from src.safety.policies.rate_limit_policy import RateLimitPolicy
-from src.safety.token_bucket import RateLimit
+
 from src.safety.interfaces import ViolationSeverity
+from src.safety.policies.rate_limit_policy import RateLimitPolicy
 
 
 class TestRateLimitPolicyBasics:

@@ -2,10 +2,10 @@
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, List, Any, Protocol
 from threading import RLock
+from typing import Any, Dict, List, Optional, Protocol
 
-from src.self_improvement.metrics.types import MetricType
+from src.self_improvement.metrics.types import SIMetricType
 
 logger = logging.getLogger(__name__)
 
@@ -46,8 +46,8 @@ class MetricCollector(ABC):
         ...         return "success_rate"
         ...
         ...     @property
-        ...     def metric_type(self) -> MetricType:
-        ...         return MetricType.AUTOMATIC
+        ...     def metric_type(self) -> SIMetricType:
+        ...         return SIMetricType.AUTOMATIC
         ...
         ...     def collect(self, execution) -> Optional[float]:
         ...         return 1.0 if execution.status == "completed" else 0.0
@@ -73,11 +73,11 @@ class MetricCollector(ABC):
 
     @property
     @abstractmethod
-    def metric_type(self) -> MetricType:
+    def metric_type(self) -> SIMetricType:
         """Classification of how this metric is computed.
 
         Returns:
-            MetricType: One of AUTOMATIC, DERIVED, or CUSTOM
+            SIMetricType: One of AUTOMATIC, DERIVED, or CUSTOM
 
         Note:
             - AUTOMATIC: Extracted from AgentExecution metadata

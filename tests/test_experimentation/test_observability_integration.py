@@ -7,31 +7,30 @@ Tests end-to-end workflow:
 3. StatisticalAnalyzer analyzes experiment results
 """
 
-import pytest
-from datetime import datetime, timezone
 
-from src.observability.tracker import ExecutionTracker
-from src.observability.backends.sql_backend import SQLObservabilityBackend
-from src.observability.database import init_database
-from src.experimentation.models import (
-    Experiment,
-    Variant,
-    ExperimentStatus,
-    AssignmentStrategyType,
-    ConfigType,
-    ExecutionStatus,
-)
+import pytest
+
+from src.experimentation.analyzer import StatisticalAnalyzer
 from src.experimentation.assignment import VariantAssigner
 from src.experimentation.metrics_collector import ExperimentMetricsCollector
-from src.experimentation.analyzer import StatisticalAnalyzer
+from src.experimentation.models import (
+    AssignmentStrategyType,
+    ConfigType,
+    Experiment,
+    ExperimentStatus,
+    Variant,
+)
+from src.observability.backends.sql_backend import SQLObservabilityBackend
+from src.observability.database import init_database
+from src.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    from src.observability.database import _db_manager, _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 

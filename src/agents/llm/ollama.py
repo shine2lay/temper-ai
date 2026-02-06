@@ -1,5 +1,5 @@
 """Ollama LLM provider (local models)."""
-from typing import Dict, Any
+from typing import Any, Dict
 
 from src.agents.llm.base import BaseLLM, LLMProvider, LLMResponse
 

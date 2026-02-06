@@ -14,30 +14,24 @@ Module Interactions Tested:
 - Configuration flow through all modules
 - Error propagation across module boundaries
 """
-import pytest
 import uuid
-import time
-from pathlib import Path
-from typing import Dict, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
-from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.compiler.workflow_executor import WorkflowExecutor
+import pytest
+
 from src.compiler.config_loader import ConfigLoader
-from src.tools.registry import ToolRegistry
-from src.tools.calculator import Calculator
-from src.observability.tracker import ExecutionTracker
-from src.observability.database import get_session, DatabaseManager
+from src.compiler.langgraph_compiler import LangGraphCompiler
+from src.observability.database import DatabaseManager, get_session
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
+    StageExecution,
     ToolExecution,
-    LLMCall
+    WorkflowExecution,
 )
-from src.safety.file_access import FileAccessPolicy
-from src.safety.interfaces import ViolationSeverity
-
+from src.observability.tracker import ExecutionTracker
+from src.tools.calculator import Calculator
+from src.tools.registry import ToolRegistry
 
 # ============================================================================
 # Fixtures

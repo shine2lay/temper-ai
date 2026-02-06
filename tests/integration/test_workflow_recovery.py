@@ -4,19 +4,19 @@ Integration tests for workflow error recovery and retry mechanisms.
 Tests workflows that handle failures gracefully through retry logic,
 checkpointing, and resume capabilities.
 """
-import uuid
-import pytest
 import time
-from datetime import datetime, UTC, timedelta
+import uuid
+from datetime import UTC, datetime, timedelta
 
-from src.observability.database import init_database, get_session
+import pytest
+
+from src.observability.database import get_session, init_database
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
+    StageExecution,
+    WorkflowExecution,
 )
 from src.observability.tracker import ExecutionTracker
-
 
 pytestmark = [pytest.mark.integration]
 

@@ -18,25 +18,24 @@ Usage:
 import sys
 import time
 from pathlib import Path
-from typing import Dict, Any, List
+
 from rich.console import Console
-from rich.panel import Panel
-from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TimeElapsedColumn
-from rich.tree import Tree
 from rich.markdown import Markdown
+from rich.panel import Panel
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
+from rich.table import Table
+from rich.tree import Tree
 
 # Add project root to path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.compiler.config_loader import ConfigLoader
+from src.compiler.langgraph_compiler import LangGraphCompiler
 from src.strategies.base import AgentOutput, SynthesisResult
 from src.strategies.consensus import ConsensusStrategy
 from src.strategies.debate import DebateAndSynthesize
-from src.strategies.merit_weighted import MeritWeightedResolver, AgentMerit, ResolutionContext
+from src.strategies.merit_weighted import AgentMerit, MeritWeightedResolver, ResolutionContext
 from src.strategies.registry import StrategyRegistry
-from src.compiler.langgraph_compiler import LangGraphCompiler
 
 console = Console()
 
@@ -234,7 +233,7 @@ def demo_2_debate_convergence():
     # Calculate convergence
     convergence_round1 = 1 / 3  # Only analyst unchanged
     console.print(f"  Convergence: {convergence_round1:.0%} (1/3 agents unchanged)")
-    console.print(f"  Decision distribution: Launch Beta (2), Wait 1 Month (1)\n")
+    console.print("  Decision distribution: Launch Beta (2), Wait 1 Month (1)\n")
 
     # ============================================================
     # ROUND 2: Further Convergence
@@ -284,7 +283,7 @@ def demo_2_debate_convergence():
     # Calculate convergence
     convergence_round2 = 2 / 3  # Optimist + analyst unchanged
     console.print(f"  Convergence: {convergence_round2:.0%} (2/3 agents unchanged)")
-    console.print(f"  Decision distribution: Launch Beta (3)\n")
+    console.print("  Decision distribution: Launch Beta (3)\n")
 
     # ============================================================
     # ROUND 3: Check Convergence
@@ -294,7 +293,7 @@ def demo_2_debate_convergence():
     # All agents now agree, convergence = 100%
     convergence_round3 = 3 / 3  # All unchanged
     console.print(f"  Convergence: {convergence_round3:.0%} (3/3 agents unchanged)")
-    console.print(f"  Threshold: 80%")
+    console.print("  Threshold: 80%")
     console.print(f"  [green]✓ {convergence_round3:.0%} > 80% → CONVERGED! Stopping debate.[/green]\n")
 
     # ============================================================
@@ -310,8 +309,8 @@ def demo_2_debate_convergence():
     console.print(f"  Decision: [bold green]{final_result.decision}[/bold green]")
     console.print(f"  Confidence: [bold]{final_result.confidence:.0%}[/bold]")
     console.print(f"  Method: {final_result.method}")
-    console.print(f"  Total rounds: 3")
-    console.print(f"  Converged: Yes (round 2)")
+    console.print("  Total rounds: 3")
+    console.print("  Converged: Yes (round 2)")
 
     # Show debate progression tree
     console.print("\n[bold]Debate Evolution:[/bold]")
@@ -445,25 +444,25 @@ def demo_3_merit_weighted_resolution():
     senior_merit = agent_merits["senior_expert"].calculate_weight(merit_weights)
     senior_conf = agent_outputs_conflict["senior_expert"].confidence
     senior_vote = senior_merit * senior_conf
-    console.print(f"  [cyan]senior_expert[/cyan] (Option A):")
+    console.print("  [cyan]senior_expert[/cyan] (Option A):")
     console.print(f"    merit: {senior_merit:.3f} × confidence: {senior_conf:.2f} = [green]{senior_vote:.3f}[/green]")
 
     # Mid-level
     mid_merit = agent_merits["mid_level"].calculate_weight(merit_weights)
     mid_conf = agent_outputs_conflict["mid_level"].confidence
     mid_vote = mid_merit * mid_conf
-    console.print(f"\n  [cyan]mid_level[/cyan] (Option A):")
+    console.print("\n  [cyan]mid_level[/cyan] (Option A):")
     console.print(f"    merit: {mid_merit:.3f} × confidence: {mid_conf:.2f} = [green]{mid_vote:.3f}[/green]")
 
     # Junior dev
     junior_merit = agent_merits["junior_dev"].calculate_weight(merit_weights)
     junior_conf = agent_outputs_conflict["junior_dev"].confidence
     junior_vote = junior_merit * junior_conf
-    console.print(f"\n  [cyan]junior_dev[/cyan] (Option B):")
+    console.print("\n  [cyan]junior_dev[/cyan] (Option B):")
     console.print(f"    merit: {junior_merit:.3f} × confidence: {junior_conf:.2f} = [yellow]{junior_vote:.3f}[/yellow]")
 
     # Totals
-    console.print(f"\n[bold]Total weighted votes:[/bold]")
+    console.print("\n[bold]Total weighted votes:[/bold]")
     console.print(f"  [green]Option A:[/green] {senior_vote:.3f} + {mid_vote:.3f} = [bold green]{decision_scores.get('Option A', 0):.3f}[/bold green]")
     console.print(f"  [yellow]Option B:[/yellow] {junior_vote:.3f} = [bold yellow]{decision_scores.get('Option B', 0):.3f}[/bold yellow]")
 
@@ -471,7 +470,7 @@ def demo_3_merit_weighted_resolution():
     console.print("[dim]Expert opinions (senior + mid) outweigh junior opinion[/dim]")
 
     # Display resolution
-    console.print(f"\n[bold yellow]═══ Final Resolution ═══[/bold yellow]\n")
+    console.print("\n[bold yellow]═══ Final Resolution ═══[/bold yellow]\n")
     console.print(f"  Decision: [bold green]{resolution.decision}[/bold green]")
     console.print(f"  Confidence: [bold]{resolution.confidence:.0%}[/bold]")
     console.print(f"  Method: {resolution.method}")
@@ -523,7 +522,7 @@ def demo_4_quality_gates():
     console.print(f"  Confidence: {good_result.confidence:.0%}")
     console.print(f"  Findings: {len(good_result.metadata['findings'])}")
     console.print(f"  Citations: {len(good_result.metadata['citations'])}")
-    console.print(f"  [green]Result: PASSED ✓[/green]\n")
+    console.print("  [green]Result: PASSED ✓[/green]\n")
 
     # Test 2: Fail confidence check
     bad_result = SynthesisResult(
@@ -548,8 +547,8 @@ def demo_4_quality_gates():
     console.print(f"  Confidence: {bad_result.confidence:.0%}")
     console.print(f"  Findings: {len(bad_result.metadata['findings'])}")
     console.print(f"  Citations: {len(bad_result.metadata['citations'])}")
-    console.print(f"  [red]Result: FAILED ✗[/red]")
-    console.print(f"  [red]Violations:[/red]")
+    console.print("  [red]Result: FAILED ✗[/red]")
+    console.print("  [red]Violations:[/red]")
     for violation in violations:
         console.print(f"    • {violation}")
     console.print()

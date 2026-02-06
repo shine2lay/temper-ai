@@ -10,16 +10,16 @@ Verifies that:
 6. Value validation is enforced
 """
 
-import pytest
-from unittest.mock import Mock
 from typing import Optional
 
+import pytest
+
 from src.self_improvement.metrics.collector import (
+    ExecutionProtocol,
     MetricCollector,
     MetricRegistry,
-    ExecutionProtocol,
 )
-from src.self_improvement.metrics.types import MetricType
+from src.self_improvement.metrics.types import SIMetricType
 
 
 # Mock execution for testing
@@ -40,8 +40,8 @@ class SuccessRateCollector(MetricCollector):
         return "success_rate"
 
     @property
-    def metric_type(self) -> MetricType:
-        return MetricType.AUTOMATIC
+    def metric_type(self) -> SIMetricType:
+        return SIMetricType.AUTOMATIC
 
     def collect(self, execution: ExecutionProtocol) -> Optional[float]:
         return 1.0 if execution.status == "completed" else 0.0
@@ -61,8 +61,8 @@ class CostCollector(MetricCollector):
         return "cost_efficiency"
 
     @property
-    def metric_type(self) -> MetricType:
-        return MetricType.DERIVED
+    def metric_type(self) -> SIMetricType:
+        return SIMetricType.DERIVED
 
     def collect(self, execution: ExecutionProtocol) -> Optional[float]:
         # Simulate cost extraction
@@ -91,7 +91,7 @@ class TestMetricCollector:
     def test_concrete_collector_has_metric_type(self):
         """Concrete collector must implement metric_type property."""
         collector = SuccessRateCollector()
-        assert collector.metric_type == MetricType.AUTOMATIC
+        assert collector.metric_type == SIMetricType.AUTOMATIC
 
     def test_concrete_collector_collects_value(self):
         """Concrete collector must implement collect method."""
@@ -257,8 +257,8 @@ class TestMetricCollection:
                 return "none_metric"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return None  # Cannot compute
@@ -283,8 +283,8 @@ class TestMetricCollection:
                 return "invalid_metric"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 return 1.5  # Invalid: > 1.0
@@ -310,8 +310,8 @@ class TestMetricCollection:
                 return "failing_metric"
 
             @property
-            def metric_type(self) -> MetricType:
-                return MetricType.CUSTOM
+            def metric_type(self) -> SIMetricType:
+                return SIMetricType.CUSTOM
 
             def collect(self, execution: ExecutionProtocol) -> Optional[float]:
                 raise ValueError("Simulated failure")

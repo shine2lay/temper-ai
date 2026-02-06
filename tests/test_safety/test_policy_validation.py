@@ -13,6 +13,7 @@ Security issues prevented:
 - Memory exhaustion from oversized inputs
 """
 import pytest
+
 from src.safety.blast_radius import BlastRadiusPolicy
 
 
@@ -118,7 +119,7 @@ class TestBlastRadiusPolicyValidation:
     def test_forbidden_patterns_oversized_list_rejected(self):
         """Oversized pattern list should raise ValueError."""
         huge_list = ["pattern" + str(i) for i in range(1001)]
-        with pytest.raises(ValueError, match="forbidden_patterns exceeds maximum size 1000"):
+        with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
             BlastRadiusPolicy({"forbidden_patterns": huge_list})
 
     def test_forbidden_patterns_oversized_pattern_rejected(self):

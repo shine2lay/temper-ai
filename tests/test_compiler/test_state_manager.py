@@ -3,8 +3,9 @@
 Verifies state initialization, validation, and utility methods.
 """
 import pytest
-from src.compiler.state_manager import StateManager
+
 from src.compiler.langgraph_state import LangGraphWorkflowState
+from src.compiler.state_manager import StateManager
 
 
 class TestStateInitialization:

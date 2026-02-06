@@ -7,11 +7,13 @@ Tests cover:
 - TokenBucketManager multi-bucket management
 - Edge cases and boundary conditions
 """
-import pytest
-import time
 import threading
+import time
 from unittest.mock import patch
-from src.safety.token_bucket import TokenBucket, TokenBucketManager, RateLimit
+
+import pytest
+
+from src.safety.token_bucket import RateLimit, TokenBucket, TokenBucketManager
 
 
 class TestRateLimit:
@@ -60,7 +62,7 @@ class TestRateLimit:
 
     def test_burst_size_exceeds_max(self):
         """Test that burst_size cannot exceed max_tokens."""
-        with pytest.raises(ValueError, match="burst_size cannot exceed max_tokens"):
+        with pytest.raises(ValueError, match="burst_size.*cannot exceed max_tokens"):
             RateLimit(max_tokens=10, refill_rate=1.0, burst_size=15)
 
     def test_hourly_rate_calculation(self):

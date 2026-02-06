@@ -1,15 +1,16 @@
 """Tests for conflict resolution strategies."""
 
 import pytest
-from src.strategies.base import Conflict, AgentOutput
+
+from src.strategies.base import AgentOutput, Conflict
 from src.strategies.conflict_resolution import (
     ConflictResolutionStrategy,
-    ResolutionResult,
-    ResolutionMethod,
     HighestConfidenceResolver,
-    RandomTiebreakerResolver,
     MeritWeightedResolver,
-    create_resolver
+    RandomTiebreakerResolver,
+    ResolutionMethod,
+    ResolutionResult,
+    create_resolver,
 )
 
 

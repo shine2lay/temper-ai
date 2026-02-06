@@ -12,18 +12,16 @@ CRITICAL: These tests validate production experiment behavior including:
 - Winner determination correctness
 """
 
-import pytest
 import random
-from datetime import datetime
-from typing import Dict, List
+from typing import Dict
 
+import pytest
+
+from src.observability.database import init_database, reset_database
+from src.self_improvement.data_models import SIOptimizationConfig
 from src.self_improvement.experiment_orchestrator import (
     ExperimentOrchestrator,
-    ExperimentError,
 )
-from src.self_improvement.data_models import OptimizationConfig
-from src.observability.database import init_database, reset_database
-
 
 # ============================================================================
 # Fixtures
@@ -60,21 +58,21 @@ def four_way_configs():
     - Variant 1: gemma2:2b (best quality, slightly slower)
     - Variant 2: mistral:7b (balanced)
     """
-    control = OptimizationConfig(
+    control = SIOptimizationConfig(
         agent_name="product_extractor",
         inference={"model": "llama3.1:8b", "temperature": 0.7}
     )
 
     variants = [
-        OptimizationConfig(
+        SIOptimizationConfig(
             agent_name="product_extractor",
             inference={"model": "phi3:mini", "temperature": 0.7}
         ),
-        OptimizationConfig(
+        SIOptimizationConfig(
             agent_name="product_extractor",
             inference={"model": "gemma2:2b", "temperature": 0.7}
         ),
-        OptimizationConfig(
+        SIOptimizationConfig(
             agent_name="product_extractor",
             inference={"model": "mistral:7b", "temperature": 0.7}
         ),
@@ -288,7 +286,7 @@ class TestFourWayExperimentValidation:
                 f"Assignment not deterministic! {execution_id} got {original_variant} " \
                 f"first, {retry_assignment.variant_id} on retry"
 
-        print(f"\n✓ Distribution validation passed:")
+        print("\n✓ Distribution validation passed:")
         print(f"  Control: {variant_counts['control']} executions")
         print(f"  Variant 0 (phi3:mini): {variant_counts['variant_0']} executions")
         print(f"  Variant 1 (gemma2:2b): {variant_counts['variant_1']} executions")
@@ -396,8 +394,9 @@ class TestFourWayExperimentValidation:
         )
 
         # VALIDATION: Experiment status updated
-        from src.observability.database import get_database
         from sqlalchemy import text
+
+        from src.observability.database import get_database
         db = get_database()
         with db.session() as session:
             updated_exp = session.execute(
@@ -410,7 +409,7 @@ class TestFourWayExperimentValidation:
             assert updated_exp[1] == "variant_1", \
                 f"Winner should be stored as variant_1, got {updated_exp[1]}"
 
-        print(f"\n✓ Winner selection validation passed:")
+        print("\n✓ Winner selection validation passed:")
         print(f"  Winner: {winner.variant_id}")
         print(f"  Quality improvement: +{winner.quality_improvement:.1f}%")
         print(f"  Speed improvement: {winner.speed_improvement:+.1f}%")
@@ -433,15 +432,15 @@ class TestFourWayExperimentValidation:
         """
         # Modify configs to make all variants worse
         worse_variants = [
-            OptimizationConfig(
+            SIOptimizationConfig(
                 agent_name="product_extractor",
                 inference={"model": "bad_model_1", "temperature": 0.7}
             ),
-            OptimizationConfig(
+            SIOptimizationConfig(
                 agent_name="product_extractor",
                 inference={"model": "bad_model_2", "temperature": 0.7}
             ),
-            OptimizationConfig(
+            SIOptimizationConfig(
                 agent_name="product_extractor",
                 inference={"model": "bad_model_3", "temperature": 0.7}
             ),
@@ -605,10 +604,10 @@ class TestFourWayExperimentValidation:
         if final_progress["is_complete"]:
             assert orchestrator.is_experiment_complete(experiment.id)
         else:
-            print(f"\n  Note: Experiment not technically complete due to uneven distribution:")
+            print("\n  Note: Experiment not technically complete due to uneven distribution:")
             print(f"  {final_progress['variants']}")
 
-        print(f"\n✓ Progress tracking validation passed:")
+        print("\n✓ Progress tracking validation passed:")
         print(f"  Total collected: {final_progress['total_collected']}/{final_progress['total_target']}")
         print(f"  All variants: {final_progress['variants']}")
         print(f"  Is complete: {final_progress['is_complete']}")

@@ -4,10 +4,12 @@ Security tests for YAML bombs and configuration injection attacks.
 Tests YAML bomb (billion laughs) detection, environment variable injection,
 config file size limits, excessive nesting depth, and circular references.
 """
-import pytest
-import tempfile
 import os
+import tempfile
 from pathlib import Path
+
+import pytest
+
 from src.compiler.config_loader import ConfigLoader
 from src.utils.exceptions import ConfigValidationError
 
@@ -472,7 +474,7 @@ node_b: &node_b
                 json.dumps(config)  # Will fail on circular refs
 
             # Accept either ConfigValidationError or RecursionError
-            assert True, "Circular reference should be detected"
+            assert exc_info.value is not None, "Circular reference should be detected"
 
     def test_self_referential_anchor(self):
         """
@@ -506,4 +508,4 @@ recursive: &loop
                 import json
                 json.dumps(config)
 
-            assert True, "Self-reference should be detected"
+            assert exc_info.value is not None, "Self-reference should be detected"

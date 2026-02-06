@@ -20,36 +20,36 @@ DEPENDENCIES:
 - m2-04b: AgentFactory
 - m2-05: LangGraph compiler
 """
-import sys
 import argparse
 import json
+import sys
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 # Check dependencies
 try:
-    from src.agents.standard_agent import StandardAgent  # m2-04
     from src.agents.agent_factory import AgentFactory  # m2-04b
+    from src.agents.standard_agent import StandardAgent  # m2-04
     from src.compiler.engine_registry import EngineRegistry  # m2.5-03
     COMPONENTS_READY = True
 except ImportError as e:
     COMPONENTS_READY = False
     IMPORT_ERROR = str(e)
 
-from src.compiler.config_loader import ConfigLoader
-from src.tools.registry import ToolRegistry
-from src.tools.calculator import Calculator
-from src.tools.web_scraper import WebScraper
-from src.tools.file_writer import FileWriter
-from src.observability.database import init_database, get_session
-from src.observability.tracker import ExecutionTracker
-from src.observability.console import StreamingVisualizer
-from src.observability.models import WorkflowExecution
+from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich import box
 
+from src.compiler.config_loader import ConfigLoader
+from src.observability.console import StreamingVisualizer
+from src.observability.database import get_session, init_database
+from src.observability.models import WorkflowExecution
+from src.observability.tracker import ExecutionTracker
+from src.tools.calculator import Calculator
+from src.tools.file_writer import FileWriter
+from src.tools.registry import ToolRegistry
+from src.tools.web_scraper import WebScraper
 
 console = Console()
 

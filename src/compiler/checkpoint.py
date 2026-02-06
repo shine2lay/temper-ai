@@ -8,18 +8,17 @@ This shim delegates to checkpoint_manager.py and checkpoint_backends.py,
 eliminating the duplicate implementation (code-high-dup-checkpoint-15).
 """
 from dataclasses import dataclass
-from datetime import datetime, UTC
-from typing import Dict, Any, Optional, List
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional
 
-from src.compiler.domain_state import WorkflowDomainState
+from src.compiler.checkpoint_backends import (
+    CheckpointNotFoundError,
+    FileCheckpointBackend,
+)
 from src.compiler.checkpoint_manager import (
     CheckpointManager as _NewCheckpointManager,
-    CheckpointStrategy,
 )
-from src.compiler.checkpoint_backends import (
-    FileCheckpointBackend,
-    CheckpointNotFoundError,
-)
+from src.compiler.domain_state import WorkflowDomainState
 
 
 @dataclass
@@ -164,7 +163,6 @@ class CheckpointManager:
             List of checkpoint metadata
         """
         # The new backend is per-workflow; scan the checkpoint directory
-        import os
         results = []
         checkpoint_dir = self._manager.backend.checkpoint_dir
         if not checkpoint_dir.exists():

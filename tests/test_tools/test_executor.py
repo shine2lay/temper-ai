@@ -2,12 +2,11 @@
 Tests for tool executor.
 """
 import time
-import pytest
 from unittest.mock import MagicMock
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.tools.registry import ToolRegistry
-from src.tools.executor import ToolExecutor
 
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from src.tools.executor import ToolExecutor
+from src.tools.registry import ToolRegistry
 
 # ============================================
 # MOCK TOOLS FOR TESTING
@@ -598,7 +597,6 @@ class TestTimeoutComprehensive:
 
         try:
             # Execute 3 tools concurrently with different timeouts
-            import concurrent.futures
             futures = []
 
             # Tool 1: Will timeout
@@ -667,7 +665,6 @@ class TestTimeoutComprehensive:
         timeout_value = 1
         num_executions = 10
 
-        import concurrent.futures
         futures = []
         start_times = []
 
@@ -701,8 +698,8 @@ class TestTimeoutComprehensive:
 
     def test_resource_cleanup_after_timeout(self):
         """Test that resources are cleaned up after timeout."""
-        import threading
         import gc
+        import threading
 
         registry = ToolRegistry()
         slow = SlowTool()

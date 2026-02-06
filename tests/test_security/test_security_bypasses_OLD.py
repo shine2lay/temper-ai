@@ -19,13 +19,12 @@ Reference:
 - OWASP Top 10
 - CWE-22 (Path Traversal), CWE-89 (SQL Injection), CWE-78 (Command Injection), CWE-918 (SSRF)
 """
-import pytest
 import time
-from pathlib import Path
 
-from src.utils.path_safety import PathSafetyValidator, PathSafetyError
+import pytest
+
 from src.tools.base import ParameterSanitizer, ValidationError
-
+from src.utils.path_safety import PathSafetyError, PathSafetyValidator
 
 # ============================================================================
 # Test Fixtures

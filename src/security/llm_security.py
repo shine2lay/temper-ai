@@ -7,18 +7,17 @@ Provides security controls for LLM interactions including:
 - Output sanitization (secrets, dangerous content)
 - Rate limiting per agent/workflow
 """
+import logging
+import math
+import os
 import re
 import time
-import math
-import hashlib
-import os
 import unicodedata
-from typing import Dict, List, Tuple, Optional, Any, DefaultDict
-from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime
 from threading import Lock
-import logging
+from typing import Any, DefaultDict, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -363,18 +362,18 @@ class OutputSanitizer:
     def __init__(self) -> None:
         """Initialize sanitizer with detection patterns from centralized registry."""
         from src.utils.secret_patterns import (
-            SECRET_PATTERNS,
             GENERIC_SECRET_PATTERNS,
             PII_PATTERNS,
+            SECRET_PATTERNS,
         )
 
         # Build secret pattern list with severity from centralized registry.
         # Exclude key=value assignment patterns (generic_api_key, generic_secret)
         # which consume JSON/config key names during inline redaction.
-        _DETECTION_ONLY = {"generic_api_key", "generic_secret"}
+        _detection_only = {"generic_api_key", "generic_secret"}
         self.secret_patterns = []
         for name, pattern in {**SECRET_PATTERNS, **GENERIC_SECRET_PATTERNS}.items():
-            if name in _DETECTION_ONLY:
+            if name in _detection_only:
                 continue
             severity = self._SECRET_SEVERITY.get(name, "high")
             self.secret_patterns.append((pattern, name, severity))
@@ -490,7 +489,7 @@ class OutputSanitizer:
         return False
 
 
-class RateLimiter:
+class LLMSecurityRateLimiter:
     """Rate limit LLM calls per agent/workflow to prevent abuse.
 
     Features:
@@ -558,12 +557,17 @@ class RateLimiter:
                 # Register Lua script
                 self._rate_limit_script = self._redis.register_script(RATE_LIMIT_LUA_SCRIPT)
                 self._redis_available = True
-                logger.info("Redis rate limiting enabled", extra={'redis_url': redis_url})
+                from src.utils.secrets import mask_url_password
+                logger.info(
+                    "Redis rate limiting enabled",
+                    extra={'redis_url': mask_url_password(redis_url)}
+                )
 
             except Exception as e:
+                from src.utils.secrets import mask_url_password
                 logger.warning(
                     f"Redis unavailable, using {fallback_mode} mode: {e}",
-                    extra={'redis_url': redis_url}
+                    extra={'redis_url': mask_url_password(redis_url)}
                 )
                 self._redis = None
                 self._redis_available = False
@@ -852,7 +856,7 @@ class RateLimiter:
 # Global instances
 _prompt_detector: Optional[PromptInjectionDetector] = None
 _output_sanitizer: Optional[OutputSanitizer] = None
-_rate_limiter: Optional[RateLimiter] = None
+_rate_limiter: Optional[LLMSecurityRateLimiter] = None
 _security_lock = Lock()
 
 
@@ -880,15 +884,15 @@ def get_output_sanitizer() -> OutputSanitizer:
     return _output_sanitizer
 
 
-def get_rate_limiter() -> RateLimiter:
-    """Get global RateLimiter instance."""
+def get_rate_limiter() -> LLMSecurityRateLimiter:
+    """Get global LLMSecurityRateLimiter instance."""
     global _rate_limiter
     # Double-check locking pattern
     if _rate_limiter is None:
         with _security_lock:
             # Check again inside lock
             if _rate_limiter is None:
-                _rate_limiter = RateLimiter()
+                _rate_limiter = LLMSecurityRateLimiter()
     return _rate_limiter
 
 

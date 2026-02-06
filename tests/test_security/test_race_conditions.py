@@ -4,14 +4,14 @@ Race condition and concurrency security tests.
 Tests for race conditions in shared state, concurrent workflow execution,
 and multi-agent data integrity.
 """
-import pytest
 import asyncio
-import time
+import tempfile
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import tempfile
-import os
+
+import pytest
 
 
 class TestRaceConditions:
@@ -287,7 +287,6 @@ class TestMemoryLeaks:
         This simulates high-load scenario with many concurrent workflows.
         """
         import gc
-        import sys
 
         # Simple workflow task
         async def mini_workflow(workflow_id: int):

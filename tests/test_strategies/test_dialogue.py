@@ -13,13 +13,9 @@ tests in test_executors/test_sequential.py and test_executors/test_parallel.py
 """
 
 import pytest
-from src.strategies.dialogue import (
-    DialogueOrchestrator,
-    DialogueRound,
-    DialogueHistory
-)
-from src.strategies.base import AgentOutput, SynthesisResult
 
+from src.strategies.base import AgentOutput
+from src.strategies.dialogue import DialogueHistory, DialogueOrchestrator, DialogueRound
 
 # Realistic metadata for agent outputs
 REALISTIC_METADATA_RESEARCH = {

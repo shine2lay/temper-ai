@@ -7,22 +7,18 @@ Tests concurrent access to:
 - core/service.py _sanitizer initialization
 """
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from unittest.mock import patch, MagicMock
 
 import pytest
 
-from src.agents.pricing import PricingManager, get_pricing_manager
 from src.agents.agent_factory import AgentFactory
 from src.agents.base_agent import BaseAgent
+from src.agents.pricing import PricingManager, get_pricing_manager
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.registry import (
     ToolRegistry,
-    get_global_registry,
     clear_global_cache,
-    _GLOBAL_LOCK,
+    get_global_registry,
 )
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-
 
 # ---------- Helpers ----------
 

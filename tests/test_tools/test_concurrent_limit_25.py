@@ -6,12 +6,12 @@ the concurrent count, preventing TOCTOU race conditions.
 
 import threading
 import time
-import pytest
-from unittest.mock import Mock
 
+import pytest
+
+from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.executor import ToolExecutor
 from src.tools.registry import ToolRegistry
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
 
 
 class SlowTestTool(BaseTool):

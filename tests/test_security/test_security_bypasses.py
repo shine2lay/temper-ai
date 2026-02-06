@@ -19,14 +19,13 @@ Reference:
 - OWASP Top 10 2021
 - CWE-22 (Path Traversal), CWE-89 (SQL Injection), CWE-78 (Command Injection), CWE-918 (SSRF)
 """
-import pytest
 import time
-from typing import Dict, Any
+
+import pytest
 
 from src.safety.file_access import FileAccessPolicy
 from src.safety.forbidden_operations import ForbiddenOperationsPolicy
 from src.safety.interfaces import ViolationSeverity
-
 
 # ============================================================================
 # Test Fixtures

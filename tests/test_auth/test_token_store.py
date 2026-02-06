@@ -7,10 +7,11 @@ SECURITY: These tests verify:
 - Audit logging
 - OS keyring integration
 """
+import time
+
 import pytest
 from cryptography.fernet import Fernet
-from datetime import datetime, timedelta
-import time
+
 from src.auth.oauth.token_store import SecureTokenStore, SecurityError
 
 # Try importing keyring for keyring tests

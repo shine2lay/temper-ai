@@ -5,28 +5,29 @@ parent execution records, so that cleanup_old_records leaves no orphaned rows
 in DecisionOutcome, RollbackSnapshotDB, or RollbackEvent tables.
 """
 
-import pytest
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
-from src.observability.database import init_database, get_session, reset_database
+import pytest
+
+from src.observability.database import get_session, init_database, reset_database
 from src.observability.models import (
-    WorkflowExecution,
-    StageExecution,
     AgentExecution,
-    LLMCall,
-    ToolExecution,
     DecisionOutcome,
-    RollbackSnapshotDB,
+    LLMCall,
     RollbackEvent,
+    RollbackSnapshotDB,
+    StageExecution,
+    ToolExecution,
+    WorkflowExecution,
 )
 
 
 @pytest.fixture(autouse=True)
 def setup_db():
     """Initialize a fresh in-memory database for each test."""
-    from src.observability.database import _db_lock
     import src.observability.database as db_module
+    from src.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 

@@ -4,13 +4,9 @@ This module provides the BaseSafetyPolicy class which implements the SafetyPolic
 interface with support for policy composition, priority-based execution, and
 short-circuit evaluation on critical violations.
 """
-from typing import List, Dict, Any
-from src.safety.interfaces import (
-    SafetyPolicy,
-    ValidationResult,
-    SafetyViolation,
-    ViolationSeverity
-)
+from typing import Any, Dict, List
+
+from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 
 class BaseSafetyPolicy(SafetyPolicy):
@@ -73,7 +69,35 @@ class BaseSafetyPolicy(SafetyPolicy):
             )
 
         # SECURITY: Validate all keys and values (prevent injection and DoS)
-        for key, value in config.items():
+        self._validate_config_dict(config, depth=0)
+
+        # Store validated config
+        self.config = config
+        self._child_policies: List[SafetyPolicy] = []
+
+    # Maximum nesting depth for config dicts (prevents DoS via deeply nested structures)
+    _MAX_CONFIG_DEPTH = 4
+
+    @classmethod
+    def _validate_config_dict(cls, d: dict, depth: int) -> None:
+        """Recursively validate a config dictionary.
+
+        Validates keys are strings, values are safe types, collections are
+        bounded, and nesting depth is limited to prevent DoS.
+
+        Args:
+            d: Dictionary to validate.
+            depth: Current nesting depth (0 = top level).
+
+        Raises:
+            ValueError: If any validation check fails.
+        """
+        if depth > cls._MAX_CONFIG_DEPTH:
+            raise ValueError(
+                f"config nesting depth exceeds maximum of {cls._MAX_CONFIG_DEPTH}"
+            )
+
+        for key, value in d.items():
             # Validate key
             if not isinstance(key, str):
                 raise ValueError(
@@ -84,15 +108,17 @@ class BaseSafetyPolicy(SafetyPolicy):
                     f"config key exceeds 100 characters: {key[:20]}..."
                 )
 
-            # SECURITY: Validate value type (prevent nested objects causing DoS)
+            # SECURITY: Recursively validate nested dicts (depth-bounded)
             if isinstance(value, dict):
-                raise ValueError(
-                    f"config values must be primitives (str/int/float/bool/list), "
-                    f"got nested dict for key '{key}'"
-                )
+                if len(value) > 100:
+                    raise ValueError(
+                        f"config nested dict exceeds maximum size of 100 keys "
+                        f"for key '{key}'"
+                    )
+                cls._validate_config_dict(value, depth + 1)
 
             # SECURITY: Validate collection sizes
-            if isinstance(value, (list, tuple, set)):
+            elif isinstance(value, (list, tuple, set)):
                 if len(value) > 1000:
                     raise ValueError(
                         f"config list/tuple/set must have <= 1000 items, "
@@ -100,16 +126,12 @@ class BaseSafetyPolicy(SafetyPolicy):
                     )
 
             # SECURITY: Validate string lengths
-            if isinstance(value, str):
+            elif isinstance(value, str):
                 if len(value) > 10_000:
                     raise ValueError(
                         f"config string must be <= 10,000 chars, "
                         f"got {len(value)} for key '{key}'"
                     )
-
-        # Store validated config
-        self.config = config
-        self._child_policies: List[SafetyPolicy] = []
 
     def add_child_policy(self, policy: SafetyPolicy) -> None:
         """Add a child policy for composition.

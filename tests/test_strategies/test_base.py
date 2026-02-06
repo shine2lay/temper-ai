@@ -9,15 +9,16 @@ This test module verifies:
 """
 
 import pytest
+
 from src.strategies.base import (
-    CollaborationStrategy,
     AgentOutput,
-    SynthesisResult,
+    CollaborationStrategy,
     Conflict,
     SynthesisMethod,
+    SynthesisResult,
     calculate_consensus_confidence,
+    calculate_vote_distribution,
     extract_majority_decision,
-    calculate_vote_distribution
 )
 
 

@@ -14,29 +14,29 @@ Validates:
 """
 
 import json
-import pytest
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
 import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+import pytest
 
 # Add .claude-coord to path for coordination Database
 coord_path = Path(__file__).parent.parent.parent / ".claude-coord"
 sys.path.insert(0, str(coord_path))
 from coord_service.database import Database as CoordDatabase
 
+from src.observability.database import init_database, reset_database
+from src.observability.models import AgentExecution
 from src.self_improvement.data_models import (
     AgentConfig,
-    ConfigDeployment,
     utcnow,
 )
 from src.self_improvement.deployment.deployer import ConfigDeployer
 from src.self_improvement.deployment.rollback_monitor import (
-    RollbackMonitor,
     RegressionThresholds,
+    RollbackMonitor,
 )
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
-from src.observability.database import init_database, reset_database
-from src.observability.models import AgentExecution
 
 
 @pytest.fixture

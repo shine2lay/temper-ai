@@ -1,43 +1,39 @@
 """LangGraph-specific workflow state dataclass.
 
-This module provides a combined dataclass that merges WorkflowDomainState
-and ExecutionContext fields for use with LangGraph StateGraph.
+This module provides a combined dataclass that extends WorkflowDomainState
+with infrastructure fields for use with LangGraph StateGraph.
 
 LangGraph requires a dataclass schema for StateGraph. Since our architecture
-separates domain state from execution context, we need a combined dataclass
-for LangGraph execution while maintaining the separation for checkpointing.
+separates domain state from execution context, we extend WorkflowDomainState
+with infrastructure fields for LangGraph execution while maintaining the
+separation for checkpointing.
 
 Design:
 - Inherits all fields from WorkflowDomainState (domain data)
-- Adds all fields from ExecutionContext (infrastructure)
+- Adds infrastructure fields (tracker, tool_registry, etc.)
 - Used only for LangGraph StateGraph definition
 - Checkpointing still uses WorkflowDomainState for serialization
 """
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List
-from datetime import datetime, UTC
-import uuid
+from datetime import datetime
+from typing import Any, Dict, Optional
+
+from src.compiler.domain_state import WorkflowDomainState
 
 
 @dataclass
-class LangGraphWorkflowState:
+class LangGraphWorkflowState(WorkflowDomainState):
     """Combined workflow state for LangGraph execution.
 
-    This dataclass combines fields from both WorkflowDomainState (domain data)
-    and ExecutionContext (infrastructure) for use with LangGraph StateGraph.
+    Extends WorkflowDomainState with infrastructure components needed
+    during LangGraph graph execution.  All domain fields (stage_outputs,
+    workflow_id, topic, etc.) are inherited from the parent class.
 
     LangGraph requires a dataclass schema to properly handle state updates
     from nodes. This combined state allows nodes to access both domain data
     and infrastructure components while maintaining proper state management.
 
-    Domain State Fields (from WorkflowDomainState):
-        stage_outputs: Outputs from completed stages
-        current_stage: Currently executing stage name
-        workflow_id: Unique workflow execution ID
-        topic, depth, focus_areas, query, input, context, data: Workflow inputs
-        version, created_at, metadata: State metadata
-
-    Infrastructure Fields (from ExecutionContext):
+    Infrastructure Fields:
         tracker: ExecutionTracker for observability
         tool_registry: ToolRegistry for agent tool access
         config_loader: ConfigLoader for stage/agent configurations
@@ -57,48 +53,17 @@ class LangGraphWorkflowState:
         ... })
     """
 
-    # Core workflow state (from WorkflowDomainState)
-    stage_outputs: Dict[str, Any] = field(default_factory=dict)
-    current_stage: str = ""
-    workflow_id: str = field(default_factory=lambda: f"wf-{uuid.uuid4().hex[:12]}")
-
-    # Common workflow inputs (from WorkflowDomainState)
-    topic: Optional[str] = None
-    depth: Optional[str] = None
-    focus_areas: Optional[List[str]] = None
-    query: Optional[str] = None
-    input: Optional[str] = None
-    context: Optional[str] = None
-    data: Optional[Any] = None
-
-    # Metadata and versioning (from WorkflowDomainState)
-    version: str = "1.0"
-    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
-    metadata: Dict[str, Any] = field(default_factory=dict)
-
-    # Infrastructure components (from ExecutionContext)
+    # Infrastructure components (added on top of inherited domain fields)
     tracker: Optional[Any] = None
     tool_registry: Optional[Any] = None
     config_loader: Optional[Any] = None
     visualizer: Optional[Any] = None
 
     # Cache for to_dict() results (performance optimization)
-    _dict_cache: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
-    _dict_cache_exclude_internal: Optional[Dict[str, Any]] = field(default=None, init=False, repr=False)
-
-    def __post_init__(self) -> None:
-        """Validate state after initialization."""
-        # Ensure focus_areas is a list if provided
-        if self.focus_areas is not None and not isinstance(self.focus_areas, list):
-            self.focus_areas = [self.focus_areas]  # type: ignore
-
-        # Validate workflow_id format
-        if not self.workflow_id.startswith("wf-"):
-            self.workflow_id = f"wf-{self.workflow_id}"
-
-        # Ensure stage_outputs is a dict
-        if not isinstance(self.stage_outputs, dict):
-            self.stage_outputs = {}  # type: ignore
+    # Note: init=True (default) is needed because LangGraph's _coerce_state passes
+    # ALL dataclass fields as kwargs during state construction, including internal ones.
+    _dict_cache: Optional[Dict[str, Any]] = field(default=None, repr=False)
+    _dict_cache_exclude_internal: Optional[Dict[str, Any]] = field(default=None, repr=False)
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Override setattr to invalidate cache on field modification.
@@ -129,11 +94,13 @@ class LangGraphWorkflowState:
         self._dict_cache = None
         self._dict_cache_exclude_internal = None
 
-    def to_dict(self, exclude_internal: bool = False) -> Dict[str, Any]:
+    def to_dict(self, exclude_internal: bool = False, exclude_none: bool = False) -> Dict[str, Any]:
         """Convert state to dictionary with caching.
 
         Args:
             exclude_internal: Exclude infrastructure objects (for serialization)
+            exclude_none: Accepted for backward compatibility with
+                WorkflowDomainState.to_dict() (no-op here).
 
         Returns:
             Dictionary representation of state

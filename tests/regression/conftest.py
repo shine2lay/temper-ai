@@ -1,11 +1,12 @@
 """Fixtures for regression tests."""
 import pytest
+
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
-    PromptConfig,
-    InferenceConfig,
     ErrorHandlingConfig,
+    InferenceConfig,
+    PromptConfig,
 )
 
 

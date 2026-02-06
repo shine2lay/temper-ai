@@ -5,10 +5,10 @@ when thresholds are breached. Supports log warnings, webhooks, email, and
 workflow halting.
 """
 import logging
-from typing import Dict, Any, List, Optional, Callable
-from enum import Enum
 from dataclasses import dataclass, field
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,7 @@ class MetricType(str, Enum):
     LATENCY_P95 = "latency_p95"
     LATENCY_P99 = "latency_p99"
     DURATION = "duration"
-    TOKEN_COUNT = "token_count"
+    TOKEN_COUNT = "token_count"  # noqa: S105 — not a password
 
 
 @dataclass

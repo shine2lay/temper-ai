@@ -15,12 +15,12 @@ Compare with regression detection:
     pytest tests/test_benchmarks/test_performance_llm.py --benchmark-only \
         --benchmark-compare=llm --benchmark-compare-fail=mean:10%
 """
-import pytest
-import time
 import asyncio
+import time
 
-from src.agents.llm_providers import OllamaLLM, LLMResponse
+import pytest
 
+from src.agents.llm_providers import LLMResponse, OllamaLLM
 
 # ============================================================================
 # CATEGORY 3: LLM Provider Performance (8 benchmarks)

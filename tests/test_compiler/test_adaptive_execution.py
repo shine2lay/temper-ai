@@ -8,12 +8,12 @@ This test module verifies:
 - Observability tracking of mode switches
 """
 
+from unittest.mock import MagicMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, MagicMock
-from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.compiler.state import WorkflowState
+
 from src.agents.base_agent import AgentResponse
-from src.strategies.base import SynthesisResult
+from src.compiler.langgraph_compiler import LangGraphCompiler
 
 
 class TestAdaptiveModeDetection:
@@ -207,10 +207,10 @@ class TestAdaptiveExecution:
             "collaboration": {"strategy": "consensus"}
         }
 
-        state = WorkflowState(
-            workflow_id="wf-123",
-            stage_outputs={}
-        )
+        state = {
+            "workflow_id": "wf-123",
+            "stage_outputs": {}
+        }
 
         # Mock config loader
         def mock_load_agent(name):
@@ -259,10 +259,10 @@ class TestAdaptiveExecution:
             "collaboration": {"strategy": "consensus"}
         }
 
-        state = WorkflowState(
-            workflow_id="wf-123",
-            stage_outputs={}
-        )
+        state = {
+            "workflow_id": "wf-123",
+            "stage_outputs": {}
+        }
 
         def mock_load_agent(name):
             return {"name": name}
@@ -322,11 +322,11 @@ class TestAdaptiveExecution:
         mock_tracker.track_agent.return_value.__exit__ = Mock(return_value=False)
         mock_tracker.set_agent_output = Mock()
 
-        state = WorkflowState(
-            workflow_id="wf-123",
-            stage_outputs={},
-            tracker=mock_tracker
-        )
+        state = {
+            "workflow_id": "wf-123",
+            "stage_outputs": {},
+            "tracker": mock_tracker
+        }
 
         def mock_load_agent(name):
             return {"name": name}

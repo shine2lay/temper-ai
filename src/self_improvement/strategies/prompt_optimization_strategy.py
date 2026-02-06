@@ -5,12 +5,12 @@ Generates configuration variants that vary system prompts, few-shot examples,
 and reasoning guides to improve LLM output quality.
 """
 import copy
-from typing import List, Dict
+from typing import Dict, List
 
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
-    OptimizationConfig,
     LearnedPattern,
+    SIOptimizationConfig,
 )
 
 
@@ -26,7 +26,7 @@ class PromptOptimizationStrategy(ImprovementStrategy):
 
     Example:
         >>> strategy = PromptOptimizationStrategy()
-        >>> current = OptimizationConfig(
+        >>> current = SIOptimizationConfig(
         ...     prompt={'system': 'You are a helpful assistant', 'inline': ''}
         ... )
         >>> variants = strategy.generate_variants(current, [])
@@ -80,8 +80,8 @@ Structure your response as follows:
         return "prompt_optimization"
 
     def generate_variants(
-        self, current_config: OptimizationConfig, patterns: List[LearnedPattern]
-    ) -> List[OptimizationConfig]:
+        self, current_config: SIOptimizationConfig, patterns: List[LearnedPattern]
+    ) -> List[SIOptimizationConfig]:
         """Generate improved configuration variants.
 
         Generates up to 4 variants:

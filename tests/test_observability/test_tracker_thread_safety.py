@@ -5,10 +5,9 @@ is properly isolated per-thread using contextvars and threading.local().
 """
 
 import threading
-import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-from src.observability.tracker import ExecutionTracker, ExecutionContext
+from src.observability.tracker import ExecutionContext, ExecutionTracker
 
 
 def _make_mock_backend():
@@ -155,58 +154,17 @@ class TestSessionStackIsolation:
         assert tracker._session_stack[0] == "main-session"
 
 
-class TestSQLBackendSessionIsolation:
-    """Verify SQLObservabilityBackend session stack is per-thread."""
+class TestSQLBackendSessionRemoved:
+    """Verify SQLObservabilityBackend no longer uses session stack/standalone (C-02)."""
 
-    def test_backend_session_stacks_isolated(self):
-        """SQL backend session stacks are per-thread."""
+    def test_backend_no_session_stack(self):
+        """SQL backend should not have _session_stack after C-02 refactor."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
 
         backend = SQLObservabilityBackend(buffer=False)
-
-        thread_stacks = {}
-        barrier = threading.Barrier(2)
-
-        def push_sessions(thread_name, count):
-            barrier.wait()
-            for i in range(count):
-                backend._session_stack.append(f"{thread_name}-{i}")
-            thread_stacks[thread_name] = list(backend._session_stack)
-
-        t1 = threading.Thread(target=push_sessions, args=("t1", 3))
-        t2 = threading.Thread(target=push_sessions, args=("t2", 5))
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-
-        assert len(thread_stacks["t1"]) == 3
-        assert len(thread_stacks["t2"]) == 5
-
-    def test_backend_standalone_session_isolated(self):
-        """SQL backend standalone sessions are per-thread."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
-
-        backend = SQLObservabilityBackend(buffer=False)
-
-        results = {}
-        barrier = threading.Barrier(2)
-
-        def set_standalone(thread_name):
-            barrier.wait()
-            backend._standalone_session = f"session-{thread_name}"
-            threading.Event().wait(0.01)
-            results[thread_name] = backend._standalone_session
-
-        t1 = threading.Thread(target=set_standalone, args=("t1",))
-        t2 = threading.Thread(target=set_standalone, args=("t2",))
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
-
-        assert results["t1"] == "session-t1"
-        assert results["t2"] == "session-t2"
+        assert not hasattr(backend, "_session_stack")
+        assert not hasattr(backend, "_standalone_session")
+        assert not hasattr(backend, "_local")
 
 
 class TestConcurrentWorkflowTracking:

@@ -3,9 +3,9 @@ Timezone-aware datetime utilities for observability system.
 
 Enforces UTC timezone consistency across all observability operations.
 """
+import logging
 from datetime import datetime, timezone
 from typing import Optional
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ def validate_utc_aware(dt: datetime, context: str = "") -> None:
     if dt.tzinfo is None:
         raise ValueError(
             f"Timezone-naive datetime not allowed{context_str}. "
-            f"Use datetime.now(timezone.utc) instead of datetime.now() or datetime.utcnow(). "
+            f"Use datetime.now(timezone.utc) instead of deprecated utcnow or naive now. "
             f"Got: {dt}"
         )
 

@@ -8,11 +8,12 @@ Tests cover:
 - Duplicate detection
 - Statistics and utilities
 """
-import pytest
-from src.safety.policy_registry import PolicyRegistry
-from src.safety.interfaces import SafetyPolicy, ValidationResult, ViolationSeverity
-from typing import Dict, Any
+from typing import Any, Dict
 
+import pytest
+
+from src.safety.interfaces import SafetyPolicy, ValidationResult
+from src.safety.policy_registry import PolicyRegistry
 
 # ============================================================================
 # Mock Policies for Testing

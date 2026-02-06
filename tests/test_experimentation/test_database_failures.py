@@ -12,27 +12,30 @@ Coverage areas:
 - Data integrity constraints
 - Distributed locking (if implemented)
 """
-import pytest
 import asyncio
 import tempfile
-from pathlib import Path
-from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock
 from contextlib import contextmanager
-from typing import Dict, Any
+from pathlib import Path
+from unittest.mock import patch
 
-from sqlalchemy.exc import OperationalError, IntegrityError
+import pytest
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, select
 
-from src.observability.database import DatabaseManager, IsolationLevel, get_session, init_database, reset_database
-from src.experimentation.service import ExperimentService
 from src.experimentation.models import (
+    AssignmentStrategyType,
+    ExecutionStatus,
     Experiment,
+    ExperimentStatus,
     Variant,
     VariantAssignment,
-    ExperimentStatus,
-    ExecutionStatus,
-    AssignmentStrategyType,
+)
+from src.experimentation.service import ExperimentService
+from src.observability.database import (
+    DatabaseManager,
+    get_session,
+    init_database,
+    reset_database,
 )
 
 
@@ -361,7 +364,7 @@ class TestConnectionPoolExhaustion:
                     experiment_id=exp_id
                 )
                 results["success"] += 1
-            except Exception as e:
+            except Exception:
                 results["failure"] += 1
 
         # Fire 50 concurrent requests

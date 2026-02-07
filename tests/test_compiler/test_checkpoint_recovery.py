@@ -4,6 +4,7 @@ from unittest.mock import Mock
 import pytest
 
 from src.compiler.checkpoint import CheckpointManager
+from src.compiler.checkpoint_backends import CheckpointNotFoundError
 from src.compiler.domain_state import WorkflowDomainState
 from src.compiler.workflow_executor import WorkflowExecutor
 
@@ -56,7 +57,7 @@ def test_resume_nonexistent_checkpoint_raises_error(tmp_path):
         enable_checkpoints=True
     )
 
-    with pytest.raises(FileNotFoundError, match="No checkpoint found"):
+    with pytest.raises(CheckpointNotFoundError, match="No checkpoints found"):
         executor.resume_from_checkpoint("wf-nonexistent")
 
 

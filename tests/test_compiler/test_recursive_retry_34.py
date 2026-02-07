@@ -5,12 +5,58 @@ iterative loop instead of recursion, preventing stack overflow.
 """
 
 import sys
+from typing import Any, Callable, Dict, Optional
 from unittest.mock import Mock, patch
 
 import pytest
 
+from src.compiler.executors.base import ParallelRunner
 from src.compiler.executors.parallel import ParallelStageExecutor
 from src.strategies.base import SynthesisResult
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+# Standard parallel result returned by FakeParallelRunner.
+# Mirrors the shape that LangGraphParallelRunner produces.
+_PARALLEL_RESULT: Dict[str, Any] = {
+    "agent_outputs": {
+        "agent_a": {
+            "output": "test",
+            "reasoning": "r",
+            "confidence": 0.9,
+            "metadata": {},
+        },
+        "__aggregate_metrics__": {},
+    },
+    "agent_statuses": {"agent_a": "success"},
+    "agent_metrics": {},
+}
+
+
+class FakeParallelRunner(ParallelRunner):
+    """In-process parallel runner that returns a fixed result.
+
+    Replaces the LangGraph-based runner so tests exercise the retry
+    logic without coupling to the graph engine at all.
+    """
+
+    def __init__(self, result: Optional[Dict[str, Any]] = None):
+        self._result = result if result is not None else dict(_PARALLEL_RESULT)
+        self.call_count = 0
+
+    def run_parallel(
+        self,
+        nodes: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]],
+        initial_state: Dict[str, Any],
+        *,
+        init_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+        collect_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        self.call_count += 1
+        return dict(self._result)
 
 
 def _make_synthesis_result(confidence=0.9, method="consensus"):
@@ -52,6 +98,8 @@ class TestIterativeRetry:
     def _make_executor(self, synthesis_results=None, quality_results=None):
         """Create executor with controlled synthesis and quality gate results.
 
+        Uses FakeParallelRunner instead of mocking LangGraph internals.
+
         Args:
             synthesis_results: List of SynthesisResult to return in sequence
             quality_results: List of (passed, violations) tuples
@@ -71,6 +119,7 @@ class TestIterativeRetry:
         return ParallelStageExecutor(
             synthesis_coordinator=coordinator,
             quality_gate_validator=validator,
+            parallel_runner=FakeParallelRunner(),
         )
 
     def _make_state(self):
@@ -80,10 +129,8 @@ class TestIterativeRetry:
             "current_stage": None,
         }
 
-    @patch("src.compiler.executors.langgraph_runner.StateGraph")
-    def test_no_recursion_with_high_max_retries(self, mock_sg_class):
+    def test_no_recursion_with_high_max_retries(self):
         """With max_retries=100, no RecursionError should occur."""
-        # All 100 attempts fail, then exhausted
         fail_result = _make_synthesis_result(confidence=0.3)
         pass_result = _make_synthesis_result(confidence=0.95)
 
@@ -95,25 +142,6 @@ class TestIterativeRetry:
             synthesis_results=synthesis_results,
             quality_results=quality_results,
         )
-
-        # Mock the subgraph compilation and invocation
-        mock_compiled = Mock()
-        mock_compiled.invoke.return_value = {
-            "agent_outputs": {
-                "agent_a": {
-                    "output": "test",
-                    "reasoning": "r",
-                    "confidence": 0.9,
-                    "metadata": {},
-                },
-                "__aggregate_metrics__": {},
-            },
-            "agent_statuses": {"agent_a": "success"},
-            "agent_metrics": {},
-        }
-        mock_sg_instance = Mock()
-        mock_sg_instance.compile.return_value = mock_compiled
-        mock_sg_class.return_value = mock_sg_instance
 
         config = _make_stage_config(max_retries=100, min_confidence=0.8)
         state = self._make_state()
@@ -132,9 +160,9 @@ class TestIterativeRetry:
             sys.setrecursionlimit(initial_limit)
 
         assert result["stage_outputs"]["test_stage"]["decision"] == "test_decision"
+        assert executor.parallel_runner.call_count == 100
 
-    @patch("src.compiler.executors.langgraph_runner.StateGraph")
-    def test_pass_on_nth_retry(self, mock_sg_class):
+    def test_pass_on_nth_retry(self):
         """Quality gate passes on the 3rd attempt (after 2 failures)."""
         fail_result = _make_synthesis_result(confidence=0.5)
         pass_result = _make_synthesis_result(confidence=0.95)
@@ -147,24 +175,6 @@ class TestIterativeRetry:
                 (True, []),
             ],
         )
-
-        mock_compiled = Mock()
-        mock_compiled.invoke.return_value = {
-            "agent_outputs": {
-                "agent_a": {
-                    "output": "test",
-                    "reasoning": "r",
-                    "confidence": 0.9,
-                    "metadata": {},
-                },
-                "__aggregate_metrics__": {},
-            },
-            "agent_statuses": {"agent_a": "success"},
-            "agent_metrics": {},
-        }
-        mock_sg_instance = Mock()
-        mock_sg_instance.compile.return_value = mock_compiled
-        mock_sg_class.return_value = mock_sg_instance
 
         config = _make_stage_config(max_retries=5, min_confidence=0.8)
         state = self._make_state()
@@ -181,9 +191,9 @@ class TestIterativeRetry:
         assert result["stage_outputs"]["test_stage"]["decision"] == "test_decision"
         # Synthesis was called 3 times
         assert executor.synthesis_coordinator.synthesize.call_count == 3
+        assert executor.parallel_runner.call_count == 3
 
-    @patch("src.compiler.executors.langgraph_runner.StateGraph")
-    def test_retries_exhausted_raises(self, mock_sg_class):
+    def test_retries_exhausted_raises(self):
         """All retries exhausted should raise RuntimeError."""
         fail_result = _make_synthesis_result(confidence=0.3)
 
@@ -191,24 +201,6 @@ class TestIterativeRetry:
             synthesis_results=[fail_result] * 3,
             quality_results=[(False, ["low confidence"])] * 3,
         )
-
-        mock_compiled = Mock()
-        mock_compiled.invoke.return_value = {
-            "agent_outputs": {
-                "agent_a": {
-                    "output": "test",
-                    "reasoning": "r",
-                    "confidence": 0.9,
-                    "metadata": {},
-                },
-                "__aggregate_metrics__": {},
-            },
-            "agent_statuses": {"agent_a": "success"},
-            "agent_metrics": {},
-        }
-        mock_sg_instance = Mock()
-        mock_sg_instance.compile.return_value = mock_compiled
-        mock_sg_class.return_value = mock_sg_instance
 
         config = _make_stage_config(max_retries=2, min_confidence=0.8)
         state = self._make_state()
@@ -224,8 +216,7 @@ class TestIterativeRetry:
         # 1 initial + 2 retries = 3 calls
         assert executor.synthesis_coordinator.synthesize.call_count == 3
 
-    @patch("src.compiler.executors.langgraph_runner.StateGraph")
-    def test_max_retries_zero_no_retries(self, mock_sg_class):
+    def test_max_retries_zero_no_retries(self):
         """max_retries=0 means no retries, immediate escalation."""
         fail_result = _make_synthesis_result(confidence=0.3)
 
@@ -233,24 +224,6 @@ class TestIterativeRetry:
             synthesis_results=[fail_result],
             quality_results=[(False, ["low confidence"])],
         )
-
-        mock_compiled = Mock()
-        mock_compiled.invoke.return_value = {
-            "agent_outputs": {
-                "agent_a": {
-                    "output": "test",
-                    "reasoning": "r",
-                    "confidence": 0.9,
-                    "metadata": {},
-                },
-                "__aggregate_metrics__": {},
-            },
-            "agent_statuses": {"agent_a": "success"},
-            "agent_metrics": {},
-        }
-        mock_sg_instance = Mock()
-        mock_sg_instance.compile.return_value = mock_compiled
-        mock_sg_class.return_value = mock_sg_instance
 
         config = _make_stage_config(max_retries=0, min_confidence=0.8)
         state = self._make_state()
@@ -266,8 +239,7 @@ class TestIterativeRetry:
         # Only 1 call (no retries)
         assert executor.synthesis_coordinator.synthesize.call_count == 1
 
-    @patch("src.compiler.executors.langgraph_runner.StateGraph")
-    def test_max_retries_one(self, mock_sg_class):
+    def test_max_retries_one(self):
         """max_retries=1 allows exactly one retry attempt."""
         fail_result = _make_synthesis_result(confidence=0.3)
 
@@ -275,24 +247,6 @@ class TestIterativeRetry:
             synthesis_results=[fail_result, fail_result],
             quality_results=[(False, ["low confidence"])] * 2,
         )
-
-        mock_compiled = Mock()
-        mock_compiled.invoke.return_value = {
-            "agent_outputs": {
-                "agent_a": {
-                    "output": "test",
-                    "reasoning": "r",
-                    "confidence": 0.9,
-                    "metadata": {},
-                },
-                "__aggregate_metrics__": {},
-            },
-            "agent_statuses": {"agent_a": "success"},
-            "agent_metrics": {},
-        }
-        mock_sg_instance = Mock()
-        mock_sg_instance.compile.return_value = mock_compiled
-        mock_sg_class.return_value = mock_sg_instance
 
         config = _make_stage_config(max_retries=1, min_confidence=0.8)
         state = self._make_state()
@@ -308,8 +262,7 @@ class TestIterativeRetry:
         # 1 initial + 1 retry = 2 calls
         assert executor.synthesis_coordinator.synthesize.call_count == 2
 
-    @patch("src.compiler.executors.langgraph_runner.StateGraph")
-    def test_retry_count_tracked_in_state(self, mock_sg_class):
+    def test_retry_count_tracked_in_state(self):
         """Retry count is correctly tracked in state['stage_retry_counts']."""
         fail_result = _make_synthesis_result(confidence=0.3)
         pass_result = _make_synthesis_result(confidence=0.95)
@@ -322,24 +275,6 @@ class TestIterativeRetry:
                 (True, []),
             ],
         )
-
-        mock_compiled = Mock()
-        mock_compiled.invoke.return_value = {
-            "agent_outputs": {
-                "agent_a": {
-                    "output": "test",
-                    "reasoning": "r",
-                    "confidence": 0.9,
-                    "metadata": {},
-                },
-                "__aggregate_metrics__": {},
-            },
-            "agent_statuses": {"agent_a": "success"},
-            "agent_metrics": {},
-        }
-        mock_sg_instance = Mock()
-        mock_sg_instance.compile.return_value = mock_compiled
-        mock_sg_class.return_value = mock_sg_instance
 
         config = _make_stage_config(max_retries=5, min_confidence=0.8)
         state = self._make_state()
@@ -354,12 +289,9 @@ class TestIterativeRetry:
         # Retry counter should be cleaned up after success
         assert "test_stage" not in state.get("stage_retry_counts", {})
 
-    @patch("src.compiler.executors.langgraph_runner.StateGraph")
-    def test_stack_depth_constant(self, mock_sg_class):
+    def test_stack_depth_constant(self):
         """Stack depth should not increase with retry count."""
         stack_depths = []
-
-        original_validate = ParallelStageExecutor._validate_quality_gates
 
         def tracking_validate(self_inner, synthesis_result, stage_config, stage_name, state):
             stack_depths.append(len([
@@ -371,28 +303,11 @@ class TestIterativeRetry:
                 return (False, ["low confidence"])
             return (True, [])
 
-        mock_compiled = Mock()
-        mock_compiled.invoke.return_value = {
-            "agent_outputs": {
-                "agent_a": {
-                    "output": "test",
-                    "reasoning": "r",
-                    "confidence": 0.9,
-                    "metadata": {},
-                },
-                "__aggregate_metrics__": {},
-            },
-            "agent_statuses": {"agent_a": "success"},
-            "agent_metrics": {},
-        }
-        mock_sg_instance = Mock()
-        mock_sg_instance.compile.return_value = mock_compiled
-        mock_sg_class.return_value = mock_sg_instance
-
         executor = ParallelStageExecutor(
             synthesis_coordinator=Mock(
                 synthesize=Mock(return_value=_make_synthesis_result())
             ),
+            parallel_runner=FakeParallelRunner(),
         )
 
         config = _make_stage_config(max_retries=15, min_confidence=0.8)

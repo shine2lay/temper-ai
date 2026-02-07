@@ -4,10 +4,6 @@ Security tests for ExperimentService.
 Tests for SQL injection prevention, input validation, and timing attack mitigation.
 """
 
-import os
-import statistics
-import time
-
 import pytest
 
 from src.experimentation.service import (
@@ -15,9 +11,6 @@ from src.experimentation.service import (
     validate_experiment_name,
     validate_variant_name,
 )
-
-# Set testing environment variable to skip timing delays
-os.environ['TESTING'] = '1'
 
 
 class TestInputValidation:
@@ -229,75 +222,6 @@ class TestExperimentServiceSecurity:
         # Verify tables still exist (no DROP TABLE executed)
         experiments = service.list_experiments()
         assert len(experiments) > 0
-
-    def test_timing_attack_mitigation(self, service):
-        """
-        Test that timing attacks are mitigated with random jitter.
-
-        Note: This test is statistical and may occasionally fail due to variance.
-        In production, timing jitter makes enumeration attacks impractical.
-        """
-        # Skip this test in TESTING mode since we disable timing delays
-        if os.getenv('TESTING'):
-            pytest.skip("Timing delays disabled in test mode")
-
-        # Create known experiment
-        service.create_experiment(
-            name="known_timing_test",
-            description="Timing test",
-            variants=[
-                {"name": "control", "is_control": True, "traffic": 0.5},
-                {"name": "variant", "traffic": 0.5}
-            ],
-            primary_metric="test_metric"
-        )
-
-        # Measure timing for existing experiment (should fail)
-        existing_timings = []
-        for _ in range(20):
-            start = time.perf_counter()
-            try:
-                service.create_experiment(
-                    name="known_timing_test",  # Duplicate
-                    description="Timing test",
-                    variants=[
-                        {"name": "control", "is_control": True, "traffic": 0.5},
-                        {"name": "variant", "traffic": 0.5}
-                    ],
-                    primary_metric="test_metric"
-                )
-            except Exception:
-                pass
-            existing_timings.append(time.perf_counter() - start)
-
-        # Measure timing for new experiment (should succeed)
-        new_timings = []
-        for i in range(20):
-            start = time.perf_counter()
-            try:
-                service.create_experiment(
-                    name=f"new_timing_test_{i}",
-                    description="Timing test",
-                    variants=[
-                        {"name": "control", "is_control": True, "traffic": 0.5},
-                        {"name": "variant", "traffic": 0.5}
-                    ],
-                    primary_metric="test_metric"
-                )
-            except Exception:
-                pass
-            new_timings.append(time.perf_counter() - start)
-
-        # Statistical comparison
-        existing_avg = statistics.mean(existing_timings)
-        new_avg = statistics.mean(new_timings)
-
-        # With random jitter, timing difference should be negligible
-        # Allow up to 3x difference (jitter creates noise)
-        ratio = max(existing_avg, new_avg) / min(existing_avg, new_avg)
-
-        # If ratio > 5, timing attack still feasible
-        assert ratio < 5.0, f"Timing attack possible: {ratio}x difference"
 
     def test_control_character_rejection(self, service):
         """Test that control characters are rejected in names."""

@@ -1,4 +1,8 @@
-"""M5 Self-Improvement System."""
+"""M5 Self-Improvement System.
+
+Bounded context: this package is a separate domain from the core framework.
+It depends on observability and compiler but should not be imported by them.
+"""
 
 from .data_models import (
     AgentPerformanceProfile,

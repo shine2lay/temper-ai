@@ -22,8 +22,12 @@ from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSe
 from src.safety.token_bucket import RateLimit, TokenBucketManager
 
 
-class RateLimitPolicy(BaseSafetyPolicy):
-    """Rate limiting policy using token bucket algorithm.
+class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
+    """Token-bucket-based rate limiting policy.
+
+    Uses the token bucket algorithm for smooth rate limiting with burst support.
+    For window-based rate limiting, see ``WindowRateLimitPolicy``
+    in ``src.safety.rate_limiter``.
 
     Configuration options:
         rate_limits: Dict mapping limit types to RateLimit configs
@@ -42,7 +46,7 @@ class RateLimitPolicy(BaseSafetyPolicy):
         ...         }
         ...     }
         ... }
-        >>> policy = RateLimitPolicy(config)
+        >>> policy = TokenBucketRateLimitPolicy(config)
         >>> result = policy.validate(
         ...     action={"operation": "git_commit"},
         ...     context={"agent_id": "agent-123"}
@@ -507,3 +511,7 @@ class RateLimitPolicy(BaseSafetyPolicy):
         if agent_id is None:
             # Also reset global limits if resetting everything
             self.global_manager.reset()
+
+
+# Backward-compatible alias (deprecated)
+RateLimitPolicy = TokenBucketRateLimitPolicy

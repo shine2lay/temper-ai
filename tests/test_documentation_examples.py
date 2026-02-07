@@ -175,7 +175,10 @@ class TestAPIReferenceExamples:
 
         assert not errors, "Syntax errors in code blocks:\n" + "\n".join(errors)
 
-    @pytest.mark.skip(reason="Requires imports to be available - run in full test suite")
+    @pytest.mark.skip(
+        reason="Placeholder: signature validation not yet implemented "
+        "(needs mapping from doc examples to actual module paths)"
+    )
     def test_method_calls_match_signatures(self, api_doc):
         """Method calls in examples should match actual signatures."""
         blocks = extract_python_blocks(api_doc)

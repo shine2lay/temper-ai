@@ -100,9 +100,9 @@ class TestWebScraperMetadata:
 @pytest.fixture
 def mock_httpx_client():
     """Create a mock httpx.Client for testing."""
-    with patch('src.tools.web_scraper.httpx.Client') as mock_client_class:
-        mock_client = MagicMock()
-        mock_client_class.return_value.__enter__.return_value = mock_client
+    mock_client = MagicMock()
+    mock_client.is_closed = False
+    with patch.object(WebScraper, '_get_client', return_value=mock_client):
         yield mock_client
 
 
@@ -688,10 +688,9 @@ class TestSSRFProtection:
         ]
 
         # Mock the httpx client to avoid actual network call
-        with patch('src.tools.web_scraper.httpx.Client') as mock_client_class:
-            mock_client = MagicMock()
-            mock_client_class.return_value.__enter__.return_value = mock_client
-
+        mock_client = MagicMock()
+        mock_client.is_closed = False
+        with patch.object(WebScraper, '_get_client', return_value=mock_client):
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.is_redirect = False
@@ -822,10 +821,9 @@ class TestSSRFProtection:
         ]
 
         # Mock the httpx client to avoid actual network call
-        with patch('src.tools.web_scraper.httpx.Client') as mock_client_class:
-            mock_client = MagicMock()
-            mock_client_class.return_value.__enter__.return_value = mock_client
-
+        mock_client = MagicMock()
+        mock_client.is_closed = False
+        with patch.object(WebScraper, '_get_client', return_value=mock_client):
             mock_response = Mock()
             mock_response.status_code = 200
             mock_response.is_redirect = False

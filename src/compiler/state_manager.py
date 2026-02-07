@@ -3,6 +3,7 @@
 Provides centralized state initialization, validation, and utilities
 for LangGraph compiler and executors.
 """
+import logging
 import uuid
 from typing import Any, Callable, Dict, List, Optional
 
@@ -13,6 +14,22 @@ from src.compiler.domain_state import (
 )
 from src.compiler.executors.base import WorkflowStateDict  # canonical definition
 from src.compiler.langgraph_state import LangGraphWorkflowState
+
+
+logger = logging.getLogger(__name__)
+
+# Keys managed by the framework that must not be overwritten by user input_data.
+RESERVED_STATE_KEYS = frozenset({
+    "stage_outputs",
+    "current_stage",
+    "workflow_id",
+    "tracker",
+    "tool_registry",
+    "config_loader",
+    "visualizer",
+    "show_details",
+    "detail_console",
+})
 
 
 class StateManager:
@@ -55,6 +72,15 @@ class StateManager:
         Returns:
             Initialized state dict ready for LangGraph execution
         """
+        # Validate that input_data doesn't overwrite framework-reserved keys
+        conflicting_keys = set(input_data.keys()) & RESERVED_STATE_KEYS
+        if conflicting_keys:
+            raise ValueError(
+                f"input_data contains reserved state keys that would overwrite "
+                f"framework-managed state: {sorted(conflicting_keys)}. "
+                f"Reserved keys: {sorted(RESERVED_STATE_KEYS)}"
+            )
+
         state: Dict[str, Any] = {
             "stage_outputs": {},
             "current_stage": "",

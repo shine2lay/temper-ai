@@ -20,8 +20,12 @@ from src.safety.base import BaseSafetyPolicy
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 
 
-class RateLimiterPolicy(BaseSafetyPolicy):
-    """Enforces rate limits on operations.
+class WindowRateLimitPolicy(BaseSafetyPolicy):
+    """Window-based rate limiting policy.
+
+    Uses fixed/sliding time windows to enforce operation rate limits.
+    For token-bucket-based rate limiting, see ``TokenBucketRateLimitPolicy``
+    in ``src.safety.policies.rate_limit_policy``.
 
     Configuration options:
         limits: Dict mapping operation types to limits
@@ -41,7 +45,7 @@ class RateLimiterPolicy(BaseSafetyPolicy):
         ...     },
         ...     "strategy": "sliding_window"
         ... }
-        >>> policy = RateLimiterPolicy(config)
+        >>> policy = WindowRateLimitPolicy(config)
         >>> result = policy.validate(
         ...     action={"operation": "llm_call"},
         ...     context={"agent_id": "agent-123"}
@@ -316,3 +320,7 @@ class RateLimiterPolicy(BaseSafetyPolicy):
                 keys_to_delete = [k for k in self._operation_history.keys() if k[1] == entity]
                 for key in keys_to_delete:
                     del self._operation_history[key]
+
+
+# Backward-compatible alias (deprecated)
+RateLimiterPolicy = WindowRateLimitPolicy

@@ -1,47 +1,15 @@
-"""Observability system for tracking workflow, stage, and agent executions."""
+"""Observability system for tracking workflow, stage, and agent executions.
 
-# Backend abstraction
-# Canonical ExecutionContext (re-exported for backward compatibility)
+Heavy submodules (backends, console, database, migrations, formatters, buffer)
+are lazily imported via __getattr__ to avoid pulling in SQLAlchemy/Rich at
+module load time. Lightweight re-exports (backend ABC, context, models, hooks,
+tracker) remain eager.
+"""
+
+# Lightweight / frequently-used — keep eager
 from src.core.context import ExecutionContext
 
 from .backend import ObservabilityBackend
-
-# Backend implementations
-from .backends import (
-    PrometheusObservabilityBackend,
-    S3ObservabilityBackend,
-    SQLObservabilityBackend,
-)
-
-# Buffer for batch operations
-from .buffer import ObservabilityBuffer
-
-# Console
-from .console import (
-    StreamingVisualizer,
-    WorkflowVisualizer,
-    print_workflow_tree,
-)
-
-# Database
-from .database import (
-    DatabaseManager,
-    get_database,
-    get_session,
-    init_database,
-)
-
-# Formatters
-from .formatters import (
-    format_cost,
-    format_duration,
-    format_timestamp,
-    format_tokens,
-    status_to_color,
-    status_to_icon,
-)
-
-# Hooks
 from .hooks import (
     ExecutionHook,
     get_tracker,
@@ -51,15 +19,6 @@ from .hooks import (
     track_stage,
     track_workflow,
 )
-
-# Migrations
-from .migrations import (
-    create_schema,
-    drop_schema,
-    reset_schema,
-)
-
-# Models
 from .models import (
     AgentExecution,
     AgentMeritScore,
@@ -72,9 +31,51 @@ from .models import (
     ToolExecution,
     WorkflowExecution,
 )
-
-# Tracker
 from .tracker import ExecutionTracker
+
+# Lazy-import mapping for heavy submodules
+_LAZY_IMPORTS: dict[str, tuple[str, str]] = {
+    # Backend implementations
+    "SQLObservabilityBackend": (".backends", "SQLObservabilityBackend"),
+    "PrometheusObservabilityBackend": (".backends", "PrometheusObservabilityBackend"),
+    "S3ObservabilityBackend": (".backends", "S3ObservabilityBackend"),
+    # Buffer
+    "ObservabilityBuffer": (".buffer", "ObservabilityBuffer"),
+    # Console
+    "WorkflowVisualizer": (".console", "WorkflowVisualizer"),
+    "StreamingVisualizer": (".console", "StreamingVisualizer"),
+    "print_workflow_tree": (".console", "print_workflow_tree"),
+    # Database
+    "DatabaseManager": (".database", "DatabaseManager"),
+    "init_database": (".database", "init_database"),
+    "get_database": (".database", "get_database"),
+    "get_session": (".database", "get_session"),
+    # Formatters
+    "format_duration": (".formatters", "format_duration"),
+    "format_timestamp": (".formatters", "format_timestamp"),
+    "format_tokens": (".formatters", "format_tokens"),
+    "format_cost": (".formatters", "format_cost"),
+    "status_to_color": (".formatters", "status_to_color"),
+    "status_to_icon": (".formatters", "status_to_icon"),
+    # Migrations
+    "create_schema": (".migrations", "create_schema"),
+    "drop_schema": (".migrations", "drop_schema"),
+    "reset_schema": (".migrations", "reset_schema"),
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY_IMPORTS:
+        module_path, attr = _LAZY_IMPORTS[name]
+        import importlib
+
+        mod = importlib.import_module(module_path, __name__)
+        val = getattr(mod, attr)
+        # Cache on module to avoid repeated lookup
+        globals()[name] = val
+        return val
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
     # Backend

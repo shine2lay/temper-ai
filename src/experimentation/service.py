@@ -4,11 +4,8 @@ Experiment service for A/B testing and experimentation.
 Main API for creating, managing, and analyzing experiments.
 """
 
-import os
 import re
-import secrets
 import threading
-import time
 import unicodedata
 import uuid
 from collections import OrderedDict
@@ -217,12 +214,6 @@ class ExperimentService(Service):
         Raises:
             ValueError: If experiment configuration is invalid
         """
-        # SECURITY: Timing attack mitigation - add random delay (10-50ms)
-        # Only in production, not in tests
-        if not os.getenv('TESTING'):
-            delay = secrets.randbelow(40) / 1000.0 + 0.01  # 10-50ms
-            time.sleep(delay)
-
         # SECURITY: Validate experiment name
         # Note: ORM already prevents SQL injection via parameterization.
         # This validation prevents timing attacks, homograph attacks, and malicious naming patterns.

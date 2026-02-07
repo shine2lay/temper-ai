@@ -1123,8 +1123,8 @@ class StandardAgent(BaseAgent):
            recent turns.
         4. Truncated content is re-sanitized through the injection detector.
         """
-        max_tool_result_size = 10_000
-        max_prompt_length = 32_000
+        max_tool_result_size = self.config.agent.safety.max_tool_result_size
+        max_prompt_length = self.config.agent.safety.max_prompt_length
 
         results_parts = ["\n\nTool Results:\n"]
         for result in tool_results:

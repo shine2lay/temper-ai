@@ -155,6 +155,50 @@ class DialogueOrchestrator(CollaborationStrategy):
         >>> # Final synthesis uses consensus on last round outputs
     """
 
+    # Class-level singleton for SentenceTransformer model.
+    # Loaded lazily on first use via _get_embedding_model() and cached here
+    # so all instances share the same (expensive) model object.
+    _embedding_model: Any = None
+    _embedding_model_loaded: bool = False
+
+    @classmethod
+    def warm_up(cls) -> bool:
+        """Preload the SentenceTransformer model for semantic convergence.
+
+        Call this during application startup to avoid latency on first
+        convergence check. Safe to call multiple times (no-op if already loaded).
+
+        Returns:
+            True if model was loaded successfully, False otherwise.
+        """
+        try:
+            from sentence_transformers import SentenceTransformer
+            if not cls._embedding_model_loaded:
+                logger.info("Loading sentence-transformers model (paraphrase-MiniLM-L6-v2)...")
+                cls._embedding_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+                cls._embedding_model_loaded = True
+            return True
+        except ImportError:
+            logger.warning(
+                "sentence-transformers not available for warm_up. "
+                "Install with: pip install sentence-transformers"
+            )
+            return False
+        except Exception as e:
+            logger.warning(f"Failed to warm up embedding model: {e}")
+            return False
+
+    @classmethod
+    def _get_embedding_model(cls) -> Any:
+        """Get or lazily load the class-level SentenceTransformer model.
+
+        Returns:
+            SentenceTransformer model instance.
+        """
+        if not cls._embedding_model_loaded:
+            cls.warm_up()
+        return cls._embedding_model
+
     def __init__(
         self,
         max_rounds: int = 3,
@@ -281,18 +325,17 @@ class DialogueOrchestrator(CollaborationStrategy):
         weights = {}
 
         try:
-            # Try to import and query observability tracker
-            from sqlmodel import Session, select
+            # Try to import and query observability tracker (public API)
+            from sqlmodel import select
 
-            from src.observability.models import AgentMeritScore
-            from src.observability.tracker import ObservabilityTracker
+            from src.observability import AgentMeritScore, ExecutionTracker
 
-            tracker = ObservabilityTracker()
-            if not tracker.engine:
+            tracker = ExecutionTracker()
+            if not tracker.backend:
                 logger.debug("Observability tracker not initialized, using equal weights")
                 return {out.agent_name: 1.0 for out in agent_outputs}
 
-            with Session(tracker.engine) as session:
+            with tracker.backend.get_session_context() as session:
                 for output in agent_outputs:
                     agent_name = output.agent_name
                     domain = self.merit_domain or agent_name  # Default to agent name as domain
@@ -675,13 +718,12 @@ class DialogueOrchestrator(CollaborationStrategy):
         Returns:
             Similarity score (0.0-1.0): percentage of agents with semantically similar positions
         """
-        from sentence_transformers import SentenceTransformer
         from sentence_transformers.util import cos_sim
 
-        # Load model (cached after first call)
-        if not hasattr(self, '_embedding_model'):
-            logger.info("Loading sentence-transformers model (paraphrase-MiniLM-L6-v2)...")
-            self._embedding_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+        # Use class-level singleton model (lazy-loaded on first use)
+        model = self._get_embedding_model()
+        if model is None:
+            raise RuntimeError("Failed to load SentenceTransformer model")
 
         # Map agent names to outputs
         prev_decisions = {out.agent_name: out.decision for out in previous_outputs}
@@ -704,7 +746,7 @@ class DialogueOrchestrator(CollaborationStrategy):
                 continue
 
             # Calculate semantic similarity
-            embeddings = self._embedding_model.encode([prev_text, curr_text])
+            embeddings = model.encode([prev_text, curr_text])
             similarity = cos_sim(embeddings[0], embeddings[1]).item()
 
             # Use high threshold (0.9) for semantic similarity

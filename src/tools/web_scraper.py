@@ -387,6 +387,29 @@ class WebScraper(BaseTool):
             max_requests=self.DEFAULT_RATE_LIMIT,
             time_window=RATE_LIMIT_WINDOW_SECONDS
         )
+        self._client: Optional[httpx.Client] = None
+
+    def _get_client(self) -> httpx.Client:
+        """Return shared httpx.Client, creating it on first use."""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.Client(
+                timeout=self.DEFAULT_TIMEOUT,
+                follow_redirects=False,
+            )
+        return self._client
+
+    def close(self) -> None:
+        """Close the shared httpx client and release resources."""
+        if self._client is not None and not self._client.is_closed:
+            self._client.close()
+            self._client = None
+
+    def __del__(self) -> None:
+        """Clean up httpx client on garbage collection."""
+        try:
+            self.close()
+        except Exception:
+            pass
 
     def get_metadata(self) -> ToolMetadata:
         """Return web scraper tool metadata."""
@@ -489,85 +512,85 @@ class WebScraper(BaseTool):
             # Fetch URL with SSRF-safe redirect handling
             # SECURITY: follow_redirects=False so we can validate each redirect
             # target against SSRF checks before following it
-            with httpx.Client(timeout=timeout, follow_redirects=False) as client:
-                current_url = url
-                for _redirect_hop in range(MAX_REDIRECTS + 1):
-                    response = client.get(current_url, headers=headers)
+            client = self._get_client()
+            current_url = url
+            for _redirect_hop in range(MAX_REDIRECTS + 1):
+                response = client.get(current_url, headers=headers, timeout=timeout)
 
-                    if response.is_redirect:
-                        redirect_url = str(response.next_request.url) if response.next_request else None
-                        if redirect_url is None:
-                            break
-                        # Validate redirect target against SSRF checks
-                        is_safe, safety_error = validate_url_safety(redirect_url)
-                        if not is_safe:
-                            return ToolResult(
-                                success=False,
-                                error=f"Redirect to unsafe URL blocked (SSRF protection): {safety_error}"
-                            )
-                        current_url = redirect_url
-                        continue
-                    break
-                else:
-                    return ToolResult(
-                        success=False,
-                        error=f"Too many redirects (max {MAX_REDIRECTS})"
-                    )
-
-                # Check status code
-                response.raise_for_status()
-
-                # Validate Content-Type (prevent crashes on binary files)
-                content_type = response.headers.get("content-type", "").lower()
-                acceptable_types = [
-                    "text/html",
-                    "text/plain",
-                    "text/xml",
-                    "application/xhtml+xml",
-                    "application/xml",
-                ]
-
-                # Check if content type is acceptable (may have charset, e.g., "text/html; charset=utf-8")
-                is_acceptable = any(
-                    acceptable_type in content_type
-                    for acceptable_type in acceptable_types
-                )
-
-                if not is_acceptable and content_type:
-                    return ToolResult(
-                        success=False,
-                        error=f"Unsupported content type: {content_type.split(';')[0]}. Only text-based content is supported."
-                    )
-
-                # Check content size
-                content_length = len(response.content)
-                if content_length > self.MAX_CONTENT_SIZE:
-                    return ToolResult(
-                        success=False,
-                        error=f"Content size ({content_length} bytes) exceeds maximum ({self.MAX_CONTENT_SIZE} bytes)"
-                    )
-
-                # Get content
-                content = response.text
-
-                # Extract text if requested
-                if extract_text:
-                    extracted_text = self._extract_text(content)
-                    result = extracted_text
-                else:
-                    result = content
-
+                if response.is_redirect:
+                    redirect_url = str(response.next_request.url) if response.next_request else None
+                    if redirect_url is None:
+                        break
+                    # Validate redirect target against SSRF checks
+                    is_safe, safety_error = validate_url_safety(redirect_url)
+                    if not is_safe:
+                        return ToolResult(
+                            success=False,
+                            error=f"Redirect to unsafe URL blocked (SSRF protection): {safety_error}"
+                        )
+                    current_url = redirect_url
+                    continue
+                break
+            else:
                 return ToolResult(
-                    success=True,
-                    result=result,
-                    metadata={
-                        "url": url,
-                        "status_code": response.status_code,
-                        "content_type": response.headers.get("content-type", ""),
-                        "size_bytes": content_length,
-                        "text_extracted": extract_text
-                    }
+                    success=False,
+                    error=f"Too many redirects (max {MAX_REDIRECTS})"
                 )
+
+            # Check status code
+            response.raise_for_status()
+
+            # Validate Content-Type (prevent crashes on binary files)
+            content_type = response.headers.get("content-type", "").lower()
+            acceptable_types = [
+                "text/html",
+                "text/plain",
+                "text/xml",
+                "application/xhtml+xml",
+                "application/xml",
+            ]
+
+            # Check if content type is acceptable (may have charset, e.g., "text/html; charset=utf-8")
+            is_acceptable = any(
+                acceptable_type in content_type
+                for acceptable_type in acceptable_types
+            )
+
+            if not is_acceptable and content_type:
+                return ToolResult(
+                    success=False,
+                    error=f"Unsupported content type: {content_type.split(';')[0]}. Only text-based content is supported."
+                )
+
+            # Check content size
+            content_length = len(response.content)
+            if content_length > self.MAX_CONTENT_SIZE:
+                return ToolResult(
+                    success=False,
+                    error=f"Content size ({content_length} bytes) exceeds maximum ({self.MAX_CONTENT_SIZE} bytes)"
+                )
+
+            # Get content
+            content = response.text
+
+            # Extract text if requested
+            if extract_text:
+                extracted_text = self._extract_text(content)
+                result = extracted_text
+            else:
+                result = content
+
+            return ToolResult(
+                success=True,
+                result=result,
+                metadata={
+                    "url": url,
+                    "status_code": response.status_code,
+                    "content_type": response.headers.get("content-type", ""),
+                    "size_bytes": content_length,
+                    "text_extracted": extract_text
+                }
+            )
 
         except httpx.TimeoutException:
             return ToolResult(

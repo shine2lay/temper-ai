@@ -54,7 +54,8 @@ _LAZY_IMPORTS = {
     # Concrete policies
     "BlastRadiusPolicy": ("src.safety.blast_radius", "BlastRadiusPolicy"),
     "SecretDetectionPolicy": ("src.safety.secret_detection", "SecretDetectionPolicy"),
-    "RateLimiterPolicy": ("src.safety.rate_limiter", "RateLimiterPolicy"),
+    "WindowRateLimitPolicy": ("src.safety.rate_limiter", "WindowRateLimitPolicy"),
+    "RateLimiterPolicy": ("src.safety.rate_limiter", "RateLimiterPolicy"),  # backward-compat alias
     "FileAccessPolicy": ("src.safety.file_access", "FileAccessPolicy"),
     "ForbiddenOperationsPolicy": ("src.safety.forbidden_operations", "ForbiddenOperationsPolicy"),
     # Policy composition
@@ -91,7 +92,8 @@ _LAZY_IMPORTS = {
     "TokenBucket": ("src.safety.token_bucket", "TokenBucket"),
     "TokenBucketManager": ("src.safety.token_bucket", "TokenBucketManager"),
     "RateLimit": ("src.safety.token_bucket", "RateLimit"),
-    "RateLimitPolicy": ("src.safety.policies.rate_limit_policy", "RateLimitPolicy"),
+    "TokenBucketRateLimitPolicy": ("src.safety.policies.rate_limit_policy", "TokenBucketRateLimitPolicy"),
+    "RateLimitPolicy": ("src.safety.policies.rate_limit_policy", "RateLimitPolicy"),  # backward-compat alias
     "RateLimitPolicyV2": ("src.safety.policies.rate_limit_policy", "RateLimitPolicy"),  # backward-compat alias
     # Resource consumption limits
     "ResourceLimitPolicy": ("src.safety.policies.resource_limit_policy", "ResourceLimitPolicy"),
@@ -121,7 +123,9 @@ _DEPRECATED_ALIASES = {
     "SafetyViolationModel": "SafetyViolation",
     "ValidationResultModel": "ValidationResult",
     "ViolationSeverityEnum": "ViolationSeverity",
-    "RateLimitPolicyV2": "RateLimitPolicy",
+    "RateLimitPolicyV2": "TokenBucketRateLimitPolicy",
+    "RateLimiterPolicy": "WindowRateLimitPolicy",
+    "RateLimitPolicy": "TokenBucketRateLimitPolicy",
 }
 
 
@@ -161,7 +165,8 @@ __all__ = [
     # Concrete policies
     "BlastRadiusPolicy",
     "SecretDetectionPolicy",
-    "RateLimiterPolicy",
+    "WindowRateLimitPolicy",
+    "RateLimiterPolicy",  # backward-compat alias for WindowRateLimitPolicy
     "FileAccessPolicy",
     "ForbiddenOperationsPolicy",
 
@@ -205,7 +210,8 @@ __all__ = [
     "TokenBucket",
     "TokenBucketManager",
     "RateLimit",
-    "RateLimitPolicy",
+    "TokenBucketRateLimitPolicy",
+    "RateLimitPolicy",  # backward-compat alias for TokenBucketRateLimitPolicy
     "RateLimitPolicyV2",  # backward-compat alias
 
     # Resource consumption limits

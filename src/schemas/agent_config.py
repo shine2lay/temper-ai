@@ -8,9 +8,9 @@ backward compatibility.
 Defines schemas for agent configuration including inference, safety,
 memory, prompt, tool references, and observability settings.
 """
-from typing import Any, Dict, List, Literal, Optional, Union
+from typing import Any, ClassVar, Dict, FrozenSet, List, Literal, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class InferenceConfig(BaseModel):
@@ -63,6 +63,8 @@ class SafetyConfig(BaseModel):
     require_approval_for_tools: List[str] = Field(default_factory=list)
     max_tool_calls_per_execution: int = Field(default=20, gt=0)
     max_execution_time_seconds: int = Field(default=300, gt=0)
+    max_prompt_length: int = Field(default=32_000, gt=0)
+    max_tool_result_size: int = Field(default=10_000, gt=0)
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
@@ -97,11 +99,44 @@ class RetryConfig(BaseModel):
 
 class ErrorHandlingConfig(BaseModel):
     """Error handling configuration."""
+
+    VALID_RETRY_STRATEGIES: ClassVar[FrozenSet[str]] = frozenset({
+        "ExponentialBackoff",
+        "LinearBackoff",
+        "FixedDelay",
+    })
+    VALID_FALLBACKS: ClassVar[FrozenSet[str]] = frozenset({
+        "GracefulDegradation",
+        "ReturnDefault",
+        "RaiseError",
+        "LogAndContinue",
+    })
+
     retry_strategy: str  # Module reference (e.g., "ExponentialBackoff")
     max_retries: int = Field(default=3, ge=0)
     fallback: str  # Module reference (e.g., "GracefulDegradation")
     escalate_to_human_after: int = Field(default=3, gt=0)
     retry_config: RetryConfig = Field(default_factory=RetryConfig)
+
+    @field_validator("retry_strategy")
+    @classmethod
+    def validate_retry_strategy(cls, v: str) -> str:
+        if v not in cls.VALID_RETRY_STRATEGIES:
+            raise ValueError(
+                f"Invalid retry_strategy '{v}'. "
+                f"Must be one of: {sorted(cls.VALID_RETRY_STRATEGIES)}"
+            )
+        return v
+
+    @field_validator("fallback")
+    @classmethod
+    def validate_fallback(cls, v: str) -> str:
+        if v not in cls.VALID_FALLBACKS:
+            raise ValueError(
+                f"Invalid fallback '{v}'. "
+                f"Must be one of: {sorted(cls.VALID_FALLBACKS)}"
+            )
+        return v
 
 
 class MeritTrackingConfig(BaseModel):

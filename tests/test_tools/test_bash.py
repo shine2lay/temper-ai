@@ -63,10 +63,13 @@ class TestAllowlistEnforcement:
     def test_allowed_command_pwd(self, bash_tool, workspace):
         result = bash_tool.execute(command="pwd", working_directory=str(workspace))
         assert result.success is True
+        assert str(workspace) in result.result
+        assert result.metadata["exit_code"] == 0
 
     def test_allowed_command_ls(self, bash_tool, workspace):
         result = bash_tool.execute(command="ls", working_directory=str(workspace))
         assert result.success is True
+        assert result.metadata["exit_code"] == 0
 
     def test_allowed_command_mkdir(self, bash_tool, workspace):
         result = bash_tool.execute(
@@ -94,7 +97,9 @@ class TestAllowlistEnforcement:
     def test_blocked_command_python(self, bash_tool, workspace):
         result = bash_tool.execute(command="python -c 'import os; os.system(\"ls\")'")
         assert result.success is False
+        assert result.error is not None
         # Could fail on allowlist or injection prevention
+        assert "not in the allowed list" in result.error or "forbidden character" in result.error.lower()
 
     def test_blocked_command_sudo(self, bash_tool):
         result = bash_tool.execute(command="sudo ls")
@@ -104,6 +109,8 @@ class TestAllowlistEnforcement:
     def test_blocked_command_chmod(self, bash_tool):
         result = bash_tool.execute(command="chmod 777 /etc/passwd")
         assert result.success is False
+        assert result.error is not None
+        assert "not in the allowed list" in result.error
 
     def test_allowed_commands_set(self):
         """Verify the default allowed set contains expected commands."""
@@ -149,12 +156,15 @@ class TestSandboxEnforcement:
     def test_valid_workspace_directory(self, bash_tool, workspace):
         result = bash_tool.execute(command="pwd", working_directory=str(workspace))
         assert result.success is True
+        assert str(workspace) in result.result
+        assert result.metadata["exit_code"] == 0
 
     def test_subdirectory_of_workspace(self, bash_tool, workspace):
         subdir = workspace / "subproject"
         subdir.mkdir()
         result = bash_tool.execute(command="pwd", working_directory=str(subdir))
         assert result.success is True
+        assert str(subdir) in result.result
 
     def test_outside_workspace_rejected(self, bash_tool, tmp_path):
         # Create a directory outside workspace
@@ -172,6 +182,8 @@ class TestSandboxEnforcement:
     def test_home_directory_rejected(self, bash_tool):
         result = bash_tool.execute(command="pwd", working_directory=os.path.expanduser("~"))
         assert result.success is False
+        assert result.error is not None
+        assert "outside the sandbox" in result.error or "resolves outside" in result.error
 
     def test_default_to_workspace_root(self, bash_tool, workspace):
         """When no working_directory is specified, use workspace root."""
@@ -186,6 +198,7 @@ class TestSandboxEnforcement:
         result = tool.execute(command="pwd")
         assert result.success is True
         assert new_workspace.exists()
+        assert str(new_workspace) in result.result
 
 
 class TestInjectionPrevention:
@@ -205,30 +218,37 @@ class TestInjectionPrevention:
     def test_semicolon_injection(self, bash_tool, workspace):
         result = bash_tool.execute(command="ls; rm -rf /", working_directory=str(workspace))
         assert result.success is False
+        assert "forbidden character" in result.error.lower()
 
     def test_pipe_injection(self, bash_tool, workspace):
         result = bash_tool.execute(command="ls | cat /etc/passwd", working_directory=str(workspace))
         assert result.success is False
+        assert "forbidden character" in result.error.lower()
 
     def test_ampersand_injection(self, bash_tool, workspace):
         result = bash_tool.execute(command="ls & rm -rf /", working_directory=str(workspace))
         assert result.success is False
+        assert "forbidden character" in result.error.lower()
 
     def test_dollar_injection(self, bash_tool, workspace):
         result = bash_tool.execute(command="ls $HOME", working_directory=str(workspace))
         assert result.success is False
+        assert "forbidden character" in result.error.lower()
 
     def test_backtick_injection(self, bash_tool, workspace):
         result = bash_tool.execute(command="ls `whoami`", working_directory=str(workspace))
         assert result.success is False
+        assert "forbidden character" in result.error.lower()
 
     def test_redirect_injection(self, bash_tool, workspace):
         result = bash_tool.execute(command="ls > /etc/passwd", working_directory=str(workspace))
         assert result.success is False
+        assert "forbidden character" in result.error.lower()
 
     def test_newline_injection(self, bash_tool, workspace):
         result = bash_tool.execute(command="ls\nrm -rf /", working_directory=str(workspace))
         assert result.success is False
+        assert "forbidden character" in result.error.lower()
 
 
 class TestTimeoutHandling:
@@ -261,6 +281,8 @@ class TestTimeoutHandling:
             timeout=1,
         )
         assert result.success is True
+        assert result.metadata["timeout"] == 1
+        assert str(workspace) in result.result
 
     @patch("src.tools.bash.subprocess.run")
     def test_timeout_expired(self, mock_run, bash_tool, workspace):
@@ -330,14 +352,17 @@ class TestEdgeCases:
     def test_empty_command(self, bash_tool, workspace):
         result = bash_tool.execute(command="", working_directory=str(workspace))
         assert result.success is False
+        assert "non-empty string" in result.error
 
     def test_none_command(self, bash_tool, workspace):
         result = bash_tool.execute(command=None, working_directory=str(workspace))
         assert result.success is False
+        assert "non-empty string" in result.error
 
     def test_whitespace_only_command(self, bash_tool, workspace):
         result = bash_tool.execute(command="   ", working_directory=str(workspace))
         assert result.success is False
+        assert "non-empty string" in result.error
 
     @patch("src.tools.bash.subprocess.run")
     def test_command_not_found(self, mock_run, bash_tool, workspace):
@@ -385,6 +410,8 @@ class TestEdgeCases:
             timeout="invalid",
         )
         assert result.success is True
+        assert result.metadata["timeout"] == bash_tool.default_timeout
+        assert str(workspace) in result.result
 
 
 class TestSymlinkSandboxProtection:
@@ -549,6 +576,7 @@ class TestSymlinkSandboxProtection:
         # pwd works
         result = tool.execute(command="pwd", working_directory=str(sub))
         assert result.success is True
+        assert str(sub) in result.result
 
         # mkdir works
         result = tool.execute(command="mkdir newdir", working_directory=str(sub))
@@ -563,6 +591,7 @@ class TestSymlinkSandboxProtection:
             working_directory=str(workspace),
         )
         assert result.success is True
+        assert result.metadata["exit_code"] == 0
 
 
 class TestShellModeCommandChaining:
@@ -586,6 +615,7 @@ class TestShellModeCommandChaining:
         """Single allowed command works in shell mode."""
         result = shell_tool.execute(command="ls", working_directory=str(workspace))
         assert result.success is True
+        assert result.metadata["exit_code"] == 0
 
     def test_pipe_between_allowed_commands(self, shell_tool, workspace):
         """Pipe between two allowed commands works."""
@@ -604,6 +634,7 @@ class TestShellModeCommandChaining:
             working_directory=str(workspace),
         )
         assert result.success is True
+        assert str(workspace) in result.result
 
     def test_and_chain_allowed_commands(self, shell_tool, workspace):
         """&& between two allowed commands works."""
@@ -612,6 +643,7 @@ class TestShellModeCommandChaining:
             working_directory=str(workspace),
         )
         assert result.success is True
+        assert str(workspace) in result.result
 
     def test_or_chain_allowed_commands(self, shell_tool, workspace):
         """|| between two allowed commands works."""
@@ -620,6 +652,7 @@ class TestShellModeCommandChaining:
             working_directory=str(workspace),
         )
         assert result.success is True
+        assert str(workspace) in result.result
 
     # --- Disallowed commands in pipeline are blocked ---
 

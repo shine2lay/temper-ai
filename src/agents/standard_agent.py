@@ -64,7 +64,9 @@ OLLAMA_DEFAULT_PORT = 11434
 # Shared thread pool for parallel tool execution (M-28).
 # H-16: Lazy initialization with lifecycle management to avoid resource leaks.
 # M-18: Pool size configurable via AGENT_TOOL_WORKERS env var.
-_TOOL_POOL_SIZE = int(os.environ.get("AGENT_TOOL_WORKERS", "4"))
+# H-11: Increase default pool size based on CPU count
+_DEFAULT_POOL_SIZE = min(32, (os.cpu_count() or 4) * 2 + 4)
+_TOOL_POOL_SIZE = int(os.environ.get("AGENT_TOOL_WORKERS", str(_DEFAULT_POOL_SIZE)))
 _tool_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 _executor_lock = threading.Lock()
 
@@ -515,10 +517,8 @@ class StandardAgent(BaseAgent):
                 if native_tools:
                     llm_kwargs["tools"] = native_tools
 
-                # Run blocking LLM call in thread pool
-                llm_response = await loop.run_in_executor(
-                    None, lambda: self.llm.complete(prompt, **llm_kwargs)
-                )
+                # C-01: Use native async path instead of thread pool
+                llm_response = await self.llm.acomplete(prompt, **llm_kwargs)
                 logger.info(
                     "[%s] LLM responded (%s tokens)",
                     self.name,

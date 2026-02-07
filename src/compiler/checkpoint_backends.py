@@ -216,8 +216,16 @@ class FileCheckpointBackend(CheckpointBackend):
             self._hmac_key = hmac_key.encode() if isinstance(hmac_key, str) else hmac_key
         else:
             env_key = os.environ.get("CHECKPOINT_HMAC_KEY")
+            # H-22: Require CHECKPOINT_HMAC_KEY in production
+            is_production = os.environ.get("ENVIRONMENT", "").lower() == "production"
+
             if env_key:
                 self._hmac_key = env_key.encode()
+            elif is_production:
+                raise ValueError(
+                    "CHECKPOINT_HMAC_KEY environment variable is required in production. "
+                    "Generate with: python -c 'import secrets; print(secrets.token_hex(32))'"
+                )
             else:
                 self._hmac_key = secrets.token_bytes(32)
                 logger.warning(

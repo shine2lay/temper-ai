@@ -187,9 +187,9 @@ class DatabaseManager:
                         session.execute(text("BEGIN IMMEDIATE"))
                     # Other isolation levels not fully supported in SQLite
                 else:
-                    # PostgreSQL/other databases support all isolation levels
-                    session.execute(
-                        text(f"SET TRANSACTION ISOLATION LEVEL {isolation_level.value}")
+                    # H-04: Use execution_options instead of f-string SQL
+                    session.connection().execution_options(
+                        isolation_level=isolation_level.value
                     )
             except Exception as e:
                 logger.warning(

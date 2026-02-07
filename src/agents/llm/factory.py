@@ -119,7 +119,20 @@ def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:
     }
 
     if provider_enum in (LLMProvider.OPENAI, LLMProvider.ANTHROPIC):
-        common_params["api_key"] = inference_config.api_key
+        # H-05: Resolve api_key_ref (prefer it over deprecated api_key)
+        if inference_config.api_key_ref:
+            # TODO: Implement secret resolution from keyring or env var
+            # For now, read from environment variable matching the ref name
+            import os
+            api_key = os.getenv(inference_config.api_key_ref)
+            if not api_key:
+                raise ValueError(f"API key reference '{inference_config.api_key_ref}' not found in environment")
+            common_params["api_key"] = api_key
+        elif inference_config.api_key:
+            # Fallback to deprecated direct api_key
+            common_params["api_key"] = inference_config.api_key
+        else:
+            raise ValueError(f"No API key or api_key_ref provided for {provider_enum}")
 
     return provider_class(**common_params)  # type: ignore[abstract]
 

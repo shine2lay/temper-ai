@@ -342,6 +342,16 @@ class Bash(BaseTool):
                     ),
                 )
 
+            # H-20: Block glob patterns (*, ?, []) to prevent filename expansion attacks
+            if '*' in command or '?' in command or '[' in command:
+                return ToolResult(
+                    success=False,
+                    error=(
+                        "Glob patterns (*, ?, []) are not allowed in shell mode. "
+                        "List files explicitly instead."
+                    ),
+                )
+
             # SECURITY: Block process substitution (<() and >()) which can
             # execute arbitrary commands outside the allowlist
             if '<(' in command or '>(' in command:

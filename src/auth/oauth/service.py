@@ -124,7 +124,8 @@ class OAuthService:
         """Get or create HTTP client with security hardening."""
         if self._http_client is None:
             self._http_client = httpx.AsyncClient(
-                timeout=httpx.Timeout(30.0, connect=5.0),
+                # H-18: Add pool timeout to prevent connection pool exhaustion
+                timeout=httpx.Timeout(30.0, connect=5.0, pool=10.0),
                 follow_redirects=False,
                 limits=httpx.Limits(
                     max_connections=100,

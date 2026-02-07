@@ -564,18 +564,18 @@ class ApprovalWorkflow:
         for callback in self._on_approved_callbacks:
             try:
                 callback(request)
-            except Exception:
-                # Don't let callback errors break workflow
-                pass
+            except Exception as e:
+                # H-12: Log callback errors instead of silently ignoring
+                logger.warning("Approval callback failed: %s", e, exc_info=True)
 
     def _trigger_rejected_callbacks(self, request: ApprovalRequest) -> None:
         """Trigger all rejected callbacks."""
         for callback in self._on_rejected_callbacks:
             try:
                 callback(request)
-            except Exception:
-                # Don't let callback errors break workflow
-                pass
+            except Exception as e:
+                # H-12: Log callback errors instead of silently ignoring
+                logger.warning("Rejection callback failed: %s", e, exc_info=True)
 
     def clear_requests(self) -> None:
         """Clear all approval requests. Use with caution!"""

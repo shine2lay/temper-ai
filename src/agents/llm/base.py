@@ -377,11 +377,18 @@ class BaseLLM(ABC):
                         pass
                     self._client = None
                 if self._async_client is not None:
-                    # Release reference; proper cleanup requires aclose().
-                    logger.debug(
-                        "close() called with active async client; "
-                        "use 'await aclose()' for async cleanup."
-                    )
+                    # H-03: Attempt to schedule async client close on running event loop
+                    try:
+                        loop = asyncio.get_running_loop()
+                        # Schedule the close on the running loop
+                        loop.create_task(self._async_client.aclose())
+                        logger.debug("Scheduled async client close on running event loop")
+                    except RuntimeError:
+                        # No running loop - just log warning
+                        logger.warning(
+                            "close() called with active async client but no running loop; "
+                            "async client not closed - use 'await aclose()' for cleanup"
+                        )
                     self._async_client = None
             except Exception as e:
                 logger.warning("Error during sync cleanup: %s", e)

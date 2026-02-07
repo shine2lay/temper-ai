@@ -605,38 +605,54 @@ class ToolExecutor:
     def execute_batch(
         self,
         executions: list[tuple[str, Dict[str, Any]]],
-        timeout: Optional[int] = None
+        timeout: Optional[int] = None,
+        overall_timeout: Optional[int] = None
     ) -> list[ToolResult]:
         """
         Execute multiple tools in parallel.
 
         Args:
             executions: List of (tool_name, params) tuples
-            timeout: Timeout for each execution
+            timeout: Timeout for each individual execution
+            overall_timeout: H-14: Overall timeout for the entire batch
 
         Returns:
             List of ToolResults in same order as executions
         """
-        results = []
-        futures = []
+        import concurrent.futures
+        import time
 
-        for tool_name, params in executions:
+        results = [None] * len(executions)
+        futures = {}
+
+        deadline = time.time() + overall_timeout if overall_timeout else None
+
+        for idx, (tool_name, params) in enumerate(executions):
             future = self._executor.submit(self.execute, tool_name, params, timeout)
-            futures.append(future)
+            futures[future] = idx
 
-        # Collect results in order
-        for future in futures:
-            try:
-                result = future.result()
-                results.append(result)
-            except Exception as e:
-                results.append(
-                    ToolResult(
+        # H-14: Use as_completed with deadline
+        try:
+            for future in concurrent.futures.as_completed(futures, timeout=overall_timeout):
+                idx = futures[future]
+                try:
+                    results[idx] = future.result()
+                except Exception as e:
+                    results[idx] = ToolResult(
                         success=False,
                         result=None,
-                        error=f"Batch execution failed: {str(e)}"
+                        error=f"Execution failed: {str(e)}"
                     )
-                )
+        except concurrent.futures.TimeoutError:
+            # Overall timeout exceeded - mark incomplete futures as timed out
+            for future, idx in futures.items():
+                if results[idx] is None:
+                    future.cancel()
+                    results[idx] = ToolResult(
+                        success=False,
+                        result=None,
+                        error=f"Batch overall timeout ({overall_timeout}s) exceeded"
+                    )
 
         return results
 

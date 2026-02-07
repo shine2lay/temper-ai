@@ -197,8 +197,12 @@ class OAuthConfig(BaseModel):
     )
 
     allow_localhost: bool = Field(
-        default=True,
-        description="Allow localhost callback URLs (dev mode)"
+        # SEC-13: Default to False in production (when ENVIRONMENT is unset or "production").
+        # Only allow localhost when ENVIRONMENT is explicitly set to a dev value.
+        default_factory=lambda: os.environ.get("ENVIRONMENT", "production") not in (
+            "production", ""
+        ),
+        description="Allow localhost callback URLs (defaults to False in production)"
     )
 
     @model_validator(mode='after')

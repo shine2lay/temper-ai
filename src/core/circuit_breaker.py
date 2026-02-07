@@ -38,12 +38,30 @@ from typing import (
     List,
     Optional,
     Protocol,
-    Type,
     TypeVar,
 )
 
 T = TypeVar('T')
 logger = logging.getLogger(__name__)
+
+# Cache exception class imports at module level to avoid per-call overhead (P-17)
+try:
+    import httpx as _httpx
+except ImportError:
+    _httpx = None  # type: ignore[assignment]
+
+try:
+    from src.utils.exceptions import (
+        LLMAuthenticationError as _LLMAuthenticationError,
+        LLMError as _LLMError,
+        LLMRateLimitError as _LLMRateLimitError,
+        LLMTimeoutError as _LLMTimeoutError,
+    )
+except ImportError:
+    _LLMError = None  # type: ignore[assignment,misc]
+    _LLMTimeoutError = None  # type: ignore[assignment,misc]
+    _LLMRateLimitError = None  # type: ignore[assignment,misc]
+    _LLMAuthenticationError = None  # type: ignore[assignment,misc]
 
 
 class StateStorage(Protocol):
@@ -173,9 +191,9 @@ class CircuitBreaker:
         name: str,
         config: Optional[CircuitBreakerConfig] = None,
         storage: Optional[StateStorage] = None,
-        failure_threshold: int = 5,
-        timeout_seconds: int = 60,
-        success_threshold: int = 2
+        failure_threshold: Optional[int] = None,
+        timeout_seconds: Optional[int] = None,
+        success_threshold: Optional[int] = None,
     ):
         # Validate name
         if not isinstance(name, str):
@@ -188,27 +206,41 @@ class CircuitBreaker:
             )
         self.name = name
 
+        # Warn on config+params conflict (API-19)
+        individual_params = [failure_threshold, timeout_seconds, success_threshold]
+        if config is not None and any(p is not None for p in individual_params):
+            logger.warning(
+                "CircuitBreaker(%s): both config and individual parameters supplied; "
+                "config takes precedence",
+                name,
+            )
+
         # Config from explicit config object OR individual params
         if config is not None:
             self.config = config
         else:
+            # Apply defaults for any parameters not explicitly provided
+            ft = failure_threshold if failure_threshold is not None else 5
+            ts = timeout_seconds if timeout_seconds is not None else 60
+            st = success_threshold if success_threshold is not None else 2
+
             # Validate individual params
-            if not isinstance(failure_threshold, int) or failure_threshold < 1 or failure_threshold > 1000:
+            if not isinstance(ft, int) or ft < 1 or ft > 1000:
                 raise ValueError(
-                    f"failure_threshold must be int 1-1000, got {failure_threshold}"
+                    f"failure_threshold must be int 1-1000, got {ft}"
                 )
-            if not isinstance(timeout_seconds, int) or timeout_seconds < 1 or timeout_seconds > 86400:
+            if not isinstance(ts, int) or ts < 1 or ts > 86400:
                 raise ValueError(
-                    f"timeout_seconds must be int 1-86400, got {timeout_seconds}"
+                    f"timeout_seconds must be int 1-86400, got {ts}"
                 )
-            if not isinstance(success_threshold, int) or success_threshold < 1 or success_threshold > 100:
+            if not isinstance(st, int) or st < 1 or st > 100:
                 raise ValueError(
-                    f"success_threshold must be int 1-100, got {success_threshold}"
+                    f"success_threshold must be int 1-100, got {st}"
                 )
             self.config = CircuitBreakerConfig(
-                failure_threshold=failure_threshold,
-                success_threshold=success_threshold,
-                timeout=timeout_seconds,
+                failure_threshold=ft,
+                success_threshold=st,
+                timeout=ts,
             )
 
         # Backward-compatible attribute aliases
@@ -508,8 +540,10 @@ class CircuitBreaker:
         for callback in callbacks:
             try:
                 callback(old_state, new_state)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(
+                    "Circuit breaker state change callback failed: %s", e
+                )
 
     # -- Internal: LLM call pattern --
 
@@ -609,45 +643,22 @@ class CircuitBreaker:
         """Determine if error should count toward circuit breaker.
 
         Network/server errors count (transient). Client errors don't.
+        Uses module-level cached imports for performance (P-17).
         """
-        try:
-            import httpx
-        except ImportError:
+        if _httpx is None:
             return True  # If httpx not available, count all errors
 
-        exc_llm: Optional[Type[Exception]]
-        exc_timeout: Optional[Type[Exception]]
-        exc_rate_limit: Optional[Type[Exception]]
-        exc_auth: Optional[Type[Exception]]
-
-        try:
-            from src.utils.exceptions import (
-                LLMAuthenticationError,
-                LLMError,
-                LLMRateLimitError,
-                LLMTimeoutError,
-            )
-            exc_llm = LLMError
-            exc_timeout = LLMTimeoutError
-            exc_rate_limit = LLMRateLimitError
-            exc_auth = LLMAuthenticationError
-        except ImportError:
-            exc_llm = None
-            exc_timeout = None
-            exc_rate_limit = None
-            exc_auth = None
-
-        if isinstance(error, (httpx.ConnectError, httpx.TimeoutException)):
+        if isinstance(error, (_httpx.ConnectError, _httpx.TimeoutException)):
             return True
-        if exc_timeout and isinstance(error, exc_timeout):
+        if _LLMTimeoutError and isinstance(error, _LLMTimeoutError):
             return True
-        if exc_rate_limit and isinstance(error, exc_rate_limit):
+        if _LLMRateLimitError and isinstance(error, _LLMRateLimitError):
             return True
-        if exc_auth and isinstance(error, exc_auth):
+        if _LLMAuthenticationError and isinstance(error, _LLMAuthenticationError):
             return False
-        if exc_llm and isinstance(error, exc_llm):
+        if _LLMError and isinstance(error, _LLMError):
             return True
-        if isinstance(error, httpx.HTTPStatusError):
+        if isinstance(error, _httpx.HTTPStatusError):
             status = error.response.status_code
             return status >= 500 or status == 429
 

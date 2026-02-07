@@ -34,9 +34,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Mapping from YAML config policy names to their implementation classes.
+# Fallback mapping from YAML config policy names to their implementation classes.
 # Each class accepts an optional config dict in its constructor.
-BUILTIN_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {
+# Prefer using _resolve_policy_class() which checks _CUSTOM_POLICIES first.
+_BUILTIN_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {
     "secret_detection_policy": SecretDetectionPolicy,
     "file_access_policy": FileAccessPolicy,
     "forbidden_ops_policy": ForbiddenOperationsPolicy,
@@ -48,6 +49,54 @@ BUILTIN_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {
     "approval_workflow_policy": ApprovalWorkflowPolicy,
     "circuit_breaker_policy": CircuitBreakerPolicy,
 }
+
+# Custom policy class registrations (takes precedence over _BUILTIN_POLICIES).
+# Populated by register_policy_class().
+_CUSTOM_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {}
+
+
+def register_policy_class(name: str, policy_cls: Type[BaseSafetyPolicy]) -> None:
+    """Register a custom policy class for use in safety config.
+
+    Custom policy classes take precedence over built-in policies when
+    resolving policy names from YAML configuration.
+
+    Args:
+        name: Policy config name (e.g., "my_custom_policy")
+        policy_cls: Policy class (must be a BaseSafetyPolicy subclass)
+
+    Raises:
+        TypeError: If policy_cls is not a BaseSafetyPolicy subclass
+    """
+    if not (isinstance(policy_cls, type) and issubclass(policy_cls, BaseSafetyPolicy)):
+        raise TypeError(
+            f"policy_cls must be a BaseSafetyPolicy subclass, got {policy_cls!r}"
+        )
+    _CUSTOM_POLICIES[name] = policy_cls
+    logger.debug("Registered custom policy class: %s -> %s", name, policy_cls.__name__)
+
+
+def _resolve_policy_class(name: str) -> Optional[Type[BaseSafetyPolicy]]:
+    """Resolve a policy config name to its implementation class.
+
+    Checks custom registrations first, then falls back to built-in policies.
+
+    Args:
+        name: Policy config name (e.g., "file_access_policy")
+
+    Returns:
+        Policy class if found, None otherwise
+    """
+    # Custom registrations take precedence
+    policy_cls = _CUSTOM_POLICIES.get(name)
+    if policy_cls is not None:
+        return policy_cls
+    # Fall back to built-in policies
+    return _BUILTIN_POLICIES.get(name)
+
+
+# Public alias for backward compatibility
+BUILTIN_POLICIES = _BUILTIN_POLICIES
 
 
 def load_safety_config(config_path: Optional[str] = None, environment: str = "development") -> Dict[str, Any]:
@@ -144,7 +193,7 @@ def create_policy_registry(config: Dict[str, Any]) -> PolicyRegistry:
 
     # Instantiate and register each policy
     for pname, action_types in policy_action_map.items():
-        policy_cls = BUILTIN_POLICIES.get(pname)
+        policy_cls = _resolve_policy_class(pname)
         if policy_cls is None:
             logger.warning(
                 "Policy '%s' referenced in config but no built-in implementation found — skipping",
@@ -181,8 +230,8 @@ def create_policy_registry(config: Dict[str, Any]) -> PolicyRegistry:
     logger.info(
         "Created PolicyRegistry with %d policies (%d global, %d action-specific)",
         registry.policy_count(),
-        len([p for p in global_policy_names if p in BUILTIN_POLICIES]),
-        registry.policy_count() - len([p for p in global_policy_names if p in BUILTIN_POLICIES]),
+        len([p for p in global_policy_names if _resolve_policy_class(p) is not None]),
+        registry.policy_count() - len([p for p in global_policy_names if _resolve_policy_class(p) is not None]),
     )
     return registry
 

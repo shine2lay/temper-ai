@@ -7,7 +7,7 @@ and learning/merit systems.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import JSON, ForeignKey, Index, String
+from sqlalchemy import JSON, CheckConstraint, ForeignKey, Index, String, UniqueConstraint
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from src.observability.datetime_utils import utcnow
@@ -17,6 +17,12 @@ class WorkflowExecution(SQLModel, table=True):
     """Top-level workflow execution tracking."""
 
     __tablename__ = "workflow_executions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed', 'halted', 'timeout')",
+            name="wf_valid_status",
+        ),
+    )
 
     id: str = Field(primary_key=True)
     workflow_name: str = Field(index=True)
@@ -66,6 +72,12 @@ class StageExecution(SQLModel, table=True):
     """Stage execution tracking."""
 
     __tablename__ = "stage_executions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed', 'halted', 'timeout')",
+            name="stage_valid_status",
+        ),
+    )
 
     id: str = Field(primary_key=True)
     workflow_execution_id: str = Field(
@@ -115,6 +127,12 @@ class AgentExecution(SQLModel, table=True):
     """Agent execution tracking."""
 
     __tablename__ = "agent_executions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('running', 'completed', 'failed', 'halted', 'timeout')",
+            name="agent_valid_status",
+        ),
+    )
 
     id: str = Field(primary_key=True)
     stage_execution_id: str = Field(
@@ -184,6 +202,12 @@ class LLMCall(SQLModel, table=True):
     """Detailed LLM call tracking."""
 
     __tablename__ = "llm_calls"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('success', 'error', 'timeout', 'cancelled')",
+            name="llm_valid_status",
+        ),
+    )
 
     id: str = Field(primary_key=True)
     agent_execution_id: str = Field(
@@ -236,6 +260,12 @@ class ToolExecution(SQLModel, table=True):
     """Tool execution tracking."""
 
     __tablename__ = "tool_executions"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('success', 'error', 'timeout', 'cancelled')",
+            name="tool_valid_status",
+        ),
+    )
 
     id: str = Field(primary_key=True)
     agent_execution_id: str = Field(
@@ -310,6 +340,9 @@ class AgentMeritScore(SQLModel, table=True):
     """Agent reputation/merit tracking."""
 
     __tablename__ = "agent_merit_scores"
+    __table_args__ = (
+        UniqueConstraint("agent_name", "domain", name="uq_merit_agent_domain"),
+    )
 
     id: str = Field(primary_key=True)
     agent_name: str = Field(index=True)
@@ -319,6 +352,7 @@ class AgentMeritScore(SQLModel, table=True):
     total_decisions: int = 0
     successful_decisions: int = 0
     failed_decisions: int = 0
+    mixed_decisions: int = 0
     overridden_decisions: int = 0
 
     # Calculated metrics
@@ -343,6 +377,12 @@ class DecisionOutcome(SQLModel, table=True):
     """Decision outcome tracking for learning loop."""
 
     __tablename__ = "decision_outcomes"
+    __table_args__ = (
+        CheckConstraint(
+            "outcome IN ('success', 'failure', 'neutral', 'mixed')",
+            name="outcome_valid_value",
+        ),
+    )
 
     id: str = Field(primary_key=True)
     agent_execution_id: Optional[str] = Field(
@@ -472,6 +512,12 @@ class RollbackEvent(SQLModel, table=True):
     """Rollback execution audit trail."""
 
     __tablename__ = "rollback_events"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('completed', 'partial', 'failed')",
+            name="rollback_valid_status",
+        ),
+    )
 
     id: str = Field(primary_key=True)
     snapshot_id: str = Field(

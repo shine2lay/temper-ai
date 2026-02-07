@@ -667,13 +667,13 @@ class TestErrorSanitizationIntegration:
 
     def test_multiple_secrets_redacted_in_validation_error(self):
         """Test multiple secrets in same error are all redacted."""
-        from src.utils.exceptions import ErrorCode, ValidationError
+        from src.utils.exceptions import ErrorCode, FrameworkValidationError
 
         api_key = "sk-prod-key-xyz"
         password = "MyP@ssw0rd!"
         token = "eyJhbGciOiJIUzI1NiJ9.test"
 
-        error = ValidationError(
+        error = FrameworkValidationError(
             message=f"Auth failed: api_key={api_key}, password={password}, token={token}",
             error_code=ErrorCode.VALIDATION_ERROR
         )

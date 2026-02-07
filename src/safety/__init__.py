@@ -116,12 +116,29 @@ _LAZY_IMPORTS = {
 }
 
 
+# Aliases that are deprecated and should emit warnings on first access.
+_DEPRECATED_ALIASES = {
+    "SafetyViolationModel": "SafetyViolation",
+    "ValidationResultModel": "ValidationResult",
+    "ViolationSeverityEnum": "ViolationSeverity",
+    "RateLimitPolicyV2": "RateLimitPolicy",
+}
+
+
 def __getattr__(name: str):
     if name in _LAZY_IMPORTS:
         module_path, obj_name = _LAZY_IMPORTS[name]
         import importlib
         module = importlib.import_module(module_path)
         obj = getattr(module, obj_name)
+        if name in _DEPRECATED_ALIASES:
+            import warnings
+            canonical = _DEPRECATED_ALIASES[name]
+            warnings.warn(
+                f"'{name}' is deprecated, use '{canonical}' instead",
+                DeprecationWarning,
+                stacklevel=2,
+            )
         # Cache in module namespace for subsequent fast access
         globals()[name] = obj
         return obj

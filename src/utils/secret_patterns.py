@@ -22,43 +22,44 @@ SECURITY: All patterns use bounded quantifiers to prevent ReDoS attacks.
 
 SECRET_PATTERNS: dict[str, str] = {
     # OpenAI (project keys and general sk- keys)
-    "openai_project_key": r"sk-proj-[a-zA-Z0-9]{20,200}",
-    "openai_key": r"sk-[a-zA-Z0-9]{20,200}",
+    # M-15: \b word boundaries reduce false positives in prose / identifiers
+    "openai_project_key": r"\bsk-proj-[a-zA-Z0-9]{20,200}\b",
+    "openai_key": r"\bsk-[a-zA-Z0-9]{20,200}\b",
 
     # Anthropic
-    "anthropic_key": r"sk-ant-api\d{2,4}-[a-zA-Z0-9_-]{20,200}",
+    "anthropic_key": r"\bsk-ant-api\d{2,4}-[a-zA-Z0-9_-]{20,200}\b",
 
     # AWS
-    "aws_access_key": r"AKIA[0-9A-Z]{16}",
+    "aws_access_key": r"\bAKIA[0-9A-Z]{16}\b",
     "aws_secret_key": (
-        r"(?:aws_secret_access_key|SecretAccessKey|AWS_SECRET)"
+        r"\b(?:aws_secret_access_key|SecretAccessKey|AWS_SECRET)"
         r"\s*[=:]\s*['\"]?([a-zA-Z0-9+/]{40})['\"]?"
     ),
 
     # GitHub
-    "github_token": r"gh[pousr]_[0-9a-zA-Z]{30,40}",
+    "github_token": r"\bgh[pousr]_[0-9a-zA-Z]{30,40}\b",
 
     # Google
-    "google_api_key": r"AIza[0-9A-Za-z_-]{35}",
-    "google_oauth": r"ya29\.[0-9A-Za-z_-]{1,500}",
+    "google_api_key": r"\bAIza[0-9A-Za-z_-]{35}\b",
+    "google_oauth": r"\bya29\.[0-9A-Za-z_-]{1,500}\b",
 
     # Slack (multi-segment format: xoxb-digits-digits-alphanum)
-    "slack_token": r"xox[baprs]-[0-9a-zA-Z-]{10,48}",
+    "slack_token": r"\bxox[baprs]-[0-9a-zA-Z-]{10,48}\b",
 
     # Stripe
-    "stripe_key": r"(sk|pk)_(test|live)_[0-9a-zA-Z]{24,200}",
+    "stripe_key": r"\b(sk|pk)_(test|live)_[0-9a-zA-Z]{24,200}\b",
 
     # Connection strings (database URLs with potential credentials)
-    "connection_string": r"(mongodb|postgres|mysql|redis)://[^'\"\s]{1,500}",
+    "connection_string": r"\b(mongodb|postgres|mysql|redis)://[^'\"\s]{1,500}",
 
     # JWT
     "jwt_token": (
-        r"eyJ[a-zA-Z0-9_-]{1,2000}"
+        r"\beyJ[a-zA-Z0-9_-]{1,2000}"
         r"\.eyJ[a-zA-Z0-9_-]{1,2000}"
-        r"\.[a-zA-Z0-9_-]{1,2000}"
+        r"\.[a-zA-Z0-9_-]{1,2000}\b"
     ),
 
-    # Private keys
+    # Private keys (line-anchored, no word boundary needed for dashes)
     "private_key": r"-----BEGIN (?:RSA |EC |DSA )?PRIVATE KEY-----",
 }
 
@@ -70,34 +71,37 @@ SECRET_PATTERNS: dict[str, str] = {
 
 GENERIC_SECRET_PATTERNS: dict[str, str] = {
     # Generic API keys with common prefixes (sk-, pk-, api_key-)
-    "api_key": r"(sk|pk|api[_-]?key)[_-]?[a-zA-Z0-9]{20,200}",
+    # M-15: \b word boundaries reduce false positives
+    "api_key": r"\b(sk|pk|api[_-]?key)[_-]?[a-zA-Z0-9]{20,200}\b",
 
     # API key assignments (key=value format)
     "generic_api_key": (
-        r"(api[_-]?key|apikey)['\"]?\s*[:=]\s*['\"]?"
+        r"\b(api[_-]?key|apikey)['\"]?\s*[:=]\s*['\"]?"
         r"([0-9a-zA-Z_\-+/]{20,500})['\"]?"
     ),
 
     # Secret/password assignments
     "generic_secret": (
-        r"(secret|password|passwd|pwd)[\w_-]*['\"]?\s*[:=]\s*['\"]?"
+        r"\b(secret|password|passwd|pwd)[\w_-]*['\"]?\s*[:=]\s*['\"]?"
         r"([^\s]{12,500})['\"]?"
     ),
 
     # Generic key/token/secret assignment (key=value, token: value)
+    # Uses (?:^|[\s_-]) lookahead instead of \b to handle compound names
+    # like "secret_key=" where \b wouldn't match before "key" after "_".
     "generic_token": (
-        r"(token|key|secret)\s*[=:]\s*['\"]?"
+        r"(?:^|(?<=[\s_\-]))(token|key|secret)\s*[=:]\s*['\"]?"
         r"([a-zA-Z0-9_\-/+=!@#$%^&*]{16,500})"
     ),
 
     # Password disclosure in natural language
     "password_disclosure": (
-        r"(password|passwd|pass)\s+(is|are)\s*:?\s*['\"]?"
+        r"\b(password|passwd|pass)\s+(is|are)\s*:?\s*['\"]?"
         r"([a-zA-Z0-9_\-!@#$%^&*]+)"
     ),
 
     # Database URLs with embedded credentials (user:pass@host)
-    "db_credentials": r"(postgres|mysql|mongodb)://[^:]+:[^@]+@",
+    "db_credentials": r"\b(postgres|mysql|mongodb)://[^:]+:[^@]+@",
 }
 
 # ---------------------------------------------------------------------------

@@ -22,6 +22,8 @@ Example:
     >>> # Load checkpoint
     >>> loaded_domain = backend.load_checkpoint("wf-123", checkpoint_id)
 """
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -188,15 +190,58 @@ class FileCheckpointBackend(CheckpointBackend):
         >>> domain = backend.load_checkpoint("wf-123", checkpoint_id)
     """
 
-    def __init__(self, checkpoint_dir: str = "./checkpoints"):
+    def __init__(self, checkpoint_dir: str = "./checkpoints", hmac_key: Optional[str] = None):
         """Initialize file-based checkpoint backend.
 
         Args:
             checkpoint_dir: Directory to store checkpoint files
+            hmac_key: Secret key for HMAC integrity verification.
+                      If not provided, reads from CHECKPOINT_HMAC_KEY env var.
+                      If env var is also unset, generates a random key and
+                      logs a warning (integrity cannot survive restarts).
         """
         self.checkpoint_dir = Path(checkpoint_dir)
         self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
         self._counter = 0  # Counter for unique IDs within same millisecond
+
+        # M-10: HMAC integrity verification for checkpoint files
+        if hmac_key is not None:
+            self._hmac_key = hmac_key.encode() if isinstance(hmac_key, str) else hmac_key
+        else:
+            env_key = os.environ.get("CHECKPOINT_HMAC_KEY")
+            if env_key:
+                self._hmac_key = env_key.encode()
+            else:
+                self._hmac_key = secrets.token_bytes(32)
+                logger.warning(
+                    "CHECKPOINT_HMAC_KEY not set. Generated ephemeral HMAC key. "
+                    "Checkpoint integrity verification will not survive process restarts. "
+                    "Set CHECKPOINT_HMAC_KEY environment variable for persistent integrity."
+                )
+
+    def _compute_hmac(self, data: bytes) -> str:
+        """Compute HMAC-SHA256 of checkpoint data.
+
+        Args:
+            data: Raw checkpoint bytes to authenticate.
+
+        Returns:
+            Hex-encoded HMAC digest.
+        """
+        return hmac.new(self._hmac_key, data, hashlib.sha256).hexdigest()
+
+    def _verify_hmac(self, data: bytes, expected_hmac: str) -> bool:
+        """Verify HMAC-SHA256 of checkpoint data using constant-time comparison.
+
+        Args:
+            data: Raw checkpoint bytes.
+            expected_hmac: Hex-encoded HMAC digest to verify against.
+
+        Returns:
+            True if HMAC is valid, False otherwise.
+        """
+        actual = hmac.new(self._hmac_key, data, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(actual, expected_hmac)
 
     @staticmethod
     def _sanitize_id(id_value: str, id_type: str = "identifier") -> str:
@@ -304,6 +349,16 @@ class FileCheckpointBackend(CheckpointBackend):
             "metadata": metadata or {}
         }
 
+        # M-10: Compute HMAC over the serialized checkpoint data for integrity
+        checkpoint_json = json.dumps(checkpoint_data, indent=2)
+        checkpoint_hmac = self._compute_hmac(checkpoint_json.encode())
+
+        # Wrap checkpoint with HMAC envelope
+        envelope = {
+            "hmac": checkpoint_hmac,
+            "data": checkpoint_data,
+        }
+
         # Atomic write: write to temp file then os.replace() to target path.
         # os.replace() is atomic on POSIX, preventing partial/corrupted checkpoint
         # files from concurrent writes or crashes mid-write.
@@ -315,7 +370,7 @@ class FileCheckpointBackend(CheckpointBackend):
         )
         try:
             with os.fdopen(fd, 'w') as f:
-                json.dump(checkpoint_data, f, indent=2)
+                json.dump(envelope, f, indent=2)
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_path, checkpoint_path)
@@ -362,7 +417,29 @@ class FileCheckpointBackend(CheckpointBackend):
             )
 
         with open(checkpoint_path, 'r') as f:
-            checkpoint_data = json.load(f)
+            raw = json.load(f)
+
+        # M-10: HMAC integrity verification.
+        # New-format files have {"hmac": ..., "data": ...} envelope.
+        # Old-format files (pre-HMAC) have checkpoint_data directly at top level.
+        if "hmac" in raw and "data" in raw:
+            # New format — verify integrity before deserializing
+            checkpoint_data = raw["data"]
+            stored_hmac = raw["hmac"]
+            canonical_json = json.dumps(checkpoint_data, indent=2).encode()
+            if not self._verify_hmac(canonical_json, stored_hmac):
+                raise CheckpointNotFoundError(
+                    f"Checkpoint {checkpoint_id} for workflow {workflow_id} "
+                    "failed HMAC integrity verification (possible tampering)"
+                )
+        else:
+            # Legacy checkpoint without HMAC — allow loading with warning
+            checkpoint_data = raw
+            logger.warning(
+                "Loading checkpoint %s without HMAC verification "
+                "(legacy format). Re-save to add integrity protection.",
+                checkpoint_id,
+            )
 
         # Restore domain state
         return WorkflowDomainState.from_dict(checkpoint_data["domain_state"])
@@ -381,7 +458,9 @@ class FileCheckpointBackend(CheckpointBackend):
 
         for checkpoint_file in workflow_dir.glob("cp-*.json"):
             with open(checkpoint_file, 'r') as f:
-                checkpoint_data = json.load(f)
+                raw = json.load(f)
+                # Handle both HMAC envelope and legacy formats
+                checkpoint_data = raw.get("data", raw) if "hmac" in raw else raw
                 checkpoints.append({
                     "checkpoint_id": checkpoint_data["checkpoint_id"],
                     "created_at": checkpoint_data["created_at"],
@@ -429,7 +508,9 @@ class FileCheckpointBackend(CheckpointBackend):
         latest_file = max(checkpoint_files, key=lambda f: f.stat().st_mtime)
         # Read only the latest file to extract the canonical checkpoint_id
         with open(latest_file, 'r') as f:
-            data = json.load(f)
+            raw = json.load(f)
+        # Handle both HMAC envelope and legacy formats
+        data = raw.get("data", raw) if "hmac" in raw else raw
         return cast(str, data["checkpoint_id"])
 
 

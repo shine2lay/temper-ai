@@ -78,12 +78,13 @@ class MeritScoreService:
         elif decision_outcome == "failure":
             merit_score.failed_decisions += 1
         elif decision_outcome == "mixed":
-            merit_score.successful_decisions += 0.5
-            merit_score.failed_decisions += 0.5
+            merit_score.mixed_decisions += 1
 
         # Update cumulative metrics
+        # Mixed decisions count as half-success for rate calculation
         if merit_score.total_decisions > 0:
-            merit_score.success_rate = merit_score.successful_decisions / merit_score.total_decisions
+            effective_successes = merit_score.successful_decisions + 0.5 * merit_score.mixed_decisions
+            merit_score.success_rate = effective_successes / merit_score.total_decisions
 
         # Update average confidence (exponential moving average, alpha=0.1)
         if confidence is not None:

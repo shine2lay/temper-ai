@@ -558,10 +558,11 @@ class TestAsyncErrorPaths:
 
     @pytest.mark.asyncio
     async def test_acomplete_exponential_backoff_timing(self):
-        """Test async retry uses correct exponential backoff.
+        """Test async retry uses correct exponential backoff with jitter.
 
         COVERAGE: Validates that asyncio.sleep is called with correct backoff intervals.
-        EXPECTED: For max_retries=3, we get 3 attempts with 2 sleep calls: [2s, 4s]
+        EXPECTED: For max_retries=3, we get 3 attempts with 2 sleep calls.
+        Base delays are [2s, 4s] with jitter multiplier in [0.5, 1.5).
         """
         llm = OllamaLLM(
             model="llama2",
@@ -579,9 +580,12 @@ class TestAsyncErrorPaths:
                 with pytest.raises(LLMTimeoutError):
                     await llm.acomplete("test prompt")
 
-                # Verify exponential backoff: 2s, 4s (for 3 attempts = 2 retries)
+                # Verify exponential backoff with jitter (R-15):
+                # Base delays are 2s, 4s; jitter multiplier is (0.5 + random()) in [0.5, 1.5)
                 sleep_calls = [call[0][0] for call in mock_sleep.call_args_list]
-                assert sleep_calls == [2.0, 4.0], f"Expected [2.0, 4.0], got {sleep_calls}"
+                assert len(sleep_calls) == 2, f"Expected 2 sleep calls, got {len(sleep_calls)}"
+                assert 1.0 <= sleep_calls[0] < 3.0, f"First delay {sleep_calls[0]} not in [1.0, 3.0)"
+                assert 2.0 <= sleep_calls[1] < 6.0, f"Second delay {sleep_calls[1]} not in [2.0, 6.0)"
                 assert mock_post.call_count == 3
 
         await llm.aclose()

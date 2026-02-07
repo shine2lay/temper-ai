@@ -6,7 +6,7 @@ enabling pluggable storage backends (SQL, Prometheus, S3, etc.).
 """
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, ContextManager, Dict, List, Optional
+from typing import Any, ContextManager, Dict, List, Literal, Optional
 
 
 class ObservabilityBackend(ABC):
@@ -69,7 +69,7 @@ class ObservabilityBackend(ABC):
         self,
         workflow_id: str,
         end_time: datetime,
-        status: str,
+        status: Literal["completed", "failed", "halted", "timeout"],
         error_message: Optional[str] = None,
         error_stack_trace: Optional[str] = None
     ) -> None:
@@ -136,7 +136,7 @@ class ObservabilityBackend(ABC):
         self,
         stage_id: str,
         end_time: datetime,
-        status: str,
+        status: Literal["completed", "failed"],
         error_message: Optional[str] = None,
         num_agents_executed: int = 0,
         num_agents_succeeded: int = 0,
@@ -201,7 +201,7 @@ class ObservabilityBackend(ABC):
         self,
         agent_id: str,
         end_time: datetime,
-        status: str,
+        status: Literal["completed", "failed"],
         error_message: Optional[str] = None
     ) -> None:
         """
@@ -264,7 +264,7 @@ class ObservabilityBackend(ABC):
         start_time: datetime,
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
-        status: str = "success",
+        status: Literal["success", "failed"] = "success",
         error_message: Optional[str] = None
     ) -> None:
         """
@@ -301,7 +301,7 @@ class ObservabilityBackend(ABC):
         output_data: Dict[str, Any],
         start_time: datetime,
         duration_seconds: float,
-        status: str = "success",
+        status: Literal["success", "failed"] = "success",
         error_message: Optional[str] = None,
         safety_checks: Optional[List[str]] = None,
         approval_required: bool = False
@@ -332,7 +332,7 @@ class ObservabilityBackend(ABC):
         workflow_id: Optional[str],
         stage_id: Optional[str],
         agent_id: Optional[str],
-        violation_severity: str,
+        violation_severity: Literal["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
         violation_message: str,
         policy_name: str,
         service_name: Optional[str] = None,

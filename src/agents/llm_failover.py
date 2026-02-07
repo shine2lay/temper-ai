@@ -79,7 +79,12 @@ class FailoverProvider:
         self.providers = providers
         self.config = config or FailoverConfig()
         self._state_lock = threading.Lock()
-        self._async_state_lock: Optional[asyncio.Lock] = None  # Lazy init (needs event loop)
+        # Eagerly create async lock to avoid race conditions with lazy initialization.
+        # NOTE: asyncio.Lock() binds to the running event loop. If no event loop is
+        # running at init time (Python 3.10+), the lock binds on first use. This is
+        # safe as long as all async callers share the same event loop, which is the
+        # standard asyncio usage pattern.
+        self._async_state_lock = asyncio.Lock()
         self.last_successful_index = 0
         self.backup_success_count = 0
 
@@ -163,12 +168,6 @@ class FailoverProvider:
             f"All {len(self.providers)} providers failed. Errors: {error_summary}"
         )
 
-    def _get_async_state_lock(self) -> asyncio.Lock:
-        """Get or create the async state lock (lazy init to avoid event loop issues)."""
-        if self._async_state_lock is None:
-            self._async_state_lock = asyncio.Lock()
-        return self._async_state_lock
-
     async def acomplete(self, prompt: str, **kwargs: Any) -> LLMResponse:
         """
         Async version: Generate completion with automatic failover.
@@ -187,10 +186,9 @@ class FailoverProvider:
             LLMError: If all providers fail
         """
         errors = []
-        async_lock = self._get_async_state_lock()
 
         # Determine starting index (read state under async lock)
-        async with async_lock:
+        async with self._async_state_lock:
             if self.config.sticky_session and self.backup_success_count < self.config.retry_primary_after:
                 start_index = self.last_successful_index
                 logger.debug(f"Using sticky session, starting at provider {start_index}")
@@ -211,7 +209,7 @@ class FailoverProvider:
                 result = await provider.acomplete(prompt, **kwargs)
 
                 # Success - update state atomically
-                async with async_lock:
+                async with self._async_state_lock:
                     if index != self.last_successful_index:
                         logger.info(
                             f"Failover successful: switched from provider {self.last_successful_index} "

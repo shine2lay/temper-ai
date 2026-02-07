@@ -497,11 +497,6 @@ def m5() -> None:
 
 def _get_m5_cli():
     """Lazy-load M5CLI to avoid import-time side effects."""
-    # Ensure coord service is importable
-    coord_path = str(PROJECT_ROOT / ".claude-coord")
-    if coord_path not in sys.path:
-        sys.path.insert(0, coord_path)
-
     try:
         from src.self_improvement.cli import M5CLI
 

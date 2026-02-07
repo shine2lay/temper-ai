@@ -12,7 +12,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import JSON, DateTime, func
+from sqlalchemy import JSON, DateTime, ForeignKey, String, func
 from sqlmodel import Column, Field, Index, Relationship, SQLModel
 
 from src.observability.datetime_utils import utcnow
@@ -116,7 +116,7 @@ class Experiment(SQLModel, table=True):
 
     # Success criteria
     primary_metric: str
-    secondary_metrics: List[str] = Field(default=[], sa_column=Column(JSON))
+    secondary_metrics: List[str] = Field(default_factory=list, sa_column=Column(JSON))
     guardrail_metrics: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
 
     # Statistical settings
@@ -129,7 +129,7 @@ class Experiment(SQLModel, table=True):
     total_executions: int = Field(default=0)
 
     # Metadata
-    tags: List[str] = Field(default=[], sa_column=Column(JSON))
+    tags: List[str] = Field(default_factory=list, sa_column=Column(JSON))
     created_by: Optional[str] = None
     extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
@@ -186,7 +186,9 @@ class Variant(SQLModel, table=True):
 
     # Identity
     id: str = Field(primary_key=True)
-    experiment_id: str = Field(foreign_key="experiments.id", index=True)
+    experiment_id: str = Field(
+        sa_column=Column(String, ForeignKey("experiments.id", ondelete="CASCADE"), index=True)
+    )
     name: str
     description: str
     is_control: bool = Field(default=False)
@@ -248,8 +250,12 @@ class VariantAssignment(SQLModel, table=True):
 
     # Identity
     id: str = Field(primary_key=True)
-    experiment_id: str = Field(foreign_key="experiments.id", index=True)
-    variant_id: str = Field(foreign_key="variants.id", index=True)
+    experiment_id: str = Field(
+        sa_column=Column(String, ForeignKey("experiments.id", ondelete="CASCADE"), index=True)
+    )
+    variant_id: str = Field(
+        sa_column=Column(String, ForeignKey("variants.id", ondelete="CASCADE"), index=True)
+    )
     workflow_execution_id: str = Field(index=True, unique=True)  # One assignment per workflow
 
     # Assignment metadata
@@ -312,7 +318,9 @@ class ExperimentResult(SQLModel, table=True):
 
     # Identity
     id: str = Field(primary_key=True)
-    experiment_id: str = Field(foreign_key="experiments.id", index=True)
+    experiment_id: str = Field(
+        sa_column=Column(String, ForeignKey("experiments.id", ondelete="CASCADE"), index=True)
+    )
 
     # Analysis metadata
     analyzed_at: datetime = Field(default_factory=utcnow, index=True)
@@ -339,7 +347,7 @@ class ExperimentResult(SQLModel, table=True):
     # }
 
     # Guardrail checks
-    guardrail_violations: List[Dict[str, Any]] = Field(default=[], sa_column=Column(JSON))
+    guardrail_violations: List[Dict[str, Any]] = Field(default_factory=list, sa_column=Column(JSON))
     # Example: [{"variant": "variant_a", "metric": "error_rate", "value": 0.08, "threshold": 0.05}]
 
     # Recommendations

@@ -72,6 +72,13 @@ llm-providers = [
     "anthropic>=0.8",
 ]
 
+# coord_service is a local package under .claude-coord/coord_service/.
+# It is NOT published to PyPI. To make it importable, either:
+#   1. Add .claude-coord/ to PYTHONPATH, or
+#   2. pip install -e .claude-coord/
+# The framework gracefully degrades when coord_service is unavailable.
+coord = []
+
 # TODO: Replace 'yourusername' with actual GitHub username/organization
 [project.urls]
 Homepage = "https://github.com/yourusername/meta-autonomous-framework"

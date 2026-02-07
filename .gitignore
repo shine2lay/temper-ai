@@ -30,6 +30,7 @@ venv.bak/
 
 # Environment variables
 .env
+.env.*
 .env.local
 .env.*.local
 

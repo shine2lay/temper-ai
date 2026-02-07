@@ -446,7 +446,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
             return None
 
-        except Exception:
+        except (psutil.Error, OSError):
             # Error checking disk space - don't block operation
             return None
 
@@ -495,7 +495,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
             return None
 
-        except Exception:
+        except (psutil.Error, OSError):
             # Error checking memory - don't block operation
             return None
 
@@ -518,7 +518,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             try:
                 process = psutil.Process()
                 self._operation_start_memory[operation_id] = process.memory_info().rss
-            except Exception:
+            except (psutil.Error, OSError):
                 pass
 
     def end_operation(
@@ -564,7 +564,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
                 memory_delta = current_memory - start_memory
                 stats["memory_delta"] = memory_delta
                 stats["memory_exceeded"] = memory_delta > self.max_memory_per_operation
-            except Exception:
+            except (psutil.Error, OSError):
                 pass
 
         return stats
@@ -597,7 +597,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
                 "system_used": system_memory.used,
                 "percent": system_memory.percent
             }
-        except Exception:
+        except (psutil.Error, OSError):
             usage["memory"] = None
 
         # Disk usage
@@ -609,7 +609,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
                 "free": disk_usage.free,
                 "percent": disk_usage.percent
             }
-        except Exception:
+        except (psutil.Error, OSError):
             usage["disk"] = None
 
         # CPU usage (requires time to sample)
@@ -619,7 +619,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
                 "percent": cpu_percent,
                 "count": psutil.cpu_count()
             }
-        except Exception:
+        except (psutil.Error, OSError):
             usage["cpu"] = None
 
         return usage

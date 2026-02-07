@@ -7,21 +7,28 @@ and shared methods for synthesis, dialogue, and agent name extraction.
 import logging
 import uuid
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from typing_extensions import TypedDict
 
-if TYPE_CHECKING:
-    from src.observability.tracker import ExecutionTracker
+from src.compiler.domain_state import (
+    ConfigLoaderProtocol,
+    ToolRegistryProtocol,
+    TrackerProtocol,
+    VisualizerProtocol,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class WorkflowStateDict(TypedDict, total=False):
-    """Type hints for the workflow state dictionary passed between executors.
+    """Canonical type hints for the workflow state dictionary.
 
-    All keys are optional (total=False) since different executors populate
-    different subsets of the state.
+    This is the single authoritative definition of the workflow state dict
+    used throughout the framework. All other modules should import from here.
+
+    All keys are optional (total=False) since different executors and
+    lifecycle phases populate different subsets of the state.
     """
 
     # Core workflow identity
@@ -31,8 +38,20 @@ class WorkflowStateDict(TypedDict, total=False):
     # Accumulated stage outputs: stage_name -> stage output dict
     stage_outputs: Dict[str, Any]
 
-    # Observability
-    tracker: Optional["ExecutionTracker"]
+    # Common workflow inputs
+    topic: Optional[str]
+    depth: Optional[str]
+    focus_areas: Optional[List[str]]
+    query: Optional[str]
+    input: Optional[str]
+    context: Optional[str]
+    data: Any
+
+    # Infrastructure (non-serializable)
+    tracker: Optional[TrackerProtocol]
+    tool_registry: Optional[ToolRegistryProtocol]
+    config_loader: Optional[ConfigLoaderProtocol]
+    visualizer: Optional[VisualizerProtocol]
 
     # UI/display
     show_details: bool
@@ -97,8 +116,8 @@ class StageExecutor(ABC):
         stage_name: str,
         stage_config: Any,
         state: Dict[str, Any],
-        config_loader: Any,
-        tool_registry: Optional[Any] = None
+        config_loader: ConfigLoaderProtocol,
+        tool_registry: Optional[ToolRegistryProtocol] = None
     ) -> Dict[str, Any]:
         """Execute stage and return updated state.
 
@@ -152,9 +171,9 @@ class StageExecutor(ABC):
         agent_outputs: list,
         stage_config: Any,
         stage_name: str,
-        state: Dict[str, Any] = None,
-        config_loader: Any = None,
-        agents: List = None
+        state: Optional[Dict[str, Any]] = None,
+        config_loader: Optional[ConfigLoaderProtocol] = None,
+        agents: Optional[List] = None
     ) -> Any:
         """Run collaboration strategy to synthesize agent outputs.
 
@@ -247,7 +266,7 @@ class StageExecutor(ABC):
         stage_config: Any,
         stage_name: str,
         state: Dict[str, Any],
-        config_loader: Any,
+        config_loader: ConfigLoaderProtocol,
         agents: list
     ) -> Any:
         """Execute multi-round dialogue with agent re-invocation.
@@ -391,7 +410,7 @@ class StageExecutor(ABC):
         agents: list,
         stage_name: str,
         state: Dict[str, Any],
-        config_loader: Any,
+        config_loader: ConfigLoaderProtocol,
         dialogue_history: list,
         round_number: int,
         max_rounds: int,

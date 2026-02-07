@@ -17,7 +17,15 @@ from typing import Any, Dict, Optional
 
 @dataclass
 class ExecutionContext:
-    """Unified execution context for tracking, error handling, and caching.
+    """Canonical ExecutionContext for agent/stage/workflow tracking.
+
+    This is the single authoritative definition of ExecutionContext used
+    across the entire framework. All modules that need an execution context
+    should import from ``src.core.context``.
+
+    Note: This is distinct from ``InfrastructureContext`` in
+    ``src.compiler.domain_state``, which holds non-serializable
+    infrastructure components (tracker, tool_registry, etc.).
 
     Provides environment and tracking information used by agents, error
     handlers, observability trackers, and LLM cache isolation.

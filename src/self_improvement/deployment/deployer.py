@@ -8,14 +8,10 @@ policy validation and approval workflows.
 
 import json
 import logging
-
-# Import coordination database
-import sys
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # Import M4 safety stack
 from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
@@ -26,9 +22,14 @@ from src.self_improvement.data_models import (
     utcnow,
 )
 
-coord_service_path = Path(__file__).parent.parent.parent.parent / ".claude-coord"
-sys.path.insert(0, str(coord_service_path))
-from coord_service.database import Database
+# Guard coord_service import - it's an optional local package under .claude-coord/
+try:
+    from coord_service.database import Database
+
+    _coord_service_available = True
+except ImportError:
+    Database = None  # type: ignore[assignment,misc]
+    _coord_service_available = False
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ class ConfigDeployer:
 
     def __init__(
         self,
-        db: Database,
+        db: Any,
         policy_engine: Optional[ActionPolicyEngine] = None,
         approval_workflow: Optional[ApprovalWorkflow] = None,
         enable_safety_checks: bool = True
@@ -63,11 +64,17 @@ class ConfigDeployer:
         Initialize deployer with database connection and safety components.
 
         Args:
-            db: Database instance (coordination service database)
+            db: Database instance (coordination service database).
+                Expects a coord_service.database.Database-compatible object.
             policy_engine: ActionPolicyEngine for policy validation (optional)
             approval_workflow: ApprovalWorkflow for approval requests (optional)
             enable_safety_checks: Enable safety validation (default: True)
         """
+        if not _coord_service_available:
+            logger.warning(
+                "coord_service not available; ConfigDeployer functionality will be limited. "
+                "Ensure .claude-coord/coord_service is on sys.path or installed."
+            )
         self.db = db
         self.policy_engine = policy_engine
         self.approval_workflow = approval_workflow

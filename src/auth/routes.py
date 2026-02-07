@@ -15,9 +15,10 @@ SECURITY NOTES:
 - Referrer-Policy prevents code leakage
 """
 import logging
+import os
 import uuid
 from pathlib import Path
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 from src.auth.models import User
@@ -27,6 +28,33 @@ from src.auth.oauth.service import OAuthError, OAuthProviderError, OAuthService,
 from src.auth.session import SessionStore, SessionStoreProtocol, UserStore
 
 logger = logging.getLogger(__name__)
+
+# M-14: Default redirect allowlist, configurable via OAUTH_ALLOWED_REDIRECTS env var
+# Format: comma-separated list of relative URLs (e.g., "/,/dashboard,/profile")
+DEFAULT_ALLOWED_REDIRECTS = ["/", "/dashboard"]
+
+
+def _get_allowed_redirects(explicit: Optional[List[str]] = None) -> List[str]:
+    """Get allowed redirect URLs from explicit list or environment variable.
+
+    M-14: Makes the redirect allowlist configurable via the
+    OAUTH_ALLOWED_REDIRECTS environment variable (comma-separated).
+
+    Args:
+        explicit: Explicitly provided list (takes precedence over env var)
+
+    Returns:
+        List of allowed redirect URLs
+    """
+    if explicit is not None:
+        return explicit
+
+    env_redirects = os.environ.get("OAUTH_ALLOWED_REDIRECTS")
+    if env_redirects:
+        # Parse comma-separated list, strip whitespace, filter empty
+        return [url.strip() for url in env_redirects.split(",") if url.strip()]
+
+    return DEFAULT_ALLOWED_REDIRECTS
 
 
 class OAuthRouteHandlers:
@@ -65,7 +93,7 @@ class OAuthRouteHandlers:
         oauth_service: OAuthService,
         session_store: Optional[SessionStoreProtocol] = None,
         user_store: Optional[UserStore] = None,
-        allowed_redirect_urls: Optional[list] = None,
+        allowed_redirect_urls: Optional[List[str]] = None,
     ):
         """Initialize OAuth route handlers.
 
@@ -73,12 +101,14 @@ class OAuthRouteHandlers:
             oauth_service: OAuth service for authentication
             session_store: Session storage (default: in-memory)
             user_store: User storage (default: in-memory)
-            allowed_redirect_urls: Whitelist of allowed redirect URLs after login
+            allowed_redirect_urls: Whitelist of allowed redirect URLs after login.
+                M-14: If not provided, reads from OAUTH_ALLOWED_REDIRECTS env var
+                (comma-separated), falling back to ["/", "/dashboard"].
         """
         self.oauth_service = oauth_service
         self.session_store = session_store or SessionStore()
         self.user_store = user_store or UserStore()
-        self.allowed_redirect_urls = allowed_redirect_urls or ["/", "/dashboard"]
+        self.allowed_redirect_urls = _get_allowed_redirects(allowed_redirect_urls)
 
     @classmethod
     def from_config_file(cls, config_path: Path) -> "OAuthRouteHandlers":
@@ -216,9 +246,13 @@ class OAuthRouteHandlers:
 
         # Generate authorization URL (includes CSRF state and PKCE)
         try:
+            # H-14: Use per-flow UUID instead of shared "anonymous" identifier
+            # to prevent cross-flow token collisions in concurrent OAuth flows
+            flow_user_id = f"oauth-flow-{uuid.uuid4()}"
+
             auth_url, state = await self.oauth_service.get_authorization_url(
                 provider=provider,
-                user_id="anonymous",  # No user yet (not authenticated)
+                user_id=flow_user_id,
                 ip_address=client_ip,
             )
 
@@ -297,19 +331,21 @@ class OAuthRouteHandlers:
         try:
             # Exchange code for tokens (validates state internally)
             # SECURITY: State is validated and deleted (single-use)
-            await self.oauth_service.exchange_code_for_tokens(
+            token_result = await self.oauth_service.exchange_code_for_tokens(
                 provider=provider,
                 code=code,
                 state=state,
                 ip_address=client_ip,
             )
 
+            # H-14: Extract the per-flow user_id that tokens were stored under
+            # (replaces hardcoded "anonymous" to prevent cross-flow collisions)
+            flow_user_id = token_result.get('_flow_user_id', str(uuid.uuid4()))
+
             # Get user info from provider
             # SECURITY: Tokens used internally, never exposed
-            # AU-03: Use "anonymous" to match the user_id from get_authorization_url
-            # (tokens were stored under this ID by exchange_code_for_tokens)
             user_info = await self.oauth_service.get_user_info(
-                user_id="anonymous",
+                user_id=flow_user_id,
                 provider=provider,
             )
 

@@ -4,6 +4,23 @@ This module defines the foundational interfaces for all safety policies,
 including validation results, violation reporting, and severity levels.
 
 Interfaces are designed for both synchronous and asynchronous execution contexts.
+
+Module boundary between ``safety/`` and ``security/``:
+
+* **safety/**  -- Policy enforcement layer.  Responsible for rate limiting,
+  blast-radius checks, action policy validation, and resource limits.
+  Policies operate on *actions* proposed by agents and decide whether
+  to allow, deny, or escalate them.  See :class:`SafetyPolicy` and
+  :class:`Validator` below.
+
+* **security/** -- Threat detection layer.  Responsible for LLM prompt
+  injection detection, secret scanning, output sanitization, and input
+  validation.  Security modules detect *threats* in data flowing through
+  the system.  The protocols :class:`PromptInjectionDetectorProtocol`,
+  :class:`OutputSanitizerProtocol`, and :class:`LLMRateLimiterProtocol`
+  (defined at the bottom of this file) bridge the two layers so that
+  ``safety/`` can depend on ``security/`` via interfaces, not concrete
+  implementations.
 """
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field

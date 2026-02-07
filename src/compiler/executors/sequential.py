@@ -5,6 +5,7 @@ Each agent's output is accumulated and passed to subsequent agents, enabling
 agent-to-agent context sharing within a stage.
 """
 import logging
+import threading
 import time
 import traceback
 import uuid
@@ -16,7 +17,9 @@ from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message
 logger = logging.getLogger(__name__)
 
 from src.agents.agent_factory import AgentFactory
+from src.compiler.domain_state import ConfigLoaderProtocol, ToolRegistryProtocol
 from src.compiler.executors.base import StageExecutor
+from src.compiler.schemas import StageErrorHandlingConfig
 from src.core.context import ExecutionContext
 from src.utils.config_helpers import get_nested_value, sanitize_config_for_display
 
@@ -50,13 +53,20 @@ class SequentialStageExecutor(StageExecutor):
     including outputs from previous agents/stages.
     """
 
+    def __init__(self) -> None:
+        """Initialize sequential executor with an empty agent cache."""
+        # Per-workflow agent cache: agent_name -> agent instance.
+        # Avoids recreating agents for every stage invocation when the
+        # same agent appears in multiple stages of the same workflow.
+        self._agent_cache: Dict[str, Any] = {}
+
     def execute_stage(
         self,
         stage_name: str,
         stage_config: Any,
         state: Dict[str, Any],
-        config_loader: Any,
-        tool_registry: Optional[Any] = None,
+        config_loader: ConfigLoaderProtocol,
+        tool_registry: Optional[ToolRegistryProtocol] = None,
         halt_on_failure: bool = True
     ) -> Dict[str, Any]:
         """Execute stage with sequential agent execution.
@@ -93,12 +103,10 @@ class SequentialStageExecutor(StageExecutor):
             agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
             error_handling_dict = get_nested_value(stage_config, 'stage.error_handling')
             if error_handling_dict:
-                from src.compiler.schemas import StageErrorHandlingConfig
                 error_handling_config = StageErrorHandlingConfig(**error_handling_dict)
 
         # If no error_handling config, create default based on halt_on_failure param
         if error_handling_config is None:
-            from src.compiler.schemas import StageErrorHandlingConfig
             on_failure = "halt_stage" if halt_on_failure else "continue_with_remaining"
             error_handling_config = StageErrorHandlingConfig(on_agent_failure=on_failure)
 
@@ -242,8 +250,8 @@ class SequentialStageExecutor(StageExecutor):
         workflow_id: str,
         state: Dict[str, Any],
         tracker: Optional[Any],
-        config_loader: Any,
-        error_handling: Any,
+        config_loader: ConfigLoaderProtocol,
+        error_handling: StageErrorHandlingConfig,
     ) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
         """Execute all agents in sequence with configurable error handling.
 
@@ -409,7 +417,7 @@ class SequentialStageExecutor(StageExecutor):
         workflow_id: str,
         state: Dict[str, Any],
         tracker: Optional[Any],
-        config_loader: Any,
+        config_loader: ConfigLoaderProtocol,
         prior_agent_outputs: Dict[str, Any],
         max_retries: int,
         agent_name: str,
@@ -437,13 +445,17 @@ class SequentialStageExecutor(StageExecutor):
         base_delay = 1.0  # seconds
         last_result: Dict[str, Any] = {}
 
+        _backoff_event = threading.Event()
+
         for attempt in range(1, max_retries + 1):
             delay = min(base_delay * (2 ** (attempt - 1)), 30.0)
             logger.info(
                 "Retrying agent %s in stage %s (attempt %d/%d, backoff %.1fs)",
                 agent_name, stage_name, attempt, max_retries, delay,
             )
-            time.sleep(delay)
+            # Use Event.wait() instead of time.sleep() so the delay is
+            # interruptible (e.g. by a shutdown signal setting the event).
+            _backoff_event.wait(timeout=delay)
 
             last_result = self._execute_agent(
                 agent_ref=agent_ref,
@@ -494,7 +506,7 @@ class SequentialStageExecutor(StageExecutor):
         workflow_id: str,
         state: Dict[str, Any],
         tracker: Optional[Any],
-        config_loader: Any,
+        config_loader: ConfigLoaderProtocol,
         prior_agent_outputs: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Execute a single agent and return structured result.
@@ -603,7 +615,7 @@ class SequentialStageExecutor(StageExecutor):
         workflow_id: str,
         state: Dict[str, Any],
         tracker: Optional[Any],
-        config_loader: Any,
+        config_loader: ConfigLoaderProtocol,
         prior_agent_outputs: Dict[str, Any],
         start_time: float,
     ) -> Dict[str, Any]:
@@ -612,14 +624,19 @@ class SequentialStageExecutor(StageExecutor):
         Returns:
             Dict with keys: agent_name, output_data, status, metrics
         """
-        # Load agent config
-        agent_config_dict = config_loader.load_agent(agent_name)
-
-        from src.compiler.schemas import AgentConfig
-        agent_config = AgentConfig(**agent_config_dict)
-
-        # Create agent
-        agent = AgentFactory.create(agent_config)
+        # Load agent config and create agent (with per-workflow caching)
+        if agent_name in self._agent_cache:
+            agent = self._agent_cache[agent_name]
+            # Still need the config dict for tracking purposes below
+            agent_config_dict = config_loader.load_agent(agent_name)
+            from src.compiler.schemas import AgentConfig
+            agent_config = AgentConfig(**agent_config_dict)
+        else:
+            agent_config_dict = config_loader.load_agent(agent_name)
+            from src.compiler.schemas import AgentConfig
+            agent_config = AgentConfig(**agent_config_dict)
+            agent = AgentFactory.create(agent_config)
+            self._agent_cache[agent_name] = agent
 
         # Prepare input data
         if hasattr(state, 'to_dict'):
@@ -654,20 +671,17 @@ class SequentialStageExecutor(StageExecutor):
         agent_config_dict_for_tracking = sanitize_config_for_display(agent_config_dict_for_tracking)
 
         if tracker:
-            import json
-
-            def is_serializable(value: Any) -> bool:
-                try:
-                    json.dumps(value)
-                    return True
-                except (TypeError, ValueError):
-                    return False
+            # Allowlist of known non-serializable/infrastructure keys to exclude
+            # from tracking data. This avoids the cost of attempting json.dumps()
+            # on every value in the state dict.
+            _NON_SERIALIZABLE_KEYS: frozenset[str] = frozenset({
+                'tracker', 'tool_registry', 'config_loader', 'visualizer',
+                'show_details', 'detail_console',
+            })
 
             tracking_input_data = {
                 k: v for k, v in input_data.items()
-                if k not in ('tracker', 'tool_registry', 'config_loader', 'visualizer',
-                             'show_details', 'detail_console')
-                and is_serializable(v)
+                if k not in _NON_SERIALIZABLE_KEYS
             }
             tracking_input_data = sanitize_config_for_display(tracking_input_data)
 

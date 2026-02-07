@@ -10,7 +10,11 @@ from src.agents.llm.base import (
     LLMResponse,
     LLMStreamChunk,
 )
-from src.agents.llm.factory import create_llm_client, create_llm_provider
+from src.agents.llm.factory import (
+    create_llm_client,
+    create_llm_from_config,
+    create_llm_provider,
+)
 from src.agents.llm.ollama import OllamaLLM
 from src.agents.llm.openai_provider import OpenAILLM
 from src.agents.llm.vllm_provider import VllmLLM
@@ -33,6 +37,7 @@ __all__ = [
     "AnthropicLLM",
     "VllmLLM",
     "create_llm_client",
+    "create_llm_from_config",
     "create_llm_provider",
     "LLMError",
     "LLMTimeoutError",

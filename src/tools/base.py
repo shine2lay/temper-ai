@@ -3,10 +3,13 @@ Base class for all tools.
 
 Defines the interface that all tools must implement.
 """
+import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Optional, Tuple, Type, Union
 
 from pydantic import BaseModel, Field, ValidationError
+
+logger = logging.getLogger(__name__)
 
 
 class ToolParameter(BaseModel):
@@ -184,28 +187,44 @@ class BaseTool(ABC):
 
     def safe_execute(self, **kwargs: Any) -> ToolResult:
         """
-        Execute tool with automatic parameter validation.
+        Execute tool with guaranteed no-exception contract (M-33).
 
         Validates parameters before execution and returns validation errors
-        as failed ToolResult if validation fails.
+        as failed ToolResult if validation fails. Catches ALL exceptions from
+        execute() and wraps them in a ToolResult with success=False so callers
+        never need to handle exceptions.
 
         Args:
             **kwargs: Tool-specific parameters
 
         Returns:
-            ToolResult - validation errors or execution result
+            ToolResult - always returns, never raises
         """
         # Validate parameters
-        validation_result = self.validate_params(kwargs)
-        if not validation_result.valid:
+        try:
+            validation_result = self.validate_params(kwargs)
+            if not validation_result.valid:
+                return ToolResult(
+                    success=False,
+                    error=f"Parameter validation failed: {validation_result.error_message}",
+                    metadata={"validation_errors": validation_result.errors}
+                )
+        except Exception as e:
+            logger.error("Tool %s parameter validation raised: %s", self.name, e)
             return ToolResult(
                 success=False,
-                error=f"Parameter validation failed: {validation_result.error_message}",
-                metadata={"validation_errors": validation_result.errors}
+                error=f"Parameter validation error: {e}",
             )
 
-        # Execute tool
-        return self.execute(**kwargs)
+        # Execute tool -- catch any exception to enforce no-exception contract
+        try:
+            return self.execute(**kwargs)
+        except Exception as e:
+            logger.error("Tool %s execution failed: %s", self.name, e, exc_info=True)
+            return ToolResult(
+                success=False,
+                error=f"Tool execution failed: {e}",
+            )
 
     @abstractmethod
     def execute(self, **kwargs: Any) -> ToolResult:

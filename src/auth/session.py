@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 import secrets
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
@@ -19,8 +20,13 @@ logger = logging.getLogger(__name__)
 class SessionStoreProtocol(abc.ABC):
     """Abstract base class for session storage backends.
 
-    All session store implementations must implement these methods.
-    This enables swapping between in-memory, Redis, database, etc.
+    All session store implementations must inherit from this ABC and
+    implement the required abstract methods. This uses nominal subtyping
+    (explicit inheritance) rather than structural subtyping (typing.Protocol)
+    to ensure implementations are clearly marked as session stores.
+
+    API-20: Consistently uses abc.ABC with @abc.abstractmethod decorators.
+    Implementations: InMemorySessionStore, RedisSessionStore.
     """
 
     @abc.abstractmethod
@@ -51,7 +57,7 @@ class SessionStoreProtocol(abc.ABC):
 
 
 class InMemorySessionStore(SessionStoreProtocol):
-    """In-memory session storage.
+    """In-memory session storage with LRU eviction.
 
     SECURITY WARNING: This is a simple in-memory implementation for development ONLY.
     This implementation is NOT suitable for production use.
@@ -61,13 +67,24 @@ class InMemorySessionStore(SessionStoreProtocol):
     Production issues with this implementation:
     - Session data loss on server restart
     - No session sharing across multiple server instances
+
+    M-09: Enforces a maximum session count with LRU (least recently used)
+    eviction to prevent unbounded memory growth.
     """
 
     CLEANUP_INTERVAL = 100  # Run cleanup every N lookups
+    MAX_SESSIONS = 10000  # M-09: Maximum sessions before LRU eviction
 
-    def __init__(self):
-        """Initialize session store."""
-        self._sessions: Dict[str, Session] = {}
+    def __init__(self, max_sessions: int = MAX_SESSIONS):
+        """Initialize session store.
+
+        Args:
+            max_sessions: Maximum number of sessions before LRU eviction
+                          (default: 10000)
+        """
+        # M-09: Use OrderedDict for O(1) LRU eviction
+        self._sessions: OrderedDict[str, Session] = OrderedDict()
+        self._max_sessions = max_sessions
         self._lock = asyncio.Lock()
         self._lookup_count = 0
 
@@ -108,8 +125,18 @@ class InMemorySessionStore(SessionStoreProtocol):
             user_agent=user_agent,
         )
 
-        # Store session atomically
+        # Store session atomically with LRU eviction (M-09)
         async with self._lock:
+            if session_id in self._sessions:
+                # Move existing session to end (most recently used)
+                self._sessions.move_to_end(session_id)
+            elif len(self._sessions) >= self._max_sessions:
+                # Evict least recently used session (oldest entry)
+                evicted_id, _ = self._sessions.popitem(last=False)
+                logger.info(
+                    f"LRU eviction: removed session {evicted_id[:16]}... "
+                    f"(max_sessions={self._max_sessions})"
+                )
             self._sessions[session_id] = session
 
         logger.info(
@@ -154,6 +181,9 @@ class InMemorySessionStore(SessionStoreProtocol):
                 del self._sessions[session_id]
                 logger.info(f"Expired session removed: {session_id[:16]}...")
                 return None
+
+            # M-09: Touch session for LRU tracking (move to most recent)
+            self._sessions.move_to_end(session_id)
 
             return session
 

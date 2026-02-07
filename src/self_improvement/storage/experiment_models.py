@@ -8,7 +8,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import JSON, DateTime, Index
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, String
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from src.observability.datetime_utils import utcnow
@@ -46,7 +46,10 @@ class M5Experiment(SQLModel, table=True):
     )
     extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
-    results: List["M5ExecutionResult"] = Relationship(back_populates="experiment")
+    results: List["M5ExecutionResult"] = Relationship(
+        back_populates="experiment",
+        sa_relationship_kwargs={"cascade": "all, delete-orphan"},
+    )
 
     def get_control_config_dict(self) -> Dict[str, Any]:
         """Return control config dict (already deserialized by JSON column)."""
@@ -87,7 +90,9 @@ class M5ExecutionResult(SQLModel, table=True):
     )
 
     id: str = Field(primary_key=True)
-    experiment_id: str = Field(foreign_key="m5_experiments.id")
+    experiment_id: str = Field(
+        sa_column=Column(String, ForeignKey("m5_experiments.id", ondelete="CASCADE"), nullable=False)
+    )
     variant_id: str
     execution_id: str = Field(unique=True)
     quality_score: Optional[float] = None

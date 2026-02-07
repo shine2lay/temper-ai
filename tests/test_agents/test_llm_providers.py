@@ -641,8 +641,8 @@ class TestCreateLLMClient:
         assert llm.model == "meta-llama/Llama-2-7b-hf"
 
     def test_create_unknown_provider_raises_error(self):
-        """Test that unknown provider raises ValueError."""
-        with pytest.raises(ValueError, match="is not a valid LLMProvider"):
+        """Test that unknown provider raises LLMError with valid providers listed."""
+        with pytest.raises(LLMError, match="Unknown LLM provider 'invalid'"):
             create_llm_client(
                 provider="invalid",
                 model="test-model",

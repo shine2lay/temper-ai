@@ -479,7 +479,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
         # Unbuffered mode (immediate commit)
         start_time_utc = ensure_utc(start_time)
-        end_time = start_time_utc  # Tool calls record start_time, end is calculated
+        end_time = start_time_utc + timedelta(seconds=duration_seconds)
 
         tool_exec = ToolExecution(
             id=tool_execution_id,
@@ -918,7 +918,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
                         input_params=call.input_params,
                         output_data=call.output_data,
                         start_time=ensure_utc(call.start_time),
-                        end_time=ensure_utc(call.start_time),  # Tool calls use start_time
+                        end_time=ensure_utc(call.start_time) + timedelta(seconds=call.duration_seconds),
                         duration_seconds=call.duration_seconds,
                         status=call.status,
                         error_message=call.error_message,

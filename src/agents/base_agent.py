@@ -7,11 +7,28 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict
 
 if TYPE_CHECKING:
     from src.schemas import AgentConfig
 from src.core.context import ExecutionContext  # canonical definition; re-exported here
+
+
+class ToolCallRecord(TypedDict, total=False):
+    """Structured record of a single tool call made during agent execution.
+
+    Attributes:
+        tool_name: Name of the tool that was called
+        arguments: Arguments passed to the tool
+        result: String result returned by the tool
+        success: Whether the tool call succeeded
+        duration_seconds: Time taken for the tool call
+    """
+    tool_name: str
+    arguments: Dict[str, Any]
+    result: str
+    success: bool
+    duration_seconds: float
 
 
 @dataclass
@@ -31,7 +48,7 @@ class AgentResponse:
     """
     output: str
     reasoning: Optional[str] = None
-    tool_calls: List[Dict[str, Any]] = field(default_factory=list)
+    tool_calls: List[ToolCallRecord] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
     tokens: int = 0
     estimated_cost_usd: float = 0.0

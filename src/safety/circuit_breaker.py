@@ -1,7 +1,12 @@
 """Circuit breakers and safety gates for preventing cascading failures.
 
-This module re-exports the unified CircuitBreaker from src.core.circuit_breaker
-and provides SafetyGate and CircuitBreakerManager which build on top of it.
+This module provides SafetyGate and CircuitBreakerManager which build on
+top of the unified CircuitBreaker from ``src.core.circuit_breaker``.
+
+.. deprecated::
+    The core circuit breaker classes (CircuitBreaker, CircuitBreakerError,
+    CircuitBreakerMetrics, CircuitState) re-exported here are deprecated.
+    Import them directly from ``src.core.circuit_breaker`` instead.
 
 Key Features:
 - Circuit breaker pattern (CLOSED/OPEN/HALF_OPEN states)
@@ -21,21 +26,50 @@ Example:
     ... except CircuitBreakerOpen:
     ...     print("Circuit breaker is open - too many failures")
 """
+import importlib
 import threading
+import warnings
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional
 
-# Re-export core circuit breaker classes
-from src.core.circuit_breaker import (
-    CircuitBreaker,
-    CircuitBreakerError,
-    CircuitBreakerMetrics,
-    CircuitState,
+# Re-export map for deprecated names from src.core.circuit_breaker
+_SHIM_EXPORTS = {
+    "CircuitBreaker": "src.core.circuit_breaker",
+    "CircuitBreakerError": "src.core.circuit_breaker",
+    "CircuitBreakerMetrics": "src.core.circuit_breaker",
+    "CircuitState": "src.core.circuit_breaker",
+    # Backward-compatible aliases
+    "CircuitBreakerState": ("src.core.circuit_breaker", "CircuitState"),
+    "CircuitBreakerOpen": ("src.core.circuit_breaker", "CircuitBreakerError"),
+}
+
+# Eagerly import for use by local classes (SafetyGate, CircuitBreakerManager)
+# These don't trigger deprecation warnings because they're internal usage.
+from src.core.circuit_breaker import (  # noqa: E402
+    CircuitBreaker as _CircuitBreaker,
+    CircuitBreakerError as _CircuitBreakerError,
+    CircuitBreakerMetrics as _CircuitBreakerMetrics,
+    CircuitState as _CircuitState,
 )
 
-# Backward-compatible aliases
-CircuitBreakerState = CircuitState
-CircuitBreakerOpen = CircuitBreakerError
+
+def __getattr__(name: str):
+    if name in _SHIM_EXPORTS:
+        mapping = _SHIM_EXPORTS[name]
+        if isinstance(mapping, tuple):
+            mod_path, attr_name = mapping
+        else:
+            mod_path = mapping
+            attr_name = name
+        warnings.warn(
+            f"Importing {name} from src.safety.circuit_breaker is deprecated. "
+            f"Import {attr_name} from src.core.circuit_breaker instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        mod = importlib.import_module(mod_path)
+        return getattr(mod, attr_name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 class SafetyGateBlocked(Exception):  # noqa: N818 — public API name
@@ -70,7 +104,7 @@ class SafetyGate:
     def __init__(
         self,
         name: str,
-        circuit_breaker: Optional[CircuitBreaker] = None,
+        circuit_breaker: Optional[_CircuitBreaker] = None,
         policy_composer: Optional[Any] = None,
         require_approval: bool = False
     ):
@@ -210,7 +244,7 @@ class CircuitBreakerManager:
     """
 
     def __init__(self) -> None:
-        self._breakers: Dict[str, CircuitBreaker] = {}
+        self._breakers: Dict[str, _CircuitBreaker] = {}
         self._gates: Dict[str, SafetyGate] = {}
         self._lock = threading.Lock()
 
@@ -220,7 +254,7 @@ class CircuitBreakerManager:
         failure_threshold: int = 5,
         timeout_seconds: int = 60,
         success_threshold: int = 2
-    ) -> CircuitBreaker:
+    ) -> _CircuitBreaker:
         """Create and register a circuit breaker.
 
         Args:
@@ -244,7 +278,7 @@ class CircuitBreakerManager:
             if name in self._breakers:
                 raise ValueError(f"Circuit breaker '{name}' already exists")
 
-            breaker = CircuitBreaker(
+            breaker = _CircuitBreaker(
                 name=name,
                 failure_threshold=failure_threshold,
                 timeout_seconds=timeout_seconds,
@@ -254,7 +288,7 @@ class CircuitBreakerManager:
             self._breakers[name] = breaker
             return breaker
 
-    def get_breaker(self, name: str) -> Optional[CircuitBreaker]:
+    def get_breaker(self, name: str) -> Optional[_CircuitBreaker]:
         """Get circuit breaker by name."""
         return self._breakers.get(name)
 

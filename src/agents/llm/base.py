@@ -4,9 +4,11 @@ Base LLM provider: abstract class, response types, and provider enum.
 This module contains the core abstractions shared by all LLM providers.
 """
 import asyncio
+import collections
 import ipaddress
 import json
 import logging
+import random
 import threading
 import time
 from abc import ABC, abstractmethod
@@ -96,8 +98,23 @@ class BaseLLM(ABC):
     # This ensures all LLM instances targeting the same endpoint share one
     # circuit breaker, so failures on one instance correctly trip the breaker
     # for all instances pointing at that endpoint.
-    _circuit_breakers: Dict[Tuple[str, str, str], CircuitBreaker] = {}
+    # Bounded via OrderedDict with LRU eviction to prevent unbounded memory growth (H-04).
+    _MAX_CIRCUIT_BREAKERS = 100
+    _circuit_breakers: collections.OrderedDict[Tuple[str, str, str], CircuitBreaker] = (
+        collections.OrderedDict()
+    )
     _circuit_breaker_lock = threading.Lock()
+
+    # Shared HTTP client pool keyed by (provider, base_url) to reduce
+    # connection overhead across instances (M-42).
+    _MAX_HTTP_CLIENTS = 50
+    _http_clients: Dict[Tuple[str, str], httpx.Client] = {}
+    _http_client_lock = threading.Lock()
+
+    # Async lock for async client creation (M-19).
+    # Lazily initialized because asyncio.Lock() requires a running event loop
+    # in some Python versions.
+    _async_client_lock: Optional[asyncio.Lock] = None
 
     def __init__(
         self,
@@ -154,16 +171,26 @@ class BaseLLM(ABC):
         self._rate_limiter = rate_limiter
 
     def _get_shared_circuit_breaker(self) -> CircuitBreaker:
-        """Get or create a shared circuit breaker for this provider+model+endpoint."""
+        """Get or create a shared circuit breaker for this provider+model+endpoint.
+
+        Uses LRU eviction: oldest (least-recently-used) circuit breaker is
+        removed when the pool reaches _MAX_CIRCUIT_BREAKERS (H-04).
+        """
         provider_name = self.__class__.__name__.replace("LLM", "").lower()
         key = (provider_name, self.model, self.base_url)
 
         with BaseLLM._circuit_breaker_lock:
             if key not in BaseLLM._circuit_breakers:
+                # Evict oldest entry if at capacity
+                if len(BaseLLM._circuit_breakers) >= BaseLLM._MAX_CIRCUIT_BREAKERS:
+                    BaseLLM._circuit_breakers.popitem(last=False)
                 BaseLLM._circuit_breakers[key] = CircuitBreaker(
                     name=f"{provider_name}:{self.model}",
                     config=CircuitBreakerConfig()
                 )
+            else:
+                # Mark as recently used
+                BaseLLM._circuit_breakers.move_to_end(key)
             return BaseLLM._circuit_breakers[key]
 
     @classmethod
@@ -173,6 +200,51 @@ class BaseLLM(ABC):
             for cb in cls._circuit_breakers.values():
                 cb.reset()
             cls._circuit_breakers.clear()
+
+    @classmethod
+    def _get_shared_http_client(
+        cls, provider: str, base_url: str, **kwargs: Any
+    ) -> httpx.Client:
+        """Get or create a shared HTTP client for this provider+base_url (M-42).
+
+        Sharing clients across instances targeting the same endpoint reduces
+        connection overhead and improves connection reuse.  Evicts oldest
+        client when the pool reaches _MAX_HTTP_CLIENTS.
+        """
+        key = (provider, base_url)
+        with cls._http_client_lock:
+            if key not in cls._http_clients:
+                if len(cls._http_clients) >= cls._MAX_HTTP_CLIENTS:
+                    oldest_key = next(iter(cls._http_clients))
+                    old_client = cls._http_clients.pop(oldest_key)
+                    try:
+                        old_client.close()
+                    except Exception:
+                        pass
+                cls._http_clients[key] = httpx.Client(**kwargs)
+            return cls._http_clients[key]
+
+    @classmethod
+    def reset_shared_http_clients(cls) -> None:
+        """Close and remove all shared HTTP clients. Primarily useful for testing."""
+        with cls._http_client_lock:
+            for client in cls._http_clients.values():
+                try:
+                    client.close()
+                except Exception:
+                    pass
+            cls._http_clients.clear()
+
+    @classmethod
+    def _get_async_lock(cls) -> asyncio.Lock:
+        """Get or lazily create the class-level async lock for client creation (M-19).
+
+        asyncio.Lock() is safe to create outside an event loop in Python 3.10+,
+        but we use lazy init for broader compatibility.
+        """
+        if cls._async_client_lock is None:
+            cls._async_client_lock = asyncio.Lock()
+        return cls._async_client_lock
 
     @staticmethod
     def _validate_base_url(url: str) -> str:
@@ -203,7 +275,12 @@ class BaseLLM(ABC):
         return url
 
     def _get_client(self) -> httpx.Client:
-        """Get or create HTTPx client with lazy initialization and connection pooling."""
+        """Get or create HTTPx client with lazy initialization and connection pooling.
+
+        Uses per-instance clients by default.  For shared client pooling
+        across instances, subclasses can override this method to call
+        ``_get_shared_http_client()`` (M-42).
+        """
         if self._client is None:
             with self._sync_cleanup_lock:
                 if self._client is None:
@@ -226,8 +303,40 @@ class BaseLLM(ABC):
                     )
         return self._client
 
+    async def _get_async_client_safe(self) -> httpx.AsyncClient:
+        """Get or create async HTTPx client with proper async locking (M-19).
+
+        Uses asyncio.Lock instead of threading.Lock to avoid blocking the
+        event loop during client creation.
+        """
+        if self._async_client is None:
+            async with self._get_async_lock():
+                if self._async_client is None:
+                    limits = httpx.Limits(
+                        max_connections=100,
+                        max_keepalive_connections=20,
+                        keepalive_expiry=30.0
+                    )
+
+                    try:
+                        import h2  # noqa: F401
+                        http2_enabled = True
+                    except ImportError:
+                        http2_enabled = False
+
+                    self._async_client = httpx.AsyncClient(
+                        timeout=self.timeout,
+                        limits=limits,
+                        http2=http2_enabled
+                    )
+        return self._async_client
+
     def _get_async_client(self) -> httpx.AsyncClient:
-        """Get or create async HTTPx client with lazy initialization and connection pooling."""
+        """Get or create async HTTPx client (sync accessor, backward compat).
+
+        For new async code, prefer _get_async_client_safe() which uses
+        asyncio.Lock instead of threading.Lock (M-19).
+        """
         if self._async_client is None:
             with self._sync_cleanup_lock:
                 if self._async_client is None:
@@ -251,35 +360,36 @@ class BaseLLM(ABC):
         return self._async_client
 
     def close(self) -> None:
-        """Close HTTPx clients (sync and async) and release resources."""
+        """Close sync resources and release references (H-06).
+
+        Closes the sync HTTP client directly.  For the async client, the
+        reference is released but callers should use ``await aclose()``
+        for proper async cleanup.  This method no longer calls
+        ``asyncio.run()`` which would fail when an event loop is already
+        running (e.g. inside an async framework).
+        """
         with self._sync_cleanup_lock:
             if self._closed:
                 return
 
             try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-
-            if loop is None or not loop.is_running():
-                asyncio.run(self.aclose())
-            else:
-                logger.warning(
-                    "close() called from async context; "
-                    "closing sync client only. Use 'await aclose()' for "
-                    "complete cleanup."
-                )
-                try:
-                    if self._client is not None:
+                if self._client is not None:
+                    try:
                         self._client.close()
-                        self._client = None
-                    if self._async_client is not None:
-                        loop.create_task(self._async_client.aclose())
-                        self._async_client = None
-                except Exception as e:
-                    logger.warning("Error during sync-only cleanup: %s", e)
-                finally:
-                    self._closed = True
+                    except Exception:
+                        pass
+                    self._client = None
+                if self._async_client is not None:
+                    # Release reference; proper cleanup requires aclose().
+                    logger.debug(
+                        "close() called with active async client; "
+                        "use 'await aclose()' for async cleanup."
+                    )
+                    self._async_client = None
+            except Exception as e:
+                logger.warning("Error during sync cleanup: %s", e)
+            finally:
+                self._closed = True
 
     async def aclose(self) -> None:
         """Async close for HTTPx clients and release resources."""
@@ -469,12 +579,16 @@ class BaseLLM(ABC):
                         raise LLMTimeoutError(
                             f"Request timed out after {self.timeout}s (attempt {attempt + 1}/{self.max_retries})"
                         )
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    # Exponential backoff with jitter (R-15) to decorrelate
+                    # retries across concurrent callers.
+                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())
+                    time.sleep(delay)
 
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())
+                    time.sleep(delay)
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
                     raise
@@ -519,12 +633,15 @@ class BaseLLM(ABC):
                         raise LLMTimeoutError(
                             f"Request timed out after {self.timeout}s (attempt {attempt + 1}/{self.max_retries})"
                         )
-                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                    # Exponential backoff with jitter (R-15)
+                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())
+                    await asyncio.sleep(delay)
 
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    await asyncio.sleep(self.retry_delay * (2 ** attempt))
+                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())
+                    await asyncio.sleep(delay)
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
                     raise

@@ -14,7 +14,6 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from src.observability.rollback_logger import log_rollback_event
 from src.tools.base import BaseTool, ToolResult
 from src.tools.registry import ToolRegistry
 from src.utils.logging import get_logger
@@ -26,6 +25,21 @@ if TYPE_CHECKING:
 
 # Module logger
 logger = get_logger(__name__)
+
+
+def _log_rollback_event(**kwargs) -> None:
+    """Lazy-import and call log_rollback_event (M-06).
+
+    Makes the observability dependency optional so tools can function
+    without the observability package installed.
+    """
+    try:
+        from src.observability.rollback_logger import log_rollback_event
+        log_rollback_event(**kwargs)
+    except ImportError:
+        logger.debug("Observability not available; skipping rollback event logging")
+    except Exception as e:
+        logger.warning("Failed to log rollback event: %s", e)
 
 
 
@@ -89,7 +103,18 @@ class ToolExecutor:
         self.approval_workflow = approval_workflow
         self.enable_auto_rollback = enable_auto_rollback
 
-        self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._executor = ThreadPoolExecutor(
+            max_workers=max_workers,
+            thread_name_prefix="tool-exec",
+        )
+        # Dedicated thread pool for approval waits (H-05).
+        # Approval polling can block for minutes/hours; keeping it on a
+        # separate pool prevents it from starving the main tool execution
+        # threads.
+        self._approval_executor = ThreadPoolExecutor(
+            max_workers=4,
+            thread_name_prefix="tool-approval",
+        )
         self._shutdown = False  # Track shutdown state
 
         # Concurrent execution tracking
@@ -101,11 +126,12 @@ class ToolExecutor:
         self._rate_limit_lock = threading.Lock()
 
         # Register cleanup using weakref.finalize() for guaranteed cleanup
-        # This ensures the thread pool is shut down even if __del__ is not called
+        # This ensures the thread pools are shut down even if __del__ is not called
         self._finalizer = weakref.finalize(
             self,
             self._cleanup_executor,
-            self._executor
+            self._executor,
+            self._approval_executor,
         )
 
         # Register approval rejection callback if both workflows provided
@@ -381,15 +407,12 @@ class ToolExecutor:
                             result.metadata["rollback_snapshot_id"] = snapshot.id
                             result.metadata["rollback_status"] = rollback_result.status.value
 
-                            # Log rollback event to database
-                            try:
-                                log_rollback_event(
-                                    result=rollback_result,
-                                    trigger="auto",
-                                    operator=context.get("agent_id")
-                                )
-                            except Exception as log_error:
-                                logger.warning(f"Failed to log rollback event: {log_error}")
+                            # Log rollback event to database (lazy import, M-06)
+                            _log_rollback_event(
+                                result=rollback_result,
+                                trigger="auto",
+                                operator=context.get("agent_id")
+                            )
                         except Exception as e:
                             logger.error(f"Auto-rollback failed: {e}")
                             result.metadata["rollback_error"] = str(e)
@@ -405,16 +428,13 @@ class ToolExecutor:
                             rollback_result = self.rollback_manager.execute_rollback(snapshot.id)
                             logger.warning(f"Auto-rollback on timeout: {rollback_result.status.value}")
 
-                            # Log rollback event
-                            try:
-                                log_rollback_event(
-                                    result=rollback_result,
-                                    trigger="auto",
-                                    operator=context.get("agent_id"),
-                                    reason="Tool execution timeout"
-                                )
-                            except Exception as log_error:
-                                logger.warning(f"Failed to log rollback event: {log_error}")
+                            # Log rollback event (lazy import, M-06)
+                            _log_rollback_event(
+                                result=rollback_result,
+                                trigger="auto",
+                                operator=context.get("agent_id"),
+                                reason="Tool execution timeout"
+                            )
                         except Exception as e:
                             logger.error(f"Auto-rollback on timeout failed: {e}")
 
@@ -438,16 +458,13 @@ class ToolExecutor:
                         extra={"rollback_result": rollback_result.to_dict()}
                     )
 
-                    # Log rollback event
-                    try:
-                        log_rollback_event(
-                            result=rollback_result,
-                            trigger="auto",
-                            operator=context.get("agent_id"),
-                            reason=f"Tool execution exception: {str(e)}"
-                        )
-                    except Exception as log_error:
-                        logger.warning(f"Failed to log rollback event: {log_error}")
+                    # Log rollback event (lazy import, M-06)
+                    _log_rollback_event(
+                        result=rollback_result,
+                        trigger="auto",
+                        operator=context.get("agent_id"),
+                        reason=f"Tool execution exception: {str(e)}"
+                    )
                 except Exception as rollback_error:
                     logger.error(f"Auto-rollback on exception failed: {rollback_error}")
 
@@ -510,6 +527,10 @@ class ToolExecutor:
     ) -> bool:
         """Wait for approval request to be approved/rejected.
 
+        Runs the blocking poll loop on the dedicated ``_approval_executor``
+        thread pool (H-05) so that approval waits do not consume threads
+        from the main tool-execution pool.
+
         Uses threading.Event.wait() for efficient blocking instead of
         busy-polling with time.sleep(). Falls back to periodic checks
         with the Event timeout to detect approval/rejection state changes.
@@ -521,6 +542,25 @@ class ToolExecutor:
 
         Returns:
             True if approved, False if rejected/expired/timeout
+        """
+        future = self._approval_executor.submit(
+            self._poll_approval, request_id, poll_interval, max_wait
+        )
+        try:
+            return future.result(timeout=max_wait + 5)
+        except Exception:
+            return False
+
+    def _poll_approval(
+        self,
+        request_id: str,
+        poll_interval: float,
+        max_wait: int,
+    ) -> bool:
+        """Poll approval status on the dedicated approval thread pool.
+
+        This method is submitted to ``_approval_executor`` by
+        ``_wait_for_approval`` and must not be called directly.
         """
         event = threading.Event()
         deadline = time.monotonic() + max_wait
@@ -552,16 +592,13 @@ class ToolExecutor:
                     f"Auto-rollback on approval rejection: {rollback_result.status.value}"
                 )
 
-                # Log rollback event
-                try:
-                    log_rollback_event(
-                        result=rollback_result,
-                        trigger="approval_rejection",
-                        operator=request.metadata.get("operator"),
-                        reason=f"Approval rejected: {request.decision_reason or 'No reason provided'}"
-                    )
-                except Exception as log_error:
-                    logger.warning(f"Failed to log rollback event: {log_error}")
+                # Log rollback event (lazy import, M-06)
+                _log_rollback_event(
+                    result=rollback_result,
+                    trigger="approval_rejection",
+                    operator=request.metadata.get("operator"),
+                    reason=f"Approval rejected: {request.decision_reason or 'No reason provided'}"
+                )
             except Exception as e:
                 logger.error(f"Auto-rollback on approval rejection failed: {e}")
 
@@ -658,25 +695,35 @@ class ToolExecutor:
         }
 
     @staticmethod
-    def _cleanup_executor(executor: ThreadPoolExecutor) -> None:
+    def _cleanup_executor(
+        executor: ThreadPoolExecutor,
+        approval_executor: Optional[ThreadPoolExecutor] = None,
+    ) -> None:
         """
-        Static cleanup method for thread pool.
+        Static cleanup method for thread pools.
 
         This is called by weakref.finalize() and must not reference
         the ToolExecutor instance (to avoid circular references).
 
         Args:
-            executor: ThreadPoolExecutor to shut down
+            executor: Main ThreadPoolExecutor to shut down
+            approval_executor: Approval ThreadPoolExecutor to shut down (H-05)
         """
-        try:
-            executor.shutdown(wait=True, cancel_futures=True)
-            logger.debug("ThreadPoolExecutor cleaned up successfully")
-        except Exception as e:
-            logger.error(f"Error during thread pool cleanup: {e}")
+        for pool_name, pool in [("tool-exec", executor), ("tool-approval", approval_executor)]:
+            if pool is None:
+                continue
+            try:
+                pool.shutdown(wait=True, cancel_futures=True)
+                logger.debug("ThreadPoolExecutor (%s) cleaned up successfully", pool_name)
+            except Exception as e:
+                logger.error("Error during thread pool cleanup (%s): %s", pool_name, e)
 
     def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
         """
         Shutdown the executor and cleanup resources.
+
+        Shuts down both the main tool-execution pool and the dedicated
+        approval-wait pool (H-05).
 
         Args:
             wait: If True, wait for pending executions to complete
@@ -688,6 +735,7 @@ class ToolExecutor:
 
         try:
             self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
+            self._approval_executor.shutdown(wait=wait, cancel_futures=cancel_futures)
             self._shutdown = True
             logger.debug("ToolExecutor shutdown completed")
         except Exception as e:

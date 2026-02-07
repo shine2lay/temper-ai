@@ -6,13 +6,17 @@ and statistical analysis to determine winning agent configurations.
 
 Database access uses SQLModel ORM via M5Experiment and M5ExecutionResult
 models (no raw SQL).
+
+Session management: Uses session-per-operation pattern via a context-manager
+factory to avoid long-lived sessions that accumulate stale state.
 """
 import hashlib
 import logging
 import re
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, Generator, List, Optional
 
 from sqlalchemy.orm import Session
 from sqlmodel import func, select
@@ -199,15 +203,33 @@ class ExperimentOrchestrator:
         session: Session,
         statistical_analyzer: Optional[SIStatisticalAnalyzer] = None,
         target_executions_per_variant: int = 50,
+        session_factory: Optional[Callable[[], Any]] = None,
     ):
         """
         Initialize experiment orchestrator.
 
         Args:
-            session: SQLAlchemy database session
+            session: SQLAlchemy database session (kept for backward compat).
+                     If session_factory is not provided, this session is wrapped
+                     in a trivial context manager and reused (legacy behavior).
             statistical_analyzer: Analyzer for statistical tests (creates default if None)
             target_executions_per_variant: Default sample size per variant (default: 50)
+            session_factory: Optional callable returning a context manager that
+                             yields a Session. Preferred over raw session for
+                             session-per-operation pattern.
         """
+        if session_factory is not None:
+            self._session_factory = session_factory
+        else:
+            # Backward-compat: wrap the passed session in a no-op context manager
+            # so existing callers work unchanged.
+            @contextmanager
+            def _legacy_session_factory() -> Generator[Session, None, None]:
+                yield session
+
+            self._session_factory = _legacy_session_factory
+
+        # Keep self.session for any external code that accesses it directly
         self.session = session
         self.statistical_analyzer = statistical_analyzer or SIStatisticalAnalyzer(
             significance_level=0.05,
@@ -264,14 +286,20 @@ class ExperimentOrchestrator:
 
     # ========== ORM Helpers ==========
 
-    def _get_db_experiment(self, experiment_id: str) -> M5Experiment:
+    def _get_db_experiment(self, experiment_id: str, session: Optional[Session] = None) -> M5Experiment:
         """Load M5Experiment ORM model by ID.
+
+        Args:
+            experiment_id: Experiment identifier
+            session: Optional session to use (for mutations within a session scope).
+                     If None, opens a new session via the factory.
 
         Raises:
             ExperimentNotFoundError: If experiment doesn't exist
         """
+        s = session if session is not None else self.session
         stmt = select(M5Experiment).where(M5Experiment.id == experiment_id)
-        db_exp = self.session.execute(stmt).scalars().first()
+        db_exp = s.execute(stmt).scalars().first()
         if not db_exp:
             raise ExperimentNotFoundError(f"Experiment not found: {experiment_id}")
         return db_exp
@@ -330,7 +358,7 @@ class ExperimentOrchestrator:
 
         now = utcnow()
 
-        # Create ORM model and store
+        # Create ORM model and store (session-per-operation)
         db_exp = M5Experiment(
             id=experiment_id,
             agent_name=agent_name,
@@ -342,8 +370,9 @@ class ExperimentOrchestrator:
             created_at=now,
             extra_metadata=extra_metadata or {},
         )
-        self.session.add(db_exp)
-        self.session.commit()
+        with self._session_factory() as session:
+            session.add(db_exp)
+            session.commit()
 
         # Build domain model for return value
         experiment = SelfImprovementExperiment(
@@ -380,8 +409,9 @@ class ExperimentOrchestrator:
             ExperimentNotFoundError: If experiment doesn't exist
         """
         self._validate_experiment_id(experiment_id)
-        db_exp = self._get_db_experiment(experiment_id)
-        return _db_to_experiment(db_exp)
+        with self._session_factory() as session:
+            db_exp = self._get_db_experiment(experiment_id, session=session)
+            return _db_to_experiment(db_exp)
 
     def list_active_experiments(self, agent_name: Optional[str] = None) -> List[SelfImprovementExperiment]:
         """
@@ -397,8 +427,9 @@ class ExperimentOrchestrator:
         if agent_name:
             stmt = stmt.where(M5Experiment.agent_name == agent_name)
 
-        rows = self.session.execute(stmt).scalars().all()
-        return [_db_to_experiment(row) for row in rows]
+        with self._session_factory() as session:
+            rows = session.execute(stmt).scalars().all()
+            return [_db_to_experiment(row) for row in rows]
 
     # ========== Variant Assignment ==========
 
@@ -573,7 +604,7 @@ class ExperimentOrchestrator:
                 f"Valid variants: {valid_variants}"
             )
 
-        # Create and store ORM result
+        # Create and store ORM result (session-per-operation)
         result_id = f"result-{uuid.uuid4().hex[:12]}"
         db_result = M5ExecutionResult(
             id=result_id,
@@ -587,8 +618,9 @@ class ExperimentOrchestrator:
             recorded_at=utcnow(),
             extra_metrics=extra_metrics or {},
         )
-        self.session.add(db_result)
-        self.session.commit()
+        with self._session_factory() as session:
+            session.add(db_result)
+            session.commit()
 
         logger.debug(
             f"Recorded result for {execution_id} ({variant_id}) "
@@ -626,19 +658,20 @@ class ExperimentOrchestrator:
         """
         self._validate_experiment_id(experiment_id)
 
-        # Get experiment via ORM
-        db_exp = self._get_db_experiment(experiment_id)
-        experiment = _db_to_experiment(db_exp)
-        target = db_exp.target_samples_per_variant
+        with self._session_factory() as session:
+            # Get experiment via ORM
+            db_exp = self._get_db_experiment(experiment_id, session=session)
+            experiment = _db_to_experiment(db_exp)
+            target = db_exp.target_samples_per_variant
 
-        # Get sample counts per variant via ORM
-        count_stmt = (
-            select(M5ExecutionResult.variant_id, func.count())
-            .where(M5ExecutionResult.experiment_id == experiment_id)
-            .group_by(M5ExecutionResult.variant_id)
-        )
-        count_rows = self.session.execute(count_stmt).all()
-        count_map = {row[0]: row[1] for row in count_rows}
+            # Get sample counts per variant via ORM
+            count_stmt = (
+                select(M5ExecutionResult.variant_id, func.count())
+                .where(M5ExecutionResult.experiment_id == experiment_id)
+                .group_by(M5ExecutionResult.variant_id)
+            )
+            count_rows = session.execute(count_stmt).all()
+            count_map = {row[0]: row[1] for row in count_rows}
 
         # Build variant progress
         variant_progress = {}
@@ -684,12 +717,13 @@ class ExperimentOrchestrator:
         """
         self._validate_experiment_id(experiment_id)
 
-        stmt = (
-            select(M5ExecutionResult)
-            .where(M5ExecutionResult.experiment_id == experiment_id)
-        )
-        rows = self.session.execute(stmt).scalars().all()
-        return [_db_to_execution_result(row) for row in rows]
+        with self._session_factory() as session:
+            stmt = (
+                select(M5ExecutionResult)
+                .where(M5ExecutionResult.experiment_id == experiment_id)
+            )
+            rows = session.execute(stmt).scalars().all()
+            return [_db_to_execution_result(row) for row in rows]
 
     # ========== Winner Determination ==========
 
@@ -827,11 +861,12 @@ class ExperimentOrchestrator:
         if winner_variant_id is not None:
             self._validate_variant_id(winner_variant_id)
 
-        db_exp = self._get_db_experiment(experiment_id)
-        db_exp.status = "completed"
-        db_exp.completed_at = utcnow()
-        db_exp.winner_variant_id = winner_variant_id
-        self.session.commit()
+        with self._session_factory() as session:
+            db_exp = self._get_db_experiment(experiment_id, session=session)
+            db_exp.status = "completed"
+            db_exp.completed_at = utcnow()
+            db_exp.winner_variant_id = winner_variant_id
+            session.commit()
 
         logger.info(f"Completed experiment {experiment_id}, winner: {winner_variant_id}")
 
@@ -847,16 +882,17 @@ class ExperimentOrchestrator:
         """
         self._validate_experiment_id(experiment_id)
 
-        db_exp = self._get_db_experiment(experiment_id)
+        with self._session_factory() as session:
+            db_exp = self._get_db_experiment(experiment_id, session=session)
 
-        # Update metadata with stop reason
-        metadata = db_exp.get_extra_metadata()
-        metadata["stop_reason"] = reason
+            # Update metadata with stop reason
+            metadata = db_exp.get_extra_metadata()
+            metadata["stop_reason"] = reason
 
-        db_exp.status = "stopped"
-        db_exp.completed_at = utcnow()
-        db_exp.extra_metadata = metadata
-        self.session.commit()
+            db_exp.status = "stopped"
+            db_exp.completed_at = utcnow()
+            db_exp.extra_metadata = metadata
+            session.commit()
 
         logger.info(f"Stopped experiment {experiment_id}, reason: {reason}")
 

@@ -193,6 +193,24 @@ class SecureTokenStore:
                     "SECURITY: Using environment variable for encryption key. "
                     "For production, use OS keyring (install 'keyring' package)."
                 )
+                # M-11: Extra warning in production environments.
+                # Check common indicators of production deployment.
+                env_name = (
+                    os.getenv("ENVIRONMENT")
+                    or os.getenv("ENV")
+                    or os.getenv("APP_ENV")
+                    or ""
+                ).lower()
+                if env_name in ("production", "prod"):
+                    logger.warning(
+                        "PRODUCTION SECURITY WARNING: Encryption key loaded from "
+                        "environment variable OAUTH_TOKEN_ENCRYPTION_KEY in a "
+                        "production environment (%s). Environment variables are "
+                        "visible in /proc/<pid>/environ, process listings, and "
+                        "may leak into logs or crash dumps. Migrate to OS keyring "
+                        "for compliance (PCI DSS, SOC 2).",
+                        env_name,
+                    )
 
         # Fail secure if no key available
         if not key:

@@ -138,6 +138,7 @@ class ObservabilityBuffer:
         max_retries: int = MAX_RETRY_ATTEMPTS,
         enable_dlq: bool = True,
         pending_id_timeout: float = PENDING_ID_TIMEOUT_SECONDS,
+        max_dlq_size: int = 10000,
     ):
         """
         Initialize observability buffer.
@@ -149,6 +150,8 @@ class ObservabilityBuffer:
             max_retries: Maximum retry attempts before moving to dead-letter queue
             enable_dlq: Enable dead-letter queue for permanently failed items
             pending_id_timeout: Seconds before a pending ID is considered stale (default: 300)
+            max_dlq_size: Maximum number of items in the dead-letter queue (default: 10000).
+                         When exceeded, oldest entries are dropped.
         """
         self.flush_size = flush_size
         self.flush_interval = flush_interval
@@ -156,6 +159,7 @@ class ObservabilityBuffer:
         self.max_retries = max_retries
         self.enable_dlq = enable_dlq
         self._pending_id_timeout = pending_id_timeout
+        self._max_dlq_size = max_dlq_size
 
         # Buffered operations
         self.llm_calls: List[BufferedLLMCall] = []
@@ -215,6 +219,7 @@ class ObservabilityBuffer:
         error_message: Optional[str] = None
     ) -> None:
         """Buffer LLM call for batch insertion."""
+        deferred_flush = None
         with self.lock:
             self.llm_calls.append(BufferedLLMCall(
                 llm_call_id=llm_call_id,
@@ -245,9 +250,14 @@ class ObservabilityBuffer:
             metrics.completion_tokens += completion_tokens
             metrics.estimated_cost_usd += estimated_cost_usd
 
-            # Check if we should flush
+            # Check if we should flush — swap buffers under lock, flush outside
             if self._should_flush():
-                self._flush_unsafe()
+                deferred_flush = self._flush_unsafe()
+
+        # Execute flush outside the lock to avoid holding lock during DB I/O
+        if deferred_flush is not None:
+            items_to_flush, flush_callback = deferred_flush
+            self._execute_flush(items_to_flush, flush_callback)
 
     def buffer_tool_call(
         self,
@@ -264,6 +274,7 @@ class ObservabilityBuffer:
         approval_required: bool = False
     ) -> None:
         """Buffer tool call for batch insertion."""
+        deferred_flush = None
         with self.lock:
             self.tool_calls.append(BufferedToolCall(
                 tool_execution_id=tool_execution_id,
@@ -285,9 +296,14 @@ class ObservabilityBuffer:
 
             self.agent_metrics[agent_id].num_tool_calls += 1
 
-            # Check if we should flush
+            # Check if we should flush — swap buffers under lock, flush outside
             if self._should_flush():
-                self._flush_unsafe()
+                deferred_flush = self._flush_unsafe()
+
+        # Execute flush outside the lock to avoid holding lock during DB I/O
+        if deferred_flush is not None:
+            items_to_flush, flush_callback = deferred_flush
+            self._execute_flush(items_to_flush, flush_callback)
 
     def flush(self) -> None:
         """
@@ -335,20 +351,17 @@ class ObservabilityBuffer:
 
         return False
 
-    def _flush_unsafe(self) -> None:
-        """Flush buffer (assumes lock is held).
+    def _flush_unsafe(self) -> Optional[tuple]:
+        """Swap buffers under lock for deferred flush (assumes lock is held).
 
-        Used by buffer_llm_call/buffer_tool_call when flush_size is reached
-        inside the lock. Swaps buffers and flushes in-place.
+        Uses swap-and-flush pattern: swaps buffer references under the lock,
+        then returns the data so the caller can flush OUTSIDE the lock.
+        This prevents holding the lock during DB I/O.
+
+        Returns:
+            Tuple of (items_to_flush, flush_callback) or None if nothing to flush.
         """
-        swapped = self._swap_buffers()
-        if swapped is None:
-            return
-
-        items_to_flush, flush_callback = swapped
-        # Note: we're still holding the lock here (called from buffer_* methods)
-        # but we've already swapped so new items can accumulate after lock release
-        self._execute_flush(items_to_flush, flush_callback)
+        return self._swap_buffers()
 
     def _swap_buffers(self):
         """Swap buffer contents to local variables (assumes lock is held).
@@ -394,11 +407,28 @@ class ObservabilityBuffer:
         # Extract by type for callback
         llm_calls = [item.item for item in items_to_flush if item.item_type == "llm_call"]
         tool_calls = [item.item for item in items_to_flush if item.item_type == "tool_call"]
-        agent_metrics = {
-            item.item_id: item.item
-            for item in items_to_flush
-            if item.item_type == "agent_metric"
-        }
+
+        # Batch agent metric updates: merge all metrics per agent into a single
+        # AgentMetricUpdate to avoid N+1 updates in the flush callback (M-44).
+        agent_metrics: Dict[str, AgentMetricUpdate] = {}
+        for item in items_to_flush:
+            if item.item_type != "agent_metric":
+                continue
+            metric = item.item
+            if item.item_id in agent_metrics:
+                # Merge into existing aggregated metric
+                self._merge_agent_metrics(agent_metrics[item.item_id], metric)
+            else:
+                # First metric for this agent — copy to avoid mutating the RetryableItem
+                agent_metrics[item.item_id] = AgentMetricUpdate(
+                    agent_id=metric.agent_id,
+                    num_llm_calls=metric.num_llm_calls,
+                    num_tool_calls=metric.num_tool_calls,
+                    total_tokens=metric.total_tokens,
+                    prompt_tokens=metric.prompt_tokens,
+                    completion_tokens=metric.completion_tokens,
+                    estimated_cost_usd=metric.estimated_cost_usd,
+                )
 
         try:
             flush_callback(llm_calls, tool_calls, agent_metrics)
@@ -525,7 +555,10 @@ class ObservabilityBuffer:
         self.retry_queue = new_retry_queue
 
     def _move_to_dlq(self, item: RetryableItem, now: datetime) -> None:
-        """Move failed item to dead-letter queue."""
+        """Move failed item to dead-letter queue.
+
+        Enforces max_dlq_size by dropping oldest entries when the limit is exceeded.
+        """
         if not self.enable_dlq:
             logger.error(
                 f"Item {item.item_type} {item.item_id} permanently failed after "
@@ -544,6 +577,12 @@ class ObservabilityBuffer:
         )
 
         self.dead_letter_queue.append(dlq_item)
+
+        # Enforce max DLQ size — drop oldest entries if exceeded
+        if len(self.dead_letter_queue) > self._max_dlq_size:
+            overflow = len(self.dead_letter_queue) - self._max_dlq_size
+            self.dead_letter_queue = self.dead_letter_queue[overflow:]
+            logger.warning("DLQ overflow: dropped %d oldest items", overflow)
 
         logger.error(
             f"Moved {item.item_type} {item.item_id} to DLQ after "
@@ -637,6 +676,7 @@ class ObservabilityBuffer:
                 "flush_interval": self.flush_interval,
                 "auto_flush": self.auto_flush,
                 "max_retries": self.max_retries,
+                "max_dlq_size": self._max_dlq_size,
                 "last_flush_time": self.last_flush_time
             }
 

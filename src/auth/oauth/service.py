@@ -377,6 +377,10 @@ class OAuthService:
                 f"Successfully exchanged OAuth code for tokens: provider={provider}, user={user_id}"
             )
 
+            # H-14: Include the flow user_id from state data so the caller
+            # can use it to retrieve tokens via get_user_info()
+            tokens['_flow_user_id'] = user_id
+
             return tokens
 
         except httpx.HTTPError as e:

@@ -560,12 +560,16 @@ class WorkflowError(BaseError):
 
 # Safety Exceptions
 
-class SecurityError(Exception):
+class SecurityError(FrameworkException):
     """Raised when a security requirement or constraint is violated.
 
     A lightweight exception for security violations across modules
     (tools, auth, pricing, etc.). Unlike SafetyError, this does not
     require ExecutionContext or ErrorCode.
+
+    Inherits from FrameworkException so that a top-level
+    ``except FrameworkException`` handler can catch security errors
+    without needing a separate ``except Exception`` fallback.
     """
     pass
 
@@ -601,8 +605,14 @@ class SafetyError(BaseError):
 
 # Validation Exceptions
 
-class ValidationError(BaseError):
-    """Base class for validation errors."""
+class FrameworkValidationError(BaseError):
+    """Base class for validation errors.
+
+    Note: Previously named ``ValidationError``. Renamed to avoid collision
+    with ``pydantic.ValidationError`` which is used extensively across
+    the codebase for schema validation.  The old name is available as a
+    backward-compatible alias that emits a ``DeprecationWarning``.
+    """
 
     def __init__(
         self,
@@ -625,6 +635,18 @@ class ValidationError(BaseError):
             cause=cause,
             **kwargs
         )
+
+
+# Backward-compat alias (deprecated)
+def ValidationError(*args, **kwargs):
+    """Deprecated: Use FrameworkValidationError instead."""
+    import warnings
+    warnings.warn(
+        "ValidationError is deprecated, use FrameworkValidationError instead",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return FrameworkValidationError(*args, **kwargs)
 
 
 # Utility Functions

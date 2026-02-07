@@ -4,6 +4,7 @@ Wraps compiled StateGraph and provides execution interface with observability.
 Supports checkpoint/resume capability for fault tolerance and long-running workflows.
 """
 import dataclasses
+import logging
 from typing import Any, Dict, Iterator, Optional, cast
 
 from langgraph.graph import StateGraph
@@ -11,6 +12,8 @@ from langgraph.graph import StateGraph
 from src.compiler.checkpoint_manager import CheckpointManager
 from src.compiler.domain_state import WorkflowDomainState
 from src.compiler.state_manager import StateManager
+
+logger = logging.getLogger(__name__)
 
 
 class WorkflowExecutor:
@@ -47,7 +50,13 @@ class WorkflowExecutor:
         self.checkpoint_manager = checkpoint_manager
         self.enable_checkpoints = enable_checkpoints
 
-        # Initialize checkpoint manager if checkpoints enabled but not provided
+        # Initialize checkpoint manager if checkpoints enabled but not provided.
+        # NOTE: The default CheckpointManager may use SQLite with StaticPool
+        # (via src.observability.database). StaticPool with SQLite is
+        # development-only. In production, use a proper connection pool
+        # (e.g., PostgreSQL with pool_size settings). StaticPool shares a
+        # single connection across all threads, which is sufficient for
+        # testing but will cause contention under load.
         if enable_checkpoints and checkpoint_manager is None:
             self.checkpoint_manager = CheckpointManager()
 
@@ -254,7 +263,14 @@ class WorkflowExecutor:
                             }
                         )
                 except Exception as checkpoint_error:
-                    # Log but don't mask original error
+                    # Log at ERROR level so checkpoint failures are visible
+                    # even when no tracker is configured
+                    logger.error(
+                        "Failed to save checkpoint for workflow %s: %s",
+                        getattr(domain_state, 'workflow_id', 'unknown'),
+                        checkpoint_error,
+                        exc_info=True
+                    )
                     if self.tracker:
                         self.tracker.log_event(
                             "checkpoint_save_failed",
@@ -363,8 +379,14 @@ class WorkflowExecutor:
                     self.checkpoint_manager.save_checkpoint(
                         domain_state_updated
                     )
-                except Exception:
-                    pass  # Don't mask original error
+                except Exception as checkpoint_error:
+                    # Log at ERROR level so checkpoint failures are visible
+                    logger.error(
+                        "Failed to save checkpoint for workflow %s: %s",
+                        workflow_id,
+                        checkpoint_error,
+                        exc_info=True
+                    )
             raise
 
     def _extract_domain_state(self, state_dict: Dict[str, Any]) -> WorkflowDomainState:

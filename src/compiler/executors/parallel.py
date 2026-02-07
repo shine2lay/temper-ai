@@ -8,6 +8,7 @@ import uuid
 from typing import Any, Callable, Dict, Optional, cast
 
 from src.agents.agent_factory import AgentFactory
+from src.compiler.domain_state import ConfigLoaderProtocol, ToolRegistryProtocol
 from src.compiler.executors.base import ParallelRunner, StageExecutor
 from src.core.context import ExecutionContext
 from src.utils.config_helpers import get_nested_value
@@ -43,14 +44,17 @@ class ParallelStageExecutor(StageExecutor):
             from src.compiler.executors.langgraph_runner import LangGraphParallelRunner
             parallel_runner = LangGraphParallelRunner()
         self.parallel_runner = parallel_runner
+        # Per-workflow agent cache: agent_name -> agent instance.
+        # Avoids recreating agents on every parallel invocation.
+        self._agent_cache: Dict[str, Any] = {}
 
     def execute_stage(
         self,
         stage_name: str,
         stage_config: Any,
         state: Dict[str, Any],
-        config_loader: Any,
-        tool_registry: Optional[Any] = None
+        config_loader: ConfigLoaderProtocol,
+        tool_registry: Optional[ToolRegistryProtocol] = None
     ) -> Dict[str, Any]:
         """Execute stage with parallel agent execution.
 
@@ -409,8 +413,16 @@ class ParallelStageExecutor(StageExecutor):
 
                 return state
 
-            except Exception:
-                # Handle stage failure
+            except Exception as exc:
+                # Handle stage failure — log before deciding how to proceed
+                logger.error(
+                    "Stage '%s' failed during parallel execution: %s: %s",
+                    stage_name,
+                    type(exc).__name__,
+                    exc,
+                    exc_info=True,
+                )
+
                 stage_dict = stage_config if isinstance(stage_config, dict) else {}
                 error_handling = stage_dict.get("error_handling", {})
                 on_failure = error_handling.get("on_stage_failure", "halt")
@@ -418,6 +430,11 @@ class ParallelStageExecutor(StageExecutor):
                 if on_failure == "halt":
                     raise
                 elif on_failure == "skip":
+                    logger.warning(
+                        "Stage '%s' error_handling policy is 'skip'; "
+                        "continuing workflow without this stage's output.",
+                        stage_name,
+                    )
                     # Skip this stage, continue workflow
                     state["stage_outputs"][stage_name] = None
                     return state
@@ -441,7 +458,7 @@ class ParallelStageExecutor(StageExecutor):
         agent_ref: Any,
         stage_name: str,
         state: Dict[str, Any],
-        config_loader: Any
+        config_loader: ConfigLoaderProtocol
     ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
         """Create execution node for a single agent in parallel execution.
 
@@ -460,14 +477,17 @@ class ParallelStageExecutor(StageExecutor):
             start_time = time.time()
 
             try:
-                # Load agent config
-                agent_config_dict = config_loader.load_agent(agent_name)
+                # Load agent config and create agent (with per-workflow caching)
+                if agent_name in self._agent_cache:
+                    agent = self._agent_cache[agent_name]
+                else:
+                    agent_config_dict = config_loader.load_agent(agent_name)
 
-                from src.compiler.schemas import AgentConfig
-                agent_config = AgentConfig(**agent_config_dict)
+                    from src.compiler.schemas import AgentConfig
+                    agent_config = AgentConfig(**agent_config_dict)
 
-                # Create agent
-                agent = AgentFactory.create(agent_config)
+                    agent = AgentFactory.create(agent_config)
+                    self._agent_cache[agent_name] = agent
 
                 # Prepare input
                 input_data = s.get("stage_input", {})

@@ -51,6 +51,99 @@ DANGEROUS_CHARS: Set[str] = {
 # Maximum allowed timeout in seconds
 MAX_TIMEOUT_SECONDS = 600
 
+# Shell operators that separate commands in a pipeline/chain.
+# Ordered longest-first so "||" and "&&" are matched before "|".
+_SHELL_OPERATORS = ("||", "&&", ";", "|")
+
+
+def _split_shell_commands(command: str) -> list[str]:
+    """Split a shell command string on unquoted shell operators.
+
+    Uses shlex lexical analysis to correctly handle quoting so that
+    operators inside quoted strings are not treated as separators.
+    This replaces the previous regex-based splitting which could not
+    distinguish quoted from unquoted operator characters (H-13).
+
+    Args:
+        command: Raw shell command string (may contain ;, |, &&, ||)
+
+    Returns:
+        List of individual sub-command strings.
+
+    Raises:
+        ValueError: If the command has unmatched quotes.
+    """
+    lexer = shlex.shlex(command, posix=True)
+    lexer.whitespace_split = True
+    # Treat shell operators as individual tokens by making them
+    # non-whitespace-split characters. We need to reconstruct
+    # sub-commands from tokens, splitting on operator tokens.
+    #
+    # Strategy: iterate character-by-character through the command,
+    # tracking quoting state via shlex, and split on operators that
+    # appear outside of quotes.
+    sub_commands: list[str] = []
+    current: list[str] = []
+    i = 0
+    in_single_quote = False
+    in_double_quote = False
+    escaped = False
+
+    while i < len(command):
+        ch = command[i]
+
+        # Handle escape sequences
+        if escaped:
+            current.append(ch)
+            escaped = False
+            i += 1
+            continue
+
+        if ch == '\\' and not in_single_quote:
+            current.append(ch)
+            escaped = True
+            i += 1
+            continue
+
+        # Handle quoting state
+        if ch == "'" and not in_double_quote:
+            in_single_quote = not in_single_quote
+            current.append(ch)
+            i += 1
+            continue
+
+        if ch == '"' and not in_single_quote:
+            in_double_quote = not in_double_quote
+            current.append(ch)
+            i += 1
+            continue
+
+        # If inside quotes, everything is literal
+        if in_single_quote or in_double_quote:
+            current.append(ch)
+            i += 1
+            continue
+
+        # Outside quotes: check for shell operators (longest match first)
+        matched = False
+        for op in _SHELL_OPERATORS:
+            if command[i:i + len(op)] == op:
+                # Found an unquoted operator -- split here
+                sub_commands.append("".join(current))
+                current = []
+                i += len(op)
+                matched = True
+                break
+
+        if not matched:
+            current.append(ch)
+            i += 1
+
+    # Append the last sub-command
+    sub_commands.append("".join(current))
+
+    return sub_commands
+
 
 class Bash(BaseTool):
     """
@@ -218,10 +311,6 @@ class Bash(BaseTool):
             # allowlist. Shell operators (;, |, &&, ||) can chain arbitrary
             # commands, so every sub-command must be validated.
             import re as _re
-            import shlex as _shlex
-
-            # Split on shell operators to get individual commands
-            sub_commands = _re.split(r'\s*(?:;|\|\||&&|\|)\s*', command)
 
             # SECURITY: Reject command substitution ($(...) and backticks)
             if '`' in command or '$(' in command:
@@ -275,12 +364,17 @@ class Bash(BaseTool):
                     ),
                 )
 
+            # Split command on shell operators using shlex-based lexical
+            # analysis (H-13). This properly handles quoting so that e.g.
+            # a semicolon inside quotes is not treated as a separator.
+            sub_commands = _split_shell_commands(command)
+
             for sub_cmd in sub_commands:
                 sub_cmd = sub_cmd.strip()
                 if not sub_cmd:
                     continue
                 try:
-                    shell_parts = _shlex.split(sub_cmd)
+                    shell_parts = shlex.split(sub_cmd)
                 except ValueError:
                     return ToolResult(
                         success=False,
@@ -315,7 +409,7 @@ class Bash(BaseTool):
                 if not sub_cmd:
                     continue
                 try:
-                    shell_parts = _shlex.split(sub_cmd)
+                    shell_parts = shlex.split(sub_cmd)
                 except ValueError:
                     continue  # Already validated above
                 for arg in shell_parts[1:]:

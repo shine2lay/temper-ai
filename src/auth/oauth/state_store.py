@@ -115,7 +115,8 @@ class InMemoryStateStore(StateStore):
                 ).isoformat()
             }
             self._store[state] = data_with_expiry
-        logger.debug(f"Stored state: {state} (TTL: {ttl_seconds}s)")
+        # SEC-14: Truncate state token in logs to prevent exposure
+        logger.debug(f"Stored state: {state[:8]}... (TTL: {ttl_seconds}s)")
 
     async def get_state(self, state: str) -> Optional[Dict[str, Any]]:
         """Retrieve and delete state data (one-time use).
@@ -306,7 +307,8 @@ class RedisStateStore(StateStore):
             value
         )
 
-        logger.debug(f"Stored OAuth state: {state} (TTL: {ttl_seconds}s)")
+        # SEC-14: Truncate state token in logs to prevent exposure
+        logger.debug(f"Stored OAuth state: {state[:8]}... (TTL: {ttl_seconds}s)")
 
     async def get_state(self, state: str) -> Optional[Dict[str, Any]]:
         """Retrieve and delete state data (atomic one-time use).
@@ -337,15 +339,18 @@ class RedisStateStore(StateStore):
         value = await self._redis.eval(lua_script, 1, key)
 
         if value is None:
-            logger.debug(f"State not found or expired: {state}")
+            # SEC-14: Truncate state token in logs
+            logger.debug(f"State not found or expired: {state[:8]}...")
             return None
 
         try:
             data = json.loads(value)
-            logger.debug(f"Retrieved and deleted state: {state}")
+            # SEC-14: Truncate state token in logs
+            logger.debug(f"Retrieved and deleted state: {state[:8]}...")
             return data
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to decode state data for {state}: {e}")
+            # SEC-14: Truncate state token in logs
+            logger.error(f"Failed to decode state data for {state[:8]}...: {e}")
             return None
 
     async def delete_state(self, state: str) -> bool:

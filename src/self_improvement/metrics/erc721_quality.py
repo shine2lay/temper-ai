@@ -9,6 +9,7 @@ Scores a workflow run output (0.0 - 1.0) based on:
 - Deployment (10%): Deploy script runs successfully
 """
 import logging
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,6 +56,38 @@ REQUIRED_PATTERNS = {
     "contracts": ".sol",
     "test": ".test.js",
 }
+
+
+def _validate_workspace_path(workspace: Path, allowed_root: Optional[Path] = None) -> Path:
+    """Validate that a workspace path does not escape the expected root.
+
+    M-12: Prevents path traversal attacks by resolving symlinks and verifying
+    the real path starts with the expected workspace root.
+
+    Args:
+        workspace: The workspace path to validate.
+        allowed_root: The root directory that workspace must reside within.
+                      If None, uses the current working directory.
+
+    Returns:
+        The resolved (real) workspace Path.
+
+    Raises:
+        ValueError: If the resolved path escapes the allowed root directory.
+    """
+    resolved = Path(os.path.realpath(workspace))
+    root = Path(os.path.realpath(allowed_root)) if allowed_root else Path(os.path.realpath(os.getcwd()))
+
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        raise ValueError(
+            f"Workspace path '{workspace}' resolves to '{resolved}' which is "
+            f"outside the allowed root directory '{root}'. "
+            "This may indicate a path traversal attempt."
+        )
+
+    return resolved
 
 
 def score_project_structure(workspace: Path, contract_name: str = "SimpleNFT") -> Dict[str, Any]:
@@ -340,6 +373,7 @@ def score_erc721_workflow(
     contract_name: str = "SimpleNFT",
     run_commands: bool = True,
     timeout: int = 120,
+    allowed_root: Optional[str] = None,
 ) -> ERC721QualityScore:
     """Score a complete ERC721 workflow run.
 
@@ -348,11 +382,21 @@ def score_erc721_workflow(
         contract_name: Name of the contract
         run_commands: Whether to run compile/test/deploy commands
         timeout: Timeout for each command
+        allowed_root: Optional root directory to constrain workspace paths.
+                      If provided, workspace_path must resolve within this root.
 
     Returns:
         ERC721QualityScore with total_score and breakdown
+
+    Raises:
+        ValueError: If workspace_path escapes the allowed root directory.
     """
     workspace = Path(workspace_path)
+
+    # M-12: Validate workspace path does not escape expected boundaries
+    root = Path(allowed_root) if allowed_root else None
+    workspace = _validate_workspace_path(workspace, root)
+
     breakdown = {}
 
     # 1. Project structure (20%)

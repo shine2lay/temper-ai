@@ -162,7 +162,7 @@ class WorkflowDomainState:
     query: Optional[str] = None
     input: Optional[str] = None
     context: Optional[str] = None
-    data: Optional[Any] = None
+    data: Optional[Dict[str, Any]] = None
 
     # Metadata and versioning
     version: str = "1.0"
@@ -439,8 +439,21 @@ class InfrastructureContext:
         return f"InfrastructureContext(components=[{', '.join(components)}])"
 
 
-# Renamed alias — avoids collision with src.core.context.ExecutionContext
-DomainExecutionContext = InfrastructureContext
+def DomainExecutionContext(*args: Any, **kwargs: Any) -> InfrastructureContext:
+    """Deprecated: Use InfrastructureContext directly.
+
+    This alias is retained for backward compatibility but will be removed
+    in a future version. All new code should use InfrastructureContext.
+    """
+    import warnings
+
+    warnings.warn(
+        "DomainExecutionContext is deprecated. "
+        "Use InfrastructureContext from src.compiler.domain_state instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    return InfrastructureContext(*args, **kwargs)
 
 
 def __getattr__(name: str) -> object:

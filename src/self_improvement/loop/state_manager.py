@@ -144,41 +144,30 @@ class LoopStateManager:
 
     def update_state(self, state: LoopState) -> None:
         """
-        Persist state to database.
+        Persist state to database using session.merge() for upsert.
+
+        Uses merge() instead of read-then-write to avoid race conditions
+        and reduce round-trips. merge() performs an INSERT or UPDATE based
+        on the primary key (agent_name).
 
         Args:
             state: LoopState to persist
         """
         state.updated_at = datetime.now(timezone.utc)
 
+        record = M5LoopStateRecord(
+            agent_name=state.agent_name,
+            current_phase=state.current_phase.value,
+            status=state.status.value,
+            iteration_number=state.iteration_number,
+            phase_data=state.phase_data if state.phase_data else None,
+            last_error=state.last_error,
+            started_at=state.started_at,
+            updated_at=state.updated_at,
+        )
+
         with self._session_factory() as session:
-            # Check if record exists
-            stmt = select(M5LoopStateRecord).where(
-                M5LoopStateRecord.agent_name == state.agent_name
-            )
-            record = session.exec(stmt).first()
-
-            if record:
-                record.current_phase = state.current_phase.value
-                record.status = state.status.value
-                record.iteration_number = state.iteration_number
-                record.phase_data = state.phase_data if state.phase_data else None
-                record.last_error = state.last_error
-                record.started_at = state.started_at
-                record.updated_at = state.updated_at
-            else:
-                record = M5LoopStateRecord(
-                    agent_name=state.agent_name,
-                    current_phase=state.current_phase.value,
-                    status=state.status.value,
-                    iteration_number=state.iteration_number,
-                    phase_data=state.phase_data if state.phase_data else None,
-                    last_error=state.last_error,
-                    started_at=state.started_at,
-                    updated_at=state.updated_at,
-                )
-                session.add(record)
-
+            session.merge(record)
             session.commit()
 
         logger.debug(f"Updated state for {state.agent_name}: {state.current_phase.value}")

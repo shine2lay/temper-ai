@@ -17,6 +17,33 @@ class PromptRenderError(Exception):
     pass
 
 
+def _is_safe_template_value(value: Any) -> bool:
+    """Check whether a value is safe to pass into Jinja2 templates.
+
+    Uses an allowlist approach: only serializable primitive types, lists,
+    tuples, and dicts (with string keys) are permitted.  Functions, classes,
+    modules, and other arbitrary objects are rejected.
+
+    Args:
+        value: The value to check.
+
+    Returns:
+        True if the value (and all nested children) contains only safe types.
+    """
+    if value is None:
+        return True
+    if isinstance(value, (str, int, float, bool)):
+        return True
+    if isinstance(value, (list, tuple)):
+        return all(_is_safe_template_value(v) for v in value)
+    if isinstance(value, dict):
+        return all(
+            isinstance(k, str) and _is_safe_template_value(v)
+            for k, v in value.items()
+        )
+    return False
+
+
 class PromptEngine:
     """
     Renders prompts from templates with variable substitution.

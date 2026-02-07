@@ -10,10 +10,14 @@ StandardAgent is the default agent type that executes a multi-turn loop:
 """
 from __future__ import annotations
 
+import asyncio
 import atexit
 import concurrent.futures
+import hashlib
 import json
 import logging
+import os
+import random
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -23,7 +27,7 @@ if TYPE_CHECKING:
 from src.agents.agent_observer import AgentObserver
 from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
 from src.agents.cost_estimator import estimate_cost
-from src.agents.llm.factory import create_llm_provider
+from src.agents.llm.factory import create_llm_from_config
 from src.agents.llm_providers import (
     AnthropicLLM,
     LLMError,
@@ -31,7 +35,7 @@ from src.agents.llm_providers import (
     OllamaLLM,
     OpenAILLM,
 )
-from src.agents.prompt_engine import PromptEngine, PromptRenderError
+from src.agents.prompt_engine import PromptEngine, PromptRenderError, _is_safe_template_value
 from src.agents.response_parser import (
     ANSWER_TAG,
     REASONING_TAGS,
@@ -57,11 +61,21 @@ OLLAMA_DEFAULT_PORT = 11434
 
 # Shared thread pool for parallel tool execution (M-28).
 # Avoids creating a new ThreadPoolExecutor per tool-call batch.
+# M-18: Pool size configurable via AGENT_TOOL_WORKERS env var.
+_TOOL_POOL_SIZE = int(os.environ.get("AGENT_TOOL_WORKERS", "4"))
 _TOOL_EXECUTOR_POOL = concurrent.futures.ThreadPoolExecutor(
-    max_workers=8,
+    max_workers=_TOOL_POOL_SIZE,
     thread_name_prefix="agent-tool"
 )
-atexit.register(_TOOL_EXECUTOR_POOL.shutdown, wait=False)
+
+
+# P-15: Graceful shutdown with wait=True so in-flight tool calls finish.
+# cancel_futures=True prevents queued-but-not-started work from executing.
+def _shutdown_pool() -> None:
+    _TOOL_EXECUTOR_POOL.shutdown(wait=True, cancel_futures=True)
+
+
+atexit.register(_shutdown_pool)
 
 
 def validate_input_data(
@@ -108,12 +122,16 @@ class StandardAgent(BaseAgent):
         super().__init__(config)
 
         self.prompt_engine = PromptEngine()
-        self.llm = create_llm_provider(self.config.agent.inference)
+        self.llm = create_llm_from_config(self.config.agent.inference)
         self.tool_registry = self._create_tool_registry()
 
         # Initialize prompt caching
         self._cached_tool_schemas: Optional[str] = None
         self._tool_registry_version: int = 0
+
+        # M-20: Cache native tool definitions to avoid recomputing each iteration
+        self._cached_native_tool_defs: Optional[List[Dict[str, Any]]] = None
+        self._cached_native_tool_defs_hash: Optional[str] = None
 
         self.validate_config()
 
@@ -279,6 +297,298 @@ class StandardAgent(BaseAgent):
                 error=f"Agent execution error: {safe_msg}"
             )
 
+    async def aexecute(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext] = None
+    ) -> AgentResponse:
+        """Async counterpart to execute().
+
+        H-34/M-20: Provides a proper async execution path so callers can
+        ``await agent.aexecute(...)`` without blocking the event loop.
+
+        Key differences from sync execute():
+        - Uses ``asyncio.sleep`` with exponential backoff + jitter for retries.
+        - Delegates CPU-bound / blocking LLM calls to a thread via
+          ``asyncio.get_event_loop().run_in_executor``.
+        - Otherwise mirrors the sync execute() logic exactly.
+        """
+        validate_input_data(input_data, context)
+
+        self._execution_context = context
+        _tool_executor = input_data.get('tool_executor', None)
+        if _tool_executor is not None:
+            from src.tools.executor import ToolExecutor
+            if not isinstance(_tool_executor, ToolExecutor):
+                raise TypeError(
+                    f"tool_executor must be a ToolExecutor instance, "
+                    f"got {type(_tool_executor).__name__}"
+                )
+        self.tool_executor = _tool_executor
+        self.tracker = input_data.get('tracker', None)
+        self._observer = AgentObserver(self.tracker, self._execution_context)
+        logger.info("[%s] Starting async execution", self.name)
+
+        start_time = time.time()
+        tool_calls_made: list[dict[str, Any]] = []
+        total_tokens = 0
+        total_cost = 0.0
+        llm_response = None
+
+        self._conversation_turns: List[str] = []
+
+        try:
+            prompt = self._render_prompt(input_data, context)
+            self._system_prompt = prompt
+            prompt_preview = prompt[-200:].replace('\n', ' ').strip()
+            logger.info("[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), prompt_preview)
+
+            max_iterations = self.config.agent.safety.max_tool_calls_per_execution
+            max_execution_time = self.config.agent.safety.max_execution_time_seconds
+
+            for iteration in range(max_iterations):
+                elapsed = time.time() - start_time
+                if elapsed >= max_execution_time:
+                    return self._build_final_response(
+                        output=llm_response.content if llm_response else "",
+                        reasoning=extract_reasoning(llm_response.content) if llm_response else None,
+                        tool_calls=tool_calls_made,
+                        tokens=total_tokens,
+                        cost=total_cost,
+                        start_time=start_time,
+                        error=f"Execution time limit exceeded ({max_execution_time}s)",
+                        metadata={"elapsed_seconds": elapsed, "iteration": iteration}
+                    )
+
+                iteration_result = await self._aexecute_iteration(
+                    prompt, total_tokens, total_cost, tool_calls_made, start_time, max_iterations
+                )
+
+                if iteration_result["complete"]:
+                    return iteration_result["response"]  # type: ignore[no-any-return]
+
+                llm_response = iteration_result["llm_response"]
+                prompt = iteration_result["next_prompt"]
+                total_tokens = iteration_result["total_tokens"]
+                total_cost = iteration_result["total_cost"]
+                tool_calls_made = iteration_result["tool_calls_made"]
+
+            return self._build_final_response(
+                output=llm_response.content if llm_response else "",
+                reasoning=extract_reasoning(llm_response.content) if llm_response else None,
+                tool_calls=tool_calls_made,
+                tokens=total_tokens,
+                cost=total_cost,
+                start_time=start_time,
+                error="Max tool calling iterations reached",
+                metadata={"iterations": max_iterations}
+            )
+
+        except Exception as e:
+            safe_msg = sanitize_error_message(str(e))
+            logger.warning("Agent async execution error: %s", safe_msg, exc_info=True)
+            return self._build_final_response(
+                output="",
+                reasoning=None,
+                tool_calls=tool_calls_made,
+                tokens=total_tokens,
+                cost=total_cost,
+                start_time=start_time,
+                error=f"Agent execution error: {safe_msg}"
+            )
+
+    async def _aexecute_iteration(
+        self,
+        prompt: str,
+        total_tokens: int,
+        total_cost: float,
+        tool_calls_made: List[Dict[str, Any]],
+        start_time: float,
+        max_iterations: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Async counterpart to _execute_iteration.
+
+        Runs blocking LLM calls in a thread executor and uses
+        asyncio.sleep for retry backoff with jitter.
+        """
+        inf_config = self.config.agent.inference
+        max_agent_retries = inf_config.max_retries
+        retry_delay = float(inf_config.retry_delay_seconds)
+
+        # Safety validation (same fail-closed logic as sync path)
+        if hasattr(self, 'tool_executor') and self.tool_executor is not None:
+            if self.tool_executor.policy_engine is not None:
+                try:
+                    from src.safety.action_policy_engine import PolicyExecutionContext
+
+                    ctx = getattr(self, '_execution_context', None)
+                    agent_id = ctx.agent_id if ctx and ctx.agent_id else self.config.agent.name
+                    workflow_id = ctx.workflow_id if ctx and ctx.workflow_id else "unknown"
+                    stage_id = ctx.stage_id if ctx and ctx.stage_id else "unknown"
+
+                    validation_result = self.tool_executor.policy_engine.validate_action_sync(
+                        action={"type": "llm_call", "model": inf_config.model, "prompt_length": len(prompt)},
+                        context=PolicyExecutionContext(
+                            agent_id=agent_id,
+                            workflow_id=workflow_id,
+                            stage_id=stage_id,
+                            action_type="llm_call",
+                            action_data={"model": inf_config.model}
+                        )
+                    )
+
+                    if not validation_result.allowed:
+                        violations_msg = "; ".join(v.message for v in validation_result.violations)
+                        logger.warning(f"LLM call blocked by safety policy: {violations_msg}")
+                        return {
+                            "complete": True,
+                            "response": self._build_final_response(
+                                output="",
+                                reasoning=None,
+                                tool_calls=tool_calls_made,
+                                tokens=total_tokens,
+                                cost=total_cost,
+                                start_time=start_time,
+                                error=f"LLM call blocked by safety policy: {violations_msg}"
+                            )
+                        }
+                except Exception as e:
+                    logger.error(
+                        "LLM call safety validation failed (fail-closed): %s",
+                        e, exc_info=True
+                    )
+                    return {
+                        "complete": True,
+                        "response": self._build_final_response(
+                            output="",
+                            reasoning=None,
+                            tool_calls=tool_calls_made,
+                            tokens=total_tokens,
+                            cost=total_cost,
+                            start_time=start_time,
+                            error=f"Safety validation error (fail-closed): {sanitize_error_message(str(e))}"
+                        )
+                    }
+
+        # Call LLM with agent-level retries (async backoff with jitter)
+        loop = asyncio.get_event_loop()
+        llm_response = None
+        last_error = None
+
+        for attempt in range(max_agent_retries + 1):
+            try:
+                llm_kwargs: Dict[str, Any] = {}
+                native_tools = self._get_native_tool_definitions()
+                if native_tools:
+                    llm_kwargs["tools"] = native_tools
+
+                # Run blocking LLM call in thread pool
+                llm_response = await loop.run_in_executor(
+                    None, lambda: self.llm.complete(prompt, **llm_kwargs)
+                )
+                logger.info(
+                    "[%s] LLM responded (%s tokens)",
+                    self.name,
+                    llm_response.total_tokens or "?",
+                )
+                break
+            except LLMError as e:
+                last_error = e
+                safe_err = sanitize_error_message(str(e))
+                if attempt < max_agent_retries:
+                    # Exponential backoff with jitter: delay * 2^attempt * uniform(0.5, 1.5)
+                    backoff_delay = retry_delay * (2.0 ** attempt) * (0.5 + random.random())
+                    logger.warning(
+                        "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
+                        attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
+                    )
+                    await asyncio.sleep(backoff_delay)
+                else:
+                    logger.error(
+                        "LLM call failed after %d attempts: %s",
+                        max_agent_retries + 1, safe_err, exc_info=True
+                    )
+
+        if llm_response is None:
+            return {
+                "complete": True,
+                "response": self._build_final_response(
+                    output="",
+                    reasoning=None,
+                    tool_calls=tool_calls_made,
+                    tokens=total_tokens,
+                    cost=total_cost,
+                    start_time=start_time,
+                    error=f"LLM call failed after {max_agent_retries + 1} attempts: {sanitize_error_message(str(last_error))}"
+                )
+            }
+
+        # Track tokens and cost
+        if llm_response.total_tokens:
+            total_tokens += llm_response.total_tokens
+        total_cost += self._estimate_cost(llm_response)
+
+        # Track LLM call via observer
+        self._observer.track_llm_call(
+            provider=inf_config.provider,
+            model=inf_config.model,
+            prompt=prompt,
+            response=llm_response.content,
+            prompt_tokens=llm_response.prompt_tokens or 0,
+            completion_tokens=llm_response.completion_tokens or 0,
+            latency_ms=int(llm_response.latency_ms) if hasattr(llm_response, 'latency_ms') and llm_response.latency_ms else 0,
+            estimated_cost_usd=self._estimate_cost(llm_response),
+            temperature=inf_config.temperature,
+            max_tokens=inf_config.max_tokens,
+            status="success"
+        )
+
+        # Parse tool calls
+        tool_calls = parse_tool_calls(llm_response.content)
+
+        if tool_calls:
+            tool_names = ", ".join(tc.get("name", "?") for tc in tool_calls)
+            logger.info("[%s] Calling %d tool(s): %s", self.name, len(tool_calls), tool_names)
+
+        if not tool_calls:
+            return {
+                "complete": True,
+                "response": self._build_final_response(
+                    output=extract_final_answer(llm_response.content),
+                    reasoning=extract_reasoning(llm_response.content),
+                    tool_calls=tool_calls_made,
+                    tokens=total_tokens,
+                    cost=total_cost,
+                    start_time=start_time,
+                    error=None
+                )
+            }
+
+        # Execute tools (reuse sync tool execution — tools are typically I/O-bound
+        # but the tool executor itself is sync; run in thread to avoid blocking)
+        tool_results = await loop.run_in_executor(
+            None, lambda: self._execute_tool_calls(tool_calls)
+        )
+        tool_calls_made.extend(tool_results)
+
+        remaining_budget = None
+        if max_iterations is not None:
+            remaining_budget = max_iterations - len(tool_calls_made)
+
+        next_prompt = self._inject_tool_results(
+            prompt, llm_response.content, tool_results,
+            remaining_tool_calls=remaining_budget
+        )
+
+        return {
+            "complete": False,
+            "llm_response": llm_response,
+            "next_prompt": next_prompt,
+            "total_tokens": total_tokens,
+            "total_cost": total_cost,
+            "tool_calls_made": tool_calls_made
+        }
+
     def _execute_iteration(
         self,
         prompt: str,
@@ -331,7 +641,24 @@ class StandardAgent(BaseAgent):
                             )
                         }
                 except Exception as e:
-                    logger.warning(f"LLM call safety validation error: {e}")
+                    # C-02/H-02: Fail-closed — safety validation errors MUST block execution.
+                    # Never silently continue when the safety stack is broken.
+                    logger.error(
+                        "LLM call safety validation failed (fail-closed): %s",
+                        e, exc_info=True
+                    )
+                    return {
+                        "complete": True,
+                        "response": self._build_final_response(
+                            output="",
+                            reasoning=None,
+                            tool_calls=tool_calls_made,
+                            tokens=total_tokens,
+                            cost=total_cost,
+                            start_time=start_time,
+                            error=f"Safety validation error (fail-closed): {sanitize_error_message(str(e))}"
+                        )
+                    }
 
         # Call LLM with agent-level retries
         llm_response = None
@@ -643,8 +970,12 @@ class StandardAgent(BaseAgent):
 
         prompt_config = self.config.agent.prompt
 
-        internal_vars = {'tracker', 'config_loader', 'tool_registry', 'workflow_id', 'tool_executor', 'show_details', 'detail_console', 'visualizer'}
-        filtered_input = {k: v for k, v in input_data.items() if k not in internal_vars}
+        # M-08: Use allowlist approach instead of denylist.  Only pass values
+        # whose types are safe for Jinja2 templates (str, int, float, bool,
+        # list, dict, tuple, None).  This automatically excludes internal
+        # framework objects (tracker, tool_registry, console, etc.) without
+        # needing to maintain a fragile denylist of variable names.
+        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
 
         all_variables = {**filtered_input, **prompt_config.variables}
 
@@ -709,13 +1040,27 @@ class StandardAgent(BaseAgent):
         return tools_section
 
     def _get_native_tool_definitions(self) -> Optional[List[Dict[str, Any]]]:
-        """Build native tool definitions for providers that support them."""
+        """Build native tool definitions for providers that support them.
+
+        M-20: Results are cached and only recomputed when the tool registry
+        contents change (detected via a hash of tool names).
+        """
         if not isinstance(self.llm, (OllamaLLM, OpenAILLM, AnthropicLLM)):
             return None
 
         tools_dict = self.tool_registry.get_all_tools()
         if not tools_dict:
             return None
+
+        # Check cache validity using a hash of sorted tool names
+        tool_names_key = ",".join(sorted(tools_dict.keys()))
+        current_hash = hashlib.md5(tool_names_key.encode()).hexdigest()
+
+        if (
+            self._cached_native_tool_defs is not None
+            and self._cached_native_tool_defs_hash == current_hash
+        ):
+            return self._cached_native_tool_defs
 
         native_tools = []
         for tool in tools_dict.values():
@@ -739,7 +1084,10 @@ class StandardAgent(BaseAgent):
                 "function": function_def,
             })
 
-        return native_tools if native_tools else None
+        result = native_tools if native_tools else None
+        self._cached_native_tool_defs = result
+        self._cached_native_tool_defs_hash = current_hash
+        return result
 
     # Delegate to extracted modules for backward compatibility
     def _parse_tool_calls(self, llm_response: str) -> List[Dict[str, Any]]:

@@ -12,7 +12,7 @@ from src.agents.base_agent import (
     BaseAgent,
     ExecutionContext,
 )
-from src.agents.llm_providers import (
+from src.agents.llm import (
     AnthropicLLM,
     # Base classes
     BaseLLM,

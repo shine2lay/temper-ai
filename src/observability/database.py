@@ -134,9 +134,10 @@ class DatabaseManager:
     def create_all_tables(self) -> None:
         """Create all tables in the database.
 
-        M5 experiment tables (m5_experiments, m5_experiment_results) are now
-        managed by SQLModel via storage.experiment_models and created
-        automatically by metadata.create_all().
+        WARNING: For production use, schema changes MUST go through Alembic
+        migrations (see alembic/versions/). This method is retained for
+        test fixtures that need a quick in-memory schema setup.
+        Do NOT call this in production startup paths.
         """
         # Ensure M5 experiment models are imported so SQLModel registers them
         import src.self_improvement.storage.experiment_models  # noqa: F401
@@ -250,7 +251,17 @@ def init_database(database_url: Optional[str] = None) -> DatabaseManager:
                 f"Failed to connect to database: {_mask_database_url(database_url)}"
             ) from e
 
-        _db_manager.create_all_tables()
+        # H-22: Alembic is the sole DDL strategy for production deployments.
+        # In production, set ALEMBIC_MANAGED=1 so that init_database() skips
+        # create_all_tables() and relies on `alembic upgrade head` instead.
+        # For dev/test (the default), tables are auto-created for convenience.
+        if not os.getenv("ALEMBIC_MANAGED"):
+            _db_manager.create_all_tables()
+        else:
+            logger.info(
+                "ALEMBIC_MANAGED is set -- skipping create_all_tables(). "
+                "Run 'alembic upgrade head' to apply schema."
+            )
         logger.info(f"Database initialized successfully: {_mask_database_url(database_url)}")
         return _db_manager
 

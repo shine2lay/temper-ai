@@ -32,6 +32,13 @@ from src.compiler.domain_state import (
     create_initial_domain_state,
     merge_domain_states,
 )
+from src.compiler.engine_registry import EngineRegistry
+from src.compiler.execution_engine import (
+    CompiledWorkflow,
+    ExecutionEngine,
+    ExecutionMode,
+    WorkflowCancelledError,
+)
 
 # Note: LangGraphCompiler not imported here to avoid circular imports
 # Import directly: from src.compiler.langgraph_compiler import LangGraphCompiler
@@ -42,14 +49,17 @@ from src.compiler.domain_state import (
 # with src.core.context.ExecutionContext).
 
 __all__ = [
+    # Config loading
     "ConfigLoader",
     "ConfigNotFoundError",
     "ConfigValidationError",
+    # Domain state
     "WorkflowDomainState",
     "InfrastructureContext",
     "DomainExecutionContext",
     "create_initial_domain_state",
     "merge_domain_states",
+    # Checkpoint management
     "CheckpointManager",
     "CheckpointStrategy",
     "CheckpointSaveError",
@@ -59,4 +69,10 @@ __all__ = [
     "FileCheckpointBackend",
     "RedisCheckpointBackend",
     "CheckpointNotFoundError",
+    # Execution engine
+    "EngineRegistry",
+    "ExecutionEngine",
+    "ExecutionMode",
+    "CompiledWorkflow",
+    "WorkflowCancelledError",
 ]

@@ -11,7 +11,6 @@ import json
 import logging
 import os
 import re
-import sys
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Match, Optional, Union, cast
@@ -197,9 +196,7 @@ class ConfigLoader:
 
         # Try to lazy-initialize ConfigDeployer
         try:
-            # Import coordination database
-            coord_db_path = Path.cwd() / ".claude-coord"
-            sys.path.insert(0, str(coord_db_path))
+            # Import coordination database (must be on sys.path or installed)
             from coord_service.database import Database
 
             # Import ConfigDeployer
@@ -214,8 +211,15 @@ class ConfigLoader:
 
             logger.debug("Initialized ConfigDeployer for M5 integration (lazy init)")
 
+        except ImportError as e:
+            # coord_service not available - continue with YAML-only mode
+            logger.debug(
+                f"coord_service not available, using YAML-only mode: {e}"
+            )
+            self.config_deployer = None
+            self._config_deployer_available = False
         except Exception as e:
-            # ConfigDeployer not available - continue with YAML-only mode
+            # Other initialization error - continue with YAML-only mode
             logger.debug(
                 f"ConfigDeployer not available, using YAML-only mode: {e}"
             )

@@ -430,7 +430,9 @@ class TestWebScraperEdgeCases:
         """Test content exceeding maximum size is rejected."""
         scraper = WebScraper()
 
-        with patch('src.tools.web_scraper.httpx.Client') as mock_client:
+        # Mock SSRF validation to pass for example.com
+        with patch('src.tools.web_scraper.validate_url_safety', return_value=(True, None)), \
+             patch('src.tools.web_scraper.httpx.Client') as mock_client:
             # 6MB content (exceeds 5MB limit)
             large_content = b"x" * (6 * 1024 * 1024)
 
@@ -438,8 +440,14 @@ class TestWebScraperEdgeCases:
             mock_response.status_code = 200
             mock_response.headers = {"content-type": "text/html"}
             mock_response.content = large_content
+            mock_response.is_redirect = False  # Not a redirect
+            mock_response.text = "x" * (6 * 1024 * 1024)  # Add text property
 
-            mock_client.return_value.__enter__.return_value.get.return_value = mock_response
+            # Mock the client directly (not as context manager)
+            mock_instance = MagicMock()
+            mock_instance.get.return_value = mock_response
+            mock_instance.is_closed = False
+            mock_client.return_value = mock_instance
 
             result = scraper.execute(url="http://example.com/large.html")
 

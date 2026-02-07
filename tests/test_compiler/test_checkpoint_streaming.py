@@ -54,9 +54,9 @@ def test_checkpoint_interval_respected(tmp_path):
     checkpoint_manager = CheckpointManager(storage_path=str(tmp_path))
     original_save = checkpoint_manager.save_checkpoint
 
-    def track_save(workflow_id, domain_state):
+    def track_save(domain_state, **kwargs):
         save_calls.append(domain_state.current_stage)
-        return original_save(workflow_id, domain_state)
+        return original_save(domain_state, **kwargs)
 
     checkpoint_manager.save_checkpoint = track_save
 
@@ -217,11 +217,11 @@ def test_checkpoint_error_handling_doesnt_mask_original_error(tmp_path):
 
     call_count = [0]
 
-    def failing_save(workflow_id, domain_state):
+    def failing_save(domain_state, **kwargs):
         call_count[0] += 1
         # First call (interval checkpoint) succeeds
         if call_count[0] == 1:
-            return original_save(workflow_id, domain_state)
+            return original_save(domain_state, **kwargs)
         # Second call (error handling checkpoint) fails
         else:
             raise IOError("Checkpoint save failed during error handling")

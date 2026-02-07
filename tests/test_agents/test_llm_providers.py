@@ -2109,15 +2109,23 @@ class TestConnectionPoolCleanup:
         assert llm._async_client is None
 
     def test_del_cleanup_sync_client(self):
-        """Verify __del__ cleanup closes sync client."""
+        """Verify __del__ emits warning for unclosed sync client."""
+        import warnings
+
         llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
         client = llm._get_client()
         assert isinstance(client, httpx.Client), \
             f"Expected httpx.Client, got {type(client)}"
 
-        # Trigger garbage collection cleanup
-        llm.__del__()
-        assert llm._client is None
+        # Verify __del__ emits ResourceWarning (new design philosophy)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            llm.__del__()
+
+            # Should emit ResourceWarning about improper cleanup
+            assert len(w) == 1
+            assert issubclass(w[0].category, ResourceWarning)
+            assert "not properly closed" in str(w[0].message)
 
     def test_del_cleanup_async_client(self):
         """Verify __del__ cleanup closes async client (code-high-02).

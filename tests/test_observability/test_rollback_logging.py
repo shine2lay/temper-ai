@@ -25,8 +25,19 @@ class TestRollbackLogging:
         """Create mock database manager."""
         mock_manager = Mock()
         mock_session = MagicMock()
-        mock_manager.session.return_value.__enter__.return_value = mock_session
-        mock_manager.session.return_value.__exit__.return_value = None
+
+        # Create context manager that simulates real session behavior
+        class MockSessionContext:
+            def __enter__(self):
+                return mock_session
+
+            def __exit__(self, exc_type, exc_val, exc_tb):
+                # Simulate context manager calling commit on successful exit
+                if exc_type is None:
+                    mock_session.commit()
+                return None
+
+        mock_manager.session.return_value = MockSessionContext()
         return mock_manager, mock_session
 
     @pytest.fixture

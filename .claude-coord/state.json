@@ -4,6 +4,11 @@
       "pid": 1630957,
       "registered_at": "2026-02-04 07:27:50",
       "last_heartbeat": "2026-02-04 07:27:50"
+    },
+    "agent-32e0e6": {
+      "pid": 1642608,
+      "registered_at": "2026-02-04 08:06:10",
+      "last_heartbeat": "2026-02-04 08:06:10"
     }
   },
   "locks": {},
@@ -51,6 +56,94 @@
       "created_at": "2026-02-04 07:33:05",
       "started_at": null,
       "completed_at": null
+    },
+    "test-quick-dialogue-suite": {
+      "subject": "Create comprehensive test suite for DialogueOrchestrator",
+      "description": "Create tests/test_strategies/test_dialogue.py with unit tests, integration tests, and edge cases. Target: 300-400 lines, >80% coverage.",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-32e0e6",
+      "created_at": "2026-02-04 08:06:21",
+      "started_at": "2026-02-04 08:06:36",
+      "completed_at": "2026-02-04 08:08:26"
+    },
+    "docs-quick-dialogue-examples": {
+      "subject": "Create dialogue configuration examples",
+      "description": "Create examples/dialogue_simple.yaml, examples/dialogue_advanced.yaml, and configs/agents/dialogue_aware_agent.yaml",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-32e0e6",
+      "created_at": "2026-02-04 08:06:25",
+      "started_at": "2026-02-04 08:08:31",
+      "completed_at": "2026-02-04 08:09:25"
+    },
+    "test-quick-dialogue-validation": {
+      "subject": "Create end-to-end validation script",
+      "description": "Create examples/validate_dialogue_orchestrator.py to validate dialogue works end-to-end. Target: 150-200 lines.",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-32e0e6",
+      "created_at": "2026-02-04 08:06:28",
+      "started_at": "2026-02-04 08:09:30",
+      "completed_at": "2026-02-04 08:10:38"
+    },
+    "docs-quick-dialogue-guide": {
+      "subject": "Write user documentation",
+      "description": "Create docs/collaboration_strategies.md user guide and update ARCHITECTURE_ISSUES_BACKLOG.md to mark Issue #20 complete.",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-32e0e6",
+      "created_at": "2026-02-04 08:06:31",
+      "started_at": "2026-02-04 08:10:43",
+      "completed_at": "2026-02-04 08:13:01"
+    },
+    "code-med-semantic-convergence": {
+      "subject": "Implement semantic convergence detection for DialogueOrchestrator",
+      "description": "Add semantic similarity comparison using embeddings instead of exact string matching. Use sentence-transformers to detect when agents express the same idea differently. Fallback to exact match if embeddings unavailable.",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-32e0e6",
+      "created_at": "2026-02-04 08:17:04",
+      "started_at": "2026-02-04 08:17:28",
+      "completed_at": "2026-02-04 08:21:44"
+    },
+    "code-med-role-dialogue": {
+      "subject": "Implement role-based dialogue system",
+      "description": "Add agent role system (proposer, critic, synthesizer, reviewer) for structured dialogue. Modify agent re-invocation to pass role context. Update prompt templates with role-specific instructions.",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-32e0e6",
+      "created_at": "2026-02-04 08:17:11",
+      "started_at": "2026-02-04 08:24:22",
+      "completed_at": "2026-02-04 08:27:32"
+    },
+    "code-med-context-curation": {
+      "subject": "Implement context curation for dialogue history",
+      "description": "Add selective history propagation based on relevance. Support context strategies: full, recent, relevant. Implement filtering in agent re-invocation.",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-32e0e6",
+      "created_at": "2026-02-04 08:17:15",
+      "started_at": "2026-02-04 08:32:29",
+      "completed_at": "2026-02-04 08:36:36"
+    },
+    "code-med-merit-weighted": {
+      "subject": "Implement merit-weighted dialogue synthesis",
+      "description": "Use AgentMeritScore to weight agent opinions in final synthesis. Query merit scores from observability tracker. High-merit agents weighted more heavily. Fallback to equal weighting if scores unavailable.",
+      "activeForm": null,
+      "priority": 2,
+      "status": "completed",
+      "owner": "agent-32e0e6",
+      "created_at": "2026-02-04 08:17:20",
+      "started_at": "2026-02-04 08:40:26",
+      "completed_at": "2026-02-04 08:44:18"
     }
   }
 }

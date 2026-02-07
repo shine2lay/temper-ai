@@ -193,6 +193,12 @@ class StandardAgent(BaseAgent):
 
             if tool_config:
                 logger.debug(f"Tool config provided for {tool_name}: {tool_config}")
+                # Apply config to tool instance
+                if hasattr(tool_instance, 'config'):
+                    if isinstance(tool_instance.config, dict):
+                        tool_instance.config.update(tool_config)
+                    else:
+                        tool_instance.config = tool_config
 
     def execute(
         self,

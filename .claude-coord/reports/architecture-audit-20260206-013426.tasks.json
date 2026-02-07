@@ -1,0 +1,190 @@
+{
+  "audit_date": "2026-02-06",
+  "report": ".claude-coord/reports/architecture-audit-20260206-013426.md",
+  "tasks": [
+    {
+      "id": "C-01",
+      "severity": "CRITICAL",
+      "category": "coverage-gap",
+      "subject": "Add tests for src/safety/config_change_policy.py (435 lines, zero coverage)",
+      "file": "src/safety/config_change_policy.py",
+      "effort": "medium"
+    },
+    {
+      "id": "C-02",
+      "severity": "CRITICAL",
+      "category": "coverage-gap",
+      "subject": "Add tests for src/observability/alerting.py (407 lines, zero coverage)",
+      "file": "src/observability/alerting.py",
+      "effort": "medium"
+    },
+    {
+      "id": "C-03",
+      "severity": "CRITICAL",
+      "category": "coverage-gap",
+      "subject": "Add tests for src/utils/error_handling.py (315 lines, zero coverage)",
+      "file": "src/utils/error_handling.py",
+      "effort": "medium"
+    },
+    {
+      "id": "C-04",
+      "severity": "CRITICAL",
+      "category": "blocking-io",
+      "subject": "Add async execution path to StandardAgent (time.sleep blocks event loop)",
+      "file": "src/agents/standard_agent.py:362",
+      "effort": "large"
+    },
+    {
+      "id": "H-01",
+      "severity": "HIGH",
+      "category": "resource-leak",
+      "subject": "Fix buffer _flush_unsafe to swap-and-release (holds lock during DB I/O)",
+      "file": "src/observability/buffer.py:338-351",
+      "effort": "small"
+    },
+    {
+      "id": "H-02",
+      "severity": "HIGH",
+      "category": "race-condition",
+      "subject": "Initialize asyncio.Lock eagerly in FailoverProvider (race on lazy creation)",
+      "file": "src/agents/llm_failover.py:166-170",
+      "effort": "small"
+    },
+    {
+      "id": "H-03",
+      "severity": "HIGH",
+      "category": "error-handling",
+      "subject": "Fix Redis checkpoint TypeError (None * 2 crashes every save with default config)",
+      "file": "src/compiler/checkpoint_backends.py:544",
+      "effort": "trivial"
+    },
+    {
+      "id": "H-04",
+      "severity": "HIGH",
+      "category": "graceful-degradation",
+      "subject": "Add LRU eviction to BaseLLM._circuit_breakers (unbounded growth)",
+      "file": "src/agents/llm/base.py:99",
+      "effort": "small"
+    },
+    {
+      "id": "H-05",
+      "severity": "HIGH",
+      "category": "injection",
+      "subject": "Replace regex splitting with shlex.split in bash tool shell mode",
+      "file": "src/tools/bash.py:216-343",
+      "effort": "medium"
+    },
+    {
+      "id": "H-06",
+      "severity": "HIGH",
+      "category": "auth",
+      "subject": "Fix OAuth token confusion (use per-flow identifier instead of 'anonymous')",
+      "file": "src/auth/routes.py:310-314",
+      "effort": "small"
+    },
+    {
+      "id": "H-07",
+      "severity": "HIGH",
+      "category": "error-contract",
+      "subject": "Make SecurityError inherit from FrameworkException (currently bypasses catch-all)",
+      "file": "src/utils/exceptions.py:563",
+      "effort": "small"
+    },
+    {
+      "id": "H-08",
+      "severity": "HIGH",
+      "category": "coupling",
+      "subject": "Clean up triple shim chain (delete src/llm/, update circuit breaker imports)",
+      "file": "src/llm/, src/agents/llm_providers.py, src/safety/circuit_breaker.py",
+      "effort": "medium"
+    },
+    {
+      "id": "H-09",
+      "severity": "HIGH",
+      "category": "boundaries",
+      "subject": "Define safety/security boundary (consolidate rate limiting, implement protocols)",
+      "file": "src/safety/ + src/security/",
+      "effort": "large"
+    },
+    {
+      "id": "H-10",
+      "severity": "HIGH",
+      "category": "dependency-direction",
+      "subject": "Inject AgentFactory into executors (break infrastructure->application dependency)",
+      "file": "src/compiler/executors/sequential.py:18, parallel.py:10",
+      "effort": "medium"
+    },
+    {
+      "id": "H-11",
+      "severity": "HIGH",
+      "category": "consistency",
+      "subject": "Unify dual LLM factory functions (create_llm_provider vs create_llm_client)",
+      "file": "src/agents/llm/factory.py:14,70",
+      "effort": "small"
+    },
+    {
+      "id": "H-12",
+      "severity": "HIGH",
+      "category": "migration",
+      "subject": "Generate Alembic migration for 7 missing tables (experimentation + M5)",
+      "file": "alembic/",
+      "effort": "small"
+    },
+    {
+      "id": "H-13",
+      "severity": "HIGH",
+      "category": "data-integrity",
+      "subject": "Add ON DELETE CASCADE to experimentation FK columns",
+      "file": "src/experimentation/models.py:189,251,315",
+      "effort": "small"
+    },
+    {
+      "id": "H-14",
+      "severity": "HIGH",
+      "category": "data-integrity",
+      "subject": "Add ON DELETE CASCADE to M5 FK columns + cascade on Relationship",
+      "file": "src/self_improvement/storage/experiment_models.py:90,49",
+      "effort": "small"
+    },
+    {
+      "id": "H-15",
+      "severity": "HIGH",
+      "category": "migration",
+      "subject": "Resolve dual schema management (remove create_all from production startup)",
+      "file": "src/observability/database.py:140-143",
+      "effort": "medium"
+    },
+    {
+      "id": "H-16",
+      "severity": "HIGH",
+      "category": "coverage-gap",
+      "subject": "Add tests for src/observability/aggregation.py (536 lines, zero coverage)",
+      "file": "src/observability/aggregation.py",
+      "effort": "medium"
+    },
+    {
+      "id": "H-17",
+      "severity": "HIGH",
+      "category": "coverage-gap",
+      "subject": "Add tests for src/cli/rollback.py (232 lines, zero coverage)",
+      "file": "src/cli/rollback.py",
+      "effort": "medium"
+    },
+    {
+      "id": "H-18",
+      "severity": "HIGH",
+      "category": "mock-quality",
+      "subject": "Add spec= to priority mocks (ConfigLoader, AgentFactory, ToolRegistry, ExecutionTracker)",
+      "file": "Multiple test files",
+      "effort": "large"
+    },
+    {
+      "id": "H-19",
+      "severity": "HIGH",
+      "category": "coverage-gap",
+      "subject": "Add comprehensive StandardAgent tests (tool failures, native tools, concurrent execution)",
+      "file": "tests/test_agents/test_standard_agent.py",
+      "effort": "medium"
+    }
+  ]
+}

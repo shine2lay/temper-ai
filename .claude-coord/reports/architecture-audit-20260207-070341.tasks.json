@@ -1,0 +1,132 @@
+[
+  {
+    "id": "audit-crit-01",
+    "subject": "Guard coord_service imports and remove sys.path manipulation",
+    "description": "Remove sys.path.insert() from deployer.py, cli.py, config_loader.py. Guard all coord_service imports with try/except ImportError. Declare as optional dependency in pyproject.toml[extras].",
+    "severity": "CRITICAL",
+    "original_agent": "structural-architect + security-auditor",
+    "agreement": "consensus",
+    "file": "deployer.py:31, cli.py:32, config_loader.py:199-212",
+    "related_findings": ["S-00", "Sec-03"]
+  },
+  {
+    "id": "audit-crit-02",
+    "subject": "Add async agent execution path with jittered retry",
+    "description": "Add async def aexecute() to StandardAgent using asyncio.sleep() for retries with jittered backoff. Prevents thread pool starvation during parallel agent execution.",
+    "severity": "CRITICAL",
+    "original_agent": "performance-reviewer",
+    "agreement": "consensus",
+    "file": "standard_agent.py:362",
+    "related_findings": ["P-01", "R-15"]
+  },
+  {
+    "id": "audit-crit-03",
+    "subject": "Add tests for untested observability modules (alerting, merit_score_service, decision_tracker, aggregation)",
+    "description": "Create test files for 4 observability modules with zero coverage. Priority: alerting.py (HALT_WORKFLOW can silently fail) and merit_score_service.py (has latent data corruption bug D-01).",
+    "severity": "CRITICAL",
+    "original_agent": "test-analyst",
+    "agreement": "unanimous",
+    "file": "src/observability/alerting.py, merit_score_service.py, decision_tracker.py, aggregation.py",
+    "related_findings": ["T-01", "D-01"]
+  },
+  {
+    "id": "audit-crit-04",
+    "subject": "Add tests for CLI rollback and detail_report",
+    "description": "Create tests/test_cli/test_rollback.py using Click CliRunner. rollback.py is safety-critical (executes state changes). detail_report.py is user-facing.",
+    "severity": "CRITICAL",
+    "original_agent": "test-analyst",
+    "agreement": "unanimous",
+    "file": "src/cli/rollback.py, src/cli/detail_report.py",
+    "related_findings": ["T-02"]
+  },
+  {
+    "id": "audit-crit-05",
+    "subject": "Add tests for security_limits.py constants",
+    "description": "Create tests/test_compiler/test_security_limits.py verifying each limit constant and behavior when exceeded. These are the only defense against memory exhaustion and billion laughs attacks.",
+    "severity": "CRITICAL",
+    "original_agent": "test-analyst",
+    "agreement": "maintained after challenge",
+    "file": "src/compiler/security_limits.py",
+    "related_findings": ["T-03"]
+  },
+  {
+    "id": "audit-high-01",
+    "subject": "Fix buffer _flush_unsafe to use swap-and-flush pattern",
+    "description": "Refactor _flush_unsafe() in buffer.py to swap buffers under lock then flush outside lock, matching the pattern already used in flush(). Prevents all-agent stall during DB writes.",
+    "severity": "HIGH",
+    "original_agent": "reliability-reviewer + performance-reviewer",
+    "agreement": "team-lead-decision",
+    "file": "buffer.py:338-351",
+    "related_findings": ["R-01", "P-06"]
+  },
+  {
+    "id": "audit-high-02",
+    "subject": "Change safety validation to fail-closed in StandardAgent",
+    "description": "At standard_agent.py:333-334, change except Exception handler from log-and-continue to fail-closed (block LLM call). Also unify exception hierarchy: make SecurityError inherit FrameworkException.",
+    "severity": "HIGH",
+    "original_agent": "reliability-reviewer + security-auditor + api-reviewer",
+    "agreement": "consensus",
+    "file": "standard_agent.py:333-334, safety/exceptions.py, utils/exceptions.py:563",
+    "related_findings": ["R-03", "API-05", "Sec-fail-open"]
+  },
+  {
+    "id": "audit-high-03",
+    "subject": "Fix asyncio.Lock TOCTOU race in FailoverProvider",
+    "description": "Initialize asyncio.Lock eagerly in __init__ instead of lazy creation in _get_async_state_lock(). Python 3.10+ allows asyncio.Lock creation outside event loop.",
+    "severity": "HIGH",
+    "original_agent": "reliability-reviewer",
+    "agreement": "unanimous",
+    "file": "llm_failover.py:166-170",
+    "related_findings": ["R-02"]
+  },
+  {
+    "id": "audit-high-04",
+    "subject": "Add LRU eviction to shared circuit breaker dict",
+    "description": "Add LRU eviction or WeakValueDictionary to BaseLLM._circuit_breakers. Grows unboundedly in long-running services with many models/endpoints.",
+    "severity": "HIGH",
+    "original_agent": "reliability-reviewer + performance-reviewer",
+    "agreement": "consensus",
+    "file": "llm/base.py:99",
+    "related_findings": ["R-04", "P-04"]
+  },
+  {
+    "id": "audit-high-05",
+    "subject": "Fix merit score columns for mixed outcomes",
+    "description": "Either change successful_decisions/failed_decisions to float (with Alembic migration) or add separate mixed_decisions counter. Currently float 0.5 increment on int columns silently truncates.",
+    "severity": "HIGH",
+    "original_agent": "data-analyst",
+    "agreement": "consensus (downgraded from CRITICAL - currently dead code path)",
+    "file": "merit_score_service.py:81-82",
+    "related_findings": ["D-01"]
+  },
+  {
+    "id": "audit-high-06",
+    "subject": "Consolidate duplicate WorkflowStateDict definitions",
+    "description": "Merge the two WorkflowStateDict TypedDicts (state_manager.py:19 with 15 keys and executors/base.py:20 with 11 keys) into a single canonical definition. Include all fields from both.",
+    "severity": "HIGH",
+    "original_agent": "data-analyst",
+    "agreement": "consensus (downgraded from CRITICAL - type-hints only)",
+    "file": "state_manager.py:19, executors/base.py:20",
+    "related_findings": ["D-02"]
+  },
+  {
+    "id": "audit-high-07",
+    "subject": "Add missing Alembic migrations for 7+ tables",
+    "description": "Run alembic revision --autogenerate to capture experimentation and M5 tables missing from migrations. Choose single DDL strategy (Alembic vs create_all).",
+    "severity": "HIGH",
+    "original_agent": "data-analyst",
+    "agreement": "unanimous",
+    "file": "alembic/versions/, database.py:140-143",
+    "related_findings": ["D-03", "D-04"]
+  },
+  {
+    "id": "audit-high-08",
+    "subject": "Add ON DELETE CASCADE to experimentation and M5 foreign keys",
+    "description": "Change FK fields to explicit sa_column=Column(String, ForeignKey('...', ondelete='CASCADE')) in experimentation/models.py and self_improvement/storage/experiment_models.py.",
+    "severity": "HIGH",
+    "original_agent": "data-analyst",
+    "agreement": "unanimous",
+    "file": "experimentation/models.py:189,251,315, experiment_models.py:90",
+    "related_findings": ["D-05", "D-06"]
+  }
+]

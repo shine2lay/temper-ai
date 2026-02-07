@@ -173,7 +173,7 @@ def test_db():
     db.create_all_tables()
     yield db
     # Cleanup
-    db.close_all_connections()
+    db.engine.dispose()
 
 
 # ============================================================================
@@ -625,11 +625,12 @@ def test_database_connection_pool_no_memory_leak(test_db):
         with test_db.session() as session:
             # Simulate database operation
             workflow = WorkflowExecution(
-                workflow_id=f"workflow_{next(db_counter)}",
+                id=f"workflow_{next(db_counter)}",  # Add explicit id
                 workflow_name="memory_test",
                 status="completed",
                 start_time=datetime.utcnow(),
-                end_time=datetime.utcnow()
+                end_time=datetime.utcnow(),
+                workflow_config_snapshot={}  # Required field
             )
             session.add(workflow)
             session.commit()

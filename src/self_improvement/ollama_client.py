@@ -13,7 +13,7 @@ Usage:
 
 from typing import Optional
 
-from src.agents.llm_providers import LLMResponse, OllamaLLM
+from src.agents.llm import LLMResponse, OllamaLLM  # M-04: Import from new location
 
 
 class OllamaClient:

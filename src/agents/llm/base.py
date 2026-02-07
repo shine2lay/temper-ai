@@ -274,9 +274,8 @@ class BaseLLM(ABC):
     def _get_client(self) -> httpx.Client:
         """Get or create HTTPx client with lazy initialization and connection pooling.
 
-        Uses per-instance clients by default.  For shared client pooling
-        across instances, subclasses can override this method to call
-        ``_get_shared_http_client()`` (M-42).
+        M-49: Uses shared client pool by default for better connection reuse
+        across instances targeting the same endpoint.
         """
         if self._client is None:
             with self._sync_cleanup_lock:
@@ -293,7 +292,11 @@ class BaseLLM(ABC):
                     except ImportError:
                         http2_enabled = False
 
-                    self._client = httpx.Client(
+                    # M-49: Use shared HTTP client by default
+                    provider_name = self.__class__.__name__.replace("LLM", "").lower()
+                    self._client = self._get_shared_http_client(
+                        provider=provider_name,
+                        base_url=self.base_url,
                         timeout=self.timeout,
                         limits=limits,
                         http2=http2_enabled

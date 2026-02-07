@@ -10,7 +10,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-from src.agents.llm_providers import BaseLLM, LLMError, LLMResponse
+from src.agents.llm import BaseLLM, LLMError, LLMResponse  # M-04: Import from new location
 from src.utils.exceptions import LLMAuthenticationError, LLMRateLimitError, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class FailoverProvider:
 
     Example:
         ```python
-        from src.agents.llm_providers import OllamaLLM, OpenAILLM
+        from src.agents.llm import OllamaLLM, OpenAILLM  # M-04: Use new import location
         from src.agents.llm_failover import FailoverProvider
 
         # Create providers

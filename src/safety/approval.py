@@ -24,9 +24,12 @@ Example:
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+import logging
 import threading
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
+
+logger = logging.getLogger(__name__)
 
 from src.safety.interfaces import SafetyViolation
 

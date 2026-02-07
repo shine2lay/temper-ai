@@ -30,7 +30,7 @@ from src.agents.agent_observer import AgentObserver
 from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
 from src.agents.cost_estimator import estimate_cost
 from src.agents.llm.factory import create_llm_from_config
-from src.agents.llm_providers import (
+from src.agents.llm import (  # M-04: Import from new location
     AnthropicLLM,
     LLMError,
     LLMResponse,
@@ -1239,6 +1239,10 @@ class StandardAgent(BaseAgent):
         # that might span across turn boundaries after truncation
         assembled_turns = truncation_marker + ''.join(included_turns)
         assembled_turns = sanitize_tool_output(assembled_turns)
+
+        # M-48: Prune old turns to free memory - keep only what we included
+        if dropped_count > 0:
+            self._conversation_turns = included_turns
 
         return system_prompt + assembled_turns + suffix
 

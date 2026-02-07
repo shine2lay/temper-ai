@@ -57,10 +57,17 @@ class InMemoryStorage:
 @pytest.fixture
 def mock_httpx_client():
     """Create a mock httpx.Client for testing."""
+    # M-49: Clear shared HTTP client pool before each test for isolation
+    from src.agents.llm.base import BaseLLM
+    BaseLLM.reset_shared_http_clients()
+
     with patch('src.agents.llm.base.httpx.Client') as mock_client_class:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
         yield mock_client
+
+    # M-49: Clear again after test to prevent pollution
+    BaseLLM.reset_shared_http_clients()
 
 
 class TestOllamaLLM:

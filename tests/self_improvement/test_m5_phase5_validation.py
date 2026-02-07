@@ -28,7 +28,7 @@ from coord_service.database import Database as CoordDatabase
 from src.observability.database import init_database, reset_database
 from src.observability.models import AgentExecution
 from src.self_improvement.data_models import (
-    AgentConfig,
+    SIOptimizationConfig,
     utcnow,
 )
 from src.self_improvement.deployment.deployer import ConfigDeployer
@@ -122,14 +122,14 @@ class TestPhase5DeploymentValidation:
         - Update agent config atomically
         """
         # Create baseline config
-        baseline_config = AgentConfig(
+        baseline_config = SIOptimizationConfig(
             agent_name="code_reviewer",
             inference={"model": "claude-3-5-sonnet-20241022", "temperature": 0.0},
             prompt={"system": "Review code for quality issues."},
         )
 
         # Create winning config (better model)
-        winner_config = AgentConfig(
+        winner_config = SIOptimizationConfig(
             agent_name="code_reviewer",
             inference={"model": "gemma2:2b", "temperature": 0.7},
             prompt={
@@ -184,7 +184,7 @@ class TestPhase5DeploymentValidation:
             )
 
         # 2. Deploy winning config
-        winner_config = AgentConfig(
+        winner_config = SIOptimizationConfig(
             agent_name=agent_name,
             inference={"model": "gemma2:2b", "temperature": 0.7},
             prompt={"system": "Improved review prompt"},
@@ -194,7 +194,7 @@ class TestPhase5DeploymentValidation:
         deployment_time = now - timedelta(hours=24)
         with coord_db.transaction() as conn:
             deployment_id = "deploy-test-123"
-            baseline_config = AgentConfig(agent_name=agent_name)
+            baseline_config = SIOptimizationConfig(agent_name=agent_name)
             conn.execute(
                 """
                 INSERT INTO config_deployments
@@ -267,12 +267,12 @@ class TestPhase5DeploymentValidation:
             )
 
         # 2. Deploy new config (24 hours ago)
-        baseline_config = AgentConfig(
+        baseline_config = SIOptimizationConfig(
             agent_name=agent_name,
             inference={"model": "claude-3-5-sonnet-20241022"},
             prompt={"system": "Original prompt"},
         )
-        new_config = AgentConfig(
+        new_config = SIOptimizationConfig(
             agent_name=agent_name,
             inference={"model": "bad-model"},
             prompt={"system": "New prompt"},
@@ -357,8 +357,8 @@ class TestPhase5DeploymentValidation:
             )
 
         # 2. Deploy new config
-        baseline_config = AgentConfig(agent_name=agent_name, inference={"model": "cheap"})
-        new_config = AgentConfig(agent_name=agent_name, inference={"model": "expensive"})
+        baseline_config = SIOptimizationConfig(agent_name=agent_name, inference={"model": "cheap"})
+        new_config = SIOptimizationConfig(agent_name=agent_name, inference={"model": "expensive"})
 
         deployment_time = now - timedelta(hours=24)
         with coord_db.transaction() as conn:
@@ -423,8 +423,8 @@ class TestPhase5DeploymentValidation:
             create_execution(obs_session, agent_name, 0.80, 0.02, 5.0, timestamp)
 
         # 2. Deploy config
-        baseline_config = AgentConfig(agent_name=agent_name)
-        new_config = AgentConfig(agent_name=agent_name, inference={"model": "new"})
+        baseline_config = SIOptimizationConfig(agent_name=agent_name)
+        new_config = SIOptimizationConfig(agent_name=agent_name, inference={"model": "new"})
 
         deployment_time = now - timedelta(hours=24)
         with coord_db.transaction() as conn:
@@ -480,7 +480,7 @@ class TestPhase5EdgeCases:
         agent_name = "test_agent"
 
         # Create and rollback deployment
-        config = AgentConfig(agent_name=agent_name)
+        config = SIOptimizationConfig(agent_name=agent_name)
         deployer.deploy(agent_name, config)
         deployer.rollback(agent_name, "First rollback")
 

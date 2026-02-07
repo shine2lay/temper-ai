@@ -62,19 +62,16 @@ workflow:
   description: Single-agent research workflow
   version: 1.0
 
-stages:
-  - name: research
-    type: agent
-    agent_ref: simple_researcher
-    input_mapping:
-      query: $input.topic
+  stages:
+    - name: research
+      stage_ref: configs/stages/research.yaml
 ```
 
 ### Run Your Config
 
 ```bash
-python examples/run_workflow.py simple_workflow \
-  --input '{"topic": "Python typing"}'
+maf run configs/workflows/simple_workflow.yaml \
+  --input inputs.yaml --show-details
 ```
 
 ---
@@ -285,22 +282,12 @@ workflow:
   # Stages
   stages:
     - name: stage1
-      type: agent
-      agent_ref: researcher
-      input_mapping:
-        query: $input.topic
+      stage_ref: configs/stages/research.yaml
 
     - name: stage2
-      type: agent
-      agent_ref: writer
-      input_mapping:
-        research: $stages.stage1.output
-        format: $input.format
-
-  # Output Mapping
-  output_mapping:
-    result: $stages.stage2.output
-    research: $stages.stage1.output
+      stage_ref: configs/stages/writing.yaml
+      depends_on:
+        - stage1
 ```
 
 ### Stage Types
@@ -309,10 +296,7 @@ workflow:
 ```yaml
 stages:
   - name: research
-    type: agent
-    agent_ref: researcher
-    input_mapping:
-      topic: $input.topic
+    stage_ref: configs/stages/research.yaml
 ```
 
 **2. Parallel Stage**

@@ -4,7 +4,7 @@ import pytest
 
 from src.self_improvement.model_registry import ModelRegistry
 from src.self_improvement.strategies import (
-    AgentConfig,
+    SIOptimizationConfig,
     LearnedPattern,
     OllamaModelSelectionStrategy,
 )
@@ -50,7 +50,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_generate_variants_returns_list(self, strategy):
         """Test generate_variants returns a list."""
-        current = AgentConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
         variants = strategy.generate_variants(current, [])
 
         assert isinstance(variants, list)
@@ -58,7 +58,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_generate_variants_creates_2_to_4_variants(self, strategy):
         """Test generates 2-4 variants."""
-        current = AgentConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
         variants = strategy.generate_variants(current, [])
 
         # Should generate up to 4 variants (all other models except current)
@@ -66,7 +66,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_variants_have_different_models(self, strategy):
         """Test each variant uses a different model."""
-        current = AgentConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
         variants = strategy.generate_variants(current, [])
 
         models = [v.inference["model"] for v in variants]
@@ -76,7 +76,7 @@ class TestOllamaModelSelectionStrategy:
     def test_variants_exclude_current_model(self, strategy):
         """Test variants don't include the current model."""
         current_model = "llama3.1:8b"
-        current = AgentConfig(agent_name="test_agent", inference={"model": current_model})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": current_model})
         variants = strategy.generate_variants(current, [])
 
         models = [v.inference["model"] for v in variants]
@@ -84,7 +84,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_variants_include_metadata(self, strategy):
         """Test variants include strategy metadata."""
-        current = AgentConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
         variants = strategy.generate_variants(current, [])
 
         for variant in variants:
@@ -96,7 +96,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_generate_variants_with_low_quality_pattern(self, strategy):
         """Test generates high-quality models for low quality problems."""
-        current = AgentConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
         patterns = [
             LearnedPattern(
                 pattern_type="low_quality",
@@ -118,7 +118,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_generate_variants_with_high_cost_pattern(self, strategy):
         """Test generates fast/cheap models for cost problems."""
-        current = AgentConfig(agent_name="test_agent", inference={"model": "qwen2.5:32b"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "qwen2.5:32b"})
         patterns = [
             LearnedPattern(
                 pattern_type="high_cost",
@@ -139,7 +139,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_generate_variants_with_slow_response_pattern(self, strategy):
         """Test generates fast models for latency problems."""
-        current = AgentConfig(agent_name="test_agent", inference={"model": "qwen2.5:32b"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "qwen2.5:32b"})
         patterns = [
             LearnedPattern(
                 pattern_type="slow_response",
@@ -159,7 +159,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_generate_variants_without_patterns_is_balanced(self, strategy):
         """Test generates balanced variants when no patterns provided."""
-        current = AgentConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
         variants = strategy.generate_variants(current, [])
 
         # Should generate diverse mix of models
@@ -171,7 +171,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_variants_preserve_other_config(self, strategy):
         """Test variants preserve non-model configuration."""
-        current = AgentConfig(
+        current = SIOptimizationConfig(
             agent_name="test_agent",
             inference={
                 "model": "phi3:mini",
@@ -225,7 +225,7 @@ class TestOllamaModelSelectionStrategy:
 
     def test_default_model_when_not_specified(self, strategy):
         """Test uses default model when current config has no model."""
-        current = AgentConfig(agent_name="test_agent", inference={})  # No model specified
+        current = SIOptimizationConfig(agent_name="test_agent", inference={})  # No model specified
         variants = strategy.generate_variants(current, [])
 
         # Should still generate variants (excluding default phi3:mini)
@@ -347,7 +347,7 @@ class TestOllamaModelSelectionStrategy:
         assert len(all_models) == 4  # Default: phi3:mini, llama3.1:8b, mistral:7b, qwen2.5:32b
 
         # Generate variants should work with registry
-        current = AgentConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "phi3:mini"})
         variants = strategy.generate_variants(current, [])
 
         # Should use models from registry

@@ -6,7 +6,7 @@ This directory contains demo scripts and examples for the Meta-Autonomous Framew
 
 1. **Install dependencies:**
    ```bash
-   poetry install
+   pip install -e ".[dev]"
    ```
 
 2. **Start Ollama (required for LLM execution):**

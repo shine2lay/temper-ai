@@ -66,7 +66,7 @@ def _load_and_validate_workflow(
 
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="maf")
+@click.version_option(package_name="meta-autonomous-framework", prog_name="maf")
 def main() -> None:
     """Meta-Autonomous Framework CLI."""
     pass

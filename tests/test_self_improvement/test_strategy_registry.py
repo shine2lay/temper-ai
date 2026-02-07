@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 import pytest
 
 from src.self_improvement.strategies import (
-    AgentConfig,
+    SIOptimizationConfig,
     ImprovementStrategy,
     LearnedPattern,
     StrategyRegistry,
@@ -28,21 +28,21 @@ class MockStrategy(ImprovementStrategy):
         agent_name: str,
         baseline_performance: Dict[str, float],
         learned_patterns: Optional[List[LearnedPattern]] = None,
-    ) -> AgentConfig:
+    ) -> SIOptimizationConfig:
         """Propose a config (mock implementation)."""
-        return AgentConfig(
+        return SIOptimizationConfig(
             agent_name=agent_name,
             inference={"mock": "config"},
         )
 
     def generate_variants(
         self,
-        current_config: AgentConfig,
+        current_config: SIOptimizationConfig,
         patterns: List[LearnedPattern],
-    ) -> List[AgentConfig]:
+    ) -> List[SIOptimizationConfig]:
         """Generate variants (mock implementation)."""
         return [
-            AgentConfig(
+            SIOptimizationConfig(
                 agent_name=current_config.agent_name,
                 inference={"variant": i},
                 extra_metadata={"variant_id": i},

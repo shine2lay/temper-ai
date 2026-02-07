@@ -1,28 +1,28 @@
-"""Tests for Experiment and ExperimentResult data models."""
+"""Tests for SelfImprovementExperiment and ExecutionResult data models."""
 
 from datetime import datetime, timezone
 
-from src.self_improvement.data_models import AgentConfig, Experiment, ExperimentResult
+from src.self_improvement.data_models import SIOptimizationConfig, SelfImprovementExperiment, ExecutionResult
 
 
 def test_experiment_creation():
-    """Test creating an Experiment instance."""
-    control_config = AgentConfig(
+    """Test creating an SelfImprovementExperiment instance."""
+    control_config = SIOptimizationConfig(
         agent_name="test_agent",
         inference={"model": "llama3.1:8b", "temperature": 0.7}
     )
 
-    variant1 = AgentConfig(
+    variant1 = SIOptimizationConfig(
         agent_name="test_agent",
         inference={"model": "mistral:7b", "temperature": 0.7}
     )
 
-    variant2 = AgentConfig(
+    variant2 = SIOptimizationConfig(
         agent_name="test_agent",
         inference={"model": "qwen2.5:32b", "temperature": 0.7}
     )
 
-    experiment = Experiment(
+    experiment = SelfImprovementExperiment(
         id="exp-001",
         agent_name="test_agent",
         status="running",
@@ -43,11 +43,11 @@ def test_experiment_creation():
 
 def test_experiment_get_all_configs():
     """Test getting all experiment configurations."""
-    control = AgentConfig(agent_name="test", inference={"model": "control"})
-    v1 = AgentConfig(agent_name="test", inference={"model": "variant1"})
-    v2 = AgentConfig(agent_name="test", inference={"model": "variant2"})
+    control = SIOptimizationConfig(agent_name="test", inference={"model": "control"})
+    v1 = SIOptimizationConfig(agent_name="test", inference={"model": "variant1"})
+    v2 = SIOptimizationConfig(agent_name="test", inference={"model": "variant2"})
 
-    experiment = Experiment(
+    experiment = SelfImprovementExperiment(
         id="exp-001",
         agent_name="test",
         status="running",
@@ -68,10 +68,10 @@ def test_experiment_get_all_configs():
 
 def test_experiment_get_variant_count():
     """Test getting total variant count including control."""
-    control = AgentConfig(agent_name="test")
-    variants = [AgentConfig(agent_name="test") for _ in range(3)]
+    control = SIOptimizationConfig(agent_name="test")
+    variants = [SIOptimizationConfig(agent_name="test") for _ in range(3)]
 
-    experiment = Experiment(
+    experiment = SelfImprovementExperiment(
         id="exp-001",
         agent_name="test",
         status="running",
@@ -84,9 +84,9 @@ def test_experiment_get_variant_count():
 
 def test_experiment_status_checks():
     """Test experiment status check methods."""
-    control = AgentConfig(agent_name="test")
+    control = SIOptimizationConfig(agent_name="test")
 
-    running_exp = Experiment(
+    running_exp = SelfImprovementExperiment(
         id="exp-001",
         agent_name="test",
         status="running",
@@ -97,7 +97,7 @@ def test_experiment_status_checks():
     assert running_exp.is_running() is True
     assert running_exp.is_completed() is False
 
-    completed_exp = Experiment(
+    completed_exp = SelfImprovementExperiment(
         id="exp-002",
         agent_name="test",
         status="completed",
@@ -110,12 +110,12 @@ def test_experiment_status_checks():
 
 
 def test_experiment_to_dict():
-    """Test converting Experiment to dictionary."""
-    control = AgentConfig(
+    """Test converting SelfImprovementExperiment to dictionary."""
+    control = SIOptimizationConfig(
         agent_name="test",
         inference={"model": "llama3.1:8b"}
     )
-    variant = AgentConfig(
+    variant = SIOptimizationConfig(
         agent_name="test",
         inference={"model": "mistral:7b"}
     )
@@ -123,7 +123,7 @@ def test_experiment_to_dict():
     created_at = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
     completed_at = datetime(2026, 1, 2, 12, 0, 0, tzinfo=timezone.utc)
 
-    experiment = Experiment(
+    experiment = SelfImprovementExperiment(
         id="exp-001",
         agent_name="test_agent",
         status="completed",
@@ -150,7 +150,7 @@ def test_experiment_to_dict():
 
 
 def test_experiment_from_dict():
-    """Test creating Experiment from dictionary."""
+    """Test creating SelfImprovementExperiment from dictionary."""
     data = {
         "id": "exp-001",
         "agent_name": "test_agent",
@@ -179,7 +179,7 @@ def test_experiment_from_dict():
         "extra_metadata": {"note": "test"}
     }
 
-    experiment = Experiment.from_dict(data)
+    experiment = SelfImprovementExperiment.from_dict(data)
 
     assert experiment.id == "exp-001"
     assert experiment.agent_name == "test_agent"
@@ -193,17 +193,17 @@ def test_experiment_from_dict():
 
 
 def test_experiment_round_trip():
-    """Test Experiment to_dict/from_dict round trip."""
-    control = AgentConfig(
+    """Test SelfImprovementExperiment to_dict/from_dict round trip."""
+    control = SIOptimizationConfig(
         agent_name="test",
         inference={"model": "control", "temperature": 0.5}
     )
-    variant = AgentConfig(
+    variant = SIOptimizationConfig(
         agent_name="test",
         inference={"model": "variant", "temperature": 0.8}
     )
 
-    original = Experiment(
+    original = SelfImprovementExperiment(
         id="exp-001",
         agent_name="test",
         status="running",
@@ -213,7 +213,7 @@ def test_experiment_round_trip():
     )
 
     data = original.to_dict()
-    restored = Experiment.from_dict(data)
+    restored = SelfImprovementExperiment.from_dict(data)
 
     assert restored.id == original.id
     assert restored.agent_name == original.agent_name
@@ -223,8 +223,8 @@ def test_experiment_round_trip():
 
 
 def test_experiment_result_creation():
-    """Test creating an ExperimentResult instance."""
-    result = ExperimentResult(
+    """Test creating an ExecutionResult instance."""
+    result = ExecutionResult(
         id="result-001",
         experiment_id="exp-001",
         variant_id="control",
@@ -247,8 +247,8 @@ def test_experiment_result_creation():
 
 
 def test_experiment_result_optional_fields():
-    """Test ExperimentResult with optional fields."""
-    result = ExperimentResult(
+    """Test ExecutionResult with optional fields."""
+    result = ExecutionResult(
         id="result-001",
         experiment_id="exp-001",
         variant_id="variant_0",
@@ -264,8 +264,8 @@ def test_experiment_result_optional_fields():
 
 
 def test_experiment_result_with_extra_metrics():
-    """Test ExperimentResult with custom extra metrics."""
-    result = ExperimentResult(
+    """Test ExecutionResult with custom extra metrics."""
+    result = ExecutionResult(
         id="result-001",
         experiment_id="exp-001",
         variant_id="control",
@@ -282,10 +282,10 @@ def test_experiment_result_with_extra_metrics():
 
 
 def test_experiment_result_to_dict():
-    """Test converting ExperimentResult to dictionary."""
+    """Test converting ExecutionResult to dictionary."""
     recorded_at = datetime(2026, 1, 1, 14, 30, 0, tzinfo=timezone.utc)
 
-    result = ExperimentResult(
+    result = ExecutionResult(
         id="result-001",
         experiment_id="exp-001",
         variant_id="variant_1",
@@ -313,7 +313,7 @@ def test_experiment_result_to_dict():
 
 
 def test_experiment_result_from_dict():
-    """Test creating ExperimentResult from dictionary."""
+    """Test creating ExecutionResult from dictionary."""
     data = {
         "id": "result-001",
         "experiment_id": "exp-001",
@@ -327,7 +327,7 @@ def test_experiment_result_from_dict():
         "extra_metrics": {"custom": 99.9}
     }
 
-    result = ExperimentResult.from_dict(data)
+    result = ExecutionResult.from_dict(data)
 
     assert result.id == "result-001"
     assert result.experiment_id == "exp-001"
@@ -341,8 +341,8 @@ def test_experiment_result_from_dict():
 
 
 def test_experiment_result_round_trip():
-    """Test ExperimentResult to_dict/from_dict round trip."""
-    original = ExperimentResult(
+    """Test ExecutionResult to_dict/from_dict round trip."""
+    original = ExecutionResult(
         id="result-001",
         experiment_id="exp-001",
         variant_id="variant_2",
@@ -353,7 +353,7 @@ def test_experiment_result_round_trip():
     )
 
     data = original.to_dict()
-    restored = ExperimentResult.from_dict(data)
+    restored = ExecutionResult.from_dict(data)
 
     assert restored.id == original.id
     assert restored.experiment_id == original.experiment_id

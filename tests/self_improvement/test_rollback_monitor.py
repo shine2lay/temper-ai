@@ -21,7 +21,7 @@ from unittest.mock import Mock
 import pytest
 
 from src.self_improvement.data_models import (
-    AgentConfig,
+    SIOptimizationConfig,
     AgentPerformanceProfile,
     ConfigDeployment,
     utcnow,
@@ -73,8 +73,8 @@ def deployment():
     return ConfigDeployment(
         id="deploy-001",
         agent_name="test_agent",
-        previous_config=AgentConfig(agent_name="test_agent"),
-        new_config=AgentConfig(agent_name="test_agent"),
+        previous_config=SIOptimizationConfig(agent_name="test_agent"),
+        new_config=SIOptimizationConfig(agent_name="test_agent"),
         deployed_at=utcnow() - timedelta(hours=12),
     )
 

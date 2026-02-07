@@ -12,9 +12,6 @@ Run with: pytest tests/test_benchmarks/test_performance_e2e.py --benchmark-only
 """
 import asyncio
 import os
-
-# Import PERFORMANCE_BUDGETS from conftest
-import sys
 import time
 from unittest.mock import Mock, patch
 
@@ -24,8 +21,7 @@ import pytest
 from src.compiler.langgraph_compiler import LangGraphCompiler
 from tests.fixtures.realistic_data import REALISTIC_RESEARCH_WORKFLOW_AGENTS
 
-sys.path.insert(0, '/home/shinelay/meta-autonomous-framework/tests/test_benchmarks')
-from conftest import PERFORMANCE_BUDGETS
+from tests.test_benchmarks.conftest import PERFORMANCE_BUDGETS
 
 # ============================================================================
 # CATEGORY 8: End-to-End Workflows (6 benchmarks)

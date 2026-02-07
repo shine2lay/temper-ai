@@ -3,6 +3,10 @@ Property-based tests for consensus strategy using Hypothesis.
 
 Tests invariants that should hold for all possible inputs.
 """
+import pytest
+
+pytest.importorskip("hypothesis")
+
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 

@@ -13,7 +13,7 @@ from typing import List
 import pytest
 
 from src.self_improvement.strategies.strategy import (
-    AgentConfig,
+    SIOptimizationConfig,
     ImprovementStrategy,
     LearnedPattern,
 )
@@ -27,16 +27,16 @@ class MockStrategy(ImprovementStrategy):
         return "mock_strategy"
 
     def generate_variants(
-        self, current_config: AgentConfig, patterns: List[LearnedPattern]
-    ) -> List[AgentConfig]:
+        self, current_config: SIOptimizationConfig, patterns: List[LearnedPattern]
+    ) -> List[SIOptimizationConfig]:
         # Generate 2 simple variants
-        variant1 = AgentConfig(
+        variant1 = SIOptimizationConfig(
             agent_name=current_config.agent_name,
             inference={"model": "gpt-3.5-turbo"},
             prompt=current_config.prompt,
             caching=current_config.caching,
         )
-        variant2 = AgentConfig(
+        variant2 = SIOptimizationConfig(
             agent_name=current_config.agent_name,
             inference={"model": "gpt-4"},
             prompt=current_config.prompt,
@@ -64,7 +64,7 @@ class TestImprovementStrategy:
     def test_concrete_strategy_generates_variants(self):
         """Concrete strategy must implement generate_variants."""
         strategy = MockStrategy()
-        current = AgentConfig(
+        current = SIOptimizationConfig(
             agent_name="test_agent",
             inference={"model": "gpt-4", "temperature": 0.7},
             prompt={"template": "default"},
@@ -83,7 +83,7 @@ class TestImprovementStrategy:
 
         assert isinstance(variants, list)
         assert len(variants) == 2
-        assert all(isinstance(v, AgentConfig) for v in variants)
+        assert all(isinstance(v, SIOptimizationConfig) for v in variants)
         assert variants[0].inference["model"] == "gpt-3.5-turbo"
         assert variants[1].inference["model"] == "gpt-4"
 
@@ -115,12 +115,12 @@ class TestImprovementStrategy:
         assert strategy.estimate_impact({}) == 0.5
 
 
-class TestAgentConfig:
-    """Test AgentConfig data class."""
+class TestSIOptimizationConfig:
+    """Test SIOptimizationConfig data class."""
 
     def test_agent_config_creation(self):
-        """Can create AgentConfig with all fields."""
-        config = AgentConfig(
+        """Can create SIOptimizationConfig with all fields."""
+        config = SIOptimizationConfig(
             agent_name="test_agent",
             inference={"model": "gpt-4", "temperature": 0.7},
             prompt={"template": "You are a helpful assistant"},
@@ -135,8 +135,8 @@ class TestAgentConfig:
         assert config.extra_metadata["version"] == "1.0"
 
     def test_agent_config_defaults(self):
-        """AgentConfig uses factory defaults for dicts."""
-        config = AgentConfig(agent_name="test_agent")
+        """SIOptimizationConfig uses factory defaults for dicts."""
+        config = SIOptimizationConfig(agent_name="test_agent")
 
         assert config.agent_name == "test_agent"
         assert isinstance(config.inference, dict)
@@ -145,8 +145,8 @@ class TestAgentConfig:
         assert config.extra_metadata == {}
 
     def test_agent_config_partial(self):
-        """Can create AgentConfig with partial fields."""
-        config = AgentConfig(agent_name="test_agent", inference={"model": "gpt-4"})
+        """Can create SIOptimizationConfig with partial fields."""
+        config = SIOptimizationConfig(agent_name="test_agent", inference={"model": "gpt-4"})
 
         assert config.inference == {"model": "gpt-4"}
         assert isinstance(config.prompt, dict)
@@ -228,7 +228,7 @@ class TestStrategyIntegration:
     def test_strategy_with_empty_patterns(self):
         """Strategy works with empty pattern list (MVP scenario)."""
         strategy = MockStrategy()
-        current = AgentConfig(agent_name="test_agent", inference={"model": "gpt-4"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "gpt-4"})
         patterns = []
 
         variants = strategy.generate_variants(current, patterns)
@@ -239,7 +239,7 @@ class TestStrategyIntegration:
     def test_strategy_with_multiple_patterns(self):
         """Strategy receives multiple learned patterns."""
         strategy = MockStrategy()
-        current = AgentConfig(agent_name="test_agent", inference={"model": "gpt-4"})
+        current = SIOptimizationConfig(agent_name="test_agent", inference={"model": "gpt-4"})
         patterns = [
             LearnedPattern("cost", "High cost", 20, 0.9, {}),
             LearnedPattern("latency", "Slow", 15, 0.8, {}),

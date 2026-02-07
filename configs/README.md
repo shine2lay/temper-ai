@@ -321,8 +321,8 @@ tools:
 ### Step 3: Validate Configuration
 
 ```bash
-# Run agent with custom config
-python -m src.cli.main --agent configs/agents/my_custom_agent.yaml
+# Validate and run a workflow that uses the custom agent
+maf run configs/workflows/my_workflow.yaml --verbose
 ```
 
 ---

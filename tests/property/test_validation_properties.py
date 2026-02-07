@@ -4,6 +4,9 @@ Property-based tests for validation and invariants using Hypothesis.
 Tests validation properties across different components.
 """
 import pytest
+
+pytest.importorskip("hypothesis")
+
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 

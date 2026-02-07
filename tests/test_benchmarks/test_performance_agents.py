@@ -13,9 +13,6 @@ This module contains 8 benchmarks covering agent execution paths:
 Run with: pytest tests/test_benchmarks/test_performance_agents.py --benchmark-only
 """
 import os
-
-# Import check_budget from conftest
-import sys
 from unittest.mock import Mock, patch
 
 import psutil
@@ -26,8 +23,7 @@ from src.agents.llm_providers import LLMResponse
 from src.agents.standard_agent import StandardAgent
 from src.tools.base import BaseTool, ToolResult
 
-sys.path.insert(0, '/home/shinelay/meta-autonomous-framework/tests/test_benchmarks')
-from conftest import check_budget
+from tests.test_benchmarks.conftest import check_budget
 
 # ============================================================================
 # CATEGORY 5: Agent Execution (8 benchmarks)

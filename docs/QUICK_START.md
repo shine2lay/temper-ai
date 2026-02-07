@@ -101,12 +101,10 @@ You should see:
 OPENAI_API_KEY=sk-...
 ```
 
-2. **Run a workflow** with a specific provider:
+2. **Run a workflow**:
 ```bash
-python examples/run_workflow.py simple_research \
-  --provider openai \
-  --model gpt-4 \
-  --prompt "Research the benefits of Python typing"
+maf run configs/workflows/simple_research.yaml \
+  --input inputs.yaml --show-details
 ```
 
 ---

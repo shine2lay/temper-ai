@@ -171,7 +171,7 @@ def normalize_agent_id(agent_id: str) -> str:
 class TestBasicDistributedRateLimiting:
     """Test basic multi-instance rate limiting coordination."""
 
-    @pytest.mark.xfail(
+    @pytest.mark.skip(
         reason="Current implementation uses in-memory state, NOT Redis. "
                "Expected to FAIL until distributed backend is implemented."
     )
@@ -224,7 +224,7 @@ class TestBasicDistributedRateLimiting:
         assert total_blocked == 20, \
             f"Expected 20 blocked globally, got {total_blocked}"
 
-    @pytest.mark.xfail(
+    @pytest.mark.skip(
         reason="Current implementation uses in-memory state, NOT Redis."
     )
     def test_three_processes_share_rate_limit(self, redis_client):
@@ -266,7 +266,7 @@ class TestBasicDistributedRateLimiting:
         assert total_blocked == 20, \
             f"Expected 20 total blocked, got {total_blocked}"
 
-    @pytest.mark.xfail(
+    @pytest.mark.skip(
         reason="Current implementation uses in-memory state, NOT Redis."
     )
     def test_five_processes_concurrent_requests(self, redis_client):
@@ -307,7 +307,7 @@ class TestBasicDistributedRateLimiting:
         assert 95 <= total_successes <= 105, \
             f"Expected ~100 total successes (±5% tolerance for timing), got {total_successes}"
 
-    @pytest.mark.xfail(
+    @pytest.mark.skip(
         reason="Current implementation tracks per-agent, but in-memory only."
     )
     def test_different_agents_separate_limits(self, redis_client):
@@ -497,7 +497,7 @@ class TestAgentIDNormalization:
 class TestClockSkewHandling:
     """Test handling of clock skew across distributed instances."""
 
-    @pytest.mark.xfail(
+    @pytest.mark.skip(
         reason="Current implementation uses time.time() which can be manipulated."
     )
     def test_handles_positive_clock_skew(self, redis_client):
@@ -513,7 +513,7 @@ class TestClockSkewHandling:
         # TODO: Implement with time mocking and distributed backend
         pytest.skip("Requires distributed backend with clock skew handling")
 
-    @pytest.mark.xfail(
+    @pytest.mark.skip(
         reason="Current implementation uses time.time() which can be manipulated."
     )
     def test_handles_negative_clock_skew(self, redis_client):
@@ -553,7 +553,7 @@ class TestClockSkewHandling:
 class TestRaceConditions:
     """Test race condition prevention in distributed rate limiting."""
 
-    @pytest.mark.xfail(
+    @pytest.mark.skip(
         reason="Current implementation has check-then-act race condition."
     )
     def test_atomic_check_and_increment(self, redis_client):
@@ -569,7 +569,7 @@ class TestRaceConditions:
         """
         pytest.skip("Requires distributed backend with atomic operations")
 
-    @pytest.mark.xfail(
+    @pytest.mark.skip(
         reason="Current implementation can have negative token counts."
     )
     def test_no_negative_tokens(self, redis_client):

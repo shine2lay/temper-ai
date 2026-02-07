@@ -1,1 +1,1 @@
-"""Tests for self-improvement module."""
+"""Tests for M5 self-improvement system."""

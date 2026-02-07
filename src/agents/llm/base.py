@@ -216,11 +216,8 @@ class BaseLLM(ABC):
             if key not in cls._http_clients:
                 if len(cls._http_clients) >= cls._MAX_HTTP_CLIENTS:
                     oldest_key = next(iter(cls._http_clients))
-                    old_client = cls._http_clients.pop(oldest_key)
-                    try:
-                        old_client.close()
-                    except Exception:
-                        pass
+                    evicted_client = cls._http_clients.pop(oldest_key)
+                    # Don't close - safer to let GC handle it
                 cls._http_clients[key] = httpx.Client(**kwargs)
             return cls._http_clients[key]
 
@@ -622,7 +619,8 @@ class BaseLLM(ABC):
                     headers = self._get_headers()
                     endpoint = f"{self.base_url}{self._get_endpoint()}"
 
-                    response = await self._get_async_client().post(
+                    client = await self._get_async_client_safe()
+                    response = await client.post(
                         endpoint, json=request_data, headers=headers,
                     )
 

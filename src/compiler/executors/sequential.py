@@ -59,6 +59,8 @@ class SequentialStageExecutor(StageExecutor):
         # Avoids recreating agents for every stage invocation when the
         # same agent appears in multiple stages of the same workflow.
         self._agent_cache: Dict[str, Any] = {}
+        # H-13: Shared shutdown event for interruptible retry waits
+        self.shutdown_event = threading.Event()
 
     def execute_stage(
         self,
@@ -445,17 +447,16 @@ class SequentialStageExecutor(StageExecutor):
         base_delay = 1.0  # seconds
         last_result: Dict[str, Any] = {}
 
-        _backoff_event = threading.Event()
-
         for attempt in range(1, max_retries + 1):
             delay = min(base_delay * (2 ** (attempt - 1)), 30.0)
             logger.info(
                 "Retrying agent %s in stage %s (attempt %d/%d, backoff %.1fs)",
                 agent_name, stage_name, attempt, max_retries, delay,
             )
-            # Use Event.wait() instead of time.sleep() so the delay is
-            # interruptible (e.g. by a shutdown signal setting the event).
-            _backoff_event.wait(timeout=delay)
+            # H-13: Use shared shutdown event instead of local event for interruptibility
+            # This allows workflow-level shutdown to interrupt retry waits
+            if self.shutdown_event.wait(timeout=delay):
+                raise KeyboardInterrupt("Executor shutdown requested")
 
             last_result = self._execute_agent(
                 agent_ref=agent_ref,

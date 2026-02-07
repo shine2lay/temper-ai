@@ -11,6 +11,7 @@ import uuid
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
@@ -493,6 +494,9 @@ class ExperimentService(Service):
             session.add(assignment)
             session.commit()
 
+            # Invalidate experiment cache after new assignment (H-25)
+            self._experiment_cache.pop(experiment_id, None)
+
         logger.info(f"Assigned workflow {workflow_id} to variant {variant_id}")
         return assignment
 
@@ -529,14 +533,34 @@ class ExperimentService(Service):
             assignment.execution_completed_at = utcnow()
             assignment.metrics = metrics
 
-            # Update variant counters
-            variant = session.get(Variant, assignment.variant_id)
-            if variant:
-                variant.total_executions += 1
-                if status == "completed":
-                    variant.successful_executions += 1
-                elif status == "failed":
-                    variant.failed_executions += 1
+            # Update variant counters atomically (C-05: prevent race conditions)
+            variant_id = assignment.variant_id
+
+            # Atomic increment of total_executions
+            session.execute(
+                update(Variant)
+                .where(Variant.id == variant_id)
+                .values(total_executions=Variant.total_executions + 1)
+            )
+
+            # Atomic increment of status-specific counter
+            if status == "completed":
+                session.execute(
+                    update(Variant)
+                    .where(Variant.id == variant_id)
+                    .values(successful_executions=Variant.successful_executions + 1)
+                )
+            elif status == "failed":
+                session.execute(
+                    update(Variant)
+                    .where(Variant.id == variant_id)
+                    .values(failed_executions=Variant.failed_executions + 1)
+                )
+
+            # Invalidate experiment cache (H-25: ensure fresh data)
+            experiment = session.get(Experiment, assignment.experiment_id)
+            if experiment:
+                self._experiment_cache.pop(experiment.id, None)
 
             session.commit()
 

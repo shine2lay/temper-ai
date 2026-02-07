@@ -24,6 +24,7 @@ Example:
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
+import threading
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
@@ -182,6 +183,7 @@ class ApprovalWorkflow:
         self._authorized_approvers: Optional[frozenset[str]] = (
             frozenset(authorized_approvers) if authorized_approvers is not None else None
         )
+        self._lock = threading.Lock()  # C-02: Protect _requests dict from race conditions
         self._requests: Dict[str, ApprovalRequest] = {}
         self._on_approved_callbacks: List[Callable[[ApprovalRequest], None]] = []
         self._on_rejected_callbacks: List[Callable[[ApprovalRequest], None]] = []
@@ -235,11 +237,12 @@ class ApprovalWorkflow:
             metadata=metadata or {}
         )
 
-        self._requests[request.id] = request
+        with self._lock:
+            self._requests[request.id] = request
 
-        # Evict oldest completed requests when over limit
-        if len(self._requests) > self._max_requests:
-            self._evict_oldest_completed()
+            # Evict oldest completed requests when over limit
+            if len(self._requests) > self._max_requests:
+                self._evict_oldest_completed()
 
         return request
 
@@ -248,6 +251,10 @@ class ApprovalWorkflow:
 
         SA-07: Evicts completed requests first, then oldest pending requests
         as a fallback to prevent unbounded growth of pending requests.
+
+        C-02: MUST be called while holding self._lock (caller's responsibility).
+        This method is private and only called from request_approval() which
+        already holds the lock.
         """
         if len(self._requests) <= self._max_requests:
             return
@@ -322,35 +329,36 @@ class ApprovalWorkflow:
         Example:
             >>> workflow.approve("req-123", approver="alice", reason="Looks good")
         """
-        request = self._requests.get(request_id)
-        if not request:
-            return False
+        with self._lock:
+            request = self._requests.get(request_id)
+            if not request:
+                return False
 
-        # Check if expired
-        if self.auto_reject_on_timeout and request.has_expired():
-            self._expire_request(request)
-            return False
+            # Check if expired
+            if self.auto_reject_on_timeout and request.has_expired():
+                self._expire_request(request)
+                return False
 
-        # Can only approve pending requests
-        if not request.is_pending():
-            return False
+            # Can only approve pending requests
+            if not request.is_pending():
+                return False
 
-        # Authorization check
-        error = self._check_approver_authorized(approver, request)
-        if error:
-            raise PermissionError(error)
+            # Authorization check
+            error = self._check_approver_authorized(approver, request)
+            if error:
+                raise PermissionError(error)
 
-        # Add approver (avoid duplicates)
-        if approver not in request.approvers:
-            request.approvers.append(approver)
+            # Add approver (avoid duplicates)
+            if approver not in request.approvers:
+                request.approvers.append(approver)
 
-        # Check if we have enough approvals
-        if not request.needs_more_approvals():
-            request.status = ApprovalStatus.APPROVED
-            request.decision_reason = reason
-            self._trigger_approved_callbacks(request)
+            # Check if we have enough approvals
+            if not request.needs_more_approvals():
+                request.status = ApprovalStatus.APPROVED
+                request.decision_reason = reason
+                self._trigger_approved_callbacks(request)
 
-        return True
+            return True
 
     def reject(
         self,
@@ -374,32 +382,33 @@ class ApprovalWorkflow:
         Example:
             >>> workflow.reject("req-123", rejecter="bob", reason="Too risky")
         """
-        request = self._requests.get(request_id)
-        if not request:
-            return False
+        with self._lock:
+            request = self._requests.get(request_id)
+            if not request:
+                return False
 
-        # Can only reject pending requests
-        if not request.is_pending():
-            return False
+            # Can only reject pending requests
+            if not request.is_pending():
+                return False
 
-        # Authorization check (self-rejection is allowed — rejecting your own
-        # request is not a security risk, unlike self-approval)
-        if self._authorized_approvers is not None:
-            if rejecter not in self._authorized_approvers:
-                raise PermissionError(
-                    f"Unauthorized rejecter: '{rejecter}' is not in the authorized approvers list"
-                )
+            # Authorization check (self-rejection is allowed — rejecting your own
+            # request is not a security risk, unlike self-approval)
+            if self._authorized_approvers is not None:
+                if rejecter not in self._authorized_approvers:
+                    raise PermissionError(
+                        f"Unauthorized rejecter: '{rejecter}' is not in the authorized approvers list"
+                    )
 
-        # Add rejecter
-        if rejecter not in request.rejecters:
-            request.rejecters.append(rejecter)
+            # Add rejecter
+            if rejecter not in request.rejecters:
+                request.rejecters.append(rejecter)
 
-        # One rejection is enough to reject the request
-        request.status = ApprovalStatus.REJECTED
-        request.decision_reason = reason
-        self._trigger_rejected_callbacks(request)
+            # One rejection is enough to reject the request
+            request.status = ApprovalStatus.REJECTED
+            request.decision_reason = reason
+            self._trigger_rejected_callbacks(request)
 
-        return True
+            return True
 
     def cancel(self, request_id: str, reason: Optional[str] = None) -> bool:
         """Cancel a pending request.
@@ -411,16 +420,17 @@ class ApprovalWorkflow:
         Returns:
             True if request was cancelled, False if not found/not pending
         """
-        request = self._requests.get(request_id)
-        if not request:
-            return False
+        with self._lock:
+            request = self._requests.get(request_id)
+            if not request:
+                return False
 
-        if not request.is_pending():
-            return False
+            if not request.is_pending():
+                return False
 
-        request.status = ApprovalStatus.CANCELLED
-        request.decision_reason = reason
-        return True
+            request.status = ApprovalStatus.CANCELLED
+            request.decision_reason = reason
+            return True
 
     def get_request(self, request_id: str) -> Optional[ApprovalRequest]:
         """Get an approval request by ID.
@@ -431,7 +441,8 @@ class ApprovalWorkflow:
         Returns:
             ApprovalRequest if found, None otherwise
         """
-        return self._requests.get(request_id)
+        with self._lock:
+            return self._requests.get(request_id)
 
     def is_approved(self, request_id: str) -> bool:
         """Check if request is approved.
@@ -442,8 +453,9 @@ class ApprovalWorkflow:
         Returns:
             True if approved, False otherwise
         """
-        request = self._requests.get(request_id)
-        return request.is_approved() if request else False
+        with self._lock:
+            request = self._requests.get(request_id)
+            return request.is_approved() if request else False
 
     def is_rejected(self, request_id: str) -> bool:
         """Check if request is rejected.
@@ -454,8 +466,9 @@ class ApprovalWorkflow:
         Returns:
             True if rejected, False otherwise
         """
-        request = self._requests.get(request_id)
-        return request.is_rejected() if request else False
+        with self._lock:
+            request = self._requests.get(request_id)
+            return request.is_rejected() if request else False
 
     def is_pending(self, request_id: str) -> bool:
         """Check if request is still pending.
@@ -466,16 +479,17 @@ class ApprovalWorkflow:
         Returns:
             True if pending, False otherwise
         """
-        request = self._requests.get(request_id)
-        if not request:
-            return False
+        with self._lock:
+            request = self._requests.get(request_id)
+            if not request:
+                return False
 
-        # Check expiration
-        if self.auto_reject_on_timeout and request.has_expired():
-            self._expire_request(request)
-            return False
+            # Check expiration
+            if self.auto_reject_on_timeout and request.has_expired():
+                self._expire_request(request)
+                return False
 
-        return request.is_pending()
+            return request.is_pending()
 
     def list_pending_requests(self) -> List[ApprovalRequest]:
         """Get all pending approval requests.
@@ -483,15 +497,16 @@ class ApprovalWorkflow:
         Returns:
             List of pending ApprovalRequest objects
         """
-        pending = []
-        for request in self._requests.values():
-            if request.is_pending():
-                # Check expiration
-                if self.auto_reject_on_timeout and request.has_expired():
-                    self._expire_request(request)
-                else:
-                    pending.append(request)
-        return pending
+        with self._lock:
+            pending = []
+            for request in self._requests.values():
+                if request.is_pending():
+                    # Check expiration
+                    if self.auto_reject_on_timeout and request.has_expired():
+                        self._expire_request(request)
+                    else:
+                        pending.append(request)
+            return pending
 
     def cleanup_expired_requests(self) -> int:
         """Expire all requests past their timeout.
@@ -502,13 +517,14 @@ class ApprovalWorkflow:
         if not self.auto_reject_on_timeout:
             return 0
 
-        expired_count = 0
-        for request in list(self._requests.values()):
-            if request.is_pending() and request.has_expired():
-                self._expire_request(request)
-                expired_count += 1
+        with self._lock:
+            expired_count = 0
+            for request in list(self._requests.values()):
+                if request.is_pending() and request.has_expired():
+                    self._expire_request(request)
+                    expired_count += 1
 
-        return expired_count
+            return expired_count
 
     def on_approved(self, callback: Callable[[ApprovalRequest], None]) -> None:
         """Register callback for when requests are approved.
@@ -563,20 +579,23 @@ class ApprovalWorkflow:
 
     def clear_requests(self) -> None:
         """Clear all approval requests. Use with caution!"""
-        self._requests.clear()
+        with self._lock:
+            self._requests.clear()
 
     def request_count(self) -> int:
         """Get total number of requests."""
-        return len(self._requests)
+        with self._lock:
+            return len(self._requests)
 
     def __repr__(self) -> str:
         """String representation."""
-        return (
-            f"ApprovalWorkflow("
-            f"requests={len(self._requests)}, "
-            f"timeout={self.default_timeout_minutes}min, "
-            f"auto_reject={self.auto_reject_on_timeout})"
-        )
+        with self._lock:
+            return (
+                f"ApprovalWorkflow("
+                f"requests={len(self._requests)}, "
+                f"timeout={self.default_timeout_minutes}min, "
+                f"auto_reject={self.auto_reject_on_timeout})"
+            )
 
 
 class NoOpApprover(ApprovalWorkflow):

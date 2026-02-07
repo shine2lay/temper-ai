@@ -590,8 +590,7 @@ class LLMSecurityRateLimiter:
             Tuple of (allowed, reason_if_blocked)
 
         Note:
-            This is the recommended method to use. The separate check_rate_limit()
-            and record_call() methods are deprecated due to TOCTOU vulnerability.
+            This is the atomic method that prevents TOCTOU race conditions.
         """
         # Normalize entity ID (prevent bypass attacks)
         normalized_id = normalize_entity_id(entity_id)
@@ -723,79 +722,6 @@ class LLMSecurityRateLimiter:
             self.call_history[entity_id].append(now)
 
             return True, None
-
-    def check_rate_limit(self, entity_id: str) -> Tuple[bool, Optional[str]]:
-        """
-        Check if entity is within rate limits (thread-safe).
-
-        DEPRECATED: This method is vulnerable to TOCTOU race conditions when used
-        with record_call(). Use check_and_record_rate_limit() instead.
-
-        Args:
-            entity_id: Agent ID or workflow ID
-
-        Returns:
-            Tuple of (allowed, reason_if_blocked)
-
-        Warning:
-            Using this method with record_call() in separate operations allows
-            concurrent threads to bypass rate limits. Always use the atomic
-            check_and_record_rate_limit() method instead.
-        """
-        logger.warning(
-            "DEPRECATED: check_rate_limit() is vulnerable to TOCTOU. "
-            "Use check_and_record_rate_limit() instead.",
-            extra={'entity_id': entity_id}
-        )
-        with self._lock:
-            now = time.time()
-
-            # Clean up old entries
-            self._cleanup_old_entries(entity_id, now)
-
-            # Check minute limit
-            minute_ago = now - 60
-            recent_calls = [t for t in self.call_history[entity_id] if t > minute_ago]
-            if len(recent_calls) >= self.max_calls_per_minute:
-                return False, f"Rate limit exceeded: {self.max_calls_per_minute} calls/minute"
-
-            # Check hour limit
-            hour_ago = now - 3600
-            hourly_calls = [t for t in self.call_history[entity_id] if t > hour_ago]
-            if len(hourly_calls) >= self.max_calls_per_hour:
-                return False, f"Rate limit exceeded: {self.max_calls_per_hour} calls/hour"
-
-            # Check burst limit
-            burst_window = now - 5  # 5 second burst window
-            burst_calls = [t for t in self.call_history[entity_id] if t > burst_window]
-            if len(burst_calls) >= self.burst_size:
-                return False, f"Burst limit exceeded: {self.burst_size} calls in 5 seconds"
-
-            return True, None
-
-    def record_call(self, entity_id: str) -> None:
-        """
-        Record a successful call (thread-safe).
-
-        DEPRECATED: This method is vulnerable to TOCTOU race conditions when used
-        with check_rate_limit(). Use check_and_record_rate_limit() instead.
-
-        Args:
-            entity_id: Agent ID or workflow ID
-
-        Warning:
-            Using this method with check_rate_limit() in separate operations allows
-            concurrent threads to bypass rate limits. Always use the atomic
-            check_and_record_rate_limit() method instead.
-        """
-        logger.warning(
-            "DEPRECATED: record_call() is vulnerable to TOCTOU. "
-            "Use check_and_record_rate_limit() instead.",
-            extra={'entity_id': entity_id}
-        )
-        with self._lock:
-            now = time.time()
-            self.call_history[entity_id].append(now)
 
     def _cleanup_old_entries(self, entity_id: str, now: float) -> None:
         """Remove entries older than 1 hour and evict empty entity keys."""

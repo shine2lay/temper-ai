@@ -572,6 +572,8 @@ class CircuitBreaker:
 
         if current_state == CircuitState.HALF_OPEN:
             if not self._half_open_semaphore.acquire(blocking=False):
+                with self.lock:
+                    self.metrics.rejected_calls += 1
                 raise CircuitBreakerError(
                     f"Circuit breaker for {self.name} is testing recovery. "
                     f"Retry in 1-2 seconds."

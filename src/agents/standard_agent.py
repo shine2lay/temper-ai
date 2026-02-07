@@ -18,6 +18,8 @@ import json
 import logging
 import os
 import random
+import sys
+import threading
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -60,22 +62,47 @@ _SANITIZE_TAGS = [TOOL_CALL_TAG, ANSWER_TAG] + REASONING_TAGS
 OLLAMA_DEFAULT_PORT = 11434
 
 # Shared thread pool for parallel tool execution (M-28).
-# Avoids creating a new ThreadPoolExecutor per tool-call batch.
+# H-16: Lazy initialization with lifecycle management to avoid resource leaks.
 # M-18: Pool size configurable via AGENT_TOOL_WORKERS env var.
 _TOOL_POOL_SIZE = int(os.environ.get("AGENT_TOOL_WORKERS", "4"))
-_TOOL_EXECUTOR_POOL = concurrent.futures.ThreadPoolExecutor(
-    max_workers=_TOOL_POOL_SIZE,
-    thread_name_prefix="agent-tool"
-)
+_tool_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
+_executor_lock = threading.Lock()
 
 
-# P-15: Graceful shutdown with wait=True so in-flight tool calls finish.
-# cancel_futures=True prevents queued-but-not-started work from executing.
-def _shutdown_pool() -> None:
-    _TOOL_EXECUTOR_POOL.shutdown(wait=True, cancel_futures=True)
+def _get_tool_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """Get or lazily create the shared thread pool for tool execution.
+
+    Thread-safe lazy initialization ensures the pool is only created when needed
+    and prevents race conditions during concurrent initialization (H-16).
+    """
+    global _tool_executor
+    if _tool_executor is None:
+        with _executor_lock:
+            # Double-check pattern to prevent race conditions
+            if _tool_executor is None:
+                _tool_executor = concurrent.futures.ThreadPoolExecutor(
+                    max_workers=_TOOL_POOL_SIZE,
+                    thread_name_prefix="agent-tool"
+                )
+    return _tool_executor
 
 
-atexit.register(_shutdown_pool)
+def _shutdown_tool_executor() -> None:
+    """Shutdown the tool executor pool gracefully (P-15, H-16).
+
+    Waits for in-flight tool calls to finish and cancels queued work.
+    Supports Python 3.8 (no cancel_futures) and 3.9+ (with cancel_futures).
+    """
+    global _tool_executor
+    if _tool_executor is not None:
+        if sys.version_info >= (3, 9):
+            _tool_executor.shutdown(wait=True, cancel_futures=True)
+        else:
+            _tool_executor.shutdown(wait=True)
+        _tool_executor = None
+
+
+atexit.register(_shutdown_tool_executor)
 
 
 def validate_input_data(
@@ -687,12 +714,16 @@ class StandardAgent(BaseAgent):
                 last_error = e
                 safe_err = sanitize_error_message(str(e))
                 if attempt < max_agent_retries:
-                    backoff_delay = retry_delay * (2.0 ** attempt)
+                    # H-10: Add jitter to prevent thundering herd
+                    backoff_delay = retry_delay * (2.0 ** attempt) * (0.5 + random.random())
                     logger.warning(
                         "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
                         attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
                     )
-                    time.sleep(backoff_delay)
+                    # H-15: Use threading.Event for interruptible wait instead of time.sleep
+                    shutdown_event = threading.Event()
+                    if shutdown_event.wait(timeout=backoff_delay):
+                        raise KeyboardInterrupt("Agent execution interrupted")
                 else:
                     logger.error(
                         "LLM call failed after %d attempts: %s",
@@ -796,7 +827,7 @@ class StandardAgent(BaseAgent):
         tool_results: List[Any] = [None] * len(tool_calls)
 
         future_to_index = {
-            _TOOL_EXECUTOR_POOL.submit(self._execute_single_tool, tool_call): i
+            _get_tool_executor().submit(self._execute_single_tool, tool_call): i
             for i, tool_call in enumerate(tool_calls)
         }
 

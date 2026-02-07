@@ -14,7 +14,7 @@ These tests verify distributed rate limiting behavior:
 - Failure handling and graceful degradation
 
 Reference:
-- .claude-coord/reports/test-review-20260130-223857.md#35
+- Historical test review report (coordination system removed)
 - DISTRIBUTED_RATE_LIMITING_TEST_DESIGN.md
 - DISTRIBUTED_RATE_LIMITING_SECURITY_ANALYSIS.md
 """

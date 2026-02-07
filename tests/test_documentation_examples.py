@@ -227,39 +227,6 @@ class TestM4APIReferenceExamples:
             "Found set_fail_fast() method - this doesn't exist"
 
 
-class TestCoordinationCommandExamples:
-    """Test coordination command examples."""
-
-    @pytest.fixture
-    def coord_readme(self):
-        return Path(".claude-coord/README.md")
-
-    def test_coord_readme_exists(self, coord_readme):
-        """Coordination README should exist."""
-        assert coord_readme.exists()
-
-    def test_no_claude_coord_sh_references(self, coord_readme):
-        """Should use 'coord' not 'claude-coord.sh'."""
-        with open(coord_readme) as f:
-            content = f.read()
-
-        assert 'claude-coord.sh' not in content, \
-            "Found deprecated 'claude-coord.sh' - should be 'coord'"
-
-    def test_uses_task_create_not_task_add(self, coord_readme):
-        """Should use 'task-create' not 'task-add'."""
-        with open(coord_readme) as f:
-            content = f.read()
-
-        # Allow task-add-dep but not task-add by itself
-        lines = content.split('\n')
-        bad_lines = [i for i, line in enumerate(lines, 1)
-                     if 'task-add' in line and 'task-add-dep' not in line]
-
-        assert not bad_lines, \
-            f"Found 'task-add' (should be 'task-create') at lines: {bad_lines}"
-
-
 class TestREADMEExamples:
     """Test examples from main README.md."""
 
@@ -296,27 +263,6 @@ class TestREADMEExamples:
 
 class TestCommandLineExamples:
     """Test CLI command examples work."""
-
-    def test_coord_commands_valid_syntax(self):
-        """Coordination commands in docs should have valid syntax."""
-        readme = Path(".claude-coord/README.md")
-        if not readme.exists():
-            pytest.skip("Coordination README not found")
-
-        bash_blocks = extract_bash_commands(readme)
-
-        for commands, line_num in bash_blocks:
-            for cmd in commands.split('\n'):
-                cmd = cmd.strip()
-                if not cmd or cmd.startswith('#'):
-                    continue
-
-                # Check for common issues
-                if cmd.startswith('coord'):
-                    # Should not have syntax like "coord --option" without command
-                    parts = cmd.split()
-                    assert len(parts) >= 2, f"Line {line_num}: Incomplete command: {cmd}"
-
 
 # ==============================================================================
 # Documentation Testing CLI

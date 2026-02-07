@@ -22,15 +22,6 @@ from src.self_improvement.data_models import (
     utcnow,
 )
 
-# Guard coord_service import - it's an optional local package under .claude-coord/
-try:
-    from coord_service.database import Database
-
-    _coord_service_available = True
-except ImportError:
-    Database = None  # type: ignore[assignment,misc]
-    _coord_service_available = False
-
 logger = logging.getLogger(__name__)
 
 
@@ -65,16 +56,11 @@ class ConfigDeployer:
 
         Args:
             db: Database instance (coordination service database).
-                Expects a coord_service.database.Database-compatible object.
+                Database instance for tracking deployment history.
             policy_engine: ActionPolicyEngine for policy validation (optional)
             approval_workflow: ApprovalWorkflow for approval requests (optional)
             enable_safety_checks: Enable safety validation (default: True)
         """
-        if not _coord_service_available:
-            logger.warning(
-                "coord_service not available; ConfigDeployer functionality will be limited. "
-                "Ensure .claude-coord/coord_service is on sys.path or installed."
-            )
         self.db = db
         self.policy_engine = policy_engine
         self.approval_workflow = approval_workflow

@@ -24,15 +24,6 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-# Guard coord_service import - it's an optional local package under .claude-coord/
-try:
-    from coord_service.database import Database
-
-    _coord_service_available = True
-except ImportError:
-    Database = None  # type: ignore[assignment,misc]
-    _coord_service_available = False
-
 from src.database import get_database, get_session, init_database
 from src.self_improvement.loop import LoopConfig, M5SelfImprovementLoop
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
@@ -58,15 +49,7 @@ class M5CLI:
 
     def __init__(self):
         """Initialize CLI."""
-        if not _coord_service_available or Database is None:
-            raise RuntimeError(
-                "coord_service is not available. "
-                "Ensure .claude-coord/coord_service is on sys.path or installed. "
-                "The M5 CLI requires coordination database access."
-            )
-        # Use default coordination database path
-        coord_db_path = Path(__file__).parent.parent.parent / ".claude-coord" / "coordination.db"
-        self.coord_db = Database(db_path=str(coord_db_path))
+        pass
 
     def run_iteration(self, agent_name: str, config_file: Optional[str] = None) -> int:
         """

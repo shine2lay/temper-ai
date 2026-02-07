@@ -9,7 +9,6 @@ Main orchestrator for M5 self-improvement cycles integrating all 5 phases:
 5. DEPLOY - Deployment and rollback
 
 Example:
-    >>> from coord_service.database import Database
     >>> from src.database import get_session
     >>> from src.self_improvement.loop import M5SelfImprovementLoop, LoopConfig
     >>>

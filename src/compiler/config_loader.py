@@ -194,37 +194,9 @@ class ConfigLoader:
             logger.debug("Using provided ConfigDeployer for M5 integration")
             return
 
-        # Try to lazy-initialize ConfigDeployer
-        try:
-            # Import coordination database (must be on sys.path or installed)
-            from coord_service.database import Database
-
-            # Import ConfigDeployer
-            from src.self_improvement.deployment.deployer import ConfigDeployer
-
-            # Initialize database
-            db = Database()
-
-            # Create ConfigDeployer
-            self.config_deployer = ConfigDeployer(db=db, enable_safety_checks=False)
-            self._config_deployer_available = True
-
-            logger.debug("Initialized ConfigDeployer for M5 integration (lazy init)")
-
-        except ImportError as e:
-            # coord_service not available - continue with YAML-only mode
-            logger.debug(
-                f"coord_service not available, using YAML-only mode: {e}"
-            )
-            self.config_deployer = None
-            self._config_deployer_available = False
-        except Exception as e:
-            # Other initialization error - continue with YAML-only mode
-            logger.debug(
-                f"ConfigDeployer not available, using YAML-only mode: {e}"
-            )
-            self.config_deployer = None
-            self._config_deployer_available = False
+        # ConfigDeployer integration removed (coordination system obsolete)
+        self.config_deployer = None
+        self._config_deployer_available = False
 
     def load_agent(self, agent_name: str, validate: bool = True) -> Dict[str, Any]:
         """

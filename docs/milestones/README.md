@@ -71,4 +71,3 @@ Each milestone completion report includes:
 - `/README.md` - Current project status
 - `/docs/ROADMAP.md` - Future roadmap
 - `/docs/INDEX.md` - Documentation index
-- `/.claude-coord/state.json` - Active task tracking

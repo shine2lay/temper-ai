@@ -1,9 +1,0 @@
-# Coordination service runtime files
-coordination.db
-coordination.db-shm
-coordination.db-wal
-coord.sock
-
-# Authentication token (SECURITY: Never commit)
-.auth_token
-.auth_token.tmp

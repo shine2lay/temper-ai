@@ -37,9 +37,7 @@ class M5SelfImprovementLoop:
     continuous, and scheduled execution modes.
 
     Example:
-        >>> from coord_service.database import Database
         >>> from src.database import get_session
-        >>> coord_db = Database()
         >>> with get_session() as obs_session:
         ...     loop = M5SelfImprovementLoop(coord_db, obs_session)
         ...     result = loop.run_iteration("my_agent")

@@ -39,6 +39,7 @@ from typing import Any, Dict, List, Optional, cast
 logger = logging.getLogger(__name__)
 
 from src.compiler.domain_state import WorkflowDomainState
+from src.utils.exceptions import ConfigurationError, ErrorCode
 
 
 class CheckpointBackend(ABC):
@@ -163,9 +164,15 @@ class CheckpointBackend(ABC):
         pass
 
 
-class CheckpointNotFoundError(Exception):
+class CheckpointNotFoundError(ConfigurationError):
     """Raised when a checkpoint cannot be found."""
-    pass
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.CONFIG_NOT_FOUND,
+            **kwargs
+        )
 
 
 class FileCheckpointBackend(CheckpointBackend):

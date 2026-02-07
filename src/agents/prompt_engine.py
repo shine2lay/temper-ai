@@ -11,10 +11,18 @@ from typing import Any, Dict, List, Optional, Union
 from jinja2 import FileSystemLoader, Template, TemplateNotFound
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
+from src.utils.exceptions import AgentError, ErrorCode
 
-class PromptRenderError(Exception):
+
+class PromptRenderError(AgentError):
     """Raised when prompt rendering fails."""
-    pass
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.AGENT_EXECUTION_ERROR,
+            **kwargs
+        )
 
 
 def _is_safe_template_value(value: Any) -> bool:

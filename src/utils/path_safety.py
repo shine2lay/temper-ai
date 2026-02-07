@@ -15,8 +15,10 @@ import unicodedata
 from pathlib import Path
 from typing import Any, List, Optional, Union
 
+from src.utils.exceptions import SecurityError
 
-class PathSafetyError(Exception):
+
+class PathSafetyError(SecurityError):
     """Raised when a path fails safety validation."""
     pass
 

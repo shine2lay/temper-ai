@@ -46,10 +46,12 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
+from src.utils.exceptions import SecurityError
+
 logger = logging.getLogger(__name__)
 
 
-class RollbackSecurityError(Exception):
+class RollbackSecurityError(SecurityError):
     """Raised when rollback operation fails security validation."""
     pass
 

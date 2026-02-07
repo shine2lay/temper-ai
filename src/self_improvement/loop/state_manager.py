@@ -14,6 +14,7 @@ from sqlmodel import Column, Field, SQLModel, select
 
 from src.observability.database import get_session
 from src.observability.datetime_utils import utcnow
+from src.utils.exceptions import ErrorCode, WorkflowError
 
 from .models import LoopState, LoopStatus, Phase
 
@@ -61,9 +62,15 @@ def _record_to_state(record: M5LoopStateRecord) -> LoopState:
     )
 
 
-class StateTransitionError(Exception):
+class StateTransitionError(WorkflowError):
     """Raised when an invalid state transition is attempted."""
-    pass
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
+            **kwargs
+        )
 
 
 class LoopStateManager:

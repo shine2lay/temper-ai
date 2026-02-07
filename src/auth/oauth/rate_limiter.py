@@ -15,11 +15,17 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 
+from src.utils.exceptions import RateLimitError
+
 logger = logging.getLogger(__name__)
 
 
-class RateLimitExceeded(Exception):  # noqa: N818 — public API name
-    """Raised when rate limit is exceeded."""
+class RateLimitExceeded(RateLimitError):  # noqa: N818 — public API name
+    """Raised when rate limit is exceeded.
+
+    Inherits from framework-wide RateLimitError for unified isinstance checks
+    while preserving the public OAuth API name.
+    """
 
     def __init__(self, message: str, retry_after: int):
         """Initialize rate limit exception.
@@ -28,8 +34,7 @@ class RateLimitExceeded(Exception):  # noqa: N818 — public API name
             message: Error message
             retry_after: Seconds until rate limit resets
         """
-        self.retry_after = retry_after
-        super().__init__(message)
+        super().__init__(message, retry_after=retry_after)
 
 
 class SlidingWindowRateLimiter:

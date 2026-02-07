@@ -26,7 +26,49 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol, Tuple, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, Tuple, TypedDict, runtime_checkable
+
+
+class ActionDescriptor(TypedDict, total=False):
+    """Type-safe descriptor for actions being validated by safety policies.
+
+    This provides a structured contract for action data passed to SafetyPolicy.validate().
+    All fields are optional to support different action types.
+
+    Common fields:
+        tool: Tool name for tool_call actions
+        args: Tool arguments
+        operation: Operation type (read, write, etc.)
+        path: File path for file operations
+        endpoint: API endpoint
+        method: HTTP method
+        command: Shell command
+        type: Action type discriminator
+
+    Example:
+        >>> action: ActionDescriptor = {
+        ...     "type": "tool_call",
+        ...     "tool": "file_read",
+        ...     "args": {"path": "/tmp/file.txt"}
+        ... }
+    """
+    # Common discriminator
+    type: str
+
+    # Tool call fields
+    tool: str
+    args: Dict[str, Any]
+
+    # File operation fields
+    operation: str
+    path: str
+
+    # API call fields
+    endpoint: str
+    method: str
+
+    # Command execution fields
+    command: str
 
 
 class ViolationSeverity(Enum):
@@ -244,10 +286,12 @@ class SafetyPolicy(ABC):
         """Validate action against safety policy (synchronous).
 
         Args:
-            action: Action to validate. Structure depends on action type:
-                - tool_call: {"tool": "name", "args": {...}}
-                - file_operation: {"operation": "read|write", "path": "..."}
-                - api_call: {"endpoint": "...", "method": "..."}
+            action: Action to validate. Should conform to ActionDescriptor structure.
+                Common patterns:
+                - tool_call: {"type": "tool_call", "tool": "name", "args": {...}}
+                - file_operation: {"type": "file_op", "operation": "read|write", "path": "..."}
+                - api_call: {"type": "api_call", "endpoint": "...", "method": "..."}
+                See ActionDescriptor TypedDict for full structure.
             context: Execution context with information about:
                 - agent: Agent name/ID
                 - stage: Current workflow stage

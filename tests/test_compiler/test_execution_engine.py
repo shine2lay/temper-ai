@@ -140,7 +140,10 @@ class TestWorkflowCancelledError:
         try:
             raise WorkflowCancelledError(message)
         except WorkflowCancelledError as e:
-            assert str(e) == message
+            # Since WorkflowCancelledError now inherits from WorkflowError,
+            # the string representation includes the error code prefix
+            assert message in str(e)
+            assert "[WORKFLOW_EXECUTION_ERROR]" in str(e)
 
 
 class TestWorkflowCancellation:

@@ -11,12 +11,13 @@ from typing import Optional
 
 from sqlalchemy import text
 
+from src.utils.exceptions import SecurityError
 from .database import DatabaseManager, get_database
 
 logger = logging.getLogger(__name__)
 
 
-class MigrationSecurityError(Exception):
+class MigrationSecurityError(SecurityError):
     """Raised when migration validation fails security checks."""
     pass
 

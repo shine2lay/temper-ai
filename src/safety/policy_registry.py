@@ -111,10 +111,18 @@ class PolicyRegistry:
         """
         return sorted(self._policy_mappings.keys())
 
-    def list_all(self) -> List[str]:
+    def list(self) -> List[str]:
         """Get names of all registered policies (Registry Protocol method).
 
-        This is an alias for list_policies() to satisfy the Registry Protocol.
+        Returns:
+            Sorted list of policy names
+        """
+        return self.list_policies()
+
+    def list_all(self) -> List[str]:
+        """DEPRECATED: Use list() instead.
+
+        Get names of all registered policies (backward compatibility).
 
         Returns:
             Sorted list of policy names

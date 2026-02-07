@@ -83,7 +83,7 @@ class TrackerProtocol(Protocol):
 class ToolRegistryProtocol(Protocol):
     """Minimal interface for a tool registry."""
 
-    def get_tool(self, name: str) -> Any: ...
+    def get(self, name: str, version: Optional[str] = None) -> Any: ...
 
 
 @runtime_checkable
@@ -439,21 +439,19 @@ class InfrastructureContext:
         return f"InfrastructureContext(components=[{', '.join(components)}])"
 
 
-def DomainExecutionContext(*args: Any, **kwargs: Any) -> InfrastructureContext:
-    """Deprecated: Use InfrastructureContext directly.
+class DomainExecutionContext(InfrastructureContext):
+    """Backward-compatible alias.
 
-    This alias is retained for backward compatibility but will be removed
-    in a future version. All new code should use InfrastructureContext.
+    DEPRECATED: Use InfrastructureContext directly.
     """
-    import warnings
-
-    warnings.warn(
-        "DomainExecutionContext is deprecated. "
-        "Use InfrastructureContext from src.compiler.domain_state instead.",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    return InfrastructureContext(*args, **kwargs)
+    def __init_subclass__(cls, **kwargs):
+        import warnings
+        warnings.warn(
+            "DomainExecutionContext is deprecated. Use InfrastructureContext.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init_subclass__(**kwargs)
 
 
 def __getattr__(name: str) -> object:

@@ -7,6 +7,7 @@ import pytest
 from unittest.mock import Mock
 
 from src.core.protocols import Registry
+from src.compiler.domain_state import ToolRegistryProtocol
 from src.tools.registry import ToolRegistry
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.safety.policy_registry import PolicyRegistry
@@ -273,6 +274,59 @@ class TestRegistryProtocolEdgeCases:
 
         assert tool_registry.count() == 3  # 3 versions total
         assert len(tool_registry.list_all()) == 2  # 2 unique tool names
+
+
+class TestToolRegistryProtocolConformance:
+    """Test ToolRegistry conformance to ToolRegistryProtocol (C-04 fix)."""
+
+    def test_tool_registry_satisfies_tool_registry_protocol(self):
+        """ToolRegistry should satisfy ToolRegistryProtocol (C-04)."""
+        registry = ToolRegistry()
+        # Verify it's recognized as ToolRegistryProtocol instance
+        assert isinstance(registry, ToolRegistryProtocol)
+
+    def test_tool_registry_protocol_get_signature(self):
+        """ToolRegistry.get() signature matches ToolRegistryProtocol (C-04)."""
+        registry = ToolRegistry()
+        tool = MockTool(name="test_tool", version="1.0.0")
+        registry.register(tool)
+
+        # Test get with name only (version defaults to None)
+        retrieved = registry.get("test_tool")
+        assert retrieved is not None
+        assert retrieved.name == "test_tool"
+
+        # Test get with explicit version
+        retrieved_v1 = registry.get("test_tool", version="1.0.0")
+        assert retrieved_v1 is not None
+        assert retrieved_v1.get_metadata().version == "1.0.0"
+
+        # Test get nonexistent
+        assert registry.get("nonexistent") is None
+        assert registry.get("nonexistent", version="1.0.0") is None
+
+    def test_tool_registry_protocol_any_implementation(self):
+        """Any class with get(name, version=None) satisfies ToolRegistryProtocol."""
+
+        class MinimalToolRegistry:
+            """Minimal implementation of ToolRegistryProtocol."""
+
+            def __init__(self):
+                self._tools = {}
+
+            def get(self, name: str, version=None):
+                """Minimal get implementation."""
+                return self._tools.get(name)
+
+        minimal_registry = MinimalToolRegistry()
+        # Should satisfy the protocol
+        assert isinstance(minimal_registry, ToolRegistryProtocol)
+
+        # Should work with protocol-typed functions
+        def use_registry(reg: ToolRegistryProtocol):
+            return reg.get("test")
+
+        assert use_registry(minimal_registry) is None
 
 
 class TestRegistryProtocolTypeChecking:

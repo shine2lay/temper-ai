@@ -16,14 +16,22 @@ from abc import ABC, abstractmethod
 from enum import Enum
 from typing import Any, Dict
 
+from src.utils.exceptions import ErrorCode, WorkflowError
 
-class WorkflowCancelledError(Exception):
+
+class WorkflowCancelledError(WorkflowError):
     """Exception raised when a workflow is cancelled during execution.
 
     This exception indicates that the workflow was cancelled explicitly
     via the cancel() method, not due to an error or failure.
     """
-    pass
+
+    def __init__(self, message: str = "Workflow was cancelled", **kwargs):
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
+            **kwargs
+        )
 
 
 class ExecutionMode(Enum):

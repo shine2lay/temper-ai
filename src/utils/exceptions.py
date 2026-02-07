@@ -11,9 +11,10 @@ import re
 import traceback
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from src.core.context import ExecutionContext  # canonical definition; re-exported here
+if TYPE_CHECKING:
+    from src.core.context import ExecutionContext
 
 
 def sanitize_error_message(message: str) -> str:
@@ -227,13 +228,17 @@ class BaseError(FrameworkException):
         self,
         message: str,
         error_code: ErrorCode = ErrorCode.UNKNOWN_ERROR,
-        context: Optional[ExecutionContext] = None,
+        context: Optional["ExecutionContext"] = None,
         cause: Optional[Exception] = None,
         extra_data: Optional[Dict[str, Any]] = None
     ):
         self.message = message
         self.error_code = error_code
-        self.context = context or ExecutionContext()
+        # Lazy import to avoid circular dependency
+        if context is None:
+            from src.core.context import ExecutionContext
+            context = ExecutionContext()
+        self.context = context
         self.cause = cause
         self.timestamp = datetime.now(timezone.utc)
         self.extra_data = extra_data or {}
@@ -318,7 +323,7 @@ class ConfigurationError(BaseError):
         self,
         message: str,
         error_code: ErrorCode = ErrorCode.CONFIG_INVALID,
-        context: Optional[ExecutionContext] = None,
+        context: Optional["ExecutionContext"] = None,
         cause: Optional[Exception] = None,
         config_path: Optional[str] = None,
         **kwargs: Any
@@ -373,7 +378,7 @@ class LLMError(BaseError):
         self,
         message: str,
         error_code: ErrorCode = ErrorCode.LLM_CONNECTION_ERROR,
-        context: Optional[ExecutionContext] = None,
+        context: Optional["ExecutionContext"] = None,
         cause: Optional[Exception] = None,
         provider: Optional[str] = None,
         model: Optional[str] = None,
@@ -411,8 +416,37 @@ class LLMTimeoutError(LLMError):
         )
 
 
-class LLMRateLimitError(LLMError):
-    """Raised when rate limited by LLM provider."""
+class RateLimitError(FrameworkException):
+    """Base class for all rate limit exceptions across the framework.
+
+    Provides unified rate limit handling for:
+    - LLM providers (LLMRateLimitError)
+    - Tool executors (ToolRateLimitError)
+    - OAuth/Auth services (OAuthRateLimitError)
+
+    Attributes:
+        message: Error message
+        retry_after: Optional seconds until rate limit resets
+    """
+
+    def __init__(self, message: str, retry_after: Optional[int] = None) -> None:
+        """Initialize rate limit exception.
+
+        Args:
+            message: Error message
+            retry_after: Optional seconds until rate limit resets
+        """
+        self.retry_after = retry_after
+        super().__init__(message)
+
+
+class LLMRateLimitError(LLMError, RateLimitError):
+    """Raised when rate limited by LLM provider.
+
+    Multiple inheritance:
+    - LLMError: Provides LLM-specific context and error codes
+    - RateLimitError: Unified rate limit base class for isinstance checks
+    """
 
     def __init__(self, message: str, retry_after: Optional[int] = None, **kwargs: Any) -> None:
         extra_data = kwargs.get('extra_data', {})
@@ -420,11 +454,15 @@ class LLMRateLimitError(LLMError):
             extra_data['retry_after'] = retry_after
         kwargs['extra_data'] = extra_data
 
-        super().__init__(
+        # Initialize LLMError (which handles BaseError and FrameworkException)
+        LLMError.__init__(
+            self,
             message=message,
             error_code=ErrorCode.LLM_RATE_LIMIT,
             **kwargs
         )
+        # Store retry_after on self (from RateLimitError interface)
+        self.retry_after = retry_after
 
 
 class LLMAuthenticationError(LLMError):
@@ -447,7 +485,7 @@ class ToolError(BaseError):
         self,
         message: str,
         error_code: ErrorCode = ErrorCode.TOOL_EXECUTION_ERROR,
-        context: Optional[ExecutionContext] = None,
+        context: Optional["ExecutionContext"] = None,
         cause: Optional[Exception] = None,
         tool_name: Optional[str] = None,
         **kwargs: Any
@@ -456,6 +494,7 @@ class ToolError(BaseError):
         if tool_name and context:
             context.tool_name = tool_name
         elif tool_name:
+            from src.core.context import ExecutionContext
             context = ExecutionContext(tool_name=tool_name)
 
         super().__init__(
@@ -511,7 +550,7 @@ class AgentError(BaseError):
         self,
         message: str,
         error_code: ErrorCode = ErrorCode.AGENT_EXECUTION_ERROR,
-        context: Optional[ExecutionContext] = None,
+        context: Optional["ExecutionContext"] = None,
         cause: Optional[Exception] = None,
         agent_name: Optional[str] = None,
         **kwargs: Any
@@ -539,7 +578,7 @@ class WorkflowError(BaseError):
         self,
         message: str,
         error_code: ErrorCode = ErrorCode.WORKFLOW_EXECUTION_ERROR,
-        context: Optional[ExecutionContext] = None,
+        context: Optional["ExecutionContext"] = None,
         cause: Optional[Exception] = None,
         workflow_name: Optional[str] = None,
         **kwargs: Any
@@ -581,7 +620,7 @@ class SafetyError(BaseError):
         self,
         message: str,
         error_code: ErrorCode = ErrorCode.SAFETY_VIOLATION,
-        context: Optional[ExecutionContext] = None,
+        context: Optional["ExecutionContext"] = None,
         cause: Optional[Exception] = None,
         policy_name: Optional[str] = None,
         severity: Optional[str] = None,
@@ -618,7 +657,7 @@ class FrameworkValidationError(BaseError):
         self,
         message: str,
         error_code: ErrorCode = ErrorCode.VALIDATION_ERROR,
-        context: Optional[ExecutionContext] = None,
+        context: Optional["ExecutionContext"] = None,
         cause: Optional[Exception] = None,
         field_name: Optional[str] = None,
         **kwargs: Any
@@ -638,15 +677,19 @@ class FrameworkValidationError(BaseError):
 
 
 # Backward-compat alias (deprecated)
-def ValidationError(*args, **kwargs):
-    """Deprecated: Use FrameworkValidationError instead."""
-    import warnings
-    warnings.warn(
-        "ValidationError is deprecated, use FrameworkValidationError instead",
-        DeprecationWarning,
-        stacklevel=2
-    )
-    return FrameworkValidationError(*args, **kwargs)
+class ValidationError(FrameworkValidationError):
+    """Backward-compatible ValidationError alias.
+
+    DEPRECATED: Use FrameworkValidationError directly.
+    """
+    def __init__(self, *args, **kwargs):
+        import warnings
+        warnings.warn(
+            "ValidationError is deprecated. Use FrameworkValidationError instead.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        super().__init__(*args, **kwargs)
 
 
 # Utility Functions
@@ -655,7 +698,7 @@ def wrap_exception(
     exc: Exception,
     message: str,
     error_code: ErrorCode = ErrorCode.UNKNOWN_ERROR,
-    context: Optional[ExecutionContext] = None
+    context: Optional["ExecutionContext"] = None
 ) -> BaseError:
     """Wrap a standard exception in a BaseError with context.
 

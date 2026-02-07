@@ -112,6 +112,14 @@ class CollaborationConfig(BaseModel):
     convergence_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
     config: Dict[str, Any] = Field(default_factory=dict)
 
+    @field_validator('strategy')
+    @classmethod
+    def validate_strategy(cls, v: str) -> str:
+        """Validate strategy is non-empty."""
+        if not v or not v.strip():
+            raise ValueError("strategy must be a non-empty string")
+        return v
+
     # Dialogue-specific fields (Phase 1: Dialogue Orchestrator)
     # All fields optional for backward compatibility
     max_dialogue_rounds: Optional[int] = Field(
@@ -190,6 +198,14 @@ class ConflictResolutionConfig(BaseModel):
         default_factory=dict,
         description="Additional strategy-specific configuration"
     )
+
+    @field_validator('strategy')
+    @classmethod
+    def validate_strategy(cls, v: str) -> str:
+        """Validate strategy is non-empty."""
+        if not v or not v.strip():
+            raise ValueError("strategy must be a non-empty string")
+        return v
 
     @model_validator(mode='after')
     def validate_thresholds(self) -> 'ConflictResolutionConfig':

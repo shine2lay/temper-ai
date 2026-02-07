@@ -166,7 +166,6 @@ __all__ = [
     "BlastRadiusPolicy",
     "SecretDetectionPolicy",
     "WindowRateLimitPolicy",
-    "RateLimiterPolicy",  # backward-compat alias for WindowRateLimitPolicy
     "FileAccessPolicy",
     "ForbiddenOperationsPolicy",
 
@@ -211,8 +210,6 @@ __all__ = [
     "TokenBucketManager",
     "RateLimit",
     "TokenBucketRateLimitPolicy",
-    "RateLimitPolicy",  # backward-compat alias for TokenBucketRateLimitPolicy
-    "RateLimitPolicyV2",  # backward-compat alias
 
     # Resource consumption limits
     "ResourceLimitPolicy",
@@ -228,11 +225,6 @@ __all__ = [
     "ResourceLimitViolation",
     "ForbiddenOperationViolation",
     "AccessDeniedViolation",
-
-    # Models (aliases for compatibility)
-    "SafetyViolationModel",
-    "ValidationResultModel",
-    "ViolationSeverityEnum",
 
     # LLM Security boundary protocols
     "PromptInjectionDetectorProtocol",

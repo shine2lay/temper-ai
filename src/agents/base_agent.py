@@ -14,8 +14,11 @@ if TYPE_CHECKING:
 from src.core.context import ExecutionContext  # canonical definition; re-exported here
 
 
-class ToolCallRecord(TypedDict, total=False):
+class ToolCallRecord(TypedDict):
     """Structured record of a single tool call made during agent execution.
+
+    Core fields (tool_name, arguments, result) are required.
+    Optional fields: success, duration_seconds.
 
     Attributes:
         tool_name: Name of the tool that was called
@@ -155,6 +158,29 @@ class BaseAgent(ABC):
             RuntimeError: If execution fails
         """
         pass
+
+    async def aexecute(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext] = None
+    ) -> AgentResponse:
+        """Async execution (default wraps sync execute).
+
+        Override for native async implementations.
+
+        Args:
+            input_data: Input data for the agent (e.g., {"query": "...", "data": {...}})
+            context: Optional execution context for tracking and environment
+
+        Returns:
+            AgentResponse with output, reasoning, tool calls, and metrics
+
+        Raises:
+            ValueError: If input_data is invalid
+            RuntimeError: If execution fails
+        """
+        import asyncio
+        return await asyncio.to_thread(self.execute, input_data, context)
 
     @abstractmethod
     def get_capabilities(self) -> Dict[str, Any]:

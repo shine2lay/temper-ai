@@ -16,17 +16,29 @@ logger = logging.getLogger(__name__)
 
 
 # Consolidated: canonical definition in src/utils/exceptions.py
-from src.utils.exceptions import SecurityError  # noqa: F401
+from src.utils.exceptions import ConfigurationError, ErrorCode, SecurityError  # noqa: F401
 
 
-class PricingConfigNotFoundError(Exception):
+class PricingConfigNotFoundError(ConfigurationError):
     """Raised when pricing configuration file is not found."""
-    pass
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.CONFIG_NOT_FOUND,
+            **kwargs
+        )
 
 
-class PricingConfigInvalidError(Exception):
+class PricingConfigInvalidError(ConfigurationError):
     """Raised when pricing configuration is invalid."""
-    pass
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.CONFIG_INVALID,
+            **kwargs
+        )
 
 
 class ModelPricing(BaseModel):

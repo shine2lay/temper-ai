@@ -230,11 +230,20 @@ class ToolRegistry:
         """
         return list(self._tools.keys())
 
-    def list_all(self) -> List[str]:
+    def list(self) -> List[str]:
         """
         List all registered tool names (Registry Protocol method).
 
-        This is an alias for list_tools() to satisfy the Registry Protocol.
+        Returns:
+            List of unique tool names
+        """
+        return self.list_tools()
+
+    def list_all(self) -> List[str]:
+        """
+        DEPRECATED: Use list() instead.
+
+        List all registered tool names (backward compatibility).
 
         Returns:
             List of unique tool names

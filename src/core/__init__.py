@@ -6,6 +6,28 @@ This package contains foundational components used throughout the framework:
 - Protocol definitions for common patterns
 - Service utilities
 """
-from src.core.protocols import Registry
+from src.core.protocols import (
+    PolicyRegistry,
+    Registry,
+    StrategyRegistry,
+    ToolRegistry,
+)
 
-__all__ = ["Registry"]
+# Lazy imports to avoid circular dependencies
+def __getattr__(name: str):
+    if name == "CircuitBreaker":
+        from src.core.circuit_breaker import CircuitBreaker
+        return CircuitBreaker
+    elif name == "ExecutionContext":
+        from src.core.context import ExecutionContext
+        return ExecutionContext
+    raise AttributeError(f"module 'src.core' has no attribute {name!r}")
+
+__all__ = [
+    "CircuitBreaker",
+    "ExecutionContext",
+    "Registry",
+    "PolicyRegistry",
+    "StrategyRegistry",
+    "ToolRegistry",
+]

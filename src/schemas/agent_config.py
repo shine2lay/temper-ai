@@ -112,9 +112,15 @@ class ErrorHandlingConfig(BaseModel):
         "LogAndContinue",
     })
 
-    retry_strategy: str  # Module reference (e.g., "ExponentialBackoff")
+    retry_strategy: str = Field(
+        default="ExponentialBackoff",
+        description="Module reference (e.g., 'ExponentialBackoff')"
+    )
     max_retries: int = Field(default=3, ge=0)
-    fallback: str  # Module reference (e.g., "GracefulDegradation")
+    fallback: str = Field(
+        default="GracefulDegradation",
+        description="Module reference (e.g., 'GracefulDegradation')"
+    )
     escalate_to_human_after: int = Field(default=3, gt=0)
     retry_config: RetryConfig = Field(default_factory=RetryConfig)
 

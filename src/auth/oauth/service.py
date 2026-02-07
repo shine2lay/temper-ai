@@ -25,11 +25,12 @@ from src.auth.oauth.config import OAuthConfig, get_provider_endpoints
 from src.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
 from src.auth.oauth.state_store import StateStore, create_state_store
 from src.auth.oauth.token_store import SecureTokenStore
+from src.utils.exceptions import FrameworkException
 
 logger = logging.getLogger(__name__)
 
 
-class OAuthError(Exception):
+class OAuthError(FrameworkException):
     """Base exception for OAuth errors."""
 
     def __init__(self, message: str, provider: Optional[str] = None):

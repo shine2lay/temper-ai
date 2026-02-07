@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from src.tools.base import BaseTool, ToolResult
 from src.tools.registry import ToolRegistry
+from src.utils.exceptions import RateLimitError  # Unified base class
 from src.utils.logging import get_logger
 
 if TYPE_CHECKING:
@@ -43,9 +44,8 @@ def _log_rollback_event(**kwargs) -> None:
 
 
 
-class RateLimitError(Exception):
-    """Raised when rate limit is exceeded."""
-    pass
+# Note: RateLimitError now imported from src.utils.exceptions
+# (unified base class for all rate limit exceptions)
 
 
 class ToolExecutor:

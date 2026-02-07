@@ -31,6 +31,7 @@ from src.agents.llm import (
     VllmLLM,
     # Factory
     create_llm_client,
+    create_llm_from_config,
 )
 from src.agents.prompt_engine import (
     PromptEngine,
@@ -63,6 +64,7 @@ __all__ = [
 
     # Factory
     "create_llm_client",
+    "create_llm_from_config",
 
     # Prompt Engine
     "PromptEngine",

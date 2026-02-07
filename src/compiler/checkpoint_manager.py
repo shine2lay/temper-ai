@@ -40,6 +40,7 @@ from src.compiler.checkpoint_backends import (
     FileCheckpointBackend,
 )
 from src.compiler.domain_state import WorkflowDomainState
+from src.utils.exceptions import ConfigurationError, ErrorCode
 
 logger = logging.getLogger(__name__)
 
@@ -351,14 +352,26 @@ class CheckpointManager:
                 )
 
 
-class CheckpointSaveError(Exception):
+class CheckpointSaveError(ConfigurationError):
     """Raised when checkpoint save fails."""
-    pass
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.CONFIG_INVALID,
+            **kwargs
+        )
 
 
-class CheckpointLoadError(Exception):
+class CheckpointLoadError(ConfigurationError):
     """Raised when checkpoint load fails."""
-    pass
+
+    def __init__(self, message: str, **kwargs):
+        super().__init__(
+            message=message,
+            error_code=ErrorCode.CONFIG_INVALID,
+            **kwargs
+        )
 
 
 def create_checkpoint_manager(

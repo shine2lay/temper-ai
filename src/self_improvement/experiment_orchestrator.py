@@ -36,13 +36,14 @@ from src.self_improvement.storage.experiment_models import (
     M5ExecutionResult,
     M5Experiment,
 )
+from src.utils.exceptions import FrameworkException
 
 logger = logging.getLogger(__name__)
 
 
 # ========== Custom Exceptions ==========
 
-class ExperimentError(Exception):
+class ExperimentError(FrameworkException):
     """Base exception for experiment-related errors."""
     pass
 

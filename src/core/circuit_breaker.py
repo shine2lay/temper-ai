@@ -44,6 +44,9 @@ from typing import (
 T = TypeVar('T')
 logger = logging.getLogger(__name__)
 
+# Import FrameworkException for proper exception hierarchy
+from src.utils.exceptions import FrameworkException
+
 # Cache exception class imports at module level to avoid per-call overhead (P-17)
 try:
     import httpx as _httpx
@@ -99,7 +102,7 @@ class CircuitBreakerConfig:
     timeout: int = 60  # seconds before trying half-open
 
 
-class CircuitBreakerError(Exception):
+class CircuitBreakerError(FrameworkException):
     """Raised when circuit breaker is open (LLM module interface)."""
     pass
 

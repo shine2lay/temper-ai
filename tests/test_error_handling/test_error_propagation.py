@@ -752,18 +752,15 @@ class TestErrorSanitizationIntegration:
         # Create error with cause to trigger traceback
         # Use password=value format so it matches the regex pattern
         try:
-            try:
-                raise RuntimeError(f"Database connection failed: password={password}")
-            except RuntimeError as e:
-                # Create error while exception is active (so traceback.format_exc() works)
-                error = WorkflowError(
-                    message="Workflow failed",
-                    error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
-                    cause=e
-                )
-                error_dict = error.to_dict()
-        except Exception:
-            pass
+            raise RuntimeError(f"Database connection failed: password={password}")
+        except RuntimeError as e:
+            # Create error while exception is active (so traceback.format_exc() works)
+            error = WorkflowError(
+                message="Workflow failed",
+                error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,
+                cause=e
+            )
+            error_dict = error.to_dict()
 
         # Password should be redacted in traceback
         if error_dict.get("traceback"):

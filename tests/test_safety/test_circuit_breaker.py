@@ -370,11 +370,13 @@ class TestSafetyGate:
 
     def test_can_pass_with_policy_composer(self):
         """Test can_pass with policy composer."""
+        from src.safety.interfaces import ValidationResult
+
         # Mock policy composer
         mock_composer = Mock()
 
         # Mock validation result with blocking violation
-        mock_result = Mock()
+        mock_result = Mock(spec=ValidationResult)
         mock_result.valid = False
         mock_result.has_blocking_violations.return_value = True
         mock_composer.validate.return_value = mock_result
@@ -717,12 +719,14 @@ class TestIntegration:
 
     def test_safety_gate_with_multiple_checks(self):
         """Test safety gate coordinates multiple safety checks."""
+        from src.safety.interfaces import ValidationResult
+
         # Create circuit breaker
         breaker = CircuitBreaker("test", failure_threshold=2)
 
         # Mock policy composer
         mock_composer = Mock()
-        mock_result = Mock()
+        mock_result = Mock(spec=ValidationResult)
         mock_result.valid = True
         mock_result.has_blocking_violations.return_value = False
         mock_composer.validate.return_value = mock_result

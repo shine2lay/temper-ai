@@ -39,7 +39,7 @@ def ollama_config():
 @pytest.fixture
 def mock_async_response():
     """Mock async HTTP response."""
-    mock_response = AsyncMock()
+    mock_response = AsyncMock(spec=httpx.Response)
     mock_response.status_code = 200
     # json() is synchronous in httpx, so use Mock not AsyncMock
     mock_response.json = Mock(return_value={
@@ -198,7 +198,7 @@ async def test_acomplete_retry_on_timeout(mock_async_client_class, ollama_config
         if call_count < 3:
             raise httpx.TimeoutException("Timeout")
 
-        mock_response = AsyncMock()
+        mock_response = AsyncMock(spec=httpx.Response)
         mock_response.status_code = 200
         # json() is synchronous in httpx, so use Mock not AsyncMock
         mock_response.json = Mock(return_value={
@@ -405,7 +405,7 @@ class TestAsyncErrorPaths:
             if call_count < 2:
                 raise httpx.TimeoutException("Request timeout")
 
-            mock_response = AsyncMock()
+            mock_response = AsyncMock(spec=httpx.Response)
             mock_response.status_code = 200
             mock_response.json = Mock(return_value={
                 "response": "Success after timeout retry",
@@ -611,7 +611,7 @@ class TestAsyncErrorPaths:
         async_client = llm._get_async_client()
 
         # Mock rate limit response
-        mock_response = Mock()
+        mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 429
         mock_response.text = "Rate limit exceeded"
 
@@ -681,7 +681,7 @@ class TestAsyncErrorPaths:
         async_client = llm._get_async_client()
 
         # Mock 401 authentication error
-        mock_response = Mock()
+        mock_response = Mock(spec=httpx.Response)
         mock_response.status_code = 401
         mock_response.text = "Invalid API key"
 

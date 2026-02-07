@@ -56,8 +56,8 @@ def temp_db_path():
     try:
         if os.path.exists(db_path):
             os.unlink(db_path)
-    except Exception:
-        pass
+    except (OSError, FileNotFoundError):
+        pass  # Ignore cleanup errors
 
 
 @pytest.fixture

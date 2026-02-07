@@ -111,6 +111,16 @@ class PolicyRegistry:
         """
         return sorted(self._policy_mappings.keys())
 
+    def list_all(self) -> List[str]:
+        """Get names of all registered policies (Registry Protocol method).
+
+        This is an alias for list_policies() to satisfy the Registry Protocol.
+
+        Returns:
+            Sorted list of policy names
+        """
+        return self.list_policies()
+
     def unregister_policy(self, policy_name: str) -> bool:
         """Remove policy by name.
 
@@ -206,6 +216,19 @@ class PolicyRegistry:
 
         return None
 
+    def get(self, name: str) -> Optional[SafetyPolicy]:
+        """Get policy instance by name (Registry Protocol method).
+
+        This is an alias for get_policy() to satisfy the Registry Protocol.
+
+        Args:
+            name: Name of policy to retrieve
+
+        Returns:
+            SafetyPolicy instance if found, None otherwise
+        """
+        return self.get_policy(name)
+
     def is_registered(self, policy_name: str) -> bool:
         """Check if policy is registered.
 
@@ -299,6 +322,16 @@ class PolicyRegistry:
             >>> count = registry.policy_count()
         """
         return len(self._policy_mappings)
+
+    def count(self) -> int:
+        """Get total number of registered policies (Registry Protocol method).
+
+        This is an alias for policy_count() to satisfy the Registry Protocol.
+
+        Returns:
+            Total policy count (including global)
+        """
+        return self.policy_count()
 
     def get_statistics(self) -> Dict[str, Any]:
         """Get registry statistics.

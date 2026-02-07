@@ -14,8 +14,5 @@ def _reset_globals_after_test():
     resets modules that were actually loaded.
     """
     yield
-    try:
-        from src.core.test_support import reset_all_globals
-        reset_all_globals()
-    except ImportError:
-        pass
+    from src.core.test_support import reset_all_globals
+    reset_all_globals()

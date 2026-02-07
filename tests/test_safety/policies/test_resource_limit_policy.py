@@ -238,8 +238,8 @@ class TestDiskSpaceLimits:
     @patch('psutil.disk_usage')
     def test_insufficient_disk_space_blocked(self, mock_disk_usage):
         """Test that operations with insufficient disk space are blocked."""
-        # Mock disk usage to simulate low space
-        mock_usage = Mock()
+        # Mock disk usage to simulate low space (psutil.sdiskusage object)
+        mock_usage = Mock()  # TODO: add spec= for psutil.sdiskusage
         mock_usage.total = 10 * 1024 * 1024 * 1024  # 10GB
         mock_usage.used = 9.5 * 1024 * 1024 * 1024  # 9.5GB
         mock_usage.free = 500 * 1024 * 1024  # 500MB free
@@ -292,8 +292,8 @@ class TestDiskSpaceLimits:
         - Free space: 1.1GB
         - Result: BLOCKED (1.1GB < 1.2GB) despite being above base requirement
         """
-        # Mock disk usage: free space is above base requirement but below margin
-        mock_usage = Mock()
+        # Mock disk usage: free space is above base requirement but below margin (psutil.sdiskusage object)
+        mock_usage = Mock()  # TODO: add spec= for psutil.sdiskusage
         mock_usage.total = 10 * 1024 * 1024 * 1024  # 10GB
         mock_usage.used = 8.9 * 1024 * 1024 * 1024  # 8.9GB
         mock_usage.free = 1.1 * 1024 * 1024 * 1024  # 1.1GB free

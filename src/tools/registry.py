@@ -230,6 +230,29 @@ class ToolRegistry:
         """
         return list(self._tools.keys())
 
+    def list_all(self) -> List[str]:
+        """
+        List all registered tool names (Registry Protocol method).
+
+        This is an alias for list_tools() to satisfy the Registry Protocol.
+
+        Returns:
+            List of unique tool names
+        """
+        return self.list_tools()
+
+    def count(self) -> int:
+        """
+        Get total number of registered tool instances (Registry Protocol method).
+
+        This is an alias for __len__() to satisfy the Registry Protocol.
+        Counts all tool versions (not just unique names).
+
+        Returns:
+            Total count of tool instances (all versions)
+        """
+        return len(self)
+
     def list_tool_versions(self, name: str) -> List[str]:
         """
         List all versions of a specific tool.

@@ -1729,7 +1729,7 @@ class TestCircuitBreakerPersistence:
         for _ in range(5):
             try:
                 breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-            except:
+            except httpx.TimeoutException:
                 pass
 
         assert breaker1.state == CircuitState.OPEN
@@ -1749,7 +1749,7 @@ class TestCircuitBreakerPersistence:
         for _ in range(3):
             try:
                 breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-            except:
+            except httpx.TimeoutException:
                 pass
 
         assert breaker1.failure_count == 3
@@ -1771,7 +1771,7 @@ class TestCircuitBreakerPersistence:
         # Open circuit
         try:
             breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-        except:
+        except httpx.TimeoutException:
             pass
 
         assert breaker1.state == CircuitState.OPEN
@@ -1808,7 +1808,7 @@ class TestCircuitBreakerPersistence:
         for _ in range(10):
             try:
                 breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-            except:
+            except httpx.TimeoutException:
                 pass
 
         assert breaker1.state == CircuitState.OPEN
@@ -1831,7 +1831,7 @@ class TestCircuitBreakerPersistence:
         for _ in range(5):
             try:
                 breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-            except:
+            except httpx.TimeoutException:
                 pass
 
         assert breaker1.state == CircuitState.OPEN
@@ -1851,7 +1851,7 @@ class TestCircuitBreakerPersistence:
         for _ in range(5):
             try:
                 breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-            except:
+            except httpx.TimeoutException:
                 pass
 
         assert breaker1.state == CircuitState.OPEN
@@ -1865,7 +1865,7 @@ class TestCircuitBreakerPersistence:
         for _ in range(5):
             try:
                 breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-            except:
+            except httpx.TimeoutException:
                 pass
 
         assert breaker1.state == CircuitState.OPEN
@@ -1887,7 +1887,7 @@ class TestCircuitBreakerPersistence:
         # Open circuit
         try:
             breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-        except:
+        except httpx.TimeoutException:
             pass
 
         assert breaker1.state == CircuitState.OPEN
@@ -1941,7 +1941,7 @@ class TestCircuitBreakerPersistence:
         before_time = time.time()
         try:
             breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-        except:
+        except httpx.TimeoutException:
             pass
         after_time = time.time()
 
@@ -1988,7 +1988,7 @@ class TestCircuitBreakerPersistence:
         for _ in range(5):
             try:
                 breaker1.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-            except:
+            except httpx.TimeoutException:
                 pass
 
         assert breaker1.state == CircuitState.OPEN
@@ -2011,7 +2011,7 @@ class TestCircuitBreakerPersistence:
             for _ in range(5):
                 try:
                     breaker.call(lambda: (_ for _ in ()).throw(httpx.TimeoutException("Timeout")))
-                except:
+                except httpx.TimeoutException:
                     pass
             results.append(breaker.state)
 

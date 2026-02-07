@@ -16,6 +16,7 @@ from src.safety.factory import (
     create_safety_stack,
 )
 from src.safety.policy_registry import PolicyRegistry
+from src.tools.registry import ToolRegistry
 
 
 class TestCreatePolicyRegistryWithDefaults:
@@ -248,7 +249,7 @@ class TestApproverSelection:
 
     @pytest.fixture
     def mock_tool_registry(self):
-        return MagicMock()
+        return MagicMock(spec=ToolRegistry)
 
     def test_development_uses_noop_approver(self, mock_tool_registry):
         """Development environment uses NoOpApprover."""

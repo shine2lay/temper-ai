@@ -106,11 +106,13 @@ class MeritScoreService:
         # a larger operation (e.g., DecisionTracker.track()).
         session.flush()
 
+        success_rate_val = merit_score.success_rate if merit_score.success_rate is not None else 0.0
+        expertise_val = merit_score.expertise_score if merit_score.expertise_score is not None else 0.0
         logger.info(
             f"Updated merit score for {agent_name} in {domain}: "
             f"total={merit_score.total_decisions}, "
-            f"success_rate={merit_score.success_rate:.3f if merit_score.success_rate else 0:.3f}, "
-            f"expertise={merit_score.expertise_score:.3f if merit_score.expertise_score else 0:.3f}"
+            f"success_rate={success_rate_val:.3f}, "
+            f"expertise={expertise_val:.3f}"
         )
 
     def _update_time_windowed_metrics(

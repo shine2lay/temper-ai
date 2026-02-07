@@ -99,10 +99,11 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short --strict-markers"
 markers = [
+    "unit: marks unit tests (select with '-m unit')",
+    "integration: marks integration tests (select with '-m integration')",
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "memory: marks tests that check for memory leaks",
     "benchmark: marks tests that measure performance",
-    "integration: marks integration tests (select with '-m integration')",
     "security: marks security tests (select with '-m security')",
 ]
 

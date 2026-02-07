@@ -750,7 +750,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_sorts_nested_dicts(self):
         """Test that canonical JSON sorts nested dictionary keys."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(), config={})
+        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         # Different key orders, same logical data
         obj1 = {"b": {"d": 1, "c": 2}, "a": 3}
@@ -766,7 +766,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_handles_lists(self):
         """Test that canonical JSON preserves list order."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(), config={})
+        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         obj1 = {"items": [3, 1, 2]}
         obj2 = {"items": [3, 1, 2]}
@@ -785,7 +785,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_sorts_sets(self):
         """Test that canonical JSON sorts sets for determinism."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(), config={})
+        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         # Sets are unordered in Python, but should serialize deterministically
         obj1 = {"tags": {3, 1, 2}}
@@ -801,7 +801,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_deeply_nested_structures(self):
         """Test canonical JSON with deeply nested structures."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(), config={})
+        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         obj1 = {
             "level1": {
@@ -825,7 +825,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_mixed_types(self):
         """Test canonical JSON with mixed data types."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(), config={})
+        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         obj = {
             "string": "hello",
@@ -849,10 +849,10 @@ class TestCacheKeySecurityFixes:
 
     def test_cache_key_prevents_collision_via_nested_key_order(self):
         """Test that cache key prevents collision via nested key order manipulation."""
-        registry = MagicMock()
+        registry = MagicMock(spec=PolicyRegistry)
         engine = ActionPolicyEngine(policy_registry=registry, config={})
 
-        policy = MagicMock()
+        policy = MagicMock(spec=SafetyPolicy)
         policy.name = "test_policy"
         policy.version = "1.0"
 
@@ -882,10 +882,10 @@ class TestCacheKeySecurityFixes:
 
     def test_cache_key_different_for_different_actions(self):
         """Test that different actions produce different cache keys."""
-        registry = MagicMock()
+        registry = MagicMock(spec=PolicyRegistry)
         engine = ActionPolicyEngine(policy_registry=registry, config={})
 
-        policy = MagicMock()
+        policy = MagicMock(spec=SafetyPolicy)
         policy.name = "test_policy"
         policy.version = "1.0"
 
@@ -908,10 +908,10 @@ class TestCacheKeySecurityFixes:
 
     def test_cache_key_sensitive_to_nested_value_changes(self):
         """Test that cache key changes when nested values change."""
-        registry = MagicMock()
+        registry = MagicMock(spec=PolicyRegistry)
         engine = ActionPolicyEngine(policy_registry=registry, config={})
 
-        policy = MagicMock()
+        policy = MagicMock(spec=SafetyPolicy)
         policy.name = "test_policy"
         policy.version = "1.0"
 
@@ -940,10 +940,10 @@ class TestCacheKeySecurityFixes:
 
     def test_cache_key_includes_workflow_and_stage_id(self):
         """Test that workflow_id and stage_id are included in cache key."""
-        registry = MagicMock()
+        registry = MagicMock(spec=PolicyRegistry)
         engine = ActionPolicyEngine(policy_registry=registry, config={})
 
-        policy = MagicMock()
+        policy = MagicMock(spec=SafetyPolicy)
         policy.name = "test_policy"
         policy.version = "1.0"
 
@@ -976,14 +976,14 @@ class TestCacheKeySecurityFixes:
 
     def test_cache_key_includes_policy_version(self):
         """Test that policy version affects cache key."""
-        registry = MagicMock()
+        registry = MagicMock(spec=PolicyRegistry)
         engine = ActionPolicyEngine(policy_registry=registry, config={})
 
-        policy1 = MagicMock()
+        policy1 = MagicMock(spec=SafetyPolicy)
         policy1.name = "test_policy"
         policy1.version = "1.0"
 
-        policy2 = MagicMock()
+        policy2 = MagicMock(spec=SafetyPolicy)
         policy2.name = "test_policy"
         policy2.version = "2.0"  # Different version
 
@@ -1005,7 +1005,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_handles_empty_structures(self):
         """Test canonical JSON with empty structures."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(), config={})
+        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         empty_dict = {}
         empty_list = []
@@ -1018,7 +1018,7 @@ class TestCacheKeySecurityFixes:
 
     def test_canonical_json_deterministic_for_complex_action(self):
         """Test canonical JSON is deterministic for complex real-world action."""
-        engine = ActionPolicyEngine(policy_registry=MagicMock(), config={})
+        engine = ActionPolicyEngine(policy_registry=MagicMock(spec=PolicyRegistry), config={})
 
         # Simulate complex action with nested structures
         action = {

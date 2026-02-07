@@ -103,7 +103,7 @@ def test_session_rollback_on_error():
         session.add(workflow)
 
     # Try to create duplicate (should fail and rollback)
-    try:
+    with pytest.raises(Exception):  # SQLAlchemy IntegrityError expected
         with manager.session() as session:
             duplicate = WorkflowExecution(
                 id="wf-001",  # Duplicate ID
@@ -113,8 +113,6 @@ def test_session_rollback_on_error():
             )
             session.add(duplicate)
             session.commit()  # Force commit to trigger error
-    except Exception:
-        pass  # Expected to fail
 
     # Verify original still exists and wasn't modified
     with manager.session() as session:
@@ -370,7 +368,8 @@ class TestDatabaseFailureRecovery:
 
         # Simulate connection loss by forcing an error during database write
         # We'll create an invalid workflow that violates database constraints
-        try:
+        # Expected to fail (integrity error acts as connection failure proxy)
+        with pytest.raises(Exception):  # SQLAlchemy IntegrityError expected
             with manager.session() as session:
                 # Create a workflow with duplicate ID (will fail on commit)
                 workflow2 = WorkflowExecution(
@@ -381,10 +380,6 @@ class TestDatabaseFailureRecovery:
                 )
                 session.add(workflow2)
                 session.commit()  # Force commit to trigger integrity error
-
-        except Exception:
-            # Expected to fail (integrity error acts as connection failure proxy)
-            pass
 
         # Verify: Only the first workflow should exist (second was rolled back)
         with manager.session() as session:

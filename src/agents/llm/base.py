@@ -32,7 +32,7 @@ except ImportError:
 from src.core.context import ExecutionContext
 
 # Import circuit breaker for resilience
-from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+from src.core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig  # M-03: Use canonical import
 
 # Import enhanced exceptions
 from src.utils.exceptions import (

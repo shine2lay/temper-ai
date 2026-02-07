@@ -530,6 +530,7 @@ class StandardAgent(BaseAgent):
                 safe_err = sanitize_error_message(str(e))
                 if attempt < max_agent_retries:
                     # Exponential backoff with jitter: delay * 2^attempt * uniform(0.5, 1.5)
+                    # M-12: random.random() is intentional (not secrets.random()) - jitter doesn't need cryptographic randomness
                     backoff_delay = retry_delay * (2.0 ** attempt) * (0.5 + random.random())
                     logger.warning(
                         "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",

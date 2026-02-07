@@ -721,7 +721,9 @@ class LLMCache:
             Updates cache statistics
         """
         try:
-            success = self._backend.set(key, value, ttl=self.ttl)
+            # M-17: Guard against None TTL to prevent Redis crash
+            ttl_value = self.ttl if self.ttl is not None else 3600  # Default 1 hour
+            success = self._backend.set(key, value, ttl=ttl_value)
 
             if success:
                 with self._stats_lock:

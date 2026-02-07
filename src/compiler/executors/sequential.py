@@ -11,7 +11,7 @@ import traceback
 import uuid
 from typing import Any, Dict, Optional, cast
 
-from src.llm.circuit_breaker import CircuitBreakerError
+from src.core.circuit_breaker import CircuitBreakerError  # M-03: Use canonical import
 from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message
 
 logger = logging.getLogger(__name__)

@@ -7,7 +7,7 @@ import logging
 from typing import Any, Callable, Dict, List, Optional
 
 from src.observability.backend import ObservabilityBackend
-from src.observability.datetime_utils import utcnow
+from src.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 

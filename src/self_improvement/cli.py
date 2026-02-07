@@ -33,7 +33,7 @@ except ImportError:
     Database = None  # type: ignore[assignment,misc]
     _coord_service_available = False
 
-from src.observability.database import get_database, get_session, init_database
+from src.database import get_database, get_session, init_database
 from src.self_improvement.loop import LoopConfig, M5SelfImprovementLoop
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 

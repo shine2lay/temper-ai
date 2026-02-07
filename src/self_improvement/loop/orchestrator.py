@@ -38,7 +38,7 @@ class M5SelfImprovementLoop:
 
     Example:
         >>> from coord_service.database import Database
-        >>> from src.observability.database import get_session
+        >>> from src.database import get_session
         >>> coord_db = Database()
         >>> with get_session() as obs_session:
         ...     loop = M5SelfImprovementLoop(coord_db, obs_session)

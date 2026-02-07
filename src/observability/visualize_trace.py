@@ -513,8 +513,8 @@ def main() -> int:
             from sqlmodel import select
 
             from examples.export_waterfall import export_waterfall_trace
-            from src.observability.database import get_session
-            from src.observability.models import WorkflowExecution
+            from src.database import get_session
+            from src.database.models import WorkflowExecution
         except ImportError as e:
             print(f"ERROR: Cannot import observability modules: {e}")
             print("Use --file to load from JSON instead")

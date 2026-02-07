@@ -65,7 +65,7 @@ class ImprovementDetector:
     5. Generate improvement proposals (problem + strategy pairs)
 
     Example:
-        >>> from src.observability.database import get_session
+        >>> from src.database import get_session
         >>>
         >>> with get_session() as session:
         ...     detector = ImprovementDetector(session)

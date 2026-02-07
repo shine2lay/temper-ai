@@ -15,7 +15,7 @@ from typing import Any, Dict, Generator, List, Optional
 from src.core.context import ExecutionContext
 from src.observability.backend import ObservabilityBackend
 from src.observability.collaboration_tracker import CollaborationEventTracker
-from src.observability.datetime_utils import utcnow
+from src.database.datetime_utils import utcnow
 from src.observability.decision_tracker import DecisionTracker
 from src.observability.metric_aggregator import MetricAggregator
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
@@ -130,7 +130,7 @@ class ExecutionTracker:
         Args:
             db_url: SQLAlchemy database URL (e.g., "sqlite:///path/to/db.sqlite")
         """
-        from src.observability.database import get_database, init_database
+        from src.database import get_database, init_database
         try:
             get_database()
         except RuntimeError:

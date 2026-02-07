@@ -72,7 +72,7 @@ class MetricAggregator:
         from sqlalchemy import case
         from sqlmodel import func, select
 
-        from src.observability.models import WorkflowExecution
+        from src.database.models import WorkflowExecution
 
         # Default time window
         if end_time is None:
@@ -198,7 +198,7 @@ class MetricAggregator:
         from sqlalchemy import case
         from sqlmodel import func, select
 
-        from src.observability.models import AgentExecution
+        from src.database.models import AgentExecution
 
         # Default time window
         if end_time is None:
@@ -324,7 +324,7 @@ class MetricAggregator:
         from sqlalchemy import case
         from sqlmodel import func, select
 
-        from src.observability.models import LLMCall
+        from src.database.models import LLMCall
 
         # Default time window
         if end_time is None:
@@ -496,7 +496,7 @@ class MetricAggregator:
         Returns:
             Created metric ID
         """
-        from src.observability.models import SystemMetric
+        from src.database.models import SystemMetric
 
         metric_id = f"metric-{uuid.uuid4().hex[:12]}"
 

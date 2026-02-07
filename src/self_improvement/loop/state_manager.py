@@ -12,8 +12,8 @@ from typing import Any, Callable, Dict, Optional
 from sqlalchemy import JSON, DateTime
 from sqlmodel import Column, Field, SQLModel, select
 
-from src.observability.database import get_session
-from src.observability.datetime_utils import utcnow
+from src.database import get_session
+from src.database.datetime_utils import utcnow
 from src.utils.exceptions import ErrorCode, WorkflowError
 
 from .models import LoopState, LoopStatus, Phase

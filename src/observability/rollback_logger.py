@@ -18,10 +18,9 @@ from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 
-from src.observability.database import DatabaseManager, get_database
-from src.observability.models import RollbackEvent, RollbackSnapshotDB
-from src.safety.rollback import RollbackResult
-from src.safety.rollback import RollbackSnapshot as SnapshotData
+from src.database import DatabaseManager, get_database
+from src.database.models import RollbackEvent, RollbackSnapshotDB
+from src.observability.rollback_types import RollbackResult, RollbackSnapshot as SnapshotData
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)

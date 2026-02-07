@@ -18,8 +18,8 @@ from src.experimentation.models import (
     ExecutionStatus,
     VariantAssignment,
 )
-from src.observability.database import get_session
-from src.observability.models import (
+from src.database import get_session
+from src.database.models import (
     WorkflowExecution,
 )
 

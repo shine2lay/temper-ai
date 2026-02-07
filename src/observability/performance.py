@@ -21,7 +21,7 @@ from src.observability.constants import (
     MAX_LATENCY_SAMPLES,
     MAX_SLOW_OPERATIONS,
 )
-from src.observability.datetime_utils import utcnow
+from src.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 

@@ -97,7 +97,7 @@ def _get_all_reset_functions() -> List[Callable[[], None]]:
         pass
 
     try:
-        from src.observability.database import reset_database
+        from src.database import reset_database
         fns.append(reset_database)
     except ImportError:
         pass

@@ -34,7 +34,7 @@ class WorkflowVisualizer:
             workflow_execution: WorkflowExecution model instance with loaded relationships
 
         Example:
-            >>> from src.observability.database import get_session
+            >>> from src.database import get_session
             >>> from sqlmodel import select
             >>> with get_session() as session:
             ...     workflow = session.exec(
@@ -289,8 +289,8 @@ def print_workflow_tree(workflow_execution: Any, verbosity: str = "standard") ->
         verbosity: Display level - minimal | standard | verbose
 
     Example:
-        >>> from src.observability.models import WorkflowExecution
-        >>> from src.observability.database import get_session
+        >>> from src.database.models import WorkflowExecution
+        >>> from src.database import get_session
         >>> from sqlmodel import select
         >>> with get_session() as session:
         ...     workflow = session.exec(
@@ -340,8 +340,8 @@ class StreamingVisualizer(WorkflowVisualizer):
         # Get initial state
         from sqlmodel import select
 
-        from src.observability.database import get_session
-        from src.observability.models import WorkflowExecution
+        from src.database import get_session
+        from src.database.models import WorkflowExecution
 
         with get_session() as session:
             workflow = session.exec(
@@ -393,8 +393,8 @@ class StreamingVisualizer(WorkflowVisualizer):
         """Poll database and update display continuously."""
         from sqlmodel import select
 
-        from src.observability.database import get_session
-        from src.observability.models import WorkflowExecution
+        from src.database import get_session
+        from src.database.models import WorkflowExecution
 
         while not self.stop_event.is_set():
             try:

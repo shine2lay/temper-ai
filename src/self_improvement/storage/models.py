@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy import JSON, Index
 from sqlmodel import Column, Field, SQLModel
 
-from src.observability.datetime_utils import utcnow
+from src.database.datetime_utils import utcnow
 
 
 class CustomMetric(SQLModel, table=True):
@@ -50,7 +50,12 @@ class CustomMetric(SQLModel, table=True):
     # Execution reference
     execution_id: str = Field(
         index=True,
-        description="ID of the agent/workflow execution this metric applies to"
+        description=(
+            "Polymorphic FK - can reference WorkflowExecution.id OR AgentExecution.id. "
+            "This intentional design allows metrics to be associated with either workflow-level "
+            "or agent-level executions without requiring separate foreign key constraints. "
+            "Application code is responsible for maintaining referential integrity."
+        )
     )
 
     # Metric identity

@@ -30,7 +30,7 @@ from src.experimentation.models import (
     VariantAssignment,
     utcnow,
 )
-from src.observability.database import get_session
+from src.database import get_session
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)

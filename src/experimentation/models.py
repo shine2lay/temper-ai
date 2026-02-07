@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import JSON, DateTime, ForeignKey, String, func
 from sqlmodel import Column, Field, Index, Relationship, SQLModel
 
-from src.observability.datetime_utils import utcnow
+from src.database.datetime_utils import utcnow
 
 
 # Enum types for type safety

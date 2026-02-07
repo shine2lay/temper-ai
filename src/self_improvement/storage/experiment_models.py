@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import JSON, DateTime, ForeignKey, Index, String
 from sqlmodel import Column, Field, Relationship, SQLModel
 
-from src.observability.datetime_utils import utcnow
+from src.database.datetime_utils import utcnow
 
 
 class M5Experiment(SQLModel, table=True):

@@ -9,7 +9,7 @@ import uuid
 from datetime import timedelta
 from typing import Any, Optional
 
-from src.observability.datetime_utils import utcnow
+from src.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +45,7 @@ class MeritScoreService:
         """
         from sqlmodel import select
 
-        from src.observability.models import AgentMeritScore
+        from src.database.models import AgentMeritScore
 
         statement = select(AgentMeritScore).where(
             AgentMeritScore.agent_name == agent_name,
@@ -126,7 +126,7 @@ class MeritScoreService:
             from sqlalchemy import String, cast, func
             from sqlmodel import select
 
-            from src.observability.models import DecisionOutcome
+            from src.database.models import DecisionOutcome
 
             thirty_days_ago = utcnow() - timedelta(days=30)
             ninety_days_ago = utcnow() - timedelta(days=90)

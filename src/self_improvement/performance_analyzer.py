@@ -23,7 +23,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import and_, case
 from sqlmodel import Session, func, select
 
-from src.observability.models import AgentExecution
+from src.database.models import AgentExecution
 from src.self_improvement.data_models import AgentPerformanceProfile
 
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class PerformanceAnalyzer:
     4. Generate AgentPerformanceProfile with statistical aggregates
 
     Example:
-        >>> from src.observability.database import get_session
+        >>> from src.database import get_session
         >>> with get_session() as session:
         ...     analyzer = PerformanceAnalyzer(session)
         ...     profile = analyzer.analyze_agent_performance("code_review_agent")

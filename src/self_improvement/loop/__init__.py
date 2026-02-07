@@ -10,7 +10,7 @@ Main orchestrator for M5 self-improvement cycles integrating all 5 phases:
 
 Example:
     >>> from coord_service.database import Database
-    >>> from src.observability.database import get_session
+    >>> from src.database import get_session
     >>> from src.self_improvement.loop import M5SelfImprovementLoop, LoopConfig
     >>>
     >>> coord_db = Database()

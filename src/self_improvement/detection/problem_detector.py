@@ -43,7 +43,7 @@ class ProblemDetector:
     - Clear, actionable problem descriptions
 
     Example:
-        >>> from src.observability.database import get_session
+        >>> from src.database import get_session
         >>> from src.self_improvement.performance_analyzer import PerformanceAnalyzer
         >>> from src.self_improvement.performance_comparison import compare_profiles
         >>>

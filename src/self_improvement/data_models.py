@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.observability.datetime_utils import utcnow
+from src.database.datetime_utils import utcnow
 
 
 @dataclass

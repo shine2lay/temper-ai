@@ -18,9 +18,9 @@ from sqlalchemy import case
 from sqlmodel import delete, func, select
 
 from src.observability.backend import ObservabilityBackend
-from src.observability.database import get_session
-from src.observability.datetime_utils import ensure_utc, safe_duration_seconds
-from src.observability.models import (
+from src.database import get_session
+from src.database.datetime_utils import ensure_utc, safe_duration_seconds
+from src.database.models import (
     AgentExecution,
     CollaborationEvent,
     LLMCall,

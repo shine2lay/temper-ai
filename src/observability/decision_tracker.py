@@ -83,7 +83,7 @@ class DecisionTracker:
         safe_impact_metrics = self._sanitize(impact_metrics) if impact_metrics else None
 
         try:
-            from src.observability.models import DecisionOutcome
+            from src.database.models import DecisionOutcome
 
             decision_record = DecisionOutcome(
                 id=decision_id,

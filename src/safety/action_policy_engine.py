@@ -30,6 +30,7 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.core.circuit_breaker import CircuitBreakerError
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.policy_registry import PolicyRegistry
 
@@ -262,7 +263,7 @@ class ActionPolicyEngine:
                         )
                         break
 
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
                 # Policy execution error - log and treat as violation for safety
                 logger.error(f"Policy {policy.name} execution failed: {e}", exc_info=True)
 
@@ -380,7 +381,7 @@ class ActionPolicyEngine:
                         )
                         break
 
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
                 logger.error(f"Policy {policy.name} execution failed: {e}", exc_info=True)
                 violation = SafetyViolation(
                     policy_name=policy.name,

@@ -602,7 +602,7 @@ class OAuthService:
         if provider:
             try:
                 await self._revoke_at_provider(provider, tokens)
-            except Exception as e:
+            except (httpx.HTTPError, OAuthError, KeyError, AttributeError) as e:
                 logger.warning(
                     f"Provider revocation failed (continuing with local deletion): "
                     f"provider={provider}, user={user_id}, error={e}"
@@ -623,7 +623,7 @@ class OAuthService:
         """
         try:
             provider_config = self.config.get_provider_config(provider)
-        except Exception:
+        except (AttributeError, KeyError, TypeError):
             return False
 
         endpoints = get_provider_endpoints(provider_config)

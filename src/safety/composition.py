@@ -14,6 +14,7 @@ Key Features:
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from src.core.circuit_breaker import CircuitBreakerError
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 
@@ -295,7 +296,7 @@ class PolicyComposer:
                 result = policy.validate(action, context)
                 policies_evaluated += 1
                 self._handle_policy_result(policy, result, all_violations, policy_results)
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
                 policies_evaluated += 1
                 self._handle_policy_error(policy, e, action, context, all_violations, policy_results)
 
@@ -340,7 +341,7 @@ class PolicyComposer:
                 result = await policy.validate_async(action, context)
                 policies_evaluated += 1
                 self._handle_policy_result(policy, result, all_violations, policy_results)
-            except Exception as e:
+            except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
                 policies_evaluated += 1
                 self._handle_policy_error(policy, e, action, context, all_violations, policy_results)
 

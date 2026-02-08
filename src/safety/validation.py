@@ -434,7 +434,7 @@ class ValidationMixin:
                         f"{param_name} may be vulnerable to ReDoS: "
                         f"took {elapsed:.3f}s on test string"
                     )
-            except Exception as e:
+            except (re.error, TimeoutError, OverflowError) as e:
                 # Pattern causes errors - reject it
                 raise ValueError(
                     f"{param_name} causes errors during matching: {e}"

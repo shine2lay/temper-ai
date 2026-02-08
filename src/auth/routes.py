@@ -429,9 +429,9 @@ class OAuthRouteHandlers:
             # Don't redirect, return error status (handled by framework)
             raise
 
-        except Exception as e:
+        except (KeyError, ValueError, AttributeError, TypeError) as e:
             logger.error(
-                f"Unexpected error in OAuth callback: {e}", exc_info=True
+                f"Data validation error in OAuth callback: {e}", exc_info=True
             )
             return "/login?error=oauth_error", self._get_security_headers()
 
@@ -475,7 +475,7 @@ class OAuthRouteHandlers:
                 try:
                     await self.oauth_service.revoke_tokens(user_id)
                     logger.info(f"OAuth tokens revoked: user={user_id}")
-                except Exception as e:
+                except Exception as e:  # Cleanup: must not fail
                     logger.warning(
                         f"Token revocation failed (continuing with logout): {e}"
                     )

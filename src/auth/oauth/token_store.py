@@ -171,17 +171,17 @@ class SecureTokenStore:
                         "Keyring library not installed, falling back to environment variable. "
                         "For production security, install keyring: pip install keyring"
                     )
-            except Exception as e:
-                # Unexpected errors (programming errors, etc.)
-                logger.error(f"Unexpected error accessing keyring: {e}", exc_info=True)
+            except (RuntimeError, OSError, AttributeError) as e:
+                # Keyring backend errors: RuntimeError (no backend), OSError (permissions), AttributeError (config)
+                logger.error(f"Keyring error: {e}", exc_info=True)
                 if require_keyring:
                     raise SecurityError(
-                        f"Unexpected keyring error (keyring required): {e}\n"
+                        f"Keyring error (keyring required): {e}\n"
                         "Check keyring configuration and logs"
                     ) from e
                 else:
                     logger.warning(
-                        "Falling back to environment variable due to unexpected keyring error. "
+                        "Falling back to environment variable due to keyring error. "
                         "See logs for details."
                     )
 
@@ -229,7 +229,7 @@ class SecureTokenStore:
             if isinstance(key, str):
                 key = key.encode()
             self.cipher = Fernet(key)
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             raise ValueError(f"Invalid encryption key: {e}") from e
 
         # In-memory storage (use database in production)
@@ -429,8 +429,8 @@ class SecureTokenStore:
                 if isinstance(new_key, str):
                     new_key = new_key.encode()
                 self.cipher = Fernet(new_key)
-            except Exception as e:
-                raise ValueError(f"Invalid new encryption key: {e}")
+            except (ValueError, TypeError) as e:
+                raise ValueError(f"Invalid new encryption key: {e}") from e
 
             # Re-encrypt with new key
             self._tokens.clear()

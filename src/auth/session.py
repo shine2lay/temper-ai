@@ -456,7 +456,7 @@ class RedisSessionStore(SessionStoreProtocol):
         if session.is_expired():
             try:
                 await self._redis.delete(self._key(session_id))
-            except Exception:
+            except Exception:  # Cleanup: must not fail
                 pass  # Best-effort cleanup
             return None
         return session

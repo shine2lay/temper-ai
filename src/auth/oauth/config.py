@@ -308,9 +308,14 @@ class OAuthConfig(BaseModel):
             # Resolve environment variable references
             return config.resolve_env_references()
 
-        except Exception as e:
+        except (OSError, IOError) as e:
             raise OAuthConfigurationError(
-                f"Failed to load OAuth config: {e}",
+                f"Failed to read OAuth config file: {e}",
+                config_path=str(config_path)
+            ) from e
+        except (yaml.YAMLError, ValueError, TypeError, KeyError) as e:
+            raise OAuthConfigurationError(
+                f"Invalid OAuth config format: {e}",
                 config_path=str(config_path)
             ) from e
 

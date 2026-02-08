@@ -263,7 +263,7 @@ class RedisStateStore(StateStore):
                 await self._redis.ping()
                 from src.utils.secrets import mask_url_password
                 logger.info(f"Connected to Redis: {mask_url_password(self.redis_url)}")
-            except Exception as e:
+            except (OSError, ConnectionError, TimeoutError, AttributeError) as e:
                 logger.error(f"Failed to connect to Redis: {e}")
                 self._redis = None
                 raise
@@ -407,6 +407,6 @@ def create_state_store(redis_url: Optional[str] = None) -> StateStore:
             "Install redis for production: pip install redis>=5.0.0"
         )
         return InMemoryStateStore()
-    except Exception as e:
+    except (OSError, ConnectionError, TimeoutError, AttributeError, RuntimeError) as e:
         logger.error(f"Failed to create Redis state store: {e}, falling back to in-memory")
         return InMemoryStateStore()

@@ -23,6 +23,9 @@ from src.constants.timeouts import DEFAULT_SESSION_TTL_SECONDS
 
 logger = logging.getLogger(__name__)
 
+# Logging constants
+SESSION_ID_LOG_LENGTH = 16  # Number of characters to show in logs for session IDs
+
 
 class SessionStoreProtocol(abc.ABC):
     """Abstract base class for session storage backends.
@@ -141,13 +144,13 @@ class InMemorySessionStore(SessionStoreProtocol):
                 # Evict least recently used session (oldest entry)
                 evicted_id, _ = self._sessions.popitem(last=False)
                 logger.info(
-                    f"LRU eviction: removed session {evicted_id[:16]}... "
+                    f"LRU eviction: removed session {evicted_id[:SESSION_ID_LOG_LENGTH]}... "
                     f"(max_sessions={self._max_sessions})"
                 )
             self._sessions[session_id] = session
 
         logger.info(
-            f"Session created: session_id={session_id[:16]}..., "
+            f"Session created: session_id={session_id[:SESSION_ID_LOG_LENGTH]}..., "
             f"user={user.user_id}"
         )
 
@@ -186,7 +189,7 @@ class InMemorySessionStore(SessionStoreProtocol):
             if session.is_expired():
                 # Clean up expired session inline (already holding lock)
                 del self._sessions[session_id]
-                logger.info(f"Expired session removed: {session_id[:16]}...")
+                logger.info(f"Expired session removed: {session_id[:SESSION_ID_LOG_LENGTH]}...")
                 return None
 
             # M-09: Touch session for LRU tracking (move to most recent)
@@ -206,7 +209,7 @@ class InMemorySessionStore(SessionStoreProtocol):
         async with self._lock:
             if session_id in self._sessions:
                 del self._sessions[session_id]
-                logger.info(f"Session deleted: {session_id[:16]}...")
+                logger.info(f"Session deleted: {session_id[:SESSION_ID_LOG_LENGTH]}...")
                 return True
             return False
 
@@ -449,7 +452,7 @@ class RedisSessionStore(SessionStoreProtocol):
         except Exception as e:
             logger.error(f"Redis error creating session: {e}")
             raise
-        logger.info(f"Session created (Redis): session_id={session_id[:16]}..., user={user.user_id}")
+        logger.info(f"Session created (Redis): session_id={session_id[:SESSION_ID_LOG_LENGTH]}..., user={user.user_id}")
         return session
 
     async def get_session(self, session_id: str) -> Optional[Session]:
@@ -457,7 +460,7 @@ class RedisSessionStore(SessionStoreProtocol):
         try:
             data = await self._redis.get(self._key(session_id))
         except Exception as e:
-            logger.error(f"Redis error getting session {session_id[:16]}...: {e}")
+            logger.error(f"Redis error getting session {session_id[:SESSION_ID_LOG_LENGTH]}...: {e}")
             return None
         if not data:
             return None
@@ -475,10 +478,10 @@ class RedisSessionStore(SessionStoreProtocol):
         try:
             result = await self._redis.delete(self._key(session_id))
         except Exception as e:
-            logger.error(f"Redis error deleting session {session_id[:16]}...: {e}")
+            logger.error(f"Redis error deleting session {session_id[:SESSION_ID_LOG_LENGTH]}...: {e}")
             return False
         if result:
-            logger.info(f"Session deleted (Redis): {session_id[:16]}...")
+            logger.info(f"Session deleted (Redis): {session_id[:SESSION_ID_LOG_LENGTH]}...")
         return bool(result)
 
     async def cleanup_expired(self) -> None:

@@ -33,6 +33,9 @@ from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
+# Logging constants
+CACHE_KEY_LOG_LENGTH = 16  # Number of characters to show in logs for cache keys
+
 # Import redis at module level for exception handling
 try:
     import redis
@@ -663,7 +666,7 @@ class LLMCache:
         cache_key = hash_obj.hexdigest()
 
         logger.debug(
-            f"Generated cache key with isolation: {cache_key[:16]}...",
+            f"Generated cache key with isolation: {cache_key[:CACHE_KEY_LOG_LENGTH]}...",
             extra={
                 'model': model,
                 'tenant_id': tenant_id,
@@ -698,10 +701,10 @@ class LLMCache:
             with self._stats_lock:
                 if value is not None:
                     self.stats.hits += 1
-                    logger.debug(f"Cache HIT: {key[:16]}...")
+                    logger.debug(f"Cache HIT: {key[:CACHE_KEY_LOG_LENGTH]}...")
                 else:
                     self.stats.misses += 1
-                    logger.debug(f"Cache MISS: {key[:16]}...")
+                    logger.debug(f"Cache MISS: {key[:CACHE_KEY_LOG_LENGTH]}...")
 
             return value
 
@@ -711,7 +714,7 @@ class LLMCache:
             # ValueError: serialization/deserialization errors
             with self._stats_lock:
                 self.stats.errors += 1
-            logger.error(f"Cache get error for key '{key[:16]}...': {e}")
+            logger.error(f"Cache get error for key '{key[:CACHE_KEY_LOG_LENGTH]}...': {e}")
             return None
 
     def set(self, key: str, value: str) -> bool:
@@ -736,11 +739,11 @@ class LLMCache:
             if success:
                 with self._stats_lock:
                     self.stats.writes += 1
-                logger.debug(f"Cached response: {key[:16]}...")
+                logger.debug(f"Cached response: {key[:CACHE_KEY_LOG_LENGTH]}...")
             else:
                 with self._stats_lock:
                     self.stats.errors += 1
-                logger.warning(f"Failed to cache response: {key[:16]}...")
+                logger.warning(f"Failed to cache response: {key[:CACHE_KEY_LOG_LENGTH]}...")
 
             return success
 
@@ -750,7 +753,7 @@ class LLMCache:
             # ValueError: serialization/deserialization errors
             with self._stats_lock:
                 self.stats.errors += 1
-            logger.error(f"Cache set error for key '{key[:16]}...': {e}")
+            logger.error(f"Cache set error for key '{key[:CACHE_KEY_LOG_LENGTH]}...': {e}")
             return False
 
     def delete(self, key: str) -> bool:

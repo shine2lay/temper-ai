@@ -12,6 +12,15 @@ from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSe
 
 logger = logging.getLogger(__name__)
 
+# Cost increase limits
+DEFAULT_MAX_COST_INCREASE_PCT = 50.0  # Maximum allowed cost increase percentage
+
+# Model cost estimates (relative scale: 1-15)
+MODEL_COST_MISTRAL_7B = 5
+MODEL_COST_LLAMA_8B = 6
+MODEL_COST_MIXTRAL_8X7B = 15
+DEFAULT_MODEL_COST = 3  # Default cost for unknown models
+
 
 @dataclass
 class ConfigChange:
@@ -59,7 +68,7 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         self.min_temperature = config.get("min_temperature", 0.0)
         self.allowed_models = config.get("allowed_models", None)  # None = all allowed
         self.block_safety_downgrades = config.get("block_safety_downgrades", True)
-        self.max_cost_increase_pct = config.get("max_cost_increase_pct", 50.0)
+        self.max_cost_increase_pct = config.get("max_cost_increase_pct", DEFAULT_MAX_COST_INCREASE_PCT)
 
     @property
     def name(self) -> str:
@@ -406,13 +415,13 @@ class ConfigChangePolicy(BaseSafetyPolicy):
             "phi3:mini": 1,
             "llama3.2:3b": 2,
             "gemma2:2b": 2,
-            "mistral:7b": 5,
-            "llama3.1:8b": 6,
-            "mixtral:8x7b": 15,
+            "mistral:7b": MODEL_COST_MISTRAL_7B,
+            "llama3.1:8b": MODEL_COST_LLAMA_8B,
+            "mixtral:8x7b": MODEL_COST_MIXTRAL_8X7B,
         }
 
-        old_cost = model_costs.get(old_model, 3)  # Default to medium cost
-        new_cost = model_costs.get(new_model, 3)
+        old_cost = model_costs.get(old_model, DEFAULT_MODEL_COST)
+        new_cost = model_costs.get(new_model, DEFAULT_MODEL_COST)
 
         if new_cost > old_cost:
             cost_increase_pct = ((new_cost - old_cost) / old_cost) * 100

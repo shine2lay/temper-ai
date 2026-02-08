@@ -32,6 +32,20 @@ TEMP_COMPARISON_TOLERANCE = 0.05  # Tolerance for comparing temperature values
 # Variant limits
 MAX_VARIANTS = 4  # Maximum number of variants to generate
 
+# Default inference parameter values
+DEFAULT_TEMPERATURE = 0.7  # Default temperature if not specified
+DEFAULT_TOP_P = 0.9  # Default top_p if not specified
+
+# Expected impact estimates by problem type
+IMPACT_QUALITY_LOW = 0.25  # Moderate impact on quality issues
+IMPACT_ERROR_RATE_HIGH = 0.20  # Some impact on error rates
+IMPACT_INCONSISTENT_OUTPUT = 0.40  # High impact on consistency
+IMPACT_HALLUCINATION = 0.30  # Good impact on hallucination
+IMPACT_INCORRECT_OUTPUT = 0.25  # Moderate impact on correctness
+IMPACT_TOO_VERBOSE = 0.20  # Some impact on verbosity
+IMPACT_TOO_BRIEF = 0.20  # Some impact on brevity
+IMPACT_DEFAULT = 0.15  # Default impact for unknown problem types
+
 
 class TemperatureSearchStrategy(ImprovementStrategy):
     """
@@ -93,8 +107,8 @@ class TemperatureSearchStrategy(ImprovementStrategy):
             List of 3-4 configuration variants
         """
         variants = []
-        current_temp = current_config.inference.get("temperature", 0.7)
-        current_top_p = current_config.inference.get("top_p", 0.9)
+        current_temp = current_config.inference.get("temperature", DEFAULT_TEMPERATURE)
+        current_top_p = current_config.inference.get("top_p", DEFAULT_TOP_P)
         # Infer problem type from patterns (if available)
         problem_type = self._infer_problem_type(patterns)
 
@@ -225,16 +239,16 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         problem_type = problem.get("problem_type", problem.get("type", "unknown"))
 
         impact_by_type = {
-            "quality_low": 0.25,  # Moderate impact on quality
-            "error_rate_high": 0.20,  # Some impact on errors
-            "inconsistent_output": 0.40,  # High impact on consistency
-            "hallucination": 0.30,  # Good impact on hallucination
-            "incorrect_output": 0.25,  # Moderate impact on correctness
-            "too_verbose": 0.20,  # Some impact on verbosity
-            "too_brief": 0.20,  # Some impact on brevity
+            "quality_low": IMPACT_QUALITY_LOW,
+            "error_rate_high": IMPACT_ERROR_RATE_HIGH,
+            "inconsistent_output": IMPACT_INCONSISTENT_OUTPUT,
+            "hallucination": IMPACT_HALLUCINATION,
+            "incorrect_output": IMPACT_INCORRECT_OUTPUT,
+            "too_verbose": IMPACT_TOO_VERBOSE,
+            "too_brief": IMPACT_TOO_BRIEF,
         }
 
-        return impact_by_type.get(problem_type, 0.15)
+        return impact_by_type.get(problem_type, IMPACT_DEFAULT)
 
     def _infer_problem_type(self, patterns: List[LearnedPattern]) -> str:
         """

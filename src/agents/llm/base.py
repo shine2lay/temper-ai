@@ -69,6 +69,18 @@ DEFAULT_BACKOFF_FACTOR = DEFAULT_BACKOFF_MULTIPLIER  # Exponential backoff facto
 # CPU sampling interval
 CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT  # Interval for CPU usage sampling
 
+# Default LLM parameter values
+DEFAULT_TEMPERATURE = 0.7  # Default temperature for generation
+DEFAULT_TOP_P = 0.9  # Default nucleus sampling threshold
+DEFAULT_REQUEST_TIMEOUT = 600  # Default timeout for LLM requests (10 minutes)
+DEFAULT_CACHE_TTL = 3600  # Default cache time-to-live (1 hour)
+
+# HTTP status codes
+HTTP_OK = 200  # Successful response
+HTTP_UNAUTHORIZED = 401  # Authentication failed
+HTTP_RATE_LIMIT = 429  # Rate limit exceeded
+HTTP_SERVER_ERROR = 500  # Server error threshold
+
 
 class LLMProvider(str, Enum):
     """Supported LLM providers."""
@@ -144,14 +156,14 @@ class BaseLLM(ABC):
         model: str,
         base_url: str,
         api_key: Optional[str] = None,
-        temperature: float = 0.7,
+        temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: int = 2048,
-        top_p: float = 0.9,
-        timeout: int = 600,
+        top_p: float = DEFAULT_TOP_P,
+        timeout: int = DEFAULT_REQUEST_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
         retry_delay: float = 2.0,
         enable_cache: bool = False,
-        cache_ttl: Optional[int] = 3600,
+        cache_ttl: Optional[int] = DEFAULT_CACHE_TTL,
         rate_limiter: Optional[Any] = None,
     ):
         self.model = model
@@ -580,7 +592,7 @@ class BaseLLM(ABC):
         """Handle response, parse, and cache. Shared by sync/async paths."""
         latency_ms = int((time.time() - start_time) * 1000)
 
-        if response.status_code != 200:
+        if response.status_code != HTTP_OK:
             self._handle_error_response(response)
 
         response_data = response.json()
@@ -699,11 +711,11 @@ class BaseLLM(ABC):
     def _handle_error_response(self, response: httpx.Response) -> None:
         """Handle HTTP error responses."""
         safe_text = sanitize_error_message(response.text[:MAX_ERROR_MESSAGE_LENGTH])
-        if response.status_code == 401:
+        if response.status_code == HTTP_UNAUTHORIZED:
             raise LLMAuthenticationError(f"Authentication failed: {safe_text}")
-        elif response.status_code == 429:
+        elif response.status_code == HTTP_RATE_LIMIT:
             raise LLMRateLimitError(f"Rate limited: {safe_text}")
-        elif response.status_code >= 500:
+        elif response.status_code >= HTTP_SERVER_ERROR:
             raise LLMError(f"Server error ({response.status_code}): {safe_text}")
         else:
             raise LLMError(f"Request failed ({response.status_code}): {safe_text}")

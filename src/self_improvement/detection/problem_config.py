@@ -6,6 +6,22 @@ from dataclasses import dataclass
 
 from src.constants.limits import DEFAULT_BATCH_SIZE
 
+# Default detection thresholds (relative percentage changes)
+DEFAULT_QUALITY_RELATIVE_THRESHOLD = 0.10  # 10% quality degradation triggers detection
+DEFAULT_QUALITY_ABSOLUTE_THRESHOLD = 0.05  # 5-point absolute quality drop
+DEFAULT_COST_RELATIVE_THRESHOLD = 0.30  # 30% cost increase triggers detection
+DEFAULT_COST_ABSOLUTE_THRESHOLD = 0.10  # $0.10 absolute cost increase
+DEFAULT_SPEED_RELATIVE_THRESHOLD = 0.50  # 50% speed decrease triggers detection
+
+# Severity classification thresholds
+SEVERITY_CRITICAL_THRESHOLD = 0.50  # >50% degradation = CRITICAL
+SEVERITY_HIGH_THRESHOLD = 0.30  # >30% degradation = HIGH
+SEVERITY_MEDIUM_THRESHOLD = 0.15  # >15% degradation = MEDIUM
+SEVERITY_LOW_THRESHOLD = 0.05  # >5% degradation = LOW
+
+# Validation bounds for threshold configuration
+MAX_COST_RELATIVE_THRESHOLD = 5  # Maximum allowed cost increase threshold (500%)
+
 
 @dataclass
 class ProblemDetectionConfig:
@@ -59,22 +75,22 @@ class ProblemDetectionConfig:
     """
 
     # Quality detection thresholds
-    quality_relative_threshold: float = 0.10  # 10% degradation
-    quality_absolute_threshold: float = 0.05  # 5 point drop (e.g., 0.85 → 0.80)
+    quality_relative_threshold: float = DEFAULT_QUALITY_RELATIVE_THRESHOLD
+    quality_absolute_threshold: float = DEFAULT_QUALITY_ABSOLUTE_THRESHOLD
 
     # Cost detection thresholds
-    cost_relative_threshold: float = 0.30  # 30% increase
-    cost_absolute_threshold: float = 0.10  # $0.10 USD increase
+    cost_relative_threshold: float = DEFAULT_COST_RELATIVE_THRESHOLD
+    cost_absolute_threshold: float = DEFAULT_COST_ABSOLUTE_THRESHOLD
 
     # Speed detection thresholds
-    speed_relative_threshold: float = 0.50  # 50% increase
+    speed_relative_threshold: float = DEFAULT_SPEED_RELATIVE_THRESHOLD
     speed_absolute_threshold: float = 2.0   # 2 second increase
 
     # Severity bands
-    severity_critical_threshold: float = 0.50  # >50% = CRITICAL
-    severity_high_threshold: float = 0.30      # >30% = HIGH
-    severity_medium_threshold: float = 0.15    # >15% = MEDIUM
-    severity_low_threshold: float = 0.05       # >5% = LOW
+    severity_critical_threshold: float = SEVERITY_CRITICAL_THRESHOLD
+    severity_high_threshold: float = SEVERITY_HIGH_THRESHOLD
+    severity_medium_threshold: float = SEVERITY_MEDIUM_THRESHOLD
+    severity_low_threshold: float = SEVERITY_LOW_THRESHOLD
 
     # Data quality requirements
     min_executions_for_detection: int = DEFAULT_BATCH_SIZE
@@ -83,8 +99,8 @@ class ProblemDetectionConfig:
         """Validate configuration."""
         if not (0 < self.quality_relative_threshold < 1):
             raise ValueError("quality_relative_threshold must be in (0, 1)")
-        if not (0 < self.cost_relative_threshold < 5):
-            raise ValueError("cost_relative_threshold must be in (0, 5)")
+        if not (0 < self.cost_relative_threshold < MAX_COST_RELATIVE_THRESHOLD):
+            raise ValueError(f"cost_relative_threshold must be in (0, {MAX_COST_RELATIVE_THRESHOLD})")
         if not (0 < self.speed_relative_threshold < 10):
             raise ValueError("speed_relative_threshold must be in (0, 10)")
         if self.quality_absolute_threshold < 0:

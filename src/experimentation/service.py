@@ -2,24 +2,20 @@
 Experiment service for A/B testing and experimentation.
 
 Main API for creating, managing, and analyzing experiments.
+Delegates to specialized modules for CRUD, lifecycle, and tracking.
 """
 
-import re
-import threading
-import unicodedata
 import uuid
-from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import update
-from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from src.core.service import Service
 from src.experimentation.analyzer import StatisticalAnalyzer
 from src.experimentation.assignment import VariantAssigner
 from src.experimentation.config_manager import ConfigManager
+from src.experimentation.experiment_crud import ExperimentCRUD
 from src.experimentation.models import (
     AssignmentStrategyType,
     ExecutionStatus,
@@ -35,85 +31,6 @@ from src.database import get_session
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
-
-
-def validate_experiment_name(name: str) -> str:
-    """
-    Validate and sanitize experiment name.
-
-    Security requirements:
-    - Alphanumeric, underscore, hyphen only
-    - 1-50 characters
-    - No Unicode tricks (homograph attacks)
-    - Normalized form (NFKC)
-
-    Args:
-        name: Raw experiment name
-
-    Returns:
-        Validated and normalized name
-
-    Raises:
-        ValueError: If name violates security policy
-
-    Example:
-        >>> validate_experiment_name("test_experiment_v2")
-        'test_experiment_v2'
-        >>> validate_experiment_name("test'; DROP TABLE--")
-        Traceback (most recent call last):
-        ValueError: Experiment name must contain only alphanumeric...
-    """
-    # 1. Length check (before expensive operations)
-    if not name or len(name) > 50:
-        raise ValueError("Experiment name must be 1-50 characters")
-
-    # 2. Normalize Unicode (prevent homograph attacks)
-    # NFKC = Compatibility Decomposition + Canonical Composition
-    normalized = unicodedata.normalize('NFKC', name)
-
-    # 3. Character set validation
-    if not re.match(r'^[a-zA-Z0-9_-]+$', normalized):
-        raise ValueError(
-            "Experiment name must contain only alphanumeric characters, "
-            "underscores, and hyphens (a-zA-Z0-9_-)"
-        )
-
-    # 4. Must start with letter (prevent issues with tooling)
-    if not normalized[0].isalpha():
-        raise ValueError("Experiment name must start with a letter")
-
-    # 5. No consecutive special characters (aesthetic + prevents parsing issues)
-    if re.search(r'[-_]{2,}', normalized):
-        raise ValueError("Experiment name cannot contain consecutive hyphens or underscores")
-
-    return normalized
-
-
-def validate_variant_name(name: str) -> str:
-    """
-    Validate variant name (same rules as experiment name but shorter).
-
-    Args:
-        name: Raw variant name
-
-    Returns:
-        Validated and normalized name
-
-    Raises:
-        ValueError: If name violates security policy
-    """
-    if not name or len(name) > 30:
-        raise ValueError("Variant name must be 1-30 characters")
-
-    normalized = unicodedata.normalize('NFKC', name)
-
-    if not re.match(r'^[a-zA-Z0-9_-]+$', normalized):
-        raise ValueError(
-            "Variant name must contain only alphanumeric characters, "
-            "underscores, and hyphens"
-        )
-
-    return normalized
 
 
 class ExperimentService(Service):
@@ -152,22 +69,20 @@ class ExperimentService(Service):
     MAX_CACHE_SIZE = 1000
 
     def __init__(self, max_cache_size: int = MAX_CACHE_SIZE) -> None:
-        """Initialize experiment service."""
+        """
+        Initialize experiment service.
+
+        Delegates to specialized modules:
+        - ExperimentCRUD: Database operations and caching
+        - VariantAssigner: Assignment logic
+        - StatisticalAnalyzer: Analysis
+        - ConfigManager: Configuration management
+        """
+        self._crud = ExperimentCRUD(max_cache_size)
         self._assigner = VariantAssigner()
         self._config_manager = ConfigManager()
         self._analyzer = StatisticalAnalyzer()
-        self._max_cache_size = max_cache_size
-        self._experiment_cache: OrderedDict[str, Experiment] = OrderedDict()
-        self._cache_lock = threading.Lock()  # ST-07: thread safety for cache
         logger.info("ExperimentService initialized")
-
-    def _cache_put(self, key: str, value: "Experiment") -> None:
-        """Add to cache with LRU eviction when max size exceeded."""
-        with self._cache_lock:
-            self._experiment_cache[key] = value
-            self._experiment_cache.move_to_end(key)
-            while len(self._experiment_cache) > self._max_cache_size:
-                self._experiment_cache.popitem(last=False)
 
     def initialize(self) -> None:
         """Initialize service resources."""
@@ -177,7 +92,7 @@ class ExperimentService(Service):
     def shutdown(self) -> None:
         """Clean up service resources."""
         logger.info("ExperimentService shutting down")
-        self._experiment_cache.clear()
+        self._crud.clear_cache()
 
     # ========== Experiment CRUD ==========
 
@@ -239,25 +154,7 @@ class ExperimentService(Service):
 
         # SECURITY: Validate ALL variant names first (atomic operation)
         # This ensures we don't partially mutate the variants list on error
-        validated_variants = []
-        for variant_config in variants:
-            try:
-                validated_name = validate_variant_name(variant_config["name"])
-                validated_variants.append({**variant_config, "name": validated_name})
-            except ValueError as e:
-                logger.warning(
-                    f"Invalid variant name rejected: {variant_config.get('name', '')[:30]}",
-                    extra={
-                        "security_event": "INPUT_VALIDATION_FAILED",
-                        "variant_name": variant_config.get("name", "")[:30],
-                        "experiment_name": name,
-                        "error": str(e)
-                    }
-                )
-                raise
-
-        # Use validated variants for processing
-        variants = validated_variants
+        variants = validate_variant_list(variants, name)
 
         # Calculate traffic allocation
         traffic_allocation = {

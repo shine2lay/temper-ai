@@ -9,7 +9,6 @@ import re
 import unicodedata
 from typing import Any, Dict, List
 
-from src.constants.limits import PERCENT_30, PERCENT_50
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)

@@ -22,7 +22,6 @@ from src.strategies.base import (
     SynthesisResult,
 )
 from src.strategies.constants import (
-    CONFLICT_SEVERITY_HIGH,
     CONFLICT_SEVERITY_LOW,
     DEFAULT_DEBATE_ROUNDS,
     DEFAULT_MIN_ROUNDS,

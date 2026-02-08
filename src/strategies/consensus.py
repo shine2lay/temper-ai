@@ -33,7 +33,6 @@ Example:
 from typing import Any, Dict, List
 
 from src.constants.probabilities import PROB_LOW_MEDIUM, PROB_MEDIUM
-from src.constants.limits import PERCENT_50
 from src.strategies.base import (
     AgentOutput,
     CollaborationStrategy,

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from threading import RLock
 from typing import Any, Dict, List, Optional, Protocol
 
+from src.self_improvement.constants import MAX_EXTRACTION_SCORE, MIN_EXTRACTION_SCORE
 from src.self_improvement.metrics.types import SIMetricType
 
 logger = logging.getLogger(__name__)
@@ -137,8 +138,7 @@ class MetricCollector(ABC):
             Override this property when making breaking changes to
             metric computation logic to enable version-aware queries.
         """
-        DEFAULT_VERSION = "1.0"
-        return DEFAULT_VERSION
+        return "1.0"
 
 
 class MetricRegistry:
@@ -266,12 +266,10 @@ class MetricRegistry:
                 # Store value if successfully collected
                 if value is not None:
                     # Validate value is in valid range
-                    METRIC_MIN = 0.0
-                    METRIC_MAX = 1.0
-                    if not (METRIC_MIN <= value <= METRIC_MAX):
+                    if not (MIN_EXTRACTION_SCORE <= value <= MAX_EXTRACTION_SCORE):
                         logger.error(
                             f"Collector '{metric_name}' returned invalid value "
-                            f"{value} (must be in [{METRIC_MIN}, {METRIC_MAX}])"
+                            f"{value} (must be in [{MIN_EXTRACTION_SCORE}, {MAX_EXTRACTION_SCORE}])"
                         )
                         continue
 

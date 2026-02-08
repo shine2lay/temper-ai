@@ -354,17 +354,13 @@ class ImprovementDetector:
                 estimated_impact = strategy.estimate_impact(problem.to_dict())
 
                 # Map severity to priority (0=highest, 3=lowest)
-                PRIORITY_CRITICAL = 0
-                PRIORITY_HIGH = 1
-                PRIORITY_MEDIUM = 2
-                PRIORITY_LOW = 3
                 severity_to_priority = {
-                    ProblemSeverity.CRITICAL: PRIORITY_CRITICAL,
-                    ProblemSeverity.HIGH: PRIORITY_HIGH,
-                    ProblemSeverity.MEDIUM: PRIORITY_MEDIUM,
-                    ProblemSeverity.LOW: PRIORITY_LOW,
+                    ProblemSeverity.CRITICAL: 0,
+                    ProblemSeverity.HIGH: 1,
+                    ProblemSeverity.MEDIUM: 2,
+                    ProblemSeverity.LOW: 3,
                 }
-                priority = severity_to_priority.get(problem.severity, PRIORITY_MEDIUM)
+                priority = severity_to_priority.get(problem.severity, 2)
 
                 # Create proposal
                 proposal = ImprovementProposal(

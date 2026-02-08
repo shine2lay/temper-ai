@@ -106,17 +106,17 @@ def create_hierarchical_gantt(
             ))
 
     # Calculate appropriate height
-    MIN_CHART_HEIGHT = 600
-    HEIGHT_PER_ITEM = 35
-    height = max(MIN_CHART_HEIGHT, len(flat_data) * HEIGHT_PER_ITEM)
+    min_chart_height = 600
+    height_per_item = 35
+    height = max(min_chart_height, len(flat_data) * height_per_item)
 
     # Update layout
     if title is None:
         title = trace.get("name", "Execution Trace")
 
     # Chart layout constants
-    TICK_INTERVAL_MS = 1000  # 1 second intervals
-    CHART_LEFT_MARGIN = 300  # More space for long names with tree structure
+    tick_interval_ms = 1000  # 1 second intervals
+    chart_left_margin = 300  # More space for long names with tree structure
 
     fig.update_layout(
         title=dict(
@@ -129,7 +129,7 @@ def create_hierarchical_gantt(
             title="Time (seconds from start)",
             tickmode='linear',
             tick0=0,
-            dtick=TICK_INTERVAL_MS,
+            dtick=tick_interval_ms,
             tickformat='.1f',
             ticksuffix='s',
             gridcolor='rgba(128,128,128,0.2)'
@@ -152,7 +152,7 @@ def create_hierarchical_gantt(
             xanchor="right",
             x=1
         ),
-        margin=dict(l=CHART_LEFT_MARGIN)
+        margin=dict(l=chart_left_margin)
     )
 
     # Save to file if requested
@@ -328,8 +328,8 @@ def print_console_gantt(trace: Dict[str, Any], _max_width: int = LARGE_ITEM_LIMI
                 return f"{seconds*1000:.0f}ms"
             return f"{seconds:.3f}s"
 
-        TIMELINE_BAR_WIDTH = 40
-        def create_timeline_bar(start_offset: float, duration: float, total_duration: float, width: int = TIMELINE_BAR_WIDTH) -> str:
+        timeline_bar_width = 40
+        def create_timeline_bar(start_offset: float, duration: float, total_duration: float, width: int = timeline_bar_width) -> str:
             """Create a visual timeline bar."""
             if total_duration == 0:
                 return "░" * width
@@ -357,7 +357,7 @@ def print_console_gantt(trace: Dict[str, Any], _max_width: int = LARGE_ITEM_LIMI
             start_offset = (start - workflow_start).total_seconds()
 
             # Create timeline bar
-            timeline = create_timeline_bar(start_offset, duration, workflow_duration, width=TIMELINE_BAR_WIDTH)
+            timeline = create_timeline_bar(start_offset, duration, workflow_duration, width=timeline_bar_width)
 
             # Get metadata
             metadata = node.get("metadata", {})

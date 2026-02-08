@@ -433,13 +433,12 @@ class OutputSanitizer:
         # Detect secrets and collect replacements
         for pattern, secret_type, severity in self.compiled_secret_patterns:
             for match in pattern.finditer(output):
-                # Evidence length constant
-                _EVIDENCE_PREFIX_LENGTH = 20
+                evidence_prefix_length = 20
                 violation = SecurityViolation(
                     violation_type="secret_leakage",
                     severity=severity,
                     description=f"Detected {secret_type} in output",
-                    evidence=f"{match.group(0)[:_EVIDENCE_PREFIX_LENGTH]}..."
+                    evidence=f"{match.group(0)[:evidence_prefix_length]}..."
                 )
                 violations.append(violation)
 
@@ -564,14 +563,13 @@ class LLMSecurityRateLimiter:
             redis_url = redis_url or os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
             try:
-                # Redis timeout constants
-                _REDIS_CONNECT_TIMEOUT = 1  # seconds
-                _REDIS_SOCKET_TIMEOUT = 2  # seconds
+                redis_connect_timeout = 1  # seconds
+                redis_socket_timeout = 2  # seconds
                 self._redis = redis.from_url(
                     redis_url,
                     decode_responses=True,
-                    socket_connect_timeout=_REDIS_CONNECT_TIMEOUT,
-                    socket_timeout=_REDIS_SOCKET_TIMEOUT
+                    socket_connect_timeout=redis_connect_timeout,
+                    socket_timeout=redis_socket_timeout
                 )
                 # Test connection
                 self._redis.ping()

@@ -21,6 +21,7 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
+from src.self_improvement.constants import MAX_EXTRACTION_SCORE, MIN_EXTRACTION_SCORE
 from src.self_improvement.metrics.collector import ExecutionProtocol, MetricCollector
 from src.self_improvement.metrics.types import SIMetricType
 
@@ -191,8 +192,7 @@ class ExtractionQualityCollector(MetricCollector):
                 correct, total = self._compare_top_level(ground_truth, extracted)
 
             # Compute accuracy
-            ZERO_FIELDS = 0
-            if total == ZERO_FIELDS:
+            if total == 0:
                 logger.warning(
                     f"Ground truth has zero fields for execution {execution.id}"
                 )
@@ -201,9 +201,7 @@ class ExtractionQualityCollector(MetricCollector):
             accuracy = correct / total
 
             # Validate range
-            METRIC_MIN = 0.0
-            METRIC_MAX = 1.0
-            if not (METRIC_MIN <= accuracy <= METRIC_MAX):
+            if not (MIN_EXTRACTION_SCORE <= accuracy <= MAX_EXTRACTION_SCORE):
                 logger.error(
                     f"Computed invalid accuracy {accuracy} for execution "
                     f"{execution.id}"
@@ -327,8 +325,8 @@ class ExtractionQualityCollector(MetricCollector):
         # Numeric comparison (handle int vs float)
         if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
             # Allow small floating point differences
-            FLOAT_COMPARISON_EPSILON = 1e-6
-            return abs(expected - actual) < FLOAT_COMPARISON_EPSILON
+            float_comparison_epsilon = 1e-6
+            return abs(expected - actual) < float_comparison_epsilon
 
         # String comparison (case-sensitive by default)
         if isinstance(expected, str) and isinstance(actual, str):

@@ -167,10 +167,9 @@ class RollbackAPI:
                     )
 
         # Check age
-        # Age threshold constant
-        _SNAPSHOT_WARNING_AGE_HOURS = 24
+        snapshot_warning_age_hours = 24
         age_hours = (datetime.now(UTC) - snapshot.created_at).total_seconds() / SECONDS_PER_HOUR
-        if age_hours > _SNAPSHOT_WARNING_AGE_HOURS:
+        if age_hours > snapshot_warning_age_hours:
             warnings.append(f"Snapshot is {age_hours:.1f} hours old")
 
         # Safe if no critical warnings

@@ -1,5 +1,6 @@
 """Tests for database connection and session management."""
 import os
+from importlib.util import find_spec
 
 import pytest
 from sqlmodel import select
@@ -12,6 +13,9 @@ from src.observability.database import (
     init_database,
 )
 from src.observability.models import WorkflowExecution
+
+# Check if psycopg2 is available
+PSYCOPG2_AVAILABLE = find_spec("psycopg2") is not None
 
 
 def test_database_manager_sqlite():
@@ -243,9 +247,7 @@ def test_multiple_sessions():
 def test_postgresql_engine_settings():
     """Test PostgreSQL engine is configured with connection pooling."""
     # Skip if psycopg2 not available
-    try:
-        import psycopg2
-    except ImportError:
+    if not PSYCOPG2_AVAILABLE:
         pytest.skip("psycopg2 not installed")
 
     # Note: This doesn't actually connect to PostgreSQL, just tests config

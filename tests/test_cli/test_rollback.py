@@ -9,7 +9,7 @@ Tests cover:
 - Error handling and exit codes
 """
 from datetime import UTC, datetime, timedelta
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 from click.testing import CliRunner

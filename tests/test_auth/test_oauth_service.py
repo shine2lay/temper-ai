@@ -9,8 +9,8 @@ Tests OAuth 2.0 authorization code flow with PKCE support including:
 - Error handling and edge cases
 """
 import pytest
-from unittest.mock import AsyncMock, Mock, patch
-from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, Mock
+from datetime import datetime, timezone
 
 import httpx
 from cryptography.fernet import Fernet

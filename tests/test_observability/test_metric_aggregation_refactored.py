@@ -6,10 +6,8 @@ Tests the new modular aggregation pipeline:
 - MetricRecordCreator
 - AggregationOrchestrator (orchestrator)
 """
-import pytest
-from datetime import datetime, timedelta, timezone
-from unittest.mock import Mock, MagicMock, call
-from typing import Any
+from datetime import datetime, timezone
+from unittest.mock import Mock
 
 from src.observability.aggregation import AggregationOrchestrator, AggregationPeriod
 from src.observability.aggregation.time_window import TimeWindowCalculator
@@ -354,8 +352,6 @@ class TestBackwardCompatibility:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            from src.observability.aggregation import AggregationOrchestrator
-            from src.observability.aggregation import AggregationPeriod
 
             # Should have no warnings
             assert len(w) == 0

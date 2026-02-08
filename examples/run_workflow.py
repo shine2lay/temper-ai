@@ -28,8 +28,6 @@ from typing import Any, Dict, Optional
 
 # Check dependencies
 try:
-    from src.agents.agent_factory import AgentFactory  # m2-04b
-    from src.agents.standard_agent import StandardAgent  # m2-04
     from src.compiler.engine_registry import EngineRegistry  # m2.5-03
     COMPONENTS_READY = True
 except ImportError as e:

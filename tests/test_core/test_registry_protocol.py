@@ -4,14 +4,12 @@ This test module validates that ToolRegistry and PolicyRegistry
 satisfy the Registry Protocol interface.
 """
 import pytest
-from unittest.mock import Mock
 
 from src.core.protocols import Registry
-from src.compiler.domain_state import DomainDomainToolRegistryProtocol
 from src.tools.registry import ToolRegistry
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.safety.policy_registry import PolicyRegistry
-from src.safety.interfaces import SafetyPolicy, ValidationResult
+from src.safety.interfaces import ValidationResult
 
 
 class MockTool(BaseTool):

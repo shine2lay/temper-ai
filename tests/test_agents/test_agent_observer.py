@@ -6,9 +6,8 @@ Tests cover:
 - track_llm_call (success, no-op when inactive, exception handling)
 - track_tool_call (success, no-op when inactive, exception handling)
 """
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
 
-import pytest
 
 from src.agents.agent_observer import AgentObserver
 

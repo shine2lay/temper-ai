@@ -9,14 +9,12 @@ Tests concurrent access to the LLM cache using threading to verify:
 """
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
-import pytest
 
 from src.cache.llm_cache import (
     InMemoryCache,
     LLMCache,
-    CacheStats,
 )
 
 

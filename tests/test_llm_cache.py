@@ -12,6 +12,7 @@ Tests cover:
 - Integration with LLM providers
 """
 import time
+from importlib.util import find_spec
 from threading import Thread
 from unittest.mock import MagicMock, patch
 
@@ -20,11 +21,7 @@ import pytest
 from src.cache.llm_cache import CacheStats, InMemoryCache, LLMCache, RedisCache
 
 # Check if redis is available
-try:
-    import redis
-    REDIS_AVAILABLE = True
-except ImportError:
-    REDIS_AVAILABLE = False
+REDIS_AVAILABLE = find_spec("redis") is not None
 
 
 class TestCacheKeyGeneration:

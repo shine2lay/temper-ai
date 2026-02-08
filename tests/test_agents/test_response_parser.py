@@ -6,13 +6,9 @@ Tests cover:
 - extract_final_answer: answer tag extraction, fallback to full text
 - extract_reasoning: multiple tag types (reasoning, thinking, think, thought)
 """
-import json
 
-import pytest
 
 from src.agents.response_parser import (
-    ANSWER_TAG,
-    TOOL_CALL_TAG,
     extract_final_answer,
     extract_reasoning,
     parse_tool_calls,

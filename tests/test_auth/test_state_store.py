@@ -1,9 +1,13 @@
 """Tests for OAuth state storage implementations."""
 import asyncio
+from importlib.util import find_spec
 
 import pytest
 
 from src.auth.oauth.state_store import InMemoryStateStore, RedisStateStore, create_state_store
+
+# Check if redis is available
+REDIS_AVAILABLE = find_spec("redis.asyncio") is not None
 
 
 @pytest.mark.asyncio
@@ -111,8 +115,10 @@ class TestRedisStateStore:
     @pytest.fixture
     async def redis_store(self):
         """Create Redis state store for testing."""
+        if not REDIS_AVAILABLE:
+            pytest.skip("redis package not installed")
+
         try:
-            import redis.asyncio
             store = RedisStateStore(redis_url="redis://localhost:6379/15")
             await store.connect()
 
@@ -127,8 +133,6 @@ class TestRedisStateStore:
                 await store._redis.flushdb()
             await store.close()
 
-        except ImportError:
-            pytest.skip("redis package not installed")
         except Exception as e:
             pytest.skip(f"Redis not available: {e}")
 
@@ -229,13 +233,11 @@ async def test_state_store_close():
     await inmem_store.close()  # Should not raise
 
     # Redis store (if available)
-    try:
-        import redis.asyncio
-        redis_store = RedisStateStore("redis://localhost:6379/15")
-        await redis_store.connect()
-        await redis_store.close()  # Should close connection
-        assert redis_store._redis is None
-    except ImportError:
-        pass  # Skip if redis not installed
-    except Exception:
-        pass  # Skip if Redis not running
+    if REDIS_AVAILABLE:
+        try:
+            redis_store = RedisStateStore("redis://localhost:6379/15")
+            await redis_store.connect()
+            await redis_store.close()  # Should close connection
+            assert redis_store._redis is None
+        except Exception:
+            pass  # Skip if Redis not running

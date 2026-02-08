@@ -16,7 +16,6 @@ from typing import Any, Dict, List
 
 # Check if plotly is installed
 try:
-    import plotly.express as px
     import plotly.graph_objects as go
 except ImportError as e:
     print("ERROR: Plotly not installed. Install with: pip install plotly")

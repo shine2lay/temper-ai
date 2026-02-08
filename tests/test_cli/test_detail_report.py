@@ -10,7 +10,7 @@ Tests cover:
 - Infrastructure key filtering
 - Edge cases: empty outputs, missing tool calls
 """
-from unittest.mock import MagicMock, Mock, call, patch
+from unittest.mock import Mock
 
 import pytest
 from rich.console import Console

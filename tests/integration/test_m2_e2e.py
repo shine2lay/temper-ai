@@ -21,6 +21,7 @@ This file contains tests at multiple levels:
 1. Component-level tests (work now with completed components)
 2. Full workflow tests (require m2-05 + m2-06, marked as pending)
 """
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
@@ -33,18 +34,10 @@ from src.agents.base_agent import AgentResponse, ExecutionContext
 from src.agents.standard_agent import StandardAgent
 
 # Check for optional engine registry (m2.5-03)
-try:
-    from src.compiler.engine_registry import EngineRegistry
-    ENGINE_REGISTRY_READY = True
-except ImportError:
-    ENGINE_REGISTRY_READY = False
+ENGINE_REGISTRY_READY = find_spec("src.compiler.engine_registry") is not None
 
 # Check for observability hooks (m2-06)
-try:
-    from src.observability.tracker import ExecutionTracker
-    TRACKER_READY = True
-except ImportError:
-    TRACKER_READY = False
+TRACKER_READY = find_spec("src.observability.tracker") is not None
 
 FULL_WORKFLOW_READY = ENGINE_REGISTRY_READY and TRACKER_READY
 

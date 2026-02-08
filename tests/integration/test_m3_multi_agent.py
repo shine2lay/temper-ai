@@ -25,6 +25,7 @@ M3 Feature Checklist:
 - ✅ m3-13: Configuration Schema
 - ✅ m3-14: Example Workflows
 """
+from importlib.util import find_spec
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -42,19 +43,10 @@ from src.strategies.debate import DebateAndSynthesize
 from src.strategies.merit_weighted import MeritWeightedResolver
 
 # Check for registry (may not exist yet)
-try:
-    from src.strategies.registry import StrategyRegistry, get_strategy_from_config
-    REGISTRY_AVAILABLE = True
-except ImportError:
-    REGISTRY_AVAILABLE = False
+REGISTRY_AVAILABLE = find_spec("src.strategies.registry") is not None
 
 # Check for observability
-try:
-    from src.observability.database import init_database
-    from src.observability.tracker import ExecutionTracker
-    OBSERVABILITY_AVAILABLE = True
-except ImportError:
-    OBSERVABILITY_AVAILABLE = False
+OBSERVABILITY_AVAILABLE = find_spec("src.observability.tracker") is not None
 
 
 # ============================================================================

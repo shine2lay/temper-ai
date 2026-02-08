@@ -7,9 +7,8 @@ Tests cover:
 - estimate_cost with unknown model (uses default pricing)
 - estimate_cost with fallback_model parameter
 """
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from src.agents.cost_estimator import estimate_cost
 from src.agents.llm.base import LLMResponse

@@ -5,7 +5,7 @@ backend delegation, error resilience, and edge cases like empty metrics
 and missing backend methods.
 """
 
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 import pytest
 

@@ -20,11 +20,16 @@ from src.strategies.conflict_resolution import (
     calculate_merit_weighted_votes,
     get_highest_weighted_decision,
 )
-from src.strategies.constants import (
-    DEFAULT_CONVERGENCE_THRESHOLD,
-    DEFAULT_MERIT_LOOKBACK_DAYS,
-    LOW_AGREEMENT_THRESHOLD,
-)
+
+# Merit weight constants (must sum to 1.0)
+DEFAULT_DOMAIN_MERIT_WEIGHT = 0.4  # Weight for domain-specific expertise (40%)
+DEFAULT_OVERALL_MERIT_WEIGHT = 0.3  # Weight for overall success rate (30%)
+DEFAULT_RECENT_PERFORMANCE_WEIGHT = 0.3  # Weight for recent performance (30%)
+
+# Resolution threshold constants
+DEFAULT_AUTO_RESOLVE_THRESHOLD = 0.85  # Confidence threshold for automatic resolution
+DEFAULT_ESCALATION_THRESHOLD = 0.5  # Confidence threshold for escalation
+DEFAULT_RECENCY_DECAY_DAYS = 30  # Days for 50% merit decay
 
 
 class MeritWeightedResolver(ConflictResolver):
@@ -70,13 +75,13 @@ class MeritWeightedResolver(ConflictResolver):
         """
         self.config = config or {}
         self.merit_weights = self.config.get("merit_weights", {
-            "domain_merit": 0.4,
-            "overall_merit": 0.3,
-            "recent_performance": 0.3
+            "domain_merit": DEFAULT_DOMAIN_MERIT_WEIGHT,
+            "overall_merit": DEFAULT_OVERALL_MERIT_WEIGHT,
+            "recent_performance": DEFAULT_RECENT_PERFORMANCE_WEIGHT
         })
-        self.auto_resolve_threshold = self.config.get("auto_resolve_threshold", DEFAULT_CONVERGENCE_THRESHOLD)
-        self.escalation_threshold = self.config.get("escalation_threshold", LOW_AGREEMENT_THRESHOLD)
-        self.recency_decay_days = self.config.get("recency_decay_days", DEFAULT_MERIT_LOOKBACK_DAYS)
+        self.auto_resolve_threshold = self.config.get("auto_resolve_threshold", DEFAULT_AUTO_RESOLVE_THRESHOLD)
+        self.escalation_threshold = self.config.get("escalation_threshold", DEFAULT_ESCALATION_THRESHOLD)
+        self.recency_decay_days = self.config.get("recency_decay_days", DEFAULT_RECENCY_DECAY_DAYS)
 
     def resolve_with_context(
         self,
@@ -279,25 +284,25 @@ class MeritWeightedResolver(ConflictResolver):
                 "merit_weights": {
                     "type": "dict",
                     "default": {
-                        "domain_merit": 0.4,
-                        "overall_merit": 0.3,
-                        "recent_performance": 0.3
+                        "domain_merit": DEFAULT_DOMAIN_MERIT_WEIGHT,
+                        "overall_merit": DEFAULT_OVERALL_MERIT_WEIGHT,
+                        "recent_performance": DEFAULT_RECENT_PERFORMANCE_WEIGHT
                     },
                     "description": "Weights for merit components"
                 },
                 "auto_resolve_threshold": {
                     "type": "float",
-                    "default": 0.85,
+                    "default": DEFAULT_AUTO_RESOLVE_THRESHOLD,
                     "description": "Confidence for auto-resolve (0-1)"
                 },
                 "escalation_threshold": {
                     "type": "float",
-                    "default": 0.5,
+                    "default": DEFAULT_ESCALATION_THRESHOLD,
                     "description": "Confidence for escalation (0-1)"
                 },
                 "recency_decay_days": {
                     "type": "int",
-                    "default": 30,
+                    "default": DEFAULT_RECENCY_DECAY_DAYS,
                     "description": "Days for 50% merit decay"
                 }
             }

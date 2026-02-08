@@ -5,9 +5,8 @@ action execution (LOG_WARNING, LOG_ERROR, HALT_WORKFLOW), alert history,
 and edge cases like duplicate alerts and invalid configurations.
 """
 
-import logging
-from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, Mock, patch
+from datetime import datetime, timezone
+from unittest.mock import Mock, patch
 
 import pytest
 

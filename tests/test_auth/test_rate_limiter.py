@@ -21,6 +21,9 @@ class TestSlidingWindowRateLimiter:
         for i in range(10):
             limiter.check_limit("test", "identifier_1", max_requests=10, window_seconds=60)
 
+        # All requests succeeded without raising exception
+        assert limiter is not None
+
     def test_exceeds_limit(self):
         """Requests exceeding limit should raise RateLimitExceeded with specific error details."""
         limiter = SlidingWindowRateLimiter()

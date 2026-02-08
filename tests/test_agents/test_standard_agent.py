@@ -14,7 +14,8 @@ from src.tools.executor import ToolExecutor
 def test_validate_input_data_accepts_valid_dict():
     """Test that validate_input_data() accepts valid dictionary."""
     # Should not raise
-    validate_input_data({"key": "value"})
+    result = validate_input_data({"key": "value"})
+    assert result is None  # Function returns None on success
 
 
 def test_validate_input_data_rejects_none():
@@ -42,7 +43,8 @@ def test_validate_input_data_accepts_valid_context():
         agent_id="agent_123"
     )
     # Should not raise
-    validate_input_data({"key": "value"}, context)
+    result = validate_input_data({"key": "value"}, context)
+    assert result is None  # Function returns None on success
 
 
 def test_validate_input_data_rejects_invalid_context():

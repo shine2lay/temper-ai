@@ -10,6 +10,8 @@ import threading
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
+import httpx
+
 from src.agents.llm import BaseLLM, LLMError, LLMResponse  # M-04: Import from new location
 from src.utils.exceptions import LLMAuthenticationError, LLMRateLimitError, LLMTimeoutError
 
@@ -149,7 +151,8 @@ class FailoverProvider:
                 logger.info(f"Success with provider [{index}]: {provider.model}")
                 return result
 
-            except Exception as e:
+            except (LLMError, LLMTimeoutError, LLMRateLimitError, LLMAuthenticationError,
+                    httpx.HTTPError, ConnectionError, TimeoutError, OSError) as e:
                 error_msg = f"{provider.model}: {type(e).__name__}: {str(e)}"
                 logger.warning(f"Provider [{index}] failed: {error_msg}")
                 errors.append(error_msg)
@@ -224,7 +227,8 @@ class FailoverProvider:
                 logger.info(f"Success with provider [{index}]: {provider.model}")
                 return result
 
-            except Exception as e:
+            except (LLMError, LLMTimeoutError, LLMRateLimitError, LLMAuthenticationError,
+                    httpx.HTTPError, ConnectionError, TimeoutError, OSError) as e:
                 error_msg = f"{provider.model}: {type(e).__name__}: {str(e)}"
                 logger.warning(f"Provider [{index}] failed: {error_msg}")
                 errors.append(error_msg)
@@ -253,8 +257,6 @@ class FailoverProvider:
         Returns:
             True if we should try the next provider
         """
-        import httpx
-
         # Timeout errors
         if isinstance(error, (LLMTimeoutError, httpx.TimeoutException, TimeoutError)):
             return self.config.failover_on_timeout

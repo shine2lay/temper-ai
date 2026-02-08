@@ -188,6 +188,10 @@ def test_load_from_config_creates_config_loader(test_tool_config, config_root):
         mock_config_loader_class.assert_called_once()
         mock_loader.load_tool.assert_called_once_with("test_tool", validate=False)
 
+        # Verify tool was loaded successfully
+        assert tool is not None
+        assert isinstance(tool, MockTestTool)
+
 
 def test_load_from_config_tool_execution(test_tool_config, config_loader):
     """Test that loaded tool can execute properly."""
@@ -444,6 +448,10 @@ def test_load_all_from_configs_creates_loader():
         # Verify ConfigLoader was created
         mock_config_loader_class.assert_called_once()
         mock_loader.list_configs.assert_called_once_with("tool")
+
+        # Verify no tools were loaded (empty config list)
+        assert count == 0
+        assert len(registry) == 0
 
 
 def test_load_all_from_configs_skips_invalid(config_root, config_loader):

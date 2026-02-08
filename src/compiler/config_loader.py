@@ -761,9 +761,7 @@ class ConfigLoader:
             elif config_type in schema_map:
                 # Validate with appropriate schema
                 schema_map[config_type](**config)
-            else:
-                # Unknown config type - skip validation
-                pass
+            # else: Unknown config type - skip validation (no action needed)
 
         except ValidationError as e:
             raise ConfigValidationError(

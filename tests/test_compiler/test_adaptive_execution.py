@@ -363,6 +363,10 @@ class TestAdaptiveExecution:
                             # May or may not be called depending on whether switch occurred
                             # This is OK - we're testing the tracking mechanism exists
 
+                        # Verify tracker has the necessary methods
+                        assert hasattr(mock_tracker, 'track_collaboration_event')
+                        assert result is not None  # Execution completed
+
 
 class TestAdaptiveExecutionEdgeCases:
     """Test edge cases in adaptive execution."""

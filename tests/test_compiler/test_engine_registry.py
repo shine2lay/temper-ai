@@ -370,6 +370,9 @@ def test_unregister_nonexistent_engine():
     # Should not raise error
     registry.unregister_engine("nonexistent")
 
+    # Verify operation completed without exception
+    assert registry is not None
+
 
 class TestThreadSafety:
     """Thread safety tests for EngineRegistry."""

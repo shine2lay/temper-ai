@@ -229,8 +229,8 @@ class BaseLLM(ABC):
             for client in cls._http_clients.values():
                 try:
                     client.close()
-                except Exception:  # noqa: BLE001 -- defensive cleanup
-                    pass
+                except (OSError, RuntimeError) as e:
+                    logger.debug(f"Error closing HTTP client during cleanup: {e}")
             cls._http_clients.clear()
 
     @classmethod
@@ -377,8 +377,8 @@ class BaseLLM(ABC):
                 if self._client is not None:
                     try:
                         self._client.close()
-                    except Exception:  # noqa: BLE001 -- defensive cleanup
-                        pass
+                    except (OSError, RuntimeError) as e:
+                        logger.debug(f"Error closing sync client: {e}")
                     self._client = None
                 if self._async_client is not None:
                     # H-03: Attempt to schedule async client close on running event loop
@@ -394,7 +394,7 @@ class BaseLLM(ABC):
                             "async client not closed - use 'await aclose()' for cleanup"
                         )
                     self._async_client = None
-            except Exception as e:  # noqa: BLE001 -- defensive cleanup
+            except (OSError, RuntimeError) as e:
                 logger.warning("Error during sync cleanup: %s", e)
             finally:
                 self._closed = True
@@ -413,7 +413,7 @@ class BaseLLM(ABC):
                     self._client.close()
                 if self._async_client is not None:
                     await self._async_client.aclose()
-            except Exception as e:  # noqa: BLE001 -- defensive cleanup
+            except (OSError, RuntimeError) as e:
                 logger.error(f"Error during async cleanup: {e}", exc_info=True)
             finally:
                 self._client = None
@@ -468,6 +468,22 @@ class BaseLLM(ABC):
     def _parse_response(self, response: Dict[str, Any], latency_ms: int) -> LLMResponse:
         """Parse provider-specific response into standardized format."""
         pass
+
+    def _build_bearer_auth_headers(self) -> Dict[str, str]:
+        """Build standard headers with Bearer token authentication.
+
+        Common helper for OpenAI-compatible providers (OpenAI, vLLM, etc.).
+        Anthropic and other providers should override _get_headers() directly.
+
+        Returns:
+            Headers dict with Content-Type and optional Authorization
+        """
+        headers = {
+            "Content-Type": "application/json",
+        }
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
     @abstractmethod
     def _get_headers(self) -> Dict[str, str]:

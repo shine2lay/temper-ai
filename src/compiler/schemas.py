@@ -233,10 +233,8 @@ class ConflictResolutionConfig(BaseModel):
             total_weight = sum(self.metric_weights.values())
             if total_weight <= 0:
                 raise ValueError("Sum of metric_weights must be positive")
-            # Normalize if not already normalized
-            if abs(total_weight - 1.0) > 0.01:
-                # Weights don't sum to 1.0, they'll be normalized at runtime
-                pass
+            # Weights don't sum to 1.0, they'll be normalized at runtime
+            # (no action needed at validation time)
         return self
 
 

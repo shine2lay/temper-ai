@@ -85,6 +85,7 @@ class MemoryConfig(BaseModel):
 
     @model_validator(mode='after')
     def validate_enabled_memory(self) -> 'MemoryConfig':
+        """Validate that type and scope are set when memory is enabled."""
         if self.enabled and (self.type is None or self.scope is None):
             raise ValueError("When memory is enabled, both type and scope must be specified")
         return self
@@ -127,6 +128,7 @@ class ErrorHandlingConfig(BaseModel):
     @field_validator("retry_strategy")
     @classmethod
     def validate_retry_strategy(cls, v: str) -> str:
+        """Validate retry_strategy is a valid strategy name."""
         if v not in cls.VALID_RETRY_STRATEGIES:
             raise ValueError(
                 f"Invalid retry_strategy '{v}'. "
@@ -137,6 +139,7 @@ class ErrorHandlingConfig(BaseModel):
     @field_validator("fallback")
     @classmethod
     def validate_fallback(cls, v: str) -> str:
+        """Validate fallback is a valid fallback name."""
         if v not in cls.VALID_FALLBACKS:
             raise ValueError(
                 f"Invalid fallback '{v}'. "
@@ -172,6 +175,7 @@ class PromptConfig(BaseModel):
 
     @model_validator(mode='after')
     def validate_prompt(self) -> 'PromptConfig':
+        """Validate that exactly one of template or inline is specified."""
         if self.template is None and self.inline is None:
             raise ValueError("Either template or inline must be specified")
         if self.template is not None and self.inline is not None:

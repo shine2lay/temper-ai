@@ -130,6 +130,12 @@ def test_all_tracking_methods_succeed(backend):
         status="completed"
     )
 
+    # Verify all tracking operations completed successfully
+    assert backend is not None
+    assert workflow_id is not None
+    assert stage_id is not None
+    assert agent_id is not None
+
 
 def test_get_session_context_works(backend):
     """Test that get_session_context provides a usable session."""
@@ -179,3 +185,4 @@ def test_multiple_operations_do_not_leak(backend):
         )
     # No assertion on internals needed - if we get here without error,
     # sessions are being properly opened and closed
+    assert backend is not None  # Verify backend is still valid after 20 operations

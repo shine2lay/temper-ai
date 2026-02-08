@@ -11,12 +11,7 @@ class OpenAILLM(BaseLLM):
         return "/v1/chat/completions"
 
     def _get_headers(self) -> Dict[str, str]:
-        headers = {
-            "Content-Type": "application/json",
-        }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        return headers
+        return self._build_bearer_auth_headers()
 
     def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
         return {

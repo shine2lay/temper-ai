@@ -26,6 +26,7 @@ from src.observability.database import DatabaseManager
 # ============================================================================
 
 @pytest.fixture
+@pytest.fixture
 def test_db():
     """Create in-memory test database."""
     db = DatabaseManager("sqlite:///:memory:")

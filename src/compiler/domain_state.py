@@ -46,7 +46,9 @@ class TrackerProtocol(Protocol):
         stage_config: Dict[str, Any],
         workflow_id: str,
         input_data: Dict[str, Any],
-    ) -> Iterator[str]: ...
+    ) -> Iterator[str]:
+        """Track stage execution."""
+        ...
 
     @contextmanager
     def track_agent(
@@ -55,7 +57,9 @@ class TrackerProtocol(Protocol):
         agent_config: Dict[str, Any],
         stage_id: str,
         input_data: Dict[str, Any],
-    ) -> Iterator[str]: ...
+    ) -> Iterator[str]:
+        """Track agent execution."""
+        ...
 
     def set_agent_output(
         self,
@@ -66,7 +70,9 @@ class TrackerProtocol(Protocol):
         estimated_cost_usd: Optional[float] = None,
         num_llm_calls: int = 0,
         num_tool_calls: int = 0,
-    ) -> None: ...
+    ) -> None:
+        """Set agent output."""
+        ...
 
     def track_collaboration_event(
         self,
@@ -76,30 +82,40 @@ class TrackerProtocol(Protocol):
         decision: Optional[str],
         confidence: float,
         metadata: Optional[Dict[str, Any]] = None,
-    ) -> None: ...
+    ) -> None:
+        """Track collaboration event."""
+        ...
 
 
 @runtime_checkable
 class DomainToolRegistryProtocol(Protocol):
     """Minimal interface for a tool registry in domain state context."""
 
-    def get(self, name: str, version: Optional[str] = None) -> Any: ...
+    def get(self, name: str, version: Optional[str] = None) -> Any:
+        """Get tool by name and optional version."""
+        ...
 
 
 @runtime_checkable
 class ConfigLoaderProtocol(Protocol):
     """Minimal interface for a configuration loader."""
 
-    def load_agent(self, agent_name: str) -> Dict[str, Any]: ...
+    def load_agent(self, agent_name: str) -> Dict[str, Any]:
+        """Load agent configuration by name."""
+        ...
 
-    def load_stage(self, stage_name: str) -> Dict[str, Any]: ...
+    def load_stage(self, stage_name: str) -> Dict[str, Any]:
+        """Load stage configuration by name."""
+        ...
 
 
 @runtime_checkable
 class VisualizerProtocol(Protocol):
     """Minimal interface for a workflow visualizer."""
 
-    def update(self, state: Dict[str, Any]) -> None: ...
+    def update(self, state: Dict[str, Any]) -> None:
+        """Update visualizer with workflow state."""
+        ...
 
 
 @dataclass

@@ -293,11 +293,13 @@ class SecretRedactingFormatter(logging.Formatter):
             text = pattern.sub(replacement, text)
 
         # Use detect_secret_patterns if available (additional layer)
+        # Already covered by _SENSITIVE_PATTERNS above, but detect_secret_patterns
+        # provides additional detection that may catch edge cases
         if SECRETS_AVAILABLE and detect_secret_patterns is not None:
             is_secret, confidence = detect_secret_patterns(text)
-            if is_secret and confidence == "high":
-                # Already covered by _SENSITIVE_PATTERNS, but keep for compatibility
-                pass
+            if is_secret and confidence and float(confidence) > 0.8:
+                # High confidence secret detected - apply additional redaction
+                text = "***REDACTED***"
 
         return text
 
@@ -524,7 +526,8 @@ class LogContext:
         old_factory = self.old_factory
 
         def record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
-            assert old_factory is not None, "old_factory should be set"
+            if old_factory is None:
+                raise RuntimeError("old_factory is None in logging context manager")
             record = old_factory(*args, **kwargs)
             for key, value in context_fields.items():
                 setattr(record, key, value)

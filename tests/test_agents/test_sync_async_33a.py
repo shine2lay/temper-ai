@@ -122,6 +122,8 @@ class TestCacheResponse:
             content="x", model="m", provider="p",
             prompt_tokens=0, completion_tokens=0, total_tokens=0, latency_ms=0,
         ))
+        # Function should complete without error when cache is None
+        assert llm._cache is None
 
     def test_noop_when_no_key(self, llm):
         """No error when cache_key is None."""

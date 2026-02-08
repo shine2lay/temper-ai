@@ -4,6 +4,7 @@ WebScraper tool for fetching and extracting text from web pages.
 Uses httpx for HTTP requests and BeautifulSoup for HTML parsing.
 """
 import ipaddress
+import logging
 import socket
 import threading
 import time
@@ -15,6 +16,8 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field, field_validator
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
+
+logger = logging.getLogger(__name__)
 
 # SSRF Protection: Blocked hosts and networks
 BLOCKED_HOSTS = [
@@ -144,7 +147,7 @@ def resolve_hostname_with_timeout(hostname: str, timeout: float = DNS_RESOLUTION
         nonlocal result, exception
         try:
             result[:] = socket.getaddrinfo(hostname, None)
-        except Exception as e:
+        except (socket.gaierror, OSError, ValueError) as e:
             exception = e
 
     # Start resolution thread
@@ -184,80 +187,80 @@ def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optiona
         - (True, None) if URL is safe
         - (False, error_message) if URL is dangerous
     """
+    # Parse URL and extract hostname
     try:
         parsed = urllib.parse.urlparse(url)
         hostname = parsed.hostname
+    except (TypeError, ValueError) as e:
+        logger.debug(f"URL parsing failed: {e}")
+        return False, "Invalid URL format"
 
-        if not hostname:
-            return False, "Invalid URL: missing hostname"
+    if not hostname:
+        return False, "Invalid URL: missing hostname"
 
-        # Block known dangerous hostnames (defense-in-depth: catch before DNS)
-        if hostname.lower() in [h.lower() for h in BLOCKED_HOSTS]:
-            return False, f"Access to {hostname} is forbidden (SSRF protection)"
+    # Block known dangerous hostnames (defense-in-depth: catch before DNS)
+    if hostname.lower() in [h.lower() for h in BLOCKED_HOSTS]:
+        return False, f"Access to {hostname} is forbidden (SSRF protection)"
 
-        # Check if hostname is already an IP address
+    # Check if hostname is already an IP address
+    try:
+        ip = ipaddress.ip_address(hostname)
+
+        # Check against blocked networks
+        for network in BLOCKED_NETWORKS:
+            if ip in network:
+                return False, f"Access to private network {network} is forbidden (SSRF protection)"
+
+        return True, None
+
+    except ValueError:
+        # Not an IP address, continue with DNS resolution
+        pass
+
+    # Check DNS cache first (prevents DNS rebinding attacks)
+    addr_info = None
+    if use_cache:
+        addr_info = _dns_cache.get(hostname)
+
+    # If not cached, perform DNS resolution with timeout
+    if addr_info is None:
         try:
-            ip = ipaddress.ip_address(hostname)
+            addr_info = resolve_hostname_with_timeout(
+                hostname,
+                timeout=DNS_RESOLUTION_TIMEOUT_SECONDS
+            )
+        except TimeoutError as e:
+            # DNS timeout likely indicates timing attack or slow DNS
+            return False, f"DNS resolution timeout (possible attack): {str(e)}"
+        except socket.gaierror as e:
+            return False, f"Cannot resolve hostname: {e}"
+        except (OSError, ValueError) as e:
+            return False, f"DNS resolution error: {str(e)}"
 
-            # Check against blocked networks
-            for network in BLOCKED_NETWORKS:
-                if ip in network:
-                    return False, f"Access to private network {network} is forbidden (SSRF protection)"
-
-            return True, None
-
-        except ValueError:
-            # Not an IP address, continue with DNS resolution
-            pass
-
-        # Check DNS cache first (prevents DNS rebinding attacks)
-        addr_info = None
-        if use_cache:
-            addr_info = _dns_cache.get(hostname)
-
-        # If not cached, perform DNS resolution with timeout
-        if addr_info is None:
+        # Validate all resolved IPs before caching
+        for family, _, _, _, sockaddr in addr_info:
+            ip_str = sockaddr[0]
             try:
-                addr_info = resolve_hostname_with_timeout(
-                    hostname,
-                    timeout=DNS_RESOLUTION_TIMEOUT_SECONDS
-                )
-            except TimeoutError as e:
-                # DNS timeout likely indicates timing attack or slow DNS
-                return False, f"DNS resolution timeout (possible attack): {str(e)}"
-            except socket.gaierror as e:
-                return False, f"Cannot resolve hostname: {e}"
-            except Exception as e:
-                return False, f"DNS resolution error: {str(e)}"
+                ip = ipaddress.ip_address(ip_str)
 
-            # Validate all resolved IPs before caching
-            for family, _, _, _, sockaddr in addr_info:
-                ip_str = sockaddr[0]
-                try:
-                    ip = ipaddress.ip_address(ip_str)
+                # Check against blocked networks
+                for network in BLOCKED_NETWORKS:
+                    if ip in network:
+                        # Don't cache invalid resolutions
+                        return False, f"Access to private network {network} is forbidden (SSRF protection)"
 
-                    # Check against blocked networks
-                    for network in BLOCKED_NETWORKS:
-                        if ip in network:
-                            # Don't cache invalid resolutions
-                            return False, f"Access to private network {network} is forbidden (SSRF protection)"
+            except ValueError as e:
+                return False, f"Invalid IP address: {e}"
 
-                except ValueError as e:
-                    return False, f"Invalid IP address: {e}"
+        # Cache validated resolution (only safe resolutions are cached)
+        if use_cache:
+            _dns_cache.set(hostname, addr_info)
 
-            # Cache validated resolution (only safe resolutions are cached)
-            if use_cache:
-                _dns_cache.set(hostname, addr_info)
+        return True, None
 
-            return True, None
-
-        else:
-            # Using cached resolution - already validated as safe
-            return True, None
-
-    except Exception:
-        # Log unexpected errors for debugging (don't expose to user)
-        return False, "URL validation failed"
+    else:
+        # Using cached resolution - already validated as safe
+        return True, None
 
 
 class ScraperRateLimiter:
@@ -408,7 +411,7 @@ class WebScraper(BaseTool):
         """Clean up httpx client on garbage collection."""
         try:
             self.close()
-        except Exception:
+        except (OSError, RuntimeError):
             pass
 
     def get_metadata(self) -> ToolMetadata:
@@ -500,16 +503,16 @@ class WebScraper(BaseTool):
                 error=f"Rate limit exceeded. Please wait {wait_time:.1f} seconds."
             )
 
+        # Prepare headers
+        headers = {
+            "User-Agent": user_agent or "Mozilla/5.0 (compatible; MetaAutonomousBot/1.0)"
+        }
+
+        # Record request for rate limiting
+        self.rate_limiter.record_request()
+
+        # Fetch URL with SSRF-safe redirect handling
         try:
-            # Prepare headers
-            headers = {
-                "User-Agent": user_agent or "Mozilla/5.0 (compatible; MetaAutonomousBot/1.0)"
-            }
-
-            # Record request for rate limiting
-            self.rate_limiter.record_request()
-
-            # Fetch URL with SSRF-safe redirect handling
             # SECURITY: follow_redirects=False so we can validate each redirect
             # target against SSRF checks before following it
             client = self._get_client()
@@ -540,37 +543,56 @@ class WebScraper(BaseTool):
             # Check status code
             response.raise_for_status()
 
-            # Validate Content-Type (prevent crashes on binary files)
-            content_type = response.headers.get("content-type", "").lower()
-            acceptable_types = [
-                "text/html",
-                "text/plain",
-                "text/xml",
-                "application/xhtml+xml",
-                "application/xml",
-            ]
-
-            # Check if content type is acceptable (may have charset, e.g., "text/html; charset=utf-8")
-            is_acceptable = any(
-                acceptable_type in content_type
-                for acceptable_type in acceptable_types
+        except httpx.TimeoutException:
+            return ToolResult(
+                success=False,
+                error=f"Request timed out after {timeout} seconds"
             )
 
-            if not is_acceptable and content_type:
-                return ToolResult(
-                    success=False,
-                    error=f"Unsupported content type: {content_type.split(';')[0]}. Only text-based content is supported."
-                )
+        except httpx.HTTPStatusError as e:
+            return ToolResult(
+                success=False,
+                error=f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
 
-            # Check content size
-            content_length = len(response.content)
-            if content_length > self.MAX_CONTENT_SIZE:
-                return ToolResult(
-                    success=False,
-                    error=f"Content size ({content_length} bytes) exceeds maximum ({self.MAX_CONTENT_SIZE} bytes)"
-                )
+        except httpx.RequestError as e:
+            return ToolResult(
+                success=False,
+                error=f"Request error: {str(e)}"
+            )
 
-            # Get content
+        # Validate Content-Type (prevent crashes on binary files)
+        content_type = response.headers.get("content-type", "").lower()
+        acceptable_types = [
+            "text/html",
+            "text/plain",
+            "text/xml",
+            "application/xhtml+xml",
+            "application/xml",
+        ]
+
+        # Check if content type is acceptable (may have charset, e.g., "text/html; charset=utf-8")
+        is_acceptable = any(
+            acceptable_type in content_type
+            for acceptable_type in acceptable_types
+        )
+
+        if not is_acceptable and content_type:
+            return ToolResult(
+                success=False,
+                error=f"Unsupported content type: {content_type.split(';')[0]}. Only text-based content is supported."
+            )
+
+        # Check content size
+        content_length = len(response.content)
+        if content_length > self.MAX_CONTENT_SIZE:
+            return ToolResult(
+                success=False,
+                error=f"Content size ({content_length} bytes) exceeds maximum ({self.MAX_CONTENT_SIZE} bytes)"
+            )
+
+        # Get content and extract text if requested
+        try:
             content = response.text
 
             # Extract text if requested
@@ -592,28 +614,10 @@ class WebScraper(BaseTool):
                 }
             )
 
-        except httpx.TimeoutException:
+        except (ValueError, UnicodeDecodeError) as e:
             return ToolResult(
                 success=False,
-                error=f"Request timed out after {timeout} seconds"
-            )
-
-        except httpx.HTTPStatusError as e:
-            return ToolResult(
-                success=False,
-                error=f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-            )
-
-        except httpx.RequestError as e:
-            return ToolResult(
-                success=False,
-                error=f"Request error: {str(e)}"
-            )
-
-        except Exception as e:
-            return ToolResult(
-                success=False,
-                error=f"Unexpected error: {str(e)}"
+                error=f"Content processing error: {str(e)}"
             )
 
     def _extract_text(self, html: str) -> str:
@@ -642,6 +646,6 @@ class WebScraper(BaseTool):
 
             return text
 
-        except Exception as e:
+        except (ValueError, TypeError, AttributeError) as e:
             # If extraction fails, return error message
             return f"[Error extracting text: {str(e)}]"

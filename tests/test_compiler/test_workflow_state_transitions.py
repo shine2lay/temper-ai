@@ -256,6 +256,10 @@ class TestWorkflowStateConsistency:
         retrieved = state.get_stage_output("stage1")
         # In a robust implementation: assert retrieved["data"] == "value1"
 
+        # Verify test setup and retrieval works
+        assert retrieved is not None
+        assert state.has_stage_output("stage1")
+
 
 class TestWorkflowStateMetadata:
     """Test workflow state metadata handling."""

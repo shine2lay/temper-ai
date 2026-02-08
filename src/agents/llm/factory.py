@@ -121,8 +121,7 @@ def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:
     if provider_enum in (LLMProvider.OPENAI, LLMProvider.ANTHROPIC):
         # H-05: Resolve api_key_ref (prefer it over deprecated api_key)
         if inference_config.api_key_ref:
-            # TODO: Implement secret resolution from keyring or env var
-            # For now, read from environment variable matching the ref name
+            # Secret resolution from environment variable matching the ref name
             import os
             api_key = os.getenv(inference_config.api_key_ref)
             if not api_key:

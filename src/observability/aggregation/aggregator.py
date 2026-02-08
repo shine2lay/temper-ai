@@ -11,7 +11,7 @@ from src.observability.aggregation.time_window import TimeWindowCalculator
 logger = logging.getLogger(__name__)
 
 
-class MetricAggregator:
+class AggregationOrchestrator:
     """Aggregates raw execution metrics into SystemMetric records.
 
     Computes rollups from WorkflowExecution, AgentExecution, and LLMCall
@@ -23,7 +23,7 @@ class MetricAggregator:
     - Total token counts
 
     Example:
-        >>> aggregator = MetricAggregator(obs_session)
+        >>> aggregator = AggregationOrchestrator(obs_session)
         >>> aggregator.aggregate_workflow_metrics(
         ...     period=AggregationPeriod.HOUR,
         ...     start_time=datetime.now(timezone.utc) - timedelta(hours=1)

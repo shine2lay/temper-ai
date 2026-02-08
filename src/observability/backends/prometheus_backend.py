@@ -55,30 +55,39 @@ class PrometheusObservabilityBackend(ObservabilityBackend):
     # Stub implementations - log only
 
     def track_workflow_start(self, workflow_id: str, workflow_name: str, **kwargs: Any) -> None:  # type: ignore[override]
+        """Track workflow start (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Workflow start: {workflow_name} ({workflow_id})")
 
     def track_workflow_end(self, workflow_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
+        """Track workflow end (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Workflow end: {workflow_id} status={status}")
 
     def update_workflow_metrics(self, workflow_id: str, **kwargs: Any) -> None:  # type: ignore[override]
+        """Update workflow metrics (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Workflow metrics: {workflow_id}")
 
     def track_stage_start(self, stage_id: str, stage_name: str, **kwargs: Any) -> None:  # type: ignore[override]
+        """Track stage start (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Stage start: {stage_name} ({stage_id})")
 
     def track_stage_end(self, stage_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
+        """Track stage end (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Stage end: {stage_id} status={status}")
 
     def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
+        """Set stage output (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Stage output: {stage_id}")
 
     def track_agent_start(self, agent_id: str, agent_name: str, **kwargs: Any) -> None:  # type: ignore[override]
+        """Track agent start (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Agent start: {agent_name} ({agent_id})")
 
     def track_agent_end(self, agent_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
+        """Track agent end (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Agent end: {agent_id} status={status}")
 
     def set_agent_output(self, agent_id: str, **kwargs: Any) -> None:  # type: ignore[override]
+        """Set agent output (stub - logs only)."""
         logger.debug(f"[Prometheus STUB] Agent output: {agent_id}")
 
     def track_llm_call(  # type: ignore[override]
@@ -91,6 +100,7 @@ class PrometheusObservabilityBackend(ObservabilityBackend):
         completion_tokens: int,
         **kwargs: Any
     ) -> None:
+        """Track LLM call (stub - logs only)."""
         logger.debug(
             f"[Prometheus STUB] LLM call: {provider}/{model} "
             f"tokens={prompt_tokens + completion_tokens}"
@@ -105,6 +115,7 @@ class PrometheusObservabilityBackend(ObservabilityBackend):
         status: str = "success",
         **kwargs: Any
     ) -> None:
+        """Track tool call (stub - logs only)."""
         logger.debug(
             f"[Prometheus STUB] Tool call: {tool_name} "
             f"duration={duration_seconds}s status={status}"
@@ -116,6 +127,7 @@ class PrometheusObservabilityBackend(ObservabilityBackend):
         policy_name: str,
         **kwargs: Any
     ) -> None:
+        """Track safety violation (stub - logs only)."""
         logger.warning(
             f"[Prometheus STUB] Safety violation: {policy_name} "
             f"severity={violation_severity}"
@@ -128,6 +140,7 @@ class PrometheusObservabilityBackend(ObservabilityBackend):
         agents_involved: List[str],
         **kwargs: Any
     ) -> str:
+        """Track collaboration event (stub - logs only)."""
         logger.debug(
             f"[Prometheus STUB] Collaboration event: {event_type} "
             f"stage={stage_id} agents={len(agents_involved)}"

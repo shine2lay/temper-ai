@@ -29,6 +29,7 @@ class NoOpBackend(ObservabilityBackend):
         tags: Optional[List[str]] = None,
         extra_metadata: Optional[Dict[str, Any]] = None
     ) -> None:
+        """Track workflow start (no-op)."""
         pass
 
     def track_workflow_end(
@@ -39,6 +40,7 @@ class NoOpBackend(ObservabilityBackend):
         error_message: Optional[str] = None,
         error_stack_trace: Optional[str] = None
     ) -> None:
+        """Track workflow end (no-op)."""
         pass
 
     def update_workflow_metrics(
@@ -49,6 +51,7 @@ class NoOpBackend(ObservabilityBackend):
         total_tokens: int,
         total_cost_usd: float
     ) -> None:
+        """Update workflow metrics (no-op)."""
         pass
 
     # ========== Stage Tracking ==========
@@ -62,6 +65,7 @@ class NoOpBackend(ObservabilityBackend):
         start_time: datetime,
         input_data: Optional[Dict[str, Any]] = None
     ) -> None:
+        """Track stage start (no-op)."""
         pass
 
     def track_stage_end(
@@ -74,6 +78,7 @@ class NoOpBackend(ObservabilityBackend):
         num_agents_succeeded: int = 0,
         num_agents_failed: int = 0
     ) -> None:
+        """Track stage end (no-op)."""
         pass
 
     def set_stage_output(
@@ -81,6 +86,7 @@ class NoOpBackend(ObservabilityBackend):
         stage_id: str,
         output_data: Dict[str, Any]
     ) -> None:
+        """Set stage output (no-op)."""
         pass
 
     # ========== Agent Tracking ==========
@@ -94,6 +100,7 @@ class NoOpBackend(ObservabilityBackend):
         start_time: datetime,
         input_data: Optional[Dict[str, Any]] = None
     ) -> None:
+        """Track agent start (no-op)."""
         pass
 
     def track_agent_end(
@@ -103,6 +110,7 @@ class NoOpBackend(ObservabilityBackend):
         status: str,
         error_message: Optional[str] = None
     ) -> None:
+        """Track agent end (no-op)."""
         pass
 
     def set_agent_output(
@@ -118,6 +126,7 @@ class NoOpBackend(ObservabilityBackend):
         num_llm_calls: Optional[int] = None,
         num_tool_calls: Optional[int] = None
     ) -> None:
+        """Set agent output (no-op)."""
         pass
 
     # ========== LLM Call Tracking ==========
@@ -140,6 +149,7 @@ class NoOpBackend(ObservabilityBackend):
         status: str = "success",
         error_message: Optional[str] = None
     ) -> None:
+        """Track LLM call (no-op)."""
         pass
 
     # ========== Tool Call Tracking ==========
@@ -158,6 +168,7 @@ class NoOpBackend(ObservabilityBackend):
         safety_checks: Optional[List[str]] = None,
         approval_required: bool = False
     ) -> None:
+        """Track tool call (no-op)."""
         pass
 
     # ========== Safety Tracking ==========
@@ -174,6 +185,7 @@ class NoOpBackend(ObservabilityBackend):
         context: Optional[Dict[str, Any]] = None,
         timestamp: Optional[datetime] = None
     ) -> None:
+        """Track safety violation (no-op)."""
         pass
 
     def track_collaboration_event(
@@ -189,12 +201,14 @@ class NoOpBackend(ObservabilityBackend):
         extra_metadata: Optional[Dict[str, Any]] = None,
         timestamp: Optional[datetime] = None
     ) -> str:
+        """Track collaboration event (no-op)."""
         return ""
 
     # ========== Context Management ==========
 
     @contextmanager
     def get_session_context(self):
+        """Get session context (no-op)."""
         yield None
 
     # ========== Maintenance Operations ==========
@@ -204,7 +218,9 @@ class NoOpBackend(ObservabilityBackend):
         retention_days: int,
         dry_run: bool = False
     ) -> Dict[str, int]:
+        """Cleanup old records (no-op)."""
         return {}
 
     def get_stats(self) -> Dict[str, Any]:
+        """Get backend stats."""
         return {"backend_type": "noop"}

@@ -158,8 +158,8 @@ class StageCompiler:
             This is a placeholder for M3+ parallel stage execution.
             Currently falls back to sequential compilation.
         """
-        # TODO M3+: Implement parallel stage execution
-        # For now, fall back to sequential
+        # FIXME(M3+): Implement parallel stage execution with DAG-based scheduling
+        # Requires: dependency analysis, thread pool executor, state synchronization
         return self.compile_stages(stage_names, workflow_config)
 
     def compile_conditional_stages(
@@ -185,6 +185,6 @@ class StageCompiler:
             This is a placeholder for M4+ conditional execution.
             Currently falls back to sequential compilation.
         """
-        # TODO M4+: Implement conditional branching
-        # For now, fall back to sequential
+        # FIXME(M4+): Implement conditional branching based on stage outputs
+        # Requires: condition evaluator, dynamic graph building, branch merging
         return self.compile_stages(stage_names, workflow_config)

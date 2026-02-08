@@ -154,7 +154,8 @@ def retry_with_backoff(
             logger.error(
                 f"All {config.max_retries + 1} attempts failed for {func.__name__}: {last_exception}"
             )
-            assert last_exception is not None, "last_exception should not be None after retries"
+            if last_exception is None:
+                raise RuntimeError(f"Retry loop completed without capturing exception for {func.__name__}")
             raise last_exception
 
         return wrapper
@@ -190,7 +191,7 @@ def safe_execute(
     try:
         result = func(*args, **kwargs)
         return result, None
-    except Exception as e:
+    except (ValueError, TypeError, KeyError, AttributeError, RuntimeError, OSError, ConnectionError, TimeoutError) as e:
         if log_errors:
             logger.error(f"Error in {func.__name__}: {e}", exc_info=True)
         return default, e
@@ -295,7 +296,7 @@ class ErrorHandler:
         for attempt in range(self.max_retries + 1):
             try:
                 return func(*args, **kwargs)
-            except Exception as e:
+            except (ValueError, TypeError, KeyError, AttributeError, RuntimeError, OSError, ConnectionError, TimeoutError) as e:
                 last_exception = e
 
                 if self.log_errors:
@@ -309,7 +310,8 @@ class ErrorHandler:
 
         # All attempts failed
         if self.raise_on_failure:
-            assert last_exception is not None, "last_exception should not be None after retries"
+            if last_exception is None:
+                raise RuntimeError(f"Retry executor completed without capturing exception for {func.__name__}")
             raise last_exception
 
         return fallback_value

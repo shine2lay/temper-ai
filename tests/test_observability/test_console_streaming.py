@@ -303,6 +303,8 @@ def test_streaming_poll_interval_respected(db_manager, sample_workflow):
     visualizer.stop()
 
     # Poll interval test is complete - visualizer ran and stopped successfully
+    assert visualizer.stop_event.is_set()
+    assert visualizer.poll_interval == 0.5
 
 
 def test_double_stop_is_safe(db_manager, sample_workflow):

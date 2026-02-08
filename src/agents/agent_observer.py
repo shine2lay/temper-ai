@@ -46,7 +46,7 @@ class AgentObserver:
             return
         try:
             self._tracker.track_llm_call(agent_id=self._agent_id, **kwargs)
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, RuntimeError) as e:
             logger.warning(f"Failed to track LLM call: {e}")
 
     def track_tool_call(self, **kwargs: Any) -> None:
@@ -55,5 +55,5 @@ class AgentObserver:
             return
         try:
             self._tracker.track_tool_call(agent_id=self._agent_id, **kwargs)
-        except Exception as e:
+        except (AttributeError, TypeError, ValueError, RuntimeError) as e:
             logger.warning(f"Failed to track tool call: {e}")

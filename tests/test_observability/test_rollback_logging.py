@@ -200,6 +200,7 @@ class TestRollbackLogging:
         # Verify add and commit were called
         mock_session.add.assert_called_once()
         mock_session.commit.assert_called_once()
+        assert mock_db_class.call_count == 1
 
     @patch('src.observability.rollback_logger.DatabaseManager')
     def test_log_rollback_event_error_handling(self, mock_db_class, sample_result):
@@ -221,6 +222,7 @@ class TestRollbackLogging:
 
         # Verify add was attempted
         mock_session.add.assert_called_once()
+        assert mock_session.add.call_count == 1
 
     def test_get_rollback_events_no_filter(self, mock_db_manager):
         """Test querying rollback events without filters."""
@@ -240,6 +242,7 @@ class TestRollbackLogging:
         mock_session.query.assert_called_once_with(RollbackEvent)
         mock_query.order_by.assert_called_once()
         mock_query.limit.assert_called_once_with(100)
+        assert isinstance(events, list)
 
     def test_get_rollback_events_filter_by_snapshot(self, mock_db_manager):
         """Test querying rollback events filtered by snapshot ID."""
@@ -259,6 +262,7 @@ class TestRollbackLogging:
 
         # Verify filter was applied
         mock_query.filter.assert_called_once()
+        assert isinstance(events, list)
 
     def test_get_rollback_events_filter_by_trigger(self, mock_db_manager):
         """Test querying rollback events filtered by trigger type."""
@@ -278,6 +282,7 @@ class TestRollbackLogging:
 
         # Verify filter was applied
         mock_query.filter.assert_called_once()
+        assert isinstance(events, list)
 
     def test_get_rollback_snapshots_no_filter(self, mock_db_manager):
         """Test querying rollback snapshots without filters."""
@@ -296,6 +301,7 @@ class TestRollbackLogging:
         mock_session.query.assert_called_once_with(RollbackSnapshotDB)
         mock_query.order_by.assert_called_once()
         mock_query.limit.assert_called_once_with(100)
+        assert isinstance(snapshots, list)
 
     def test_get_rollback_snapshots_filter_by_workflow(self, mock_db_manager):
         """Test querying snapshots filtered by workflow execution ID."""
@@ -315,3 +321,4 @@ class TestRollbackLogging:
 
         # Verify filter was applied
         mock_query.filter.assert_called_once()
+        assert isinstance(snapshots, list)

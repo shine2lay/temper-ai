@@ -167,7 +167,9 @@ class TestDedicatedTempDirectory:
         validator = PathSafetyValidator(allowed_root=tmp_path)
 
         # Should be within allowed_root
-        validator.temp_dir.relative_to(validator.allowed_root)
+        relative_path = validator.temp_dir.relative_to(validator.allowed_root)
+        assert relative_path is not None
+        assert validator.temp_dir.is_relative_to(validator.allowed_root)
 
     def test_temp_directory_can_be_disabled(self, tmp_path):
         """Verify temp directory can be disabled."""

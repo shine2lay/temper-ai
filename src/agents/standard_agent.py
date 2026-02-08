@@ -1098,7 +1098,7 @@ class StandardAgent(BaseAgent):
 
         # Check cache validity using a hash of sorted tool names
         tool_names_key = ",".join(sorted(tools_dict.keys()))
-        current_hash = hashlib.md5(tool_names_key.encode(), usedforsecurity=False).hexdigest()
+        current_hash = hashlib.sha256(tool_names_key.encode()).hexdigest()
 
         if (
             self._cached_native_tool_defs is not None

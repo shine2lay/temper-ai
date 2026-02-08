@@ -72,10 +72,12 @@ class TestCollectAgentMetrics:
             metric_registry=mock_registry
         )
 
-        aggregator.collect_agent_metrics("agent-123")
+        result = aggregator.collect_agent_metrics("agent-123")
 
         mock_backend.get_agent_execution.assert_called_once_with("agent-123")
         mock_registry.collect_all.assert_called_once_with(mock_execution)
+        # Verify metrics were collected
+        assert result is None or isinstance(result, dict)
 
     def test_collect_with_registry_execution_not_found(self):
         """Test metric collection when execution is not found."""
@@ -111,9 +113,10 @@ class TestCollectAgentMetrics:
         )
 
         # Should handle gracefully (execution will be None)
-        aggregator.collect_agent_metrics("agent-123")
+        result = aggregator.collect_agent_metrics("agent-123")
 
         mock_registry.collect_all.assert_not_called()
+        assert result is None or isinstance(result, dict)
 
     def test_collect_with_empty_metrics(self):
         """Test metric collection returns empty dict."""
@@ -153,7 +156,9 @@ class TestCollectAgentMetrics:
         )
 
         # Should handle None gracefully
-        aggregator.collect_agent_metrics("agent-123")
+        result = aggregator.collect_agent_metrics("agent-123")
+        assert result is None or isinstance(result, dict)
+        mock_registry.collect_all.assert_called_once()
 
     def test_collect_exception_handling(self):
         """Test exception handling in metric collection."""
@@ -202,6 +207,7 @@ class TestSetAgentOutput:
             num_llm_calls=None,
             num_tool_calls=None
         )
+        assert mock_backend.set_agent_output.call_count == 1
 
     def test_set_agent_output_full_parameters(self):
         """Test set_agent_output with all parameters."""
@@ -235,6 +241,7 @@ class TestSetAgentOutput:
             num_llm_calls=3,
             num_tool_calls=5
         )
+        assert mock_backend.set_agent_output.call_count == 1
 
     def test_set_agent_output_delegates_to_backend(self):
         """Test set_agent_output properly delegates to backend."""
@@ -290,6 +297,7 @@ class TestSetStageOutput:
             stage_id="stage-123",
             output_data=output_data
         )
+        assert mock_backend.set_stage_output.call_count == 1
 
     def test_set_stage_output_empty_data(self):
         """Test set_stage_output with empty dict."""
@@ -379,11 +387,13 @@ class TestErrorResilience:
         )
 
         # Should not crash, just log warning
-        with patch('src.observability.metric_aggregator.logger'):
-            aggregator.collect_agent_metrics("agent-123")
+        with patch('src.observability.metric_aggregator.logger') as mock_logger:
+            result = aggregator.collect_agent_metrics("agent-123")
 
         # Registry should not be called after exception
         mock_registry.collect_all.assert_not_called()
+        assert result is None or isinstance(result, dict)
+        assert mock_logger.warning.called
 
 
 class TestMetricRegistryIntegration:

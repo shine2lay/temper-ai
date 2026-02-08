@@ -249,10 +249,12 @@ class TestCaseInsensitivePaths:
             ("/sys/kernel", "/Sys/Kernel"),
         ]
 
+        tested_count = 0
         for original, variation in forbidden_variations:
             if not Path(original).exists():
                 continue
 
+            tested_count += 1
             # On case-insensitive filesystems (Windows, macOS), both should be blocked
             # On case-sensitive filesystems (Linux), only exact match is blocked
             try:
@@ -264,6 +266,9 @@ class TestCaseInsensitivePaths:
             except PathSafetyError:
                 # Expected - path is forbidden
                 pass
+
+        # Verify at least one variation was tested
+        assert tested_count > 0, "No forbidden path variations could be tested"
 
     def test_project_directory_case_variations(self, validator, temp_workspace):
         """Test case variations of forbidden project directories."""
@@ -277,16 +282,20 @@ class TestCaseInsensitivePaths:
             temp_workspace / ".Git" / "config",
         ]
 
+        exception_count = 0
         for path_var in variations:
             try:
-                validator.validate_path(path_var)
+                result = validator.validate_path(path_var)
                 # On case-insensitive FS, all should be blocked
                 # Validator checks ".git" in parts, which is case-sensitive
-                # So .GIT may not be caught
-                pass
+                # So .GIT may not be caught - verify result is valid
+                assert result is not None
             except (PathSafetyError, FileNotFoundError):
                 # Either blocked or doesn't exist (expected)
-                pass
+                exception_count += 1
+
+        # Verify at least one path was processed (either validated or raised exception)
+        assert len(variations) > 0, "No variations tested"
 
 
 class TestExtremelyLongPaths:
@@ -491,12 +500,18 @@ class TestCrossPlatformBehavior:
             "D:\\etc\\passwd",  # Try to access via different drive
         ]
 
+        processed = 0
         for path in windows_paths:
+            processed += 1
             try:
-                validator.validate_path(path)
+                result = validator.validate_path(path)
+                # If validation passes, verify result
+                assert result is not None
             except (PathSafetyError, OSError):
                 # Expected - outside allowed root or doesn't exist
                 pass
+
+        assert processed == len(windows_paths), "All Windows paths should be tested"
 
     @pytest.mark.skipif(sys.platform != "win32", reason="Windows-specific test")
     def test_windows_unc_paths(self, validator):
@@ -506,12 +521,18 @@ class TestCrossPlatformBehavior:
             "\\\\?\\C:\\Windows\\System32",
         ]
 
+        processed = 0
         for path in unc_paths:
+            processed += 1
             try:
-                validator.validate_path(path)
+                result = validator.validate_path(path)
+                # If validation passes, verify result
+                assert result is not None
             except (PathSafetyError, OSError, ValueError):
                 # Expected - UNC paths should be blocked or invalid
                 pass
+
+        assert processed == len(unc_paths), "All UNC paths should be tested"
 
     @pytest.mark.skipif(sys.platform == "win32", reason="Unix-specific test")
     def test_unix_special_files(self, validator):

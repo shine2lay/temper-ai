@@ -184,7 +184,7 @@ class DialogueOrchestrator(CollaborationStrategy):
                 "Install with: pip install sentence-transformers"
             )
             return False
-        except Exception as e:
+        except (OSError, RuntimeError, ValueError) as e:
             logger.warning(f"Failed to warm up embedding model: {e}")
             return False
 
@@ -366,7 +366,7 @@ class DialogueOrchestrator(CollaborationStrategy):
                         weights[agent_name] = 0.5  # Neutral for new agents
                         logger.debug(f"No merit score for {agent_name}, using neutral weight 0.5")
 
-        except Exception as e:
+        except (ImportError, AttributeError, TypeError, ValueError) as e:
             logger.warning(f"Failed to load merit scores: {e}. Using equal weights.")
             weights = {out.agent_name: 1.0 for out in agent_outputs}
 
@@ -823,7 +823,7 @@ class DialogueOrchestrator(CollaborationStrategy):
             if self._check_embeddings_available():
                 try:
                     return self._calculate_semantic_similarity(current_outputs, previous_outputs)
-                except Exception as e:
+                except (ImportError, RuntimeError, ValueError, TypeError) as e:
                     logger.warning(
                         f"Semantic similarity calculation failed: {e}. "
                         f"Falling back to exact match."

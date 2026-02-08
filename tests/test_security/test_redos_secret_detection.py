@@ -280,6 +280,8 @@ class TestInputValidation:
         # Should not raise ValueError
         result = detect_secret_patterns(max_input)
         # Result doesn't matter, just verify it doesn't raise
+        assert result is not None
+        assert isinstance(result, (list, dict, bool))
 
     def test_input_validation_error_message(self):
         """Verify error message is clear and informative."""

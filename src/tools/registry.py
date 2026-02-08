@@ -590,7 +590,7 @@ class ToolRegistry:
                                 if suggestion:
                                     logger.debug(f"How to fix:\n{suggestion}")
 
-                            except Exception as e:
+                            except (ValueError, AttributeError, RuntimeError) as e:
                                 # Other instantiation error
                                 logger.error(
                                     f"Failed to instantiate tool {obj.__name__}: {e}",
@@ -735,7 +735,7 @@ class ToolRegistry:
             raise ToolRegistryError(
                 f"Tool class not found in module '{module_name}': {class_name}"
             )
-        except Exception as e:
+        except (TypeError, ValueError, RuntimeError) as e:
             raise ToolRegistryError(
                 f"Failed to instantiate tool '{tool_name}': {e}"
             )
@@ -766,7 +766,7 @@ class ToolRegistry:
         # List all tool configurations
         try:
             tool_configs = config_loader.list_configs("tool")
-        except Exception as e:
+        except (OSError, ValueError, KeyError) as e:
             logger.warning(f"Failed to list tool configurations: {e}")
             return 0
 

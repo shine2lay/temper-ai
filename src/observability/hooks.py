@@ -70,8 +70,10 @@ def track_workflow(
         ...     return "result"
     """
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        """Apply workflow tracking to function."""
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Execute function with workflow tracking."""
             name = workflow_name or func.__name__
             config = {}
             if get_config:
@@ -111,8 +113,10 @@ def track_stage(
         ...     return "result"
     """
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        """Apply stage tracking to function."""
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Execute function with stage tracking."""
             name = stage_name or func.__name__
             config = {}
             if get_config:
@@ -157,8 +161,10 @@ def track_agent(
         ...     return "result"
     """
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        """Apply agent tracking to function."""
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Execute function with agent tracking."""
             name = agent_name or func.__name__
             config = {}
             if get_config:

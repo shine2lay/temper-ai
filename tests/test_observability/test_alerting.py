@@ -328,6 +328,7 @@ class TestAlertManager:
         with patch('src.observability.alerting.logger') as mock_logger:
             manager.check_metric("cost_usd", 15.0)
             mock_logger.info.assert_called()
+            assert mock_logger.info.call_count > 0
 
     def test_webhook_action_with_handler(self, manager):
         """Test webhook action with registered handler."""
@@ -369,6 +370,7 @@ class TestAlertManager:
         manager.check_metric("cost_usd", 15.0)
 
         mock_handler.assert_called_once()
+        assert mock_handler.call_count == 1
 
     def test_get_recent_alerts(self, manager):
         """Test retrieving recent alerts."""

@@ -256,8 +256,8 @@ class StratifiedAssignment(AssignmentStrategy):
         Returns:
             variant_id: Assigned variant ID
         """
-        # TODO: Implement stratified assignment logic
-        # For now, fall back to hash assignment
+        # FIXME: Implement stratified assignment logic with stratum-based hashing
+        # Requires: stratum extraction from context, per-stratum hash assignment
         return HashAssignment().assign(experiment, variants, execution_id, context)
 
 
@@ -297,8 +297,8 @@ class BanditAssignment(AssignmentStrategy):
         Returns:
             variant_id: Assigned variant ID
         """
-        # TODO: Implement multi-armed bandit logic
-        # For now, fall back to random assignment
+        # FIXME: Implement multi-armed bandit logic with Thompson sampling or UCB
+        # Requires: Bayesian backend for beta distributions, reward tracking
         return RandomAssignment().assign(experiment, variants, execution_id, context)
 
 

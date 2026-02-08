@@ -209,7 +209,7 @@ class BaseTool(ABC):
                     error=f"Parameter validation failed: {validation_result.error_message}",
                     metadata={"validation_errors": validation_result.errors}
                 )
-        except Exception as e:
+        except (TypeError, ValueError, KeyError, AttributeError) as e:
             logger.error("Tool %s parameter validation raised: %s", self.name, e)
             return ToolResult(
                 success=False,
@@ -219,7 +219,7 @@ class BaseTool(ABC):
         # Execute tool -- catch any exception to enforce no-exception contract
         try:
             return self.execute(**kwargs)
-        except Exception as e:
+        except (RuntimeError, TypeError, ValueError, OSError, KeyError, AttributeError) as e:
             logger.error("Tool %s execution failed: %s", self.name, e, exc_info=True)
             return ToolResult(
                 success=False,
@@ -298,7 +298,7 @@ class BaseTool(ABC):
                 msg = error['msg']
                 errors.append(f"{field}: {msg}")
             return ParameterValidationResult(valid=False, errors=errors)
-        except Exception as e:
+        except (TypeError, KeyError, AttributeError) as e:
             return ParameterValidationResult(
                 valid=False,
                 errors=[f"Validation error: {str(e)}"]
@@ -386,6 +386,11 @@ class BaseTool(ABC):
         }
 
     def __repr__(self) -> str:
+        """Return string representation of the tool.
+
+        Returns:
+            String representation showing tool class name, name, and version
+        """
         return f"{self.__class__.__name__}(name='{self.name}', version='{self.version}')"
 
 

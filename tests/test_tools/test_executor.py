@@ -433,8 +433,13 @@ class TestToolExecutor:
         """Test shutting down executor."""
         registry = ToolRegistry()
         executor = ToolExecutor(registry)
+
+        # Shutdown should complete without errors
         executor.shutdown(wait=True)
-        # Should not raise any errors
+
+        # After shutdown, executor should be in a clean state
+        # Verify the thread pool executor is shutdown
+        assert executor._executor._shutdown is True
 
     def test_repr(self):
         """Test string representation."""

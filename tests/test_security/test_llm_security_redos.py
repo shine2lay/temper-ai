@@ -215,7 +215,8 @@ class TestReDoSProtection:
 
         # Underscores not in limited character class - may not detect
         # This is acceptable tradeoff for ReDoS protection
-        pass  # No assertion - optional coverage
+        assert isinstance(is_safe, bool)
+        assert isinstance(violations, list)
 
     def test_separator_mixed(self, detector):
         """Test detection with mixed separators."""
@@ -320,6 +321,8 @@ class TestReDoSProtection:
 
         is_safe, violations = detector.detect(short_unicode)
         # Should complete without error (may or may not trigger high entropy)
+        assert isinstance(is_safe, bool)
+        assert isinstance(violations, list)
 
     def test_entropy_dos_protection_long_unicode(self, detector):
         """Test entropy calculation skipped on long Unicode input."""

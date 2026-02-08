@@ -192,8 +192,11 @@ class TestBackendWorkflowExecution:
 
         # Should not raise, just log
         with tracker.track_workflow("test_workflow", config) as workflow_id:
+            assert workflow_id is not None
             with tracker.track_stage("test_stage", config, workflow_id) as stage_id:
+                assert stage_id is not None
                 with tracker.track_agent("test_agent", config, stage_id) as agent_id:
+                    assert agent_id is not None
                     tracker.track_llm_call(
                         agent_id=agent_id,
                         provider="ollama",

@@ -39,7 +39,7 @@ def _log_rollback_event(**kwargs) -> None:
         log_rollback_event(**kwargs)
     except ImportError:
         logger.debug("Observability not available; skipping rollback event logging")
-    except Exception as e:
+    except (TypeError, ValueError, OSError) as e:
         logger.warning("Failed to log rollback event: %s", e)
 
 
@@ -298,7 +298,7 @@ class ToolExecutor:
                     result=None,
                     error=f"Invalid parameters for tool '{tool_name}'"
                 )
-        except Exception as e:
+        except (TypeError, ValueError, KeyError, AttributeError) as e:
             return ToolResult(
                 success=False,
                 result=None,
@@ -347,7 +347,7 @@ class ToolExecutor:
                             error="Action requires approval but was not approved",
                             metadata={"approval_request_id": approval_request.id}
                         )
-        except Exception as e:
+        except (TypeError, ValueError, KeyError, AttributeError, ImportError, RuntimeError) as e:
             logger.error(f"Policy validation error (fail-closed): {e}")
             return ToolResult(
                 success=False,
@@ -365,7 +365,7 @@ class ToolExecutor:
                     strategy_name="file"
                 )
                 logger.debug(f"Created snapshot {snapshot.id} for tool {tool_name}")
-        except Exception as e:
+        except (TypeError, ValueError, OSError, AttributeError) as e:
             logger.warning(f"Failed to create snapshot: {e}")
             # Continue execution even if snapshot fails
 
@@ -413,7 +413,7 @@ class ToolExecutor:
                                 trigger="auto",
                                 operator=context.get("agent_id")
                             )
-                        except Exception as e:
+                        except (TypeError, ValueError, OSError, AttributeError) as e:
                             logger.error(f"Auto-rollback failed: {e}")
                             result.metadata["rollback_error"] = str(e)
 
@@ -435,7 +435,7 @@ class ToolExecutor:
                                 operator=context.get("agent_id"),
                                 reason="Tool execution timeout"
                             )
-                        except Exception as e:
+                        except (TypeError, ValueError, OSError, AttributeError) as e:
                             logger.error(f"Auto-rollback on timeout failed: {e}")
 
                     return ToolResult(
@@ -448,7 +448,7 @@ class ToolExecutor:
                 # Always decrement concurrent count
                 self._release_concurrent_slot()
 
-        except Exception as e:
+        except (RuntimeError, OSError, MemoryError) as e:
             # Auto-rollback on exception
             if snapshot and self.enable_auto_rollback and self.rollback_manager:
                 try:
@@ -465,7 +465,7 @@ class ToolExecutor:
                         operator=context.get("agent_id"),
                         reason=f"Tool execution exception: {str(e)}"
                     )
-                except Exception as rollback_error:
+                except (TypeError, ValueError, OSError, AttributeError) as rollback_error:
                     logger.error(f"Auto-rollback on exception failed: {rollback_error}")
 
             logger.error(f"Tool execution failed: {e}", exc_info=True)
@@ -488,7 +488,7 @@ class ToolExecutor:
         """
         try:
             return tool.execute(**params)
-        except Exception as e:
+        except (RuntimeError, TypeError, ValueError, OSError, KeyError, AttributeError) as e:
             # Catch any unhandled exceptions from tool.execute()
             return ToolResult(
                 success=False,
@@ -548,7 +548,7 @@ class ToolExecutor:
         )
         try:
             return future.result(timeout=max_wait + 5)
-        except Exception:
+        except (TimeoutError, RuntimeError, ValueError):
             return False
 
     def _poll_approval(
@@ -599,7 +599,7 @@ class ToolExecutor:
                     operator=request.metadata.get("operator"),
                     reason=f"Approval rejected: {request.decision_reason or 'No reason provided'}"
                 )
-            except Exception as e:
+            except (TypeError, ValueError, OSError, AttributeError) as e:
                 logger.error(f"Auto-rollback on approval rejection failed: {e}")
 
     def execute_batch(
@@ -634,7 +634,7 @@ class ToolExecutor:
                 idx = futures[future]
                 try:
                     results[idx] = future.result()
-                except Exception as e:
+                except (RuntimeError, TypeError, ValueError, OSError, TimeoutError, KeyError, AttributeError) as e:
                     results[idx] = ToolResult(
                         success=False,
                         result=None,
@@ -678,7 +678,7 @@ class ToolExecutor:
             validation = tool.validate_params(params)
             if not validation.valid:
                 return False, f"Invalid parameters for tool '{tool_name}'"
-        except Exception as e:
+        except (TypeError, ValueError, KeyError, AttributeError) as e:
             return False, f"Parameter validation failed: {str(e)}"
 
         return True, None
@@ -728,7 +728,7 @@ class ToolExecutor:
             try:
                 pool.shutdown(wait=True, cancel_futures=True)
                 logger.debug("ThreadPoolExecutor (%s) cleaned up successfully", pool_name)
-            except Exception as e:
+            except (RuntimeError, OSError) as e:
                 logger.error("Error during thread pool cleanup (%s): %s", pool_name, e)
 
     def shutdown(self, wait: bool = True, cancel_futures: bool = False) -> None:
@@ -751,7 +751,7 @@ class ToolExecutor:
             self._approval_executor.shutdown(wait=wait, cancel_futures=cancel_futures)
             self._shutdown = True
             logger.debug("ToolExecutor shutdown completed")
-        except Exception as e:
+        except (RuntimeError, OSError) as e:
             logger.error(f"Error during executor shutdown: {e}")
             raise
 
@@ -779,7 +779,7 @@ class ToolExecutor:
                     "Use context manager or call shutdown() explicitly."
                 )
                 self.shutdown(wait=False, cancel_futures=True)
-        except Exception as e:
+        except (RuntimeError, OSError, AttributeError) as e:
             # Exceptions in __del__ are ignored but logged
             logger.error(f"Error in ToolExecutor.__del__: {e}")
 

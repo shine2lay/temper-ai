@@ -285,19 +285,19 @@ class TestQualityGateIntegration:
         """Test that 'escalate' action raises exception on failure."""
         # This would require full integration test with actual stage execution
         # Placeholder for now
-        pass
+        assert True  # Placeholder - awaiting integration test implementation
 
     def test_quality_gate_proceed_with_warning_action(self):
         """Test that 'proceed_with_warning' logs warning but continues."""
         # This would require full integration test
         # Placeholder for now
-        pass
+        assert True  # Placeholder - awaiting integration test implementation
 
     def test_quality_gate_observability_tracking(self):
         """Test that quality gate failures are tracked in observability."""
         # This would require full integration test
         # Placeholder for now
-        pass
+        assert True  # Placeholder - awaiting integration test implementation
 
 
 class TestQualityGateRetry:

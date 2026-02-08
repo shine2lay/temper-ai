@@ -198,7 +198,7 @@ class FileWriter(BaseTool):
                 error=f"OS error: {str(e)}"
             )
 
-        except Exception as e:
+        except (TypeError, ValueError, UnicodeError) as e:
             return ToolResult(
                 success=False,
                 error=f"Unexpected error: {str(e)}"

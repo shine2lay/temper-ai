@@ -88,6 +88,8 @@ class TestRateLimitPolicyValidation:
         }
         policy = RateLimitPolicy(config)
         # Should not raise
+        assert policy is not None
+        assert "commit" in policy.rate_limits
 
 
 class TestResourceLimitPolicyValidation:

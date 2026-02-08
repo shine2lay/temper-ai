@@ -1,17 +1,17 @@
-"""Tests for refactored MetricAggregator (SQL-based aggregation).
+"""Tests for refactored AggregationOrchestrator (SQL-based aggregation).
 
 Tests the new modular aggregation pipeline:
 - TimeWindowCalculator
 - AggregationQueryBuilder
 - MetricRecordCreator
-- MetricAggregator (orchestrator)
+- AggregationOrchestrator (orchestrator)
 """
 import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, MagicMock, call
 from typing import Any
 
-from src.observability.aggregation import MetricAggregator, AggregationPeriod
+from src.observability.aggregation import AggregationOrchestrator, AggregationPeriod
 from src.observability.aggregation.time_window import TimeWindowCalculator
 from src.observability.aggregation.query_builder import AggregationQueryBuilder
 from src.observability.aggregation.metric_creator import MetricRecordCreator
@@ -200,12 +200,12 @@ class TestMetricRecordCreator:
         assert len(metric_ids) == 4
 
 
-class TestMetricAggregatorOrchestrator:
-    """Tests for MetricAggregator orchestrator class."""
+class TestAggregationOrchestratorOrchestrator:
+    """Tests for AggregationOrchestrator orchestrator class."""
 
     def test_init(self):
         mock_session = Mock()
-        aggregator = MetricAggregator(mock_session)
+        aggregator = AggregationOrchestrator(mock_session)
 
         assert aggregator.session == mock_session
         assert isinstance(aggregator._metric_creator, MetricRecordCreator)
@@ -214,7 +214,7 @@ class TestMetricAggregatorOrchestrator:
         mock_session = Mock()
         mock_session.exec.return_value.all.return_value = []
 
-        aggregator = MetricAggregator(mock_session)
+        aggregator = AggregationOrchestrator(mock_session)
 
         start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
         end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
@@ -243,7 +243,7 @@ class TestMetricAggregatorOrchestrator:
 
         mock_session.exec.return_value.all.return_value = [mock_result]
 
-        aggregator = MetricAggregator(mock_session)
+        aggregator = AggregationOrchestrator(mock_session)
 
         start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
         end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
@@ -262,7 +262,7 @@ class TestMetricAggregatorOrchestrator:
         mock_session = Mock()
         mock_session.exec.side_effect = Exception("Database error")
 
-        aggregator = MetricAggregator(mock_session)
+        aggregator = AggregationOrchestrator(mock_session)
 
         start_time = datetime(2024, 1, 1, 13, 0, 0, tzinfo=timezone.utc)
         end_time = datetime(2024, 1, 1, 14, 0, 0, tzinfo=timezone.utc)
@@ -281,7 +281,7 @@ class TestMetricAggregatorOrchestrator:
         mock_session = Mock()
         mock_session.exec.return_value.all.return_value = []
 
-        aggregator = MetricAggregator(mock_session)
+        aggregator = AggregationOrchestrator(mock_session)
 
         result = aggregator.aggregate_agent_metrics(
             period=AggregationPeriod.HOUR
@@ -294,7 +294,7 @@ class TestMetricAggregatorOrchestrator:
         mock_session = Mock()
         mock_session.exec.return_value.all.return_value = []
 
-        aggregator = MetricAggregator(mock_session)
+        aggregator = AggregationOrchestrator(mock_session)
 
         result = aggregator.aggregate_llm_metrics(
             period=AggregationPeriod.HOUR
@@ -307,7 +307,7 @@ class TestMetricAggregatorOrchestrator:
         mock_session = Mock()
         mock_session.exec.return_value.all.return_value = []
 
-        aggregator = MetricAggregator(mock_session)
+        aggregator = AggregationOrchestrator(mock_session)
 
         result = aggregator.aggregate_all_metrics(
             period=AggregationPeriod.HOUR
@@ -335,7 +335,7 @@ class TestBackwardCompatibility:
         from src.observability import aggregation
 
         # Verify the classes are accessible
-        assert hasattr(aggregation, 'MetricAggregator')
+        assert hasattr(aggregation, 'AggregationOrchestrator')
         assert hasattr(aggregation, 'AggregationPeriod')
 
     def test_classes_accessible_from_aggregation_module(self):
@@ -345,7 +345,7 @@ class TestBackwardCompatibility:
 
         from src.observability import aggregation
 
-        assert hasattr(aggregation, 'MetricAggregator')
+        assert hasattr(aggregation, 'AggregationOrchestrator')
         assert hasattr(aggregation, 'AggregationPeriod')
 
     def test_import_from_package_no_warning(self):
@@ -354,7 +354,7 @@ class TestBackwardCompatibility:
 
         with warnings.catch_warnings(record=True) as w:
             warnings.simplefilter("always")
-            from src.observability.aggregation import MetricAggregator
+            from src.observability.aggregation import AggregationOrchestrator
             from src.observability.aggregation import AggregationPeriod
 
             # Should have no warnings

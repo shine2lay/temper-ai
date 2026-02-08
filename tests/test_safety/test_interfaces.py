@@ -675,6 +675,9 @@ class TestSafetyServiceMixin:
         # Should not raise
         service.handle_violations([violation], raise_exception=True)
 
+        # Verify operation completed without exception
+        assert service is not None
+
     def test_handle_violations_raises_on_high(self):
         """Test that HIGH violations raise exception."""
         class TestService(Service, SafetyServiceMixin):

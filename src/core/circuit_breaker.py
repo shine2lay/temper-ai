@@ -602,11 +602,8 @@ class CircuitBreaker:
                     if self._success_count >= self.config.success_threshold:
                         self._state = CircuitState.CLOSED
                         self._success_count = 0
-                elif (
-                    reserved_state == CircuitState.HALF_OPEN
-                    and self._state == CircuitState.OPEN
-                ):
-                    pass  # Re-opened by another thread, ignore our success
+                # elif reserved_state == CircuitState.HALF_OPEN and self._state == CircuitState.OPEN:
+                #     Re-opened by another thread, ignore our success (no action needed)
 
                 if self.storage:
                     self._save_state()

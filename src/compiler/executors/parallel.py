@@ -12,7 +12,7 @@ from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryPr
 from src.compiler.executors.base import ParallelRunner, StageExecutor
 from src.core.context import ExecutionContext
 from src.utils.config_helpers import get_nested_value
-from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError
+from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError, ToolExecutionError, LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -413,7 +413,7 @@ class ParallelStageExecutor(StageExecutor):
 
                 return state
 
-            except Exception as exc:
+            except (RuntimeError, ConfigNotFoundError, ConfigValidationError, ToolExecutionError, LLMError, ValueError) as exc:
                 # Handle stage failure — log before deciding how to proceed
                 logger.error(
                     "Stage '%s' failed during parallel execution: %s: %s",
@@ -564,7 +564,7 @@ class ParallelStageExecutor(StageExecutor):
                 # System-level interrupts should propagate
                 raise
 
-            except Exception as e:
+            except (RuntimeError, ToolExecutionError, LLMError, ValueError, TypeError) as e:
                 # Unexpected errors - log with full context for debugging
                 logger.error(
                     f"Unexpected error in agent {agent_name}: {type(e).__name__}: {e}",

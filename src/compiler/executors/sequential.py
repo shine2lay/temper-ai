@@ -12,7 +12,7 @@ import uuid
 from typing import Any, Dict, Optional, cast
 
 from src.core.circuit_breaker import CircuitBreakerError  # M-03: Use canonical import
-from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message
+from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message, ConfigNotFoundError, ConfigValidationError, ToolExecutionError, LLMError
 
 logger = logging.getLogger(__name__)
 
@@ -193,7 +193,7 @@ class SequentialStageExecutor(StageExecutor):
                     f"{synthesis_result.method} (confidence={synthesis_result.confidence:.2f})"
                 )
 
-            except Exception as e:
+            except (RuntimeError, ConfigValidationError, ValueError, KeyError) as e:
                 logger.warning(
                     f"Collaboration synthesis failed for sequential stage {stage_name}: {e}. "
                     f"Falling back to last agent output."
@@ -543,7 +543,7 @@ class SequentialStageExecutor(StageExecutor):
             )
         except (KeyboardInterrupt, SystemExit):
             raise
-        except Exception as e:
+        except (CircuitBreakerError, BaseError, ToolExecutionError, LLMError, ConfigNotFoundError, ConfigValidationError, TimeoutError, ConnectionError, ValueError, RuntimeError) as e:
             duration = time.time() - start_time
 
             # Check for circuit breaker error (provider unhealthy)

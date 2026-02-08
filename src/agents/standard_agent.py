@@ -48,7 +48,7 @@ from src.agents.response_parser import (
     sanitize_tool_output,
 )
 from src.tools.registry import ToolRegistry
-from src.utils.exceptions import sanitize_error_message
+from src.utils.exceptions import sanitize_error_message, ToolExecutionError, ToolNotFoundError, ConfigValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -319,7 +319,7 @@ class StandardAgent(BaseAgent):
                 metadata={"iterations": max_iterations}
             )
 
-        except Exception as e:
+        except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:
             safe_msg = sanitize_error_message(str(e))
             logger.warning("Agent execution error: %s", safe_msg, exc_info=True)
             return self._build_final_response(
@@ -419,7 +419,7 @@ class StandardAgent(BaseAgent):
                 metadata={"iterations": max_iterations}
             )
 
-        except Exception as e:
+        except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:
             safe_msg = sanitize_error_message(str(e))
             logger.warning("Agent async execution error: %s", safe_msg, exc_info=True)
             return self._build_final_response(
@@ -487,7 +487,7 @@ class StandardAgent(BaseAgent):
                                 error=f"LLM call blocked by safety policy: {violations_msg}"
                             )
                         }
-                except Exception as e:
+                except (ConfigValidationError, ValueError, RuntimeError) as e:
                     logger.error(
                         "LLM call safety validation failed (fail-closed): %s",
                         e, exc_info=True
@@ -674,7 +674,7 @@ class StandardAgent(BaseAgent):
                                 error=f"LLM call blocked by safety policy: {violations_msg}"
                             )
                         }
-                except Exception as e:
+                except (ConfigValidationError, ValueError, RuntimeError) as e:
                     # C-02/H-02: Fail-closed — safety validation errors MUST block execution.
                     # Never silently continue when the safety stack is broken.
                     logger.error(
@@ -837,7 +837,7 @@ class StandardAgent(BaseAgent):
             try:
                 result = future.result()
                 tool_results[index] = result
-            except Exception as e:
+            except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
                 logger.error(f"Tool execution failed in parallel mode: {e}")
                 tool_results[index] = {
                     "name": tool_calls[index].get("name", "unknown"),
@@ -949,7 +949,7 @@ class StandardAgent(BaseAgent):
                 "error": result.error if not result.success else None,
                 "success": result.success
             }
-        except Exception as e:
+        except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
             duration_seconds = time.time() - tool_start_time
 
             self._observer.track_tool_call(
@@ -1023,7 +1023,7 @@ class StandardAgent(BaseAgent):
                     prompt_config.template,
                     all_variables
                 )
-            except Exception as e:
+            except (PromptRenderError, ValueError, KeyError, FileNotFoundError) as e:
                 raise PromptRenderError(
                     f"Failed to render template file {prompt_config.template}: {e}"
                 )

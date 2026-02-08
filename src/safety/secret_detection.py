@@ -46,7 +46,11 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.safety.base import BaseSafetyPolicy
+from src.safety.entropy_analyzer import EntropyAnalyzer
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
+from src.safety.pattern_matcher import PatternMatcher
+from src.safety.redaction_utils import create_redacted_preview, hash_secret
+from src.safety.test_secret_filter import TestSecretFilter
 from src.safety.validation import ValidationMixin
 
 
@@ -111,64 +115,6 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
     )
     SECRET_PATTERNS = {**_SECRET_PATTERNS, **_GENERIC_SECRET_PATTERNS}
 
-    # Test/example secrets to allow (case-insensitive matching)
-    # IMPROVED: Expanded to reduce false positives from documentation and test code
-    #
-    # SECURITY NOTE: These are split into two categories:
-    # 1. KEYWORD indicators (checked as substrings) - e.g., "test", "demo", "placeholder"
-    # 2. PATTERN indicators (checked as exact match) - e.g., "abcdefgh", "12345678"
-    #
-    # This prevents false positives where legitimate secrets happen to contain
-    # common patterns like "abcdefgh" or "12345678" as substrings.
-
-    TEST_SECRET_KEYWORDS = [
-        # Original test indicators
-        "test",
-        "example",
-        "demo",
-        "placeholder",
-        "changeme",
-        "password123",
-        "dummy",
-        "fake",
-
-        # Template/documentation indicators
-        "sample",
-        "template",
-        "mock",
-        "stub",
-        "fixture",
-        "your-",     # Matches "your-api-key-here", "your-secret-here"
-        "your_",     # Matches "your_api_key_here"
-        "-here",     # Matches "api-key-here", "secret-here"
-        "_here",     # Matches "api_key_here"
-        "todo",
-        "fixme",
-        "-from-",    # Matches "key-from-provider"
-        "_from_",    # Matches "key_from_config"
-
-        # Development indicators
-        "dev",
-        "local",
-        "localhost",
-
-        # Weak/generic passwords (common defaults)
-        "admin",
-        "root",
-        "user",
-        "guest",
-        "password",
-        "secret",
-    ]
-
-    # Pattern indicators (exact match only to avoid false positives)
-    TEST_SECRET_PATTERNS = [
-        "xxxxxxxx",
-        "aaaaaaaa",
-        "11111111",
-        "abcdefgh",
-        "12345678"
-    ]
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize secret detection policy.
@@ -257,12 +203,16 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         import os
         self._session_key = os.urandom(32)
 
-        # Compile regex patterns
-        self.compiled_patterns = {
-            name: re.compile(pattern, re.IGNORECASE)
-            for name, pattern in self.SECRET_PATTERNS.items()
-            if name in self.enabled_patterns
-        }
+        # Initialize helper modules
+        self.entropy_analyzer = EntropyAnalyzer()
+        self.test_secret_filter = TestSecretFilter(self.allow_test_secrets)
+        self.pattern_matcher = PatternMatcher(
+            self.enabled_patterns,
+            self.SECRET_PATTERNS
+        )
+
+        # Keep compiled_patterns for backward compatibility (if needed by subclasses)
+        self.compiled_patterns = self.pattern_matcher.compiled_patterns
 
     @property
     def name(self) -> str:
@@ -293,23 +243,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         Returns:
             Entropy value (0-8 for bits per character)
         """
-        if not text:
-            return 0.0
-
-        # Count character frequencies
-        freq: Dict[str, int] = {}
-        for char in text:
-            freq[char] = freq.get(char, 0) + 1
-
-        # Calculate entropy
-        import math
-        length = len(text)
-        entropy = 0.0
-        for count in freq.values():
-            p = count / length
-            entropy -= p * math.log2(p)
-
-        return entropy
+        return self.entropy_analyzer.calculate(text)
 
     def _is_test_secret(self, text: str) -> bool:
         """Check if text appears to be a test/example secret.
@@ -328,29 +262,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         Returns:
             True if likely a test secret or non-literal value
         """
-        if not self.allow_test_secrets:
-            return False
-
-        text_lower = text.lower()
-
-        # Check for keyword indicators (word-boundary match)
-        # Using word boundaries prevents false positives like "testing" matching "test"
-        # in production secrets (e.g., "sk_live_testing_real_key")
-        import re
-        if any(re.search(rf'\b{re.escape(keyword)}\b', text_lower)
-               for keyword in self.TEST_SECRET_KEYWORDS):
-            return True
-
-        # Check for pattern indicators (exact match only)
-        if text_lower in self.TEST_SECRET_PATTERNS:
-            return True
-
-        # Filter out function calls and method invocations
-        # These are not literal secrets (e.g., "get_secret()", "retrieve_api_key_from_config()")
-        if '(' in text and ')' in text:
-            return True
-
-        return False
+        return self.test_secret_filter.is_test_secret(text)
 
     def _create_redacted_preview(self, text: str, pattern_name: str) -> str:
         """Create safe preview of detected secret.
@@ -363,20 +275,11 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
         Returns:
             Redacted preview safe for logging
-
-        Examples:
-            >>> _create_redacted_preview("AKIAIOSFODNN7EXAMPLE", "aws_access_key")
-            '[AWS_ACCESS_KEY:20_chars]'
-
-            >>> _create_redacted_preview("sk-proj-abc123def456...", "generic_api_key")
-            '[GENERIC_API_KEY:50_chars]'
         """
-        length = len(text)
-        pattern_upper = pattern_name.upper()
-        return f"[{pattern_upper}:{length}_chars]"
+        return create_redacted_preview(text, pattern_name)
 
     def _hash_secret(self, text: str) -> str:
-        """Create SHA256 hash of secret for deduplication.
+        """Create hash of secret for deduplication.
 
         Allows tracking same secret across multiple violations without
         storing the actual value.
@@ -385,13 +288,9 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
             text: Secret text
 
         Returns:
-            SHA256 hash (hex, first 16 characters)
-
-        Example:
-            >>> _hash_secret("AKIAIOSFODNN7EXAMPLE")
-            'a1b2c3d4e5f6g7h8'  # First 16 chars of SHA256
+            HMAC-SHA256 hash (hex, first 16 characters)
         """
-        return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
+        return hash_secret(text, self._session_key)
 
     def get_detection_summary(self) -> Dict[str, Any]:
         """Get summary of detection configuration and capabilities.
@@ -435,8 +334,8 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
             "pattern_count": len(self.enabled_patterns),
             "specific_patterns": specific_patterns,
             "generic_patterns": generic_patterns,
-            "test_secret_keywords": len(self.TEST_SECRET_KEYWORDS),
-            "test_secret_patterns": len(self.TEST_SECRET_PATTERNS)
+            "test_secret_keywords": len(TestSecretFilter.TEST_SECRET_KEYWORDS),
+            "test_secret_patterns": len(TestSecretFilter.TEST_SECRET_PATTERNS)
         }
 
     def _sanitize_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
@@ -498,75 +397,63 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         if not content:
             return ValidationResult(valid=True, policy_name=self.name)
 
-        # Scan for pattern matches
-        for pattern_name, pattern_regex in self.compiled_patterns.items():
-            matches = pattern_regex.finditer(content)
-            for match in matches:
-                matched_text = match.group(0)
+        # Scan for pattern matches using PatternMatcher
+        for pattern_match in self.pattern_matcher.find_matches(content):
+            # Skip if likely a test secret (check the VALUE, not the full match)
+            # SECURITY FIX (code-high-14): Check secret_value instead of matched_text
+            # to avoid filtering real secrets that happen to contain keywords like "secret" or "password"
+            if self._is_test_secret(pattern_match.secret_value):
+                continue
 
-                # Extract actual secret value (usually in capture group)
-                secret_value = match.group(2) if match.lastindex and match.lastindex >= 2 else matched_text
+            # Calculate entropy
+            entropy = self._calculate_entropy(pattern_match.secret_value)
 
-                # Skip if likely a test secret (check the VALUE, not the full match)
-                # SECURITY FIX (code-high-14): Check secret_value instead of matched_text
-                # to avoid filtering real secrets that happen to contain keywords like "secret" or "password"
-                if self._is_test_secret(secret_value):
+            # SECURITY FIX (code-high-14): Filter generic patterns by entropy
+            # Generic patterns have high false positive rates without entropy filtering
+            # Skip low-entropy matches that are likely variable names, templates, or documentation
+            if pattern_match.pattern_name in ["generic_api_key", "generic_secret"]:
+                if entropy < self.entropy_threshold_generic:
+                    # Low entropy suggests non-random text (e.g., "your-api-key-here", "password_reset")
                     continue
 
-                # Calculate entropy
-                entropy = self._calculate_entropy(secret_value)
+            # Determine severity based on pattern and entropy
+            if pattern_match.pattern_name in ["private_key", "aws_secret_key"]:
+                severity = ViolationSeverity.CRITICAL
+            elif pattern_match.pattern_name in ["aws_access_key", "github_token", "generic_api_key", "stripe_key"]:
+                # API keys and tokens should always block
+                severity = ViolationSeverity.HIGH
+            elif entropy > self.entropy_threshold:
+                severity = ViolationSeverity.HIGH
+            else:
+                severity = ViolationSeverity.MEDIUM
 
-                # SECURITY FIX (code-high-14): Filter generic patterns by entropy
-                # Generic patterns have high false positive rates without entropy filtering
-                # Skip low-entropy matches that are likely variable names, templates, or documentation
-                if pattern_name in ["generic_api_key", "generic_secret"]:
-                    if entropy < self.entropy_threshold_generic:
-                        # Low entropy suggests non-random text (e.g., "your-api-key-here", "password_reset")
-                        continue
+            # Create safe redacted preview (never expose actual secret)
+            redacted_preview = create_redacted_preview(pattern_match.matched_text, pattern_match.pattern_name)
 
-                # Determine severity based on pattern and entropy
-                if pattern_name in ["private_key", "aws_secret_key"]:
-                    severity = ViolationSeverity.CRITICAL
-                elif pattern_name in ["aws_access_key", "github_token", "generic_api_key", "stripe_key"]:
-                    # API keys and tokens should always block
-                    severity = ViolationSeverity.HIGH
-                elif entropy > self.entropy_threshold:
-                    severity = ViolationSeverity.HIGH
-                else:
-                    severity = ViolationSeverity.MEDIUM
+            # SECURITY: Generate violation ID using HMAC for secure deduplication
+            # HMAC ensures: same secret = same ID (deduplication) without rainbow table risk
+            # Session key rotates per process, so IDs are not correlatable across sessions
+            violation_id = hash_secret(pattern_match.matched_text, self._session_key)
 
-                # Create safe redacted preview (never expose actual secret)
-                redacted_preview = self._create_redacted_preview(matched_text, pattern_name)
+            # SECURITY: Sanitize context to prevent re-exposing detected secrets
+            # in observability logs and violation records
+            sanitized_context = self._sanitize_context(context)
 
-                # SECURITY: Generate violation ID using HMAC for secure deduplication
-                # HMAC ensures: same secret = same ID (deduplication) without rainbow table risk
-                # Session key rotates per process, so IDs are not correlatable across sessions
-                import hmac
-                violation_id = hmac.new(
-                    self._session_key,
-                    matched_text.encode('utf-8'),
-                    hashlib.sha256
-                ).hexdigest()[:16]  # 16 chars = 64 bits = low collision probability
-
-                # SECURITY: Sanitize context to prevent re-exposing detected secrets
-                # in observability logs and violation records
-                sanitized_context = self._sanitize_context(context)
-
-                violations.append(SafetyViolation(
-                    policy_name=self.name,
-                    severity=severity,
-                    message=f"Potential secret detected ({pattern_name}): {redacted_preview}",
-                    action=f"file_path={file_path}, pattern={pattern_name}",
-                    context=sanitized_context,
-                    remediation_hint="Use environment variables or secret management service",
-                    metadata={
-                        "pattern_type": pattern_name,
-                        "entropy": round(entropy, 2),
-                        "match_position": match.start(),
-                        "match_length": len(matched_text),
-                        "violation_id": violation_id  # For deduplication within session
-                    }
-                ))
+            violations.append(SafetyViolation(
+                policy_name=self.name,
+                severity=severity,
+                message=f"Potential secret detected ({pattern_match.pattern_name}): {redacted_preview}",
+                action=f"file_path={file_path}, pattern={pattern_match.pattern_name}",
+                context=sanitized_context,
+                remediation_hint="Use environment variables or secret management service",
+                metadata={
+                    "pattern_type": pattern_match.pattern_name,
+                    "entropy": round(entropy, 2),
+                    "match_position": pattern_match.match_position,
+                    "match_length": pattern_match.match_length,
+                    "violation_id": violation_id  # For deduplication within session
+                }
+            ))
 
         # Determine validity (invalid if any HIGH or CRITICAL violations)
         valid = not any(

@@ -15,6 +15,22 @@ from src.self_improvement.strategies.strategy import (
     SIOptimizationConfig,
 )
 
+# Expected impact percentages for model changes
+IMPACT_QUALITY_IMPROVEMENT = 0.4  # 40% quality improvement expected
+IMPACT_SPEED_IMPROVEMENT = 0.3  # 30% speed improvement
+IMPACT_COST_REDUCTION = 0.3  # 30% cost reduction
+IMPACT_ERROR_REDUCTION = 0.3  # 30% error rate reduction
+IMPACT_DEFAULT = 0.1  # 10% default impact for unknown problem types
+
+# Model quality/speed scoring values
+SCORE_HIGHEST_QUALITY = 4
+SCORE_HIGH_QUALITY = 3
+SCORE_VERY_FAST = 4
+SCORE_FAST = 3
+
+# Maximum number of model candidates to return
+MAX_MODEL_CANDIDATES = 4
+
 
 class OllamaModelSelectionStrategy(ImprovementStrategy):
     """
@@ -141,13 +157,13 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
 
         # Model selection has high impact on quality and moderate on speed/cost
         impact_by_type = {
-            "quality_low": 0.4,  # 40% quality improvement expected
-            "speed_low": 0.3,  # 30% speed improvement
-            "cost_high": 0.3,  # 30% cost reduction
-            "error_rate_high": 0.3,  # 30% error rate reduction
+            "quality_low": IMPACT_QUALITY_IMPROVEMENT,
+            "speed_low": IMPACT_SPEED_IMPROVEMENT,
+            "cost_high": IMPACT_COST_REDUCTION,
+            "error_rate_high": IMPACT_ERROR_REDUCTION,
         }
 
-        return impact_by_type.get(problem_type, 0.1)
+        return impact_by_type.get(problem_type, IMPACT_DEFAULT)
 
     def _infer_problem_type(self, patterns: List[LearnedPattern]) -> str:
         """
@@ -207,7 +223,7 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         # Keep original order (diverse mix)
 
         # Return 2-4 candidates
-        return candidates[:SMALL_ITEM_LIMIT - 1] if len(candidates) >= 4 else candidates
+        return candidates[:SMALL_ITEM_LIMIT - 1] if len(candidates) >= MAX_MODEL_CANDIDATES else candidates
 
     def _quality_score(self, model: ModelMetadata) -> int:
         """
@@ -220,8 +236,8 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
             Quality score (higher is better)
         """
         quality_map = {
-            "highest": 4,
-            "high": 3,
+            "highest": SCORE_HIGHEST_QUALITY,
+            "high": SCORE_HIGH_QUALITY,
             "medium": 2,
             "low": 1,
         }
@@ -238,8 +254,8 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
             Speed score (higher is faster)
         """
         speed_map = {
-            "very_fast": 4,
-            "fast": 3,
+            "very_fast": SCORE_VERY_FAST,
+            "fast": SCORE_FAST,
             "medium": 2,
             "slow": 1,
         }

@@ -21,6 +21,19 @@ from src.self_improvement.metrics.types import SIMetricType
 
 logger = logging.getLogger(__name__)
 
+# Scoring weight constants (must sum to 1.0)
+WEIGHT_PROJECT_STRUCTURE = 0.20  # 20% - File structure completeness
+WEIGHT_COMPILATION = 0.30  # 30% - Successful compilation
+WEIGHT_TESTS_PASS = 0.30  # 30% - All tests passing
+WEIGHT_CODE_QUALITY = 0.10  # 10% - Static analysis quality
+WEIGHT_DEPLOYMENT = 0.10  # 10% - Deployment success
+
+# Project structure constants
+EXPECTED_DIRECTORY_COUNT = 4  # root files + contract + test + deploy + node_modules
+
+# Output truncation limit (characters)
+MAX_OUTPUT_LENGTH = 500  # Maximum length for stdout/stderr in details
+
 
 @dataclass
 class ERC721QualityScore:
@@ -39,11 +52,11 @@ class ERC721QualityScore:
 
 # Weight configuration for scoring
 WEIGHTS = {
-    "project_structure": 0.20,
-    "compilation": 0.30,
-    "tests_pass": 0.30,
-    "code_quality": 0.10,
-    "deployment": 0.10,
+    "project_structure": WEIGHT_PROJECT_STRUCTURE,
+    "compilation": WEIGHT_COMPILATION,
+    "tests_pass": WEIGHT_TESTS_PASS,
+    "code_quality": WEIGHT_CODE_QUALITY,
+    "deployment": WEIGHT_DEPLOYMENT,
 }
 
 # Required project files (relative to workspace)
@@ -149,7 +162,7 @@ def score_project_structure(workspace: Path, contract_name: str = "SimpleNFT") -
     else:
         missing.append("node_modules/")
 
-    total_expected = len(REQUIRED_FILES) + 4  # root files + contract + test + deploy + node_modules
+    total_expected = len(REQUIRED_FILES) + EXPECTED_DIRECTORY_COUNT
     score = len(found) / total_expected if total_expected > 0 else 0.0
 
     return {
@@ -187,14 +200,14 @@ def score_compilation(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict
         if result.returncode == 0:
             return {
                 "score": 1.0,
-                "details": {"stdout": result.stdout[:500], "exit_code": 0},
+                "details": {"stdout": result.stdout[:MAX_OUTPUT_LENGTH], "exit_code": 0},
             }
         else:
             return {
                 "score": 0.0,
                 "details": {
-                    "stdout": result.stdout[:500],
-                    "stderr": result.stderr[:500],
+                    "stdout": result.stdout[:MAX_OUTPUT_LENGTH],
+                    "stderr": result.stderr[:MAX_OUTPUT_LENGTH],
                     "exit_code": result.returncode,
                 },
             }
@@ -260,8 +273,8 @@ def score_tests(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[str, 
                 "passing": passing,
                 "failing": failing,
                 "exit_code": result.returncode,
-                "stdout": stdout[:500],
-                "stderr": result.stderr[:500],
+                "stdout": stdout[:MAX_OUTPUT_LENGTH],
+                "stderr": result.stderr[:MAX_OUTPUT_LENGTH],
             },
         }
     except subprocess.TimeoutExpired:
@@ -350,14 +363,14 @@ def score_deployment(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[
         if result.returncode == 0:
             return {
                 "score": 1.0,
-                "details": {"stdout": result.stdout[:500], "exit_code": 0},
+                "details": {"stdout": result.stdout[:MAX_OUTPUT_LENGTH], "exit_code": 0},
             }
         else:
             return {
                 "score": 0.0,
                 "details": {
-                    "stdout": result.stdout[:500],
-                    "stderr": result.stderr[:500],
+                    "stdout": result.stdout[:MAX_OUTPUT_LENGTH],
+                    "stderr": result.stderr[:MAX_OUTPUT_LENGTH],
                     "exit_code": result.returncode,
                 },
             }

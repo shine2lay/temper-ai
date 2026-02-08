@@ -920,3 +920,772 @@ class TestParallelExecution:
         assert "Foo" in missing_names
         assert "bar" in missing_names
         assert bt["summary"]["total_broad_try"] == 0
+
+
+# ---------------------------------------------------------------------------
+# v2.3.0: Function Complexity
+# ---------------------------------------------------------------------------
+
+class TestFunctionComplexity:
+    """Tests for scan_function_complexity."""
+
+    def test_long_function_flagged(self, tmp_path):
+        # Create a function with > 50 lines
+        body = "\n".join(f"    x = {i}" for i in range(55))
+        code = f"def long_func():\n{body}\n"
+        fi = _make_file(tmp_path, "src/mod/long.py", code)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        assert result["summary"]["long_functions"] == 1
+        assert len(result["details"]) == 1
+        assert "long_function" in result["details"][0]["flags"]
+
+    def test_short_function_ok(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/short.py", """\
+            def short_func():
+                return 1
+        """)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        assert result["summary"]["long_functions"] == 0
+        assert result["summary"]["total_functions"] == 1
+        assert len(result["details"]) == 0
+
+    def test_high_params_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/params.py", """\
+            def many_params(a, b, c, d, e, f, g, h):
+                pass
+        """)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        assert result["summary"]["high_param_functions"] == 1
+        assert "high_param_count" in result["details"][0]["flags"]
+
+    def test_normal_params_ok(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/few.py", """\
+            def few_params(a, b, c):
+                pass
+        """)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        assert result["summary"]["high_param_functions"] == 0
+        assert len(result["details"]) == 0
+
+    def test_self_cls_excluded(self, tmp_path):
+        # self + 7 params = 8 args total, but self excluded so param_count = 7
+        fi = _make_file(tmp_path, "src/mod/method.py", """\
+            class Foo:
+                def method(self, a, b, c, d, e, f, g):
+                    pass
+        """)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        # 7 params exactly == threshold, not > threshold
+        assert result["summary"]["high_param_functions"] == 0
+
+    def test_deep_nesting_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/nested.py", """\
+            def deeply_nested():
+                if True:
+                    for x in range(10):
+                        while True:
+                            with open("f"):
+                                if True:
+                                    pass
+        """)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        assert result["summary"]["deep_nesting_functions"] == 1
+        assert "deep_nesting" in result["details"][0]["flags"]
+
+    def test_shallow_nesting_ok(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/shallow.py", """\
+            def shallow():
+                if True:
+                    for x in range(10):
+                        pass
+        """)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        assert result["summary"]["deep_nesting_functions"] == 0
+        assert len(result["details"]) == 0
+
+    def test_multiple_flags(self, tmp_path):
+        # Long function + high params
+        body = "\n".join(f"    x = {i}" for i in range(55))
+        code = f"def multi_flag(a, b, c, d, e, f, g, h):\n{body}\n"
+        fi = _make_file(tmp_path, "src/mod/multi.py", code)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        flags = result["details"][0]["flags"]
+        assert "long_function" in flags
+        assert "high_param_count" in flags
+
+    def test_async_functions(self, tmp_path):
+        body = "\n".join(f"    x = {i}" for i in range(55))
+        code = f"async def async_long():\n{body}\n"
+        fi = _make_file(tmp_path, "src/mod/async_fn.py", code)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        assert result["summary"]["long_functions"] == 1
+        assert result["details"][0]["name"] == "async_long"
+
+    def test_syntax_error_handled(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/bad.py", """\
+            def broken(
+                this is not valid python!!!
+        """)
+        result = scanner.scan_function_complexity(tmp_path / "src", [fi])
+        assert result["summary"]["parse_errors"] == 1
+        assert len(result["parse_errors"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# v2.3.0: Magic Values
+# ---------------------------------------------------------------------------
+
+class TestMagicValues:
+    """Tests for scan_magic_values."""
+
+    def test_magic_number_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/magic.py", """\
+            x = 42
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        assert result["summary"]["total_magic_numbers"] >= 1
+        values = [m["value"] for m in result["magic_numbers"]]
+        assert 42 in values
+
+    def test_whitelist_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/whitelist.py", """\
+            a = 0
+            b = 1
+            c = 2
+            d = -1
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        assert result["summary"]["total_magic_numbers"] == 0
+
+    def test_bool_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/bools.py", """\
+            a = True
+            b = False
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        assert result["summary"]["total_magic_numbers"] == 0
+
+    def test_repeated_string_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/strings.py", """\
+            a = "hello_world"
+            b = "hello_world"
+            c = "hello_world"
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        assert result["summary"]["total_repeated_strings"] >= 1
+        values = [s["value"] for s in result["repeated_strings"]]
+        assert "hello_world" in values
+
+    def test_docstring_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/docs.py", """\
+            \"\"\"Module docstring with number 42.\"\"\"
+
+            class Foo:
+                \"\"\"Class docstring.\"\"\"
+                pass
+
+            def bar():
+                \"\"\"Function docstring.\"\"\"
+                pass
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        assert result["summary"]["total_magic_numbers"] == 0
+
+    def test_dunder_main_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/main_check.py", """\
+            if __name__ == "__main__":
+                pass
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        values = [s["value"] for s in result["repeated_strings"]]
+        assert "__main__" not in values
+        assert "__name__" not in values
+
+    def test_annotation_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/typed.py", """\
+            def foo(x: int) -> int:
+                return x
+            count: int = 5
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        values = [m["value"] for m in result["magic_numbers"]]
+        # 5 is a value assignment, should be flagged
+        assert 5 in values
+
+    def test_syntax_error_handled(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/bad.py", """\
+            x = !!!not valid python
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        assert result["summary"]["parse_errors"] == 1
+        assert len(result["parse_errors"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# v2.3.0: Dead Code
+# ---------------------------------------------------------------------------
+
+class TestDeadCode:
+    """Tests for scan_dead_code."""
+
+    def test_after_return_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/dc.py", """\
+            def foo():
+                return 1
+                x = 2
+        """)
+        result = scanner.scan_dead_code(tmp_path / "src", [fi])
+        assert result["summary"]["unreachable_statements"] == 1
+        assert any(d["type"] == "unreachable_statement" for d in result["details"])
+
+    def test_after_raise_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/dc2.py", """\
+            def foo():
+                raise ValueError("err")
+                x = 2
+        """)
+        result = scanner.scan_dead_code(tmp_path / "src", [fi])
+        assert result["summary"]["unreachable_statements"] == 1
+        assert any("raise" in d["description"].lower() for d in result["details"])
+
+    def test_after_break_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/dc3.py", """\
+            for i in range(10):
+                break
+                x = 2
+        """)
+        result = scanner.scan_dead_code(tmp_path / "src", [fi])
+        assert result["summary"]["unreachable_statements"] == 1
+        assert any("break" in d["description"].lower() for d in result["details"])
+
+    def test_after_continue_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/dc4.py", """\
+            for i in range(10):
+                continue
+                x = 2
+        """)
+        result = scanner.scan_dead_code(tmp_path / "src", [fi])
+        assert result["summary"]["unreachable_statements"] == 1
+        assert any("continue" in d["description"].lower() for d in result["details"])
+
+    def test_normal_code_ok(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/dc5.py", """\
+            def foo():
+                x = 1
+                y = 2
+                return x + y
+        """)
+        result = scanner.scan_dead_code(tmp_path / "src", [fi])
+        assert result["summary"]["unreachable_statements"] == 0
+        assert result["summary"]["empty_branches"] == 0
+        assert result["summary"]["constant_conditions"] == 0
+
+    def test_empty_if_body_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/dc6.py", """\
+            x = 1
+            if x:
+                pass
+        """)
+        result = scanner.scan_dead_code(tmp_path / "src", [fi])
+        assert result["summary"]["empty_branches"] == 1
+        assert any(d["type"] == "empty_branch" for d in result["details"])
+
+    def test_always_true_condition_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/dc7.py", """\
+            if True:
+                x = 1
+        """)
+        result = scanner.scan_dead_code(tmp_path / "src", [fi])
+        assert result["summary"]["constant_conditions"] == 1
+        assert any(d["type"] == "constant_condition" for d in result["details"])
+
+    def test_while_true_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/dc8.py", """\
+            while True:
+                break
+        """)
+        result = scanner.scan_dead_code(tmp_path / "src", [fi])
+        assert result["summary"]["constant_conditions"] == 0
+
+
+# ---------------------------------------------------------------------------
+# v2.3.0: Import Density
+# ---------------------------------------------------------------------------
+
+class TestImportDensity:
+    """Tests for compute_import_density."""
+
+    def test_fan_out_calculated(self):
+        import_data = {"module_graph": {"a": ["b", "c", "d"], "b": ["a"]}}
+        result = scanner.compute_import_density(import_data)
+        assert result["summary"]["total_modules"] == 2
+        assert result["summary"]["avg_fan_out"] == 2.0
+
+    def test_fan_in_calculated(self):
+        import_data = {"module_graph": {"a": ["x"], "b": ["x"], "c": ["x"]}}
+        result = scanner.compute_import_density(import_data)
+        assert result["summary"]["avg_fan_in"] > 0
+
+    def test_high_fan_out_flagged(self):
+        imports = [f"mod{i}" for i in range(9)]
+        import_data = {"module_graph": {"big_importer": imports}}
+        result = scanner.compute_import_density(import_data)
+        assert result["summary"]["high_fan_out_count"] == 1
+        assert result["fan_out"][0]["module"] == "big_importer"
+        assert result["fan_out"][0]["fan_out"] == 9
+
+    def test_high_fan_in_flagged(self):
+        graph = {f"mod{i}": ["popular"] for i in range(7)}
+        import_data = {"module_graph": graph}
+        result = scanner.compute_import_density(import_data)
+        assert result["summary"]["high_fan_in_count"] == 1
+        assert result["fan_in"][0]["module"] == "popular"
+        assert result["fan_in"][0]["fan_in"] == 7
+
+    def test_empty_graph(self):
+        import_data = {"module_graph": {}}
+        result = scanner.compute_import_density(import_data)
+        assert result["summary"]["total_modules"] == 0
+        assert result["summary"]["high_fan_out_count"] == 0
+        assert result["summary"]["high_fan_in_count"] == 0
+        assert result["summary"]["avg_fan_out"] == 0.0
+        assert result["summary"]["avg_fan_in"] == 0.0
+        assert result["fan_out"] == []
+        assert result["fan_in"] == []
+        assert result["high_coupling"] == []
+
+    def test_single_module(self):
+        import_data = {"module_graph": {"only": ["dep"]}}
+        result = scanner.compute_import_density(import_data)
+        assert result["summary"]["total_modules"] == 1
+        assert result["summary"]["avg_fan_out"] == 1.0
+        assert result["summary"]["high_fan_out_count"] == 0
+        assert result["summary"]["high_fan_in_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# v2.3.0: Duplicate Code
+# ---------------------------------------------------------------------------
+
+class TestDuplicateCode:
+    """Tests for scan_duplicate_code and _normalize_ast_body."""
+
+    def test_identical_functions_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/a.py", """\
+            def foo():
+                x = 1
+                y = 2
+                z = x + y
+                w = z * 2
+                v = w + 1
+                return v
+
+            def bar():
+                x = 1
+                y = 2
+                z = x + y
+                w = z * 2
+                v = w + 1
+                return v
+        """)
+        result = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert result["summary"]["duplicate_groups"] == 1
+        assert result["summary"]["total_duplicated_functions"] == 2
+
+    def test_variable_renamed_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/b.py", """\
+            def alpha():
+                a = 1
+                b = 2
+                c = a + b
+                d = c * 2
+                e = d + 1
+                return e
+
+            def beta():
+                x = 1
+                y = 2
+                z = x + y
+                w = z * 2
+                v = w + 1
+                return v
+        """)
+        result = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert result["summary"]["duplicate_groups"] == 1
+        assert result["summary"]["total_duplicated_functions"] == 2
+
+    def test_short_function_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/c.py", """\
+            def short_a():
+                return 1
+
+            def short_b():
+                return 1
+        """)
+        result = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert result["summary"]["total_functions_analyzed"] == 0
+        assert result["summary"]["duplicate_groups"] == 0
+
+    def test_no_duplicates_clean(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/d.py", """\
+            def unique_one():
+                a = 10
+                b = 20
+                c = a + b
+                d = c - 1
+                e = d * 3
+                return e
+
+            def unique_two():
+                x = "hello"
+                y = "world"
+                z = x + " " + y
+                w = z.upper()
+                v = len(w)
+                return v > 0
+        """)
+        result = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert result["summary"]["duplicate_groups"] == 0
+        assert result["summary"]["total_duplicated_functions"] == 0
+
+    def test_all_locations_reported(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/e.py", """\
+            def first():
+                a = 1
+                b = 2
+                c = a + b
+                d = c * 2
+                e = d + 1
+                return e
+
+            def second():
+                x = 1
+                y = 2
+                z = x + y
+                w = z * 2
+                v = w + 1
+                return v
+        """)
+        result = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert len(result["details"]) == 1
+        group = result["details"][0]
+        assert group["count"] == 2
+        names = {loc["name"] for loc in group["locations"]}
+        assert names == {"first", "second"}
+
+    def test_different_logic_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/f.py", """\
+            def compute_sum():
+                a = 1
+                b = 2
+                c = a + b
+                d = c + 10
+                e = d + 20
+                return e
+
+            def compute_product():
+                a = 1
+                b = 2
+                c = a * b
+                d = c * 10
+                e = d * 20
+                return e
+        """)
+        result = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert result["summary"]["duplicate_groups"] == 0
+
+    def test_syntax_error_handled(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/broken.py", """\
+            def foo(:
+                pass
+        """)
+        result = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert result["summary"]["parse_errors"] >= 1
+        assert result["summary"]["skipped"] is False
+
+    def test_deterministic_output(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/det.py", """\
+            def dup_a():
+                x = 1
+                y = 2
+                z = x + y
+                w = z * 2
+                v = w + 1
+                return v
+
+            def dup_b():
+                a = 1
+                b = 2
+                c = a + b
+                d = c * 2
+                e = d + 1
+                return e
+        """)
+        r1 = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        r2 = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert r1 == r2
+
+    def test_skipped_when_too_many(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/many.py", """\
+            def example():
+                a = 1
+                b = 2
+                c = a + b
+                d = c * 2
+                e = d + 1
+                return e
+        """)
+        with patch.object(scanner, "MAX_FUNCTIONS_FOR_DUPLICATE_SCAN", 0):
+            result = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert result["summary"]["skipped"] is True
+        assert result["summary"]["duplicate_groups"] == 0
+
+    def test_class_methods_included(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/cls.py", """\
+            class MyClass:
+                def method_a(self):
+                    x = 1
+                    y = 2
+                    z = x + y
+                    w = z * 2
+                    v = w + 1
+                    return v
+
+            class OtherClass:
+                def method_b(self):
+                    a = 1
+                    b = 2
+                    c = a + b
+                    d = c * 2
+                    e = d + 1
+                    return e
+        """)
+        result = scanner.scan_duplicate_code(tmp_path / "src", [fi])
+        assert result["summary"]["duplicate_groups"] == 1
+        assert result["summary"]["total_duplicated_functions"] == 2
+
+
+# ---------------------------------------------------------------------------
+# v2.3.0: Test Quality
+# ---------------------------------------------------------------------------
+
+class TestTestQuality:
+    """Tests for scan_test_quality."""
+
+    def _setup_project(self, tmp_path, src_content, test_content):
+        """Helper to create src/ and tests/ dirs for test_quality tests."""
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "app.py").write_text(textwrap.dedent(src_content), encoding="utf-8")
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_app.py").write_text(textwrap.dedent(test_content), encoding="utf-8")
+        src_lines = src_content.count("\n") + 1
+        return src_dir, src_lines
+
+    def test_assert_count_correct(self, tmp_path):
+        src_dir, src_lines = self._setup_project(tmp_path, """\
+            def add(a, b):
+                return a + b
+        """, """\
+            def test_add():
+                assert add(1, 2) == 3
+                assert add(0, 0) == 0
+                assert add(-1, 1) == 0
+        """)
+        result = scanner.scan_test_quality(src_dir, src_total_lines=src_lines)
+        assert result["summary"]["available"] is True
+        assert result["summary"]["total_test_functions"] == 1
+        assert result["summary"]["zero_assert_tests"] == 0
+        assert result["summary"]["avg_assert_density"] == 3.0
+
+    def test_pytest_raises_counted(self, tmp_path):
+        src_dir, src_lines = self._setup_project(tmp_path, """\
+            def divide(a, b):
+                return a / b
+        """, """\
+            import pytest
+            def test_divide_error():
+                with pytest.raises(ZeroDivisionError):
+                    divide(1, 0)
+        """)
+        result = scanner.scan_test_quality(src_dir, src_total_lines=src_lines)
+        assert result["summary"]["zero_assert_tests"] == 0
+        assert result["summary"]["avg_assert_density"] == 1.0
+
+    def test_mock_assert_counted(self, tmp_path):
+        src_dir, src_lines = self._setup_project(tmp_path, """\
+            def greet(name):
+                return f"Hello, {name}"
+        """, """\
+            from unittest.mock import MagicMock
+            def test_mock():
+                m = MagicMock()
+                m("hello")
+                m.assert_called_once()
+                m.assert_called_with("hello")
+        """)
+        result = scanner.scan_test_quality(src_dir, src_total_lines=src_lines)
+        assert result["summary"]["zero_assert_tests"] == 0
+        assert result["summary"]["avg_assert_density"] == 2.0
+
+    def test_zero_assert_detected(self, tmp_path):
+        src_dir, src_lines = self._setup_project(tmp_path, """\
+            def noop():
+                pass
+        """, """\
+            def test_noop():
+                noop()
+        """)
+        result = scanner.scan_test_quality(src_dir, src_total_lines=src_lines)
+        assert result["summary"]["zero_assert_tests"] == 1
+        assert len(result["zero_assert_details"]) == 1
+        assert result["zero_assert_details"][0]["name"] == "test_noop"
+
+    def test_ratio_calculated(self, tmp_path):
+        src_content = """\
+            def foo():
+                return 1
+            def bar():
+                return 2
+        """
+        test_content = """\
+            def test_foo():
+                assert foo() == 1
+        """
+        src_dir, src_lines = self._setup_project(tmp_path, src_content, test_content)
+        result = scanner.scan_test_quality(src_dir, src_total_lines=src_lines)
+        assert result["summary"]["test_to_code_ratio"] > 0
+        assert isinstance(result["summary"]["test_to_code_ratio"], float)
+
+    def test_no_tests_dir(self, tmp_path):
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "app.py").write_text("x = 1\n", encoding="utf-8")
+        result = scanner.scan_test_quality(src_dir, src_total_lines=100)
+        assert result["summary"]["available"] is False
+        assert result["summary"]["total_test_files"] == 0
+
+    def test_avg_density_calculated(self, tmp_path):
+        src_dir, src_lines = self._setup_project(tmp_path, """\
+            def a(): pass
+        """, """\
+            def test_one():
+                assert 1 == 1
+                assert 2 == 2
+            def test_two():
+                assert True
+        """)
+        result = scanner.scan_test_quality(src_dir, src_total_lines=src_lines)
+        assert result["summary"]["total_test_functions"] == 2
+        assert result["summary"]["avg_assert_density"] == 1.5
+
+    def test_syntax_error_handled(self, tmp_path):
+        src_dir = tmp_path / "src"
+        src_dir.mkdir()
+        (src_dir / "app.py").write_text("x = 1\n", encoding="utf-8")
+        tests_dir = tmp_path / "tests"
+        tests_dir.mkdir()
+        (tests_dir / "test_broken.py").write_text("def test_bad(:\n    pass\n", encoding="utf-8")
+        result = scanner.scan_test_quality(src_dir, src_total_lines=10)
+        assert result["summary"]["available"] is True
+        assert result["summary"]["total_test_functions"] == 0
+
+
+# ---------------------------------------------------------------------------
+# v2.3.0: Scoring for new features
+# ---------------------------------------------------------------------------
+
+class TestScoringV230:
+    """Tests for v2.3.0 scoring deductions."""
+
+    def _minimal_inputs(self):
+        return {
+            "anti_patterns": {"summary": {"critical": 0, "high": 0, "medium": 0, "low": 0}, "details": []},
+            "naming_collisions": {"summary": {"total_collisions": 0}},
+            "god_objects": {"summary": {"god_classes": 0}},
+            "layer_violations": {"summary": {"total_violations": 0}},
+            "circular_deps": [],
+            "static_analysis": {},
+        }
+
+    def test_function_complexity_deduction(self):
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(
+            **inputs,
+            function_complexity={"summary": {"long_functions": 10, "high_param_functions": 5, "deep_nesting_functions": 3}},
+        )
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert any("long functions" in r for r in reasons)
+        assert any("high parameter" in r for r in reasons)
+        assert any("deep nesting" in r for r in reasons)
+        assert result["score"] < 100
+
+    def test_dead_code_deduction(self):
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(
+            **inputs,
+            dead_code={"summary": {"unreachable_statements": 5, "empty_branches": 3}},
+        )
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert any("unreachable" in r for r in reasons)
+        assert any("empty" in r for r in reasons)
+        assert result["score"] < 100
+
+    def test_import_density_deduction(self):
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(
+            **inputs,
+            import_density={"summary": {"high_fan_out_count": 3, "high_fan_in_count": 2}},
+        )
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert any("fan-out" in r for r in reasons)
+        assert any("fan-in" in r for r in reasons)
+        assert result["score"] < 100
+
+    def test_magic_values_deduction(self):
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(
+            **inputs,
+            magic_values={"summary": {"total_magic_numbers": 20, "total_repeated_strings": 5}},
+        )
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert any("magic numbers" in r for r in reasons)
+        assert any("repeated magic" in r for r in reasons)
+        assert result["score"] < 100
+
+    def test_duplicate_code_deduction(self):
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(
+            **inputs,
+            duplicate_code={"summary": {"duplicate_groups": 3, "skipped": False}},
+        )
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert any("duplicate" in r for r in reasons)
+        assert result["score"] < 100
+
+    def test_test_quality_deduction(self):
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(
+            **inputs,
+            test_quality={"summary": {"available": True, "zero_assert_tests": 10}},
+        )
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert any("zero-assert" in r for r in reasons)
+        assert result["score"] < 100
+
+    def test_backward_compat_new_params(self):
+        """Old call signature (without v2.3.0 params) still works."""
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(**inputs)
+        assert result["score"] == 100
+
+    def test_cap_prevents_dominance(self):
+        """Verify scoring caps prevent a single category from dominating."""
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(
+            **inputs,
+            magic_values={"summary": {"total_magic_numbers": 1000, "total_repeated_strings": 1000}},
+        )
+        # Even with 1000 magic numbers, cap is 3+3=6 points max
+        assert result["score"] >= 94

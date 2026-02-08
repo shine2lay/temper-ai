@@ -190,6 +190,24 @@ GOD_CLASS_LINES = 500
 GOD_CLASS_METHODS = 20
 LARGE_FILE_LINES = 500
 
+# v2.3.0: Function complexity thresholds
+LONG_FUNCTION_LINES = 50
+HIGH_PARAM_COUNT = 7
+DEEP_NESTING_DEPTH = 4
+
+# v2.3.0: Duplicate code thresholds
+MIN_DUPLICATE_LINES = 6
+MAX_FUNCTIONS_FOR_DUPLICATE_SCAN = 2000
+
+# v2.3.0: Import density thresholds
+HIGH_FAN_OUT = 8
+HIGH_FAN_IN = 6
+
+# v2.3.0: Magic values thresholds
+MAGIC_NUMBER_WHITELIST = {-1, 0, 1, 2}
+MAGIC_STRING_MIN_OCCURRENCES = 3
+MAGIC_STRING_MIN_LENGTH = 3
+
 
 # ---------------------------------------------------------------------------
 # File Scanning
@@ -1355,6 +1373,729 @@ def _run_test_coverage(src_dir: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Function Complexity Analysis (AST-based)
+# ---------------------------------------------------------------------------
+
+def _max_nesting_depth(node) -> int:
+    """Recursively calculate the maximum nesting depth of control flow structures.
+
+    Counts the current node if it's a control flow structure, plus the deepest
+    nesting found in its children.
+    """
+    control_flow_types = (
+        ast.If, ast.For, ast.While, ast.With, ast.Try,
+        ast.AsyncFor, ast.AsyncWith,
+    )
+    is_cf = isinstance(node, control_flow_types)
+    max_child = 0
+    for child in ast.iter_child_nodes(node):
+        max_child = max(max_child, _max_nesting_depth(child))
+    return (1 if is_cf else 0) + max_child
+
+
+def scan_function_complexity(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+    """Detect overly complex functions: long bodies, many params, deep nesting."""
+    details: list[dict] = []
+    parse_errors: list[str] = []
+    total_functions = 0
+    long_count = 0
+    high_param_count = 0
+    deep_nesting_count = 0
+
+    for file_info in files:
+        file_path = Path(file_info["abs_path"])
+        rel_path = file_info["path"]
+
+        if file_cache and file_info["abs_path"] in file_cache:
+            source, tree = file_cache[file_info["abs_path"]]
+            if tree is None:
+                parse_errors.append(f"{rel_path}: cached parse error")
+                continue
+        else:
+            try:
+                source = file_path.read_text(encoding="utf-8", errors="replace")
+                tree = ast.parse(source, filename=str(file_path))
+            except (SyntaxError, ValueError) as e:
+                parse_errors.append(f"{rel_path}: {e}")
+                continue
+
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+
+            total_functions += 1
+
+            # Length
+            length = (node.end_lineno or node.lineno) - node.lineno + 1
+
+            # Param count: args + kwonlyargs + vararg + kwarg, excluding self/cls
+            args = node.args
+            positional = args.args
+            if positional and positional[0].arg in ("self", "cls"):
+                positional = positional[1:]
+            param_count = len(positional) + len(args.kwonlyargs)
+            if args.vararg:
+                param_count += 1
+            if args.kwarg:
+                param_count += 1
+
+            # Nesting depth across all body statements
+            nesting_depth = 0
+            for stmt in node.body:
+                depth = _max_nesting_depth(stmt)
+                nesting_depth = max(nesting_depth, depth)
+
+            # Determine flags
+            flags: list[str] = []
+            if length > LONG_FUNCTION_LINES:
+                flags.append("long_function")
+                long_count += 1
+            if param_count > HIGH_PARAM_COUNT:
+                flags.append("high_param_count")
+                high_param_count += 1
+            if nesting_depth > DEEP_NESTING_DEPTH:
+                flags.append("deep_nesting")
+                deep_nesting_count += 1
+
+            if flags:
+                details.append({
+                    "file": rel_path,
+                    "name": node.name,
+                    "line": node.lineno,
+                    "end_line": node.end_lineno or node.lineno,
+                    "length": length,
+                    "param_count": param_count,
+                    "nesting_depth": nesting_depth,
+                    "flags": flags,
+                })
+
+    return {
+        "summary": {
+            "total_functions": total_functions,
+            "long_functions": long_count,
+            "high_param_functions": high_param_count,
+            "deep_nesting_functions": deep_nesting_count,
+            "parse_errors": len(parse_errors),
+        },
+        "details": sorted(details, key=lambda x: (x["file"], x["line"])),
+        "parse_errors": parse_errors,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Magic Values Detection (AST-based)
+# ---------------------------------------------------------------------------
+
+def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+    """Detect magic numbers and repeated string literals."""
+    magic_numbers: list[dict] = []
+    all_repeated_strings: list[dict] = []
+    parse_errors: list[str] = []
+
+    _annotation_types = (ast.AnnAssign, ast.arg, ast.FunctionDef, ast.AsyncFunctionDef)
+
+    for file_info in files:
+        file_path = Path(file_info["abs_path"])
+        rel_path = file_info["path"]
+
+        if file_cache and file_info["abs_path"] in file_cache:
+            source, tree = file_cache[file_info["abs_path"]]
+            if tree is None:
+                parse_errors.append(f"{rel_path}: cached parse error")
+                continue
+        else:
+            try:
+                source = file_path.read_text(encoding="utf-8", errors="replace")
+                tree = ast.parse(source, filename=str(file_path))
+            except (SyntaxError, ValueError) as e:
+                parse_errors.append(f"{rel_path}: {e}")
+                continue
+
+        # Set _parent on all nodes
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                child._parent = node
+
+        # Collect docstring positions (line numbers to skip)
+        docstring_lines: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+                if (node.body
+                        and isinstance(node.body[0], ast.Expr)
+                        and isinstance(node.body[0].value, ast.Constant)
+                        and isinstance(node.body[0].value.value, str)):
+                    docstring_lines.add(node.body[0].value.lineno)
+
+        # Collect __name__ / "__main__" comparison lines
+        dunder_main_lines: set[int] = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Compare):
+                has_dunder = False
+                if isinstance(node.left, ast.Name) and node.left.id == "__name__":
+                    has_dunder = True
+                for comp in node.comparators:
+                    if isinstance(comp, ast.Name) and comp.id == "__name__":
+                        has_dunder = True
+                    if isinstance(comp, ast.Constant) and comp.value == "__main__":
+                        has_dunder = True
+                if has_dunder:
+                    dunder_main_lines.add(node.lineno)
+
+        # --- Magic numbers ---
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant):
+                continue
+            if not isinstance(node.value, (int, float)):
+                continue
+            if isinstance(node.value, bool):
+                continue
+            if node.value in MAGIC_NUMBER_WHITELIST:
+                continue
+            if node.lineno in docstring_lines:
+                continue
+            if node.lineno in dunder_main_lines:
+                continue
+            # Skip annotations
+            parent = getattr(node, "_parent", None)
+            if parent is not None:
+                if isinstance(parent, ast.AnnAssign) and node is not parent.value:
+                    continue
+                if isinstance(parent, ast.arg):
+                    continue
+                if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if node is parent.returns:
+                        continue
+                if isinstance(parent, ast.Subscript):
+                    grandparent = getattr(parent, "_parent", None)
+                    if grandparent is not None and isinstance(grandparent, _annotation_types):
+                        continue
+
+            magic_numbers.append({
+                "file": rel_path,
+                "line": node.lineno,
+                "value": node.value,
+            })
+
+        # --- Repeated strings ---
+        string_occurrences: dict[str, list[int]] = defaultdict(list)
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Constant):
+                continue
+            if not isinstance(node.value, str):
+                continue
+            if len(node.value) < MAGIC_STRING_MIN_LENGTH:
+                continue
+            if node.lineno in docstring_lines:
+                continue
+            if node.value in ("__name__", "__main__"):
+                continue
+            # Skip type annotations
+            parent = getattr(node, "_parent", None)
+            if parent is not None:
+                if isinstance(parent, ast.AnnAssign) and node is not parent.value:
+                    continue
+                if isinstance(parent, ast.arg):
+                    continue
+                if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    if node is parent.returns:
+                        continue
+
+            string_occurrences[node.value].append(node.lineno)
+
+        for value, lines in string_occurrences.items():
+            if len(lines) >= MAGIC_STRING_MIN_OCCURRENCES:
+                all_repeated_strings.append({
+                    "file": rel_path,
+                    "value": value,
+                    "count": len(lines),
+                    "lines": sorted(lines),
+                })
+
+    return {
+        "summary": {
+            "total_magic_numbers": len(magic_numbers),
+            "total_repeated_strings": len(all_repeated_strings),
+            "parse_errors": len(parse_errors),
+        },
+        "magic_numbers": sorted(magic_numbers, key=lambda x: (x["file"], x["line"])),
+        "repeated_strings": sorted(all_repeated_strings, key=lambda x: (x["file"], x["value"])),
+        "parse_errors": parse_errors,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Dead Code Detection (AST-based)
+# ---------------------------------------------------------------------------
+
+def scan_dead_code(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
+    """Detect unreachable statements, empty branches, and constant conditions."""
+    unreachable_details: list[dict] = []
+    empty_branch_details: list[dict] = []
+    constant_condition_details: list[dict] = []
+    parse_errors: list[str] = []
+
+    terminal_types = (ast.Return, ast.Raise, ast.Break, ast.Continue)
+
+    def _check_body(body: list, filepath: str) -> None:
+        """Check a list of statements for unreachable code after terminal statements."""
+        for i, stmt in enumerate(body):
+            if isinstance(stmt, terminal_types) and i + 1 < len(body):
+                next_stmt = body[i + 1]
+                unreachable_details.append({
+                    "file": filepath,
+                    "line": next_stmt.lineno,
+                    "type": "unreachable_statement",
+                    "description": f"Code after {type(stmt).__name__.lower()} is unreachable",
+                })
+
+    def _walk_bodies(node: ast.AST, filepath: str) -> None:
+        """Recursively walk all statement bodies in an AST node."""
+        body_attrs: list[list] = []
+
+        if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            body_attrs.append(node.body)
+        elif isinstance(node, ast.If):
+            body_attrs.append(node.body)
+            if node.orelse:
+                body_attrs.append(node.orelse)
+        elif isinstance(node, (ast.For, ast.AsyncFor)):
+            body_attrs.append(node.body)
+            if node.orelse:
+                body_attrs.append(node.orelse)
+        elif isinstance(node, ast.While):
+            body_attrs.append(node.body)
+            if node.orelse:
+                body_attrs.append(node.orelse)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            body_attrs.append(node.body)
+        elif isinstance(node, ast.Try):
+            body_attrs.append(node.body)
+            if node.orelse:
+                body_attrs.append(node.orelse)
+            if node.finalbody:
+                body_attrs.append(node.finalbody)
+            for handler in node.handlers:
+                body_attrs.append(handler.body)
+        elif isinstance(node, ast.ExceptHandler):
+            body_attrs.append(node.body)
+
+        for body in body_attrs:
+            _check_body(body, filepath)
+
+        for child in ast.iter_child_nodes(node):
+            _walk_bodies(child, filepath)
+
+    def _is_pass_or_ellipsis_only(body: list) -> bool:
+        """Check if a body consists of only Pass or Ellipsis."""
+        if len(body) != 1:
+            return False
+        stmt = body[0]
+        if isinstance(stmt, ast.Pass):
+            return True
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and stmt.value.value is ...:
+            return True
+        return False
+
+    def _check_empty_branches(node: ast.AST, filepath: str) -> None:
+        """Find empty if/else branches."""
+        if isinstance(node, ast.If):
+            if _is_pass_or_ellipsis_only(node.body):
+                empty_branch_details.append({
+                    "file": filepath,
+                    "line": node.lineno,
+                    "type": "empty_branch",
+                    "description": "Empty if body (only pass/ellipsis)",
+                })
+            if node.orelse and _is_pass_or_ellipsis_only(node.orelse):
+                empty_branch_details.append({
+                    "file": filepath,
+                    "line": node.lineno,
+                    "type": "empty_branch",
+                    "description": "Empty else body (only pass/ellipsis)",
+                })
+        for child in ast.iter_child_nodes(node):
+            _check_empty_branches(child, filepath)
+
+    def _check_constant_conditions(node: ast.AST, filepath: str) -> None:
+        """Find if statements with constant True/False conditions (skip while True)."""
+        if isinstance(node, ast.If):
+            if isinstance(node.test, ast.Constant) and isinstance(node.test.value, bool):
+                constant_condition_details.append({
+                    "file": filepath,
+                    "line": node.lineno,
+                    "type": "constant_condition",
+                    "description": f"Condition is always {node.test.value}",
+                })
+        for child in ast.iter_child_nodes(node):
+            _check_constant_conditions(child, filepath)
+
+    for file_info in files:
+        file_path = Path(file_info["abs_path"])
+        rel_path = file_info["path"]
+
+        if file_cache and file_info["abs_path"] in file_cache:
+            source, tree = file_cache[file_info["abs_path"]]
+            if tree is None:
+                parse_errors.append(f"{rel_path}: cached parse error")
+                continue
+        else:
+            try:
+                source = file_path.read_text(encoding="utf-8", errors="replace")
+                tree = ast.parse(source, filename=str(file_path))
+            except (SyntaxError, ValueError) as e:
+                parse_errors.append(f"{rel_path}: {e}")
+                continue
+
+        _walk_bodies(tree, rel_path)
+        _check_empty_branches(tree, rel_path)
+        _check_constant_conditions(tree, rel_path)
+
+    all_details = unreachable_details + empty_branch_details + constant_condition_details
+
+    return {
+        "summary": {
+            "unreachable_statements": len(unreachable_details),
+            "empty_branches": len(empty_branch_details),
+            "constant_conditions": len(constant_condition_details),
+            "parse_errors": len(parse_errors),
+        },
+        "details": sorted(all_details, key=lambda x: (x["file"], x["line"])),
+        "parse_errors": parse_errors,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Import Density Analysis
+# ---------------------------------------------------------------------------
+
+def compute_import_density(import_data: dict) -> dict:
+    """Compute fan-out and fan-in metrics from scan_imports output."""
+    module_graph = import_data.get("module_graph", {})
+
+    total_modules = len(module_graph)
+
+    if total_modules == 0:
+        return {
+            "summary": {
+                "total_modules": 0,
+                "high_fan_out_count": 0,
+                "high_fan_in_count": 0,
+                "avg_fan_out": 0.0,
+                "avg_fan_in": 0.0,
+            },
+            "fan_out": [],
+            "fan_in": [],
+            "high_coupling": [],
+        }
+
+    # Build fan_out: module -> list of imports
+    fan_out_map = {mod: sorted(imports) for mod, imports in module_graph.items()}
+
+    # Build fan_in: module -> list of modules that import it
+    fan_in_map: dict[str, list[str]] = {}
+    for mod, imports in module_graph.items():
+        for imp in imports:
+            if imp not in fan_in_map:
+                fan_in_map[imp] = []
+            fan_in_map[imp].append(mod)
+
+    # Sort imported_by lists for determinism
+    for imp in fan_in_map:
+        fan_in_map[imp].sort()
+
+    # Calculate averages
+    total_fan_out = sum(len(imports) for imports in fan_out_map.values())
+    avg_fan_out = round(total_fan_out / total_modules, 2) if total_modules > 0 else 0.0
+
+    total_fan_in = sum(len(importers) for importers in fan_in_map.values())
+    all_modules = set(module_graph.keys()) | set(fan_in_map.keys())
+    avg_fan_in = round(total_fan_in / len(all_modules), 2) if all_modules else 0.0
+
+    # Flag high fan-out
+    high_fan_out_list = []
+    for mod in sorted(fan_out_map.keys()):
+        count = len(fan_out_map[mod])
+        if count >= HIGH_FAN_OUT:
+            high_fan_out_list.append({
+                "module": mod,
+                "fan_out": count,
+                "imports": fan_out_map[mod],
+            })
+
+    # Flag high fan-in
+    high_fan_in_list = []
+    for mod in sorted(fan_in_map.keys()):
+        count = len(fan_in_map[mod])
+        if count >= HIGH_FAN_IN:
+            high_fan_in_list.append({
+                "module": mod,
+                "fan_in": count,
+                "imported_by": fan_in_map[mod],
+            })
+
+    # High coupling: modules flagged for either high fan-out or high fan-in
+    high_fan_out_set = {item["module"] for item in high_fan_out_list}
+    high_fan_in_set = {item["module"] for item in high_fan_in_list}
+    high_coupling_modules = high_fan_out_set | high_fan_in_set
+
+    high_coupling_list = []
+    for mod in sorted(high_coupling_modules):
+        fo = len(fan_out_map.get(mod, []))
+        fi = len(fan_in_map.get(mod, []))
+        reasons = []
+        if mod in high_fan_out_set:
+            reasons.append(f"high fan-out ({fo})")
+        if mod in high_fan_in_set:
+            reasons.append(f"high fan-in ({fi})")
+        high_coupling_list.append({
+            "module": mod,
+            "fan_out": fo,
+            "fan_in": fi,
+            "reasons": reasons,
+        })
+
+    return {
+        "summary": {
+            "total_modules": total_modules,
+            "high_fan_out_count": len(high_fan_out_list),
+            "high_fan_in_count": len(high_fan_in_list),
+            "avg_fan_out": avg_fan_out,
+            "avg_fan_in": avg_fan_in,
+        },
+        "fan_out": high_fan_out_list,
+        "fan_in": high_fan_in_list,
+        "high_coupling": high_coupling_list,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Duplicate Code Detection (AST-based)
+# ---------------------------------------------------------------------------
+
+def _normalize_ast_body(body: list[ast.stmt]) -> str:
+    """Normalize an AST function body for duplicate detection.
+
+    Renames all Name nodes to sequential _v0, _v1, ... and strips
+    location info so that structurally identical code with different
+    variable names and positions produces the same dump.
+
+    Re-parses from unparse to avoid deepcopy issues with _parent attrs.
+    """
+    # Re-parse to get a clean AST without custom attributes (e.g. _parent)
+    try:
+        wrapper = ast.Module(body=body, type_ignores=[])
+        source = ast.unparse(wrapper)
+        fresh = ast.parse(source)
+    except (SyntaxError, ValueError):
+        # Fallback: dump without normalization
+        return ast.dump(ast.Module(body=body, type_ignores=[]))
+
+    name_map: dict[str, str] = {}
+    counter = 0
+
+    for node in ast.walk(fresh):
+        if isinstance(node, ast.Name):
+            if node.id not in name_map:
+                name_map[node.id] = f"_v{counter}"
+                counter += 1
+            node.id = name_map[node.id]
+
+    for node in ast.walk(fresh):
+        for attr in ("lineno", "col_offset", "end_lineno", "end_col_offset"):
+            if hasattr(node, attr):
+                setattr(node, attr, 0)
+
+    return ast.dump(fresh)
+
+
+def scan_duplicate_code(
+    src_dir: Path, files: list[dict], *, file_cache: dict | None = None
+) -> dict:
+    """Detect duplicate function bodies via AST normalization and hashing."""
+    parse_errors: list[str] = []
+    func_entries: list[tuple[str, str, int, int, list]] = []
+
+    cache = file_cache if file_cache else _build_file_cache(files)
+
+    for file_info in files:
+        abs_path = file_info["abs_path"]
+        rel_path = file_info["path"]
+        source, tree = cache.get(abs_path, ("", None))
+        if tree is None:
+            if source or Path(abs_path).exists():
+                parse_errors.append(f"{rel_path}: parse error")
+            continue
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                if not node.body:
+                    continue
+                start = node.body[0].lineno
+                end = max(
+                    getattr(n, "end_lineno", getattr(n, "lineno", start))
+                    for n in node.body
+                )
+                body_lines = end - start + 1
+                if body_lines < MIN_DUPLICATE_LINES:
+                    continue
+                func_entries.append((rel_path, node.name, node.lineno, body_lines, node.body))
+
+    if len(func_entries) > MAX_FUNCTIONS_FOR_DUPLICATE_SCAN:
+        return {
+            "summary": {
+                "total_functions_analyzed": len(func_entries),
+                "duplicate_groups": 0,
+                "total_duplicated_functions": 0,
+                "skipped": True,
+                "parse_errors": len(parse_errors),
+            },
+            "details": [],
+            "parse_errors": parse_errors,
+        }
+
+    # Hash each function body
+    hash_groups: dict[str, list[dict]] = defaultdict(list)
+    for rel_path, func_name, line, body_lines, body in func_entries:
+        normalized = _normalize_ast_body(body)
+        h = hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+        hash_groups[h].append({
+            "file": rel_path,
+            "name": func_name,
+            "line": line,
+            "body_lines": body_lines,
+        })
+
+    # Filter to groups with 2+ members
+    duplicate_groups = []
+    for h, locations in hash_groups.items():
+        if len(locations) >= 2:
+            sorted_locs = sorted(locations, key=lambda loc: (loc["file"], loc["line"]))
+            duplicate_groups.append({
+                "hash": h[:16],
+                "count": len(sorted_locs),
+                "lines": sorted_locs[0]["body_lines"],
+                "locations": [
+                    {"file": loc["file"], "name": loc["name"], "line": loc["line"]}
+                    for loc in sorted_locs
+                ],
+            })
+
+    # Sort groups by first occurrence
+    duplicate_groups.sort(key=lambda g: (g["locations"][0]["file"], g["locations"][0]["line"]))
+
+    total_duplicated = sum(g["count"] for g in duplicate_groups)
+
+    return {
+        "summary": {
+            "total_functions_analyzed": len(func_entries),
+            "duplicate_groups": len(duplicate_groups),
+            "total_duplicated_functions": total_duplicated,
+            "skipped": False,
+            "parse_errors": len(parse_errors),
+        },
+        "details": duplicate_groups,
+        "parse_errors": parse_errors,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Test Quality Analysis
+# ---------------------------------------------------------------------------
+
+def scan_test_quality(src_dir: Path, *, src_total_lines: int = 0) -> dict:
+    """Analyze test quality: assert density, zero-assert tests, test-to-code ratio."""
+    tests_dir = src_dir.parent / "tests"
+    if not tests_dir.exists():
+        return {
+            "summary": {
+                "available": False,
+                "total_test_files": 0,
+                "total_test_lines": 0,
+                "total_test_functions": 0,
+                "zero_assert_tests": 0,
+                "avg_assert_density": 0.0,
+                "test_to_code_ratio": 0.0,
+            },
+            "zero_assert_details": [],
+            "low_density_details": [],
+        }
+
+    test_files_result = scan_files(tests_dir)
+    test_files = test_files_result["details"]
+    total_test_lines = test_files_result["summary"]["total_lines"]
+    cache = _build_file_cache(test_files)
+
+    all_test_funcs: list[dict] = []
+    total_asserts = 0
+
+    for file_info in test_files:
+        abs_path = file_info["abs_path"]
+        rel_path = file_info["path"]
+        source, tree = cache.get(abs_path, ("", None))
+        if tree is None:
+            continue
+
+        # Collect test functions: top-level test_* and methods inside Test* classes
+        test_nodes: list[tuple[str, ast.FunctionDef]] = []
+        for node in ast.iter_child_nodes(tree):
+            if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+                test_nodes.append((node.name, node))
+            elif isinstance(node, ast.ClassDef) and node.name.startswith("Test"):
+                for item in node.body:
+                    if isinstance(item, ast.FunctionDef) and item.name.startswith("test_"):
+                        test_nodes.append((item.name, item))
+
+        for func_name, func_node in test_nodes:
+            assert_count = 0
+            for child in ast.walk(func_node):
+                if isinstance(child, ast.Assert):
+                    assert_count += 1
+                elif isinstance(child, ast.Call):
+                    func_attr = child.func
+                    if isinstance(func_attr, ast.Attribute):
+                        if func_attr.attr == "raises":
+                            assert_count += 1
+                        elif func_attr.attr.startswith("assert_"):
+                            assert_count += 1
+
+            total_asserts += assert_count
+            func_info = {
+                "file": rel_path,
+                "name": func_name,
+                "line": func_node.lineno,
+                "assert_count": assert_count,
+            }
+            all_test_funcs.append(func_info)
+
+    zero_assert = [f for f in all_test_funcs if f["assert_count"] == 0]
+    low_density = [f for f in all_test_funcs if f["assert_count"] > 0]
+
+    total_test_functions = len(all_test_funcs)
+    avg_density = round(total_asserts / total_test_functions, 2) if total_test_functions else 0.0
+    ratio = round(total_test_lines / src_total_lines, 2) if src_total_lines else 0.0
+
+    return {
+        "summary": {
+            "available": True,
+            "total_test_files": len(test_files),
+            "total_test_lines": total_test_lines,
+            "total_test_functions": total_test_functions,
+            "zero_assert_tests": len(zero_assert),
+            "avg_assert_density": avg_density,
+            "test_to_code_ratio": ratio,
+        },
+        "zero_assert_details": [
+            {"file": f["file"], "name": f["name"], "line": f["line"]}
+            for f in zero_assert
+        ],
+        "low_density_details": [
+            {"file": f["file"], "name": f["name"], "line": f["line"], "assert_count": f["assert_count"]}
+            for f in low_density
+        ],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Deterministic Score
 # ---------------------------------------------------------------------------
 
@@ -1368,6 +2109,12 @@ def compute_deterministic_score(
     unused_imports: dict | None = None,
     missing_docstrings: dict | None = None,
     test_coverage: dict | None = None,
+    function_complexity: dict | None = None,
+    magic_values: dict | None = None,
+    dead_code: dict | None = None,
+    import_density: dict | None = None,
+    duplicate_code: dict | None = None,
+    test_quality: dict | None = None,
 ) -> dict:
     """Compute a fully deterministic score from scan results.
 
@@ -1487,6 +2234,39 @@ def compute_deterministic_score(
         )
         deduct("coverage gap severity", int(coverage_gap), 0.01, 5)
 
+    # v2.3.0: Function complexity (if provided)
+    if function_complexity is not None:
+        fc = function_complexity["summary"]
+        deduct("long functions (>50 lines)", fc.get("long_functions", 0), 0.3, 5)
+        deduct("high parameter count (>7)", fc.get("high_param_functions", 0), 0.3, 3)
+        deduct("deep nesting (>4 levels)", fc.get("deep_nesting_functions", 0), 0.5, 5)
+
+    # v2.3.0: Dead code (if provided)
+    if dead_code is not None:
+        dc = dead_code["summary"]
+        deduct("unreachable code statements", dc.get("unreachable_statements", 0), 0.5, 5)
+        deduct("empty if/else branches", dc.get("empty_branches", 0), 0.3, 3)
+
+    # v2.3.0: Import density (if provided)
+    if import_density is not None:
+        id_s = import_density["summary"]
+        deduct("high fan-out modules (>=8)", id_s.get("high_fan_out_count", 0), 1.0, 5)
+        deduct("high fan-in modules (>=6)", id_s.get("high_fan_in_count", 0), 0.5, 3)
+
+    # v2.3.0: Magic values (if provided)
+    if magic_values is not None:
+        mv = magic_values["summary"]
+        deduct("magic numbers", mv.get("total_magic_numbers", 0), 0.1, 3)
+        deduct("repeated magic strings (3+)", mv.get("total_repeated_strings", 0), 0.2, 3)
+
+    # v2.3.0: Duplicate code (if provided)
+    if duplicate_code is not None and not duplicate_code["summary"].get("skipped"):
+        deduct("duplicate code groups", duplicate_code["summary"].get("duplicate_groups", 0), 1.5, 8)
+
+    # v2.3.0: Test quality (if provided)
+    if test_quality is not None and test_quality["summary"].get("available"):
+        deduct("zero-assert test functions", test_quality["summary"].get("zero_assert_tests", 0), 0.5, 5)
+
     score = max(0, round(score))
 
     return {
@@ -1544,7 +2324,7 @@ def main() -> None:
     files = scan_files(src_dir)
     file_cache = _build_file_cache(files["details"])
 
-    # Run 6 independent AST scans in parallel (file cache is immutable, thread-safe)
+    # Run 10 independent AST scans in parallel (file cache is immutable, thread-safe)
     ast_scan_runners = {
         "imports": lambda: scan_imports(src_dir, files["details"], file_cache=file_cache),
         "classes": lambda: scan_classes(src_dir, files["details"], file_cache=file_cache),
@@ -1552,9 +2332,13 @@ def main() -> None:
         "unused_imports": lambda: scan_unused_imports(src_dir, files["details"], file_cache=file_cache),
         "missing_docstrings": lambda: scan_missing_docstrings(src_dir, files["details"], file_cache=file_cache),
         "broad_try": lambda: scan_broad_try_blocks(src_dir, files["details"], file_cache=file_cache),
+        "function_complexity": lambda: scan_function_complexity(src_dir, files["details"], file_cache=file_cache),
+        "magic_values": lambda: scan_magic_values(src_dir, files["details"], file_cache=file_cache),
+        "dead_code": lambda: scan_dead_code(src_dir, files["details"], file_cache=file_cache),
+        "duplicate_code": lambda: scan_duplicate_code(src_dir, files["details"], file_cache=file_cache),
     }
     ast_results: dict[str, Any] = {}
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {
             executor.submit(runner): name
             for name, runner in ast_scan_runners.items()
@@ -1568,15 +2352,21 @@ def main() -> None:
     unused_imports = ast_results["unused_imports"]
     missing_docstrings = ast_results["missing_docstrings"]
     broad_try = ast_results["broad_try"]
+    function_complexity = ast_results["function_complexity"]
+    magic_values = ast_results["magic_values"]
+    dead_code = ast_results["dead_code"]
+    duplicate_code = ast_results["duplicate_code"]
 
     # Dependent computations (need imports/classes results)
     collisions = find_naming_collisions(classes["details"])
     god_objects = find_god_objects(files["details"], classes["details"])
     layers = analyze_layers(imports)
+    import_density = compute_import_density(imports)
 
     # External tools (already parallelized internally)
     static = run_static_analysis(src_dir)
     test_coverage = _run_test_coverage(src_dir)
+    test_quality = scan_test_quality(src_dir, src_total_lines=files["summary"]["total_lines"])
 
     # Step 2: Compute deterministic score
     det_score = compute_deterministic_score(
@@ -1589,6 +2379,12 @@ def main() -> None:
         unused_imports=unused_imports,
         missing_docstrings=missing_docstrings,
         test_coverage=test_coverage,
+        function_complexity=function_complexity,
+        magic_values=magic_values,
+        dead_code=dead_code,
+        import_density=import_density,
+        duplicate_code=duplicate_code,
+        test_quality=test_quality,
     )
 
     # Step 3: Build output
@@ -1600,7 +2396,7 @@ def main() -> None:
         "metadata": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "src_dir": str(src_dir),
-            "scanner_version": "2.2.0",
+            "scanner_version": "2.3.0",
             "content_hash": compute_content_hash(src_dir),
         },
         "files": files,
@@ -1615,6 +2411,12 @@ def main() -> None:
         "missing_docstrings": missing_docstrings,
         "broad_try_blocks": broad_try,
         "test_coverage": test_coverage,
+        "function_complexity": function_complexity,
+        "magic_values": magic_values,
+        "dead_code": dead_code,
+        "import_density": import_density,
+        "duplicate_code": duplicate_code,
+        "test_quality": test_quality,
         "deterministic_score": det_score,
     }
 

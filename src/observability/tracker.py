@@ -19,6 +19,8 @@ from src.observability.collaboration_tracker import CollaborationEventTracker
 from src.observability.decision_tracker import DecisionTracker
 from src.observability.metric_aggregator import MetricAggregator
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
+from src.constants.durations import MILLISECONDS_PER_SECOND
+from src.constants.limits import THRESHOLD_MEDIUM_COUNT
 from src.utils.config_helpers import sanitize_config_for_display
 
 logger = logging.getLogger(__name__)
@@ -770,7 +772,7 @@ class ExecutionTracker:
 
         # Check tool execution duration alerts
         if self.alert_manager and duration_seconds > 0:
-            duration_ms = duration_seconds * 1000
+            duration_ms = duration_seconds * MILLISECONDS_PER_SECOND
             self.alert_manager.check_metric(
                 metric_type="duration",
                 value=duration_ms,
@@ -803,7 +805,7 @@ class ExecutionTracker:
             return data
 
         # OB-09: Prevent RecursionError on deeply nested structures
-        if _depth > 20:
+        if _depth > THRESHOLD_MEDIUM_COUNT:
             return {"__truncated__": "max depth exceeded"}
 
         sanitized = {}

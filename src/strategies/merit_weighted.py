@@ -11,6 +11,12 @@ Higher-merit agents have more influence in close decisions.
 from typing import Any, Dict, List, Optional
 
 from src.strategies.base import AgentOutput, Conflict
+from src.strategies.constants import (
+    DEFAULT_AGREEMENT_THRESHOLD,
+    DEFAULT_CONVERGENCE_THRESHOLD,
+    DEFAULT_MERIT_LOOKBACK_DAYS,
+    LOW_AGREEMENT_THRESHOLD,
+)
 from src.strategies.conflict_resolution import (
     AgentMerit,
     ConflictResolver,
@@ -69,9 +75,9 @@ class MeritWeightedResolver(ConflictResolver):
             "overall_merit": 0.3,
             "recent_performance": 0.3
         })
-        self.auto_resolve_threshold = self.config.get("auto_resolve_threshold", 0.85)
-        self.escalation_threshold = self.config.get("escalation_threshold", 0.5)
-        self.recency_decay_days = self.config.get("recency_decay_days", 30)
+        self.auto_resolve_threshold = self.config.get("auto_resolve_threshold", DEFAULT_CONVERGENCE_THRESHOLD)
+        self.escalation_threshold = self.config.get("escalation_threshold", LOW_AGREEMENT_THRESHOLD)
+        self.recency_decay_days = self.config.get("recency_decay_days", DEFAULT_MERIT_LOOKBACK_DAYS)
 
     def resolve_with_context(
         self,

@@ -55,6 +55,14 @@ from src.utils.exceptions import (
     ToolNotFoundError,
     sanitize_error_message,
 )
+from src.constants.limits import DEFAULT_POOL_SIZE as _POOL_SIZE_LIMIT
+from src.agents.constants import (
+    PROMPT_PREVIEW_LENGTH,
+    OUTPUT_PREVIEW_LENGTH,
+)
+from src.constants.probabilities import PROB_MEDIUM, WEIGHT_LARGE
+from src.constants.retries import DEFAULT_BACKOFF_MULTIPLIER, RETRY_JITTER_MIN
+from src.constants.sizes import SIZE_256KB
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +79,9 @@ OLLAMA_DEFAULT_PORT = 11434
 # H-16: Lazy initialization with lifecycle management to avoid resource leaks.
 # M-18: Pool size configurable via AGENT_TOOL_WORKERS env var.
 # H-11: Increase default pool size based on CPU count
-_DEFAULT_POOL_SIZE = min(32, (os.cpu_count() or 4) * 2 + 4)
+_CPU_MULTIPLIER = 2
+_CPU_OFFSET = 4
+_DEFAULT_POOL_SIZE = min(_POOL_SIZE_LIMIT, (os.cpu_count() or _CPU_OFFSET) * _CPU_MULTIPLIER + _CPU_OFFSET)
 _TOOL_POOL_SIZE = int(os.environ.get("AGENT_TOOL_WORKERS", str(_DEFAULT_POOL_SIZE)))
 _tool_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 _executor_lock = threading.Lock()
@@ -280,8 +290,8 @@ class StandardAgent(BaseAgent):
         try:
             prompt = self._render_prompt(input_data, context)
             self._system_prompt = prompt  # Pin the original prompt
-            # Log input preview (last 200 chars of prompt shows injected context)
-            prompt_preview = prompt[-200:].replace('\n', ' ').strip()
+            # Log input preview (last chars of prompt shows injected context)
+            prompt_preview = prompt[-PROMPT_PREVIEW_LENGTH:].replace('\n', ' ').strip()
             logger.info("[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), prompt_preview)
 
             max_iterations = self.config.agent.safety.max_tool_calls_per_execution
@@ -381,7 +391,7 @@ class StandardAgent(BaseAgent):
         try:
             prompt = self._render_prompt(input_data, context)
             self._system_prompt = prompt
-            prompt_preview = prompt[-200:].replace('\n', ' ').strip()
+            prompt_preview = prompt[-PROMPT_PREVIEW_LENGTH:].replace('\n', ' ').strip()
             logger.info("[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), prompt_preview)
 
             max_iterations = self.config.agent.safety.max_tool_calls_per_execution
@@ -537,7 +547,7 @@ class StandardAgent(BaseAgent):
                 if attempt < max_agent_retries:
                     # Exponential backoff with jitter: delay * 2^attempt * uniform(0.5, 1.5)
                     # M-12: random.random() is intentional (not secrets.random()) - jitter doesn't need cryptographic randomness
-                    backoff_delay = retry_delay * (2.0 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                    backoff_delay = retry_delay * (DEFAULT_BACKOFF_MULTIPLIER ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     logger.warning(
                         "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
                         attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
@@ -722,7 +732,7 @@ class StandardAgent(BaseAgent):
                 safe_err = sanitize_error_message(str(e))
                 if attempt < max_agent_retries:
                     # H-10: Add jitter to prevent thundering herd
-                    backoff_delay = retry_delay * (2.0 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                    backoff_delay = retry_delay * (DEFAULT_BACKOFF_MULTIPLIER ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     logger.warning(
                         "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
                         attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
@@ -988,7 +998,7 @@ class StandardAgent(BaseAgent):
     ) -> AgentResponse:
         """Build final AgentResponse."""
         duration = time.time() - start_time
-        output_preview = (output[:150].replace('\n', ' ').strip() + "...") if len(output) > 150 else output.replace('\n', ' ').strip()
+        output_preview = (output[:OUTPUT_PREVIEW_LENGTH].replace('\n', ' ').strip() + "...") if len(output) > OUTPUT_PREVIEW_LENGTH else output.replace('\n', ' ').strip()
         logger.info(
             "[%s] Execution complete (%d tokens, $%.4f, %.1fs) → %s",
             self.name, tokens, cost, duration, output_preview or "(empty)",

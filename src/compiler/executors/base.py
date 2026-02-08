@@ -17,6 +17,7 @@ from src.compiler.domain_state import (
     TrackerProtocol,
     VisualizerProtocol,
 )
+from src.constants.probabilities import PROB_MEDIUM
 
 logger = logging.getLogger(__name__)
 
@@ -244,7 +245,7 @@ class StageExecutor(ABC):
             if decision and votes:
                 confidence = votes.get(str(decision), 0) / len(agent_outputs)
             else:
-                confidence = 0.5
+                confidence = PROB_MEDIUM
 
             return SynthesisResult(
                 decision=decision or "",

@@ -4,6 +4,8 @@ from typing import Any
 
 from sqlalchemy import Select
 
+from src.constants.probabilities import PROB_NEAR_CERTAIN, PROB_VERY_HIGH_PLUS
+
 
 class AggregationQueryBuilder:
     """Builds SQLAlchemy queries for metric aggregation.
@@ -45,7 +47,7 @@ class AggregationQueryBuilder:
             func.sum(case((WorkflowExecution.status == 'completed', 1), else_=0)).label('successful'),
             func.avg(WorkflowExecution.duration_seconds).label('avg_duration'),
             func.sum(WorkflowExecution.total_cost_usd).label('total_cost'),
-            func.percentile_cont(0.95).within_group(WorkflowExecution.duration_seconds).label('p95_duration')
+            func.percentile_cont(PROB_NEAR_CERTAIN).within_group(WorkflowExecution.duration_seconds).label('p95_duration')
         ).where(
             WorkflowExecution.start_time >= start_time,
             WorkflowExecution.start_time < end_time
@@ -123,7 +125,7 @@ class AggregationQueryBuilder:
             func.count(LLMCall.id).label('total'),
             func.sum(case((LLMCall.status == 'success', 1), else_=0)).label('successful'),
             func.avg(LLMCall.latency_ms).label('avg_latency'),
-            func.percentile_cont(0.95).within_group(LLMCall.latency_ms).label('p95_latency'),
+            func.percentile_cont(PROB_NEAR_CERTAIN).within_group(LLMCall.latency_ms).label('p95_latency'),
             func.percentile_cont(0.99).within_group(LLMCall.latency_ms).label('p99_latency'),
             func.sum(LLMCall.estimated_cost_usd).label('total_cost')
         ).where(

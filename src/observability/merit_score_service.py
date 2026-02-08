@@ -9,7 +9,14 @@ import uuid
 from datetime import timedelta
 from typing import Any, Optional
 
+from src.constants.durations import DAYS_90
+from src.constants.probabilities import (
+    PROB_MEDIUM,
+    WEIGHT_MINIMAL,
+    WEIGHT_VERY_LARGE,
+)
 from src.database.datetime_utils import utcnow
+from src.observability.constants import DEFAULT_MERIT_DECAY_RATE, DEFAULT_MERIT_WINDOW_DAYS
 
 logger = logging.getLogger(__name__)
 
@@ -83,19 +90,19 @@ class MeritScoreService:
         # Update cumulative metrics
         # Mixed decisions count as half-success for rate calculation
         if merit_score.total_decisions > 0:
-            effective_successes = merit_score.successful_decisions + 0.5 * merit_score.mixed_decisions
+            effective_successes = merit_score.successful_decisions + PROB_MEDIUM * merit_score.mixed_decisions
             merit_score.success_rate = effective_successes / merit_score.total_decisions
 
-        # Update average confidence (exponential moving average, alpha=0.1)
+        # Update average confidence (exponential moving average, alpha=WEIGHT_MINIMAL)
         if confidence is not None:
             if merit_score.average_confidence is None:
                 merit_score.average_confidence = confidence
             else:
-                merit_score.average_confidence = 0.9 * merit_score.average_confidence + 0.1 * confidence
+                merit_score.average_confidence = WEIGHT_VERY_LARGE * merit_score.average_confidence + WEIGHT_MINIMAL * confidence
 
         # Compute expertise score (weighted: 70% success rate, 30% confidence)
         if merit_score.success_rate is not None:
-            confidence_component = merit_score.average_confidence or 0.5
+            confidence_component = merit_score.average_confidence or PROB_MEDIUM
             merit_score.expertise_score = 0.7 * merit_score.success_rate + 0.3 * confidence_component
 
         # Update time-windowed metrics
@@ -128,8 +135,8 @@ class MeritScoreService:
 
             from src.database.models import DecisionOutcome
 
-            thirty_days_ago = utcnow() - timedelta(days=30)
-            ninety_days_ago = utcnow() - timedelta(days=90)
+            thirty_days_ago = utcnow() - timedelta(days=DEFAULT_MERIT_WINDOW_DAYS)
+            ninety_days_ago = utcnow() - timedelta(days=DAYS_90)
 
             # Use cast() for portable JSON field access (works on both SQLite and PostgreSQL)
             agent_name_field = cast(DecisionOutcome.decision_data['agent_name'], String)

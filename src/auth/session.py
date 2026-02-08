@@ -13,6 +13,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from src.auth.models import Session, User
+from src.constants.durations import (
+    CLEANUP_INTERVAL_FREQUENT,
+    TIMEOUT_VERY_SHORT,
+)
+from src.constants.limits import THRESHOLD_MASSIVE_COUNT
+from src.constants.sizes import TOKEN_BYTES_SESSION
+from src.constants.timeouts import DEFAULT_SESSION_TTL_SECONDS
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +42,7 @@ class SessionStoreProtocol(abc.ABC):
         user: User,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-        session_max_age: int = 3600,
+        session_max_age: int = DEFAULT_SESSION_TTL_SECONDS,
     ) -> Session:
         """Create a new session for authenticated user."""
         ...
@@ -72,8 +79,8 @@ class InMemorySessionStore(SessionStoreProtocol):
     eviction to prevent unbounded memory growth.
     """
 
-    CLEANUP_INTERVAL = 100  # Run cleanup every N lookups
-    MAX_SESSIONS = 10000  # M-09: Maximum sessions before LRU eviction
+    CLEANUP_INTERVAL = CLEANUP_INTERVAL_FREQUENT  # Run cleanup every N lookups
+    MAX_SESSIONS = THRESHOLD_MASSIVE_COUNT  # M-09: Maximum sessions before LRU eviction
 
     def __init__(self, max_sessions: int = MAX_SESSIONS):
         """Initialize session store.
@@ -93,7 +100,7 @@ class InMemorySessionStore(SessionStoreProtocol):
         user: User,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-        session_max_age: int = 3600,  # 1 hour default
+        session_max_age: int = DEFAULT_SESSION_TTL_SECONDS,
     ) -> Session:
         """Create a new session for authenticated user.
 
@@ -109,7 +116,7 @@ class InMemorySessionStore(SessionStoreProtocol):
             Created session
         """
         # Generate secure session ID
-        session_id = f"sess_{secrets.token_urlsafe(32)}"
+        session_id = f"sess_{secrets.token_urlsafe(TOKEN_BYTES_SESSION)}"
 
         # Create session with expiration
         session = Session(
@@ -376,8 +383,8 @@ class RedisSessionStore(SessionStoreProtocol):
         self._redis = aioredis.from_url(
             redis_url,
             decode_responses=True,
-            socket_connect_timeout=5,
-            socket_timeout=5,
+            socket_connect_timeout=TIMEOUT_VERY_SHORT,
+            socket_timeout=TIMEOUT_VERY_SHORT,
         )
         self._key_prefix = key_prefix
 
@@ -417,10 +424,10 @@ class RedisSessionStore(SessionStoreProtocol):
         user: User,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-        session_max_age: int = 3600,
+        session_max_age: int = DEFAULT_SESSION_TTL_SECONDS,
     ) -> Session:
         """Create new session with given data, return session ID."""
-        session_id = f"sess_{secrets.token_urlsafe(32)}"
+        session_id = f"sess_{secrets.token_urlsafe(TOKEN_BYTES_SESSION)}"
         session = Session(
             session_id=session_id,
             user_id=user.user_id,

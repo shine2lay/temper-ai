@@ -18,6 +18,10 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_SHORT, TIMEOUT_NETWORK_CONNECT
+from src.constants.limits import PERCENT_80, PERCENT_20, THRESHOLD_MASSIVE_COUNT
+from src.constants.probabilities import WEIGHT_LARGE
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +32,7 @@ class StateStore:
         self,
         state: str,
         data: Dict[str, Any],
-        ttl_seconds: int = 600
+        ttl_seconds: int = SECONDS_PER_10_MINUTES
     ) -> None:
         """Store state data with TTL.
 
@@ -77,16 +81,16 @@ class InMemoryStateStore(StateStore):
     Use RedisStateStore for production environments.
     """
 
-    MAX_ENTRIES = 50000
+    MAX_ENTRIES = THRESHOLD_MASSIVE_COUNT * 5  # 50000
 
-    def __init__(self, max_entries: int = MAX_ENTRIES):
+    def __init__(self, max_entries: int = None):
         """Initialize in-memory state storage.
 
         Args:
             max_entries: Maximum number of entries before auto-cleanup (default: 50000)
         """
         self._store: Dict[str, Dict[str, Any]] = {}
-        self._max_entries = max_entries
+        self._max_entries = max_entries if max_entries is not None else self.MAX_ENTRIES
         self._lock = asyncio.Lock()
         logger.warning(
             "Using InMemoryStateStore - NOT suitable for production! "
@@ -97,12 +101,15 @@ class InMemoryStateStore(StateStore):
         self,
         state: str,
         data: Dict[str, Any],
-        ttl_seconds: int = 600
+        ttl_seconds: int = None
     ) -> None:
         """Store state data with expiration time."""
+        if ttl_seconds is None:
+            ttl_seconds = SECONDS_PER_10_MINUTES
+
         async with self._lock:
             # Auto-cleanup when 80% full to prevent unbounded memory growth
-            if len(self._store) >= int(self._max_entries * 0.8):
+            if len(self._store) >= int(self._max_entries * (PERCENT_80 / 100)):
                 await self._cleanup_expired_unlocked()
                 # If still over limit after cleanup, remove oldest 20%
                 if len(self._store) >= self._max_entries:
@@ -180,7 +187,7 @@ class InMemoryStateStore(StateStore):
 
     def _evict_oldest(self) -> None:
         """Evict oldest 20% of entries when store exceeds max_entries."""
-        to_remove = max(1, len(self._store) // 5)
+        to_remove = max(1, len(self._store) * PERCENT_20 // 100)
         # Sort by expires_at to remove the oldest entries first
         sorted_keys = sorted(
             self._store.keys(),
@@ -210,7 +217,7 @@ class RedisStateStore(StateStore):
         ...     "user_id": "user_456",
         ...     "provider": "google",
         ...     "code_verifier": "verifier_abc"
-        ... }, ttl_seconds=600)
+        ... }, ttl_seconds=SECONDS_PER_10_MINUTES)
         >>>
         >>> # Later (in callback):
         >>> state_data = await store.get_state("state_123")  # Atomic get-and-delete
@@ -256,8 +263,8 @@ class RedisStateStore(StateStore):
                     self.redis_url,
                     encoding="utf-8",
                     decode_responses=True,
-                    socket_connect_timeout=5,
-                    socket_timeout=5
+                    socket_connect_timeout=TIMEOUT_SHORT,
+                    socket_timeout=TIMEOUT_SHORT
                 )
                 # Test connection
                 await self._redis.ping()
@@ -283,7 +290,7 @@ class RedisStateStore(StateStore):
         self,
         state: str,
         data: Dict[str, Any],
-        ttl_seconds: int = 600
+        ttl_seconds: int = None
     ) -> None:
         """Store state data with automatic TTL.
 
@@ -292,6 +299,9 @@ class RedisStateStore(StateStore):
             data: State data (user_id, provider, code_verifier, etc.)
             ttl_seconds: Time to live in seconds (default: 10 minutes)
         """
+        if ttl_seconds is None:
+            ttl_seconds = SECONDS_PER_10_MINUTES
+
         await self.connect()
 
         if not self._redis:

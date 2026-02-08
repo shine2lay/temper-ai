@@ -14,11 +14,18 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.constants.probabilities import PROB_MEDIUM, PROB_VERY_LOW
 from src.strategies.base import (
     AgentOutput,
     CollaborationStrategy,
     Conflict,
     SynthesisResult,
+)
+from src.strategies.constants import (
+    CONFLICT_SEVERITY_HIGH,
+    CONFLICT_SEVERITY_LOW,
+    DEFAULT_DEBATE_ROUNDS,
+    DEFAULT_MIN_ROUNDS,
 )
 
 
@@ -111,10 +118,10 @@ class DebateAndSynthesize(CollaborationStrategy):
         self.validate_inputs(agent_outputs)
 
         # Get config with defaults
-        max_rounds = config.get("max_rounds", 3)
-        convergence_threshold = config.get("convergence_threshold", 0.8)
+        max_rounds = config.get("max_rounds", DEFAULT_DEBATE_ROUNDS)
+        convergence_threshold = config.get("convergence_threshold", CONFLICT_SEVERITY_HIGH)
         require_unanimous = config.get("require_unanimous", False)
-        min_rounds = config.get("min_rounds", 1)
+        min_rounds = config.get("min_rounds", DEFAULT_MIN_ROUNDS)
 
         # Initialize debate history
         debate_history = DebateHistory(
@@ -173,7 +180,7 @@ class DebateAndSynthesize(CollaborationStrategy):
         )
 
         # Detect conflicts
-        conflicts = self.detect_conflicts(final_outputs, threshold=0.3)
+        conflicts = self.detect_conflicts(final_outputs, threshold=CONFLICT_SEVERITY_LOW)
 
         # Build reasoning from debate
         reasoning = self._build_debate_reasoning(
@@ -303,10 +310,10 @@ class DebateAndSynthesize(CollaborationStrategy):
 
         if require_unanimous and consensus_strength < 1.0:
             # Penalize non-unanimous results when unanimity required
-            confidence = consensus_strength * 0.5
+            confidence = consensus_strength * PROB_MEDIUM
         else:
             # Convergence bonus: boost confidence if debate converged
-            convergence_bonus = 0.1 if debate_history.converged else 0.0
+            convergence_bonus = PROB_VERY_LOW if debate_history.converged else 0.0
 
             # Average confidence of agents supporting this decision
             supporters = [o for o in final_outputs if str(o.decision) == winning_key]

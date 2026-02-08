@@ -16,9 +16,23 @@ import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
+from src.constants.durations import (
+    RATE_LIMIT_WINDOW_DAY,
+    RATE_LIMIT_WINDOW_HOUR,
+    RATE_LIMIT_WINDOW_MINUTE,
+    RATE_LIMIT_WINDOW_SECOND,
+    SECONDS_PER_2_HOURS,
+    SECONDS_PER_HOUR,
+    SECONDS_PER_MINUTE,
+)
+from src.constants.limits import MULTIPLIER_SMALL
+from src.constants.probabilities import PROB_MEDIUM
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import RATE_LIMIT_PRIORITY
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
+
+# Burst allowance multiplier (1.5 = 50% burst above base rate)
+BURST_ALLOWANCE_DEFAULT = PROB_MEDIUM + 1.0
 
 
 class WindowRateLimitPolicy(BaseSafetyPolicy):
@@ -73,7 +87,7 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
         # Configuration
         self.limits = self.config.get("limits", self.DEFAULT_LIMITS)
         self.strategy = self.config.get("strategy", "sliding_window")
-        self.burst_allowance = self.config.get("burst_allowance", 1.5)
+        self.burst_allowance = self.config.get("burst_allowance", BURST_ALLOWANCE_DEFAULT)
         self.per_entity = self.config.get("per_entity", True)
 
         # State tracking: {(operation, entity): [(timestamp, ...)]}
@@ -164,7 +178,7 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
 
             # Determine severity based on how much over limit
             overage_ratio = len(recent_history) / max_count
-            if overage_ratio > 2.0:
+            if overage_ratio > MULTIPLIER_SMALL:
                 severity = ViolationSeverity.CRITICAL
             elif overage_ratio >= 1.0:
                 severity = ViolationSeverity.HIGH
@@ -198,12 +212,12 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
         Returns:
             Formatted string (e.g., "1 minute", "30 seconds")
         """
-        if seconds >= 3600:
-            return f"{int(seconds / 3600)} hour{'s' if seconds >= 7200 else ''}"
-        elif seconds >= 60:
-            return f"{int(seconds / 60)} minute{'s' if seconds >= 120 else ''}"
+        if seconds >= SECONDS_PER_HOUR:
+            return f"{int(seconds / SECONDS_PER_HOUR)} hour{'s' if seconds >= SECONDS_PER_2_HOURS else ''}"
+        elif seconds >= SECONDS_PER_MINUTE:
+            return f"{int(seconds / SECONDS_PER_MINUTE)} minute{'s' if seconds >= MULTIPLIER_SMALL * SECONDS_PER_MINUTE else ''}"
         else:
-            return f"{int(seconds)} second{'s' if seconds >= 2 else ''}"
+            return f"{int(seconds)} second{'s' if seconds >= MULTIPLIER_SMALL else ''}"
 
     def _validate_impl(
         self,
@@ -245,7 +259,7 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
                 violation = self._check_limit(
                     history,
                     operation_limits["max_per_second"],
-                    1.0,
+                    RATE_LIMIT_WINDOW_SECOND,
                     operation
                 )
                 if violation:
@@ -255,7 +269,7 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
                 violation = self._check_limit(
                     history,
                     operation_limits["max_per_minute"],
-                    60.0,
+                    RATE_LIMIT_WINDOW_MINUTE,
                     operation
                 )
                 if violation:
@@ -265,7 +279,7 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
                 violation = self._check_limit(
                     history,
                     operation_limits["max_per_hour"],
-                    3600.0,
+                    RATE_LIMIT_WINDOW_HOUR,
                     operation
                 )
                 if violation:
@@ -276,16 +290,16 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
                 history.append(now)
                 # SA-04: Use window durations (not count values) for history age
                 _window_durations = {
-                    "max_per_second": 1.0,
-                    "max_per_minute": 60.0,
-                    "max_per_hour": 3600.0,
-                    "max_per_day": 86400.0,
+                    "max_per_second": RATE_LIMIT_WINDOW_SECOND,
+                    "max_per_minute": RATE_LIMIT_WINDOW_MINUTE,
+                    "max_per_hour": RATE_LIMIT_WINDOW_HOUR,
+                    "max_per_day": RATE_LIMIT_WINDOW_DAY,
                 }
                 max_window = max(
-                    (_window_durations.get(k, 3600.0) for k in operation_limits if k.startswith("max_per_")),
-                    default=3600.0
+                    (_window_durations.get(k, RATE_LIMIT_WINDOW_HOUR) for k in operation_limits if k.startswith("max_per_")),
+                    default=RATE_LIMIT_WINDOW_HOUR
                 )
-                self._operation_history[history_key] = self._clean_old_records(history, max_window * 2)
+                self._operation_history[history_key] = self._clean_old_records(history, max_window * MULTIPLIER_SMALL)
 
         # Determine validity (invalid if any HIGH or CRITICAL violations)
         valid = not any(

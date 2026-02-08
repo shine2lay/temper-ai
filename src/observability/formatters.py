@@ -2,6 +2,9 @@
 from datetime import datetime
 from typing import Optional
 
+from src.constants.durations import MILLISECONDS_PER_SECOND, SECONDS_PER_MINUTE
+from src.constants.sizes import BYTES_PER_KB
+
 
 def format_duration(seconds: Optional[float]) -> str:
     """Format duration in human-readable form.
@@ -25,11 +28,11 @@ def format_duration(seconds: Optional[float]) -> str:
     if seconds is None:
         return "N/A"
     if seconds < 1:
-        return f"{int(seconds * 1000)}ms"
-    if seconds < 60:
+        return f"{int(seconds * MILLISECONDS_PER_SECOND)}ms"
+    if seconds < SECONDS_PER_MINUTE:
         return f"{seconds:.1f}s"
-    minutes = int(seconds // 60)
-    secs = int(seconds % 60)
+    minutes = int(seconds // SECONDS_PER_MINUTE)
+    secs = int(seconds % SECONDS_PER_MINUTE)
     return f"{minutes}m {secs}s"
 
 
@@ -219,8 +222,8 @@ def format_bytes(bytes_count: Optional[int]) -> str:
     size = float(bytes_count)
     unit_idx = 0
 
-    while size >= 1024 and unit_idx < len(units) - 1:
-        size /= 1024
+    while size >= BYTES_PER_KB and unit_idx < len(units) - 1:
+        size /= BYTES_PER_KB
         unit_idx += 1
 
     return f"{size:.1f} {units[unit_idx]}"

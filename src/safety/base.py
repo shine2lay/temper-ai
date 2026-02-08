@@ -6,6 +6,7 @@ short-circuit evaluation on critical violations.
 """
 from typing import Any, Dict, List
 
+from src.constants.limits import THRESHOLD_LARGE_COUNT, THRESHOLD_VERY_LARGE_COUNT, MAX_TEXT_LENGTH
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 
@@ -63,9 +64,9 @@ class BaseSafetyPolicy(SafetyPolicy):
             )
 
         # SECURITY: Validate config size to prevent DoS
-        if len(config) > 100:
+        if len(config) > THRESHOLD_LARGE_COUNT:
             raise ValueError(
-                f"config exceeds maximum size of 100 keys, got {len(config)}"
+                f"config exceeds maximum size of {THRESHOLD_LARGE_COUNT} keys, got {len(config)}"
             )
 
         # SECURITY: Validate all keys and values (prevent injection and DoS)
@@ -103,33 +104,33 @@ class BaseSafetyPolicy(SafetyPolicy):
                 raise ValueError(
                     f"config keys must be strings, got {type(key).__name__}: {key}"
                 )
-            if len(key) > 100:
+            if len(key) > THRESHOLD_LARGE_COUNT:
                 raise ValueError(
-                    f"config key exceeds 100 characters: {key[:20]}..."
+                    f"config key exceeds {THRESHOLD_LARGE_COUNT} characters: {key[:20]}..."
                 )
 
             # SECURITY: Recursively validate nested dicts (depth-bounded)
             if isinstance(value, dict):
-                if len(value) > 100:
+                if len(value) > THRESHOLD_LARGE_COUNT:
                     raise ValueError(
-                        f"config nested dict exceeds maximum size of 100 keys "
+                        f"config nested dict exceeds maximum size of {THRESHOLD_LARGE_COUNT} keys "
                         f"for key '{key}'"
                     )
                 cls._validate_config_dict(value, depth + 1)
 
             # SECURITY: Validate collection sizes
             elif isinstance(value, (list, tuple, set)):
-                if len(value) > 1000:
+                if len(value) > THRESHOLD_VERY_LARGE_COUNT:
                     raise ValueError(
-                        f"config list/tuple/set must have <= 1000 items, "
+                        f"config list/tuple/set must have <= {THRESHOLD_VERY_LARGE_COUNT} items, "
                         f"got {len(value)} for key '{key}'"
                     )
 
             # SECURITY: Validate string lengths
             elif isinstance(value, str):
-                if len(value) > 10_000:
+                if len(value) > MAX_TEXT_LENGTH:
                     raise ValueError(
-                        f"config string must be <= 10,000 chars, "
+                        f"config string must be <= {MAX_TEXT_LENGTH:,} chars, "
                         f"got {len(value)} for key '{key}'"
                     )
 

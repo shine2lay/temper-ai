@@ -30,8 +30,10 @@ from src.experimentation.models import (
     VariantAssignment,
     utcnow,
 )
+from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.validators import validate_experiment_name, validate_variant_list
 from src.utils.logging import get_logger
+from src.constants.limits import THRESHOLD_LARGE_COUNT
 
 logger = get_logger(__name__)
 
@@ -69,7 +71,7 @@ class ExperimentService(Service):
         return "experiment_service"
 
     # Maximum cached experiments to prevent unbounded memory growth
-    MAX_CACHE_SIZE = 1000
+    MAX_CACHE_SIZE = THRESHOLD_LARGE_COUNT
 
     def __init__(self, max_cache_size: int = MAX_CACHE_SIZE) -> None:
         """
@@ -108,8 +110,8 @@ class ExperimentService(Service):
         primary_metric: str = "duration_seconds",
         secondary_metrics: Optional[List[str]] = None,
         guardrail_metrics: Optional[List[Dict[str, Any]]] = None,
-        confidence_level: float = 0.95,
-        min_sample_size_per_variant: int = 100,
+        confidence_level: float = DEFAULT_CREDIBLE_LEVEL,
+        min_sample_size_per_variant: int = THRESHOLD_LARGE_COUNT,
         **kwargs: Any
     ) -> str:
         """

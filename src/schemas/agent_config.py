@@ -12,6 +12,29 @@ from typing import Any, ClassVar, Dict, FrozenSet, List, Literal, Optional, Unio
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.agents.constants import (
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_TOP_P,
+    MAX_EXECUTION_TIME_SECONDS,
+    MAX_PROMPT_LENGTH,
+    MAX_TOOL_CALLS_PER_EXECUTION,
+)
+from src.constants.durations import (
+    DAYS_90,
+    SECONDS_PER_MINUTE,
+)
+from src.constants.limits import (
+    DEFAULT_QUEUE_SIZE,
+    MEDIUM_ITEM_LIMIT,
+    MAX_TEXT_LENGTH,
+)
+from src.constants.probabilities import PROB_HIGH
+from src.constants.retries import (
+    DEFAULT_MAX_RETRIES,
+    SHORT_BACKOFF_SECONDS,
+)
+
 
 class InferenceConfig(BaseModel):
     """LLM inference configuration."""
@@ -28,12 +51,12 @@ class InferenceConfig(BaseModel):
         deprecated=True,
         description="DEPRECATED: Use api_key_ref with ${env:VAR_NAME} instead"
     )
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
-    max_tokens: int = Field(default=2048, gt=0)
-    top_p: float = Field(default=0.9, ge=0.0, le=1.0)
-    timeout_seconds: int = Field(default=60, gt=0)
-    max_retries: int = Field(default=3, ge=0)
-    retry_delay_seconds: int = Field(default=2, ge=0)
+    temperature: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
+    max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, gt=0)
+    top_p: float = Field(default=DEFAULT_TOP_P, ge=0.0, le=1.0)
+    timeout_seconds: int = Field(default=SECONDS_PER_MINUTE, gt=0)
+    max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0)
+    retry_delay_seconds: int = Field(default=int(SHORT_BACKOFF_SECONDS), ge=0)
 
     @model_validator(mode='after')
     def migrate_api_key(self) -> 'InferenceConfig':
@@ -61,10 +84,10 @@ class SafetyConfig(BaseModel):
     """Safety configuration."""
     mode: Literal["execute", "dry_run", "require_approval"] = "execute"
     require_approval_for_tools: List[str] = Field(default_factory=list)
-    max_tool_calls_per_execution: int = Field(default=20, gt=0)
-    max_execution_time_seconds: int = Field(default=300, gt=0)
-    max_prompt_length: int = Field(default=32_000, gt=0)
-    max_tool_result_size: int = Field(default=10_000, gt=0)
+    max_tool_calls_per_execution: int = Field(default=MAX_TOOL_CALLS_PER_EXECUTION, gt=0)
+    max_execution_time_seconds: int = Field(default=MAX_EXECUTION_TIME_SECONDS, gt=0)
+    max_prompt_length: int = Field(default=MAX_PROMPT_LENGTH, gt=0)
+    max_tool_result_size: int = Field(default=MAX_TEXT_LENGTH, gt=0)
     risk_level: Literal["low", "medium", "high"] = "medium"
 
 
@@ -75,12 +98,12 @@ class MemoryConfig(BaseModel):
     scope: Optional[Literal["session", "project", "cross_session", "permanent"]] = None
 
     # Vector memory config
-    retrieval_k: int = Field(default=10, gt=0)
-    relevance_threshold: float = Field(default=0.7, ge=0.0, le=1.0)
+    retrieval_k: int = Field(default=MEDIUM_ITEM_LIMIT, gt=0)
+    relevance_threshold: float = Field(default=PROB_HIGH, ge=0.0, le=1.0)
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
 
     # Episodic memory config
-    max_episodes: int = Field(default=1000, gt=0)
+    max_episodes: int = Field(default=DEFAULT_QUEUE_SIZE, gt=0)
     decay_factor: float = Field(default=0.95, ge=0.0, le=1.0)
 
     @model_validator(mode='after')
@@ -94,7 +117,7 @@ class MemoryConfig(BaseModel):
 class RetryConfig(BaseModel):
     """Retry strategy configuration."""
     initial_delay_seconds: int = Field(default=1, gt=0)
-    max_delay_seconds: int = Field(default=30, gt=0)
+    max_delay_seconds: int = Field(default=SECONDS_PER_MINUTE // 2, gt=0)
     exponential_base: float = Field(default=2.0, gt=1.0)
 
 
@@ -117,12 +140,12 @@ class ErrorHandlingConfig(BaseModel):
         default="ExponentialBackoff",
         description="Module reference (e.g., 'ExponentialBackoff')"
     )
-    max_retries: int = Field(default=3, ge=0)
+    max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0)
     fallback: str = Field(
         default="GracefulDegradation",
         description="Module reference (e.g., 'GracefulDegradation')"
     )
-    escalate_to_human_after: int = Field(default=3, gt=0)
+    escalate_to_human_after: int = Field(default=DEFAULT_MAX_RETRIES, gt=0)
     retry_config: RetryConfig = Field(default_factory=RetryConfig)
 
     @field_validator("retry_strategy")
@@ -154,7 +177,7 @@ class MeritTrackingConfig(BaseModel):
     track_decision_outcomes: bool = True
     domain_expertise: List[str] = Field(default_factory=list)
     decay_enabled: bool = True
-    half_life_days: int = Field(default=90, gt=0)
+    half_life_days: int = Field(default=DAYS_90, gt=0)
 
 
 class ObservabilityConfig(BaseModel):

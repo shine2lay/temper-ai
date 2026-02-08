@@ -9,6 +9,8 @@ from typing import Any, Dict, Optional, Tuple, Type, Union
 
 from pydantic import BaseModel, Field, ValidationError
 
+from src.constants.limits import MAX_LONG_STRING_LENGTH, MAX_TEXT_LENGTH
+
 logger = logging.getLogger(__name__)
 
 
@@ -480,7 +482,7 @@ class ParameterSanitizer:
         return str(normalized)
 
     # Maximum command length to prevent DoS
-    MAX_COMMAND_LENGTH = 1000
+    MAX_COMMAND_LENGTH = MAX_LONG_STRING_LENGTH
 
     @staticmethod
     def sanitize_command(
@@ -583,7 +585,7 @@ class ParameterSanitizer:
     @staticmethod
     def validate_string_length(
         value: str,
-        max_length: int = 10000,
+        max_length: int = MAX_TEXT_LENGTH,
         param_name: str = "parameter"
     ) -> str:
         """

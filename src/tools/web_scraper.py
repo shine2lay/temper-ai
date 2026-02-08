@@ -16,6 +16,20 @@ from bs4 import BeautifulSoup
 from pydantic import BaseModel, Field, field_validator
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from src.tools.constants import (
+    DEFAULT_WEB_TIMEOUT,
+    MAX_WEB_TIMEOUT,
+    MAX_CONTENT_SIZE as _MAX_CONTENT_SIZE,
+    DEFAULT_RATE_LIMIT as _DEFAULT_RATE_LIMIT,
+    RATE_LIMIT_WINDOW_SECONDS as _RATE_LIMIT_WINDOW_SECONDS,
+    MAX_REDIRECTS as _MAX_REDIRECTS,
+    URL_MIN_LENGTH as _URL_MIN_LENGTH,
+    URL_MAX_LENGTH as _URL_MAX_LENGTH,
+    USER_AGENT_MAX_LENGTH as _USER_AGENT_MAX_LENGTH,
+    DNS_RESOLUTION_TIMEOUT_SECONDS as _DNS_RESOLUTION_TIMEOUT_SECONDS,
+    DNS_CACHE_TTL_SECONDS as _DNS_CACHE_TTL_SECONDS,
+    DNS_CACHE_MAX_SIZE as _DNS_CACHE_MAX_SIZE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +56,12 @@ BLOCKED_NETWORKS: List[Union[ipaddress.IPv4Network, ipaddress.IPv6Network]] = [
 ]
 
 # DNS Security Configuration
-DNS_RESOLUTION_TIMEOUT_SECONDS = 2.0  # Prevents DNS timing attacks and DoS
-DNS_CACHE_TTL_SECONDS = 300  # 5 minutes - prevents DNS rebinding attacks
-DNS_CACHE_MAX_SIZE = 1000  # Limit cache size to prevent memory exhaustion
+DNS_RESOLUTION_TIMEOUT_SECONDS = _DNS_RESOLUTION_TIMEOUT_SECONDS
+DNS_CACHE_TTL_SECONDS = _DNS_CACHE_TTL_SECONDS
+DNS_CACHE_MAX_SIZE = _DNS_CACHE_MAX_SIZE
 
 # SSRF Redirect Protection
-MAX_REDIRECTS = 5  # Maximum number of redirects to follow
+MAX_REDIRECTS = _MAX_REDIRECTS
 
 
 class DNSCache:
@@ -304,23 +318,11 @@ class ScraperRateLimiter:
 
 
 # Validation constants for web scraper parameters
-# Rationale for URL length limits:
-# - Min 10 chars ensures valid URL (e.g., "http://a.b")
-# - Max 2000 chars prevents DoS while supporting long query strings
-URL_MIN_LENGTH = 10
-URL_MAX_LENGTH = 2000
-
-# Max timeout: 5 minutes prevents indefinite hangs while allowing slow endpoints
-# Typical use: Large files, slow APIs, or high-latency connections
-MAX_TIMEOUT_SECONDS = 300
-
-# User-Agent max length: 500 chars is reasonable for custom UA strings
-# Prevents header injection attacks and excessive memory usage
-USER_AGENT_MAX_LENGTH = 500
-
-# Rate limit time window: 60 seconds (1 minute) for request counting
-# Matches DEFAULT_RATE_LIMIT of 10 requests per minute
-RATE_LIMIT_WINDOW_SECONDS = 60
+URL_MIN_LENGTH = _URL_MIN_LENGTH
+URL_MAX_LENGTH = _URL_MAX_LENGTH
+MAX_TIMEOUT_SECONDS = MAX_WEB_TIMEOUT
+USER_AGENT_MAX_LENGTH = _USER_AGENT_MAX_LENGTH
+RATE_LIMIT_WINDOW_SECONDS = _RATE_LIMIT_WINDOW_SECONDS
 
 
 class WebScraperParams(BaseModel):
@@ -375,9 +377,9 @@ class WebScraper(BaseTool):
     - Maximum content size limit
     """
 
-    MAX_CONTENT_SIZE = 5 * 1024 * 1024  # 5MB limit
-    DEFAULT_TIMEOUT = 30  # seconds
-    DEFAULT_RATE_LIMIT = 10  # requests per minute
+    MAX_CONTENT_SIZE = _MAX_CONTENT_SIZE
+    DEFAULT_TIMEOUT = DEFAULT_WEB_TIMEOUT
+    DEFAULT_RATE_LIMIT = _DEFAULT_RATE_LIMIT
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize web scraper with rate limiter.

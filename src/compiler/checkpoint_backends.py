@@ -39,6 +39,8 @@ from typing import Any, Dict, List, Optional, cast
 logger = logging.getLogger(__name__)
 
 from src.compiler.domain_state import WorkflowDomainState
+from src.constants.durations import TIMEOUT_SHORT
+from src.constants.limits import MAX_SHORT_STRING_LENGTH
 from src.utils.exceptions import ConfigurationError, ErrorCode
 
 
@@ -277,8 +279,8 @@ class FileCheckpointBackend(CheckpointBackend):
             raise ValueError(f"{id_type} must be a non-empty string")
         if '\x00' in id_value:
             raise ValueError(f"{id_type} contains null bytes")
-        if len(id_value) > 255:
-            raise ValueError(f"{id_type} exceeds maximum length of 255 characters")
+        if len(id_value) > MAX_SHORT_STRING_LENGTH:
+            raise ValueError(f"{id_type} exceeds maximum length of {MAX_SHORT_STRING_LENGTH} characters")
         sanitized = re.sub(r'[^A-Za-z0-9_-]', '_', id_value)
         if not sanitized:
             raise ValueError(f"{id_type} contains no valid characters after sanitization")
@@ -575,8 +577,8 @@ class RedisCheckpointBackend(CheckpointBackend):
         self.redis_client = redis.from_url(
             redis_url,
             decode_responses=True,
-            socket_connect_timeout=5,
-            socket_timeout=5,
+            socket_connect_timeout=TIMEOUT_SHORT,
+            socket_timeout=TIMEOUT_SHORT,
         )
         self.ttl = ttl
 

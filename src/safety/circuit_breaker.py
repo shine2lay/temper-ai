@@ -32,6 +32,9 @@ import warnings
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional
 
+from src.constants.durations import TIMEOUT_LONG
+from src.constants.limits import MAX_SHORT_STRING_LENGTH, MULTIPLIER_SMALL, THRESHOLD_SMALL_COUNT
+
 # Re-export map for deprecated names from src.core.circuit_breaker
 _SHIM_EXPORTS = {
     "CircuitBreaker": "src.core.circuit_breaker",
@@ -248,9 +251,9 @@ class CircuitBreakerManager:
     def create_breaker(
         self,
         name: str,
-        failure_threshold: int = 5,
-        timeout_seconds: int = 60,
-        success_threshold: int = 2
+        failure_threshold: int = THRESHOLD_SMALL_COUNT,
+        timeout_seconds: int = TIMEOUT_LONG,
+        success_threshold: int = MULTIPLIER_SMALL
     ) -> _CircuitBreaker:
         """Create and register a circuit breaker.
 
@@ -268,8 +271,8 @@ class CircuitBreakerManager:
         """
         if not isinstance(name, str):
             raise ValueError(f"name must be a string, got {type(name).__name__}")
-        if not name or len(name) > 100:
-            raise ValueError(f"name must be 1-100 characters, got {len(name)}")
+        if not name or len(name) > MAX_SHORT_STRING_LENGTH:
+            raise ValueError(f"name must be 1-{MAX_SHORT_STRING_LENGTH} characters, got {len(name)}")
 
         with self._lock:
             if name in self._breakers:

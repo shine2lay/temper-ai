@@ -45,6 +45,19 @@ T = TypeVar('T')
 logger = logging.getLogger(__name__)
 
 # Import FrameworkException for proper exception hierarchy
+from src.constants.retries import (
+    CIRCUIT_BREAKER_FAILURE_THRESHOLD,
+    CIRCUIT_BREAKER_RESET_TIMEOUT,
+)
+from src.core.constants import (
+    MAX_CIRCUIT_BREAKER_NAME_LENGTH,
+    MAX_FAILURE_THRESHOLD,
+    MAX_SUCCESS_THRESHOLD,
+    MAX_TIMEOUT_SECONDS,
+    MIN_FAILURE_THRESHOLD,
+    MIN_SUCCESS_THRESHOLD,
+    MIN_TIMEOUT_SECONDS,
+)
 from src.utils.exceptions import FrameworkException
 
 # Cache exception class imports at module level to avoid per-call overhead (P-17)
@@ -103,9 +116,9 @@ CircuitBreakerState = CircuitState
 @dataclass
 class CircuitBreakerConfig:
     """Circuit breaker configuration."""
-    failure_threshold: int = 5
+    failure_threshold: int = CIRCUIT_BREAKER_FAILURE_THRESHOLD
     success_threshold: int = 2
-    timeout: int = 60  # seconds before trying half-open
+    timeout: int = CIRCUIT_BREAKER_RESET_TIMEOUT  # seconds before trying half-open
 
 
 class CircuitBreakerError(FrameworkException):
@@ -209,7 +222,7 @@ class CircuitBreaker:
             raise ValueError(
                 f"name must be a string, got {type(name).__name__}"
             )
-        if not name or len(name) > 100:
+        if not name or len(name) > MAX_CIRCUIT_BREAKER_NAME_LENGTH:
             raise ValueError(
                 f"name must be 1-100 characters, got {len(name)}"
             )
@@ -229,22 +242,22 @@ class CircuitBreaker:
             self.config = config
         else:
             # Apply defaults for any parameters not explicitly provided
-            ft = failure_threshold if failure_threshold is not None else 5
-            ts = timeout_seconds if timeout_seconds is not None else 60
+            ft = failure_threshold if failure_threshold is not None else CIRCUIT_BREAKER_FAILURE_THRESHOLD
+            ts = timeout_seconds if timeout_seconds is not None else CIRCUIT_BREAKER_RESET_TIMEOUT
             st = success_threshold if success_threshold is not None else 2
 
             # Validate individual params
-            if not isinstance(ft, int) or ft < 1 or ft > 1000:
+            if not isinstance(ft, int) or ft < MIN_FAILURE_THRESHOLD or ft > MAX_FAILURE_THRESHOLD:
                 raise ValueError(
-                    f"failure_threshold must be int 1-1000, got {ft}"
+                    f"failure_threshold must be int {MIN_FAILURE_THRESHOLD}-{MAX_FAILURE_THRESHOLD}, got {ft}"
                 )
-            if not isinstance(ts, int) or ts < 1 or ts > 86400:
+            if not isinstance(ts, int) or ts < MIN_TIMEOUT_SECONDS or ts > MAX_TIMEOUT_SECONDS:
                 raise ValueError(
-                    f"timeout_seconds must be int 1-86400, got {ts}"
+                    f"timeout_seconds must be int {MIN_TIMEOUT_SECONDS}-{MAX_TIMEOUT_SECONDS}, got {ts}"
                 )
-            if not isinstance(st, int) or st < 1 or st > 100:
+            if not isinstance(st, int) or st < MIN_SUCCESS_THRESHOLD or st > MAX_SUCCESS_THRESHOLD:
                 raise ValueError(
-                    f"success_threshold must be int 1-100, got {st}"
+                    f"success_threshold must be int {MIN_SUCCESS_THRESHOLD}-{MAX_SUCCESS_THRESHOLD}, got {st}"
                 )
             self.config = CircuitBreakerConfig(
                 failure_threshold=ft,

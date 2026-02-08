@@ -9,6 +9,11 @@ import operator
 from typing import Any, Dict
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from src.tools.constants import (
+    MAX_NESTING_DEPTH as _MAX_NESTING_DEPTH,
+    MAX_EXPONENT as _MAX_EXPONENT,
+    MAX_COLLECTION_SIZE,
+)
 
 # Safe operators allowed in expressions
 SAFE_OPERATORS = {
@@ -44,12 +49,10 @@ SAFE_FUNCTIONS = {
 }
 
 # Maximum nesting depth for lists/tuples to prevent DoS attacks
-# Example attack: [[[[[[[[[[1]]]]]]]]]] causes stack overflow
-MAX_NESTING_DEPTH = 10
+MAX_NESTING_DEPTH = _MAX_NESTING_DEPTH
 
 # Maximum exponent value to prevent CPU/memory exhaustion via ** operator
-# Example attack: 9**9**9**9 causes unbounded computation
-MAX_EXPONENT = 1000
+MAX_EXPONENT = _MAX_EXPONENT
 
 
 class Calculator(BaseTool):
@@ -253,15 +256,15 @@ class Calculator(BaseTool):
 
         elif isinstance(node, ast.List):  # List literal [1, 2, 3]
             # TO-08: Bound list size to prevent DoS via large literals
-            if len(node.elts) > 1000:
-                raise ValueError(f"List size {len(node.elts)} exceeds maximum of 1000")
+            if len(node.elts) > MAX_COLLECTION_SIZE:
+                raise ValueError(f"List size {len(node.elts)} exceeds maximum of {MAX_COLLECTION_SIZE}")
             # Increment depth for nested lists (prevents DoS via [[[[...]]]]])
             return [self._safe_eval(item, depth + 1) for item in node.elts]
 
         elif isinstance(node, ast.Tuple):  # Tuple literal (1, 2, 3)
             # TO-08: Bound tuple size to prevent DoS via large literals
-            if len(node.elts) > 1000:
-                raise ValueError(f"Tuple size {len(node.elts)} exceeds maximum of 1000")
+            if len(node.elts) > MAX_COLLECTION_SIZE:
+                raise ValueError(f"Tuple size {len(node.elts)} exceeds maximum of {MAX_COLLECTION_SIZE}")
             # Increment depth for nested tuples (prevents DoS via ((((...)))) )
             return tuple(self._safe_eval(item, depth + 1) for item in node.elts)
 

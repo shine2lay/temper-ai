@@ -9,6 +9,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from src.constants.durations import HOURS_PER_DAY
+from src.constants.limits import PERCENT_10, PERCENT_20, PERCENT_30
 from src.self_improvement.data_models import (
     AgentPerformanceProfile,
     ConfigDeployment,
@@ -27,9 +29,9 @@ class RegressionThresholds:
 
     def __init__(
         self,
-        quality_drop_pct: float = 10.0,
-        cost_increase_pct: float = 20.0,
-        speed_increase_pct: float = 30.0,
+        quality_drop_pct: float = float(PERCENT_10),
+        cost_increase_pct: float = float(PERCENT_20),
+        speed_increase_pct: float = float(PERCENT_30),
         min_executions: int = 20,
     ):
         """
@@ -80,7 +82,7 @@ class RollbackMonitor:
     def check_for_regression(
         self,
         agent_name: str,
-        window_hours: int = 24,
+        window_hours: int = HOURS_PER_DAY,
     ) -> Dict[str, Any]:
         """
         Check if agent has regressed after recent deployment.
@@ -179,7 +181,7 @@ class RollbackMonitor:
         Uses 24 hours of data ending at deployment time.
         """
         window_end = deployment.deployed_at
-        window_start = window_end - timedelta(hours=24)
+        window_start = window_end - timedelta(hours=HOURS_PER_DAY)
 
         # SI-05: Handle PerformanceDataError gracefully instead of letting
         # it propagate as an unhandled exception.
@@ -266,7 +268,7 @@ class RollbackMonitor:
     def monitor_all_agents(
         self,
         agent_names: list[str],
-        window_hours: int = 24,
+        window_hours: int = HOURS_PER_DAY,
     ) -> Dict[str, Dict[str, Any]]:
         """
         Monitor multiple agents for regressions.

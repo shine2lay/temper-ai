@@ -15,6 +15,7 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 
+from src.constants.durations import DURATION_INSTANT, SECONDS_PER_HOUR, SECONDS_PER_MINUTE
 from src.utils.exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)
@@ -96,7 +97,7 @@ class SlidingWindowRateLimiter:
             if len(timestamps) >= max_requests:
                 # Calculate retry-after (time until oldest request expires)
                 oldest_timestamp = timestamps[0]
-                retry_after = int((oldest_timestamp + timedelta(seconds=window_seconds) - now).total_seconds()) + 1
+                retry_after = int((oldest_timestamp + timedelta(seconds=window_seconds) - now).total_seconds()) + DURATION_INSTANT
 
                 logger.warning(
                     f"Rate limit exceeded: {limit_type}={identifier}, "
@@ -156,7 +157,7 @@ class SlidingWindowRateLimiter:
 
             return remaining, reset_after
 
-    def cleanup(self, older_than_seconds: int = 3600):
+    def cleanup(self, older_than_seconds: int = SECONDS_PER_HOUR):
         """Clean up old rate limit data.
 
         Removes limit data for identifiers with no recent requests.
@@ -223,17 +224,17 @@ class OAuthRateLimiter:
         # Define OAuth-specific limits
         self.limits = {
             # OAuth flow initiation
-            "oauth_init_ip": (10, 60),      # 10 per IP per minute
-            "oauth_init_user": (5, 60),     # 5 per user per minute
-            "oauth_init_global": (1000, 3600),  # 1000 global per hour
+            "oauth_init_ip": (10, SECONDS_PER_MINUTE),      # 10 per IP per minute
+            "oauth_init_user": (5, SECONDS_PER_MINUTE),     # 5 per user per minute
+            "oauth_init_global": (1000, SECONDS_PER_HOUR),  # 1000 global per hour
 
             # Token exchange
-            "token_exchange_ip": (5, 60),   # 5 per IP per minute
-            "token_exchange_global": (500, 3600),  # 500 global per hour
+            "token_exchange_ip": (5, SECONDS_PER_MINUTE),   # 5 per IP per minute
+            "token_exchange_global": (500, SECONDS_PER_HOUR),  # 500 global per hour
 
             # User info retrieval
-            "userinfo_user": (60, 60),      # 60 per user per minute
-            "userinfo_global": (5000, 3600),  # 5000 global per hour
+            "userinfo_user": (60, SECONDS_PER_MINUTE),      # 60 per user per minute
+            "userinfo_global": (5000, SECONDS_PER_HOUR),  # 5000 global per hour
         }
 
     def check_oauth_init(

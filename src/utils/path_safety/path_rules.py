@@ -13,6 +13,7 @@ import unicodedata
 from pathlib import Path
 from typing import List, Union
 
+from src.utils.constants import MAX_COMPONENT_LENGTH, MAX_PATH_LENGTH
 from src.utils.path_safety.exceptions import PathSafetyError
 from src.utils.path_safety.platform_detector import PlatformPathDetector
 
@@ -20,8 +21,8 @@ from src.utils.path_safety.platform_detector import PlatformPathDetector
 class PathValidationRules:
     """Core path validation rules and safety checks."""
 
-    MAX_PATH_LENGTH = 4096
-    MAX_COMPONENT_LENGTH = 255
+    MAX_PATH_LENGTH = MAX_PATH_LENGTH
+    MAX_COMPONENT_LENGTH = MAX_COMPONENT_LENGTH
 
     def __init__(
         self,

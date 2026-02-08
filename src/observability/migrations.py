@@ -11,6 +11,7 @@ from typing import Optional
 
 from sqlalchemy import text
 
+from src.constants.limits import DEFAULT_MIN_ITEMS
 from src.utils.exceptions import SecurityError
 
 from .database import DatabaseManager, get_database
@@ -73,7 +74,7 @@ def check_schema_version(db_manager: DatabaseManager) -> Optional[str]:
     try:
         with db_manager.session() as session:
             result = session.execute(
-                text("SELECT version FROM schema_version ORDER BY applied_at DESC LIMIT 1")
+                text(f"SELECT version FROM schema_version ORDER BY applied_at DESC LIMIT {DEFAULT_MIN_ITEMS}")
             )
             row = result.fetchone()
             return row[0] if row else None

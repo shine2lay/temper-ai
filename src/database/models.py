@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import JSON, CheckConstraint, ForeignKey, Index, String, UniqueConstraint
 from sqlmodel import Column, Field, Relationship, SQLModel
 
+from src.constants.sizes import BYTES_PER_MB
 from src.database.datetime_utils import utcnow
 from src.database.validators import validate_json_size
 
@@ -74,14 +75,14 @@ class WorkflowExecution(SQLModel, table=True):
         if "workflow_config_snapshot" in data:
             validate_json_size(
                 data["workflow_config_snapshot"],
-                max_mb=2.0,  # Workflows can be larger
+                max_bytes=2 * BYTES_PER_MB,  # Workflows can be larger
                 field_name="workflow_config_snapshot"
             )
 
         if "extra_metadata" in data and data["extra_metadata"]:
             validate_json_size(
                 data["extra_metadata"],
-                max_mb=0.5,
+                max_bytes=BYTES_PER_MB // 2,
                 field_name="extra_metadata"
             )
 
@@ -147,21 +148,21 @@ class StageExecution(SQLModel, table=True):
         if "stage_config_snapshot" in data:
             validate_json_size(
                 data["stage_config_snapshot"],
-                max_mb=1.0,
+                max_bytes=BYTES_PER_MB,
                 field_name="stage_config_snapshot"
             )
 
         if "input_data" in data and data["input_data"]:
             validate_json_size(
                 data["input_data"],
-                max_mb=0.5,
+                max_bytes=BYTES_PER_MB // 2,
                 field_name="input_data"
             )
 
         if "output_data" in data and data["output_data"]:
             validate_json_size(
                 data["output_data"],
-                max_mb=0.5,
+                max_bytes=BYTES_PER_MB // 2,
                 field_name="output_data"
             )
 
@@ -247,21 +248,21 @@ class AgentExecution(SQLModel, table=True):
         if "agent_config_snapshot" in data:
             validate_json_size(
                 data["agent_config_snapshot"],
-                max_mb=1.0,
+                max_bytes=BYTES_PER_MB,
                 field_name="agent_config_snapshot"
             )
 
         if "input_data" in data and data["input_data"]:
             validate_json_size(
                 data["input_data"],
-                max_mb=0.5,
+                max_bytes=BYTES_PER_MB // 2,
                 field_name="input_data"
             )
 
         if "output_data" in data and data["output_data"]:
             validate_json_size(
                 data["output_data"],
-                max_mb=0.5,
+                max_bytes=BYTES_PER_MB // 2,
                 field_name="output_data"
             )
 

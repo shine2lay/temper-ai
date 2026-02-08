@@ -7,6 +7,7 @@ the detected performance problem (quality, cost, speed).
 import copy
 from typing import List
 
+from src.constants.limits import SMALL_ITEM_LIMIT
 from src.self_improvement.model_registry import ModelMetadata, ModelRegistry
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
@@ -82,7 +83,7 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
 
         # Generate variants (2-4 models)
         variants = []
-        for model in candidates[:4]:  # Limit to 4 variants
+        for model in candidates[:SMALL_ITEM_LIMIT - 1]:  # Limit to 4 variants
             variant = copy.deepcopy(current_config)
             variant.inference["model"] = model.name
             variant.extra_metadata["strategy"] = self.name
@@ -206,7 +207,7 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         # Keep original order (diverse mix)
 
         # Return 2-4 candidates
-        return candidates[:4] if len(candidates) >= 4 else candidates
+        return candidates[:SMALL_ITEM_LIMIT - 1] if len(candidates) >= 4 else candidates
 
     def _quality_score(self, model: ModelMetadata) -> int:
         """

@@ -31,6 +31,8 @@ from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
+from src.constants.durations import SECONDS_PER_MINUTE
+from src.safety.constants import DEFAULT_APPROVAL_TIMEOUT_SECONDS
 from src.safety.interfaces import SafetyViolation
 
 
@@ -164,7 +166,7 @@ class ApprovalWorkflow:
 
     def __init__(
         self,
-        default_timeout_minutes: int = 60,
+        default_timeout_minutes: int = DEFAULT_APPROVAL_TIMEOUT_SECONDS // SECONDS_PER_MINUTE,
         auto_reject_on_timeout: bool = True,
         max_requests: int = MAX_REQUESTS,
         authorized_approvers: Optional[List[str]] = None,

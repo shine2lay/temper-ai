@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import JSON, DateTime, ForeignKey, Index, String
 from sqlmodel import Column, Field, Relationship, SQLModel
 
+from src.constants.limits import DEFAULT_BATCH_SIZE
 from src.database.datetime_utils import utcnow
 
 
@@ -32,7 +33,7 @@ class M5Experiment(SQLModel, table=True):
     status: str  # "running", "completed", "stopped", "failed"
     control_config: Dict[str, Any] = Field(sa_column=Column(JSON, nullable=False))
     variant_configs: List[Dict[str, Any]] = Field(sa_column=Column(JSON, nullable=False))
-    target_samples_per_variant: int = Field(default=50)
+    target_samples_per_variant: int = Field(default=DEFAULT_BATCH_SIZE)
     winner_variant_id: Optional[str] = None
     analysis_results: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
     proposal_id: Optional[str] = None

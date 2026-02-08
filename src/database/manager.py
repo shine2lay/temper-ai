@@ -12,6 +12,8 @@ from sqlalchemy.engine import Engine
 from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
+from src.constants.limits import SMALL_POOL_SIZE
+
 logger = logging.getLogger(__name__)
 
 
@@ -123,8 +125,8 @@ class DatabaseManager:
             # PostgreSQL settings
             engine = create_engine(
                 self.database_url,
-                pool_size=10,
-                max_overflow=20,
+                pool_size=SMALL_POOL_SIZE,
+                max_overflow=SMALL_POOL_SIZE * 2,
                 pool_pre_ping=True,
                 echo=False
             )

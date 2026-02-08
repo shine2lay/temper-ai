@@ -20,6 +20,10 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 from urllib.parse import unquote
 
+from src.constants.limits import DEFAULT_MAX_ITEMS
+from src.constants.probabilities import PROB_VERY_HIGH
+from src.constants.sizes import SIZE_10KB
+
 # Import secret detection for redaction
 detect_secret_patterns: Optional[Callable[[str], Tuple[bool, Optional[str]]]] = None
 SECRETS_AVAILABLE = False
@@ -76,7 +80,7 @@ _ZERO_WIDTH_CHARS = {
 }
 
 
-def _recursive_url_decode(text: str, max_depth: int = 3) -> str:
+def _recursive_url_decode(text: str, max_depth: int = DEFAULT_MAX_ITEMS) -> str:
     """
     Recursively URL decode with depth limit to prevent infinite loops.
 
@@ -150,7 +154,7 @@ def _sanitize_control_characters(text: str) -> str:
     return ''.join(sanitized_chars)
 
 
-def _sanitize_for_logging(text: str, max_length: int = 10000) -> str:
+def _sanitize_for_logging(text: str, max_length: int = SIZE_10KB) -> str:
     """
     Multi-layer sanitization for log injection prevention.
 
@@ -182,7 +186,7 @@ def _sanitize_for_logging(text: str, max_length: int = 10000) -> str:
 
     # LAYER 1: Recursive URL decode (FIRST - before any checks)
     # Handles %0A, %0D, and nested encoding like %252540A
-    text = _recursive_url_decode(text, max_depth=3)
+    text = _recursive_url_decode(text, max_depth=DEFAULT_MAX_ITEMS)
 
     # LAYER 2: Truncate if too long (EARLY - before expensive operations)
     # Prevents DoS via huge log messages
@@ -297,7 +301,7 @@ class SecretRedactingFormatter(logging.Formatter):
         # provides additional detection that may catch edge cases
         if SECRETS_AVAILABLE and detect_secret_patterns is not None:
             is_secret, confidence = detect_secret_patterns(text)
-            if is_secret and confidence and float(confidence) > 0.8:
+            if is_secret and confidence and float(confidence) > PROB_VERY_HIGH:
                 # High confidence secret detected - apply additional redaction
                 text = "***REDACTED***"
 

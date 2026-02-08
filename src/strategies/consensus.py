@@ -32,6 +32,7 @@ Example:
 
 from typing import Any, Dict, List
 
+from src.constants.probabilities import PROB_LOW_MEDIUM, PROB_MEDIUM
 from src.strategies.base import (
     AgentOutput,
     CollaborationStrategy,
@@ -110,7 +111,7 @@ class ConsensusStrategy(CollaborationStrategy):
 
         # Get config
         min_agents = config.get("min_agents", 1)
-        min_consensus = config.get("min_consensus", 0.51)  # >50%
+        min_consensus = config.get("min_consensus", PROB_MEDIUM + 0.01)  # >50% (0.51)
         tie_breaker = config.get("tie_breaker", "confidence")
 
         # Validate config
@@ -158,7 +159,7 @@ class ConsensusStrategy(CollaborationStrategy):
 
         if decision_support < min_consensus:
             # No clear majority - create conflict
-            conflicts = self.detect_conflicts(agent_outputs, threshold=0.3)
+            conflicts = self.detect_conflicts(agent_outputs, threshold=PROB_LOW_MEDIUM)
             return SynthesisResult(
                 decision=decision,  # Best effort decision
                 confidence=round(decision_support * WEAK_CONSENSUS_CONFIDENCE_PENALTY, 4),
@@ -186,7 +187,7 @@ class ConsensusStrategy(CollaborationStrategy):
         dissenters = [o.agent_name for o in agent_outputs if o.decision != decision]
 
         # Detect conflicts
-        conflicts = self.detect_conflicts(agent_outputs, threshold=0.3)
+        conflicts = self.detect_conflicts(agent_outputs, threshold=PROB_LOW_MEDIUM)
 
         # Build reasoning
         reasoning = self._build_reasoning(

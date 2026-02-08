@@ -19,6 +19,9 @@ import os
 from typing import List, Optional, Tuple
 from urllib.parse import urlparse, urlunparse
 
+# RFC 1035 maximum hostname length
+MAX_HOSTNAME_LENGTH = 253
+
 
 class CallbackURLValidator:
     """Validates OAuth callback URLs against whitelist.
@@ -41,9 +44,6 @@ class CallbackURLValidator:
 
     # SECURITY: Only allow http/https schemes (blocks javascript:, file:, data:, etc.)
     ALLOWED_SCHEMES = {'http', 'https'}
-
-    # RFC 1035 maximum hostname length
-    MAX_HOSTNAME_LENGTH = 253
 
     def __init__(self, allowed_urls: List[str], allow_localhost: bool = None):
         """Initialize validator with whitelist.

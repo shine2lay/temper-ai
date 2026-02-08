@@ -16,6 +16,7 @@ from src.agents.prompt_validation import (
     PromptRenderError,
     TemplateVariableValidator,
 )
+from src.cache.constants import DEFAULT_CACHE_SIZE
 
 
 class PromptEngine:
@@ -47,13 +48,13 @@ class PromptEngine:
     ALLOWED_TYPES = TemplateVariableValidator.ALLOWED_TYPES
     MAX_VAR_SIZE = TemplateVariableValidator.MAX_VAR_SIZE
 
-    def __init__(self, templates_dir: Optional[Union[str, Path]] = None, cache_size: int = 128):
+    def __init__(self, templates_dir: Optional[Union[str, Path]] = None, cache_size: int = DEFAULT_CACHE_SIZE):
         """
         Initialize prompt engine.
 
         Args:
             templates_dir: Directory for template files (defaults to configs/prompts)
-            cache_size: Maximum number of compiled templates to cache (default: 128)
+            cache_size: Maximum number of compiled templates to cache (default from cache constants)
         """
         if templates_dir is None:
             # Default to configs/prompts in project root

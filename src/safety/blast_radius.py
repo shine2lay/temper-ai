@@ -13,6 +13,19 @@ or malicious action could affect many resources.
 from typing import Any, Dict, List, Optional
 
 from src.safety.base import BaseSafetyPolicy
+from src.safety.constants import (
+    BLAST_RADIUS_PRIORITY,
+    DEFAULT_MAX_ENTITIES,
+    DEFAULT_MAX_FILES,
+    DEFAULT_MAX_LINES_PER_FILE,
+    DEFAULT_MAX_OPS_PER_MINUTE,
+    DEFAULT_MAX_TOTAL_LINES,
+    MAX_ENTITIES_UPPER_BOUND,
+    MAX_FILES_UPPER_BOUND,
+    MAX_LINES_UPPER_BOUND,
+    MAX_OPS_UPPER_BOUND,
+    MAX_TOTAL_LINES_UPPER_BOUND,
+)
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
 
@@ -41,12 +54,12 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
         ... )
     """
 
-    # Default limits
-    DEFAULT_MAX_FILES = 10
-    DEFAULT_MAX_LINES_PER_FILE = 500
-    DEFAULT_MAX_TOTAL_LINES = 2000
-    DEFAULT_MAX_ENTITIES = 100
-    DEFAULT_MAX_OPS_PER_MINUTE = 20
+    # Default limits (from safety constants)
+    DEFAULT_MAX_FILES = DEFAULT_MAX_FILES
+    DEFAULT_MAX_LINES_PER_FILE = DEFAULT_MAX_LINES_PER_FILE
+    DEFAULT_MAX_TOTAL_LINES = DEFAULT_MAX_TOTAL_LINES
+    DEFAULT_MAX_ENTITIES = DEFAULT_MAX_ENTITIES
+    DEFAULT_MAX_OPS_PER_MINUTE = DEFAULT_MAX_OPS_PER_MINUTE
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize blast radius policy with validated configuration.
@@ -72,35 +85,35 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
             self.config.get("max_files_per_operation", self.DEFAULT_MAX_FILES),
             "max_files_per_operation",
             min_value=1,
-            max_value=10000
+            max_value=MAX_FILES_UPPER_BOUND
         )
 
         self.max_lines_per_file = self._validate_positive_int(
             self.config.get("max_lines_per_file", self.DEFAULT_MAX_LINES_PER_FILE),
             "max_lines_per_file",
             min_value=1,
-            max_value=1000000
+            max_value=MAX_LINES_UPPER_BOUND
         )
 
         self.max_total_lines = self._validate_positive_int(
             self.config.get("max_total_lines", self.DEFAULT_MAX_TOTAL_LINES),
             "max_total_lines",
             min_value=1,
-            max_value=10000000
+            max_value=MAX_TOTAL_LINES_UPPER_BOUND
         )
 
         self.max_entities = self._validate_positive_int(
             self.config.get("max_entities_affected", self.DEFAULT_MAX_ENTITIES),
             "max_entities_affected",
             min_value=1,
-            max_value=100000
+            max_value=MAX_ENTITIES_UPPER_BOUND
         )
 
         self.max_ops_per_minute = self._validate_positive_int(
             self.config.get("max_operations_per_minute", self.DEFAULT_MAX_OPS_PER_MINUTE),
             "max_operations_per_minute",
             min_value=1,
-            max_value=1000
+            max_value=MAX_OPS_UPPER_BOUND
         )
 
         # Validate forbidden patterns

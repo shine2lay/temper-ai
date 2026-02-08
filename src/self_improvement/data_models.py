@@ -8,7 +8,17 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from src.constants.durations import DEFAULT_CACHE_TTL_SECONDS, DEFAULT_TIMEOUT_SECONDS
+from src.constants.probabilities import PROB_HIGH, PROB_VERY_HIGH_PLUS
+from src.constants.retries import (
+    DEFAULT_BACKOFF_MULTIPLIER,
+    DEFAULT_MAX_RETRIES,
+    MIN_BACKOFF_SECONDS,
+)
 from src.database.datetime_utils import utcnow
+
+# Configuration constants
+ZERO_EXAMPLES = 0
 
 
 @dataclass
@@ -125,9 +135,9 @@ class SIOptimizationConfig:
     inference: Dict[str, Any] = field(default_factory=lambda: {
         "provider": "ollama",
         "model": "llama3.1:8b",
-        "temperature": 0.7,
+        "temperature": PROB_HIGH,
         "max_tokens": 2048,
-        "top_p": 0.9,
+        "top_p": PROB_VERY_HIGH_PLUS,
         "base_url": None,
     })
 
@@ -135,7 +145,7 @@ class SIOptimizationConfig:
     prompt: Dict[str, Any] = field(default_factory=lambda: {
         "template": None,
         "include_examples": False,
-        "num_examples": 0,
+        "num_examples": ZERO_EXAMPLES,
         "include_reasoning_guide": False,
         "include_citations": False,
         "require_source_verification": False,
@@ -145,8 +155,8 @@ class SIOptimizationConfig:
     # Tool configuration
     tools: Dict[str, Any] = field(default_factory=lambda: {
         "enabled_tools": [],
-        "tool_timeout_seconds": 60,
-        "max_retries": 3,
+        "tool_timeout_seconds": DEFAULT_TIMEOUT_SECONDS,
+        "max_retries": DEFAULT_MAX_RETRIES,
         "safety_checks": True,
     })
 
@@ -154,14 +164,14 @@ class SIOptimizationConfig:
     caching: Dict[str, Any] = field(default_factory=lambda: {
         "enabled": False,
         "cache_type": "memory",
-        "ttl_seconds": 3600,
+        "ttl_seconds": DEFAULT_CACHE_TTL_SECONDS,
     })
 
     # Retry configuration
     retry: Dict[str, Any] = field(default_factory=lambda: {
-        "max_retries": 3,
-        "backoff_multiplier": 2,
-        "initial_delay_seconds": 1,
+        "max_retries": DEFAULT_MAX_RETRIES,
+        "backoff_multiplier": DEFAULT_BACKOFF_MULTIPLIER,
+        "initial_delay_seconds": MIN_BACKOFF_SECONDS,
     })
 
     # Metadata

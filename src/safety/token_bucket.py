@@ -18,6 +18,19 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
+from src.constants.durations import (
+    RATE_LIMIT_WINDOW_DAY,
+    RATE_LIMIT_WINDOW_HOUR,
+    RATE_LIMIT_WINDOW_MINUTE,
+    RATE_LIMIT_WINDOW_SECOND,
+    SECONDS_PER_DAY,
+)
+from src.constants.limits import PERCENT_10, PERCENT_100, THRESHOLD_MASSIVE_COUNT
+
+# Token bucket safety limits
+MAX_TOKENS_SAFETY_LIMIT = 1_000_000
+MAX_REFILL_RATE_SAFETY_LIMIT = 1_000_000
+
 
 def requires_lock(method: Callable) -> Callable:
     """Decorator to enforce that a method is called with the instance lock held.
@@ -92,9 +105,9 @@ class RateLimit:
             raise ValueError(
                 f"max_tokens must be positive, got {self.max_tokens}"
             )
-        if self.max_tokens > 1_000_000:
+        if self.max_tokens > MAX_TOKENS_SAFETY_LIMIT:
             raise ValueError(
-                f"max_tokens must be <= 1,000,000 (safety limit), got {self.max_tokens}"
+                f"max_tokens must be <= {MAX_TOKENS_SAFETY_LIMIT} (safety limit), got {self.max_tokens}"
             )
 
         # SECURITY: Validate refill_rate (must be positive, bounded)
@@ -111,9 +124,9 @@ class RateLimit:
             raise ValueError(
                 f"refill_rate must be positive, got {self.refill_rate}"
             )
-        if self.refill_rate > 1_000_000:
+        if self.refill_rate > MAX_REFILL_RATE_SAFETY_LIMIT:
             raise ValueError(
-                f"refill_rate must be <= 1,000,000 (safety limit), got {self.refill_rate}"
+                f"refill_rate must be <= {MAX_REFILL_RATE_SAFETY_LIMIT} (safety limit), got {self.refill_rate}"
             )
 
         # SECURITY: Validate refill_period
@@ -130,9 +143,9 @@ class RateLimit:
             raise ValueError(
                 f"refill_period must be positive, got {self.refill_period}"
             )
-        if self.refill_period > 86400:  # Max 24 hours
+        if self.refill_period > SECONDS_PER_DAY:
             raise ValueError(
-                f"refill_period must be <= 86400s (24h), got {self.refill_period}"
+                f"refill_period must be <= {SECONDS_PER_DAY}s (24h), got {self.refill_period}"
             )
 
         # SECURITY: Validate burst_size
@@ -357,7 +370,7 @@ class TokenBucket:
                 'refill_period': self.refill_period,
                 'burst_size': self.burst_size,
                 'time_since_last_refill': round(time.time() - self.last_refill, 2),
-                'fill_percentage': round((self.tokens / self.max_tokens) * 100, 1)
+                'fill_percentage': round((self.tokens / self.max_tokens) * PERCENT_100, 1)
             }
 
 
@@ -385,7 +398,7 @@ class TokenBucketManager:
         >>> wait = manager.get_wait_time('agent-123', 'deploy', 1)
     """
 
-    def __init__(self, max_buckets: int = 10000) -> None:
+    def __init__(self, max_buckets: int = THRESHOLD_MASSIVE_COUNT) -> None:
         """Initialize token bucket manager.
 
         Args:

@@ -36,6 +36,11 @@ from src.self_improvement.storage.experiment_models import (
     M5ExecutionResult,
     M5Experiment,
 )
+from src.constants.limits import DEFAULT_BATCH_SIZE
+from src.self_improvement.constants import (
+    DEFAULT_ALPHA,
+    MAX_CONCURRENT_EXPERIMENTS,
+)
 from src.utils.exceptions import FrameworkException
 
 logger = logging.getLogger(__name__)
@@ -203,7 +208,7 @@ class ExperimentOrchestrator:
         self,
         session: Session,
         statistical_analyzer: Optional[SIStatisticalAnalyzer] = None,
-        target_executions_per_variant: int = 50,
+        target_executions_per_variant: int = DEFAULT_BATCH_SIZE,
         session_factory: Optional[Callable[[], Any]] = None,
     ):
         """
@@ -233,7 +238,7 @@ class ExperimentOrchestrator:
         # Keep self.session for any external code that accesses it directly
         self.session = session
         self.statistical_analyzer = statistical_analyzer or SIStatisticalAnalyzer(
-            significance_level=0.05,
+            significance_level=DEFAULT_ALPHA,
             quality_weight=0.7,
             speed_weight=0.2,
             cost_weight=0.1
@@ -340,8 +345,8 @@ class ExperimentOrchestrator:
         # Validation
         if not variant_configs:
             raise ValueError("Must provide at least one variant configuration")
-        if len(variant_configs) > 3:
-            raise ValueError(f"Maximum 3 variants allowed, got {len(variant_configs)}")
+        if len(variant_configs) > MAX_CONCURRENT_EXPERIMENTS:
+            raise ValueError(f"Maximum {MAX_CONCURRENT_EXPERIMENTS} variants allowed, got {len(variant_configs)}")
 
         # Validate all configs have same agent_name
         all_configs = [control_config] + variant_configs

@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from typing import List, Optional, Union
 
+from src.utils.constants import MAX_COMPONENT_LENGTH, MAX_PATH_LENGTH
 from src.utils.path_safety.exceptions import PathSafetyError
 from src.utils.path_safety.path_rules import PathValidationRules
 from src.utils.path_safety.platform_detector import PlatformPathDetector
@@ -39,8 +40,8 @@ class PathSafetyValidator:
     """
 
     # Path length limits (conservative values for cross-platform safety)
-    MAX_PATH_LENGTH = 4096  # Typical Linux limit
-    MAX_COMPONENT_LENGTH = 255  # Typical filename length limit
+    MAX_PATH_LENGTH = MAX_PATH_LENGTH
+    MAX_COMPONENT_LENGTH = MAX_COMPONENT_LENGTH
 
     @staticmethod
     def _get_windows_system_paths() -> List[str]:

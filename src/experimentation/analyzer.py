@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np  # type: ignore[import-not-found]
 from scipy import stats  # type: ignore[import-untyped]
 
+from src.constants.probabilities import PROB_MEDIUM
+from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.models import (
     ExecutionStatus,
     Experiment,
@@ -33,7 +35,7 @@ class StatisticalAnalyzer:
         ...     print(f"Winner: {result.recommended_winner}")
     """
 
-    def __init__(self, confidence_level: float = 0.95, min_effect_size: float = 0.05):
+    def __init__(self, confidence_level: float = DEFAULT_CREDIBLE_LEVEL, min_effect_size: float = 0.05):
         """
         Initialize statistical analyzer.
 
@@ -386,7 +388,7 @@ class StatisticalAnalyzer:
             # Significant but effect size too small, or no winner found
             if significant_tests:
                 return (RecommendationType.STOP_NO_DIFFERENCE, None, confidence_level)
-            return (RecommendationType.CONTINUE, None, 0.5)
+            return (RecommendationType.CONTINUE, None, PROB_MEDIUM)
 
     def _inconclusive_result(self, reason: str) -> Dict[str, Any]:
         """Return inconclusive result."""

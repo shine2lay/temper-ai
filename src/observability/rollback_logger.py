@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 
+from src.constants.limits import VERY_LARGE_ITEM_LIMIT
 from src.database import DatabaseManager, get_database
 from src.database.models import RollbackEvent, RollbackSnapshotDB
 from src.observability.rollback_types import RollbackResult
@@ -120,7 +121,7 @@ def log_rollback_event(
 def get_rollback_events(
     snapshot_id: Optional[str] = None,
     trigger: Optional[str] = None,
-    limit: int = 100,
+    limit: int = VERY_LARGE_ITEM_LIMIT,
     db_manager: Optional[DatabaseManager] = None
 ) -> list[RollbackEvent]:
     """Query rollback events from database.
@@ -160,7 +161,7 @@ def get_rollback_events(
 
 def get_rollback_snapshots(
     workflow_execution_id: Optional[str] = None,
-    limit: int = 100,
+    limit: int = VERY_LARGE_ITEM_LIMIT,
     db_manager: Optional[DatabaseManager] = None
 ) -> list[RollbackSnapshotDB]:
     """Query rollback snapshots from database.

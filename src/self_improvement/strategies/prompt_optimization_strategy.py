@@ -7,6 +7,7 @@ and reasoning guides to improve LLM output quality.
 import copy
 from typing import Dict, List
 
+from src.constants.limits import SMALL_ITEM_LIMIT, MULTIPLIER_SMALL
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
     LearnedPattern,
@@ -126,7 +127,7 @@ Structure your response as follows:
         # Variant 4: Combined approach (specificity + format)
         # Only add if we generated at least one other variant
         if (
-            len(variants) >= 2
+            len(variants) >= MULTIPLIER_SMALL
             and self.SPECIFICITY_GUIDE not in current_system
             and self.FORMAT_GUIDE not in current_inline
         ):
@@ -144,7 +145,7 @@ Structure your response as follows:
             )
             variants.append(variant_combined)
 
-        return variants[:4]  # Limit to 4 variants max
+        return variants[:SMALL_ITEM_LIMIT - 1]  # Limit to 4 variants max
 
     def is_applicable(self, problem_type: str) -> bool:
         """Check if strategy applies to the problem.

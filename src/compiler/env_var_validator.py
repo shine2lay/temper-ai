@@ -19,6 +19,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, Optional, Pattern, Tuple
 
+from src.compiler.constants import MAX_ENV_VAR_SIZE
+
 
 class ValidationLevel(Enum):
     """Validation strictness levels based on variable usage context."""
@@ -337,7 +339,7 @@ class EnvVarValidator:
         var_name: str,
         value: str,
         context: Optional[ValidationLevel] = None,
-        max_length: int = 10 * 1024  # 10KB default
+        max_length: int = MAX_ENV_VAR_SIZE
     ) -> Tuple[bool, Optional[str]]:
         """
         Validate environment variable value with context-aware rules.

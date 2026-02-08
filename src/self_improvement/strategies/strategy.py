@@ -35,6 +35,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+from src.constants.durations import DAYS_90
+from src.constants.limits import DEFAULT_MIN_ITEMS, DEFAULT_MAX_ITEMS
+from src.constants.probabilities import PROB_VERY_HIGH
 from src.self_improvement.data_models import SIOptimizationConfig
 
 
@@ -238,8 +241,8 @@ class ImprovementStrategy(ABC):
             strategy_name=self.name,
             problem_type=problem_type,
             metric="composite_score",
-            min_confidence=0.80,
-            days_back=90
+            min_confidence=PROB_VERY_HIGH,
+            days_back=DAYS_90
         )
 
         # If no historical data, return base estimate
@@ -250,7 +253,7 @@ class ImprovementStrategy(ABC):
         sample_count = self.learning_store.get_sample_count(
             strategy_name=self.name,
             problem_type=problem_type,
-            days_back=90
+            days_back=DAYS_90
         )
 
         # Bayesian updating: weight historical average by sample size
@@ -261,7 +264,7 @@ class ImprovementStrategy(ABC):
         # where prior_weight is fixed at 10, and data_weight is sample_count
         #
         # This means we need ~10 samples before historical data dominates the estimate
-        prior_weight = 10.0
+        prior_weight = float(DEFAULT_MAX_ITEMS)
         data_weight = float(sample_count)
 
         weighted_estimate = (

@@ -6,6 +6,8 @@ Provides formatting utilities for LLM function calling tool schemas.
 import json
 from typing import Any, Dict, List
 
+from src.constants.limits import MULTIPLIER_SMALL
+
 
 class ToolSchemaFormatter:
     """Formats tool schemas for inclusion in prompts.
@@ -42,7 +44,7 @@ class ToolSchemaFormatter:
 
         if format_style == "json":
             # Pretty JSON format
-            return json.dumps(schemas, indent=2)
+            return json.dumps(schemas, indent=MULTIPLIER_SMALL)
 
         elif format_style == "list":
             # Simple list format: "- name: description"

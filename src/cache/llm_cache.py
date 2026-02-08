@@ -20,7 +20,10 @@ from dataclasses import asdict, dataclass
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.cache.constants import DEFAULT_CACHE_SIZE, DEFAULT_TTL_SECONDS
+from src.agents.constants import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
+from src.cache.constants import DEFAULT_CACHE_SIZE, DEFAULT_REDIS_DB, DEFAULT_REDIS_PORT, DEFAULT_TTL_SECONDS
+from src.constants.durations import TIMEOUT_VERY_SHORT, TTL_LONG
+from src.constants.limits import DEFAULT_BATCH_SIZE
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -256,7 +259,7 @@ class RedisCache(CacheBackend):
     Requires: redis package
     """
 
-    def __init__(self, host: str = "localhost", port: int = 6379, db: int = 0, password: Optional[str] = None):
+    def __init__(self, host: str = "localhost", port: int = DEFAULT_REDIS_PORT, db: int = DEFAULT_REDIS_DB, password: Optional[str] = None):
         """
         Initialize Redis cache.
 
@@ -306,8 +309,8 @@ class RedisCache(CacheBackend):
                 db=db,
                 password=redis_password,  # May be None for local dev
                 decode_responses=True,  # Return strings not bytes
-                socket_connect_timeout=5,
-                socket_timeout=5,
+                socket_connect_timeout=TIMEOUT_VERY_SHORT,
+                socket_timeout=TIMEOUT_VERY_SHORT,
             )
 
             # Test connection
@@ -357,7 +360,7 @@ class RedisCache(CacheBackend):
             return False
         # KeyboardInterrupt and SystemExit propagate automatically
 
-    def clear(self, pattern: str = "*", dry_run: bool = False, batch_size: int = 100) -> int:
+    def clear(self, pattern: str = "*", dry_run: bool = False, batch_size: int = DEFAULT_BATCH_SIZE) -> int:
         """
         Clear cache keys safely using SCAN.
 
@@ -493,8 +496,8 @@ class LLMCache:
         ttl: Optional[int] = DEFAULT_TTL_SECONDS,
         max_size: int = DEFAULT_CACHE_SIZE,
         redis_host: str = "localhost",
-        redis_port: int = 6379,
-        redis_db: int = 0,
+        redis_port: int = DEFAULT_REDIS_PORT,
+        redis_db: int = DEFAULT_REDIS_DB,
         redis_password: Optional[str] = None
     ):
         """
@@ -535,8 +538,8 @@ class LLMCache:
         self,
         model: str,
         prompt: str,
-        temperature: float = 0.7,
-        max_tokens: int = 2048,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         user_id: Optional[str] = None,
         tenant_id: Optional[str] = None,
         session_id: Optional[str] = None,
@@ -722,7 +725,7 @@ class LLMCache:
         """
         try:
             # M-17: Guard against None TTL to prevent Redis crash
-            ttl_value = self.ttl if self.ttl is not None else 3600  # Default 1 hour
+            ttl_value = self.ttl if self.ttl is not None else TTL_LONG  # Default 1 hour
             success = self._backend.set(key, value, ttl=ttl_value)
 
             if success:

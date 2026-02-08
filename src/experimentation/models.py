@@ -16,6 +16,8 @@ from sqlalchemy import JSON, DateTime, ForeignKey, String, func
 from sqlmodel import Column, Field, Index, Relationship, SQLModel
 
 from src.database.datetime_utils import utcnow
+from src.constants.probabilities import PROB_NEAR_CERTAIN, FRACTION_HALF
+from src.constants.limits import THRESHOLD_LARGE_COUNT
 
 
 # Enum types for type safety
@@ -120,8 +122,8 @@ class Experiment(SQLModel, table=True):
     guardrail_metrics: Optional[List[Dict[str, Any]]] = Field(default=None, sa_column=Column(JSON))
 
     # Statistical settings
-    confidence_level: float = Field(default=0.95)
-    min_sample_size_per_variant: int = Field(default=100)
+    confidence_level: float = Field(default=PROB_NEAR_CERTAIN)
+    min_sample_size_per_variant: int = Field(default=THRESHOLD_LARGE_COUNT)
 
     # Results (cached)
     winner_variant_id: Optional[str] = None
@@ -198,7 +200,7 @@ class Variant(SQLModel, table=True):
     config_overrides: Dict[str, Any] = Field(sa_column=Column(JSON))
 
     # Traffic allocation
-    allocated_traffic: float = Field(default=0.5)
+    allocated_traffic: float = Field(default=FRACTION_HALF)
     actual_traffic: float = Field(default=0.0)
 
     # Metrics (cached aggregates)

@@ -8,6 +8,7 @@ from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryPr
 from src.compiler.executors.base import StageExecutor
 from src.compiler.executors.parallel import ParallelStageExecutor
 from src.compiler.executors.sequential import SequentialStageExecutor
+from src.constants.probabilities import PROB_MEDIUM
 
 
 class AdaptiveStageExecutor(StageExecutor):
@@ -72,8 +73,8 @@ class AdaptiveStageExecutor(StageExecutor):
         execution_config = stage_dict.get("execution", {})
         adaptive_config = execution_config.get("adaptive_config", {})
 
-        # Get threshold (default: 0.5 = 50% disagreement)
-        disagreement_threshold = adaptive_config.get("disagreement_threshold", 0.5)
+        # Get threshold (default: 50% disagreement)
+        disagreement_threshold = adaptive_config.get("disagreement_threshold", PROB_MEDIUM)
 
         # Track mode switch metadata
         mode_switch_metadata = {

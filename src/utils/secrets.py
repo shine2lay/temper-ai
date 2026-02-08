@@ -19,6 +19,8 @@ from typing import Any, Optional, Tuple
 
 from cryptography.fernet import Fernet
 
+from src.constants.sizes import SIZE_10KB
+
 __all__ = [
     # Secret resolution
     'SecretReference',
@@ -204,10 +206,10 @@ class SecretReference:
             raise ValueError(f"Secret '{name}' is empty")
 
         # Check for excessively long values (likely misconfiguration)
-        if len(value) > 10 * 1024:  # 10KB
+        if len(value) > SIZE_10KB:
             raise ValueError(
                 f"Secret '{name}' is too long ({len(value)} bytes). "
-                "Maximum 10KB allowed."
+                f"Maximum {SIZE_10KB} bytes allowed."
             )
 
         # Check for null bytes (security risk)
@@ -431,11 +433,10 @@ def detect_secret_patterns(text: str) -> Tuple[bool, Optional[str]]:
         (False, None)
     """
     # SECURITY: Input length validation (Defense in Depth against ReDoS)
-    max_input_length = 10 * 1024  # 10KB
-    if len(text) > max_input_length:
+    if len(text) > SIZE_10KB:
         raise ValueError(
             f"Input too long for secret detection ({len(text)} bytes). "
-            f"Maximum {max_input_length} bytes allowed. "
+            f"Maximum {SIZE_10KB} bytes allowed. "
             "This protects against ReDoS attacks."
         )
 

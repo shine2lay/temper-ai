@@ -25,8 +25,68 @@ from typing import Any, Dict, List, Optional
 
 import psutil  # type: ignore[import-untyped]
 
+from src.constants.durations import SECONDS_PER_HOUR, SLEEP_VERY_SHORT, TIMEOUT_MEDIUM
+from src.constants.limits import (
+    DEFAULT_MAX_WORKERS,
+    MAX_WORKERS,
+    MIN_POSITIVE_VALUE,
+    MIN_WORKERS,
+    MULTIPLIER_LARGE,
+    MULTIPLIER_MEDIUM,
+    PERCENT_20,
+    PERCENT_80,
+)
+from src.constants.probabilities import FRACTION_QUARTER
+from src.constants.sizes import (
+    BYTES_PER_GB,
+    BYTES_PER_KB,
+    BYTES_PER_MB,
+    BYTES_PER_TB,
+    SIZE_10MB,
+    SIZE_100MB,
+    SIZE_1GB,
+)
 from src.safety.base import BaseSafetyPolicy
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
+
+# File size validation limits
+MIN_FILE_SIZE = MIN_WORKERS  # Minimum file size in bytes (prevents negative/zero)
+MAX_FILE_SIZE_READ = 10 * BYTES_PER_GB  # 10GB maximum for read operations
+MAX_FILE_SIZE_WRITE = SIZE_1GB  # 1GB maximum for write operations
+
+# Memory validation limits
+MIN_MEMORY_SIZE = MIN_WORKERS  # Minimum memory size in bytes (prevents negative/zero)
+MAX_MEMORY_SIZE = 8 * BYTES_PER_GB  # 8GB maximum memory per operation
+
+# Disk space limits
+MIN_FREE_DISK_SPACE = SIZE_1GB  # 1GB minimum free disk space required
+MAX_FREE_DISK_SPACE = BYTES_PER_TB  # 1TB maximum disk space limit
+
+# Worker process limits
+MIN_WORKER_PROCESSES = MIN_WORKERS  # Minimum number of worker processes
+MAX_WORKER_PROCESSES = MAX_WORKERS  # Maximum number of worker processes
+
+# CPU time limits
+MIN_CPU_TIME = MIN_POSITIVE_VALUE  # 1ms minimum (prevents zero/negative, allows testing)
+MAX_CPU_TIME = float(SECONDS_PER_HOUR)  # 1 hour maximum CPU time
+
+# Disk space safety margin
+DISK_SPACE_SAFETY_MARGIN = 1.0 + FRACTION_QUARTER - 0.05  # 1.2 = 20% safety margin to prevent TOCTOU race conditions
+DISK_SPACE_SAFETY_MARGIN_PERCENT = PERCENT_20  # 20% safety margin percentage for metadata
+
+# HTTP connection pool limits
+DEFAULT_MAX_HTTP_CONNECTIONS = DEFAULT_MAX_WORKERS
+DEFAULT_MAX_KEEPALIVE_CONNECTIONS = PERCENT_20
+DEFAULT_KEEPALIVE_EXPIRY_SECONDS = float(TIMEOUT_MEDIUM)
+
+# Byte size formatting (converted to float for division operations)
+BYTES_PER_KB_FLOAT = float(BYTES_PER_KB)
+BYTES_PER_MB_FLOAT = float(BYTES_PER_MB)
+BYTES_PER_GB_FLOAT = float(BYTES_PER_GB)
+BYTES_PER_TB_FLOAT = float(BYTES_PER_TB)
+
+# CPU sampling
+CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT  # Interval for CPU usage sampling
 
 
 class ResourceLimitPolicy(BaseSafetyPolicy):
@@ -58,11 +118,11 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
     """
 
     # Default limits (conservative defaults for safety)
-    DEFAULT_MAX_FILE_SIZE_READ = 100 * 1024 * 1024  # 100MB
-    DEFAULT_MAX_FILE_SIZE_WRITE = 10 * 1024 * 1024  # 10MB
-    DEFAULT_MAX_MEMORY_PER_OPERATION = 500 * 1024 * 1024  # 500MB
-    DEFAULT_MAX_CPU_TIME = 30.0  # 30 seconds
-    DEFAULT_MIN_FREE_DISK_SPACE = 1024 * 1024 * 1024  # 1GB
+    DEFAULT_MAX_FILE_SIZE_READ = SIZE_100MB  # 100MB
+    DEFAULT_MAX_FILE_SIZE_WRITE = SIZE_10MB  # 10MB
+    DEFAULT_MAX_MEMORY_PER_OPERATION = (MULTIPLIER_LARGE * 5) * BYTES_PER_MB  # 500MB
+    DEFAULT_MAX_CPU_TIME = float(TIMEOUT_MEDIUM)  # 30 seconds
+    DEFAULT_MIN_FREE_DISK_SPACE = SIZE_1GB  # 1GB
 
     # Map action types to resource checks
     FILE_READ_OPERATIONS = {
@@ -198,24 +258,24 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         self.max_file_size_read = self._validate_size(
             "max_file_size_read",
             self.config.get("max_file_size_read", self.DEFAULT_MAX_FILE_SIZE_READ),
-            min_value=1,  # 1 byte minimum (prevents negative/zero)
-            max_value=10 * 1024**3,  # 10GB maximum (safety limit)
+            min_value=MIN_FILE_SIZE,
+            max_value=MAX_FILE_SIZE_READ,
             default=self.DEFAULT_MAX_FILE_SIZE_READ
         )
 
         self.max_file_size_write = self._validate_size(
             "max_file_size_write",
             self.config.get("max_file_size_write", self.DEFAULT_MAX_FILE_SIZE_WRITE),
-            min_value=1,  # 1 byte minimum (prevents negative/zero)
-            max_value=1024**3,  # 1GB maximum (safety limit)
+            min_value=MIN_FILE_SIZE,
+            max_value=MAX_FILE_SIZE_WRITE,
             default=self.DEFAULT_MAX_FILE_SIZE_WRITE
         )
 
         self.max_memory_per_operation = self._validate_size(
             "max_memory_per_operation",
             self.config.get("max_memory_per_operation", self.DEFAULT_MAX_MEMORY_PER_OPERATION),
-            min_value=1,  # 1 byte minimum (prevents negative/zero, allows testing)
-            max_value=8 * 1024**3,  # 8GB maximum (safety limit)
+            min_value=MIN_MEMORY_SIZE,
+            max_value=MAX_MEMORY_SIZE,
             default=self.DEFAULT_MAX_MEMORY_PER_OPERATION
         )
 
@@ -223,8 +283,8 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         self.max_cpu_time = self._validate_time(
             "max_cpu_time",
             self.config.get("max_cpu_time", self.DEFAULT_MAX_CPU_TIME),
-            min_value=0.001,  # 1ms minimum (prevents zero/negative, allows testing)
-            max_value=3600.0,  # 1 hour maximum
+            min_value=MIN_CPU_TIME,
+            max_value=MAX_CPU_TIME,
             default=self.DEFAULT_MAX_CPU_TIME
         )
 
@@ -232,8 +292,8 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         self.min_free_disk_space = self._validate_size(
             "min_free_disk_space",
             self.config.get("min_free_disk_space", self.DEFAULT_MIN_FREE_DISK_SPACE),
-            min_value=1,  # 1 byte minimum (prevents negative/zero, allows testing)
-            max_value=1024**4,  # 1TB maximum
+            min_value=MIN_MEMORY_SIZE,
+            max_value=MAX_FREE_DISK_SPACE,
             default=self.DEFAULT_MIN_FREE_DISK_SPACE
         )
 
@@ -271,7 +331,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
         Resource limiting has high priority to prevent system exhaustion.
         """
-        return 80
+        return PERCENT_80
 
     def _validate_impl(
         self,
@@ -421,14 +481,13 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             # - Other processes writing to disk between check and write
             # - File system metadata overhead
             # - Buffer space needed for atomic writes
-            safety_margin = 1.2
-            required_space_with_margin = int(self.min_free_disk_space * safety_margin)
+            required_space_with_margin = int(self.min_free_disk_space * DISK_SPACE_SAFETY_MARGIN)
 
             if free_space < required_space_with_margin:
                 return SafetyViolation(
                     policy_name=self.name,
                     severity=ViolationSeverity.CRITICAL,
-                    message=f"Insufficient disk space: {self._format_bytes(free_space)} < {self._format_bytes(required_space_with_margin)} required (includes 20% safety margin)",
+                    message=f"Insufficient disk space: {self._format_bytes(free_space)} < {self._format_bytes(required_space_with_margin)} required (includes {DISK_SPACE_SAFETY_MARGIN_PERCENT}% safety margin)",
                     action="file_write",
                     context=context,
                     remediation_hint="Free up disk space or reduce min_free_disk_space requirement",
@@ -437,7 +496,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
                         "free_space": free_space,
                         "required_space_base": self.min_free_disk_space,
                         "required_space_with_margin": required_space_with_margin,
-                        "safety_margin_percent": 20,
+                        "safety_margin_percent": DISK_SPACE_SAFETY_MARGIN_PERCENT,
                         "total_space": disk_usage.total,
                         "used_space": disk_usage.used,
                         "disk_usage_percent": disk_usage.percent
@@ -614,7 +673,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
         # CPU usage (requires time to sample)
         try:
-            cpu_percent = psutil.cpu_percent(interval=0.1)
+            cpu_percent = psutil.cpu_percent(interval=CPU_SAMPLE_INTERVAL_SECONDS)
             usage["cpu"] = {
                 "percent": cpu_percent,
                 "count": psutil.cpu_count()
@@ -635,7 +694,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         """
         size: float = float(size_bytes)
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if size < 1024.0:
+            if size < BYTES_PER_KB_FLOAT:
                 return f"{size:.1f} {unit}"
-            size /= 1024.0
+            size /= BYTES_PER_KB_FLOAT
         return f"{size:.1f} PB"

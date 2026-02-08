@@ -12,6 +12,16 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict
 if TYPE_CHECKING:
     from src.schemas import AgentConfig
 from src.core.context import ExecutionContext  # canonical definition; re-exported here
+from src.agents.constants import (
+    BASE_CONFIDENCE,
+    REASONING_BONUS,
+    TOOL_FAILURE_MAJOR_PENALTY,
+    TOOL_FAILURE_MINOR_PENALTY,
+    MIN_OUTPUT_LENGTH,
+    MIN_REASONING_LENGTH,
+)
+from src.constants.probabilities import CONFIDENCE_LOW, CONFIDENCE_MEDIUM, PROB_MEDIUM
+from src.constants.limits import THRESHOLD_MIN_COUNT, THRESHOLD_SMALL_COUNT
 
 
 class ToolCallRecord(TypedDict):
@@ -76,21 +86,20 @@ class AgentResponse:
         Returns:
             Confidence score between 0.0 and 1.0
         """
-        # Start with base confidence
-        confidence = 1.0
+        confidence = BASE_CONFIDENCE
 
         # Major penalty for errors
         if self.error:
-            confidence = 0.3
+            confidence = CONFIDENCE_LOW
             return confidence
 
         # Penalty for very short outputs (likely incomplete)
-        if len(self.output.strip()) < 10:
-            confidence -= 0.3
+        if len(self.output.strip()) < MIN_OUTPUT_LENGTH:
+            confidence -= CONFIDENCE_LOW
 
         # Bonus for reasoning (shows thoughtful response)
-        if self.reasoning and len(self.reasoning.strip()) > 20:
-            confidence = min(1.0, confidence + 0.1)
+        if self.reasoning and len(self.reasoning.strip()) > MIN_REASONING_LENGTH:
+            confidence = min(BASE_CONFIDENCE, confidence + REASONING_BONUS)
 
         # Check tool call success rate
         if self.tool_calls:
@@ -99,13 +108,13 @@ class AgentResponse:
             if total_calls > 0:
                 tool_success_rate = successful_calls / total_calls
                 # Penalize if tools failed
-                if tool_success_rate < 0.5:
-                    confidence -= 0.2
-                elif tool_success_rate < 1.0:
-                    confidence -= 0.1
+                if tool_success_rate < PROB_MEDIUM:
+                    confidence -= TOOL_FAILURE_MAJOR_PENALTY
+                elif tool_success_rate < BASE_CONFIDENCE:
+                    confidence -= TOOL_FAILURE_MINOR_PENALTY
 
         # Clamp to valid range
-        return max(0.0, min(1.0, confidence))
+        return max(0.0, min(BASE_CONFIDENCE, confidence))
 
 
 class BaseAgent(ABC):

@@ -5,6 +5,7 @@ config/model_pricing.yaml.
 """
 from typing import TYPE_CHECKING
 
+from src.agents.constants import DEFAULT_INPUT_TOKEN_RATIO, DEFAULT_OUTPUT_TOKEN_RATIO
 from src.agents.pricing import get_pricing_manager
 
 if TYPE_CHECKING:
@@ -38,7 +39,7 @@ def estimate_cost(llm_response: "LLMResponse", fallback_model: str = "unknown") 
     if input_tokens == 0 and output_tokens == 0 and llm_response.total_tokens:
         # Rough estimate: assume 60% input, 40% output (typical for agent interactions)
         total = llm_response.total_tokens
-        input_tokens = int(total * 0.6)
-        output_tokens = int(total * 0.4)
+        input_tokens = int(total * DEFAULT_INPUT_TOKEN_RATIO)
+        output_tokens = int(total * DEFAULT_OUTPUT_TOKEN_RATIO)
 
     return pricing.get_cost(model, input_tokens, output_tokens)

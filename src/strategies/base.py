@@ -39,6 +39,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from src.constants.probabilities import PROB_LOW_MEDIUM
+
 
 class SynthesisMethod(Enum):
     """Methods for combining agent outputs.
@@ -349,7 +351,7 @@ class CollaborationStrategy(ABC):
     def detect_conflicts(
         self,
         agent_outputs: List[AgentOutput],
-        threshold: float = 0.3
+        threshold: float = PROB_LOW_MEDIUM
     ) -> List[Conflict]:
         """Detect conflicts between agent decisions.
 

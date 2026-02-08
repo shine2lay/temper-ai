@@ -9,6 +9,7 @@ Generates configuration variants for improving ERC721 code generation:
 import copy
 from typing import Dict, List
 
+from src.constants.probabilities import PROB_MINIMAL, FRACTION_HALF
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
     LearnedPattern,
@@ -98,7 +99,7 @@ contract MyNFT is ERC721, Ownable {
         variant_temp = copy.deepcopy(current_config)
         current_temp = variant_temp.inference.get("temperature", 0.7)
         # Reduce by 50%, minimum 0.05
-        new_temp = max(0.05, current_temp * 0.5)
+        new_temp = max(PROB_MINIMAL, current_temp * FRACTION_HALF)
         variant_temp.inference["temperature"] = round(new_temp, 2)
         variant_temp.extra_metadata["strategy"] = self.name
         variant_temp.extra_metadata["variant_type"] = "lower_temperature"

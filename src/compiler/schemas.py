@@ -12,6 +12,29 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.constants.durations import (
+    SECONDS_PER_10_MINUTES,
+    SECONDS_PER_HOUR,
+    SECONDS_PER_MINUTE,
+    SECONDS_PER_5_MINUTES,
+    SECONDS_PER_WEEK,
+)
+from src.constants.limits import (
+    DEFAULT_MAX_ITEMS,
+    DEFAULT_MIN_ITEMS,
+    DEFAULT_QUEUE_SIZE,
+    MEDIUM_ITEM_LIMIT,
+    SMALL_ITEM_LIMIT,
+    SMALL_QUEUE_SIZE,
+)
+from src.constants.probabilities import (
+    PROB_CRITICAL,
+    PROB_HIGH,
+    PROB_MEDIUM,
+    PROB_VERY_HIGH,
+)
+from src.constants.retries import DEFAULT_MAX_RETRIES, MIN_RETRY_ATTEMPTS
+
 # ============================================
 # AGENT CONFIGURATION SCHEMAS (re-exported from src.schemas.agent_config)
 # ============================================
@@ -63,16 +86,16 @@ class SafetyCheck(BaseModel):
 
 class RateLimits(BaseModel):
     """Rate limiting configuration."""
-    max_calls_per_minute: int = Field(default=100, gt=0)
-    max_calls_per_hour: int = Field(default=1000, gt=0)
-    max_concurrent_requests: int = Field(default=10, gt=0)
-    cooldown_on_failure_seconds: int = Field(default=60, ge=0)
+    max_calls_per_minute: int = Field(default=SMALL_QUEUE_SIZE, gt=0)
+    max_calls_per_hour: int = Field(default=DEFAULT_QUEUE_SIZE, gt=0)
+    max_concurrent_requests: int = Field(default=MEDIUM_ITEM_LIMIT, gt=0)
+    cooldown_on_failure_seconds: int = Field(default=SECONDS_PER_MINUTE, ge=0)
 
 
 class ToolErrorHandlingConfig(BaseModel):
     """Tool error handling configuration."""
     retry_on_status_codes: List[int] = Field(default_factory=list)
-    max_retries: int = Field(default=3, ge=0)
+    max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0)
     backoff_strategy: str = "ExponentialBackoff"
     timeout_is_retry: bool = False
 
@@ -122,15 +145,15 @@ class ToolConfig(BaseModel):
 class StageExecutionConfig(BaseModel):
     """Stage execution configuration."""
     agent_mode: Literal["parallel", "sequential", "adaptive"] = "parallel"
-    timeout_seconds: int = Field(default=600, gt=0)
+    timeout_seconds: int = Field(default=SECONDS_PER_10_MINUTES, gt=0)
     adaptive_config: Dict[str, Any] = Field(default_factory=dict)
 
 
 class CollaborationConfig(BaseModel):
     """Collaboration configuration."""
     strategy: str  # Module reference
-    max_rounds: int = Field(default=3, gt=0)
-    convergence_threshold: float = Field(default=0.8, ge=0.0, le=1.0)
+    max_rounds: int = Field(default=DEFAULT_MAX_RETRIES, gt=0)
+    convergence_threshold: float = Field(default=PROB_VERY_HIGH, ge=0.0, le=1.0)
     config: Dict[str, Any] = Field(default_factory=dict)
 
     @field_validator('strategy')
@@ -142,7 +165,7 @@ class CollaborationConfig(BaseModel):
     # Dialogue-specific fields (Phase 1: Dialogue Orchestrator)
     # All fields optional for backward compatibility
     max_dialogue_rounds: Optional[int] = Field(
-        default=3,
+        default=DEFAULT_MAX_RETRIES,
         gt=0,
         description="Maximum number of dialogue rounds"
     )
@@ -160,7 +183,7 @@ class CollaborationConfig(BaseModel):
         description="Agent role assignments (e.g., {'agent1': 'proposer', 'agent2': 'critic'})"
     )
     context_window_rounds: Optional[int] = Field(
-        default=2,
+        default=MIN_RETRY_ATTEMPTS + 1,
         gt=0,
         description="Number of recent rounds to keep in full context"
     )
@@ -202,13 +225,13 @@ class ConflictResolutionConfig(BaseModel):
         description="Custom weights for metrics (defaults to equal weights)"
     )
     auto_resolve_threshold: float = Field(
-        default=0.85,
+        default=PROB_CRITICAL,
         ge=0.0,
         le=1.0,
         description="Auto-resolve if winning decision has >= this weighted support"
     )
     escalation_threshold: float = Field(
-        default=0.50,
+        default=PROB_MEDIUM,
         ge=0.0,
         le=1.0,
         description="Escalate if no decision has >= this support"
@@ -266,20 +289,20 @@ class StageSafetyConfig(BaseModel):
 class StageErrorHandlingConfig(BaseModel):
     """Stage error handling configuration."""
     on_agent_failure: Literal["halt_stage", "retry_agent", "skip_agent", "continue_with_remaining"] = "continue_with_remaining"
-    min_successful_agents: int = Field(default=1, gt=0)
+    min_successful_agents: int = Field(default=DEFAULT_MIN_ITEMS, gt=0)
     fallback_strategy: Optional[str] = None
     retry_failed_agents: bool = True
-    max_agent_retries: int = Field(default=2, ge=0)
+    max_agent_retries: int = Field(default=MIN_RETRY_ATTEMPTS + 1, ge=0)
 
 
 class QualityGatesConfig(BaseModel):
     """Quality gates configuration."""
     enabled: bool = False  # Disabled by default for backward compatibility
-    min_confidence: float = Field(default=0.7, ge=0.0, le=1.0)
-    min_findings: int = Field(default=5, ge=0)
+    min_confidence: float = Field(default=PROB_HIGH, ge=0.0, le=1.0)
+    min_findings: int = Field(default=SMALL_ITEM_LIMIT, ge=0)
     require_citations: bool = True
     on_failure: Literal["retry_stage", "escalate", "proceed_with_warning"] = "retry_stage"
-    max_retries: int = Field(default=2, ge=0)
+    max_retries: int = Field(default=MIN_RETRY_ATTEMPTS + 1, ge=0)
 
 
 class StageConfigInner(BaseModel):
@@ -330,7 +353,7 @@ class WorkflowStageReference(BaseModel):
     conditional: bool = False
     condition: Optional[str] = None
     loops_back_to: Optional[str] = None
-    max_loops: int = Field(default=1, gt=0)
+    max_loops: int = Field(default=MIN_RETRY_ATTEMPTS, gt=0)
 
 
 class BudgetConfig(BaseModel):
@@ -342,9 +365,9 @@ class BudgetConfig(BaseModel):
 
 class WorkflowConfigOptions(BaseModel):
     """Workflow configuration options."""
-    max_iterations: int = Field(default=5, gt=0)
+    max_iterations: int = Field(default=SMALL_ITEM_LIMIT, gt=0)
     convergence_detection: bool = False
-    timeout_seconds: int = Field(default=3600, gt=0)
+    timeout_seconds: int = Field(default=SECONDS_PER_HOUR, gt=0)
     budget: BudgetConfig = Field(default_factory=BudgetConfig)
 
 
@@ -378,7 +401,7 @@ class WorkflowObservabilityConfig(BaseModel):
 class WorkflowErrorHandlingConfig(BaseModel):
     """Workflow error handling configuration."""
     on_stage_failure: Literal["halt", "skip", "retry"] = "halt"
-    max_stage_retries: int = Field(default=2, ge=0)
+    max_stage_retries: int = Field(default=MIN_RETRY_ATTEMPTS + 1, ge=0)
     escalation_policy: str  # Module reference
     enable_rollback: bool = True
     rollback_on: List[str] = Field(default_factory=list)
@@ -519,8 +542,8 @@ class EventSourceConfig(BaseModel):
     connection: Optional[str] = None
     queue_name: Optional[str] = None
     consumer_group: Optional[str] = None
-    max_connections: int = Field(default=10, gt=0)
-    reconnect_delay_seconds: int = Field(default=5, gt=0)
+    max_connections: int = Field(default=MEDIUM_ITEM_LIMIT, gt=0)
+    reconnect_delay_seconds: int = Field(default=SMALL_ITEM_LIMIT, gt=0)
 
 
 class EventFilterCondition(BaseModel):
@@ -539,19 +562,19 @@ class EventFilter(BaseModel):
 
 class ConcurrencyConfig(BaseModel):
     """Concurrency configuration."""
-    max_parallel_executions: int = Field(default=5, gt=0)
+    max_parallel_executions: int = Field(default=SMALL_ITEM_LIMIT, gt=0)
     queue_when_busy: bool = True
-    max_queue_size: int = Field(default=100, gt=0)
+    max_queue_size: int = Field(default=SMALL_QUEUE_SIZE, gt=0)
     deduplicate: bool = True
-    dedup_window_seconds: int = Field(default=300, gt=0)
+    dedup_window_seconds: int = Field(default=SECONDS_PER_5_MINUTES, gt=0)
     dedup_key: Optional[str] = None
 
 
 class TriggerRetryConfig(BaseModel):
     """Retry configuration for triggers."""
     enabled: bool = True
-    max_retries: int = Field(default=3, ge=0)
-    retry_delay_seconds: int = Field(default=60, gt=0)
+    max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0)
+    retry_delay_seconds: int = Field(default=SECONDS_PER_MINUTE, gt=0)
     exponential_backoff: bool = True
 
 
@@ -587,7 +610,7 @@ class CronTriggerInner(BaseModel):
     timezone: str = "UTC"
     skip_on_holiday: bool = True
     skip_if_recent_execution: bool = True
-    min_hours_between_runs: int = Field(default=168, gt=0)
+    min_hours_between_runs: int = Field(default=SECONDS_PER_WEEK // SECONDS_PER_HOUR, gt=0)
     workflow: str
     workflow_inputs: Dict[str, Any] = Field(default_factory=dict)
     metadata: TriggerMetadata = Field(default_factory=TriggerMetadata)
@@ -597,7 +620,7 @@ class MetricConfig(BaseModel):
     """Metric configuration for threshold triggers."""
     source: Literal["prometheus", "datadog", "custom", "database"]
     query: str
-    evaluation_interval_seconds: int = Field(default=60, gt=0)
+    evaluation_interval_seconds: int = Field(default=SECONDS_PER_MINUTE, gt=0)
 
 
 class CompoundCondition(BaseModel):
@@ -621,7 +644,7 @@ class ThresholdTriggerInner(BaseModel):
     metric: MetricConfig
     condition: Literal["greater_than", "less_than", "equals"]
     threshold: float
-    duration_minutes: int = Field(default=10, gt=0)
+    duration_minutes: int = Field(default=MEDIUM_ITEM_LIMIT, gt=0)
     compound_conditions: Optional[CompoundConditions] = None
     workflow: str
     workflow_inputs: Dict[str, Any] = Field(default_factory=dict)

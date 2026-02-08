@@ -23,6 +23,8 @@ from typing import List, Optional
 
 from sqlmodel import Session
 
+from src.constants.durations import HOURS_PER_WEEK
+from src.constants.limits import DEFAULT_BATCH_SIZE, THRESHOLD_MEDIUM_COUNT
 from src.self_improvement.baseline_storage import BaselineStorage
 from src.self_improvement.data_models import AgentPerformanceProfile
 from src.self_improvement.metrics_aggregator import MetricsAggregator
@@ -121,10 +123,10 @@ class PerformanceAnalyzer:
     def analyze_agent_performance(
         self,
         agent_name: str,
-        window_hours: int = 168,  # 7 days default
+        window_hours: int = HOURS_PER_WEEK,  # 7 days default
         window_start: Optional[datetime] = None,
         window_end: Optional[datetime] = None,
-        min_executions: int = 10,
+        min_executions: int = THRESHOLD_MEDIUM_COUNT,
         include_failed: bool = False
     ) -> AgentPerformanceProfile:
         """
@@ -258,7 +260,7 @@ class PerformanceAnalyzer:
             return self.analyze_agent_performance(
                 agent_name,
                 window_hours=window_days * 24,
-                min_executions=50  # Higher threshold for baseline
+                min_executions=DEFAULT_BATCH_SIZE  # Higher threshold for baseline
             )
         except PerformanceDataError:
             logger.warning(
@@ -304,7 +306,7 @@ class PerformanceAnalyzer:
             profile = self.analyze_agent_performance(
                 agent_name,
                 window_hours=window_days * 24,
-                min_executions=50  # Higher threshold for baseline
+                min_executions=DEFAULT_BATCH_SIZE  # Higher threshold for baseline
             )
 
         # Delegate to BaselineStorage for persistence
@@ -367,8 +369,8 @@ class PerformanceAnalyzer:
 
     def analyze_all_agents(
         self,
-        window_hours: int = 168,
-        min_executions: int = 10
+        window_hours: int = HOURS_PER_WEEK,
+        min_executions: int = THRESHOLD_MEDIUM_COUNT
     ) -> List[AgentPerformanceProfile]:
         """
         Analyze performance for all agents with sufficient data.

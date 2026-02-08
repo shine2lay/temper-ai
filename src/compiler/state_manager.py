@@ -14,6 +14,7 @@ from src.compiler.domain_state import (
 )
 from src.compiler.executors.base import WorkflowStateDict  # canonical definition
 from src.compiler.langgraph_state import LangGraphWorkflowState
+from src.constants.sizes import UUID_HEX_SHORT_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class StateManager:
             **input_data,
         }
 
-        state["workflow_id"] = workflow_id or f"wf-{uuid.uuid4().hex[:12]}"
+        state["workflow_id"] = workflow_id or f"wf-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
         if tracker:
             state["tracker"] = tracker
         if tool_registry:
@@ -130,7 +131,7 @@ class StateManager:
 
             # Set workflow ID if not present
             if not state.workflow_id or state.workflow_id == "":
-                updates["workflow_id"] = f"wf-{uuid.uuid4().hex[:12]}"
+                updates["workflow_id"] = f"wf-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
 
             return updates
 

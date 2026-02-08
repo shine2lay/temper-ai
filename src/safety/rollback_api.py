@@ -27,6 +27,9 @@ import os
 from datetime import UTC, datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.constants.durations import SECONDS_PER_HOUR
+from src.constants.limits import THRESHOLD_LARGE_COUNT
+
 from src.safety.rollback import RollbackManager, RollbackResult, RollbackSnapshot
 from src.utils.logging import get_logger
 
@@ -54,12 +57,15 @@ class RollbackAPI:
         """
         self.manager = rollback_manager
 
+    # Default snapshot limit
+    DEFAULT_SNAPSHOT_LIMIT = THRESHOLD_LARGE_COUNT
+
     def list_snapshots(
         self,
         workflow_id: Optional[str] = None,
         agent_id: Optional[str] = None,
         since: Optional[datetime] = None,
-        limit: int = 100
+        limit: int = DEFAULT_SNAPSHOT_LIMIT
     ) -> List[RollbackSnapshot]:
         """List available snapshots with filtering.
 
@@ -118,7 +124,7 @@ class RollbackAPI:
             "file_count": len(snapshot.file_snapshots),
             "files": list(snapshot.file_snapshots.keys()),
             "state_keys": list(snapshot.state_snapshots.keys()),
-            "age_hours": (datetime.now(UTC) - snapshot.created_at).total_seconds() / 3600
+            "age_hours": (datetime.now(UTC) - snapshot.created_at).total_seconds() / SECONDS_PER_HOUR
         }
 
     def validate_rollback_safety(
@@ -162,8 +168,10 @@ class RollbackAPI:
                     )
 
         # Check age
-        age_hours = (datetime.now(UTC) - snapshot.created_at).total_seconds() / 3600
-        if age_hours > 24:
+        # Age threshold constant
+        _SNAPSHOT_WARNING_AGE_HOURS = 24
+        age_hours = (datetime.now(UTC) - snapshot.created_at).total_seconds() / SECONDS_PER_HOUR
+        if age_hours > _SNAPSHOT_WARNING_AGE_HOURS:
             warnings.append(f"Snapshot is {age_hours:.1f} hours old")
 
         # Safe if no critical warnings
@@ -229,10 +237,13 @@ class RollbackAPI:
 
         return result
 
+    # Default history limit
+    DEFAULT_HISTORY_LIMIT = THRESHOLD_LARGE_COUNT
+
     def get_rollback_history(
         self,
         snapshot_id: Optional[str] = None,
-        limit: int = 100
+        limit: int = DEFAULT_HISTORY_LIMIT
     ) -> List[RollbackResult]:
         """Get rollback execution history.
 

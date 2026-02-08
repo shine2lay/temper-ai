@@ -2,6 +2,7 @@
 from typing import Any, Dict
 
 from src.agents.llm.base import BaseLLM, LLMProvider, LLMResponse
+from src.constants.sizes import SIZE_4KB
 
 
 class OllamaLLM(BaseLLM):
@@ -38,7 +39,7 @@ class OllamaLLM(BaseLLM):
                     "temperature": kwargs.get("temperature", self.temperature),
                     "top_p": kwargs.get("top_p", self.top_p),
                     "num_predict": kwargs.get("max_tokens", self.max_tokens),
-                    "num_ctx": kwargs.get("max_tokens", self.max_tokens) + 4096,
+                    "num_ctx": kwargs.get("max_tokens", self.max_tokens) + SIZE_4KB,
                 },
                 "tools": tools,
                 "stream": False,

@@ -15,6 +15,8 @@ from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from src.database import get_session
+from src.constants.limits import THRESHOLD_LARGE_COUNT
+from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.models import (
     AssignmentStrategyType,
     Experiment,
@@ -71,8 +73,8 @@ class ExperimentCRUD:
         primary_metric: str = "duration_seconds",
         secondary_metrics: Optional[List[str]] = None,
         guardrail_metrics: Optional[List[Dict[str, Any]]] = None,
-        confidence_level: float = 0.95,
-        min_sample_size_per_variant: int = 100,
+        confidence_level: float = DEFAULT_CREDIBLE_LEVEL,
+        min_sample_size_per_variant: int = THRESHOLD_LARGE_COUNT,
         **kwargs: Any
     ) -> str:
         """

@@ -14,6 +14,11 @@ Usage:
 from typing import Optional
 
 from src.agents.llm import LLMResponse, OllamaLLM  # M-04: Import from new location
+from src.constants.durations import TIMEOUT_LONG
+from src.self_improvement.constants import (
+    DEFAULT_OLLAMA_PORT,
+    DEFAULT_TEMPERATURE,
+)
 
 
 class OllamaClient:
@@ -56,11 +61,11 @@ class OllamaClient:
     def __init__(
         self,
         model: str,
-        base_url: str = "http://localhost:11434",
-        temperature: float = 0.7,
+        base_url: str = f"http://localhost:{DEFAULT_OLLAMA_PORT}",
+        temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: int = 2048,
         top_p: float = 0.9,
-        timeout: int = 60,
+        timeout: int = TIMEOUT_LONG,
     ):
         """
         Initialize OllamaClient.

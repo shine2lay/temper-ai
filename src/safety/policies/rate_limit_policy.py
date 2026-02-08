@@ -17,10 +17,46 @@ Default Limits (per agent):
 """
 from typing import Any, Dict, List, Optional
 
+from src.constants.durations import SECONDS_PER_HOUR, SECONDS_PER_MINUTE
+from src.constants.limits import (
+    DEFAULT_MAX_ITEMS,
+    LARGE_ITEM_LIMIT,
+    MEDIUM_ITEM_LIMIT,
+    MULTIPLIER_LARGE,
+    PERCENT_20,
+    SMALL_ITEM_LIMIT,
+    THRESHOLD_MEDIUM_COUNT,
+    VERY_LARGE_ITEM_LIMIT,
+)
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import RATE_LIMIT_PRIORITY
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.token_bucket import RateLimit, TokenBucketManager
+
+# Default rate limits (per agent, per hour)
+DEFAULT_COMMITS_PER_HOUR = THRESHOLD_MEDIUM_COUNT
+DEFAULT_COMMITS_BURST = SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT + 1  # 2
+DEFAULT_DEPLOYS_PER_HOUR = SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT + 1  # 2
+DEFAULT_DEPLOYS_BURST = SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT  # 1
+DEFAULT_TOOL_CALLS_PER_HOUR = VERY_LARGE_ITEM_LIMIT
+DEFAULT_TOOL_CALLS_BURST = THRESHOLD_MEDIUM_COUNT
+DEFAULT_LLM_CALLS_PER_HOUR = LARGE_ITEM_LIMIT
+DEFAULT_LLM_CALLS_BURST = SMALL_ITEM_LIMIT
+DEFAULT_API_CALLS_PER_HOUR = VERY_LARGE_ITEM_LIMIT * THRESHOLD_MEDIUM_COUNT
+DEFAULT_API_CALLS_BURST = LARGE_ITEM_LIMIT
+
+# Default global rate limits (across all agents, per hour)
+DEFAULT_GLOBAL_TOOL_CALLS_PER_HOUR = VERY_LARGE_ITEM_LIMIT * THRESHOLD_MEDIUM_COUNT
+DEFAULT_GLOBAL_TOOL_CALLS_BURST = LARGE_ITEM_LIMIT
+
+# Rate limit configuration limits
+MAX_COOLDOWN_MULTIPLIER = MULTIPLIER_LARGE  # Safety limit for cooldown multiplier
+
+# Severity threshold constants
+RATE_LIMIT_CRITICAL_THRESHOLD_SECONDS = SECONDS_PER_HOUR  # 1 hour - threshold for CRITICAL severity
+RATE_LIMIT_HOUR_THRESHOLD_SECONDS = SECONDS_PER_HOUR  # 1 hour
+RATE_LIMIT_MINUTE_THRESHOLD_SECONDS = SECONDS_PER_MINUTE  # 1 minute
+RATE_LIMIT_PLURAL_THRESHOLD = SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT + 1  # Threshold for plural form in formatting
 
 
 class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
@@ -57,44 +93,44 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
     # Default rate limits (per agent)
     DEFAULT_LIMITS = {
         "commit": RateLimit(
-            max_tokens=10,
-            refill_rate=10/3600,  # 10 per hour
-            refill_period=1.0,
-            burst_size=2
+            max_tokens=DEFAULT_COMMITS_PER_HOUR,
+            refill_rate=DEFAULT_COMMITS_PER_HOUR / SECONDS_PER_HOUR,
+            refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
+            burst_size=DEFAULT_COMMITS_BURST
         ),
         "deploy": RateLimit(
-            max_tokens=2,
-            refill_rate=2/3600,  # 2 per hour
-            refill_period=1.0,
-            burst_size=1
+            max_tokens=DEFAULT_DEPLOYS_PER_HOUR,
+            refill_rate=DEFAULT_DEPLOYS_PER_HOUR / SECONDS_PER_HOUR,
+            refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
+            burst_size=DEFAULT_DEPLOYS_BURST
         ),
         "tool_call": RateLimit(
-            max_tokens=100,
-            refill_rate=100/3600,  # 100 per hour
-            refill_period=1.0,
-            burst_size=10
+            max_tokens=DEFAULT_TOOL_CALLS_PER_HOUR,
+            refill_rate=DEFAULT_TOOL_CALLS_PER_HOUR / SECONDS_PER_HOUR,
+            refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
+            burst_size=DEFAULT_TOOL_CALLS_BURST
         ),
         "llm_call": RateLimit(
-            max_tokens=50,
-            refill_rate=50/3600,  # 50 per hour
-            refill_period=1.0,
-            burst_size=5
+            max_tokens=DEFAULT_LLM_CALLS_PER_HOUR,
+            refill_rate=DEFAULT_LLM_CALLS_PER_HOUR / SECONDS_PER_HOUR,
+            refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
+            burst_size=DEFAULT_LLM_CALLS_BURST
         ),
         "api_call": RateLimit(
-            max_tokens=1000,
-            refill_rate=1000/3600,  # 1000 per hour
-            refill_period=1.0,
-            burst_size=50
+            max_tokens=DEFAULT_API_CALLS_PER_HOUR,
+            refill_rate=DEFAULT_API_CALLS_PER_HOUR / SECONDS_PER_HOUR,
+            refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
+            burst_size=DEFAULT_API_CALLS_BURST
         ),
     }
 
     # Default global limits (across all agents)
     DEFAULT_GLOBAL_LIMITS = {
         "total_tool_calls": RateLimit(
-            max_tokens=1000,
-            refill_rate=1000/3600,  # 1000 per hour total
-            refill_period=1.0,
-            burst_size=50
+            max_tokens=DEFAULT_GLOBAL_TOOL_CALLS_PER_HOUR,
+            refill_rate=DEFAULT_GLOBAL_TOOL_CALLS_PER_HOUR / SECONDS_PER_HOUR,
+            refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
+            burst_size=DEFAULT_GLOBAL_TOOL_CALLS_BURST
         ),
     }
 
@@ -139,10 +175,10 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
             raise ValueError(
                 f"cooldown_multiplier must be non-negative, got {cooldown_multiplier}"
             )
-        if cooldown_multiplier > 100:
+        if cooldown_multiplier > MAX_COOLDOWN_MULTIPLIER:
             raise ValueError(
-                f"cooldown_multiplier must be <= 100 (safety limit), got {cooldown_multiplier}. "
-                f"Hint: Values > 100 can create extremely long wait times."
+                f"cooldown_multiplier must be <= {MAX_COOLDOWN_MULTIPLIER} (safety limit), got {cooldown_multiplier}. "
+                f"Hint: Values > {MAX_COOLDOWN_MULTIPLIER} can create extremely long wait times."
             )
         self.cooldown_multiplier = cooldown_multiplier
 
@@ -412,7 +448,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
 
         # Determine severity based on how long the wait is
         # Rate limit violations should always be at least HIGH to block actions
-        if wait_time > 3600:  # > 1 hour
+        if wait_time > RATE_LIMIT_CRITICAL_THRESHOLD_SECONDS:
             severity = ViolationSeverity.CRITICAL
         else:
             # All rate limit violations are HIGH severity (blocking)
@@ -448,14 +484,14 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         Returns:
             Formatted string (e.g., "5.2 minutes", "1.5 hours")
         """
-        if seconds >= 3600:
-            hours = seconds / 3600
-            return f"{hours:.1f} hour{'s' if hours >= 2 else ''}"
-        elif seconds >= 60:
-            minutes = seconds / 60
-            return f"{minutes:.1f} minute{'s' if minutes >= 2 else ''}"
+        if seconds >= RATE_LIMIT_HOUR_THRESHOLD_SECONDS:
+            hours = seconds / RATE_LIMIT_HOUR_THRESHOLD_SECONDS
+            return f"{hours:.1f} hour{'s' if hours >= RATE_LIMIT_PLURAL_THRESHOLD else ''}"
+        elif seconds >= RATE_LIMIT_MINUTE_THRESHOLD_SECONDS:
+            minutes = seconds / RATE_LIMIT_MINUTE_THRESHOLD_SECONDS
+            return f"{minutes:.1f} minute{'s' if minutes >= RATE_LIMIT_PLURAL_THRESHOLD else ''}"
         else:
-            return f"{seconds:.1f} second{'s' if seconds >= 2 else ''}"
+            return f"{seconds:.1f} second{'s' if seconds >= RATE_LIMIT_PLURAL_THRESHOLD else ''}"
 
     def get_status(self, agent_id: str) -> Dict[str, Any]:
         """Get rate limit status for an agent.

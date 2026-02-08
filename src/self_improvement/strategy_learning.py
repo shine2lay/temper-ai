@@ -8,6 +8,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
+from src.constants.durations import DAYS_90
+from src.constants.probabilities import PROB_VERY_HIGH
 from src.self_improvement.data_models import StrategyOutcome
 
 logger = logging.getLogger(__name__)
@@ -197,8 +199,8 @@ class StrategyLearningStore:
         strategy_name: str,
         problem_type: str,
         metric: str = "composite_score",
-        min_confidence: float = 0.80,
-        days_back: Optional[int] = 90
+        min_confidence: float = PROB_VERY_HIGH,
+        days_back: Optional[int] = DAYS_90
     ) -> Optional[float]:
         """
         Get average improvement for a strategy on a problem type.
@@ -250,7 +252,7 @@ class StrategyLearningStore:
         self,
         strategy_name: str,
         problem_type: Optional[str] = None,
-        days_back: Optional[int] = 90
+        days_back: Optional[int] = DAYS_90
     ) -> float:
         """
         Get win rate for a strategy.

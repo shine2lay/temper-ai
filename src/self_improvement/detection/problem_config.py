@@ -4,6 +4,8 @@ Configuration for problem detection thresholds.
 
 from dataclasses import dataclass
 
+from src.constants.limits import DEFAULT_BATCH_SIZE
+
 
 @dataclass
 class ProblemDetectionConfig:
@@ -75,7 +77,7 @@ class ProblemDetectionConfig:
     severity_low_threshold: float = 0.05       # >5% = LOW
 
     # Data quality requirements
-    min_executions_for_detection: int = 50
+    min_executions_for_detection: int = DEFAULT_BATCH_SIZE
 
     def __post_init__(self):
         """Validate configuration."""

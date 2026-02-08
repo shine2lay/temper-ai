@@ -40,6 +40,8 @@ from src.compiler.checkpoint_backends import (
     FileCheckpointBackend,
 )
 from src.compiler.domain_state import WorkflowDomainState
+from src.constants.durations import SECONDS_PER_5_MINUTES
+from src.constants.limits import MEDIUM_ITEM_LIMIT
 from src.utils.exceptions import ConfigurationError, ErrorCode
 
 logger = logging.getLogger(__name__)
@@ -91,8 +93,8 @@ class CheckpointManager:
         self,
         backend: Optional[CheckpointBackend] = None,
         strategy: CheckpointStrategy = CheckpointStrategy.EVERY_STAGE,
-        max_checkpoints: int = 10,
-        periodic_interval: int = 300  # 5 minutes
+        max_checkpoints: int = MEDIUM_ITEM_LIMIT,
+        periodic_interval: int = SECONDS_PER_5_MINUTES
     ):
         """Initialize checkpoint manager.
 

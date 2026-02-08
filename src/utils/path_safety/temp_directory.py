@@ -11,6 +11,7 @@ replacing unsafe /tmp access. Features:
 from pathlib import Path
 from typing import Optional
 
+from src.utils.constants import MAX_COMPONENT_LENGTH
 from src.utils.path_safety.exceptions import PathSafetyError
 
 
@@ -21,7 +22,7 @@ class SecureTempDirectory:
         self,
         allowed_root: Path,
         enabled: bool = True,
-        max_component_length: int = 255
+        max_component_length: int = MAX_COMPONENT_LENGTH
     ):
         """Initialize secure temp directory manager.
 

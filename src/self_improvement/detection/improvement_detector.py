@@ -10,6 +10,9 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session
 
+from src.constants.durations import HOURS_PER_DAY, DAYS_PER_WEEK
+from src.constants.limits import DEFAULT_BATCH_SIZE
+
 from src.self_improvement.detection.improvement_proposal import ImprovementProposal
 from src.self_improvement.detection.problem_detector import (
     ProblemDetectionDataError as DetectorInsufficientDataError,
@@ -108,8 +111,8 @@ class ImprovementDetector:
     def detect_improvements(
         self,
         agent_name: str,
-        window_hours: int = 168,  # 7 days default
-        min_executions: int = 50,
+        window_hours: int = HOURS_PER_DAY * DAYS_PER_WEEK,  # 7 days default
+        min_executions: int = DEFAULT_BATCH_SIZE,
     ) -> List[ImprovementProposal]:
         """
         Detect improvement opportunities for an agent.
@@ -122,7 +125,7 @@ class ImprovementDetector:
 
         Args:
             agent_name: Name of agent to analyze
-            window_hours: Time window for current performance analysis (default: 168 = 7 days)
+            window_hours: Time window for current performance analysis (default: 7 days)
             min_executions: Minimum executions required for detection (default: 50)
 
         Returns:
@@ -351,14 +354,18 @@ class ImprovementDetector:
                 # Estimate impact (default implementation returns 0.1)
                 estimated_impact = strategy.estimate_impact(problem.to_dict())
 
-                # Map severity to priority
+                # Map severity to priority (0=highest, 3=lowest)
+                PRIORITY_CRITICAL = 0
+                PRIORITY_HIGH = 1
+                PRIORITY_MEDIUM = 2
+                PRIORITY_LOW = 3
                 severity_to_priority = {
-                    ProblemSeverity.CRITICAL: 0,
-                    ProblemSeverity.HIGH: 1,
-                    ProblemSeverity.MEDIUM: 2,
-                    ProblemSeverity.LOW: 3,
+                    ProblemSeverity.CRITICAL: PRIORITY_CRITICAL,
+                    ProblemSeverity.HIGH: PRIORITY_HIGH,
+                    ProblemSeverity.MEDIUM: PRIORITY_MEDIUM,
+                    ProblemSeverity.LOW: PRIORITY_LOW,
                 }
-                priority = severity_to_priority.get(problem.severity, 2)
+                priority = severity_to_priority.get(problem.severity, PRIORITY_MEDIUM)
 
                 # Create proposal
                 proposal = ImprovementProposal(

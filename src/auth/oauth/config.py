@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.constants.durations import DEFAULT_TOKEN_TTL_SECONDS, SECONDS_PER_MINUTE, SECONDS_PER_DAY
+
 
 class OAuthConfigurationError(Exception):
     """Raised when OAuth configuration is invalid."""
@@ -191,10 +193,10 @@ class OAuthConfig(BaseModel):
     )
 
     token_expiry_seconds: int = Field(
-        default=3600,
+        default=DEFAULT_TOKEN_TTL_SECONDS,
         description="Default token expiry in seconds",
-        ge=60,  # Minimum 1 minute
-        le=86400  # Maximum 24 hours
+        ge=SECONDS_PER_MINUTE,  # Minimum 1 minute
+        le=SECONDS_PER_DAY  # Maximum 24 hours
     )
 
     allow_localhost: bool = Field(

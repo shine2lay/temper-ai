@@ -10,6 +10,9 @@ from typing import Any, Callable, Dict, Optional, cast
 from src.agents.agent_factory import AgentFactory
 from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.compiler.executors.base import ParallelRunner, StageExecutor
+from src.constants.durations import SECONDS_PER_10_MINUTES
+from src.constants.limits import DEFAULT_MIN_ITEMS, SMALL_ITEM_LIMIT
+from src.constants.probabilities import PROB_HIGH, PROB_VERY_HIGH
 from src.core.context import ExecutionContext
 from src.utils.config_helpers import get_nested_value
 from src.utils.exceptions import (
@@ -83,15 +86,15 @@ class ParallelStageExecutor(StageExecutor):
             RuntimeError: If stage execution fails
         """
         # Derive wall-clock timeout for the entire retry loop from stage config.
-        # Default to 600s (10 minutes) if not specified.
-        _wall_clock_timeout: float = 600.0
+        # Default to 10 minutes if not specified.
+        _wall_clock_timeout: float = SECONDS_PER_10_MINUTES
         if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'execution'):
             _wall_clock_timeout = float(
-                getattr(stage_config.stage.execution, 'timeout_seconds', 600)
+                getattr(stage_config.stage.execution, 'timeout_seconds', SECONDS_PER_10_MINUTES)
             )
         elif isinstance(stage_config, dict):
             _exec_cfg = get_nested_value(stage_config, 'stage.execution') or {}
-            _wall_clock_timeout = float(_exec_cfg.get('timeout_seconds', 600))
+            _wall_clock_timeout = float(_exec_cfg.get('timeout_seconds', SECONDS_PER_10_MINUTES))
 
         _wall_clock_start = time.monotonic()
 
@@ -135,7 +138,7 @@ class ParallelStageExecutor(StageExecutor):
                 """Collect and validate agent outputs, calculate aggregate metrics."""
                 stage_dict = stage_config if isinstance(stage_config, dict) else {}
                 error_handling = stage_dict.get("error_handling", {})
-                min_successful = error_handling.get("min_successful_agents", 1)
+                min_successful = error_handling.get("min_successful_agents", DEFAULT_MIN_ITEMS)
 
                 agent_statuses = s.get("agent_statuses", {})
                 successful = [
@@ -247,7 +250,7 @@ class ParallelStageExecutor(StageExecutor):
                         agent_name=agent_name,
                         decision=output_data.get("output", ""),
                         reasoning=output_data.get("reasoning", ""),
-                        confidence=output_data.get("confidence", 0.8),
+                        confidence=output_data.get("confidence", PROB_VERY_HIGH),
                         metadata=output_data.get("metadata", {})
                     ))
 
@@ -634,7 +637,7 @@ class ParallelStageExecutor(StageExecutor):
         violations = []
 
         # Check minimum confidence
-        min_confidence = quality_gates_config.get("min_confidence", 0.7)
+        min_confidence = quality_gates_config.get("min_confidence", PROB_HIGH)
         actual_confidence = getattr(synthesis_result, "confidence", 0.0)
         if actual_confidence < min_confidence:
             violations.append(
@@ -642,7 +645,7 @@ class ParallelStageExecutor(StageExecutor):
             )
 
         # Check minimum findings
-        min_findings = quality_gates_config.get("min_findings", 5)
+        min_findings = quality_gates_config.get("min_findings", SMALL_ITEM_LIMIT)
         # Look for findings in synthesis result metadata or decision
         findings = []
         if hasattr(synthesis_result, "metadata"):

@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Type
 
 import yaml
 
+from src.constants.durations import RATE_LIMIT_WINDOW_MINUTE
+from src.constants.limits import THRESHOLD_VERY_LARGE_COUNT
 from src.safety.action_policy_engine import ActionPolicyEngine
 from src.safety.approval import ApprovalWorkflow, NoOpApprover
 from src.safety.base import BaseSafetyPolicy
@@ -133,8 +135,8 @@ def _get_default_config() -> Dict[str, Any]:
     """Get default safety configuration."""
     return {
         'policy_engine': {
-            'cache_ttl': 60,
-            'max_cache_size': 1000,
+            'cache_ttl': RATE_LIMIT_WINDOW_MINUTE,
+            'max_cache_size': THRESHOLD_VERY_LARGE_COUNT,
             'enable_caching': True,
             'short_circuit_critical': True,
             'log_violations': True,

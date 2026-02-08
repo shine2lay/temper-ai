@@ -10,6 +10,9 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
+from src.constants.durations import HOURS_PER_DAY, SECONDS_PER_5_MINUTES
+from src.observability.constants import DEFAULT_ERROR_RATE_ALERT_THRESHOLD
+
 logger = logging.getLogger(__name__)
 
 
@@ -126,8 +129,8 @@ class AlertManager:
         self.add_rule(AlertRule(
             name="high_error_rate",
             metric_type=MetricType.ERROR_RATE,
-            threshold=0.1,  # 10% error rate
-            window_seconds=300,  # 5 minutes
+            threshold=DEFAULT_ERROR_RATE_ALERT_THRESHOLD,  # 10% error rate
+            window_seconds=SECONDS_PER_5_MINUTES,  # 5 minutes
             severity=AlertSeverity.ERROR,
             actions=[AlertAction.LOG_ERROR],
             metadata={"description": "Error rate exceeds 10% in 5 minute window"}
@@ -377,7 +380,7 @@ class AlertManager:
 
     def get_recent_alerts(
         self,
-        hours: int = 24,
+        hours: int = HOURS_PER_DAY,
         severity: Optional[AlertSeverity] = None
     ) -> List[Alert]:
         """Get recent alerts within time window.

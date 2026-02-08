@@ -6,6 +6,8 @@ Implements intelligent retry logic, backoff, and recovery actions.
 import logging
 import time
 
+from src.constants.durations import SECONDS_PER_5_MINUTES
+
 from .config import LoopConfig
 from .models import Phase, RecoveryAction
 
@@ -133,7 +135,7 @@ class ErrorRecoveryStrategy:
         delay = self.config.initial_retry_delay_seconds * (
             self.config.retry_backoff_multiplier ** (attempt - 1)
         )
-        return min(delay, 300.0)  # Cap at 5 minutes
+        return min(delay, float(SECONDS_PER_5_MINUTES))  # Cap at 5 minutes
 
     def wait_for_retry(self, attempt: int) -> None:
         """

@@ -5,6 +5,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
+from src.constants.probabilities import PROB_MINIMAL, PROB_MEDIUM
+
 
 class SIMetricType(Enum):
     """Classification of metric collection methods.
@@ -39,16 +41,20 @@ class MetricValue:
         collector_version: Version string of the collector implementation
         metadata: Optional additional context about the metric computation
     """
+    METRIC_MIN = 0.0
+    METRIC_MAX = 1.0
+    DEFAULT_VERSION = "1.0"
+
     metric_name: str
     value: float
     metric_type: SIMetricType
     collected_at: datetime
-    collector_version: str = "1.0"
+    collector_version: str = DEFAULT_VERSION
     metadata: Optional[Dict[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self):
         """Validate metric value is in valid range."""
-        if not (0.0 <= self.value <= 1.0):
+        if not (self.METRIC_MIN <= self.value <= self.METRIC_MAX):
             raise ValueError(
-                f"Metric value must be in range [0.0, 1.0], got {self.value}"
+                f"Metric value must be in range [{self.METRIC_MIN}, {self.METRIC_MAX}], got {self.value}"
             )

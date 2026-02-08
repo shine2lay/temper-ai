@@ -24,3 +24,52 @@ DEFAULT_BUFFER_SIZE = 100  # Default number of records to buffer before flush
 DEFAULT_BUFFER_TIMEOUT_SECONDS = 5.0  # Flush after N seconds even if buffer not full
 MAX_RETRY_ATTEMPTS = 3  # Maximum number of retry attempts for failed operations
 RETRY_DELAY_SECONDS = 1.0  # Delay between retry attempts
+
+# ============================================================================
+# Alerting Thresholds
+# ============================================================================
+
+DEFAULT_ALERT_COOLDOWN_SECONDS = 300  # 5 minutes between alerts
+MAX_ALERT_HISTORY = 1000
+DEFAULT_ERROR_RATE_ALERT_THRESHOLD = 0.1  # 10% error rate
+DEFAULT_LATENCY_ALERT_MULTIPLIER = 2.0  # 2x normal latency
+
+# ============================================================================
+# Display & Formatting
+# ============================================================================
+
+DEFAULT_TRACE_DEPTH = 10  # Max trace depth for visualization
+MAX_TRACE_DISPLAY_ITEMS = 50
+DEFAULT_INDENT_SIZE = 2  # Spaces per indent level
+SANITIZATION_MAX_LENGTH = 10000  # Max string length before truncation
+SANITIZATION_REPLACEMENT = "***"
+
+# ============================================================================
+# Dead Letter Queue (DLQ)
+# ============================================================================
+
+DEFAULT_DLQ_MAX_SIZE = 10000
+DEFAULT_DLQ_RETRY_INTERVAL = 60  # seconds
+MAX_DLQ_RETRY_ATTEMPTS = 5
+
+# ============================================================================
+# Merit Score Service
+# ============================================================================
+
+DEFAULT_MERIT_DECAY_RATE = 0.95
+DEFAULT_MERIT_WINDOW_DAYS = 30
+MIN_OBSERVATIONS_FOR_MERIT = 5
+
+# ============================================================================
+# Decision Tracker
+# ============================================================================
+
+MAX_DECISION_HISTORY = 10000
+DECISION_CONTEXT_MAX_LENGTH = 5000
+
+# ============================================================================
+# SQL Backend
+# ============================================================================
+
+DEFAULT_QUERY_LIMIT = 1000
+DEFAULT_AGGREGATION_INTERVAL_SECONDS = 60

@@ -15,6 +15,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
+from src.self_improvement.constants import PROMPT_IMPROVEMENT_THRESHOLD
 from src.self_improvement.data_models import AgentPerformanceProfile
 
 logger = logging.getLogger(__name__)
@@ -124,7 +125,7 @@ class IncomparableProfilesError(PerformanceComparisonError):
 def compare_profiles(
     baseline: AgentPerformanceProfile,
     current: AgentPerformanceProfile,
-    min_improvement_threshold: float = 0.05,
+    min_improvement_threshold: float = PROMPT_IMPROVEMENT_THRESHOLD,
     metric_weights: Optional[Dict[str, float]] = None
 ) -> PerformanceComparison:
     """

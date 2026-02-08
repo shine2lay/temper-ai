@@ -19,6 +19,17 @@ from datetime import datetime
 from threading import Lock
 from typing import Any, DefaultDict, Dict, List, Optional, Tuple
 
+from src.constants.durations import (
+    RATE_LIMIT_WINDOW_BURST,
+    RATE_LIMIT_WINDOW_HOUR,
+    RATE_LIMIT_WINDOW_MINUTE,
+)
+from src.constants.limits import (
+    MAX_SHORT_STRING_LENGTH,
+    SMALL_ITEM_LIMIT,
+)
+from src.constants.sizes import SIZE_10KB, SIZE_100KB
+
 logger = logging.getLogger(__name__)
 
 # Try to import Redis (optional dependency)
@@ -32,7 +43,7 @@ except ImportError:
 
 # Lua script for atomic rate limit check (prevents TOCTOU race condition)
 # Combined version checks all limits (minute, hour, burst) in a single atomic operation
-RATE_LIMIT_LUA_SCRIPT = """
+RATE_LIMIT_LUA_SCRIPT = f"""
 -- Atomically check all rate limits (minute, hour, burst) in single operation
 -- This prevents partial rollback issues and reduces Redis roundtrips
 local minute_key = KEYS[1]
@@ -51,26 +62,26 @@ local burst_count = tonumber(redis.call('GET', burst_key)) or 0
 -- Check ALL limits BEFORE incrementing (prevents partial success)
 -- If limit=100, allows requests when current=0..99, blocks when current=100
 if minute_count >= minute_limit then
-    return {0, 'minute'}  -- Rate limited by minute
+    return {{0, 'minute'}}  -- Rate limited by minute
 end
 
 if hour_count >= hour_limit then
-    return {0, 'hour'}  -- Rate limited by hour
+    return {{0, 'hour'}}  -- Rate limited by hour
 end
 
 if burst_count >= burst_limit then
-    return {0, 'burst'}  -- Rate limited by burst
+    return {{0, 'burst'}}  -- Rate limited by burst
 end
 
 -- All checks passed - increment ALL counters atomically
 redis.call('INCR', minute_key)
-redis.call('EXPIRE', minute_key, 60)
+redis.call('EXPIRE', minute_key, {RATE_LIMIT_WINDOW_MINUTE})
 redis.call('INCR', hour_key)
-redis.call('EXPIRE', hour_key, 3600)
+redis.call('EXPIRE', hour_key, {RATE_LIMIT_WINDOW_HOUR})
 redis.call('INCR', burst_key)
-redis.call('EXPIRE', burst_key, 5)
+redis.call('EXPIRE', burst_key, {RATE_LIMIT_WINDOW_BURST})
 
-return {1, 'allowed'}  -- Success
+return {{1, 'allowed'}}  -- Success
 """
 
 
@@ -136,15 +147,15 @@ class PromptInjectionDetector:
     """
 
     # Maximum input length before pattern matching (DoS protection)
-    MAX_INPUT_LENGTH = 100_000  # 100KB - pattern matching is O(n)
+    MAX_INPUT_LENGTH = SIZE_100KB  # pattern matching is O(n)
 
     # Maximum input length for entropy calculation (DoS protection)
-    MAX_ENTROPY_LENGTH = 10_000  # 10KB - entropy is O(n*m) with large m for Unicode
+    MAX_ENTROPY_LENGTH = SIZE_10KB  # entropy is O(n*m) with large m for Unicode
     # NOTE: Inputs 10KB-100KB skip entropy check (acceptable tradeoff for performance)
     # This is intentional: entropy calculation on large Unicode inputs can exhaust memory.
 
     # Maximum evidence length in violation reports (prevent log injection)
-    MAX_EVIDENCE_LENGTH = 200  # Balance detail vs log safety
+    MAX_EVIDENCE_LENGTH = MAX_SHORT_STRING_LENGTH  # Balance detail vs log safety
 
     def __init__(self) -> None:
         """Initialize detector with ReDoS-safe attack patterns."""
@@ -190,7 +201,7 @@ class PromptInjectionDetector:
             # Encoding bypass attempts - length-limited to prevent ReDoS
             (r"(?:decode|execute|run)\s+(?:and\s+)?(?:execute|run)?\s*:\s*[a-zA-Z0-9+/=]{20,200}", "encoding bypass"),
             (r"base64|hex\s+encoded|rot13", "encoding bypass"),
-            (r"\\x[0-9a-f]{2}", "encoding bypass"),
+            (r"\\x[0-9a-f]{2}", "encoding bypass"),  # hex encoding detection
 
             # DAN/Jailbreak patterns
             (r"(?:do\s+anything\s+now|DAN\s+mode)", "jailbreak attempt"),
@@ -262,7 +273,7 @@ class PromptInjectionDetector:
                 violation_type="high_risk_keywords",
                 severity="medium",
                 description="High-risk keywords detected",
-                evidence=", ".join(detected_keywords[:5])
+                evidence=", ".join(detected_keywords[:SMALL_ITEM_LIMIT])
             )
             violations.append(violation)
 
@@ -422,11 +433,13 @@ class OutputSanitizer:
         # Detect secrets and collect replacements
         for pattern, secret_type, severity in self.compiled_secret_patterns:
             for match in pattern.finditer(output):
+                # Evidence length constant
+                _EVIDENCE_PREFIX_LENGTH = 20
                 violation = SecurityViolation(
                     violation_type="secret_leakage",
                     severity=severity,
                     description=f"Detected {secret_type} in output",
-                    evidence=f"{match.group(0)[:20]}..."
+                    evidence=f"{match.group(0)[:_EVIDENCE_PREFIX_LENGTH]}..."
                 )
                 violations.append(violation)
 
@@ -505,11 +518,16 @@ class LLMSecurityRateLimiter:
     multi-tier LLM call limiting with optional Redis backend.
     """
 
+    # Default rate limiting parameters
+    DEFAULT_MAX_CALLS_PER_MINUTE = 60
+    DEFAULT_MAX_CALLS_PER_HOUR = 1000
+    DEFAULT_BURST_SIZE = 10
+
     def __init__(
         self,
-        max_calls_per_minute: int = 60,
-        max_calls_per_hour: int = 1000,
-        burst_size: int = 10,
+        max_calls_per_minute: int = DEFAULT_MAX_CALLS_PER_MINUTE,
+        max_calls_per_hour: int = DEFAULT_MAX_CALLS_PER_HOUR,
+        burst_size: int = DEFAULT_BURST_SIZE,
         redis_url: Optional[str] = None,
         fallback_mode: str = 'in_memory'
     ):
@@ -546,11 +564,14 @@ class LLMSecurityRateLimiter:
             redis_url = redis_url or os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
 
             try:
+                # Redis timeout constants
+                _REDIS_CONNECT_TIMEOUT = 1  # seconds
+                _REDIS_SOCKET_TIMEOUT = 2  # seconds
                 self._redis = redis.from_url(
                     redis_url,
                     decode_responses=True,
-                    socket_connect_timeout=1,
-                    socket_timeout=2
+                    socket_connect_timeout=_REDIS_CONNECT_TIMEOUT,
+                    socket_timeout=_REDIS_SOCKET_TIMEOUT
                 )
                 # Test connection
                 self._redis.ping()
@@ -666,7 +687,7 @@ class LLMSecurityRateLimiter:
             limit_messages = {
                 'minute': f"Rate limit exceeded: {self.max_calls_per_minute} calls/minute",
                 'hour': f"Rate limit exceeded: {self.max_calls_per_hour} calls/hour",
-                'burst': f"Burst limit exceeded: {self.burst_size} calls in 5 seconds"
+                'burst': f"Burst limit exceeded: {self.burst_size} calls in {RATE_LIMIT_WINDOW_BURST} seconds"
             }
 
             logger.warning(
@@ -701,22 +722,22 @@ class LLMSecurityRateLimiter:
             self._cleanup_old_entries(entity_id, now)
 
             # Check minute limit
-            minute_ago = now - 60
+            minute_ago = now - RATE_LIMIT_WINDOW_MINUTE
             recent_calls = [t for t in self.call_history[entity_id] if t > minute_ago]
             if len(recent_calls) >= self.max_calls_per_minute:
                 return False, f"Rate limit exceeded: {self.max_calls_per_minute} calls/minute"
 
             # Check hour limit
-            hour_ago = now - 3600
+            hour_ago = now - RATE_LIMIT_WINDOW_HOUR
             hourly_calls = [t for t in self.call_history[entity_id] if t > hour_ago]
             if len(hourly_calls) >= self.max_calls_per_hour:
                 return False, f"Rate limit exceeded: {self.max_calls_per_hour} calls/hour"
 
             # Check burst limit
-            burst_window = now - 5  # 5 second burst window
+            burst_window = now - RATE_LIMIT_WINDOW_BURST
             burst_calls = [t for t in self.call_history[entity_id] if t > burst_window]
             if len(burst_calls) >= self.burst_size:
-                return False, f"Burst limit exceeded: {self.burst_size} calls in 5 seconds"
+                return False, f"Burst limit exceeded: {self.burst_size} calls in {RATE_LIMIT_WINDOW_BURST} seconds"
 
             # ATOMIC: Record the call immediately after checks pass
             self.call_history[entity_id].append(now)
@@ -725,7 +746,7 @@ class LLMSecurityRateLimiter:
 
     def _cleanup_old_entries(self, entity_id: str, now: float) -> None:
         """Remove entries older than 1 hour and evict empty entity keys."""
-        hour_ago = now - 3600
+        hour_ago = now - RATE_LIMIT_WINDOW_HOUR
         self.call_history[entity_id] = [
             t for t in self.call_history[entity_id] if t > hour_ago
         ]
@@ -748,8 +769,8 @@ class LLMSecurityRateLimiter:
             now = time.time()
             self._cleanup_old_entries(entity_id, now)
 
-            minute_ago = now - 60
-            hour_ago = now - 3600
+            minute_ago = now - RATE_LIMIT_WINDOW_MINUTE
+            hour_ago = now - RATE_LIMIT_WINDOW_HOUR
 
             minute_calls = len([t for t in self.call_history[entity_id] if t > minute_ago])
             hour_calls = len([t for t in self.call_history[entity_id] if t > hour_ago])

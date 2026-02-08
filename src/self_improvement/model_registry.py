@@ -7,6 +7,14 @@ Used by strategies like OllamaModelSelectionStrategy to generate config variants
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from src.self_improvement.constants import (
+    CONTEXT_WINDOW_4K,
+    CONTEXT_WINDOW_8K,
+    CONTEXT_WINDOW_32K,
+    MODEL_TIER_MEDIUM_MAX,
+    MODEL_TIER_SMALL_MAX,
+)
+
 
 @dataclass
 class ModelMetadata:
@@ -27,7 +35,7 @@ class ModelMetadata:
     size: str
     expected_quality: str
     expected_speed: str = "medium"
-    context_window: int = 4096
+    context_window: int = CONTEXT_WINDOW_4K
     notes: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
@@ -73,7 +81,7 @@ class ModelRegistry:
                 size="3.8B",
                 expected_quality="medium",
                 expected_speed="very_fast",
-                context_window=4096,
+                context_window=CONTEXT_WINDOW_4K,
                 notes="Small, fast model. Good for simple tasks."
             ),
             ModelMetadata(
@@ -82,7 +90,7 @@ class ModelRegistry:
                 size="8B",
                 expected_quality="high",
                 expected_speed="fast",
-                context_window=8192,
+                context_window=CONTEXT_WINDOW_8K,
                 notes="Balanced model. Good default choice."
             ),
             ModelMetadata(
@@ -91,7 +99,7 @@ class ModelRegistry:
                 size="7B",
                 expected_quality="high",
                 expected_speed="fast",
-                context_window=8192,
+                context_window=CONTEXT_WINDOW_8K,
                 notes="High quality, efficient model."
             ),
             ModelMetadata(
@@ -100,7 +108,7 @@ class ModelRegistry:
                 size="32B",
                 expected_quality="highest",
                 expected_speed="slow",
-                context_window=32768,
+                context_window=CONTEXT_WINDOW_32K,
                 notes="Large, high-quality model. Best accuracy."
             ),
         ]
@@ -186,9 +194,9 @@ class ModelRegistry:
             size_str = model.size.replace("B", "")
             try:
                 size_float = float(size_str)
-                if size_float < 5:
+                if size_float < MODEL_TIER_SMALL_MAX:
                     tiers["small"].append(model)
-                elif size_float <= 15:
+                elif size_float <= MODEL_TIER_MEDIUM_MAX:
                     tiers["medium"].append(model)
                 else:
                     tiers["large"].append(model)

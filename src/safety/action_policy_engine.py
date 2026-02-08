@@ -30,6 +30,8 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
+from src.constants.durations import MILLISECONDS_PER_SECOND, TTL_LONG
+from src.constants.limits import THRESHOLD_MEDIUM_COUNT
 from src.core.circuit_breaker import CircuitBreakerError
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.policy_registry import PolicyRegistry
@@ -140,8 +142,8 @@ class ActionPolicyEngine:
         self.config = config or {}
 
         # Configuration
-        self.cache_ttl = self.config.get('cache_ttl', 60)  # 60 seconds
-        self.max_cache_size = self.config.get('max_cache_size', 1000)
+        self.cache_ttl = self.config.get('cache_ttl', TTL_LONG)
+        self.max_cache_size = self.config.get('max_cache_size', THRESHOLD_MEDIUM_COUNT)
         self.enable_caching = self.config.get('enable_caching', True)
         self.short_circuit_critical = self.config.get('short_circuit_critical', True)
         self.log_violations = self.config.get('log_violations', True)
@@ -293,7 +295,7 @@ class ActionPolicyEngine:
         if self.log_violations and all_violations:
             await self._log_violations(all_violations, context)
 
-        execution_time = (time.time() - start_time) * 1000  # ms
+        execution_time = (time.time() - start_time) * MILLISECONDS_PER_SECOND
         self._validations_performed += 1
 
         return EnforcementResult(
@@ -404,7 +406,7 @@ class ActionPolicyEngine:
         if self.log_violations and all_violations:
             self._log_violations_sync(all_violations, context)
 
-        execution_time = (time.time() - start_time) * 1000
+        execution_time = (time.time() - start_time) * MILLISECONDS_PER_SECOND
         self._validations_performed += 1
 
         return EnforcementResult(

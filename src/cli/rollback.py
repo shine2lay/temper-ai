@@ -28,6 +28,8 @@ from typing import Optional
 
 import click
 
+from src.constants.durations import SECONDS_PER_HOUR
+from src.constants.limits import MEDIUM_ITEM_LIMIT
 from src.safety.rollback import RollbackManager
 from src.safety.rollback_api import RollbackAPI
 from src.utils.logging import get_logger
@@ -45,7 +47,7 @@ def rollback() -> None:
 @click.option("--workflow-id", help="Filter by workflow ID")
 @click.option("--agent-id", help="Filter by agent ID")
 @click.option("--since-hours", type=int, help="Show snapshots from last N hours")
-@click.option("--limit", default=20, type=int, help="Max snapshots to show")
+@click.option("--limit", default=MEDIUM_ITEM_LIMIT, type=int, help="Max snapshots to show")
 def list(workflow_id: Optional[str], agent_id: Optional[str], since_hours: Optional[int], limit: int) -> None:
     """List available snapshots."""
     try:
@@ -69,7 +71,7 @@ def list(workflow_id: Optional[str], agent_id: Optional[str], since_hours: Optio
 
         click.echo(f"\nFound {len(snapshots)} snapshot(s):\n")
         for snapshot in snapshots:
-            age = (datetime.now(UTC) - snapshot.created_at).total_seconds() / 3600
+            age = (datetime.now(UTC) - snapshot.created_at).total_seconds() / SECONDS_PER_HOUR
             click.echo(
                 f"  {snapshot.id}: {snapshot.action.get('tool', 'unknown')} "
                 f"({snapshot.created_at.strftime('%Y-%m-%d %H:%M:%S')}, "
@@ -195,7 +197,7 @@ def execute(snapshot_id: str, reason: str, operator: str, dry_run: bool, force: 
 
 @rollback.command()
 @click.option("--snapshot-id", help="Filter by snapshot ID")
-@click.option("--limit", default=20, type=int, help="Max results to show")
+@click.option("--limit", default=MEDIUM_ITEM_LIMIT, type=int, help="Max results to show")
 def history(snapshot_id: Optional[str], limit: int) -> None:
     """View rollback execution history."""
     try:

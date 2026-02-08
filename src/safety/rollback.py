@@ -43,6 +43,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from src.constants.limits import MAX_MEDIUM_STRING_LENGTH, THRESHOLD_LARGE_COUNT
+
 # Import rollback data types from observability (canonical location)
 from src.observability.rollback_types import (
     RollbackResult,
@@ -628,8 +630,8 @@ class RollbackManager:
     """
 
     # Defaults for bounded collections
-    MAX_SNAPSHOTS = 500
-    MAX_HISTORY = 10000
+    MAX_SNAPSHOTS = MAX_MEDIUM_STRING_LENGTH
+    MAX_HISTORY = THRESHOLD_LARGE_COUNT
 
     def __init__(
         self,

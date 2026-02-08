@@ -10,6 +10,18 @@ from typing import Any, Dict, List, Tuple
 import numpy as np  # type: ignore[import-not-found]
 from scipy import stats  # type: ignore[import-untyped]
 
+from src.experimentation.constants import (
+    DEFAULT_ALPHA,
+    DEFAULT_BETA,
+    DEFAULT_CREDIBLE_LEVEL,
+    DEFAULT_MDE,
+    DEFAULT_POWER,
+    DEFAULT_PRIOR_MEAN,
+    DEFAULT_PRIOR_STD,
+    MAX_SAMPLE_SIZE_FALLBACK,
+    SPRT_MIN_OBSERVATIONS,
+)
+
 
 class SequentialTester:
     """
@@ -27,9 +39,9 @@ class SequentialTester:
 
     def __init__(
         self,
-        alpha: float = 0.05,
-        beta: float = 0.20,
-        mde: float = 0.10
+        alpha: float = DEFAULT_ALPHA,
+        beta: float = DEFAULT_BETA,
+        mde: float = DEFAULT_MDE
     ):
         """
         Initialize sequential tester.
@@ -65,7 +77,7 @@ class SequentialTester:
             - "stop_winner": Sufficient evidence for winner
             - "stop_no_difference": Sufficient evidence of no difference
         """
-        if len(control_values) < 10 or len(treatment_values) < 10:
+        if len(control_values) < SPRT_MIN_OBSERVATIONS or len(treatment_values) < SPRT_MIN_OBSERVATIONS:
             return ("continue", {"reason": "Insufficient samples for sequential test"})
 
         # Calculate means and pooled variance
@@ -126,7 +138,7 @@ class SequentialTester:
         self,
         baseline_mean: float,
         baseline_std: float,
-        power: float = 0.80
+        power: float = DEFAULT_POWER
     ) -> int:
         """
         Calculate required sample size per variant.
@@ -147,7 +159,7 @@ class SequentialTester:
         effect_size = self.mde * abs(baseline_mean) / baseline_std if baseline_std > 0 else 0
 
         if effect_size == 0:
-            return 10000  # Large number if effect size is zero
+            return MAX_SAMPLE_SIZE_FALLBACK  # Large number if effect size is zero
 
         # Sample size formula for two-sample t-test
         n = 2 * ((z_alpha + z_beta) / effect_size) ** 2
@@ -163,7 +175,7 @@ class BayesianAnalyzer:
     as an alternative to frequentist p-values.
     """
 
-    def __init__(self, prior_mean: float = 0.0, prior_std: float = 1.0):
+    def __init__(self, prior_mean: float = DEFAULT_PRIOR_MEAN, prior_std: float = DEFAULT_PRIOR_STD):
         """
         Initialize Bayesian analyzer.
 
@@ -178,7 +190,7 @@ class BayesianAnalyzer:
         self,
         control_values: List[float],
         treatment_values: List[float],
-        credible_level: float = 0.95
+        credible_level: float = DEFAULT_CREDIBLE_LEVEL
     ) -> Dict[str, Any]:
         """
         Perform Bayesian analysis on two variants.
@@ -246,8 +258,8 @@ def calculate_sample_size(
     baseline_mean: float,
     baseline_std: float,
     mde: float,
-    alpha: float = 0.05,
-    power: float = 0.80
+    alpha: float = DEFAULT_ALPHA,
+    power: float = DEFAULT_POWER
 ) -> int:
     """
     Calculate required sample size for experiment.

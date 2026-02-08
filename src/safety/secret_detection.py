@@ -44,6 +44,16 @@ truffleHog, gitleaks), consider:
 from typing import Any, Dict, List, Optional
 
 from src.safety.base import BaseSafetyPolicy
+from src.safety.constants import (
+    DEFAULT_ENTROPY_THRESHOLD,
+    DEFAULT_ENTROPY_THRESHOLD_GENERIC,
+    MAX_EXCLUDED_PATH_LENGTH,
+    MAX_EXCLUDED_PATHS,
+    MAX_SHANNON_ENTROPY,
+    MIN_ENTROPY_VALUE,
+    SECRET_DETECTION_PRIORITY,
+    SECRET_DETECTION_SESSION_KEY_SIZE,
+)
 from src.safety.entropy_analyzer import EntropyAnalyzer
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.pattern_matcher import PatternMatcher
@@ -157,18 +167,18 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         # Validate entropy thresholds (float, 0.0 to 8.0)
         # Shannon entropy for bytes is max 8.0 bits per character
         self.entropy_threshold = self._validate_float_range(
-            self.config.get("entropy_threshold", 4.5),
+            self.config.get("entropy_threshold", DEFAULT_ENTROPY_THRESHOLD),
             "entropy_threshold",
-            min_value=0.0,
-            max_value=8.0
+            min_value=MIN_ENTROPY_VALUE,
+            max_value=MAX_SHANNON_ENTROPY
         )
 
         # SECURITY: Minimum entropy for generic patterns to reduce false positives
         self.entropy_threshold_generic = self._validate_float_range(
-            self.config.get("entropy_threshold_generic", 3.5),
+            self.config.get("entropy_threshold_generic", DEFAULT_ENTROPY_THRESHOLD_GENERIC),
             "entropy_threshold_generic",
-            min_value=0.0,
-            max_value=8.0
+            min_value=MIN_ENTROPY_VALUE,
+            max_value=MAX_SHANNON_ENTROPY
         )
 
         # Validate excluded_paths (list of strings)
@@ -182,12 +192,12 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         for path in excluded_paths_raw:
             if not isinstance(path, str):
                 raise ValueError(f"excluded_paths items must be strings, got {type(path).__name__}")
-            if len(path) > 500:
-                raise ValueError(f"excluded_paths items must be <= 500 characters, got {len(path)}")
+            if len(path) > MAX_EXCLUDED_PATH_LENGTH:
+                raise ValueError(f"excluded_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(path)}")
             self.excluded_paths.append(path)
 
-        if len(self.excluded_paths) > 1000:
-            raise ValueError(f"excluded_paths must have <= 1000 items, got {len(self.excluded_paths)}")
+        if len(self.excluded_paths) > MAX_EXCLUDED_PATHS:
+            raise ValueError(f"excluded_paths must have <= {MAX_EXCLUDED_PATHS} items, got {len(self.excluded_paths)}")
 
         # Validate allow_test_secrets (boolean)
         self.allow_test_secrets = self._validate_boolean(
@@ -199,7 +209,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         # SECURITY: Session-scoped secret key for HMAC-based violation IDs
         # Provides deduplication (same secret = same ID) without rainbow table risk
         import os
-        self._session_key = os.urandom(32)
+        self._session_key = os.urandom(SECRET_DETECTION_SESSION_KEY_SIZE)
 
         # Initialize helper modules
         self.entropy_analyzer = EntropyAnalyzer()
@@ -228,7 +238,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
         Secret detection has very high priority since leaked secrets are critical.
         """
-        return 95
+        return SECRET_DETECTION_PRIORITY
 
     def _calculate_entropy(self, text: str) -> float:
         """Calculate Shannon entropy of text.

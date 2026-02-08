@@ -45,6 +45,8 @@ except ImportError:
     KEYRING_AVAILABLE = False
     KeyringError = Exception  # type: ignore
 
+from src.constants.limits import THRESHOLD_MASSIVE_COUNT
+
 logger = logging.getLogger(__name__)
 
 
@@ -92,7 +94,7 @@ class SecureTokenStore:
 
     DEFAULT_KEYRING_SERVICE = "meta-autonomous-framework"
     DEFAULT_KEYRING_KEY_NAME = "oauth_token_encryption_key"
-    MAX_ACCESS_LOG_SIZE = 10000
+    MAX_ACCESS_LOG_SIZE = THRESHOLD_MASSIVE_COUNT  # 10000
 
     def __init__(
         self,
@@ -101,7 +103,7 @@ class SecureTokenStore:
         keyring_service: Optional[str] = None,
         keyring_key_name: Optional[str] = None,
         require_keyring: bool = False,  # Fail if keyring not available
-        max_access_log_size: int = MAX_ACCESS_LOG_SIZE,
+        max_access_log_size: int = None,
     ):
         """Initialize token store with secure key management.
 
@@ -120,6 +122,9 @@ class SecureTokenStore:
             ValueError: If no encryption key available
             SecurityError: If keyring required but not available
         """
+        if max_access_log_size is None:
+            max_access_log_size = self.MAX_ACCESS_LOG_SIZE
+
         self.keyring_service = keyring_service or self.DEFAULT_KEYRING_SERVICE
         self.keyring_key_name = keyring_key_name or self.DEFAULT_KEYRING_KEY_NAME
         self.using_keyring = False

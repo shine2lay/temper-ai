@@ -20,6 +20,11 @@ import re
 from typing import Any, Dict, List, Optional, Set
 
 from src.safety.base import BaseSafetyPolicy
+from src.safety.constants import (
+    FORBIDDEN_OPS_PRIORITY,
+    MAX_EXCLUDED_PATH_LENGTH,
+    MAX_EXCLUDED_PATHS,
+)
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
 
@@ -301,9 +306,9 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 raise ValueError(
                     f"custom_forbidden_patterns['{name}'] must be a string, got {type(pattern).__name__}"
                 )
-            if len(pattern) > 500:
+            if len(pattern) > MAX_EXCLUDED_PATH_LENGTH:
                 raise ValueError(
-                    f"custom_forbidden_patterns['{name}'] must be <= 500 characters, got {len(pattern)}"
+                    f"custom_forbidden_patterns['{name}'] must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(pattern)}"
                 )
 
             # SECURITY: Validate regex pattern doesn't have ReDoS vulnerability
@@ -312,7 +317,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 self._validate_regex_pattern(
                     pattern,
                     f"custom_forbidden_patterns['{name}']",
-                    max_length=500,
+                    max_length=MAX_EXCLUDED_PATH_LENGTH,
                     test_timeout=0.1
                 )
                 self.custom_forbidden_patterns[name] = pattern
@@ -343,9 +348,9 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 )
             whitelist_validated.append(cmd)
 
-        if len(whitelist_validated) > 1000:
+        if len(whitelist_validated) > MAX_EXCLUDED_PATHS:
             raise ValueError(
-                f"whitelist_commands must have <= 1000 items, got {len(whitelist_validated)}"
+                f"whitelist_commands must have <= {MAX_EXCLUDED_PATHS} items, got {len(whitelist_validated)}"
             )
 
         self.whitelist_commands = set(whitelist_validated)

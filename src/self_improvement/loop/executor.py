@@ -9,6 +9,9 @@ from typing import Any, Optional
 
 from sqlmodel import Session
 
+from src.constants.durations import DAYS_90
+from src.constants.limits import THRESHOLD_SMALL_COUNT
+from src.constants.probabilities import PROB_HIGH, PROB_MEDIUM, PROB_VERY_HIGH
 from src.self_improvement.data_models import StrategyOutcome
 from src.self_improvement.deployment.deployer import ConfigDeployer
 from src.self_improvement.deployment.rollback_monitor import (
@@ -387,11 +390,11 @@ class LoopExecutor:
         # This identifies which strategies have historically worked well
         try:
             patterns = self.pattern_miner.mine_patterns(
-                min_support=5,  # Require at least 5 observations
-                min_confidence=0.70,  # 70% confidence threshold
-                min_win_rate=0.50,  # Strategy wins at least 50% of time
+                min_support=THRESHOLD_SMALL_COUNT,  # Require at least 5 observations
+                min_confidence=PROB_HIGH,  # 70% confidence threshold
+                min_win_rate=PROB_MEDIUM,  # Strategy wins at least 50% of time
                 min_improvement=0.03,  # At least 3% improvement
-                days_back=90  # Last 90 days
+                days_back=DAYS_90  # Last 90 days
             )
             logger.info(f"Mined {len(patterns)} patterns from experiment history")
 
@@ -608,7 +611,7 @@ class LoopExecutor:
                     actual_speed_improvement=0.0,
                     actual_cost_improvement=0.0,
                     composite_score=0.0,
-                    confidence=0.80,  # Moderate confidence that control is best
+                    confidence=PROB_VERY_HIGH,  # Moderate confidence that control is best
                     sample_size=self.config.target_samples_per_variant * (len(strategy_result.variant_configs) + 1),
                     context={
                         "control_config": strategy_result.control_config.to_dict(),

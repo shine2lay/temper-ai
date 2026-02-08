@@ -22,6 +22,13 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from src.constants.limits import (
+    DEFAULT_MIN_ITEMS,
+    MEDIUM_ITEM_LIMIT,
+    LARGE_ITEM_LIMIT,
+    THRESHOLD_LARGE_COUNT,
+)
+
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
@@ -95,11 +102,17 @@ def create_hierarchical_gantt(
             ))
 
     # Calculate appropriate height
-    height = max(600, len(flat_data) * 35)
+    MIN_CHART_HEIGHT = 600
+    HEIGHT_PER_ITEM = 35
+    height = max(MIN_CHART_HEIGHT, len(flat_data) * HEIGHT_PER_ITEM)
 
     # Update layout
     if title is None:
         title = trace.get("name", "Execution Trace")
+
+    # Chart layout constants
+    TICK_INTERVAL_MS = 1000  # 1 second intervals
+    CHART_LEFT_MARGIN = 300  # More space for long names with tree structure
 
     fig.update_layout(
         title=dict(
@@ -112,7 +125,7 @@ def create_hierarchical_gantt(
             title="Time (seconds from start)",
             tickmode='linear',
             tick0=0,
-            dtick=1000,  # 1 second intervals
+            dtick=TICK_INTERVAL_MS,
             tickformat='.1f',
             ticksuffix='s',
             gridcolor='rgba(128,128,128,0.2)'
@@ -135,7 +148,7 @@ def create_hierarchical_gantt(
             xanchor="right",
             x=1
         ),
-        margin=dict(l=300)  # More space for long names with tree structure
+        margin=dict(l=CHART_LEFT_MARGIN)
     )
 
     # Save to file if requested
@@ -277,7 +290,7 @@ def _flatten_trace_with_tree(
     return flat
 
 
-def print_console_gantt(trace: Dict[str, Any], _max_width: int = 80) -> None:
+def print_console_gantt(trace: Dict[str, Any], _max_width: int = LARGE_ITEM_LIMIT) -> None:
     """
     Print a text-based Gantt chart to console.
 
@@ -311,7 +324,8 @@ def print_console_gantt(trace: Dict[str, Any], _max_width: int = 80) -> None:
                 return f"{seconds*1000:.0f}ms"
             return f"{seconds:.3f}s"
 
-        def create_timeline_bar(start_offset: float, duration: float, total_duration: float, width: int = 40) -> str:
+        TIMELINE_BAR_WIDTH = 40
+        def create_timeline_bar(start_offset: float, duration: float, total_duration: float, width: int = TIMELINE_BAR_WIDTH) -> str:
             """Create a visual timeline bar."""
             if total_duration == 0:
                 return "░" * width
@@ -339,7 +353,7 @@ def print_console_gantt(trace: Dict[str, Any], _max_width: int = 80) -> None:
             start_offset = (start - workflow_start).total_seconds()
 
             # Create timeline bar
-            timeline = create_timeline_bar(start_offset, duration, workflow_duration, width=40)
+            timeline = create_timeline_bar(start_offset, duration, workflow_duration, width=TIMELINE_BAR_WIDTH)
 
             # Get metadata
             metadata = node.get("metadata", {})

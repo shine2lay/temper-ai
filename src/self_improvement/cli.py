@@ -24,6 +24,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from src.constants.durations import HOURS_PER_WEEK
+from src.constants.limits import THRESHOLD_MEDIUM_COUNT
 from src.database import get_database, get_session, init_database
 from src.self_improvement.loop import LoopConfig, M5SelfImprovementLoop
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
@@ -100,7 +102,7 @@ class M5CLI:
                 logger.exception("Iteration error")
                 return 1
 
-    def analyze(self, agent_name: str, window_hours: int = 168) -> int:
+    def analyze(self, agent_name: str, window_hours: int = HOURS_PER_WEEK) -> int:
         """
         Analyze agent performance (Phase 2 only).
 
@@ -121,7 +123,7 @@ class M5CLI:
                 profile = analyzer.analyze_agent_performance(
                     agent_name=agent_name,
                     window_hours=window_hours,
-                    min_executions=10,
+                    min_executions=THRESHOLD_MEDIUM_COUNT,
                 )
 
                 print("\n📈 Performance Analysis:")
@@ -454,7 +456,7 @@ Examples:
     # analyze command
     analyze_parser = subparsers.add_parser('analyze', help='Analyze agent performance')
     analyze_parser.add_argument('agent_name', help='Name of agent')
-    analyze_parser.add_argument('--window', type=int, default=168, help='Analysis window in hours (default: 168)')
+    analyze_parser.add_argument('--window', type=int, default=HOURS_PER_WEEK, help=f'Analysis window in hours (default: {HOURS_PER_WEEK})')
 
     # optimize command (alias for run)
     optimize_parser = subparsers.add_parser('optimize', help='Optimize agent (alias for run)')

@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 from threading import RLock
 from typing import Any, Dict, List, Optional, Protocol
 
+from src.constants.probabilities import PROB_MINIMAL, PROB_MEDIUM
 from src.self_improvement.metrics.types import SIMetricType
 
 logger = logging.getLogger(__name__)
@@ -94,9 +95,9 @@ class MetricCollector(ABC):
             execution: Execution object containing execution metadata
 
         Returns:
-            float: Metric value normalized to [0.0, 1.0] scale, where:
-                   - 0.0 = worst possible value
-                   - 1.0 = best possible value
+            float: Metric value normalized to [METRIC_MIN, METRIC_MAX] scale, where:
+                   - METRIC_MIN = worst possible value
+                   - METRIC_MAX = best possible value
             None: If metric cannot be computed or is not applicable
 
         Raises:
@@ -137,7 +138,8 @@ class MetricCollector(ABC):
             Override this property when making breaking changes to
             metric computation logic to enable version-aware queries.
         """
-        return "1.0"
+        DEFAULT_VERSION = "1.0"
+        return DEFAULT_VERSION
 
 
 class MetricRegistry:
@@ -265,10 +267,12 @@ class MetricRegistry:
                 # Store value if successfully collected
                 if value is not None:
                     # Validate value is in valid range
-                    if not (0.0 <= value <= 1.0):
+                    METRIC_MIN = 0.0
+                    METRIC_MAX = 1.0
+                    if not (METRIC_MIN <= value <= METRIC_MAX):
                         logger.error(
                             f"Collector '{metric_name}' returned invalid value "
-                            f"{value} (must be in [0.0, 1.0])"
+                            f"{value} (must be in [{METRIC_MIN}, {METRIC_MAX}])"
                         )
                         continue
 

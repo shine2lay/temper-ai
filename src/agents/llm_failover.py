@@ -13,6 +13,13 @@ from typing import Any, List, Optional
 import httpx
 
 from src.agents.llm import BaseLLM, LLMError, LLMResponse  # M-04: Import from new location
+from src.constants.limits import (
+    HTTP_CLIENT_ERROR_MAX,
+    HTTP_CLIENT_ERROR_MIN,
+    HTTP_SERVER_ERROR_MAX,
+    HTTP_SERVER_ERROR_MIN,
+)
+from src.constants.retries import DEFAULT_MAX_RETRIES
 from src.utils.exceptions import LLMAuthenticationError, LLMRateLimitError, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
@@ -22,7 +29,7 @@ logger = logging.getLogger(__name__)
 class FailoverConfig:
     """Configuration for failover behavior."""
     sticky_session: bool = True  # Use last successful provider first
-    retry_primary_after: int = 10  # Retry primary after N successful backup calls
+    retry_primary_after: int = DEFAULT_MAX_RETRIES  # Retry primary after N successful backup calls
     failover_on_timeout: bool = True
     failover_on_rate_limit: bool = True
     failover_on_connection_error: bool = True
@@ -272,9 +279,9 @@ class FailoverProvider:
         # HTTP status errors
         if isinstance(error, httpx.HTTPStatusError):
             status_code = error.response.status_code
-            if 400 <= status_code < 500:
+            if HTTP_CLIENT_ERROR_MIN <= status_code < HTTP_CLIENT_ERROR_MAX:
                 return self.config.failover_on_client_error
-            elif 500 <= status_code < 600:
+            elif HTTP_SERVER_ERROR_MIN <= status_code < HTTP_SERVER_ERROR_MAX:
                 return self.config.failover_on_server_error
 
         # Authentication errors - don't failover (likely same credentials)

@@ -34,6 +34,8 @@ from src.compiler.schemas import (
 
 # Import security limits from shared configuration
 from src.compiler.security_limits import CONFIG_SECURITY
+from src.constants.limits import MEDIUM_ITEM_LIMIT
+from src.constants.durations import SECONDS_PER_5_MINUTES
 
 # Import enhanced exceptions
 from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError
@@ -70,7 +72,7 @@ class ConfigLoader:
     """
 
     # Default maximum number of cached configs before LRU eviction
-    DEFAULT_MAX_CACHE_SIZE = 128
+    DEFAULT_MAX_CACHE_SIZE = MEDIUM_ITEM_LIMIT * 12  # 120 configs (10 * 12)
 
     def __init__(
         self,

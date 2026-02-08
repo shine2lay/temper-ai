@@ -16,6 +16,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from src.tools.constants import (
+    DEFAULT_BASH_TIMEOUT,
+    MAX_BASH_TIMEOUT,
+    MAX_BASH_OUTPUT_LENGTH,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +54,7 @@ DANGEROUS_CHARS: Set[str] = {
 }
 
 # Maximum allowed timeout in seconds
-MAX_TIMEOUT_SECONDS = 600
+MAX_TIMEOUT_SECONDS = MAX_BASH_TIMEOUT
 
 # Shell operators that separate commands in a pipeline/chain.
 # Ordered longest-first so "||" and "&&" are matched before "|".
@@ -168,7 +173,7 @@ class Bash(BaseTool):
     - Working directory is validated before execution
     """
 
-    DEFAULT_TIMEOUT = 120  # 2 minutes default
+    DEFAULT_TIMEOUT = DEFAULT_BASH_TIMEOUT  # 2 minutes default
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize Bash tool.
@@ -574,11 +579,10 @@ class Bash(BaseTool):
             exit_code = result.returncode
 
             # Truncate very long output
-            max_output = 50000
-            if len(stdout) > max_output:
-                stdout = stdout[:max_output] + "\n... [output truncated]"
-            if len(stderr) > max_output:
-                stderr = stderr[:max_output] + "\n... [output truncated]"
+            if len(stdout) > MAX_BASH_OUTPUT_LENGTH:
+                stdout = stdout[:MAX_BASH_OUTPUT_LENGTH] + "\n... [output truncated]"
+            if len(stderr) > MAX_BASH_OUTPUT_LENGTH:
+                stderr = stderr[:MAX_BASH_OUTPUT_LENGTH] + "\n... [output truncated]"
 
             success = exit_code == 0
 

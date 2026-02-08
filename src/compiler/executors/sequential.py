@@ -11,6 +11,12 @@ import traceback
 import uuid
 from typing import Any, Dict, Optional, cast
 
+from src.constants.durations import SECONDS_PER_MINUTE
+from src.constants.probabilities import PROB_VERY_HIGH
+from src.constants.retries import (
+    DEFAULT_BACKOFF_MULTIPLIER,
+    MIN_BACKOFF_SECONDS,
+)
 from src.core.circuit_breaker import CircuitBreakerError  # M-03: Use canonical import
 from src.utils.exceptions import (
     BaseError,
@@ -179,7 +185,7 @@ class SequentialStageExecutor(StageExecutor):
                         agent_name=agent_name,
                         decision=output_data.get("output", ""),
                         reasoning=output_data.get("reasoning", ""),
-                        confidence=output_data.get("confidence", 0.8),
+                        confidence=output_data.get("confidence", PROB_VERY_HIGH),
                         metadata=output_data.get("metadata", {})
                     ))
 
@@ -452,11 +458,11 @@ class SequentialStageExecutor(StageExecutor):
         Returns:
             Dict with keys: agent_name, output_data, status, metrics
         """
-        base_delay = 1.0  # seconds
+        base_delay = MIN_BACKOFF_SECONDS
         last_result: Dict[str, Any] = {}
 
         for attempt in range(1, max_retries + 1):
-            delay = min(base_delay * (2 ** (attempt - 1)), 30.0)
+            delay = min(base_delay * (DEFAULT_BACKOFF_MULTIPLIER ** (attempt - 1)), SECONDS_PER_MINUTE / 2)
             logger.info(
                 "Retrying agent %s in stage %s (attempt %d/%d, backoff %.1fs)",
                 agent_name, stage_name, attempt, max_retries, delay,

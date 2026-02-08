@@ -8,6 +8,8 @@ from typing import Any, Dict
 from jinja2 import Template
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
+from src.cache.constants import DEFAULT_CACHE_SIZE
+
 
 class TemplateCacheManager:
     """Manages template compilation cache with LRU eviction.
@@ -16,12 +18,12 @@ class TemplateCacheManager:
     Provides cache statistics for monitoring and optimization.
     """
 
-    def __init__(self, cache_size: int = 128):
+    def __init__(self, cache_size: int = DEFAULT_CACHE_SIZE):
         """
         Initialize cache manager.
 
         Args:
-            cache_size: Maximum number of compiled templates to cache (default: 128)
+            cache_size: Maximum number of compiled templates to cache (default from cache constants)
         """
         self._template_cache: Dict[str, Template] = {}
         self._cache_size = cache_size

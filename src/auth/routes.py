@@ -26,6 +26,7 @@ from src.auth.oauth.config import OAuthConfig
 from src.auth.oauth.rate_limiter import RateLimitExceeded
 from src.auth.oauth.service import OAuthError, OAuthProviderError, OAuthService, OAuthStateError
 from src.auth.session import SessionStore, SessionStoreProtocol, UserStore
+from src.constants.durations import SECONDS_PER_10_MINUTES, SECONDS_PER_HOUR, SECONDS_PER_YEAR
 
 logger = logging.getLogger(__name__)
 
@@ -150,7 +151,7 @@ class OAuthRouteHandlers:
         self,
         name: str,
         value: str,
-        max_age: int = 3600,
+        max_age: int = SECONDS_PER_HOUR,
         path: str = "/",
     ) -> str:
         """Create secure cookie header.
@@ -193,7 +194,7 @@ class OAuthRouteHandlers:
             # Prevent referrer leakage (CRITICAL for OAuth)
             "Referrer-Policy": "no-referrer",
             # HTTPS enforcement
-            "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+            "Strict-Transport-Security": f"max-age={SECONDS_PER_YEAR}; includeSubDomains",
             # Clickjacking protection
             "X-Frame-Options": "DENY",
             # MIME sniffing protection
@@ -263,7 +264,7 @@ class OAuthRouteHandlers:
             headers["Set-Cookie"] = self._create_secure_cookie(
                 name="oauth_redirect",
                 value=redirect_after,
-                max_age=600,  # 10 minutes
+                max_age=SECONDS_PER_10_MINUTES,  # 10 minutes
             )
 
             logger.info(
@@ -377,7 +378,7 @@ class OAuthRouteHandlers:
                 user=user,
                 ip_address=client_ip,
                 user_agent=user_agent,
-                session_max_age=3600,  # 1 hour
+                session_max_age=SECONDS_PER_HOUR,  # 1 hour
             )
 
             # Get redirect URL from state data (bound to OAuth flow)
@@ -398,7 +399,7 @@ class OAuthRouteHandlers:
             session_cookie = self._create_secure_cookie(
                 name="session_id",
                 value=session.session_id,
-                max_age=3600,  # 1 hour
+                max_age=SECONDS_PER_HOUR,  # 1 hour
             )
 
             # Add session cookie to headers

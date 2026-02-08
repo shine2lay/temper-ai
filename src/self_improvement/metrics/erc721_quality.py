@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from src.constants.durations import TIMEOUT_VERY_LONG
 from src.self_improvement.metrics.collector import ExecutionProtocol, MetricCollector
 from src.self_improvement.metrics.types import SIMetricType
 
@@ -160,7 +161,7 @@ def score_project_structure(workspace: Path, contract_name: str = "SimpleNFT") -
     }
 
 
-def score_compilation(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
+def score_compilation(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[str, Any]:
     """Score compilation by running npx hardhat compile.
 
     Args:
@@ -205,7 +206,7 @@ def score_compilation(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
         return {"score": 0.0, "details": f"Error: {e}"}
 
 
-def score_tests(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
+def score_tests(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[str, Any]:
     """Score tests by running npx hardhat test.
 
     Args:
@@ -323,7 +324,7 @@ def score_code_quality(workspace: Path, contract_name: str = "SimpleNFT") -> Dic
     }
 
 
-def score_deployment(workspace: Path, timeout: int = 120) -> Dict[str, Any]:
+def score_deployment(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[str, Any]:
     """Score deployment by running the deploy script on local hardhat node.
 
     Args:
@@ -372,7 +373,7 @@ def score_erc721_workflow(
     workspace_path: str,
     contract_name: str = "SimpleNFT",
     run_commands: bool = True,
-    timeout: int = 120,
+    timeout: int = TIMEOUT_VERY_LONG,
     allowed_root: Optional[str] = None,
 ) -> ERC721QualityScore:
     """Score a complete ERC721 workflow run.

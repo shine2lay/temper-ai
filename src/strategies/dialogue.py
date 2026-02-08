@@ -35,7 +35,10 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
+from src.constants.limits import SMALL_ITEM_LIMIT
+from src.constants.probabilities import PROB_CRITICAL, PROB_MEDIUM, PROB_VERY_HIGH_PLUS
 from src.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
+from src.strategies.constants import DEFAULT_MAX_ROUNDS, DEFAULT_MIN_ROUNDS
 
 logger = logging.getLogger(__name__)
 
@@ -201,13 +204,13 @@ class DialogueOrchestrator(CollaborationStrategy):
 
     def __init__(
         self,
-        max_rounds: int = 3,
-        convergence_threshold: float = 0.85,
+        max_rounds: int = DEFAULT_MAX_ROUNDS,
+        convergence_threshold: float = PROB_CRITICAL,
         cost_budget_usd: Optional[float] = None,
-        min_rounds: int = 1,
+        min_rounds: int = DEFAULT_MIN_ROUNDS,
         use_semantic_convergence: bool = True,
         context_strategy: str = "full",
-        context_window_size: int = 2,
+        context_window_size: int = SMALL_ITEM_LIMIT - 3,  # 2 rounds
         use_merit_weighting: bool = False,
         merit_domain: Optional[str] = None
     ):
@@ -363,8 +366,8 @@ class DialogueOrchestrator(CollaborationStrategy):
                         )
                     else:
                         # No merit score available, use neutral weight
-                        weights[agent_name] = 0.5  # Neutral for new agents
-                        logger.debug(f"No merit score for {agent_name}, using neutral weight 0.5")
+                        weights[agent_name] = PROB_MEDIUM  # Neutral for new agents
+                        logger.debug(f"No merit score for {agent_name}, using neutral weight {PROB_MEDIUM}")
 
         except (ImportError, AttributeError, TypeError, ValueError) as e:
             logger.warning(f"Failed to load merit scores: {e}. Using equal weights.")
@@ -441,7 +444,7 @@ class DialogueOrchestrator(CollaborationStrategy):
             avg_confidence = weighted_conf_sum / weight_sum if weight_sum > 0 else 0
             final_confidence = decision_support * avg_confidence
         else:
-            final_confidence = 0.5
+            final_confidence = PROB_MEDIUM
 
         # Build reasoning
         reasoning = self._build_merit_weighted_reasoning(
@@ -751,7 +754,7 @@ class DialogueOrchestrator(CollaborationStrategy):
 
             # Use high threshold (0.9) for semantic similarity
             # This ensures agents truly mean the same thing, not just related ideas
-            if similarity >= 0.9:
+            if similarity >= PROB_VERY_HIGH_PLUS:
                 similar_count += 1
                 logger.debug(
                     f"Agent {agent} semantically similar: {similarity:.3f} "

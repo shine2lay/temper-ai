@@ -14,6 +14,14 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from src.constants.durations import (
+    DEFAULT_TIMEOUT_SECONDS,
+    POLL_INTERVAL_FAST,
+    RATE_LIMIT_WINDOW_SECOND,
+    SECONDS_PER_HOUR,
+    TIMEOUT_VERY_SHORT,
+)
+from src.constants.limits import MIN_WORKERS
 from src.tools.base import BaseTool, ToolResult
 from src.tools.registry import ToolRegistry
 from src.utils.exceptions import RateLimitError  # Unified base class
@@ -62,11 +70,11 @@ class ToolExecutor:
     def __init__(
         self,
         registry: ToolRegistry,
-        default_timeout: int = 30,
-        max_workers: int = 4,
+        default_timeout: int = DEFAULT_TIMEOUT_SECONDS,
+        max_workers: int = MIN_WORKERS,
         max_concurrent: Optional[int] = None,
         rate_limit: Optional[int] = None,
-        rate_window: float = 1.0,
+        rate_window: float = RATE_LIMIT_WINDOW_SECOND,
         rollback_manager: Optional[RollbackManager] = None,
         policy_engine: Optional[ActionPolicyEngine] = None,
         approval_workflow: Optional[ApprovalWorkflow] = None,
@@ -81,11 +89,11 @@ class ToolExecutor:
 
         Args:
             registry: ToolRegistry instance
-            default_timeout: Default timeout in seconds (default: 30)
-            max_workers: Max concurrent tool executions (default: 4)
+            default_timeout: Default timeout in seconds (default: DEFAULT_TIMEOUT_SECONDS)
+            max_workers: Max concurrent tool executions (default: MIN_WORKERS)
             max_concurrent: Max total concurrent executions allowed (default: None/unlimited)
             rate_limit: Max executions per rate_window (default: None/unlimited)
-            rate_window: Time window for rate limiting in seconds (default: 1.0)
+            rate_window: Time window for rate limiting in seconds (default: RATE_LIMIT_WINDOW_SECOND)
             rollback_manager: RollbackManager for snapshot/rollback (optional)
             policy_engine: ActionPolicyEngine for policy validation (optional)
             approval_workflow: ApprovalWorkflow for approval requests (optional)
@@ -112,7 +120,7 @@ class ToolExecutor:
         # separate pool prevents it from starving the main tool execution
         # threads.
         self._approval_executor = ThreadPoolExecutor(
-            max_workers=4,
+            max_workers=MIN_WORKERS,
             thread_name_prefix="tool-approval",
         )
         self._shutdown = False  # Track shutdown state
@@ -522,8 +530,8 @@ class ToolExecutor:
     def _wait_for_approval(
         self,
         request_id: str,
-        poll_interval: float = 1.0,
-        max_wait: int = 3600
+        poll_interval: float = POLL_INTERVAL_FAST,
+        max_wait: int = SECONDS_PER_HOUR
     ) -> bool:
         """Wait for approval request to be approved/rejected.
 
@@ -547,7 +555,7 @@ class ToolExecutor:
             self._poll_approval, request_id, poll_interval, max_wait
         )
         try:
-            return future.result(timeout=max_wait + 5)
+            return future.result(timeout=max_wait + TIMEOUT_VERY_SHORT)
         except (TimeoutError, RuntimeError, ValueError):
             return False
 

@@ -10,6 +10,13 @@ from enum import Enum
 from functools import wraps
 from typing import Any, Callable, Dict, Optional, Tuple, Type, TypeVar
 
+from src.constants.durations import TIMEOUT_LONG
+from src.constants.retries import (
+    DEFAULT_BACKOFF_MULTIPLIER,
+    DEFAULT_MAX_RETRIES,
+    MIN_BACKOFF_SECONDS,
+)
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
@@ -37,11 +44,11 @@ class RetryParams:
 
     def __init__(
         self,
-        max_retries: int = 3,
-        initial_delay: float = 1.0,
-        max_delay: float = 60.0,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        initial_delay: float = MIN_BACKOFF_SECONDS,
+        max_delay: float = TIMEOUT_LONG,
         strategy: RetryStrategy = RetryStrategy.EXPONENTIAL_BACKOFF,
-        backoff_multiplier: float = 2.0,
+        backoff_multiplier: float = DEFAULT_BACKOFF_MULTIPLIER,
         retryable_exceptions: Optional[Tuple[Type[Exception], ...]] = None
     ):
         self.max_retries = max_retries
@@ -76,9 +83,9 @@ class RetryParams:
 
 
 def retry_with_backoff(
-    max_retries: int = 3,
-    initial_delay: float = 1.0,
-    max_delay: float = 60.0,
+    max_retries: int = DEFAULT_MAX_RETRIES,
+    initial_delay: float = MIN_BACKOFF_SECONDS,
+    max_delay: float = TIMEOUT_LONG,
     strategy: RetryStrategy = RetryStrategy.EXPONENTIAL_BACKOFF,
     retryable_exceptions: Optional[Tuple[Type[Exception], ...]] = None,
     on_retry: Optional[Callable[[Exception, int], None]] = None
@@ -254,8 +261,8 @@ class ErrorHandler:
 
     def __init__(
         self,
-        max_retries: int = 3,
-        retry_delay: float = 1.0,
+        max_retries: int = DEFAULT_MAX_RETRIES,
+        retry_delay: float = MIN_BACKOFF_SECONDS,
         log_errors: bool = True,
         raise_on_failure: bool = True
     ):

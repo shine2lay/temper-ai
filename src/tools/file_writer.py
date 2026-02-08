@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from src.tools.constants import MAX_FILE_SIZE as _MAX_FILE_SIZE
 from src.utils.path_safety import PathSafetyError, PathSafetyValidator
 
 # Dangerous file extensions
@@ -45,7 +46,7 @@ class FileWriter(BaseTool):
     - Uses centralized path_safety module
     """
 
-    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB limit
+    MAX_FILE_SIZE = _MAX_FILE_SIZE  # 10MB limit
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize FileWriter with path safety validator.

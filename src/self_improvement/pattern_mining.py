@@ -10,6 +10,13 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from src.constants.durations import DAYS_90
+from src.constants.limits import THRESHOLD_MEDIUM_COUNT
+from src.constants.probabilities import PROB_MEDIUM_HIGH, PROB_VERY_HIGH
+from src.self_improvement.constants import (
+    MIN_PATTERN_FREQUENCY,
+    PROMPT_IMPROVEMENT_THRESHOLD,
+)
 from src.self_improvement.strategies.strategy import LearnedPattern
 from src.self_improvement.strategy_learning import StrategyLearningStore
 
@@ -64,11 +71,11 @@ class PatternMiner:
 
     def mine_patterns(
         self,
-        min_support: int = 10,
-        min_confidence: float = 0.80,
-        min_win_rate: float = 0.60,
-        min_improvement: float = 0.05,
-        days_back: Optional[int] = 90
+        min_support: int = THRESHOLD_MEDIUM_COUNT,
+        min_confidence: float = PROB_VERY_HIGH,
+        min_win_rate: float = PROB_MEDIUM_HIGH,
+        min_improvement: float = PROMPT_IMPROVEMENT_THRESHOLD,
+        days_back: Optional[int] = DAYS_90
     ) -> List[LearnedPattern]:
         """
         Mine patterns from experiment history.
@@ -188,9 +195,9 @@ class PatternMiner:
             query += " WHERE recorded_at >= ?"
             params.append(cutoff)
 
-        query += """
+        query += f"""
             GROUP BY strategy_name, problem_type
-            HAVING COUNT(*) >= 3
+            HAVING COUNT(*) >= {MIN_PATTERN_FREQUENCY}
             ORDER BY sample_count DESC
         """
 
@@ -257,7 +264,7 @@ class PatternMiner:
     def get_patterns_for_problem_type(
         self,
         problem_type: str,
-        min_confidence: float = 0.80
+        min_confidence: float = PROB_VERY_HIGH
     ) -> List[LearnedPattern]:
         """
         Get learned patterns for a specific problem type.

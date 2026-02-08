@@ -44,9 +44,32 @@ from src.utils.exceptions import (
     LLMTimeoutError,
     sanitize_error_message,
 )
+from src.agents.constants import (
+    DEFAULT_MAX_HTTP_CLIENTS,
+    DEFAULT_MAX_CIRCUIT_BREAKERS,
+    DEFAULT_MAX_HTTP_CONNECTIONS,
+    DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+    DEFAULT_KEEPALIVE_EXPIRY_SECONDS,
+    MAX_ERROR_MESSAGE_LENGTH,
+    RATE_LIMIT_CRITICAL_THRESHOLD_SECONDS,
+)
+from src.constants.durations import TIMEOUT_HTTP_DEFAULT, SLEEP_VERY_SHORT
+from src.constants.retries import (
+    DEFAULT_MAX_RETRIES,
+    DEFAULT_BACKOFF_MULTIPLIER,
+    RETRY_JITTER_MIN,
+    RETRY_JITTER_MAX,
+)
 
 # Module logger for connection management warnings
 logger = logging.getLogger(__name__)
+
+# Timeout and retry constants
+DEFAULT_TIMEOUT_SECONDS = TIMEOUT_HTTP_DEFAULT  # Default timeout for HTTP requests (2 minutes)
+DEFAULT_BACKOFF_FACTOR = DEFAULT_BACKOFF_MULTIPLIER  # Exponential backoff factor
+
+# CPU sampling interval
+CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT  # Interval for CPU usage sampling
 
 
 class LLMProvider(str, Enum):
@@ -101,7 +124,7 @@ class BaseLLM(ABC):
     # circuit breaker, so failures on one instance correctly trip the breaker
     # for all instances pointing at that endpoint.
     # Bounded via OrderedDict with LRU eviction to prevent unbounded memory growth (H-04).
-    _MAX_CIRCUIT_BREAKERS = 100
+    _MAX_CIRCUIT_BREAKERS = DEFAULT_MAX_CIRCUIT_BREAKERS
     _circuit_breakers: collections.OrderedDict[Tuple[str, str, str], CircuitBreaker] = (
         collections.OrderedDict()
     )
@@ -109,7 +132,7 @@ class BaseLLM(ABC):
 
     # Shared HTTP client pool keyed by (provider, base_url) to reduce
     # connection overhead across instances (M-42).
-    _MAX_HTTP_CLIENTS = 50
+    _MAX_HTTP_CLIENTS = DEFAULT_MAX_HTTP_CLIENTS
     _http_clients: Dict[Tuple[str, str], httpx.Client] = {}
     _http_client_lock = threading.Lock()
 
@@ -127,7 +150,7 @@ class BaseLLM(ABC):
         max_tokens: int = 2048,
         top_p: float = 0.9,
         timeout: int = 600,
-        max_retries: int = 3,
+        max_retries: int = DEFAULT_MAX_RETRIES,
         retry_delay: float = 2.0,
         enable_cache: bool = False,
         cache_ttl: Optional[int] = 3600,
@@ -282,9 +305,9 @@ class BaseLLM(ABC):
             with self._sync_cleanup_lock:
                 if self._client is None:
                     limits = httpx.Limits(
-                        max_connections=100,
-                        max_keepalive_connections=20,
-                        keepalive_expiry=30.0
+                        max_connections=DEFAULT_MAX_HTTP_CONNECTIONS,
+                        max_keepalive_connections=DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+                        keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY_SECONDS
                     )
 
                     try:
@@ -314,9 +337,9 @@ class BaseLLM(ABC):
             async with self._get_async_lock():
                 if self._async_client is None:
                     limits = httpx.Limits(
-                        max_connections=100,
-                        max_keepalive_connections=20,
-                        keepalive_expiry=30.0
+                        max_connections=DEFAULT_MAX_HTTP_CONNECTIONS,
+                        max_keepalive_connections=DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+                        keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY_SECONDS
                     )
 
                     try:
@@ -342,9 +365,9 @@ class BaseLLM(ABC):
             with self._sync_cleanup_lock:
                 if self._async_client is None:
                     limits = httpx.Limits(
-                        max_connections=100,
-                        max_keepalive_connections=20,
-                        keepalive_expiry=30.0
+                        max_connections=DEFAULT_MAX_HTTP_CONNECTIONS,
+                        max_keepalive_connections=DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+                        keepalive_expiry=DEFAULT_KEEPALIVE_EXPIRY_SECONDS
                     )
 
                     try:
@@ -605,13 +628,13 @@ class BaseLLM(ABC):
                         )
                     # Exponential backoff with jitter (R-15) to decorrelate
                     # retries across concurrent callers.
-                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                    delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     time.sleep(delay)
 
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                    delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     time.sleep(delay)
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
@@ -659,13 +682,13 @@ class BaseLLM(ABC):
                             f"Request timed out after {self.timeout}s (attempt {attempt + 1}/{self.max_retries})"
                         )
                     # Exponential backoff with jitter (R-15)
-                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                    delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     await asyncio.sleep(delay)
 
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                    delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     await asyncio.sleep(delay)
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
@@ -677,7 +700,7 @@ class BaseLLM(ABC):
 
     def _handle_error_response(self, response: httpx.Response) -> None:
         """Handle HTTP error responses."""
-        safe_text = sanitize_error_message(response.text[:500])
+        safe_text = sanitize_error_message(response.text[:MAX_ERROR_MESSAGE_LENGTH])
         if response.status_code == 401:
             raise LLMAuthenticationError(f"Authentication failed: {safe_text}")
         elif response.status_code == 429:

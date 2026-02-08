@@ -17,6 +17,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
 from src.safety.base import BaseSafetyPolicy
+from src.safety.constants import (
+    FILE_ACCESS_PRIORITY,
+    MAX_EXCLUDED_PATH_LENGTH,
+    MAX_EXCLUDED_PATHS,
+)
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
 
@@ -136,12 +141,12 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         for path in allowed_paths_raw:
             if not isinstance(path, str):
                 raise ValueError(f"allowed_paths items must be strings, got {type(path).__name__}")
-            if len(path) > 500:
-                raise ValueError(f"allowed_paths items must be <= 500 characters, got {len(path)}")
+            if len(path) > MAX_EXCLUDED_PATH_LENGTH:
+                raise ValueError(f"allowed_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(path)}")
             self.allowed_paths.append(path)
 
-        if len(self.allowed_paths) > 1000:
-            raise ValueError(f"allowed_paths must have <= 1000 items, got {len(self.allowed_paths)}")
+        if len(self.allowed_paths) > MAX_EXCLUDED_PATHS:
+            raise ValueError(f"allowed_paths must have <= {MAX_EXCLUDED_PATHS} items, got {len(self.allowed_paths)}")
 
         denied_paths_raw = self.config.get("denied_paths", [])
         if not isinstance(denied_paths_raw, list):
@@ -153,12 +158,12 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         for path in denied_paths_raw:
             if not isinstance(path, str):
                 raise ValueError(f"denied_paths items must be strings, got {type(path).__name__}")
-            if len(path) > 500:
-                raise ValueError(f"denied_paths items must be <= 500 characters, got {len(path)}")
+            if len(path) > MAX_EXCLUDED_PATH_LENGTH:
+                raise ValueError(f"denied_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(path)}")
             self.denied_paths.append(path)
 
-        if len(self.denied_paths) > 1000:
-            raise ValueError(f"denied_paths must have <= 1000 items, got {len(self.denied_paths)}")
+        if len(self.denied_paths) > MAX_EXCLUDED_PATHS:
+            raise ValueError(f"denied_paths must have <= {MAX_EXCLUDED_PATHS} items, got {len(self.denied_paths)}")
 
         # Validate security settings (booleans)
         # CRITICAL: Prevents type confusion attacks like allow_parent_traversal="false" -> True
@@ -223,15 +228,15 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 raise ValueError(
                     f"forbidden_directories items must be strings, got {type(dir_path).__name__}"
                 )
-            if len(dir_path) > 500:
+            if len(dir_path) > MAX_EXCLUDED_PATH_LENGTH:
                 raise ValueError(
-                    f"forbidden_directories items must be <= 500 characters, got {len(dir_path)}"
+                    f"forbidden_directories items must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(dir_path)}"
                 )
             forbidden_dirs_validated.append(dir_path)
 
-        if len(forbidden_dirs_validated) > 1000:
+        if len(forbidden_dirs_validated) > MAX_EXCLUDED_PATHS:
             raise ValueError(
-                f"forbidden_directories must have <= 1000 items, got {len(forbidden_dirs_validated)}"
+                f"forbidden_directories must have <= {MAX_EXCLUDED_PATHS} items, got {len(forbidden_dirs_validated)}"
             )
 
         self.forbidden_directories: Set[str] = set(forbidden_dirs_validated) | self.DEFAULT_FORBIDDEN_DIRS
@@ -251,9 +256,9 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 raise ValueError(f"forbidden_files items must be <= 255 characters, got {len(file_name)}")
             forbidden_files_validated.append(file_name)
 
-        if len(forbidden_files_validated) > 1000:
+        if len(forbidden_files_validated) > MAX_EXCLUDED_PATHS:
             raise ValueError(
-                f"forbidden_files must have <= 1000 items, got {len(forbidden_files_validated)}"
+                f"forbidden_files must have <= {MAX_EXCLUDED_PATHS} items, got {len(forbidden_files_validated)}"
             )
 
         self.forbidden_files: Set[str] = set(forbidden_files_validated) | self.DEFAULT_FORBIDDEN_FILES

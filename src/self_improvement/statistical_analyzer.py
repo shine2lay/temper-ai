@@ -10,6 +10,11 @@ from typing import List, Optional
 import numpy as np
 from scipy import stats
 
+from src.self_improvement.constants import (
+    DEFAULT_ALPHA,
+    DEFAULT_CONFIDENCE_LEVEL,
+)
+
 
 @dataclass
 class VariantResults:
@@ -78,7 +83,7 @@ class ExperimentAnalysis:
     control_results: VariantResults
     variant_comparisons: List[ComparisonResult]
     winner: Optional[ComparisonResult]
-    confidence_level: float = 0.95
+    confidence_level: float = DEFAULT_CONFIDENCE_LEVEL
 
 
 class SIStatisticalAnalyzer:
@@ -94,7 +99,7 @@ class SIStatisticalAnalyzer:
 
     def __init__(
         self,
-        significance_level: float = 0.05,
+        significance_level: float = DEFAULT_ALPHA,
         quality_weight: float = 0.7,
         speed_weight: float = 0.2,
         cost_weight: float = 0.1,

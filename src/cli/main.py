@@ -22,6 +22,9 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
+from src.constants.durations import HOURS_PER_WEEK
+from src.constants.limits import DEFAULT_MAX_ITEMS, MEDIUM_ITEM_LIMIT
+
 console = Console()
 logger = logging.getLogger(__name__)
 
@@ -526,7 +529,7 @@ def m5_run(agent_name: str, config_file: Optional[str]) -> None:
 @click.option(
     "--window",
     type=int,
-    default=168,
+    default=HOURS_PER_WEEK,  # 168 hours = 1 week
     show_default=True,
     help="Analysis window in hours",
 )

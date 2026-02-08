@@ -6,6 +6,8 @@ Server-Side Template Injection (SSTI) attacks.
 """
 from typing import Any, Dict
 
+from src.constants.limits import MEDIUM_ITEM_LIMIT, MULTIPLIER_MEDIUM, MULTIPLIER_SMALL
+from src.constants.sizes import SIZE_100MB
 from src.utils.exceptions import AgentError, ErrorCode
 
 
@@ -58,7 +60,7 @@ class TemplateVariableValidator:
     # Allowed types for template variables (defense against SSTI via dangerous objects)
     ALLOWED_TYPES = (str, int, float, bool, list, dict, tuple, type(None))
     # Maximum size per variable in bytes (100KB)
-    MAX_VAR_SIZE = 100 * 1024
+    MAX_VAR_SIZE = SIZE_100MB // MULTIPLIER_MEDIUM // MULTIPLIER_MEDIUM  # 100KB = 100MB / 10 / 10
 
     def validate_variables(self, variables: Dict[str, Any]) -> None:
         """
@@ -75,9 +77,9 @@ class TemplateVariableValidator:
 
     def _validate_value(self, key: str, value: Any, depth: int = 0) -> None:
         """Recursively validate a single value."""
-        if depth > 20:
+        if depth > MULTIPLIER_MEDIUM * MULTIPLIER_SMALL:  # 20 = 10 * 2
             raise PromptRenderError(
-                f"Variable '{key}' has excessive nesting depth (>20)"
+                f"Variable '{key}' has excessive nesting depth (>{MULTIPLIER_MEDIUM * MULTIPLIER_SMALL})"
             )
 
         if not isinstance(value, self.ALLOWED_TYPES):

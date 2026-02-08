@@ -34,6 +34,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from src.constants.probabilities import PROB_MEDIUM
 from src.strategies.base import AgentOutput, Conflict
 
 
@@ -650,8 +651,8 @@ def calculate_merit_weighted_votes(
 
         merit = context.agent_merits.get(agent_name)
         if not merit:
-            # Use default merit (0.5) if not available
-            merit_score = 0.5
+            # Use default merit (neutral) if not available
+            merit_score = PROB_MEDIUM
         else:
             merit_score = merit.calculate_weight(merit_weights)
 

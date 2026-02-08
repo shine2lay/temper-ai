@@ -15,6 +15,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
+from src.constants.limits import MAX_MEDIUM_STRING_LENGTH
+
 # Infrastructure keys filtered from input display
 _INFRA_KEYS = frozenset({
     "tracker", "config_loader", "tool_registry", "workflow_id",
@@ -160,9 +162,9 @@ def print_detailed_report(result: dict, console: Console) -> None:
                 if agent_name.startswith("__") and agent_name.endswith("__"):
                     continue
 
-                # Output preview (200 chars)
+                # Output preview (500 chars)
                 raw_output = str(output_data.get("output", "") or "")
-                preview = raw_output[:200] + "..." if len(raw_output) > 200 else raw_output
+                preview = raw_output[:MAX_MEDIUM_STRING_LENGTH] + "..." if len(raw_output) > MAX_MEDIUM_STRING_LENGTH else raw_output
                 output_cell = Text(preview)
 
                 confidence = output_data.get("confidence")

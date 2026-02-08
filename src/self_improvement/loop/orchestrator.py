@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session
 
+from src.constants.limits import DEFAULT_MAX_ITEMS
+
 from .config import LoopConfig
 from .continuous_executor import ContinuousExecutor
 from .error_recovery import ErrorRecoveryStrategy
@@ -276,7 +278,7 @@ class M5SelfImprovementLoop:
     def get_history(
         self,
         agent_name: str,
-        limit: int = 10,
+        limit: int = DEFAULT_MAX_ITEMS,
     ) -> List[IterationResult]:
         """
         Get iteration history for agent (not implemented).

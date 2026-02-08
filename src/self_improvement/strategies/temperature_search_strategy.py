@@ -13,6 +13,25 @@ from src.self_improvement.strategies.strategy import (
     SIOptimizationConfig,
 )
 
+# Temperature threshold constants
+MIN_TEMP_FOR_REDUCTION = 0.15  # Minimum temperature before skipping reduction variant
+MAX_TEMP_FOR_INCREASE = 0.85  # Maximum temperature before skipping increase variant
+TEMP_BOUNDARY_BALANCED = 0.5  # Boundary between low and balanced temperature
+CREATIVE_TEMP_THRESHOLD = 0.6  # Threshold for creative temperature consideration
+MAX_CREATIVE_TEMP = 0.95  # Maximum creative temperature limit
+
+# Temperature multipliers
+LOW_TEMP_MULTIPLIER = 0.5  # Multiplier for reducing temperature
+HIGH_TEMP_MULTIPLIER = 1.3  # Multiplier for increasing temperature
+
+# Top-p threshold constants
+TOP_P_INCREASE_THRESHOLD = 0.85  # Threshold for increasing top_p (focused sampling)
+TOP_P_TOLERANCE = 0.05  # Tolerance for comparing top_p values
+TEMP_COMPARISON_TOLERANCE = 0.05  # Tolerance for comparing temperature values
+
+# Variant limits
+MAX_VARIANTS = 4  # Maximum number of variants to generate
+
 
 class TemperatureSearchStrategy(ImprovementStrategy):
     """
@@ -81,8 +100,8 @@ class TemperatureSearchStrategy(ImprovementStrategy):
 
         # Variant 1: Lower temperature (more deterministic)
         # Always generate this unless temperature is already very low
-        if current_temp > 0.15:
-            target_temp = self.DETERMINISTIC_TEMP if current_temp > 0.5 else current_temp * 0.5
+        if current_temp > MIN_TEMP_FOR_REDUCTION:
+            target_temp = self.DETERMINISTIC_TEMP if current_temp > TEMP_BOUNDARY_BALANCED else current_temp * LOW_TEMP_MULTIPLIER
             variant_low_temp = copy.deepcopy(current_config)
             variant_low_temp.inference["temperature"] = round(target_temp, 2)
             variant_low_temp.extra_metadata["strategy"] = self.name
@@ -95,8 +114,8 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         # Variant 2: Higher temperature (more creative)
         # Only if problem suggests need for creativity or diversity
         # Skip higher temperature for quality/correctness problems
-        if problem_type not in ("quality_low", "incorrect_output", "hallucination") and current_temp < 0.85:
-            target_temp = self.CREATIVE_TEMP if current_temp < 0.6 else min(0.95, current_temp * 1.3)
+        if problem_type not in ("quality_low", "incorrect_output", "hallucination") and current_temp < MAX_TEMP_FOR_INCREASE:
+            target_temp = self.CREATIVE_TEMP if current_temp < CREATIVE_TEMP_THRESHOLD else min(MAX_CREATIVE_TEMP, current_temp * HIGH_TEMP_MULTIPLIER)
             variant_high_temp = copy.deepcopy(current_config)
             variant_high_temp.inference["temperature"] = round(target_temp, 2)
             variant_high_temp.extra_metadata["strategy"] = self.name
@@ -109,7 +128,7 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         # Variant 3: Adjusted top_p for better quality/diversity balance
         # For quality issues, use more focused sampling
         if problem_type in ("quality_low", "error_rate_high", "incorrect_output"):
-            if current_top_p > 0.85:
+            if current_top_p > TOP_P_INCREASE_THRESHOLD:
                 target_top_p = self.FOCUSED_TOP_P
                 variant_top_p = copy.deepcopy(current_config)
                 variant_top_p.inference["top_p"] = target_top_p
@@ -121,7 +140,7 @@ class TemperatureSearchStrategy(ImprovementStrategy):
                 variants.append(variant_top_p)
         else:
             # For other problems, try balanced or diverse sampling
-            if abs(current_top_p - self.BALANCED_TOP_P) > 0.05:
+            if abs(current_top_p - self.BALANCED_TOP_P) > TOP_P_TOLERANCE:
                 target_top_p = self.BALANCED_TOP_P
                 variant_top_p = copy.deepcopy(current_config)
                 variant_top_p.inference["top_p"] = target_top_p
@@ -144,7 +163,7 @@ class TemperatureSearchStrategy(ImprovementStrategy):
                 optimal_top_p = self.BALANCED_TOP_P
 
             # Only add if different from current
-            if abs(current_temp - optimal_temp) > 0.05 or abs(current_top_p - optimal_top_p) > 0.05:
+            if abs(current_temp - optimal_temp) > TEMP_COMPARISON_TOLERANCE or abs(current_top_p - optimal_top_p) > TOP_P_TOLERANCE:
                 variant_combined = copy.deepcopy(current_config)
                 variant_combined.inference["temperature"] = optimal_temp
                 variant_combined.inference["top_p"] = optimal_top_p
@@ -156,7 +175,7 @@ class TemperatureSearchStrategy(ImprovementStrategy):
                 )
                 variants.append(variant_combined)
 
-        return variants[:4]  # Limit to 4 variants max
+        return variants[:MAX_VARIANTS]
 
     def is_applicable(self, problem_type: str) -> bool:
         """Check if strategy applies to the problem.

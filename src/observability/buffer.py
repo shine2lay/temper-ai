@@ -14,8 +14,10 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 from src.observability.constants import (
     DEFAULT_BUFFER_SIZE,
+    DEFAULT_DLQ_MAX_SIZE,
     MAX_RETRY_ATTEMPTS,
 )
+from src.constants.durations import SECONDS_PER_5_MINUTES
 
 logger = logging.getLogger(__name__)
 
@@ -128,7 +130,7 @@ class ObservabilityBuffer:
     """
 
     # Default timeout for pending IDs before they are considered stale
-    PENDING_ID_TIMEOUT_SECONDS = 300  # 5 minutes
+    PENDING_ID_TIMEOUT_SECONDS = SECONDS_PER_5_MINUTES
 
     def __init__(
         self,
@@ -138,7 +140,7 @@ class ObservabilityBuffer:
         max_retries: int = MAX_RETRY_ATTEMPTS,
         enable_dlq: bool = True,
         pending_id_timeout: float = PENDING_ID_TIMEOUT_SECONDS,
-        max_dlq_size: int = 10000,
+        max_dlq_size: int = DEFAULT_DLQ_MAX_SIZE,
     ):
         """
         Initialize observability buffer.

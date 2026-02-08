@@ -11,6 +11,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
+from src.constants.durations import SECONDS_PER_MINUTE, SECONDS_PER_HOUR
+from src.constants.limits import THRESHOLD_SMALL_COUNT
+
 from .config import LoopConfig
 from .models import IterationResult
 
@@ -266,13 +269,13 @@ class ContinuousExecutor:
             False if shutdown was requested, True otherwise
         """
         logger.info(f"Sleeping for {interval_minutes} minutes...")
-        sleep_seconds = interval_minutes * 60
+        sleep_seconds = interval_minutes * SECONDS_PER_MINUTE
         sleep_start = time.time()
 
         while time.time() - sleep_start < sleep_seconds:
             if shutdown_requested["flag"]:
                 return False
-            time.sleep(min(5, sleep_seconds - (time.time() - sleep_start)))  # Intentional blocking: interval sleep with periodic shutdown checks in sync continuous loop
+            time.sleep(min(THRESHOLD_SMALL_COUNT, sleep_seconds - (time.time() - sleep_start)))  # Intentional blocking: interval sleep with periodic shutdown checks in sync continuous loop
 
         return True
 
@@ -294,7 +297,7 @@ class ContinuousExecutor:
         logger.info("Continuous improvement loop stopped")
         logger.info(f"{'='*60}")
         logger.info(f"Stop reason: {stats.stop_reason}")
-        logger.info(f"Duration: {duration:.1f}s ({duration/3600:.1f} hours)")
+        logger.info(f"Duration: {duration:.1f}s ({duration/SECONDS_PER_HOUR:.1f} hours)")
         logger.info(f"Total iterations: {stats.total_iterations}")
         logger.info(f"Successful: {stats.successful_iterations}")
         logger.info(f"Failed: {stats.failed_iterations}")

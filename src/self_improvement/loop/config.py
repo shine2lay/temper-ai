@@ -6,6 +6,31 @@ Provides sensible defaults while allowing customization of all loop parameters.
 from dataclasses import dataclass
 from typing import Optional
 
+from src.constants.durations import (
+    HOURS_PER_WEEK,
+    MINUTES_PER_HOUR,
+    SECONDS_PER_MINUTE,
+)
+from src.constants.limits import (
+    DEFAULT_BATCH_SIZE,
+    PERCENT_10,
+    PERCENT_20,
+    PERCENT_30,
+    THRESHOLD_MEDIUM_COUNT,
+    THRESHOLD_SMALL_COUNT,
+)
+from src.constants.retries import (
+    DEFAULT_BACKOFF_MULTIPLIER,
+    DEFAULT_MAX_RETRIES,
+    MEDIUM_BACKOFF_SECONDS,
+)
+from src.self_improvement.constants import (
+    DEFAULT_ALPHA,
+    MAX_CONCURRENT_EXPERIMENTS,
+    PROMPT_IMPROVEMENT_THRESHOLD,
+    ROLLBACK_THRESHOLD,
+)
+
 
 @dataclass
 class LoopConfig:
@@ -16,25 +41,25 @@ class LoopConfig:
     """
 
     # Phase 1: Detection
-    detection_window_hours: int = 168  # 7 days
-    min_executions_for_detection: int = 50  # Minimum samples needed
-    detection_threshold: float = 0.1  # 10% degradation triggers detection
+    detection_window_hours: int = HOURS_PER_WEEK  # 7 days
+    min_executions_for_detection: int = DEFAULT_BATCH_SIZE  # Minimum samples needed
+    detection_threshold: float = ROLLBACK_THRESHOLD  # 10% degradation triggers detection
 
     # Phase 2: Analysis
-    analysis_window_hours: int = 168  # 7 days
-    min_executions_for_analysis: int = 10  # Minimum samples for analysis
+    analysis_window_hours: int = HOURS_PER_WEEK  # 7 days
+    min_executions_for_analysis: int = THRESHOLD_MEDIUM_COUNT  # Minimum samples for analysis
 
     # Phase 3: Strategy
-    max_variants_per_experiment: int = 3  # A/B/C/D testing (control + 3 variants)
+    max_variants_per_experiment: int = MAX_CONCURRENT_EXPERIMENTS  # A/B/C/D testing (control + 3 variants)
     enable_model_variants: bool = True  # Test different LLM models
     enable_prompt_variants: bool = True  # Test different prompts
     enable_param_variants: bool = True  # Test different inference params
 
     # Phase 4: Experimentation
-    target_samples_per_variant: int = 50  # Samples per variant for statistical significance
+    target_samples_per_variant: int = DEFAULT_BATCH_SIZE  # Samples per variant for statistical significance
     experiment_timeout_hours: int = 72  # 3 days max
-    min_improvement_threshold: float = 0.05  # 5% minimum improvement to deploy
-    statistical_significance_level: float = 0.05  # p < 0.05 for significance
+    min_improvement_threshold: float = PROMPT_IMPROVEMENT_THRESHOLD  # 5% minimum improvement to deploy
+    statistical_significance_level: float = DEFAULT_ALPHA  # p < 0.05 for significance
 
     # Phase 5: Deployment
     enable_auto_deploy: bool = True  # Auto-deploy winners
@@ -43,22 +68,22 @@ class LoopConfig:
     deployment_confirmation_required: bool = False  # Require manual confirmation
 
     # Rollback thresholds (from RegressionThresholds)
-    rollback_quality_drop_pct: float = 10.0  # 10% quality drop triggers rollback
-    rollback_cost_increase_pct: float = 20.0  # 20% cost increase triggers rollback
-    rollback_speed_increase_pct: float = 30.0  # 30% speed degradation triggers rollback
+    rollback_quality_drop_pct: float = float(PERCENT_10)  # 10% quality drop triggers rollback
+    rollback_cost_increase_pct: float = float(PERCENT_20)  # 20% cost increase triggers rollback
+    rollback_speed_increase_pct: float = float(PERCENT_30)  # 30% speed degradation triggers rollback
     rollback_min_executions: int = 20  # Min samples before rollback check
 
     # Error handling
-    max_retries_per_phase: int = 3  # Retry failed phases up to 3 times
-    retry_backoff_multiplier: float = 2.0  # Exponential backoff multiplier
-    initial_retry_delay_seconds: float = 5.0  # Initial delay before retry
+    max_retries_per_phase: int = DEFAULT_MAX_RETRIES  # Retry failed phases up to 3 times
+    retry_backoff_multiplier: float = DEFAULT_BACKOFF_MULTIPLIER  # Exponential backoff multiplier
+    initial_retry_delay_seconds: float = float(MEDIUM_BACKOFF_SECONDS)  # Initial delay before retry
     fail_on_permanent_error: bool = False  # Skip iteration vs fail completely
 
     # Continuous mode
-    continuous_check_interval_minutes: int = 60  # Check hourly
+    continuous_check_interval_minutes: int = MINUTES_PER_HOUR  # Check hourly
     continuous_enabled: bool = False  # Disabled by default
     continuous_max_iterations: Optional[int] = None  # Max iterations (None = unlimited)
-    continuous_convergence_window: int = 5  # Stop if no deployments in N iterations
+    continuous_convergence_window: int = THRESHOLD_SMALL_COUNT  # Stop if no deployments in N iterations
     continuous_cost_budget: Optional[float] = None  # Max total cost (None = unlimited)
 
     # Observability
@@ -69,7 +94,7 @@ class LoopConfig:
     # State management
     enable_state_persistence: bool = True  # Persist state to DB
     enable_crash_recovery: bool = True  # Resume from crash
-    state_checkpoint_interval_seconds: int = 60  # Checkpoint state every minute
+    state_checkpoint_interval_seconds: int = SECONDS_PER_MINUTE  # Checkpoint state every minute
 
     def validate(self) -> None:
         """

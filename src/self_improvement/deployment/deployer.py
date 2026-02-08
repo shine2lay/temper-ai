@@ -16,6 +16,7 @@ from typing import Any, Optional
 # Import M4 safety stack
 from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 from src.safety.approval import ApprovalWorkflow
+from src.constants.durations import MINUTES_PER_HOUR
 from src.self_improvement.data_models import (
     ConfigDeployment,
     SIOptimizationConfig,
@@ -330,7 +331,7 @@ class ConfigDeployer:
         new_config: SIOptimizationConfig,
         enforcement_result,
         deployed_by: str,
-        approval_timeout_minutes: int = 60
+        approval_timeout_minutes: int = MINUTES_PER_HOUR
     ) -> bool:
         """
         Request approval and wait for decision.

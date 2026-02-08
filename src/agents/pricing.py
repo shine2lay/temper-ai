@@ -12,11 +12,18 @@ from typing import Any, Dict, Optional
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from src.constants.limits import MULTIPLIER_VERY_LARGE, THRESHOLD_MIN_COUNT
+from src.constants.sizes import SIZE_1MB
+
 logger = logging.getLogger(__name__)
 
 
 # Consolidated: canonical definition in src/utils/exceptions.py
 from src.utils.exceptions import ConfigurationError, ErrorCode, SecurityError  # noqa: F401
+
+# Pricing constants
+TOKENS_PER_MILLION = MULTIPLIER_VERY_LARGE * MULTIPLIER_VERY_LARGE  # 1,000,000
+MAX_REASONABLE_PRICE_PER_MILLION = MULTIPLIER_VERY_LARGE  # $1000 per 1M tokens
 
 
 class PricingConfigNotFoundError(ConfigurationError):
@@ -67,8 +74,8 @@ class ModelPricing(BaseModel):
 
         This is a sanity check to catch configuration errors.
         """
-        if v > 1000:
-            raise ValueError(f"Price {v} unreasonably high (>$1000/1M tokens)")
+        if v > MAX_REASONABLE_PRICE_PER_MILLION:
+            raise ValueError(f"Price {v} unreasonably high (>${MAX_REASONABLE_PRICE_PER_MILLION}/1M tokens)")
         return v
 
 
@@ -104,7 +111,7 @@ class PricingManager:
     _lock = threading.RLock()
 
     # Security constant
-    MAX_CONFIG_SIZE = 1024 * 1024  # 1MB
+    MAX_CONFIG_SIZE = SIZE_1MB
 
     # Supported schema versions
     SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
@@ -213,7 +220,7 @@ class PricingManager:
             self.pricing['_default'] = config.default
             self._config_mtime = self.config_path.stat().st_mtime
 
-            logger.info(f"Loaded pricing for {len(self.pricing) - 1} models")
+            logger.info(f"Loaded pricing for {len(self.pricing) - THRESHOLD_MIN_COUNT} models")
 
         except yaml.YAMLError as e:
             logger.error(f"Invalid YAML in pricing config: {e}")
@@ -299,8 +306,8 @@ class PricingManager:
             pricing = self.pricing['_default']
 
         # Calculate cost
-        input_cost = (input_tokens / 1_000_000) * pricing.input_price
-        output_cost = (output_tokens / 1_000_000) * pricing.output_price
+        input_cost = (input_tokens / TOKENS_PER_MILLION) * pricing.input_price
+        output_cost = (output_tokens / TOKENS_PER_MILLION) * pricing.output_price
 
         return input_cost + output_cost
 
@@ -341,7 +348,7 @@ class PricingManager:
         """
         return {
             "status": "healthy" if self.pricing else "degraded",
-            "models_loaded": len(self.pricing) - 1,  # Exclude _default
+            "models_loaded": len(self.pricing) - THRESHOLD_MIN_COUNT,  # Exclude _default
             "config_path": str(self.config_path),
             "config_exists": self.config_path.exists(),
             "last_reload_mtime": self._config_mtime,

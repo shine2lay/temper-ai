@@ -25,6 +25,9 @@ from src.auth.oauth.config import OAuthConfig, get_provider_endpoints
 from src.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
 from src.auth.oauth.state_store import StateStore, create_state_store
 from src.auth.oauth.token_store import SecureTokenStore
+from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_MEDIUM, TIMEOUT_SHORT, TIMEOUT_NETWORK_CONNECT
+from src.constants.limits import VERY_LARGE_ITEM_LIMIT
+from src.constants.sizes import TOKEN_BYTES_NONCE, TOKEN_BYTES_STATE
 from src.utils.exceptions import FrameworkException
 
 logger = logging.getLogger(__name__)
@@ -125,10 +128,10 @@ class OAuthService:
         if self._http_client is None:
             self._http_client = httpx.AsyncClient(
                 # H-18: Add pool timeout to prevent connection pool exhaustion
-                timeout=httpx.Timeout(30.0, connect=5.0, pool=10.0),
+                timeout=httpx.Timeout(float(TIMEOUT_MEDIUM), connect=float(TIMEOUT_SHORT), pool=float(TIMEOUT_NETWORK_CONNECT)),
                 follow_redirects=False,
                 limits=httpx.Limits(
-                    max_connections=100,
+                    max_connections=VERY_LARGE_ITEM_LIMIT,
                     max_keepalive_connections=20
                 ),
                 # Verify SSL certificates (enabled by default, but explicit for clarity)
@@ -148,11 +151,11 @@ class OAuthService:
 
     def _generate_state(self) -> str:
         """Generate cryptographically secure state token for CSRF protection."""
-        return secrets.token_urlsafe(32)
+        return secrets.token_urlsafe(TOKEN_BYTES_STATE)  # 32 bytes = 256 bits of entropy
 
     def _generate_code_verifier(self) -> str:
         """Generate PKCE code verifier (random string)."""
-        return secrets.token_urlsafe(64)
+        return secrets.token_urlsafe(TOKEN_BYTES_NONCE)  # 64 bytes = 512 bits of entropy
 
     def _generate_code_challenge(self, code_verifier: str) -> str:
         """Generate PKCE code challenge from verifier (SHA256 hash)."""
@@ -216,7 +219,7 @@ class OAuthService:
                 'code_verifier': code_verifier,
                 'created_at': datetime.now(timezone.utc).isoformat()
             },
-            ttl_seconds=600  # 10 minutes
+            ttl_seconds=SECONDS_PER_10_MINUTES  # 10 minutes
         )
 
         # Build authorization URL
@@ -644,7 +647,7 @@ class OAuthService:
                     'client_id': provider_config.client_id,
                     'client_secret': provider_config.client_secret,
                 },
-                timeout=10.0,
+                timeout=float(TIMEOUT_NETWORK_CONNECT),
             )
             if response.status_code == 200:
                 logger.info(f"Token revoked at provider: {provider}")

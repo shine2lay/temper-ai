@@ -9,6 +9,14 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Pattern
 
+from src.constants.sizes import BYTES_PER_GB, BYTES_PER_KB, BYTES_PER_MB
+from src.safety.constants import (
+    DEFAULT_MAX_ITEM_LENGTH,
+    DEFAULT_MAX_ITEMS,
+    DEFAULT_MAX_STRING_LENGTH,
+    MAX_VALIDATION_TIME_SECONDS,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -98,7 +106,7 @@ class ValidationMixin:
         value: Any,
         param_name: str,
         min_seconds: float = 0.1,
-        max_seconds: float = 86400.0  # 24 hours
+        max_seconds: float = float(MAX_VALIDATION_TIME_SECONDS)
     ) -> float:
         """Validate that a parameter is a valid time value in seconds.
 
@@ -299,8 +307,8 @@ class ValidationMixin:
         values: Any,
         param_name: str,
         allow_empty: bool = False,
-        max_items: int = 1000,
-        max_item_length: int = 1000
+        max_items: int = DEFAULT_MAX_ITEMS,
+        max_item_length: int = DEFAULT_MAX_ITEM_LENGTH
     ) -> List[str]:
         """Validate that a parameter is a list of valid strings.
 
@@ -363,7 +371,7 @@ class ValidationMixin:
         self,
         pattern: str,
         param_name: str,
-        max_length: int = 1000,
+        max_length: int = DEFAULT_MAX_STRING_LENGTH,
         test_timeout: float = 0.1
     ) -> Pattern[str]:
         """Validate that a pattern is a safe, compilable regex.
@@ -493,11 +501,11 @@ class ValidationMixin:
             >>> ValidationMixin._format_bytes(1536)
             "1.5KB"
         """
-        if bytes_value < 1024:
+        if bytes_value < BYTES_PER_KB:
             return f"{bytes_value} bytes"
-        elif bytes_value < 1024 * 1024:
-            return f"{bytes_value / 1024:.1f}KB"
-        elif bytes_value < 1024 * 1024 * 1024:
-            return f"{bytes_value / (1024 * 1024):.1f}MB"
+        elif bytes_value < BYTES_PER_MB:
+            return f"{bytes_value / BYTES_PER_KB:.1f}KB"
+        elif bytes_value < BYTES_PER_GB:
+            return f"{bytes_value / BYTES_PER_MB:.1f}MB"
         else:
-            return f"{bytes_value / (1024 * 1024 * 1024):.1f}GB"
+            return f"{bytes_value / BYTES_PER_GB:.1f}GB"

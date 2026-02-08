@@ -4,52 +4,19 @@ Prompt template rendering engine using Jinja2.
 Provides flexible prompt templating with variable substitution, conditional blocks,
 and tool schema formatting for LLM function calling.
 """
-import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from jinja2 import FileSystemLoader, Template, TemplateNotFound
+from jinja2 import FileSystemLoader, TemplateNotFound
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
-from src.utils.exceptions import AgentError, ErrorCode
-
-
-class PromptRenderError(AgentError):
-    """Raised when prompt rendering fails."""
-
-    def __init__(self, message: str, **kwargs):
-        super().__init__(
-            message=message,
-            error_code=ErrorCode.AGENT_EXECUTION_ERROR,
-            **kwargs
-        )
-
-
-def _is_safe_template_value(value: Any) -> bool:
-    """Check whether a value is safe to pass into Jinja2 templates.
-
-    Uses an allowlist approach: only serializable primitive types, lists,
-    tuples, and dicts (with string keys) are permitted.  Functions, classes,
-    modules, and other arbitrary objects are rejected.
-
-    Args:
-        value: The value to check.
-
-    Returns:
-        True if the value (and all nested children) contains only safe types.
-    """
-    if value is None:
-        return True
-    if isinstance(value, (str, int, float, bool)):
-        return True
-    if isinstance(value, (list, tuple)):
-        return all(_is_safe_template_value(v) for v in value)
-    if isinstance(value, dict):
-        return all(
-            isinstance(k, str) and _is_safe_template_value(v)
-            for k, v in value.items()
-        )
-    return False
+from src.agents.prompt_validation import (
+    PromptRenderError,
+    TemplateVariableValidator,
+    _is_safe_template_value
+)
+from src.agents.prompt_cache import TemplateCacheManager
+from src.agents.prompt_formatters import ToolSchemaFormatter
 
 
 class PromptEngine:
@@ -77,10 +44,9 @@ class PromptEngine:
         'You have 1 tools'
     """
 
-    # Allowed types for template variables (defense against SSTI via dangerous objects)
-    ALLOWED_TYPES = (str, int, float, bool, list, dict, tuple, type(None))
-    # Maximum size per variable in bytes (100KB)
-    MAX_VAR_SIZE = 100 * 1024
+    # Backward-compatible class constants (delegate to validator)
+    ALLOWED_TYPES = TemplateVariableValidator.ALLOWED_TYPES
+    MAX_VAR_SIZE = TemplateVariableValidator.MAX_VAR_SIZE
 
     def __init__(self, templates_dir: Optional[Union[str, Path]] = None, cache_size: int = 128):
         """
@@ -105,11 +71,14 @@ class PromptEngine:
 
         self.templates_dir = Path(templates_dir) if templates_dir else None
 
+        # Validation
+        self.validator = TemplateVariableValidator()
+
         # Template compilation cache (LRU)
-        self._template_cache: Dict[str, Template] = {}
-        self._cache_size = cache_size
-        self._cache_hits = 0
-        self._cache_misses = 0
+        self.cache = TemplateCacheManager(cache_size)
+
+        # Tool schema formatting
+        self.formatter = ToolSchemaFormatter()
 
         # Shared immutable sandboxed environment for inline templates
         # ImmutableSandboxedEnvironment prevents attribute modification on objects
@@ -162,28 +131,11 @@ class PromptEngine:
             variables = {}
 
         # Validate variable types and sizes before rendering
-        self._validate_variables(variables)
+        self.validator.validate_variables(variables)
 
         try:
-            # Check cache for compiled template
-            jinja_template = self._template_cache.get(template)
-
-            if jinja_template is None:
-                # Cache miss - compile template
-                self._cache_misses += 1
-                jinja_template = self._sandbox_env.from_string(template)
-
-                # Add to cache (LRU eviction if full)
-                if len(self._template_cache) >= self._cache_size:
-                    # Remove oldest entry (simple FIFO since dicts are ordered in Python 3.7+)
-                    oldest_key = next(iter(self._template_cache))
-                    del self._template_cache[oldest_key]
-
-                self._template_cache[template] = jinja_template
-            else:
-                # Cache hit
-                self._cache_hits += 1
-
+            # Get or compile template
+            jinja_template = self.cache.get_or_compile(template, self._sandbox_env)
             return jinja_template.render(**variables)
         except PromptRenderError:
             raise
@@ -217,7 +169,7 @@ class PromptEngine:
             variables = {}
 
         # Validate variable types and sizes before rendering
-        self._validate_variables(variables)
+        self.validator.validate_variables(variables)
 
         if not self.jinja_env:
             raise PromptRenderError(
@@ -274,7 +226,7 @@ class PromptEngine:
 
         if tool_schemas:
             # Inject formatted tools into variables
-            variables["tools_available"] = self._format_tool_schemas(
+            variables["tools_available"] = self.formatter.format_tool_schemas(
                 tool_schemas,
                 format_style
             )
@@ -330,7 +282,7 @@ class PromptEngine:
             variables["agent_name"] = agent_name
 
         if tool_schemas:
-            variables["tools_available"] = self._format_tool_schemas(tool_schemas)
+            variables["tools_available"] = self.formatter.format_tool_schemas(tool_schemas)
             variables["tools"] = tool_schemas
         else:
             variables["tools_available"] = "No tools available"
@@ -349,6 +301,8 @@ class PromptEngine:
         """
         Format tool schemas for inclusion in prompts.
 
+        Backward-compatible wrapper around formatter.format_tool_schemas().
+
         Args:
             schemas: List of tool schema dictionaries
             format_style: How to format ("json", "list", "markdown")
@@ -362,33 +316,7 @@ class PromptEngine:
             >>> engine._format_tool_schemas(tools, "list")
             '- calc: Calculator'
         """
-        if not schemas:
-            return "No tools available"
-
-        if format_style == "json":
-            # Pretty JSON format
-            return json.dumps(schemas, indent=2)
-
-        elif format_style == "list":
-            # Simple list format: "- name: description"
-            lines = []
-            for schema in schemas:
-                name = schema.get("name", "Unknown")
-                desc = schema.get("description", "No description")
-                lines.append(f"- {name}: {desc}")
-            return "\n".join(lines)
-
-        elif format_style == "markdown":
-            # Markdown table format
-            lines = ["| Tool | Description |", "|------|-------------|"]
-            for schema in schemas:
-                name = schema.get("name", "Unknown")
-                desc = schema.get("description", "No description")
-                lines.append(f"| {name} | {desc} |")
-            return "\n".join(lines)
-
-        else:
-            raise ValueError(f"Unknown format_style: {format_style}")
+        return self.formatter.format_tool_schemas(schemas, format_style)
 
     def get_cache_stats(self) -> Dict[str, Any]:
         """
@@ -407,17 +335,7 @@ class PromptEngine:
             >>> stats["cache_hit_rate"]
             0.5
         """
-        total_requests = self._cache_hits + self._cache_misses
-        hit_rate = self._cache_hits / total_requests if total_requests > 0 else 0.0
-
-        return {
-            "cache_hits": self._cache_hits,
-            "cache_misses": self._cache_misses,
-            "total_requests": total_requests,
-            "cache_hit_rate": hit_rate,
-            "cache_size": len(self._template_cache),
-            "cache_capacity": self._cache_size
-        }
+        return self.cache.get_cache_stats()
 
     def clear_cache(self) -> None:
         """
@@ -433,55 +351,7 @@ class PromptEngine:
             >>> stats["cache_size"]
             0
         """
-        self._template_cache.clear()
-        self._cache_hits = 0
-        self._cache_misses = 0
-
-    def _validate_variables(self, variables: Dict[str, Any]) -> None:
-        """
-        Validate template variables for type safety and size limits.
-
-        Prevents SSTI by ensuring only safe primitive types are passed to
-        the template engine. Blocks functions, classes, modules, and other
-        objects that could be used to access Python internals.
-
-        Args:
-            variables: Variables to validate
-
-        Raises:
-            PromptRenderError: If any variable has a disallowed type or exceeds size limit
-        """
-        for key, value in variables.items():
-            self._validate_value(key, value)
-
-    def _validate_value(self, key: str, value: Any, depth: int = 0) -> None:
-        """Recursively validate a single value."""
-        if depth > 20:
-            raise PromptRenderError(
-                f"Variable '{key}' has excessive nesting depth (>20)"
-            )
-
-        if not isinstance(value, self.ALLOWED_TYPES):
-            raise PromptRenderError(
-                f"Variable '{key}' has disallowed type: {type(value).__name__}. "
-                f"Allowed: str, int, float, bool, list, dict, tuple, None"
-            )
-
-        # Check size for string values
-        if isinstance(value, str):
-            size = len(value.encode('utf-8', errors='replace'))
-            if size > self.MAX_VAR_SIZE:
-                raise PromptRenderError(
-                    f"Variable '{key}' exceeds size limit: {size} > {self.MAX_VAR_SIZE}"
-                )
-
-        # Recursively validate nested structures
-        if isinstance(value, dict):
-            for k, v in value.items():
-                self._validate_value(f"{key}.{k}", v, depth + 1)
-        elif isinstance(value, (list, tuple)):
-            for i, item in enumerate(value):
-                self._validate_value(f"{key}[{i}]", item, depth + 1)
+        self.cache.clear_cache()
 
     def render_agent_prompt(
         self,
@@ -546,7 +416,7 @@ class PromptEngine:
             if agent_name:
                 all_vars["agent_name"] = agent_name
             if tool_schemas:
-                all_vars["tools_available"] = self._format_tool_schemas(tool_schemas)
+                all_vars["tools_available"] = self.formatter.format_tool_schemas(tool_schemas)
                 all_vars["tools"] = tool_schemas
 
             return self.render_file(template_path, all_vars)

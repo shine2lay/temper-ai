@@ -45,6 +45,19 @@ from src.utils.exceptions import FrameworkException
 
 logger = logging.getLogger(__name__)
 
+# Metric weights for statistical analysis (must sum to 1.0)
+WEIGHT_QUALITY = 0.7  # Weight for quality metrics in analysis
+WEIGHT_SPEED = 0.2  # Weight for speed metrics in analysis
+WEIGHT_COST = 0.1  # Weight for cost metrics in analysis
+
+# ID truncation lengths
+EXPERIMENT_ID_UUID_LENGTH = 8  # Number of hex chars for experiment IDs
+RESULT_ID_UUID_LENGTH = 12  # Number of hex chars for result IDs
+
+# Hash constants
+HASH_PREFIX_LENGTH = 8  # Number of hex chars to use from hash for variant assignment
+HEX_BASE = 16  # Base for hexadecimal conversion
+
 
 # ========== Custom Exceptions ==========
 
@@ -239,9 +252,9 @@ class ExperimentOrchestrator:
         self.session = session
         self.statistical_analyzer = statistical_analyzer or SIStatisticalAnalyzer(
             significance_level=DEFAULT_ALPHA,
-            quality_weight=0.7,
-            speed_weight=0.2,
-            cost_weight=0.1
+            quality_weight=WEIGHT_QUALITY,
+            speed_weight=WEIGHT_SPEED,
+            cost_weight=WEIGHT_COST
         )
         self.target_executions_per_variant = target_executions_per_variant
 
@@ -357,7 +370,7 @@ class ExperimentOrchestrator:
             )
 
         # Generate experiment ID
-        experiment_id = f"exp-{agent_name}-{uuid.uuid4().hex[:8]}"
+        experiment_id = f"exp-{agent_name}-{uuid.uuid4().hex[:EXPERIMENT_ID_UUID_LENGTH]}"
 
         # Set target
         target = target_executions_per_variant or self.target_executions_per_variant
@@ -516,7 +529,7 @@ class ExperimentOrchestrator:
         """
         # Compute SHA-256 hash
         hash_value = hashlib.sha256(hash_input.encode()).hexdigest()
-        hash_int = int(hash_value[:8], 16)
+        hash_int = int(hash_value[:HASH_PREFIX_LENGTH], HEX_BASE)
 
         # Map to variant index (equal distribution)
         variant_index = hash_int % num_variants
@@ -611,7 +624,7 @@ class ExperimentOrchestrator:
             )
 
         # Create and store ORM result (session-per-operation)
-        result_id = f"result-{uuid.uuid4().hex[:12]}"
+        result_id = f"result-{uuid.uuid4().hex[:RESULT_ID_UUID_LENGTH]}"
         db_result = M5ExecutionResult(
             id=result_id,
             experiment_id=experiment_id,

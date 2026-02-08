@@ -22,6 +22,19 @@ from src.self_improvement.strategy_learning import StrategyLearningStore
 
 logger = logging.getLogger(__name__)
 
+# Confidence calculation constants
+SAMPLE_SIZE_THRESHOLD = 50.0  # Sample count for 90% confidence
+IMPROVEMENT_THRESHOLD = 0.5  # 50% improvement for full confidence
+BASE_CONFIDENCE = 0.5  # Base confidence for improvement scaling
+
+# Confidence weight components (must sum to 1.0)
+WEIGHT_SAMPLE_SIZE = 0.5  # Weight for sample size in confidence
+WEIGHT_WIN_RATE = 0.3  # Weight for win rate in confidence
+WEIGHT_IMPROVEMENT = 0.2  # Weight for improvement magnitude in confidence
+
+# Result limits
+TOP_PROBLEM_TYPES_LIMIT = 3  # Number of top problem types to return
+
 
 @dataclass
 class PatternCandidate:
@@ -241,7 +254,7 @@ class PatternMiner:
         """
         # Sample size confidence (asymptotic to 1.0)
         # Reaches 0.9 at 50 samples, 0.95 at 100 samples
-        sample_confidence = 1.0 - (1.0 / (1.0 + sample_count / 50.0))
+        sample_confidence = 1.0 - (1.0 / (1.0 + sample_count / SAMPLE_SIZE_THRESHOLD))
 
         # Win rate confidence (linear with win rate)
         # 60% win rate = 0.6 confidence, 100% = 1.0 confidence
@@ -249,14 +262,14 @@ class PatternMiner:
 
         # Improvement magnitude confidence
         # 5% improvement = 0.5, 20% = 0.8, 50%+ = 1.0
-        improvement_confidence = min(1.0, avg_improvement / 0.5 + 0.5)
+        improvement_confidence = min(1.0, avg_improvement / IMPROVEMENT_THRESHOLD + BASE_CONFIDENCE)
 
         # Weighted combination
         # Sample size is most important, then win rate, then improvement
         confidence = (
-            0.5 * sample_confidence +
-            0.3 * win_confidence +
-            0.2 * improvement_confidence
+            WEIGHT_SAMPLE_SIZE * sample_confidence +
+            WEIGHT_WIN_RATE * win_confidence +
+            WEIGHT_IMPROVEMENT * improvement_confidence
         )
 
         return min(1.0, max(0.0, confidence))
@@ -350,5 +363,5 @@ class PatternMiner:
                 problem_types.items(),
                 key=lambda x: x[1]["win_rate"],
                 reverse=True
-            )[:3]  # Top 3 problem types
+            )[:TOP_PROBLEM_TYPES_LIMIT]
         }

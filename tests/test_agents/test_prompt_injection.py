@@ -21,6 +21,8 @@ def agent():
     mock_config.agent.safety.mode = "execute"
     mock_config.agent.safety.require_approval_for_tools = []
     mock_config.agent.safety.max_execution_time_seconds = 300
+    mock_config.agent.safety.max_tool_result_size = 100000
+    mock_config.agent.safety.max_prompt_length = 200000
     mock_config.agent.model.provider = "ollama"
     mock_config.agent.model.name = "test"
 

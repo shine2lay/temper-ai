@@ -30,9 +30,9 @@ SECRET_PATTERNS: dict[str, str] = {
     "anthropic_key": r"\bsk-ant-api\d{2,4}-[a-zA-Z0-9_-]{20,200}\b",
 
     # AWS
-    "aws_access_key": r"\bAKIA[0-9A-Z]{16}\b",
+    "aws_access_key": r"AKIA[0-9A-Z]{16}",
     "aws_secret_key": (
-        r"\b(?:aws_secret_access_key|SecretAccessKey|AWS_SECRET)"
+        r"['\"]?(?:aws_secret_access_key|SecretAccessKey|AWS_SECRET)['\"]?"
         r"\s*[=:]\s*['\"]?([a-zA-Z0-9+/]{40})['\"]?"
     ),
 

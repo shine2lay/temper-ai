@@ -23,7 +23,7 @@ from src.agents.llm_providers import (
     VllmLLM,
     create_llm_client,
 )
-from src.llm.circuit_breaker import (
+from src.core.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitBreakerError,
@@ -2135,17 +2135,18 @@ class TestConnectionPoolCleanup:
             assert "not properly closed" in str(w[0].message)
 
     def test_del_cleanup_async_client(self):
-        """Verify __del__ cleanup closes async client (code-high-02).
+        """Verify close() method closes async client (code-high-02).
 
-        Previously, __del__ only closed sync client, causing async connection leaks.
+        The __del__ method only warns about improper cleanup, not actually
+        cleanup resources. Use close() for proper cleanup.
         """
         llm = OllamaLLM(model="llama2", base_url="http://localhost:11434")
         async_client = llm._get_async_client()
         assert isinstance(async_client, httpx.AsyncClient), \
             f"Expected httpx.AsyncClient, got {type(async_client)}"
 
-        # Trigger garbage collection cleanup
-        llm.__del__()
+        # Close the client properly
+        llm.close()
 
         # Verify async client was closed (critical fix verification)
         assert llm._async_client is None

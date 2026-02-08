@@ -194,12 +194,15 @@ class TestFileCheckpointStorage:
             checkpoint_data = json.load(f)
 
         # Verify it's valid JSON with expected fields
-        # New backend wraps domain state with checkpoint metadata
-        assert "workflow_id" in checkpoint_data
-        assert checkpoint_data["workflow_id"] == "wf-test-123"
-        assert "domain_state" in checkpoint_data
-        assert "stage_outputs" in checkpoint_data["domain_state"]
-        assert "current_stage" in checkpoint_data["domain_state"]
+        # New backend wraps domain state with checkpoint metadata and HMAC
+        assert "hmac" in checkpoint_data
+        assert "data" in checkpoint_data
+        data = checkpoint_data["data"]
+        assert "workflow_id" in data
+        assert data["workflow_id"] == "wf-test-123"
+        assert "domain_state" in data
+        assert "stage_outputs" in data["domain_state"]
+        assert "current_stage" in data["domain_state"]
 
     def test_sanitize_workflow_id_in_filename(self, storage):
         """Test that workflow IDs with slashes are sanitized."""

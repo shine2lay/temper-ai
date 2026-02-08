@@ -184,12 +184,15 @@ class TestSyncAsyncConsistency:
     async def test_acomplete_uses_check_cache(self, llm):
         """acomplete() uses _check_cache for cache lookup."""
         with patch.object(llm, '_check_cache', return_value=("key", None)) as mock_check, \
-             patch.object(llm, '_get_async_client') as mock_client:
+             patch('src.agents.llm.base.httpx.AsyncClient') as mock_client_class:
 
             mock_resp = MagicMock()
             mock_resp.status_code = 200
             mock_resp.json.return_value = {"text": "result"}
-            mock_client.return_value.post = AsyncMock(return_value=mock_resp)
+
+            mock_client = AsyncMock()
+            mock_client.post = AsyncMock(return_value=mock_resp)
+            mock_client_class.return_value = mock_client
 
             await llm.acomplete("hello")
             mock_check.assert_called_once()

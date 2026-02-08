@@ -1031,9 +1031,11 @@ def _run_bandit(src_dir: Path) -> dict:
 def _run_radon_cc(src_dir: Path) -> dict:
     """Run radon cyclomatic complexity analysis."""
     try:
+        # Run from /tmp to avoid radon crashing on pyproject.toml pytest config
         result = subprocess.run(
-            ["radon", "cc", str(src_dir), "-j", "-n", "C"],  # Only show C+ complexity
+            ["radon", "cc", str(src_dir.resolve()), "-j", "-n", "C"],  # Only show C+ complexity
             capture_output=True, text=True, timeout=120,
+            cwd="/tmp",
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
@@ -1066,9 +1068,11 @@ def _run_radon_cc(src_dir: Path) -> dict:
 def _run_radon_mi(src_dir: Path) -> dict:
     """Run radon maintainability index analysis."""
     try:
+        # Run from /tmp to avoid radon crashing on pyproject.toml pytest config
         result = subprocess.run(
-            ["radon", "mi", str(src_dir), "-j"],
+            ["radon", "mi", str(src_dir.resolve()), "-j"],
             capture_output=True, text=True, timeout=120,
+            cwd="/tmp",
         )
         if result.returncode == 0:
             data = json.loads(result.stdout)
@@ -1108,8 +1112,13 @@ def _run_pip_audit() -> dict:
         )
         if result.returncode in (0, 1):  # 1 means vulnerabilities found
             data = json.loads(result.stdout)
+            # pip-audit >= 2.x wraps results in {"dependencies": [...]}
+            if isinstance(data, dict):
+                data = data.get("dependencies", [])
             vulns = []
             for item in data:
+                if not isinstance(item, dict) or "skip_reason" in item:
+                    continue
                 name = item.get("name", "")
                 version = item.get("version", "")
                 for vuln in item.get("vulns", []):
@@ -2396,7 +2405,7 @@ def main() -> None:
         "metadata": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "src_dir": str(src_dir),
-            "scanner_version": "2.3.0",
+            "scanner_version": "2.3.1",
             "content_hash": compute_content_hash(src_dir),
         },
         "files": files,
@@ -2407,6 +2416,16 @@ def main() -> None:
         "god_objects": god_objects,
         "layer_analysis": layers,
         "static_analysis": static,
+        # Flatten external tool results to top level for easy access
+        "ruff": static.get("ruff", {}),
+        "black": static.get("black", {}),
+        "vulture": static.get("vulture", {}),
+        "bandit": static.get("bandit", {}),
+        "radon_cc": static.get("radon_cc", {}),
+        "radon_mi": static.get("radon_mi", {}),
+        "pip_audit": static.get("pip_audit", {}),
+        "mypy": static.get("mypy", {}),
+        "coverage": test_coverage,
         "unused_imports": unused_imports,
         "missing_docstrings": missing_docstrings,
         "broad_try_blocks": broad_try,

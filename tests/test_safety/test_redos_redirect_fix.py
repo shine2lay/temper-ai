@@ -328,8 +328,13 @@ class TestPerformanceBenchmarks:
         # Original ReDoS would take >10s, so this is >50x improvement
         assert elapsed < 0.2, f"100 iterations took {elapsed:.3f}s"
 
-    def test_benchmark_large_input(self):
-        """Benchmark large input (100KB)."""
+    def test_benchmark_large_input(self, worker_id):
+        """Benchmark large input (100KB).
+
+        Note: Skipped in parallel mode due to timing sensitivity.
+        """
+        if worker_id != "master":
+            pytest.skip("Performance benchmark - run serially only")
         policy = ForbiddenOperationsPolicy()
 
         command = "x" * 100000 + " > output.txt"

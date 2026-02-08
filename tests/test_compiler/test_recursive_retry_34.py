@@ -129,8 +129,13 @@ class TestIterativeRetry:
             "current_stage": None,
         }
 
-    def test_no_recursion_with_high_max_retries(self):
-        """With max_retries=100, no RecursionError should occur."""
+    def test_no_recursion_with_high_max_retries(self, worker_id):
+        """With max_retries=100, no RecursionError should occur.
+
+        Note: Skipped in parallel mode due to sys.setrecursionlimit() modifying global state.
+        """
+        if worker_id != "master":
+            pytest.skip("Test modifies global recursion limit - run serially only")
         fail_result = _make_synthesis_result(confidence=0.3)
         pass_result = _make_synthesis_result(confidence=0.95)
 

@@ -24,6 +24,7 @@ import re
 import subprocess
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -108,6 +109,24 @@ ANTI_PATTERNS: list[dict[str, str]] = [
         "severity": "HIGH",
         "description": "Potential hardcoded password or secret key",
     },
+    {
+        "name": "pickle_loads",
+        "pattern": r"pickle\.loads?\(",
+        "severity": "HIGH",
+        "description": "Deserialization attack via pickle",
+    },
+    {
+        "name": "os_system",
+        "pattern": r"os\.system\(",
+        "severity": "HIGH",
+        "description": "Shell injection via os.system()",
+    },
+    {
+        "name": "marshal_loads",
+        "pattern": r"marshal\.loads?\(",
+        "severity": "HIGH",
+        "description": "Unsafe deserialization via marshal",
+    },
     # MEDIUM: Code quality issues
     {
         "name": "deprecated_utcnow",
@@ -133,6 +152,12 @@ ANTI_PATTERNS: list[dict[str, str]] = [
         "severity": "MEDIUM",
         "description": "Broad except catches Exception (prefer specific exceptions)",
     },
+    {
+        "name": "tempfile_mktemp",
+        "pattern": r"tempfile\.mktemp\(",
+        "severity": "MEDIUM",
+        "description": "Race condition (use mkstemp)",
+    },
     # LOW: Informational
     {
         "name": "time_sleep",
@@ -145,6 +170,18 @@ ANTI_PATTERNS: list[dict[str, str]] = [
         "pattern": r"#\s*(?:TODO|FIXME|HACK|XXX)\b",
         "severity": "LOW",
         "description": "Unresolved TODO/FIXME marker",
+    },
+    {
+        "name": "md5_security",
+        "pattern": r"hashlib\.(?:md5|sha1)\(",
+        "severity": "LOW",
+        "description": "Weak hash (MD5/SHA1)",
+    },
+    {
+        "name": "assert_validation",
+        "pattern": r"^\s*assert\s+(?!.*#\s*noqa)",
+        "severity": "LOW",
+        "description": "assert for validation (disabled with -O)",
     },
 ]
 
@@ -187,6 +224,33 @@ def scan_files(src_dir: Path) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# File Cache (single-pass read + parse)
+# ---------------------------------------------------------------------------
+
+def _build_file_cache(
+    files: list[dict],
+) -> dict[str, tuple[str, "ast.Module | None"]]:
+    """Read and parse all files once, returning {abs_path: (source, tree|None)}.
+
+    The cache is immutable after construction and safe for concurrent reads.
+    """
+    cache: dict[str, tuple[str, ast.Module | None]] = {}
+    for file_info in files:
+        abs_path = file_info["abs_path"]
+        try:
+            source = Path(abs_path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            cache[abs_path] = ("", None)
+            continue
+        try:
+            tree = ast.parse(source, filename=abs_path)
+        except (SyntaxError, ValueError):
+            tree = None
+        cache[abs_path] = (source, tree)
+    return cache
+
+
+# ---------------------------------------------------------------------------
 # Import Analysis (AST-based)
 # ---------------------------------------------------------------------------
 
@@ -199,7 +263,7 @@ def _get_top_module(import_path: str) -> str:
     return parts[0]
 
 
-def scan_imports(src_dir: Path, files: list[dict]) -> dict:
+def scan_imports(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
     """Build import graph via AST parsing.
 
     Skips TYPE_CHECKING blocks (type-only imports) and test_support.py
@@ -221,12 +285,18 @@ def scan_imports(src_dir: Path, files: list[dict]) -> dict:
         if file_path.name == "test_support.py":
             continue
 
-        try:
-            source = file_path.read_text(encoding="utf-8", errors="replace")
-            tree = ast.parse(source, filename=str(file_path))
-        except (SyntaxError, ValueError) as e:
-            parse_errors.append(f"{rel_path}: {e}")
-            continue
+        if file_cache and file_info["abs_path"] in file_cache:
+            source, tree = file_cache[file_info["abs_path"]]
+            if tree is None:
+                parse_errors.append(f"{rel_path}: cached parse error")
+                continue
+        else:
+            try:
+                source = file_path.read_text(encoding="utf-8", errors="replace")
+                tree = ast.parse(source, filename=str(file_path))
+            except (SyntaxError, ValueError) as e:
+                parse_errors.append(f"{rel_path}: {e}")
+                continue
 
         # Determine this file's top-level module
         parts = Path(rel_path).parts
@@ -335,7 +405,7 @@ def _detect_circular(graph: dict[str, set[str]]) -> list[list[str]]:
 # Class Analysis (AST-based)
 # ---------------------------------------------------------------------------
 
-def scan_classes(src_dir: Path, files: list[dict]) -> dict:
+def scan_classes(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
     """Find all class definitions with metadata via AST."""
     classes: list[dict] = []
     parse_errors: list[str] = []
@@ -343,12 +413,19 @@ def scan_classes(src_dir: Path, files: list[dict]) -> dict:
     for file_info in files:
         file_path = Path(file_info["abs_path"])
         rel_path = file_info["path"]
-        try:
-            source = file_path.read_text(encoding="utf-8", errors="replace")
-            tree = ast.parse(source, filename=str(file_path))
-        except (SyntaxError, ValueError) as e:
-            parse_errors.append(f"{rel_path}: {e}")
-            continue
+
+        if file_cache and file_info["abs_path"] in file_cache:
+            source, tree = file_cache[file_info["abs_path"]]
+            if tree is None:
+                parse_errors.append(f"{rel_path}: cached parse error")
+                continue
+        else:
+            try:
+                source = file_path.read_text(encoding="utf-8", errors="replace")
+                tree = ast.parse(source, filename=str(file_path))
+            except (SyntaxError, ValueError) as e:
+                parse_errors.append(f"{rel_path}: {e}")
+                continue
 
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
@@ -407,7 +484,7 @@ def scan_classes(src_dir: Path, files: list[dict]) -> dict:
 # Anti-Pattern Detection (regex-based)
 # ---------------------------------------------------------------------------
 
-def scan_anti_patterns(src_dir: Path, files: list[dict]) -> dict:
+def scan_anti_patterns(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
     """Detect known anti-patterns via regex scanning."""
     findings: list[dict] = []
     counts: dict[str, int] = defaultdict(int)
@@ -415,10 +492,16 @@ def scan_anti_patterns(src_dir: Path, files: list[dict]) -> dict:
     for file_info in files:
         file_path = Path(file_info["abs_path"])
         rel_path = file_info["path"]
-        try:
-            lines = file_path.read_text(encoding="utf-8", errors="replace").splitlines()
-        except OSError:
-            continue
+
+        if file_cache and file_info["abs_path"] in file_cache:
+            source, _ = file_cache[file_info["abs_path"]]
+            lines = source.splitlines()
+        else:
+            try:
+                source = file_path.read_text(encoding="utf-8", errors="replace")
+                lines = source.splitlines()
+            except OSError:
+                continue
 
         # Also check multi-line patterns against full content
         full_content = "\n".join(lines)
@@ -477,7 +560,7 @@ def scan_anti_patterns(src_dir: Path, files: list[dict]) -> dict:
 # Unused Import Detection (AST-based)
 # ---------------------------------------------------------------------------
 
-def scan_unused_imports(src_dir: Path, files: list[dict]) -> dict:
+def scan_unused_imports(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
     """Detect imported names that are never used in file body.
 
     Skips __init__.py (re-export modules) and TYPE_CHECKING blocks.
@@ -493,12 +576,18 @@ def scan_unused_imports(src_dir: Path, files: list[dict]) -> dict:
         if file_path.name == "__init__.py":
             continue
 
-        try:
-            source = file_path.read_text(encoding="utf-8", errors="replace")
-            tree = ast.parse(source, filename=str(file_path))
-        except (SyntaxError, ValueError) as e:
-            parse_errors.append(f"{rel_path}: {e}")
-            continue
+        if file_cache and file_info["abs_path"] in file_cache:
+            source, tree = file_cache[file_info["abs_path"]]
+            if tree is None:
+                parse_errors.append(f"{rel_path}: cached parse error")
+                continue
+        else:
+            try:
+                source = file_path.read_text(encoding="utf-8", errors="replace")
+                tree = ast.parse(source, filename=str(file_path))
+            except (SyntaxError, ValueError) as e:
+                parse_errors.append(f"{rel_path}: {e}")
+                continue
 
         # Collect all names used in the file (excluding import nodes themselves)
         used_names: set[str] = set()
@@ -603,7 +692,7 @@ def scan_unused_imports(src_dir: Path, files: list[dict]) -> dict:
 # Missing Docstring Detection (AST-based)
 # ---------------------------------------------------------------------------
 
-def scan_missing_docstrings(src_dir: Path, files: list[dict]) -> dict:
+def scan_missing_docstrings(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
     """Find public classes and functions missing docstrings."""
     missing: list[dict] = []
     parse_errors: list[str] = []
@@ -612,12 +701,18 @@ def scan_missing_docstrings(src_dir: Path, files: list[dict]) -> dict:
         file_path = Path(file_info["abs_path"])
         rel_path = file_info["path"]
 
-        try:
-            source = file_path.read_text(encoding="utf-8", errors="replace")
-            tree = ast.parse(source, filename=str(file_path))
-        except (SyntaxError, ValueError) as e:
-            parse_errors.append(f"{rel_path}: {e}")
-            continue
+        if file_cache and file_info["abs_path"] in file_cache:
+            source, tree = file_cache[file_info["abs_path"]]
+            if tree is None:
+                parse_errors.append(f"{rel_path}: cached parse error")
+                continue
+        else:
+            try:
+                source = file_path.read_text(encoding="utf-8", errors="replace")
+                tree = ast.parse(source, filename=str(file_path))
+            except (SyntaxError, ValueError) as e:
+                parse_errors.append(f"{rel_path}: {e}")
+                continue
 
         for node in ast.walk(tree):
             if isinstance(node, ast.ClassDef):
@@ -662,7 +757,7 @@ def scan_missing_docstrings(src_dir: Path, files: list[dict]) -> dict:
 
 BROAD_TRY_THRESHOLD = 50  # lines
 
-def scan_broad_try_blocks(src_dir: Path, files: list[dict]) -> dict:
+def scan_broad_try_blocks(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
     """Find try blocks where body spans more than BROAD_TRY_THRESHOLD lines."""
     findings: list[dict] = []
     parse_errors: list[str] = []
@@ -671,12 +766,18 @@ def scan_broad_try_blocks(src_dir: Path, files: list[dict]) -> dict:
         file_path = Path(file_info["abs_path"])
         rel_path = file_info["path"]
 
-        try:
-            source = file_path.read_text(encoding="utf-8", errors="replace")
-            tree = ast.parse(source, filename=str(file_path))
-        except (SyntaxError, ValueError) as e:
-            parse_errors.append(f"{rel_path}: {e}")
-            continue
+        if file_cache and file_info["abs_path"] in file_cache:
+            source, tree = file_cache[file_info["abs_path"]]
+            if tree is None:
+                parse_errors.append(f"{rel_path}: cached parse error")
+                continue
+        else:
+            try:
+                source = file_path.read_text(encoding="utf-8", errors="replace")
+                tree = ast.parse(source, filename=str(file_path))
+            except (SyntaxError, ValueError) as e:
+                parse_errors.append(f"{rel_path}: {e}")
+                continue
 
         for node in ast.walk(tree):
             if isinstance(node, ast.Try):
@@ -844,30 +945,30 @@ def analyze_layers(import_data: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def run_static_analysis(src_dir: Path) -> dict:
-    """Run bandit, radon, pip-audit, and mypy if available."""
+    """Run bandit, radon, pip-audit, mypy, ruff, black, vulture in parallel."""
+    tool_runners: dict[str, Any] = {
+        "bandit": lambda: _run_bandit(src_dir),
+        "radon_cc": lambda: _run_radon_cc(src_dir),
+        "radon_mi": lambda: _run_radon_mi(src_dir),
+        "pip_audit": lambda: _run_pip_audit(),
+        "mypy": lambda: _run_mypy(src_dir),
+        "ruff": lambda: _run_ruff(src_dir),
+        "black": lambda: _run_black_check(src_dir),
+        "vulture": lambda: _run_vulture(src_dir),
+    }
     results: dict[str, Any] = {}
 
-    # Bandit (security scanner)
-    results["bandit"] = _run_bandit(src_dir)
-
-    # Radon (complexity metrics)
-    results["radon_cc"] = _run_radon_cc(src_dir)
-    results["radon_mi"] = _run_radon_mi(src_dir)
-
-    # pip-audit (dependency vulnerabilities)
-    results["pip_audit"] = _run_pip_audit()
-
-    # mypy (type checking)
-    results["mypy"] = _run_mypy(src_dir)
-
-    # ruff (linter)
-    results["ruff"] = _run_ruff(src_dir)
-
-    # black (formatter check)
-    results["black"] = _run_black_check(src_dir)
-
-    # vulture (dead code detection)
-    results["vulture"] = _run_vulture(src_dir)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = {
+            executor.submit(runner): name
+            for name, runner in tool_runners.items()
+        }
+        for future in as_completed(futures):
+            name = futures[future]
+            try:
+                results[name] = future.result()
+            except Exception as e:
+                results[name] = {"available": False, "reason": f"thread error: {e!s}"[:200]}
 
     return results
 
@@ -1322,6 +1423,11 @@ def compute_deterministic_score(
         deduct("bandit HIGH findings", bandit.get("high", 0), 3, 15)
         deduct("bandit MEDIUM findings", bandit.get("medium", 0), 1.5, 10)
 
+    # Radon CC complex items (C+ rating)
+    radon_cc = static_analysis.get("radon_cc", {})
+    if radon_cc.get("available"):
+        deduct("radon complex items (C+)", radon_cc.get("total_complex", 0), 0.5, 5)
+
     # pip-audit findings (if available)
     pip_audit = static_analysis.get("pip_audit", {})
     if pip_audit.get("available"):
@@ -1353,12 +1459,17 @@ def compute_deterministic_score(
     if unused_imports is not None:
         deduct("unused imports", unused_imports["summary"]["total_unused"], 0.3, 5)
 
-    # Missing docstrings on public classes (if provided)
+    # Missing docstrings on public classes and functions (if provided)
     if missing_docstrings is not None:
         deduct(
             "missing docstrings (public classes)",
             missing_docstrings["summary"]["missing_on_classes"],
             0.2, 5,
+        )
+        deduct(
+            "missing docstrings (public functions)",
+            missing_docstrings["summary"].get("missing_on_functions", 0),
+            0.1, 5,
         )
 
     # Low test coverage modules (if provided)
@@ -1368,6 +1479,13 @@ def compute_deterministic_score(
             test_coverage.get("low_coverage_count", 0),
             1, 8,
         )
+        # Coverage gap severity: 0% is worse than 49%
+        # Sum (50 - actual%) for each low module
+        coverage_gap = sum(
+            50 - m.get("percent", 0)
+            for m in test_coverage.get("low_coverage_modules", [])
+        )
+        deduct("coverage gap severity", int(coverage_gap), 0.01, 5)
 
     score = max(0, round(score))
 
@@ -1424,18 +1542,40 @@ def main() -> None:
 
     # Step 1: Collect facts
     files = scan_files(src_dir)
-    imports = scan_imports(src_dir, files["details"])
-    classes = scan_classes(src_dir, files["details"])
-    anti_patterns = scan_anti_patterns(src_dir, files["details"])
+    file_cache = _build_file_cache(files["details"])
+
+    # Run 6 independent AST scans in parallel (file cache is immutable, thread-safe)
+    ast_scan_runners = {
+        "imports": lambda: scan_imports(src_dir, files["details"], file_cache=file_cache),
+        "classes": lambda: scan_classes(src_dir, files["details"], file_cache=file_cache),
+        "anti_patterns": lambda: scan_anti_patterns(src_dir, files["details"], file_cache=file_cache),
+        "unused_imports": lambda: scan_unused_imports(src_dir, files["details"], file_cache=file_cache),
+        "missing_docstrings": lambda: scan_missing_docstrings(src_dir, files["details"], file_cache=file_cache),
+        "broad_try": lambda: scan_broad_try_blocks(src_dir, files["details"], file_cache=file_cache),
+    }
+    ast_results: dict[str, Any] = {}
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = {
+            executor.submit(runner): name
+            for name, runner in ast_scan_runners.items()
+        }
+        for future in as_completed(futures):
+            ast_results[futures[future]] = future.result()
+
+    imports = ast_results["imports"]
+    classes = ast_results["classes"]
+    anti_patterns = ast_results["anti_patterns"]
+    unused_imports = ast_results["unused_imports"]
+    missing_docstrings = ast_results["missing_docstrings"]
+    broad_try = ast_results["broad_try"]
+
+    # Dependent computations (need imports/classes results)
     collisions = find_naming_collisions(classes["details"])
     god_objects = find_god_objects(files["details"], classes["details"])
     layers = analyze_layers(imports)
-    static = run_static_analysis(src_dir)
 
-    # New AST-based scans
-    unused_imports = scan_unused_imports(src_dir, files["details"])
-    missing_docstrings = scan_missing_docstrings(src_dir, files["details"])
-    broad_try = scan_broad_try_blocks(src_dir, files["details"])
+    # External tools (already parallelized internally)
+    static = run_static_analysis(src_dir)
     test_coverage = _run_test_coverage(src_dir)
 
     # Step 2: Compute deterministic score
@@ -1460,7 +1600,7 @@ def main() -> None:
         "metadata": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "src_dir": str(src_dir),
-            "scanner_version": "2.1.0",
+            "scanner_version": "2.2.0",
             "content_hash": compute_content_hash(src_dir),
         },
         "files": files,

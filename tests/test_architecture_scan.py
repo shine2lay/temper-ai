@@ -601,3 +601,322 @@ class TestScoringNewTools:
         }
         result = scanner.compute_deterministic_score(**inputs)
         assert result["score"] == 100
+
+
+# ---------------------------------------------------------------------------
+# v2.2.0: New Anti-Patterns
+# ---------------------------------------------------------------------------
+
+class TestNewAntiPatterns:
+
+    def test_pickle_loads_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/unsafe.py", """\
+            import pickle
+            data = pickle.loads(raw)
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "pickle_loads" in names
+
+    def test_pickle_load_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/unsafe.py", """\
+            import pickle
+            data = pickle.load(f)
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "pickle_loads" in names
+
+    def test_os_system_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/unsafe.py", """\
+            import os
+            os.system("rm -rf /")
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "os_system" in names
+
+    def test_marshal_loads_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/unsafe.py", """\
+            import marshal
+            obj = marshal.loads(data)
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "marshal_loads" in names
+
+    def test_tempfile_mktemp_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/unsafe.py", """\
+            import tempfile
+            name = tempfile.mktemp()
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "tempfile_mktemp" in names
+
+    def test_mkstemp_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/safe.py", """\
+            import tempfile
+            fd, name = tempfile.mkstemp()
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "tempfile_mktemp" not in names
+
+    def test_md5_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/weak.py", """\
+            import hashlib
+            h = hashlib.md5(data)
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "md5_security" in names
+
+    def test_sha1_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/weak.py", """\
+            import hashlib
+            h = hashlib.sha1(data)
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "md5_security" in names
+
+    def test_sha256_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/safe.py", """\
+            import hashlib
+            h = hashlib.sha256(data)
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "md5_security" not in names
+
+    def test_assert_validation_detected(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/validate.py", """\
+            def check(x):
+                assert x > 0
+                return x
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "assert_validation" in names
+
+    def test_assert_with_noqa_not_flagged(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/ok.py", """\
+            def check(x):
+                assert x > 0  # noqa
+                return x
+        """)
+        result = scanner.scan_anti_patterns(tmp_path / "src", [fi])
+        names = [d["pattern"] for d in result["details"]]
+        assert "assert_validation" not in names
+
+
+# ---------------------------------------------------------------------------
+# v2.2.0: File Cache
+# ---------------------------------------------------------------------------
+
+class TestFileCache:
+
+    def test_cache_builds_correctly(self, tmp_path):
+        fi1 = _make_file(tmp_path, "src/mod/a.py", """\
+            x = 1
+        """)
+        fi2 = _make_file(tmp_path, "src/mod/b.py", """\
+            class Foo:
+                pass
+        """)
+        cache = scanner._build_file_cache([fi1, fi2])
+        assert len(cache) == 2
+        for abs_path, (source, tree) in cache.items():
+            assert isinstance(source, str)
+            assert tree is not None
+
+    def test_cache_handles_syntax_errors(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/bad.py", """\
+            def foo(
+        """)
+        cache = scanner._build_file_cache([fi])
+        source, tree = cache[fi["abs_path"]]
+        assert isinstance(source, str)
+        assert tree is None
+
+    def test_cached_results_match_uncached(self, tmp_path):
+        fi = _make_file(tmp_path, "src/mod/example.py", """\
+            import os
+            import sys
+
+            class Foo:
+                pass
+
+            def bar():
+                try:
+                    x = 1
+                except Exception as e:
+                    pass
+
+            print(sys.argv)
+        """)
+        src = tmp_path / "src"
+        (src / "mod" / "__init__.py").write_text("")
+        files = [fi]
+
+        r1 = scanner.scan_anti_patterns(src, files)
+        r2 = scanner.scan_unused_imports(src, files)
+        r3 = scanner.scan_missing_docstrings(src, files)
+        r4 = scanner.scan_broad_try_blocks(src, files)
+
+        cache = scanner._build_file_cache(files)
+        c1 = scanner.scan_anti_patterns(src, files, file_cache=cache)
+        c2 = scanner.scan_unused_imports(src, files, file_cache=cache)
+        c3 = scanner.scan_missing_docstrings(src, files, file_cache=cache)
+        c4 = scanner.scan_broad_try_blocks(src, files, file_cache=cache)
+
+        assert r1["summary"] == c1["summary"]
+        assert r2["summary"] == c2["summary"]
+        assert r3["summary"] == c3["summary"]
+        assert r4["summary"] == c4["summary"]
+
+    def test_cache_handles_missing_file(self, tmp_path):
+        fi = {"path": "src/mod/gone.py", "abs_path": str(tmp_path / "src/mod/gone.py"), "lines": 0}
+        cache = scanner._build_file_cache([fi])
+        source, tree = cache[fi["abs_path"]]
+        assert source == ""
+        assert tree is None
+
+
+# ---------------------------------------------------------------------------
+# v2.2.0: Scoring Gaps
+# ---------------------------------------------------------------------------
+
+class TestScoringGaps:
+
+    def _minimal_inputs(self):
+        return {
+            "anti_patterns": {"summary": {"critical": 0, "high": 0, "medium": 0, "low": 0}, "details": []},
+            "naming_collisions": {"summary": {"total_collisions": 0}},
+            "god_objects": {"summary": {"god_classes": 0}},
+            "layer_violations": {"summary": {"total_violations": 0}},
+            "circular_deps": [],
+            "static_analysis": {},
+        }
+
+    def test_radon_cc_deduction_present(self):
+        inputs = self._minimal_inputs()
+        inputs["static_analysis"] = {
+            "radon_cc": {"available": True, "total_complex": 10},
+        }
+        result = scanner.compute_deterministic_score(**inputs)
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert any("radon complex" in r for r in reasons)
+        assert result["score"] < 100
+
+    def test_radon_cc_no_deduction_when_zero(self):
+        inputs = self._minimal_inputs()
+        inputs["static_analysis"] = {
+            "radon_cc": {"available": True, "total_complex": 0},
+        }
+        result = scanner.compute_deterministic_score(**inputs)
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert not any("radon complex" in r for r in reasons)
+
+    def test_function_docstring_deduction(self):
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(
+            **inputs,
+            missing_docstrings={"summary": {"missing_on_classes": 0, "missing_on_functions": 20}},
+        )
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert any("public functions" in r for r in reasons)
+        assert result["score"] < 100
+
+    def test_coverage_gap_0pct_worse_than_49pct(self):
+        inputs = self._minimal_inputs()
+        result_0 = scanner.compute_deterministic_score(
+            **inputs,
+            test_coverage={
+                "available": True,
+                "low_coverage_count": 2,
+                "low_coverage_modules": [
+                    {"file": "a.py", "percent": 0},
+                    {"file": "b.py", "percent": 0},
+                ],
+            },
+        )
+        result_49 = scanner.compute_deterministic_score(
+            **inputs,
+            test_coverage={
+                "available": True,
+                "low_coverage_count": 2,
+                "low_coverage_modules": [
+                    {"file": "a.py", "percent": 49},
+                    {"file": "b.py", "percent": 49},
+                ],
+            },
+        )
+        assert result_0["score"] < result_49["score"]
+
+    def test_no_coverage_gap_when_all_above_50(self):
+        inputs = self._minimal_inputs()
+        result = scanner.compute_deterministic_score(
+            **inputs,
+            test_coverage={
+                "available": True,
+                "low_coverage_count": 0,
+                "low_coverage_modules": [],
+            },
+        )
+        reasons = [d["reason"] for d in result["deductions"]]
+        assert not any("coverage gap" in r for r in reasons)
+
+
+# ---------------------------------------------------------------------------
+# v2.2.0: Parallel Execution
+# ---------------------------------------------------------------------------
+
+class TestParallelExecution:
+
+    def test_all_tool_keys_returned(self):
+        """Parallel run_static_analysis returns all 8 expected keys."""
+        mock_proc = MagicMock(returncode=0, stdout="[]", stderr="")
+        with patch("architecture_scan.subprocess.run", return_value=mock_proc):
+            result = scanner.run_static_analysis(Path("/tmp/src"))
+        expected_keys = {"bandit", "radon_cc", "radon_mi", "pip_audit", "mypy", "ruff", "black", "vulture"}
+        assert expected_keys == set(result.keys())
+
+    def test_thread_error_handled(self):
+        """A tool that raises an exception is caught gracefully."""
+        with patch("architecture_scan._run_bandit", side_effect=RuntimeError("bandit crashed")):
+            mock_proc = MagicMock(returncode=0, stdout="[]", stderr="")
+            with patch("architecture_scan.subprocess.run", return_value=mock_proc):
+                result = scanner.run_static_analysis(Path("/tmp/src"))
+        assert "bandit" in result
+        assert result["bandit"].get("available") is False or "error" in str(result["bandit"])
+
+    def test_parallel_results_match_expectations(self, tmp_path):
+        """Parallel AST scans produce consistent results."""
+        fi = _make_file(tmp_path, "src/mod/test.py", """\
+            import os
+
+            class Foo:
+                pass
+
+            def bar():
+                pass
+        """)
+        src = tmp_path / "src"
+        (src / "mod" / "__init__.py").write_text("")
+        files = [fi]
+        cache = scanner._build_file_cache(files)
+
+        ap = scanner.scan_anti_patterns(src, files, file_cache=cache)
+        ui = scanner.scan_unused_imports(src, files, file_cache=cache)
+        md = scanner.scan_missing_docstrings(src, files, file_cache=cache)
+        bt = scanner.scan_broad_try_blocks(src, files, file_cache=cache)
+
+        assert ap["summary"]["total"] >= 0
+        unused_names = [d["name"] for d in ui["details"]]
+        assert "os" in unused_names
+        missing_names = [d["name"] for d in md["details"]]
+        assert "Foo" in missing_names
+        assert "bar" in missing_names
+        assert bt["summary"]["total_broad_try"] == 0

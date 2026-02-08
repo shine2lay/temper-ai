@@ -26,6 +26,13 @@ from src.constants.limits import (
     LARGE_ITEM_LIMIT,
 )
 
+# Chart display constants
+CHART_MARKER_LINE_WIDTH = 0.5  # Width of marker border lines
+CHART_TITLE_X_POSITION = 0.5  # Center title horizontally
+CHART_TITLE_FONT_SIZE = 20  # Title font size in points
+CHART_LEGEND_Y_POSITION = 1.02  # Legend Y position (above chart)
+CHART_SEPARATOR_WIDTH = 80  # Width of separator lines in console output
+
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
@@ -92,7 +99,7 @@ def create_hierarchical_gantt(
                 y=[item["display_name"] for item in type_items],
                 base=[item["start_ms"] for item in type_items],
                 orientation='h',
-                marker=dict(color=color, line=dict(width=0.5, color='white')),
+                marker=dict(color=color, line=dict(width=CHART_MARKER_LINE_WIDTH, color='white')),
                 text=[item["hover_text"] for item in type_items],
                 hovertemplate='%{text}<extra></extra>',
                 textposition='none'
@@ -114,9 +121,9 @@ def create_hierarchical_gantt(
     fig.update_layout(
         title=dict(
             text=f"{title} - Hierarchical Timeline",
-            x=0.5,
+            x=CHART_TITLE_X_POSITION,
             xanchor='center',
-            font=dict(size=20, color='#2E86AB')
+            font=dict(size=CHART_TITLE_FONT_SIZE, color='#2E86AB')
         ),
         xaxis=dict(
             title="Time (seconds from start)",
@@ -131,7 +138,7 @@ def create_hierarchical_gantt(
             title="",
             autorange="reversed",  # Top to bottom
             gridcolor='rgba(128,128,128,0.1)',
-            tickfont=dict(family='monospace', size=11)  # Monospace for tree chars
+            tickfont=dict(family='monospace', size=CHART_TITLE_FONT_SIZE - 9)  # Monospace for tree chars (11pt)
         ),
         barmode='overlay',
         height=height,
@@ -141,7 +148,7 @@ def create_hierarchical_gantt(
         legend=dict(
             orientation="h",
             yanchor="bottom",
-            y=1.02,
+            y=CHART_LEGEND_Y_POSITION,
             xanchor="right",
             x=1
         ),
@@ -559,9 +566,9 @@ def main() -> int:
 
     # Print summary
     print()
-    print("=" * 80)
+    print("=" * CHART_SEPARATOR_WIDTH)
     print("EXECUTION TRACE SUMMARY")
-    print("=" * 80)
+    print("=" * CHART_SEPARATOR_WIDTH)
     print(f"Workflow: {trace['name']}")
     duration = trace.get('duration') or 0
     print(f"Duration: {duration:.2f}s")
@@ -573,9 +580,9 @@ def main() -> int:
     print()
 
     # Visualize
-    print("=" * 80)
+    print("=" * CHART_SEPARATOR_WIDTH)
     print("Creating hierarchical Gantt chart...")
-    print("=" * 80)
+    print("=" * CHART_SEPARATOR_WIDTH)
     print()
 
     visualize_trace(

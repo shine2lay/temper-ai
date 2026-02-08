@@ -34,6 +34,7 @@ import ast
 import argparse
 import hashlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -42,6 +43,30 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+# ---------------------------------------------------------------------------
+# Venv auto-detection: re-exec with venv Python if available
+# ---------------------------------------------------------------------------
+def _ensure_venv() -> None:
+    """Re-exec with venv Python if we're running from system Python.
+
+    Ensures external tools (pip-audit, ruff, mypy, etc.) use the project's
+    venv packages, producing consistent results regardless of how the
+    scanner is invoked.
+    """
+    project_root = Path(__file__).resolve().parent.parent
+    venv_dir = project_root / "venv"
+    venv_python = venv_dir / "bin" / "python"
+    if venv_python.is_file() and not sys.prefix.startswith(str(venv_dir)):
+        venv_bin = str(venv_dir / "bin")
+        env = os.environ.copy()
+        env["PATH"] = venv_bin + os.pathsep + env.get("PATH", "")
+        env["VIRTUAL_ENV"] = str(venv_dir)
+        os.execve(str(venv_python), [str(venv_python)] + sys.argv, env)
+
+
+_ensure_venv()
 
 
 # ---------------------------------------------------------------------------

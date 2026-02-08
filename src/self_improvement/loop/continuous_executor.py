@@ -100,6 +100,7 @@ class ContinuousExecutor:
         shutdown_requested = {"flag": False}
 
         def signal_handler(signum, _frame):
+            """Handle interrupt signals for graceful shutdown."""
             logger.info(f"Received signal {signum}, requesting graceful shutdown...")
             shutdown_requested["flag"] = True
 

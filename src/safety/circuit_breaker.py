@@ -352,9 +352,11 @@ class CircuitBreakerManager:
             breaker.reset()
 
     def breaker_count(self) -> int:
+        """Count of circuit breakers."""
         return len(self._breakers)
 
     def gate_count(self) -> int:
+        """Count of circuit gates."""
         return len(self._gates)
 
     def __repr__(self) -> str:

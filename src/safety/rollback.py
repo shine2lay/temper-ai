@@ -286,6 +286,7 @@ class FileRollbackStrategy(RollbackStrategy):
 
     @property
     def name(self) -> str:
+        """Rollback handler name."""
         return "file_rollback"
 
     def create_snapshot(
@@ -466,6 +467,7 @@ class StateRollbackStrategy(RollbackStrategy):
 
     @property
     def name(self) -> str:
+        """Rollback handler name."""
         return "state_rollback"
 
     def __init__(self, state_getter: Optional[Callable[[], Dict[str, Any]]] = None):
@@ -522,6 +524,7 @@ class CompositeRollbackStrategy(RollbackStrategy):
 
     @property
     def name(self) -> str:
+        """Rollback handler name."""
         return "composite_rollback"
 
     def __init__(self, strategies: Optional[List[RollbackStrategy]] = None):

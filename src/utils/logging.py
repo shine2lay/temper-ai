@@ -526,6 +526,7 @@ class LogContext:
         old_factory = self.old_factory
 
         def record_factory(*args: Any, **kwargs: Any) -> logging.LogRecord:
+            """Logging record factory."""
             if old_factory is None:
                 raise RuntimeError("old_factory is None in logging context manager")
             record = old_factory(*args, **kwargs)
@@ -572,8 +573,10 @@ def log_function_call(logger: logging.Logger, level: int = logging.DEBUG) -> Cal
         return {k: _redact_value(k, v) for k, v in kwargs.items()}
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        """Logging decorator."""
         @functools.wraps(func)
         def wrapper(*func_args: Any, **func_kwargs: Any) -> Any:
+            """Logging wrapper."""
             safe_kw = _safe_kwargs(func_kwargs)
             logger.log(level, f"Entering {func.__name__} with args={func_args}, kwargs={safe_kw}")
             try:

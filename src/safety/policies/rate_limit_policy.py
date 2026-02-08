@@ -18,6 +18,7 @@ Default Limits (per agent):
 from typing import Any, Dict, List, Optional
 
 from src.safety.base import BaseSafetyPolicy
+from src.safety.constants import RATE_LIMIT_PRIORITY
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.token_bucket import RateLimit, TokenBucketManager
 
@@ -279,7 +280,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
 
         Rate limiting has high priority to prevent resource exhaustion.
         """
-        return 85
+        return RATE_LIMIT_PRIORITY
 
     def _validate_impl(
         self,

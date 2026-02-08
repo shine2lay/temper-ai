@@ -23,10 +23,12 @@ class ApprovalWorkflowPolicy(BaseSafetyPolicy):
 
     @property
     def name(self) -> str:
+        """Policy name identifier."""
         return "approval_workflow_policy"
 
     @property
     def version(self) -> str:
+        """Policy version identifier."""
         return "0.1.0"
 
     def _validate_impl(
@@ -48,10 +50,12 @@ class CircuitBreakerPolicy(BaseSafetyPolicy):
 
     @property
     def name(self) -> str:
+        """Policy name identifier."""
         return "circuit_breaker_policy"
 
     @property
     def version(self) -> str:
+        """Policy version identifier."""
         return "0.1.0"
 
     def _validate_impl(

@@ -116,6 +116,7 @@ class OAuthProviderConfig(BaseModel):
             pattern = r'\$\{env:([A-Z_][A-Z0-9_]*)\}'
 
             def replacer(match):
+                """Replace OAuth config placeholders with environment variables."""
                 var_name = match.group(1)
                 env_value = os.getenv(var_name)
                 if env_value is None:
@@ -254,6 +255,7 @@ class OAuthConfig(BaseModel):
             pattern = r'\$\{env:([A-Z_][A-Z0-9_]*)\}'
 
             def replacer(match):
+                """Replace OAuth config placeholders with environment variables."""
                 var_name = match.group(1)
                 env_value = os.getenv(var_name)
                 if env_value is None:

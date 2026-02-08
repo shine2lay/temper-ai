@@ -42,6 +42,7 @@ def requires_lock(method: Callable) -> Callable:
     """
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
+        """Decorator wrapper for rate limiting."""
         # Check if lock is held by attempting to acquire it with blocking=False
         # If we can acquire it, that means it wasn't held - this is an error!
         if self.lock.acquire(blocking=False):

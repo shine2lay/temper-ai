@@ -31,6 +31,27 @@ from src.schemas.agent_config import (  # noqa: E402, F401
 )
 
 # ============================================
+# HELPER FUNCTIONS
+# ============================================
+
+def _validate_strategy_string(v: str) -> str:
+    """Validate strategy is non-empty string.
+
+    Args:
+        v: Strategy string value
+
+    Returns:
+        Validated strategy string
+
+    Raises:
+        ValueError: If strategy is empty or whitespace-only
+    """
+    if not v or not v.strip():
+        raise ValueError("strategy must be a non-empty string")
+    return v
+
+
+# ============================================
 # TOOL CONFIGURATION SCHEMAS
 # ============================================
 
@@ -116,9 +137,7 @@ class CollaborationConfig(BaseModel):
     @classmethod
     def validate_strategy(cls, v: str) -> str:
         """Validate strategy is non-empty."""
-        if not v or not v.strip():
-            raise ValueError("strategy must be a non-empty string")
-        return v
+        return _validate_strategy_string(v)
 
     # Dialogue-specific fields (Phase 1: Dialogue Orchestrator)
     # All fields optional for backward compatibility
@@ -203,9 +222,7 @@ class ConflictResolutionConfig(BaseModel):
     @classmethod
     def validate_strategy(cls, v: str) -> str:
         """Validate strategy is non-empty."""
-        if not v or not v.strip():
-            raise ValueError("strategy must be a non-empty string")
-        return v
+        return _validate_strategy_string(v)
 
     @model_validator(mode='after')
     def validate_thresholds(self) -> 'ConflictResolutionConfig':
@@ -284,6 +301,7 @@ class StageConfigInner(BaseModel):
     @field_validator('agents')
     @classmethod
     def validate_agents(cls, v: List[str]) -> List[str]:
+        """Validate agent configuration list."""
         if not v:
             raise ValueError("At least one agent must be specified")
         return v
@@ -383,6 +401,7 @@ class WorkflowConfigInner(BaseModel):
     @field_validator('stages')
     @classmethod
     def validate_stages(cls, v: List['WorkflowStageReference']) -> List['WorkflowStageReference']:
+        """Validate workflow stage configuration."""
         if not v:
             raise ValueError("At least one stage must be specified")
         return v

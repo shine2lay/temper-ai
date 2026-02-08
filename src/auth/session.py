@@ -419,6 +419,7 @@ class RedisSessionStore(SessionStoreProtocol):
         user_agent: Optional[str] = None,
         session_max_age: int = 3600,
     ) -> Session:
+        """Create new session with given data, return session ID."""
         session_id = f"sess_{secrets.token_urlsafe(32)}"
         session = Session(
             session_id=session_id,
@@ -445,6 +446,7 @@ class RedisSessionStore(SessionStoreProtocol):
         return session
 
     async def get_session(self, session_id: str) -> Optional[Session]:
+        """Retrieve session data by session ID."""
         try:
             data = await self._redis.get(self._key(session_id))
         except Exception as e:
@@ -462,6 +464,7 @@ class RedisSessionStore(SessionStoreProtocol):
         return session
 
     async def delete_session(self, session_id: str) -> bool:
+        """Delete session by ID."""
         try:
             result = await self._redis.delete(self._key(session_id))
         except Exception as e:
@@ -472,6 +475,7 @@ class RedisSessionStore(SessionStoreProtocol):
         return bool(result)
 
     async def cleanup_expired(self) -> None:
+        """Remove all expired sessions from store."""
         # Redis TTL handles expiry automatically; this is a no-op.
         pass
 

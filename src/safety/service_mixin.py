@@ -56,6 +56,7 @@ def _sanitize_violation_context(context: Optional[Dict[str, Any]]) -> Optional[D
 
     # Recursively sanitize dictionary values
     def sanitize_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove sensitive keys from dictionary."""
         if not isinstance(data, dict):
             return data
 

@@ -70,15 +70,6 @@ contract MyNFT is ERC721, Ownable {
 }
 '''
 
-    def __init__(self, learning_store=None):
-        """
-        Initialize strategy with optional learning store.
-
-        Args:
-            learning_store: Optional StrategyLearningStore for learning from outcomes
-        """
-        super().__init__(learning_store)
-
     @property
     def name(self) -> str:
         """Strategy identifier."""

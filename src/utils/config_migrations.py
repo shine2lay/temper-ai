@@ -84,6 +84,7 @@ class ConfigMigrationRegistry:
             ...     return config
         """
         def decorator(migrate_fn: Callable[[Dict[str, Any]], Dict[str, Any]]) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+            """Migration decorator wrapper."""
             step = MigrationStep(
                 from_version=from_version,
                 to_version=to_version,

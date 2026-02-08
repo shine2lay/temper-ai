@@ -625,6 +625,7 @@ class ConfigLoader:
         pattern = r'\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}'
 
         def replacer(match: Match[str]) -> str:
+            """Replace config placeholders with environment variables."""
             var_name = match.group(1)
             default_value = match.group(2)
 
@@ -717,6 +718,7 @@ class ConfigLoader:
         pattern = r'\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}'
 
         def replacer(match: Match[str]) -> str:
+            """Replace config placeholders with environment variables."""
             var_name = match.group(1)
             if var_name not in variables:
                 raise ConfigValidationError(

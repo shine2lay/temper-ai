@@ -50,15 +50,6 @@ class TemperatureSearchStrategy(ImprovementStrategy):
     MODERATE_TOP_K = 50  # Moderate vocabulary
     WIDE_TOP_K = 100  # Wider vocabulary
 
-    def __init__(self, learning_store=None):
-        """
-        Initialize strategy with optional learning store.
-
-        Args:
-            learning_store: Optional StrategyLearningStore for learning from outcomes
-        """
-        super().__init__(learning_store)
-
     @property
     def name(self) -> str:
         """Strategy identifier."""
@@ -103,10 +94,8 @@ class TemperatureSearchStrategy(ImprovementStrategy):
 
         # Variant 2: Higher temperature (more creative)
         # Only if problem suggests need for creativity or diversity
-        if problem_type in ("quality_low", "incorrect_output", "hallucination"):
-            # For these problems, we actually want lower temperature, so skip this variant
-            pass
-        elif current_temp < 0.85:
+        # Skip higher temperature for quality/correctness problems
+        if problem_type not in ("quality_low", "incorrect_output", "hallucination") and current_temp < 0.85:
             target_temp = self.CREATIVE_TEMP if current_temp < 0.6 else min(0.95, current_temp * 1.3)
             variant_high_temp = copy.deepcopy(current_config)
             variant_high_temp.inference["temperature"] = round(target_temp, 2)

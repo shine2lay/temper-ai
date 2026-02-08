@@ -202,10 +202,8 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
                 key=lambda m: self._speed_score(m),
                 reverse=True
             )
-        else:
-            # Balanced: mix of different sizes
-            # Keep original order (diverse mix)
-            pass
+        # Balanced: mix of different sizes
+        # Keep original order (diverse mix)
 
         # Return 2-4 candidates
         return candidates[:4] if len(candidates) >= 4 else candidates

@@ -454,10 +454,12 @@ class ERC721QualityCollector(MetricCollector):
 
     @property
     def metric_name(self) -> str:
+        """Metric name identifier."""
         return "erc721_quality"
 
     @property
     def metric_type(self) -> SIMetricType:
+        """Metric type identifier."""
         return SIMetricType.CUSTOM
 
     def collect(self, execution: ExecutionProtocol) -> Optional[float]:

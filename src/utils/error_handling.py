@@ -119,8 +119,10 @@ def retry_with_backoff(
     )
 
     def decorator(func: Callable[..., T]) -> Callable[..., T]:
+        """Error handling decorator."""
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> T:
+            """Error handling wrapper."""
             last_exception = None
 
             for attempt in range(config.max_retries + 1):

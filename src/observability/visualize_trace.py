@@ -169,6 +169,7 @@ def _flatten_trace_with_tree(
         is_last_child: Optional[List[bool]] = None,
         _parent_name: str = ""
     ) -> None:
+        """Add node to trace visualization graph."""
         if is_last_child is None:
             is_last_child = []
 
@@ -406,6 +407,7 @@ def print_console_gantt(trace: Dict[str, Any], _max_width: int = 80) -> None:
         print(f"  {trace['name']} - {trace.get('duration', 0):.3f}s")
 
         def print_simple(node: Dict[str, Any], indent: int = 0) -> None:
+            """Print simplified trace output."""
             prefix = "  " * indent
             duration = node.get('duration') or 0
             print(f"{prefix}├─ {node['name']} ({duration:.3f}s)")

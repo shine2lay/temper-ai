@@ -58,6 +58,21 @@ class ResolutionMethod(Enum):
     MAJORITY_PLUS_CONFIDENCE = "majority_plus_confidence"
 
 
+def _validate_confidence_range(confidence: float) -> None:
+    """Validate confidence is in valid range [0, 1].
+
+    Args:
+        confidence: Confidence value to validate
+
+    Raises:
+        ValueError: If confidence is outside [0, 1] range
+    """
+    if not 0 <= confidence <= 1:
+        raise ValueError(
+            f"Confidence must be between 0 and 1, got {confidence}"
+        )
+
+
 @dataclass
 class ResolutionResult:
     """Result of conflict resolution.
@@ -89,10 +104,7 @@ class ResolutionResult:
 
     def __post_init__(self) -> None:
         """Validate confidence is in valid range."""
-        if not 0 <= self.confidence <= 1:
-            raise ValueError(
-                f"Confidence must be between 0 and 1, got {self.confidence}"
-            )
+        _validate_confidence_range(self.confidence)
 
 
 class ConflictResolutionStrategy(ABC):
@@ -589,10 +601,7 @@ class Resolution:
 
     def __post_init__(self) -> None:
         """Validate confidence is in valid range."""
-        if not 0 <= self.confidence <= 1:
-            raise ValueError(
-                f"Confidence must be between 0 and 1, got {self.confidence}"
-            )
+        _validate_confidence_range(self.confidence)
 
 
 # Helper functions for merit-weighted voting

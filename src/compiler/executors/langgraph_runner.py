@@ -39,6 +39,7 @@ class LangGraphParallelRunner(ParallelRunner):
         init_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
         collect_node: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
+        """Execute parallel tasks using LangGraph."""
         graph: StateGraph[Any] = StateGraph(_ParallelState)
 
         # Add init node

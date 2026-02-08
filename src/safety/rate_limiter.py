@@ -17,6 +17,7 @@ from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
 from src.safety.base import BaseSafetyPolicy
+from src.safety.constants import RATE_LIMIT_PRIORITY
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 
 
@@ -95,7 +96,7 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
 
         Rate limiting has high priority to prevent resource exhaustion.
         """
-        return 85
+        return RATE_LIMIT_PRIORITY
 
     def _get_entity_key(self, context: Dict[str, Any]) -> str:
         """Extract entity identifier from context.

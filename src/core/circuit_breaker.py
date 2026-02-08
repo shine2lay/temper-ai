@@ -298,26 +298,32 @@ class CircuitBreaker:
 
     @property
     def failure_count(self) -> int:
+        """Number of consecutive failures."""
         return self._failure_count
 
     @failure_count.setter
     def failure_count(self, value: int) -> None:
+        """Number of consecutive failures."""
         self._failure_count = value
 
     @property
     def success_count(self) -> int:
+        """Number of consecutive successes."""
         return self._success_count
 
     @success_count.setter
     def success_count(self, value: int) -> None:
+        """Number of consecutive successes."""
         self._success_count = value
 
     @property
     def last_failure_time(self) -> Optional[float]:
+        """Timestamp of most recent failure."""
         return self._last_failure_time
 
     @last_failure_time.setter
     def last_failure_time(self, value: Optional[float]) -> None:
+        """Timestamp of most recent failure."""
         self._last_failure_time = value
 
     # -- Safety module interface: can_execute, record_success, record_failure --

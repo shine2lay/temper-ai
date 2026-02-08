@@ -37,6 +37,13 @@ from src.utils.exceptions import FrameworkException
 
 logger = logging.getLogger(__name__)
 
+# HTTP client connection limits
+MAX_KEEPALIVE_CONNECTIONS = 20  # Maximum number of keepalive connections in pool
+
+# HTTP status codes
+HTTP_OK = 200  # Successful response
+HTTP_UNAUTHORIZED = 401  # Authentication failed / token expired
+
 
 class OAuthError(FrameworkException):
     """Base exception for OAuth errors."""
@@ -137,7 +144,7 @@ class OAuthService:
                 follow_redirects=False,
                 limits=httpx.Limits(
                     max_connections=VERY_LARGE_ITEM_LIMIT,
-                    max_keepalive_connections=20
+                    max_keepalive_connections=MAX_KEEPALIVE_CONNECTIONS
                 ),
                 # Verify SSL certificates (enabled by default, but explicit for clarity)
                 verify=True
@@ -357,7 +364,7 @@ class OAuthService:
                 headers={'Accept': 'application/json'}
             )
 
-            if response.status_code != 200:
+            if response.status_code != HTTP_OK:
                 error_detail = response.text
                 raise OAuthProviderError(
                     f"Token exchange failed: {response.status_code} - {error_detail}",
@@ -457,7 +464,7 @@ class OAuthService:
                 headers={'Accept': 'application/json'}
             )
 
-            if response.status_code != 200:
+            if response.status_code != HTTP_OK:
                 raise OAuthProviderError(
                     f"Token refresh failed: {response.status_code}",
                     provider=provider
@@ -559,7 +566,7 @@ class OAuthService:
             )
 
             # Handle token expiration
-            if response.status_code == 401 and auto_refresh:
+            if response.status_code == HTTP_UNAUTHORIZED and auto_refresh:
                 logger.info(
                     f"Access token expired, refreshing: provider={provider}, user={user_id}"
                 )
@@ -567,7 +574,7 @@ class OAuthService:
                 # Retry with new token
                 return await self.get_user_info(user_id, provider, auto_refresh=False)
 
-            if response.status_code != 200:
+            if response.status_code != HTTP_OK:
                 raise OAuthProviderError(
                     f"User info request failed: {response.status_code}",
                     provider=provider
@@ -654,7 +661,7 @@ class OAuthService:
                 },
                 timeout=float(TIMEOUT_NETWORK_CONNECT),
             )
-            if response.status_code == 200:
+            if response.status_code == HTTP_OK:
                 logger.info(f"Token revoked at provider: {provider}")
                 return True
             logger.warning(

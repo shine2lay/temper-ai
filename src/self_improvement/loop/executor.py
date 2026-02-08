@@ -43,6 +43,17 @@ from .state_manager import LoopStateManager
 
 logger = logging.getLogger(__name__)
 
+# Phase completion thresholds
+PHASES_BEFORE_EXPERIMENT = 3  # Number of phases completed before experiment phase
+PHASES_BEFORE_DEPLOY = 4  # Number of phases completed before deploy phase
+
+# Pattern mining constants
+MIN_IMPROVEMENT_THRESHOLD = 0.03  # Minimum 3% improvement for pattern mining
+TOP_PATTERNS_LIMIT = 3  # Number of top patterns to log
+
+# ID truncation lengths
+OUTCOME_ID_UUID_LENGTH = 12  # Number of hex chars for outcome IDs
+
 
 class LoopExecutor:
     """
@@ -183,7 +194,7 @@ class LoopExecutor:
                 result.phases_completed.append(Phase.STRATEGY)
 
             # Phase 4: Experiment
-            if len(result.phases_completed) >= 3 or start_phase == Phase.EXPERIMENT:
+            if len(result.phases_completed) >= PHASES_BEFORE_EXPERIMENT or start_phase == Phase.EXPERIMENT:
                 result.experiment_result = self._execute_with_retry(
                     agent_name,
                     Phase.EXPERIMENT,
@@ -192,7 +203,7 @@ class LoopExecutor:
                 result.phases_completed.append(Phase.EXPERIMENT)
 
             # Phase 5: Deploy
-            if len(result.phases_completed) >= 4 or start_phase == Phase.DEPLOY:
+            if len(result.phases_completed) >= PHASES_BEFORE_DEPLOY or start_phase == Phase.DEPLOY:
                 if result.experiment_result and result.experiment_result.winner_config:
                     result.deployment_result = self._execute_with_retry(
                         agent_name,
@@ -393,13 +404,13 @@ class LoopExecutor:
                 min_support=THRESHOLD_SMALL_COUNT,  # Require at least 5 observations
                 min_confidence=PROB_HIGH,  # 70% confidence threshold
                 min_win_rate=PROB_MEDIUM,  # Strategy wins at least 50% of time
-                min_improvement=0.03,  # At least 3% improvement
+                min_improvement=MIN_IMPROVEMENT_THRESHOLD,
                 days_back=DAYS_90  # Last 90 days
             )
             logger.info(f"Mined {len(patterns)} patterns from experiment history")
 
             # Log top patterns for debugging
-            for pattern in patterns[:3]:
+            for pattern in patterns[:TOP_PATTERNS_LIMIT]:
                 logger.info(
                     f"  Pattern: {pattern.evidence['strategy_name']} for "
                     f"{pattern.evidence['problem_type']} "
@@ -534,7 +545,7 @@ class LoopExecutor:
                 problem_type = strategy_result.strategy_metadata.get("problem_type", "quality_low")
 
                 outcome = StrategyOutcome(
-                    id=f"outcome-{uuid.uuid4().hex[:12]}",
+                    id=f"outcome-{uuid.uuid4().hex[:OUTCOME_ID_UUID_LENGTH]}",
                     strategy_name=strategy_result.strategy_name,
                     problem_type=problem_type,
                     agent_name=agent_name,
@@ -601,7 +612,7 @@ class LoopExecutor:
                 problem_type = strategy_result.strategy_metadata.get("problem_type", "quality_low")
 
                 outcome = StrategyOutcome(
-                    id=f"outcome-{uuid.uuid4().hex[:12]}",
+                    id=f"outcome-{uuid.uuid4().hex[:OUTCOME_ID_UUID_LENGTH]}",
                     strategy_name=strategy_result.strategy_name,
                     problem_type=problem_type,
                     agent_name=agent_name,

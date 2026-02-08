@@ -23,6 +23,12 @@ from src.constants.limits import PERCENT_20, PERCENT_80, THRESHOLD_MASSIVE_COUNT
 
 logger = logging.getLogger(__name__)
 
+# In-memory storage limits
+MAX_ENTRIES_MULTIPLIER = 5  # Multiplier for max entries calculation
+
+# Logging constants
+STATE_TOKEN_LOG_LENGTH = 8  # Number of characters to show in logs for state tokens
+
 
 class StateStore:
     """Abstract base class for state storage implementations."""
@@ -80,7 +86,7 @@ class InMemoryStateStore(StateStore):
     Use RedisStateStore for production environments.
     """
 
-    MAX_ENTRIES = THRESHOLD_MASSIVE_COUNT * 5  # 50000
+    MAX_ENTRIES = THRESHOLD_MASSIVE_COUNT * MAX_ENTRIES_MULTIPLIER  # 50000
 
     def __init__(self, max_entries: int = None):
         """Initialize in-memory state storage.
@@ -122,7 +128,7 @@ class InMemoryStateStore(StateStore):
             }
             self._store[state] = data_with_expiry
         # SEC-14: Truncate state token in logs to prevent exposure
-        logger.debug(f"Stored state: {state[:8]}... (TTL: {ttl_seconds}s)")
+        logger.debug(f"Stored state: {state[:STATE_TOKEN_LOG_LENGTH]}... (TTL: {ttl_seconds}s)")
 
     async def get_state(self, state: str) -> Optional[Dict[str, Any]]:
         """Retrieve and delete state data (one-time use).
@@ -317,7 +323,7 @@ class RedisStateStore(StateStore):
         )
 
         # SEC-14: Truncate state token in logs to prevent exposure
-        logger.debug(f"Stored OAuth state: {state[:8]}... (TTL: {ttl_seconds}s)")
+        logger.debug(f"Stored OAuth state: {state[:STATE_TOKEN_LOG_LENGTH]}... (TTL: {ttl_seconds}s)")
 
     async def get_state(self, state: str) -> Optional[Dict[str, Any]]:
         """Retrieve and delete state data (atomic one-time use).
@@ -349,17 +355,17 @@ class RedisStateStore(StateStore):
 
         if value is None:
             # SEC-14: Truncate state token in logs
-            logger.debug(f"State not found or expired: {state[:8]}...")
+            logger.debug(f"State not found or expired: {state[:STATE_TOKEN_LOG_LENGTH]}...")
             return None
 
         try:
             data = json.loads(value)
             # SEC-14: Truncate state token in logs
-            logger.debug(f"Retrieved and deleted state: {state[:8]}...")
+            logger.debug(f"Retrieved and deleted state: {state[:STATE_TOKEN_LOG_LENGTH]}...")
             return data
         except json.JSONDecodeError as e:
             # SEC-14: Truncate state token in logs
-            logger.error(f"Failed to decode state data for {state[:8]}...: {e}")
+            logger.error(f"Failed to decode state data for {state[:STATE_TOKEN_LOG_LENGTH]}...: {e}")
             return None
 
     async def delete_state(self, state: str) -> bool:

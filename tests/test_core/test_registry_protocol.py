@@ -7,7 +7,7 @@ import pytest
 from unittest.mock import Mock
 
 from src.core.protocols import Registry
-from src.compiler.domain_state import ToolRegistryProtocol
+from src.compiler.domain_state import DomainDomainToolRegistryProtocol
 from src.tools.registry import ToolRegistry
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.safety.policy_registry import PolicyRegistry
@@ -276,17 +276,17 @@ class TestRegistryProtocolEdgeCases:
         assert len(tool_registry.list_all()) == 2  # 2 unique tool names
 
 
-class TestToolRegistryProtocolConformance:
-    """Test ToolRegistry conformance to ToolRegistryProtocol (C-04 fix)."""
+class TestDomainToolRegistryProtocolConformance:
+    """Test ToolRegistry conformance to DomainToolRegistryProtocol (C-04 fix)."""
 
     def test_tool_registry_satisfies_tool_registry_protocol(self):
-        """ToolRegistry should satisfy ToolRegistryProtocol (C-04)."""
+        """ToolRegistry should satisfy DomainToolRegistryProtocol (C-04)."""
         registry = ToolRegistry()
-        # Verify it's recognized as ToolRegistryProtocol instance
-        assert isinstance(registry, ToolRegistryProtocol)
+        # Verify it's recognized as DomainToolRegistryProtocol instance
+        assert isinstance(registry, DomainToolRegistryProtocol)
 
     def test_tool_registry_protocol_get_signature(self):
-        """ToolRegistry.get() signature matches ToolRegistryProtocol (C-04)."""
+        """ToolRegistry.get() signature matches DomainToolRegistryProtocol (C-04)."""
         registry = ToolRegistry()
         tool = MockTool(name="test_tool", version="1.0.0")
         registry.register(tool)
@@ -306,10 +306,10 @@ class TestToolRegistryProtocolConformance:
         assert registry.get("nonexistent", version="1.0.0") is None
 
     def test_tool_registry_protocol_any_implementation(self):
-        """Any class with get(name, version=None) satisfies ToolRegistryProtocol."""
+        """Any class with get(name, version=None) satisfies DomainToolRegistryProtocol."""
 
         class MinimalToolRegistry:
-            """Minimal implementation of ToolRegistryProtocol."""
+            """Minimal implementation of DomainToolRegistryProtocol."""
 
             def __init__(self):
                 self._tools = {}
@@ -320,10 +320,10 @@ class TestToolRegistryProtocolConformance:
 
         minimal_registry = MinimalToolRegistry()
         # Should satisfy the protocol
-        assert isinstance(minimal_registry, ToolRegistryProtocol)
+        assert isinstance(minimal_registry, DomainToolRegistryProtocol)
 
         # Should work with protocol-typed functions
-        def use_registry(reg: ToolRegistryProtocol):
+        def use_registry(reg: DomainToolRegistryProtocol):
             return reg.get("test")
 
         assert use_registry(minimal_registry) is None

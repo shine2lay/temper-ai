@@ -13,7 +13,7 @@ from typing_extensions import TypedDict
 
 from src.compiler.domain_state import (
     ConfigLoaderProtocol,
-    ToolRegistryProtocol,
+    DomainDomainToolRegistryProtocol,
     TrackerProtocol,
     VisualizerProtocol,
 )
@@ -49,7 +49,7 @@ class WorkflowStateDict(TypedDict, total=False):
 
     # Infrastructure (non-serializable)
     tracker: Optional[TrackerProtocol]
-    tool_registry: Optional[ToolRegistryProtocol]
+    tool_registry: Optional[DomainToolRegistryProtocol]
     config_loader: Optional[ConfigLoaderProtocol]
     visualizer: Optional[VisualizerProtocol]
 
@@ -117,7 +117,7 @@ class StageExecutor(ABC):
         stage_config: Any,
         state: Dict[str, Any],
         config_loader: ConfigLoaderProtocol,
-        tool_registry: Optional[ToolRegistryProtocol] = None
+        tool_registry: Optional[DomainToolRegistryProtocol] = None
     ) -> Dict[str, Any]:
         """Execute stage and return updated state.
 

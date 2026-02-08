@@ -8,7 +8,7 @@ import uuid
 from typing import Any, Callable, Dict, Optional, cast
 
 from src.agents.agent_factory import AgentFactory
-from src.compiler.domain_state import ConfigLoaderProtocol, ToolRegistryProtocol
+from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.compiler.executors.base import ParallelRunner, StageExecutor
 from src.core.context import ExecutionContext
 from src.utils.config_helpers import get_nested_value
@@ -54,7 +54,7 @@ class ParallelStageExecutor(StageExecutor):
         stage_config: Any,
         state: Dict[str, Any],
         config_loader: ConfigLoaderProtocol,
-        tool_registry: Optional[ToolRegistryProtocol] = None
+        tool_registry: Optional[DomainToolRegistryProtocol] = None
     ) -> Dict[str, Any]:
         """Execute stage with parallel agent execution.
 

@@ -345,7 +345,7 @@ class StandardAgent(BaseAgent):
         Key differences from sync execute():
         - Uses ``asyncio.sleep`` with exponential backoff + jitter for retries.
         - Delegates CPU-bound / blocking LLM calls to a thread via
-          ``asyncio.get_event_loop().run_in_executor``.
+          ``asyncio.get_running_loop().run_in_executor``.
         - Otherwise mirrors the sync execute() logic exactly.
         """
         validate_input_data(input_data, context)
@@ -506,7 +506,7 @@ class StandardAgent(BaseAgent):
                     }
 
         # Call LLM with agent-level retries (async backoff with jitter)
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         llm_response = None
         last_error = None
 
@@ -1092,7 +1092,7 @@ class StandardAgent(BaseAgent):
 
         # Check cache validity using a hash of sorted tool names
         tool_names_key = ",".join(sorted(tools_dict.keys()))
-        current_hash = hashlib.md5(tool_names_key.encode()).hexdigest()
+        current_hash = hashlib.md5(tool_names_key.encode(), usedforsecurity=False).hexdigest()
 
         if (
             self._cached_native_tool_defs is not None

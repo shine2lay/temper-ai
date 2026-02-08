@@ -5,11 +5,11 @@ for LangGraph compiler and executors.
 """
 import logging
 import uuid
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, Optional
 
 from src.compiler.domain_state import (
     ConfigLoaderProtocol,
-    ToolRegistryProtocol,
+    DomainToolRegistryProtocol,
     TrackerProtocol,
 )
 from src.compiler.executors.base import WorkflowStateDict  # canonical definition
@@ -57,7 +57,7 @@ class StateManager:
         input_data: Dict[str, Any],
         workflow_id: Optional[str] = None,
         tracker: Optional[TrackerProtocol] = None,
-        tool_registry: Optional[ToolRegistryProtocol] = None,
+        tool_registry: Optional[DomainToolRegistryProtocol] = None,
         config_loader: Optional[ConfigLoaderProtocol] = None,
     ) -> WorkflowStateDict:
         """Create and initialize workflow state as a plain dict.

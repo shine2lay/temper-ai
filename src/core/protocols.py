@@ -4,7 +4,7 @@ This module provides Protocol definitions for common patterns used across
 the framework, enabling type checking and structural subtyping without
 tight coupling between components.
 """
-from typing import Any, Dict, Protocol, TypeVar, List, Optional, runtime_checkable
+from typing import Any, Protocol, TypeVar, List, Optional, runtime_checkable
 
 T = TypeVar('T')
 
@@ -63,7 +63,7 @@ class Registry(Protocol[T]):
 
 
 @runtime_checkable
-class ToolRegistry(Protocol):
+class ToolRegistryProtocol(Protocol):
     """Protocol for tool registries.
 
     Provides type-safe interface for tool registration and retrieval.
@@ -75,7 +75,7 @@ class ToolRegistry(Protocol):
         ...     def get_tool(self, name: str) -> Optional[Any]:
         ...         ...
         >>>
-        >>> registry: ToolRegistry = MyToolRegistry()
+        >>> registry: ToolRegistryProtocol = MyToolRegistry()
     """
 
     def register_tool(self, name: str, tool_class: type) -> None:
@@ -108,7 +108,7 @@ class ToolRegistry(Protocol):
 
 
 @runtime_checkable
-class PolicyRegistry(Protocol):
+class PolicyRegistryProtocol(Protocol):
     """Protocol for safety policy registries.
 
     Provides type-safe interface for policy registration and retrieval.
@@ -120,7 +120,7 @@ class PolicyRegistry(Protocol):
         ...     def get_policy(self, name: str) -> Optional[Any]:
         ...         ...
         >>>
-        >>> registry: PolicyRegistry = MyPolicyRegistry()
+        >>> registry: PolicyRegistryProtocol = MyPolicyRegistry()
     """
 
     def register_policy(self, policy: Any) -> None:
@@ -152,7 +152,7 @@ class PolicyRegistry(Protocol):
 
 
 @runtime_checkable
-class StrategyRegistry(Protocol):
+class StrategyRegistryProtocol(Protocol):
     """Protocol for strategy registries.
 
     Provides type-safe interface for strategy registration and retrieval.
@@ -164,7 +164,7 @@ class StrategyRegistry(Protocol):
         ...     def get_strategy(self, name: str) -> Optional[Any]:
         ...         ...
         >>>
-        >>> registry: StrategyRegistry = MyStrategyRegistry()
+        >>> registry: StrategyRegistryProtocol = MyStrategyRegistry()
     """
 
     def register_strategy(self, name: str, strategy_class: type) -> None:

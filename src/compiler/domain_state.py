@@ -80,8 +80,8 @@ class TrackerProtocol(Protocol):
 
 
 @runtime_checkable
-class ToolRegistryProtocol(Protocol):
-    """Minimal interface for a tool registry."""
+class DomainToolRegistryProtocol(Protocol):
+    """Minimal interface for a tool registry in domain state context."""
 
     def get(self, name: str, version: Optional[str] = None) -> Any: ...
 
@@ -420,7 +420,7 @@ class InfrastructureContext:
 
     # Infrastructure components (all optional, typed via Protocols)
     tracker: Optional[TrackerProtocol] = None
-    tool_registry: Optional[ToolRegistryProtocol] = None
+    tool_registry: Optional[DomainToolRegistryProtocol] = None
     config_loader: Optional[ConfigLoaderProtocol] = None
     visualizer: Optional[VisualizerProtocol] = None
 

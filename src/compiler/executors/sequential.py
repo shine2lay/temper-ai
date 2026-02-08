@@ -17,7 +17,7 @@ from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message
 logger = logging.getLogger(__name__)
 
 from src.agents.agent_factory import AgentFactory
-from src.compiler.domain_state import ConfigLoaderProtocol, ToolRegistryProtocol
+from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.compiler.executors.base import StageExecutor
 from src.compiler.schemas import StageErrorHandlingConfig
 from src.core.context import ExecutionContext
@@ -68,7 +68,7 @@ class SequentialStageExecutor(StageExecutor):
         stage_config: Any,
         state: Dict[str, Any],
         config_loader: ConfigLoaderProtocol,
-        tool_registry: Optional[ToolRegistryProtocol] = None,
+        tool_registry: Optional[DomainToolRegistryProtocol] = None,
         halt_on_failure: bool = True
     ) -> Dict[str, Any]:
         """Execute stage with sequential agent execution.

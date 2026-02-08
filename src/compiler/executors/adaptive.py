@@ -4,7 +4,7 @@ Starts with parallel execution, switches to sequential if disagreement is high.
 """
 from typing import Any, Dict, Optional, cast
 
-from src.compiler.domain_state import ConfigLoaderProtocol, ToolRegistryProtocol
+from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.compiler.executors.base import StageExecutor
 from src.compiler.executors.parallel import ParallelStageExecutor
 from src.compiler.executors.sequential import SequentialStageExecutor
@@ -40,7 +40,7 @@ class AdaptiveStageExecutor(StageExecutor):
         stage_config: Any,
         state: Dict[str, Any],
         config_loader: ConfigLoaderProtocol,
-        tool_registry: Optional[ToolRegistryProtocol] = None
+        tool_registry: Optional[DomainToolRegistryProtocol] = None
     ) -> Dict[str, Any]:
         """Execute stage with adaptive mode.
 

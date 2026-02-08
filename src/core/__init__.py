@@ -7,10 +7,10 @@ This package contains foundational components used throughout the framework:
 - Service utilities
 """
 from src.core.protocols import (
-    PolicyRegistry,
+    PolicyRegistryProtocol,
     Registry,
-    StrategyRegistry,
-    ToolRegistry,
+    StrategyRegistryProtocol,
+    ToolRegistryProtocol,
 )
 
 # Lazy imports to avoid circular dependencies
@@ -27,7 +27,7 @@ __all__ = [
     "CircuitBreaker",
     "ExecutionContext",
     "Registry",
-    "PolicyRegistry",
-    "StrategyRegistry",
-    "ToolRegistry",
+    "PolicyRegistryProtocol",
+    "StrategyRegistryProtocol",
+    "ToolRegistryProtocol",
 ]

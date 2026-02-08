@@ -47,9 +47,6 @@ _SHIM_EXPORTS = {
 # These don't trigger deprecation warnings because they're internal usage.
 from src.core.circuit_breaker import (  # noqa: E402
     CircuitBreaker as _CircuitBreaker,
-    CircuitBreakerError as _CircuitBreakerError,
-    CircuitBreakerMetrics as _CircuitBreakerMetrics,
-    CircuitState as _CircuitState,
 )
 
 

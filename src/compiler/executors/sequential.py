@@ -12,7 +12,15 @@ import uuid
 from typing import Any, Dict, Optional, cast
 
 from src.core.circuit_breaker import CircuitBreakerError  # M-03: Use canonical import
-from src.utils.exceptions import BaseError, ErrorCode, sanitize_error_message, ConfigNotFoundError, ConfigValidationError, ToolExecutionError, LLMError
+from src.utils.exceptions import (
+    BaseError,
+    ConfigNotFoundError,
+    ConfigValidationError,
+    ErrorCode,
+    LLMError,
+    ToolExecutionError,
+    sanitize_error_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -675,14 +683,14 @@ class SequentialStageExecutor(StageExecutor):
             # Allowlist of known non-serializable/infrastructure keys to exclude
             # from tracking data. This avoids the cost of attempting json.dumps()
             # on every value in the state dict.
-            _NON_SERIALIZABLE_KEYS: frozenset[str] = frozenset({
+            _non_serializable_keys: frozenset[str] = frozenset({
                 'tracker', 'tool_registry', 'config_loader', 'visualizer',
                 'show_details', 'detail_console',
             })
 
             tracking_input_data = {
                 k: v for k, v in input_data.items()
-                if k not in _NON_SERIALIZABLE_KEYS
+                if k not in _non_serializable_keys
             }
             tracking_input_data = sanitize_config_for_display(tracking_input_data)
 

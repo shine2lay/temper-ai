@@ -41,8 +41,6 @@ truffleHog, gitleaks), consider:
             all_violations = result.violations + external_violations
             return ValidationResult(valid=len(all_violations) == 0, violations=all_violations)
 """
-import hashlib
-import re
 from typing import Any, Dict, List, Optional
 
 from src.safety.base import BaseSafetyPolicy

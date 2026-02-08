@@ -9,9 +9,12 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from src.core.service import Service
+from src.database import get_session
 from src.experimentation.analyzer import StatisticalAnalyzer
 from src.experimentation.assignment import VariantAssigner
 from src.experimentation.config_manager import ConfigManager
@@ -27,7 +30,7 @@ from src.experimentation.models import (
     VariantAssignment,
     utcnow,
 )
-from src.database import get_session
+from src.experimentation.validators import validate_experiment_name, validate_variant_list
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)

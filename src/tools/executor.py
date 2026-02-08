@@ -620,12 +620,9 @@ class ToolExecutor:
             List of ToolResults in same order as executions
         """
         import concurrent.futures
-        import time
 
         results = [None] * len(executions)
         futures = {}
-
-        deadline = time.time() + overall_timeout if overall_timeout else None
 
         for idx, (tool_name, params) in enumerate(executions):
             future = self._executor.submit(self.execute, tool_name, params, timeout)

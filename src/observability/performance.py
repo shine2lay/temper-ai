@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, Generator, List, Optional
 
+from src.database.datetime_utils import utcnow
 from src.observability.constants import (
     DEFAULT_CLEANUP_INTERVAL,
     DEFAULT_SLOW_THRESHOLD_MS,
@@ -21,7 +22,6 @@ from src.observability.constants import (
     MAX_LATENCY_SAMPLES,
     MAX_SLOW_OPERATIONS,
 )
-from src.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 

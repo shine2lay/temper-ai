@@ -56,8 +56,14 @@ except ImportError:
 try:
     from src.utils.exceptions import (
         LLMAuthenticationError as _LLMAuthenticationError,
+    )
+    from src.utils.exceptions import (
         LLMError as _LLMError,
+    )
+    from src.utils.exceptions import (
         LLMRateLimitError as _LLMRateLimitError,
+    )
+    from src.utils.exceptions import (
         LLMTimeoutError as _LLMTimeoutError,
     )
 except ImportError:

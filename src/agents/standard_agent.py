@@ -29,7 +29,6 @@ if TYPE_CHECKING:
 from src.agents.agent_observer import AgentObserver
 from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
 from src.agents.cost_estimator import estimate_cost
-from src.agents.llm.factory import create_llm_from_config
 from src.agents.llm import (  # M-04: Import from new location
     AnthropicLLM,
     LLMError,
@@ -37,7 +36,9 @@ from src.agents.llm import (  # M-04: Import from new location
     OllamaLLM,
     OpenAILLM,
 )
-from src.agents.prompt_engine import PromptEngine, PromptRenderError, _is_safe_template_value
+from src.agents.llm.factory import create_llm_from_config
+from src.agents.prompt_engine import PromptEngine
+from src.agents.prompt_validation import PromptRenderError, _is_safe_template_value
 from src.agents.response_parser import (
     ANSWER_TAG,
     REASONING_TAGS,
@@ -48,7 +49,12 @@ from src.agents.response_parser import (
     sanitize_tool_output,
 )
 from src.tools.registry import ToolRegistry
-from src.utils.exceptions import sanitize_error_message, ToolExecutionError, ToolNotFoundError, ConfigValidationError
+from src.utils.exceptions import (
+    ConfigValidationError,
+    ToolExecutionError,
+    ToolNotFoundError,
+    sanitize_error_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -531,7 +537,7 @@ class StandardAgent(BaseAgent):
                 if attempt < max_agent_retries:
                     # Exponential backoff with jitter: delay * 2^attempt * uniform(0.5, 1.5)
                     # M-12: random.random() is intentional (not secrets.random()) - jitter doesn't need cryptographic randomness
-                    backoff_delay = retry_delay * (2.0 ** attempt) * (0.5 + random.random())
+                    backoff_delay = retry_delay * (2.0 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     logger.warning(
                         "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
                         attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
@@ -716,7 +722,7 @@ class StandardAgent(BaseAgent):
                 safe_err = sanitize_error_message(str(e))
                 if attempt < max_agent_retries:
                     # H-10: Add jitter to prevent thundering herd
-                    backoff_delay = retry_delay * (2.0 ** attempt) * (0.5 + random.random())
+                    backoff_delay = retry_delay * (2.0 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     logger.warning(
                         "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
                         attempt + 1, max_agent_retries + 1, safe_err, backoff_delay

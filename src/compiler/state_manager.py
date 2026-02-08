@@ -15,7 +15,6 @@ from src.compiler.domain_state import (
 from src.compiler.executors.base import WorkflowStateDict  # canonical definition
 from src.compiler.langgraph_state import LangGraphWorkflowState
 
-
 logger = logging.getLogger(__name__)
 
 # Keys managed by the framework that must not be overwritten by user input_data.

@@ -14,7 +14,6 @@ Commands:
 """
 import json
 import logging
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -55,7 +54,7 @@ def _load_and_validate_workflow(
         WorkflowConfigSchema(**workflow_config)
         if verbose:
             console.print("[green]Schema validation passed[/green]")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- CLI validation catch-all
         console.print(f"[red]Validation error:[/red] {e}")
         raise SystemExit(1)
 
@@ -216,7 +215,7 @@ def run(
             trace = export_waterfall_trace(workflow_id)
             if "error" not in trace:
                 print_console_gantt(trace)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- optional visualization, non-fatal
             logger.debug(f"Could not display gantt chart: {e}")
 
         # 11. Save results if --output
@@ -240,7 +239,7 @@ def run(
                 logger.debug("Calling tool_executor.shutdown()")
                 tool_executor.shutdown()
                 logger.debug("tool_executor.shutdown() completed")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- defensive cleanup
                 logger.debug(f"Error during tool executor shutdown: {e}")
         else:
             logger.debug("No tool_executor found to cleanup")
@@ -259,10 +258,10 @@ def run(
             if tool_executor is not None:
                 try:
                     tool_executor.shutdown()
-                except Exception:
+                except Exception:  # noqa: BLE001 -- defensive cleanup on interrupt
                     pass
         raise SystemExit(130)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- CLI top-level catch-all
         console.print(f"[red]Execution error:[/red] {e}")
         if verbose:
             logger.exception("Workflow execution failed")
@@ -276,7 +275,7 @@ def run(
             if tool_executor is not None:
                 try:
                     tool_executor.shutdown()
-                except Exception:
+                except Exception:  # noqa: BLE001 -- defensive cleanup on error
                     pass
         raise SystemExit(1)
 
@@ -506,7 +505,7 @@ def _get_m5_cli():
             f"[red]Error:[/red] M5 self-improvement module not available: {e}"
         )
         raise SystemExit(1)
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- CLI init catch-all
         console.print(f"[red]Error:[/red] Failed to initialize M5 CLI: {e}")
         raise SystemExit(1)
 

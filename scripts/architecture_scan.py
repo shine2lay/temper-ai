@@ -1107,7 +1107,7 @@ def _run_pip_audit() -> dict:
     """Run pip-audit to check for dependency vulnerabilities."""
     try:
         result = subprocess.run(
-            ["pip-audit", "--format", "json", "--desc"],
+            [sys.executable, "-m", "pip_audit", "--format", "json", "--desc"],
             capture_output=True, text=True, timeout=120,
         )
         if result.returncode in (0, 1):  # 1 means vulnerabilities found

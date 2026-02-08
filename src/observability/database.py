@@ -13,4 +13,4 @@ warnings.warn(
 
 # Re-export all public API including private functions and module state
 from src.database.manager import *  # noqa: F401, F403
-from src.database.manager import _mask_database_url, _db_manager  # noqa: F401
+from src.database.manager import _db_manager, _mask_database_url  # noqa: F401

@@ -29,10 +29,12 @@ except ImportError:
     LLMCache = None  # type: ignore
 
 # Import canonical execution context for cache isolation
-from src.core.context import ExecutionContext
-
 # Import circuit breaker for resilience
-from src.core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig  # M-03: Use canonical import
+from src.core.circuit_breaker import (  # M-03: Use canonical import
+    CircuitBreaker,
+    CircuitBreakerConfig,
+)
+from src.core.context import ExecutionContext
 
 # Import enhanced exceptions
 from src.utils.exceptions import (
@@ -216,8 +218,7 @@ class BaseLLM(ABC):
             if key not in cls._http_clients:
                 if len(cls._http_clients) >= cls._MAX_HTTP_CLIENTS:
                     oldest_key = next(iter(cls._http_clients))
-                    evicted_client = cls._http_clients.pop(oldest_key)
-                    # Don't close - safer to let GC handle it
+                    cls._http_clients.pop(oldest_key)  # Don't close - safer to let GC handle it
                 cls._http_clients[key] = httpx.Client(**kwargs)
             return cls._http_clients[key]
 
@@ -228,7 +229,7 @@ class BaseLLM(ABC):
             for client in cls._http_clients.values():
                 try:
                     client.close()
-                except Exception:
+                except Exception:  # noqa: BLE001 -- defensive cleanup
                     pass
             cls._http_clients.clear()
 
@@ -376,7 +377,7 @@ class BaseLLM(ABC):
                 if self._client is not None:
                     try:
                         self._client.close()
-                    except Exception:
+                    except Exception:  # noqa: BLE001 -- defensive cleanup
                         pass
                     self._client = None
                 if self._async_client is not None:
@@ -393,7 +394,7 @@ class BaseLLM(ABC):
                             "async client not closed - use 'await aclose()' for cleanup"
                         )
                     self._async_client = None
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- defensive cleanup
                 logger.warning("Error during sync cleanup: %s", e)
             finally:
                 self._closed = True
@@ -412,7 +413,7 @@ class BaseLLM(ABC):
                     self._client.close()
                 if self._async_client is not None:
                     await self._async_client.aclose()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- defensive cleanup
                 logger.error(f"Error during async cleanup: {e}", exc_info=True)
             finally:
                 self._client = None
@@ -588,13 +589,13 @@ class BaseLLM(ABC):
                         )
                     # Exponential backoff with jitter (R-15) to decorrelate
                     # retries across concurrent callers.
-                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())
+                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     time.sleep(delay)
 
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())
+                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     time.sleep(delay)
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
@@ -642,13 +643,13 @@ class BaseLLM(ABC):
                             f"Request timed out after {self.timeout}s (attempt {attempt + 1}/{self.max_retries})"
                         )
                     # Exponential backoff with jitter (R-15)
-                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())
+                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     await asyncio.sleep(delay)
 
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
-                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())
+                    delay = self.retry_delay * (2 ** attempt) * (0.5 + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     await asyncio.sleep(delay)
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):

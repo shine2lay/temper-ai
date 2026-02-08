@@ -14,13 +14,13 @@ from typing import Any, ContextManager, Dict, List, Optional, Tuple
 from sqlalchemy import and_, text
 from sqlmodel import Session, select
 
-from src.experimentation.models import (
-    ExecutionStatus,
-    VariantAssignment,
-)
 from src.database import get_session
 from src.database.models import (
     WorkflowExecution,
+)
+from src.experimentation.models import (
+    ExecutionStatus,
+    VariantAssignment,
 )
 
 logger = logging.getLogger(__name__)

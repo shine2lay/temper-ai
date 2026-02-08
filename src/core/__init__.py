@@ -13,6 +13,7 @@ from src.core.protocols import (
     ToolRegistryProtocol,
 )
 
+
 # Lazy imports to avoid circular dependencies
 def __getattr__(name: str):
     if name == "CircuitBreaker":

@@ -6,8 +6,8 @@ concerns from core execution tracking.
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
-from src.observability.backend import ObservabilityBackend
 from src.database.datetime_utils import utcnow
+from src.observability.backend import ObservabilityBackend
 
 logger = logging.getLogger(__name__)
 

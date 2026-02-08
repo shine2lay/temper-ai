@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import List, Optional, Union
 
 from src.utils.path_safety.exceptions import PathSafetyError
-from src.utils.path_safety.platform_detector import PlatformPathDetector
 from src.utils.path_safety.path_rules import PathValidationRules
+from src.utils.path_safety.platform_detector import PlatformPathDetector
 from src.utils.path_safety.symlink_validator import SymlinkSecurityValidator
 from src.utils.path_safety.temp_directory import SecureTempDirectory
 

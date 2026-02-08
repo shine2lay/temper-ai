@@ -4,7 +4,6 @@ Identifies strings that are obviously test/demo values to reduce
 false positives from documentation, examples, and test code.
 """
 import re
-from typing import List
 
 
 class TestSecretFilter:

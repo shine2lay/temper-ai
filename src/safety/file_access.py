@@ -471,7 +471,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             try:
                 # Use strict error handling - malformed encoding raises exception
                 decoded = urllib.parse.unquote(decoded, errors='strict')
-            except Exception:
+            except (UnicodeDecodeError, ValueError):
                 # Malformed percent encoding (e.g., %GG, %2, %) - use original path
                 # This is safer than trying to partially decode
                 return path
@@ -546,7 +546,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         # Example: ＡＢＣ → ABC, ＿ → _, ／ → /
         try:
             normalized = unicodedata.normalize('NFKC', path)
-        except Exception:
+        except (UnicodeError, ValueError):
             # If normalization fails (invalid Unicode), return current state
             # Better to potentially reject than to crash
             return path
@@ -592,7 +592,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 normalized = normalized.lower()
 
             return normalized
-        except Exception:
+        except (OSError, ValueError, TypeError):
             # If path is invalid, return as-is for error reporting
             return unicode_normalized if self.case_sensitive else unicode_normalized.lower()
 

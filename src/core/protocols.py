@@ -4,7 +4,7 @@ This module provides Protocol definitions for common patterns used across
 the framework, enabling type checking and structural subtyping without
 tight coupling between components.
 """
-from typing import Any, Protocol, TypeVar, List, Optional, runtime_checkable
+from typing import Any, List, Optional, Protocol, TypeVar, runtime_checkable
 
 T = TypeVar('T')
 

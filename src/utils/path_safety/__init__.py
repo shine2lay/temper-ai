@@ -3,8 +3,8 @@ Path safety validation utilities.
 
 Public API for path safety validation.
 """
-from typing import Any, Union
 from pathlib import Path
+from typing import Any, Union
 
 from src.utils.path_safety.exceptions import PathSafetyError
 from src.utils.path_safety.validator import PathSafetyValidator

@@ -457,9 +457,13 @@ class TestAgentIDNormalization:
                 context={"agent_id": agent_id}
             )
 
-            # Should handle safely without errors
+            # Should handle safely without errors and return a valid result
             assert result is not None, \
                 f"Policy failed to handle special character in ID: {repr(agent_id)}"
+            assert hasattr(result, 'valid'), \
+                f"Result should have 'valid' attribute for ID: {repr(agent_id)}"
+            assert isinstance(result.valid, bool), \
+                f"Result.valid should be bool for ID: {repr(agent_id)}"
 
     def test_agent_id_whitespace_trimming(self):
         """Test that leading/trailing whitespace is trimmed.
@@ -642,6 +646,8 @@ class TestFailureRecovery:
         )
 
         assert result is not None, "Policy should handle Redis failure gracefully"
+        assert hasattr(result, 'valid'), "Result should have 'valid' attribute"
+        assert result.valid is True, "Fail-open policy should allow requests when backend unavailable"
 
     def test_redis_connection_failure_fail_closed(self):
         """Test fail-closed behavior when Redis is unavailable.

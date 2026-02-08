@@ -36,6 +36,7 @@ class AggregationQueryBuilder:
         """
         from sqlalchemy import case
         from sqlmodel import func, select
+
         from src.database.models import WorkflowExecution
 
         return select(
@@ -74,6 +75,7 @@ class AggregationQueryBuilder:
         """
         from sqlalchemy import case
         from sqlmodel import func, select
+
         from src.database.models import AgentExecution
 
         return select(
@@ -112,6 +114,7 @@ class AggregationQueryBuilder:
         """
         from sqlalchemy import case
         from sqlmodel import func, select
+
         from src.database.models import LLMCall
 
         return select(

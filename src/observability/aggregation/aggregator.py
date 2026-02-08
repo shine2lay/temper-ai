@@ -3,9 +3,9 @@ import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+from src.observability.aggregation.metric_creator import MetricRecordCreator
 from src.observability.aggregation.period import AggregationPeriod
 from src.observability.aggregation.query_builder import AggregationQueryBuilder
-from src.observability.aggregation.metric_creator import MetricRecordCreator
 from src.observability.aggregation.time_window import TimeWindowCalculator
 
 logger = logging.getLogger(__name__)

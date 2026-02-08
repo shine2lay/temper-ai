@@ -21,11 +21,11 @@ Example:
     >>> workflow.approve(request.id, approver="alice")
     >>> result = workflow.get_result(request.id)
 """
+import logging
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import Enum
-import logging
-import threading
 from typing import Any, Callable, Dict, List, Optional
 from uuid import uuid4
 
@@ -567,7 +567,7 @@ class ApprovalWorkflow:
         for callback in self._on_approved_callbacks:
             try:
                 callback(request)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- defensive cleanup for arbitrary callback
                 # H-12: Log callback errors instead of silently ignoring
                 logger.warning("Approval callback failed: %s", e, exc_info=True)
 
@@ -576,7 +576,7 @@ class ApprovalWorkflow:
         for callback in self._on_rejected_callbacks:
             try:
                 callback(request)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- defensive cleanup for arbitrary callback
                 # H-12: Log callback errors instead of silently ignoring
                 logger.warning("Rejection callback failed: %s", e, exc_info=True)
 

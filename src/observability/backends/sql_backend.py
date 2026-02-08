@@ -17,7 +17,6 @@ from typing import Any, Dict, List, Optional, cast
 from sqlalchemy import case
 from sqlmodel import delete, func, select
 
-from src.observability.backend import ObservabilityBackend
 from src.database import get_session
 from src.database.datetime_utils import ensure_utc, safe_duration_seconds
 from src.database.models import (
@@ -28,6 +27,7 @@ from src.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
+from src.observability.backend import ObservabilityBackend
 
 logger = logging.getLogger(__name__)
 

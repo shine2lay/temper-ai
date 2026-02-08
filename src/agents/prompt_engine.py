@@ -10,13 +10,12 @@ from typing import Any, Dict, List, Optional, Union
 from jinja2 import FileSystemLoader, TemplateNotFound
 from jinja2.sandbox import ImmutableSandboxedEnvironment
 
+from src.agents.prompt_cache import TemplateCacheManager
+from src.agents.prompt_formatters import ToolSchemaFormatter
 from src.agents.prompt_validation import (
     PromptRenderError,
     TemplateVariableValidator,
-    _is_safe_template_value
 )
-from src.agents.prompt_cache import TemplateCacheManager
-from src.agents.prompt_formatters import ToolSchemaFormatter
 
 
 class PromptEngine:

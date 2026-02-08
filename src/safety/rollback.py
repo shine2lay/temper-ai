@@ -211,7 +211,7 @@ def validate_rollback_path(
         # Path is valid
         return True, None
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- fail-closed top-level handler
         # Any unexpected error - fail closed
         logger.error(f"Path validation error for {file_path}: {e}")
         return False, f"Path validation failed: {str(e)}"
@@ -320,7 +320,7 @@ class FileRollbackStrategy(RollbackStrategy):
                     with open(path, 'r') as f:
                         snapshot.file_snapshots[file_path] = f.read()
                     snapshot.metadata[f"{file_path}_existed"] = True
-                except Exception:
+                except (OSError, UnicodeDecodeError):
                     # Binary file or read error - skip content snapshot
                     snapshot.metadata[f"{file_path}_existed"] = True
                     snapshot.metadata[f"{file_path}_unreadable"] = True
@@ -386,7 +386,7 @@ class FileRollbackStrategy(RollbackStrategy):
                         pass
                     raise
                 result.reverted_items.append(file_path)
-            except Exception as e:
+            except (OSError, IOError) as e:
                 result.failed_items.append(file_path)
                 result.errors.append(f"Failed to restore {file_path}: {str(e)}")
 
@@ -424,7 +424,7 @@ class FileRollbackStrategy(RollbackStrategy):
                     if os.path.exists(real_path):
                         os.remove(real_path)
                         result.reverted_items.append(f"deleted:{file_path}")
-                except Exception as e:
+                except (OSError, IOError) as e:
                     result.failed_items.append(file_path)
                     result.errors.append(f"Failed to delete {file_path}: {str(e)}")
 
@@ -489,7 +489,7 @@ class StateRollbackStrategy(RollbackStrategy):
                 current_state = self.state_getter()
                 if isinstance(current_state, dict):
                     snapshot.state_snapshots = current_state.copy()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- arbitrary state_getter callback
                 snapshot.metadata["snapshot_error"] = str(e)
 
         return snapshot
@@ -557,7 +557,7 @@ class CompositeRollbackStrategy(RollbackStrategy):
 
                 # Track which strategies contributed
                 snapshot.metadata[f"strategy_{strategy.name}"] = True
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- arbitrary strategy callback
                 snapshot.metadata[f"strategy_{strategy.name}_error"] = str(e)
 
         return snapshot
@@ -587,7 +587,7 @@ class CompositeRollbackStrategy(RollbackStrategy):
                     composite_result.success = False
 
                 composite_result.metadata[f"strategy_{strategy.name}_status"] = result.status.value
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 -- arbitrary strategy callback
                 composite_result.success = False
                 composite_result.errors.append(f"Strategy {strategy.name} failed: {str(e)}")
 
@@ -798,7 +798,7 @@ class RollbackManager:
         for callback in self._on_rollback_callbacks:
             try:
                 callback(result)
-            except Exception:
+            except Exception:  # noqa: BLE001 -- defensive cleanup for arbitrary callback
                 # Don't let callback errors break rollback
                 pass
 

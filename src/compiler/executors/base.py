@@ -13,7 +13,7 @@ from typing_extensions import TypedDict
 
 from src.compiler.domain_state import (
     ConfigLoaderProtocol,
-    DomainDomainToolRegistryProtocol,
+    DomainToolRegistryProtocol,
     TrackerProtocol,
     VisualizerProtocol,
 )

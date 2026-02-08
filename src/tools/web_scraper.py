@@ -359,7 +359,7 @@ class WebScraperParams(BaseModel):
         description="Whether to extract text from HTML"
     )
     timeout: int = Field(
-        default=30,
+        default=DEFAULT_WEB_TIMEOUT,
         description="Request timeout in seconds",
         gt=0,
         le=MAX_TIMEOUT_SECONDS

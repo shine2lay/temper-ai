@@ -15,6 +15,12 @@ from .problem_models import PerformanceProblem, ProblemSeverity, ProblemType
 
 logger = logging.getLogger(__name__)
 
+# Severity ordering for problem sorting
+SEVERITY_ORDER_CRITICAL = 0
+SEVERITY_ORDER_HIGH = 1
+SEVERITY_ORDER_MEDIUM = 2
+SEVERITY_ORDER_LOW = 3
+
 
 class ProblemDetectionError(Exception):
     """Base exception for problem detection errors."""
@@ -132,10 +138,10 @@ class ProblemDetector:
 
         # Sort by severity (CRITICAL first, then HIGH, MEDIUM, LOW)
         severity_order = {
-            ProblemSeverity.CRITICAL: 0,
-            ProblemSeverity.HIGH: 1,
-            ProblemSeverity.MEDIUM: 2,
-            ProblemSeverity.LOW: 3,
+            ProblemSeverity.CRITICAL: SEVERITY_ORDER_CRITICAL,
+            ProblemSeverity.HIGH: SEVERITY_ORDER_HIGH,
+            ProblemSeverity.MEDIUM: SEVERITY_ORDER_MEDIUM,
+            ProblemSeverity.LOW: SEVERITY_ORDER_LOW,
         }
         problems.sort(key=lambda p: severity_order[p.severity])
 

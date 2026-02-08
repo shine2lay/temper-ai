@@ -9,6 +9,8 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Pattern
 
+from src.constants.limits import LARGE_ITEM_LIMIT
+from src.constants.probabilities import PROB_VERY_LOW
 from src.constants.sizes import BYTES_PER_GB, BYTES_PER_KB, BYTES_PER_MB
 from src.safety.constants import (
     DEFAULT_MAX_ITEM_LENGTH,
@@ -105,7 +107,7 @@ class ValidationMixin:
         self,
         value: Any,
         param_name: str,
-        min_seconds: float = 0.1,
+        min_seconds: float = PROB_VERY_LOW,
         max_seconds: float = float(MAX_VALIDATION_TIME_SECONDS)
     ) -> float:
         """Validate that a parameter is a valid time value in seconds.
@@ -372,7 +374,7 @@ class ValidationMixin:
         pattern: str,
         param_name: str,
         max_length: int = DEFAULT_MAX_STRING_LENGTH,
-        test_timeout: float = 0.1
+        test_timeout: float = PROB_VERY_LOW
     ) -> Pattern[str]:
         """Validate that a pattern is a safe, compilable regex.
 
@@ -426,9 +428,9 @@ class ValidationMixin:
 
         # ReDoS check - test on adversarial inputs
         test_strings = [
-            "a" * 100,  # Repetition
-            "a" * 50 + "b",  # Repetition with terminator
-            "x" * 100,  # Different character
+            "a" * (LARGE_ITEM_LIMIT * 2),  # Repetition (100 chars)
+            "a" * LARGE_ITEM_LIMIT + "b",  # Repetition with terminator (50 chars)
+            "x" * (LARGE_ITEM_LIMIT * 2),  # Different character (100 chars)
         ]
 
         for test_str in test_strings:

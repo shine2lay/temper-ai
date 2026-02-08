@@ -41,7 +41,12 @@ logger = logging.getLogger(__name__)
 from src.compiler.domain_state import WorkflowDomainState
 from src.constants.durations import TIMEOUT_SHORT
 from src.constants.limits import MAX_SHORT_STRING_LENGTH
+from src.constants.sizes import TOKEN_BYTES_SESSION, UUID_HEX_MEDIUM_LENGTH
 from src.utils.exceptions import ConfigurationError, ErrorCode
+
+# Checkpoint ID generation constants
+CHECKPOINT_ID_RANDOM_BYTES = 6  # Hex bytes for random suffix (48 bits entropy)
+CHECKPOINT_ID_HEX_CHARS = CHECKPOINT_ID_RANDOM_BYTES * 2  # 12 hex characters
 
 
 class CheckpointBackend(ABC):
@@ -229,7 +234,7 @@ class FileCheckpointBackend(CheckpointBackend):
                     "Generate with: python -c 'import secrets; print(secrets.token_hex(32))'"
                 )
             else:
-                self._hmac_key = secrets.token_bytes(32)
+                self._hmac_key = secrets.token_bytes(TOKEN_BYTES_SESSION)
                 logger.warning(
                     "CHECKPOINT_HMAC_KEY not set. Generated ephemeral HMAC key. "
                     "Checkpoint integrity verification will not survive process restarts. "
@@ -322,7 +327,7 @@ class FileCheckpointBackend(CheckpointBackend):
         """
         timestamp = int(time.time() * 1000)  # Millisecond precision
         self._counter += 1
-        random_suffix = secrets.token_hex(6)  # 12 hex chars (48 bits of entropy)
+        random_suffix = secrets.token_hex(CHECKPOINT_ID_RANDOM_BYTES)  # 12 hex chars (48 bits of entropy)
         return f"cp-{timestamp}-{self._counter}-{random_suffix}"
 
     def _get_checkpoint_path(self, workflow_id: str, checkpoint_id: str) -> Path:
@@ -591,7 +596,7 @@ class RedisCheckpointBackend(CheckpointBackend):
     def _generate_checkpoint_id(self) -> str:
         """Generate a unique checkpoint ID (CO-07: uuid4 prevents collisions)."""
         import uuid
-        return f"cp-{uuid.uuid4().hex[:16]}"
+        return f"cp-{uuid.uuid4().hex[:UUID_HEX_MEDIUM_LENGTH]}"
 
     def save_checkpoint(
         self,

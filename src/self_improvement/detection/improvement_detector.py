@@ -31,6 +31,12 @@ from src.self_improvement.strategies.registry import StrategyRegistry
 
 logger = logging.getLogger(__name__)
 
+# Priority mapping for problem severity
+PRIORITY_CRITICAL = 0  # Highest priority
+PRIORITY_HIGH = 1
+PRIORITY_MEDIUM = 2
+PRIORITY_LOW = 3  # Lowest priority
+
 
 class ImprovementDetectionError(Exception):
     """Base exception for improvement detection errors."""
@@ -355,10 +361,10 @@ class ImprovementDetector:
 
                 # Map severity to priority (0=highest, 3=lowest)
                 severity_to_priority = {
-                    ProblemSeverity.CRITICAL: 0,
-                    ProblemSeverity.HIGH: 1,
-                    ProblemSeverity.MEDIUM: 2,
-                    ProblemSeverity.LOW: 3,
+                    ProblemSeverity.CRITICAL: PRIORITY_CRITICAL,
+                    ProblemSeverity.HIGH: PRIORITY_HIGH,
+                    ProblemSeverity.MEDIUM: PRIORITY_MEDIUM,
+                    ProblemSeverity.LOW: PRIORITY_LOW,
                 }
                 priority = severity_to_priority.get(problem.severity, 2)
 

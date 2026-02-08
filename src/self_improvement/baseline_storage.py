@@ -23,6 +23,9 @@ from src.self_improvement.path_validator import AgentPathValidator
 
 logger = logging.getLogger(__name__)
 
+# File permissions for baseline storage
+BASELINE_FILE_MODE = 0o644  # Read/write for owner, read-only for group/others
+
 
 class BaselineStorageError(Exception):
     """Raised when baseline storage operations fail."""
@@ -116,7 +119,7 @@ class BaselineStorage:
             if hasattr(os, 'O_NOFOLLOW'):
                 flags |= os.O_NOFOLLOW
 
-            fd = os.open(str(baseline_file), flags, 0o644)
+            fd = os.open(str(baseline_file), flags, BASELINE_FILE_MODE)
             with os.fdopen(fd, 'w') as f:
                 json.dump(profile.to_dict(), f, indent=2)
 

@@ -5,6 +5,9 @@ from typing import Any, Dict, List, Optional
 
 from src.observability.aggregation.period import AggregationPeriod
 
+# UUID hex string length for metric IDs
+UUID_HEX_LENGTH = 12
+
 
 class MetricRecordCreator:
     """Creates SystemMetric records from aggregated data.
@@ -322,7 +325,7 @@ class MetricRecordCreator:
         """
         from src.database.models import SystemMetric
 
-        metric_id = f"metric-{uuid.uuid4().hex[:12]}"
+        metric_id = f"metric-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 
         metric = SystemMetric(
             id=metric_id,

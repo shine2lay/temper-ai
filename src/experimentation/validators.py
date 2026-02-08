@@ -9,9 +9,15 @@ import re
 import unicodedata
 from typing import Any, Dict, List
 
+from src.constants.limits import PERCENT_30, PERCENT_50
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Validation length limits
+MAX_EXPERIMENT_NAME_LENGTH = 50
+MAX_VARIANT_NAME_LENGTH = 30
+MAX_NAME_DISPLAY_LENGTH = 30  # Maximum characters to display in security logs
 
 
 def validate_experiment_name(name: str) -> str:
@@ -42,8 +48,8 @@ def validate_experiment_name(name: str) -> str:
     """
     # 1. Length check (before expensive operations)
     # Strip whitespace for length validation to catch " " as empty
-    if not name or not name.strip() or len(name) > 50:
-        raise ValueError("Experiment name must be 1-50 characters")
+    if not name or not name.strip() or len(name) > MAX_EXPERIMENT_NAME_LENGTH:
+        raise ValueError(f"Experiment name must be 1-{MAX_EXPERIMENT_NAME_LENGTH} characters")
 
     # 2. Normalize Unicode (prevent homograph attacks)
     # NFKC = Compatibility Decomposition + Canonical Composition
@@ -80,8 +86,8 @@ def validate_variant_name(name: str) -> str:
     Raises:
         ValueError: If name violates security policy
     """
-    if not name or len(name) > 30:
-        raise ValueError("Variant name must be 1-30 characters")
+    if not name or len(name) > MAX_VARIANT_NAME_LENGTH:
+        raise ValueError(f"Variant name must be 1-{MAX_VARIANT_NAME_LENGTH} characters")
 
     normalized = unicodedata.normalize('NFKC', name)
 
@@ -120,10 +126,10 @@ def validate_variant_list(
             validated_variants.append({**variant_config, "name": validated_name})
         except ValueError as e:
             logger.warning(
-                f"Invalid variant name rejected: {variant_config.get('name', '')[:30]}",
+                f"Invalid variant name rejected: {variant_config.get('name', '')[:MAX_NAME_DISPLAY_LENGTH]}",
                 extra={
                     "security_event": "INPUT_VALIDATION_FAILED",
-                    "variant_name": variant_config.get("name", "")[:30],
+                    "variant_name": variant_config.get("name", "")[:MAX_NAME_DISPLAY_LENGTH],
                     "experiment_name": experiment_name,
                     "error": str(e)
                 }

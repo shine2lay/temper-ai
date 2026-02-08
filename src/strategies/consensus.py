@@ -33,6 +33,7 @@ Example:
 from typing import Any, Dict, List
 
 from src.constants.probabilities import PROB_LOW_MEDIUM, PROB_MEDIUM
+from src.constants.limits import PERCENT_50
 from src.strategies.base import (
     AgentOutput,
     CollaborationStrategy,
@@ -43,6 +44,8 @@ from src.strategies.base import (
 
 # Constants
 WEAK_CONSENSUS_CONFIDENCE_PENALTY = 0.7  # Reduce confidence by 30% for weak consensus
+MIN_CONSENSUS_DEFAULT = 0.51  # Default minimum consensus threshold (>50%)
+PERCENT_TO_FRACTION = 0.01  # Convert percentage to fraction
 
 
 class ConsensusStrategy(CollaborationStrategy):
@@ -111,7 +114,7 @@ class ConsensusStrategy(CollaborationStrategy):
 
         # Get config
         min_agents = config.get("min_agents", 1)
-        min_consensus = config.get("min_consensus", PROB_MEDIUM + 0.01)  # >50% (0.51)
+        min_consensus = config.get("min_consensus", PROB_MEDIUM + PERCENT_TO_FRACTION)  # >50% (0.51)
         tie_breaker = config.get("tie_breaker", "confidence")
 
         # Validate config
@@ -162,7 +165,7 @@ class ConsensusStrategy(CollaborationStrategy):
             conflicts = self.detect_conflicts(agent_outputs, threshold=PROB_LOW_MEDIUM)
             return SynthesisResult(
                 decision=decision,  # Best effort decision
-                confidence=round(decision_support * WEAK_CONSENSUS_CONFIDENCE_PENALTY, 4),
+                confidence=round(decision_support * WEAK_CONSENSUS_CONFIDENCE_PENALTY, 4),  # noqa: Standard precision
                 method="consensus_weak",
                 votes=vote_counts,
                 conflicts=conflicts,
@@ -360,7 +363,7 @@ class ConsensusStrategy(CollaborationStrategy):
                 },
                 "min_consensus": {
                     "type": "float",
-                    "default": 0.51,
+                    "default": MIN_CONSENSUS_DEFAULT,
                     "description": "Minimum consensus percentage (0-1)"
                 },
                 "tie_breaker": {

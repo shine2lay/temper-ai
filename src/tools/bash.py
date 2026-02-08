@@ -277,9 +277,9 @@ class Bash(BaseTool):
                 "timeout": {
                     "type": "integer",
                     "description": (
-                        "Timeout in seconds (max 600). Default: 120."
+                        f"Timeout in seconds (max {MAX_BASH_TIMEOUT}). Default: {DEFAULT_BASH_TIMEOUT}."
                     ),
-                    "default": 120,
+                    "default": DEFAULT_BASH_TIMEOUT,
                 },
             },
             "required": ["command"],

@@ -10,6 +10,9 @@ from src.strategies.base import AgentOutput, Conflict, SynthesisResult
 
 logger = logging.getLogger(__name__)
 
+# Display constants
+MAX_TEXT_PREVIEW_LENGTH = 50  # Maximum characters to show in text preview/truncation
+
 
 def get_merit_weights(
     agent_outputs: List[AgentOutput],
@@ -354,7 +357,7 @@ def calculate_semantic_similarity(
             similar_count += 1
             logger.debug(
                 f"Agent {agent} semantically similar: {similarity:.3f} "
-                f"(prev: '{prev_text[:50]}...', curr: '{curr_text[:50]}...')"
+                f"(prev: '{prev_text[:MAX_TEXT_PREVIEW_LENGTH]}...', curr: '{curr_text[:MAX_TEXT_PREVIEW_LENGTH]}...')"
             )
 
     return similar_count / len(common_agents)

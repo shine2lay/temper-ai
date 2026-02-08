@@ -31,6 +31,9 @@ from typing import Any, Dict, Iterator, List, Optional, runtime_checkable
 
 from typing_extensions import Protocol
 
+# Workflow ID format constants
+WORKFLOW_ID_HEX_LENGTH = 12  # Length of hex portion in workflow IDs (wf-<12 hex chars>)
+
 # ---------------------------------------------------------------------------
 # Protocol definitions for InfrastructureContext field types
 # ---------------------------------------------------------------------------
@@ -169,7 +172,7 @@ class WorkflowDomainState:
     # Core workflow state (required fields with defaults)
     stage_outputs: Dict[str, Any] = field(default_factory=dict)
     current_stage: str = ""
-    workflow_id: str = field(default_factory=lambda: f"wf-{uuid.uuid4().hex[:12]}")
+    workflow_id: str = field(default_factory=lambda: f"wf-{uuid.uuid4().hex[:WORKFLOW_ID_HEX_LENGTH]}")
 
     # Common workflow inputs (all optional)
     topic: Optional[str] = None

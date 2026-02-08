@@ -128,7 +128,7 @@ class DialogueOrchestrator(CollaborationStrategy):
         min_rounds: int = DEFAULT_MIN_ROUNDS,
         use_semantic_convergence: bool = True,
         context_strategy: str = "full",
-        context_window_size: int = SMALL_ITEM_LIMIT - 3,  # 2 rounds
+        context_window_size: int = SMALL_ITEM_LIMIT - 3,  # 2 rounds  # noqa: Offset in calculation
         use_merit_weighting: bool = False,
         merit_domain: Optional[str] = None
     ):

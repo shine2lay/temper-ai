@@ -25,8 +25,18 @@ from src.constants.durations import (
     SECONDS_PER_HOUR,
     SECONDS_PER_MINUTE,
 )
-from src.constants.limits import MULTIPLIER_SMALL
+from src.constants.limits import LARGE_ITEM_LIMIT, MULTIPLIER_LARGE, MULTIPLIER_SMALL, PERCENT_20
 from src.constants.probabilities import PROB_MEDIUM
+
+# Default rate limit values
+DEFAULT_MAX_CALLS_PER_MINUTE = MULTIPLIER_LARGE * MULTIPLIER_LARGE  # 100
+DEFAULT_MAX_CALLS_PER_HOUR = MULTIPLIER_LARGE * LARGE_ITEM_LIMIT  # 5000
+DEFAULT_MAX_CALLS_PER_SECOND = PERCENT_20  # 20
+DEFAULT_MAX_DB_QUERIES_PER_SECOND = LARGE_ITEM_LIMIT  # 50
+DEFAULT_MAX_DB_QUERIES_PER_MINUTE = MULTIPLIER_LARGE * PERCENT_20  # 2000
+DEFAULT_MAX_FILE_OPS_PER_MINUTE = 3 * MULTIPLIER_LARGE  # 30  # noqa: Multiplier in expression
+DEFAULT_MAX_TOOL_CALLS_PER_MINUTE = 6 * MULTIPLIER_LARGE  # 60  # noqa: Multiplier in expression
+DEFAULT_MAX_API_CALLS_PER_MINUTE = MULTIPLIER_LARGE * MULTIPLIER_LARGE  # 1000
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import RATE_LIMIT_PRIORITY
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
@@ -69,11 +79,11 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
 
     # Default limits for common operations
     DEFAULT_LIMITS = {
-        "llm_call": {"max_per_minute": 100, "max_per_hour": 5000},
-        "tool_call": {"max_per_minute": 60},
-        "file_operation": {"max_per_minute": 30},
-        "api_call": {"max_per_second": 20, "max_per_minute": 1000},
-        "database_query": {"max_per_second": 50, "max_per_minute": 2000}
+        "llm_call": {"max_per_minute": DEFAULT_MAX_CALLS_PER_MINUTE, "max_per_hour": DEFAULT_MAX_CALLS_PER_HOUR},
+        "tool_call": {"max_per_minute": DEFAULT_MAX_TOOL_CALLS_PER_MINUTE},
+        "file_operation": {"max_per_minute": DEFAULT_MAX_FILE_OPS_PER_MINUTE},
+        "api_call": {"max_per_second": DEFAULT_MAX_CALLS_PER_SECOND, "max_per_minute": DEFAULT_MAX_API_CALLS_PER_MINUTE},
+        "database_query": {"max_per_second": DEFAULT_MAX_DB_QUERIES_PER_SECOND, "max_per_minute": DEFAULT_MAX_DB_QUERIES_PER_MINUTE}
     }
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):

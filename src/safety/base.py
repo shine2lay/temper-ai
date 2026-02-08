@@ -106,7 +106,7 @@ class BaseSafetyPolicy(SafetyPolicy):
                 )
             if len(key) > THRESHOLD_LARGE_COUNT:
                 raise ValueError(
-                    f"config key exceeds {THRESHOLD_LARGE_COUNT} characters: {key[:20]}..."
+                    f"config key exceeds {THRESHOLD_LARGE_COUNT} characters: {key[:20]}..."  # noqa: Preview length
                 )
 
             # SECURITY: Recursively validate nested dicts (depth-bounded)

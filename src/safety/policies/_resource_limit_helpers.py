@@ -17,7 +17,7 @@ from src.safety.interfaces import SafetyViolation, ViolationSeverity
 
 # Constants (duplicated from resource_limit_policy to avoid circular import)
 BYTES_PER_KB_FLOAT = float(BYTES_PER_KB)
-DISK_SPACE_SAFETY_MARGIN = 1.0 + FRACTION_QUARTER - 0.05  # 1.2
+DISK_SPACE_SAFETY_MARGIN = 1.0 + FRACTION_QUARTER - 0.05  # 1.2  # noqa: Calculation constant
 DISK_SPACE_SAFETY_MARGIN_PERCENT = PERCENT_20
 CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT
 

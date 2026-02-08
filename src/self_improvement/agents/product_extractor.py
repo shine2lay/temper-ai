@@ -21,6 +21,12 @@ from src.self_improvement.ollama_client import OllamaClient
 # Configure logging
 logger = logging.getLogger(__name__)
 
+# Extraction quality constants
+DEFAULT_EXTRACTION_TEMPERATURE = 0.3  # Low temperature for deterministic structured output
+DEFAULT_EXTRACTION_TIMEOUT_SECONDS = 30  # Request timeout
+MAX_PRODUCT_PRICE_USD = 1000000  # Reasonable maximum price for product validation
+LOG_TEXT_PREVIEW_LENGTH = 100  # Length of text to log in error messages
+
 # Security limits
 MAX_INPUT_LENGTH = 2000  # Maximum chars in input text
 MAX_RESPONSE_SIZE = 10000  # Maximum response size (10KB)
@@ -58,18 +64,18 @@ class ProductExtractorAgent:
     def __init__(
         self,
         model: str = "llama3.1:8b",
-        temperature: float = 0.3,
+        temperature: float = DEFAULT_EXTRACTION_TEMPERATURE,
         max_tokens: int = 512,
-        timeout: int = 30,
+        timeout: int = DEFAULT_EXTRACTION_TIMEOUT_SECONDS,
     ):
         """
         Initialize ProductExtractorAgent.
 
         Args:
             model: Ollama model to use (e.g., "llama3.1:8b", "qwen2.5:32b")
-            temperature: Lower = more deterministic (default: 0.3 for structured output)
+            temperature: Lower = more deterministic (default: DEFAULT_EXTRACTION_TEMPERATURE for structured output)
             max_tokens: Maximum tokens to generate (default: 512)
-            timeout: Request timeout in seconds (default: 30)
+            timeout: Request timeout in seconds (default: DEFAULT_EXTRACTION_TIMEOUT_SECONDS)
 
         Raises:
             ValueError: If parameters are invalid
@@ -150,7 +156,7 @@ class ProductExtractorAgent:
             # Expected parsing errors - log and return fallback
             logger.warning(
                 "Product extraction failed for text: %s, error: %s",
-                text[:100],  # Log first 100 chars only
+                text[:LOG_TEXT_PREVIEW_LENGTH],  # Log preview only
                 str(e),
                 exc_info=True
             )
@@ -318,7 +324,7 @@ JSON output:"""
                     if price < 0:
                         logger.warning("Negative price detected: %s, setting to None", price)
                         product_data["price"] = None
-                    elif not (0 <= price <= 1_000_000):  # Reasonable max for products
+                    elif not (0 <= price <= MAX_PRODUCT_PRICE_USD):  # Reasonable max for products
                         logger.warning("Price out of range: %s, setting to None", price)
                         product_data["price"] = None
                     elif price != price:  # Check for NaN (NaN != NaN)
@@ -341,7 +347,7 @@ JSON output:"""
             return product_data
 
         except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse JSON response: {e}\nResponse: {response[:200]}")
+            raise ValueError(f"Failed to parse JSON response: {e}\nResponse: {response[:200]}")  # noqa: Preview length
 
     def __repr__(self) -> str:
         """String representation for debugging."""

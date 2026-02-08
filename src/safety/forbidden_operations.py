@@ -23,6 +23,8 @@ from src.safety._forbidden_ops_helpers import (
 from src.safety._forbidden_ops_helpers import (
     validate_redirect_context as _validate_redirect_context,
 )
+from src.constants.limits import PERCENT_100
+from src.constants.probabilities import PROB_VERY_LOW
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
     MAX_EXCLUDED_PATH_LENGTH,
@@ -30,6 +32,13 @@ from src.safety.constants import (
 )
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
+
+# Forbidden operations policy priority
+FORBIDDEN_OPS_PRIORITY = 200
+# Maximum whitelist command length
+MAX_WHITELIST_COMMAND_LENGTH = 200
+# Maximum custom patterns allowed
+MAX_CUSTOM_PATTERNS = PERCENT_100
 
 
 class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
@@ -293,15 +302,15 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                     pattern,
                     f"custom_forbidden_patterns['{name}']",
                     max_length=MAX_EXCLUDED_PATH_LENGTH,
-                    test_timeout=0.1
+                    test_timeout=PROB_VERY_LOW
                 )
                 self.custom_forbidden_patterns[name] = pattern
             except ValueError as e:
                 raise ValueError(f"Invalid regex in custom_forbidden_patterns['{name}']: {e}")
 
-        if len(self.custom_forbidden_patterns) > 100:
+        if len(self.custom_forbidden_patterns) > MAX_CUSTOM_PATTERNS:
             raise ValueError(
-                f"custom_forbidden_patterns must have <= 100 patterns, got {len(self.custom_forbidden_patterns)}"
+                f"custom_forbidden_patterns must have <= {MAX_CUSTOM_PATTERNS} patterns, got {len(self.custom_forbidden_patterns)}"
             )
 
         # Validate whitelist commands (list of strings)
@@ -317,9 +326,9 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 raise ValueError(
                     f"whitelist_commands items must be strings, got {type(cmd).__name__}"
                 )
-            if len(cmd) > 200:
+            if len(cmd) > MAX_WHITELIST_COMMAND_LENGTH:
                 raise ValueError(
-                    f"whitelist_commands items must be <= 200 characters, got {len(cmd)}"
+                    f"whitelist_commands items must be <= {MAX_WHITELIST_COMMAND_LENGTH} characters, got {len(cmd)}"
                 )
             whitelist_validated.append(cmd)
 
@@ -356,7 +365,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
     @property
     def priority(self) -> int:
         """Return policy priority (P0 - critical security)."""
-        return 200  # P0 priority
+        return FORBIDDEN_OPS_PRIORITY  # P0 priority
 
     def _extract_command(self, action: Dict[str, Any]) -> Optional[str]:
         """Extract command string from action."""

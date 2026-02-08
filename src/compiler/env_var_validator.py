@@ -21,6 +21,9 @@ from typing import Dict, Optional, Pattern, Tuple
 
 from src.compiler.constants import MAX_ENV_VAR_SIZE
 
+# Path validation constants
+MIN_DRIVE_LETTER_PATH_LENGTH = 3  # Minimum length for Windows absolute paths (C:\, D:\, etc.)
+
 
 class ValidationLevel(Enum):
     """Validation strictness levels based on variable usage context."""
@@ -278,7 +281,7 @@ class EnvVarValidator:
             original_path = str(path_value)
             is_unc = original_path.startswith('\\\\') or original_path.startswith('//')
             is_windows_absolute = (
-                len(original_path) >= 3 and
+                len(original_path) >= MIN_DRIVE_LETTER_PATH_LENGTH and
                 original_path[0].isalpha() and
                 original_path[1] == ':' and
                 original_path[2] in ('\\', '/')

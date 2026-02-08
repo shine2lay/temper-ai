@@ -1120,6 +1120,62 @@ class TestMagicValues:
         assert result["summary"]["parse_errors"] == 1
         assert len(result["parse_errors"]) == 1
 
+    def test_constants_in_nested_structures_not_flagged(self, tmp_path):
+        """v2.4.2: Constants in dicts/lists/tuples assigned to UPPERCASE should be skipped."""
+        fi = _make_file(tmp_path, "src/mod/nested_const.py", """\
+            DEFAULT_THRESHOLDS = {
+                "timeout": 5000.0,
+                "retries": 3,
+            }
+            ALLOWED_PORTS = [80, 443, 8080]
+            PYTHON_VERSION = (3, 9)
+            config = {
+                "timeout": 5000.0,
+            }
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        magic_nums = result["magic_numbers"]
+        values = [m["value"] for m in magic_nums]
+
+        # Values in UPPERCASE assignments should NOT be flagged
+        # Lines 2-3 are DEFAULT_THRESHOLDS dict
+        # Line 5 is ALLOWED_PORTS list
+        # Line 6 is PYTHON_VERSION tuple
+        assert not any(m["line"] in (2, 3, 5, 6) for m in magic_nums)
+
+        # But the one in lowercase 'config' SHOULD be flagged (line 8)
+        assert any(m["value"] == 5000.0 and m["line"] == 8 for m in magic_nums)
+
+        # Should only have 1 magic number (the one in config)
+        assert len(magic_nums) == 1
+
+    def test_suppression_comments_skip_magic_numbers(self, tmp_path):
+        """v2.4.3: Magic numbers with suppression comments should be skipped."""
+        fi = _make_file(tmp_path, "src/mod/suppressed.py", """\
+            # Should be flagged
+            timeout = 300
+
+            # Should NOT be flagged (noqa)
+            version = (3, 9)  # noqa
+
+            # Should NOT be flagged (scanner: skip-magic)
+            indent = 4  # scanner: skip-magic
+
+            # Should be flagged
+            retries = 5
+        """)
+        result = scanner.scan_magic_values(tmp_path / "src", [fi])
+        magic_nums = result["magic_numbers"]
+
+        # Should only flag lines without suppression comments
+        assert len(magic_nums) == 2
+        assert any(m["value"] == 300 and m["line"] == 2 for m in magic_nums)
+        assert any(m["value"] == 5 and m["line"] == 11 for m in magic_nums)
+
+        # Should NOT flag suppressed lines
+        assert not any(m["line"] == 5 for m in magic_nums)  # noqa line
+        assert not any(m["line"] == 8 for m in magic_nums)  # scanner: skip-magic line
+
 
 # ---------------------------------------------------------------------------
 # v2.3.0: Dead Code

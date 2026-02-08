@@ -41,6 +41,9 @@ from typing import Any, Dict, List, Optional
 
 from src.constants.probabilities import PROB_LOW_MEDIUM
 
+# Constants
+DEFAULT_MOST_COMMON_LIMIT = 4  # Number of items to retrieve from Counter.most_common()
+
 
 class SynthesisMethod(Enum):
     """Methods for combining agent outputs.
@@ -402,7 +405,7 @@ class CollaborationStrategy(ABC):
                 conflicts.append(Conflict(
                     agents=[o.agent_name for o in agent_outputs],
                     decisions=list(decision_groups.keys()),
-                    disagreement_score=round(disagreement_score, 4),  # Explicit rounding for consistency
+                    disagreement_score=round(disagreement_score, 4),  # Explicit rounding for consistency  # noqa: Standard precision
                     context={
                         "num_decisions": len(decision_groups),
                         "largest_group_size": largest_group,
@@ -499,7 +502,7 @@ def extract_majority_decision(agent_outputs: List[AgentOutput]) -> Optional[Any]
     if not counts:
         return None
 
-    # Get most common (up to 2 to check for ties)
+    # Get most common (up to DEFAULT_MOST_COMMON_LIMIT to check for ties)
     most_common = counts.most_common(2)
 
     # Check for tie

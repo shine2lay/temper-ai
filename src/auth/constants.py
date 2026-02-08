@@ -34,7 +34,8 @@ CALLBACK_RATE_LIMIT_MAX = 10  # Max callbacks per window
 # ============================================================================
 
 DEFAULT_TOKEN_EXPIRY_SECONDS = TTL_LONG  # 1 hour
-REFRESH_TOKEN_EXPIRY_SECONDS = SECONDS_PER_DAY * 30  # 30 days
+REFRESH_TOKEN_EXPIRY_DAYS = 30  # Number of days for refresh token validity
+REFRESH_TOKEN_EXPIRY_SECONDS = SECONDS_PER_DAY * REFRESH_TOKEN_EXPIRY_DAYS  # 30 days
 TOKEN_REFRESH_BUFFER_SECONDS = 300  # Refresh 5 min before expiry
 
 # ============================================================================

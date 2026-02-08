@@ -31,6 +31,10 @@ DEFAULT_AUTO_RESOLVE_THRESHOLD = 0.85  # Confidence threshold for automatic reso
 DEFAULT_ESCALATION_THRESHOLD = 0.5  # Confidence threshold for escalation
 DEFAULT_RECENCY_DECAY_DAYS = 30  # Days for 50% merit decay
 
+# Display and formatting constants
+MAX_DECISIONS_TO_SHOW = 3  # Maximum number of decisions to show in escalation messages
+MAX_AGENTS_TO_SHOW = 5  # Maximum number of agents to show in escalation messages
+
 
 class MeritWeightedResolver(ConflictResolver):
     """Merit-weighted conflict resolution.
@@ -336,12 +340,12 @@ class HumanEscalationResolver(ConflictResolver):
         """
         # Build escalation message
         decision_summary = ", ".join(
-            f"'{d}'" for d in conflict.decisions[:3]  # Limit to 3
+            f"'{d}'" for d in conflict.decisions[:MAX_DECISIONS_TO_SHOW]
         )
 
         message = (
             f"Conflict requires human resolution. "
-            f"Agents: {', '.join(conflict.agents[:5])} disagree on: {decision_summary}. "
+            f"Agents: {', '.join(conflict.agents[:MAX_AGENTS_TO_SHOW])} disagree on: {decision_summary}. "
             f"Disagreement severity: {conflict.disagreement_score:.1%}."
         )
 

@@ -12,6 +12,7 @@ or malicious action could affect many resources.
 """
 from typing import Any, Dict, List, Optional
 
+from src.constants.probabilities import PROB_VERY_LOW
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
     DEFAULT_MAX_ENTITIES,
@@ -27,6 +28,9 @@ from src.safety.constants import (
 )
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
+
+# Blast radius policy priority
+BLAST_RADIUS_PRIORITY = 90
 
 
 class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
@@ -133,7 +137,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
                 pattern_str,
                 f"forbidden_patterns['{pattern_str}']",
                 max_length=1000,
-                test_timeout=0.1
+                test_timeout=PROB_VERY_LOW
             )
             self.forbidden_patterns.append(compiled_pattern)
 
@@ -153,7 +157,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
 
         Blast radius has high priority since it prevents widespread damage.
         """
-        return 90
+        return BLAST_RADIUS_PRIORITY
 
     def _validate_impl(
         self,

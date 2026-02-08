@@ -20,6 +20,13 @@ from src.observability.constants import DEFAULT_MERIT_WINDOW_DAYS
 
 logger = logging.getLogger(__name__)
 
+# UUID hex string length for merit score IDs
+UUID_HEX_LENGTH = 12
+
+# Merit score weights (success rate vs confidence)
+MERIT_SUCCESS_RATE_WEIGHT = 0.7
+MERIT_CONFIDENCE_WEIGHT = 0.3
+
 
 class MeritScoreService:
     """Service for updating agent merit scores based on decision outcomes.
@@ -62,7 +69,7 @@ class MeritScoreService:
 
         if not merit_score:
             merit_score = AgentMeritScore(
-                id=f"merit-{uuid.uuid4().hex[:12]}",
+                id=f"merit-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}",
                 agent_name=agent_name,
                 domain=domain,
                 total_decisions=0,
@@ -103,7 +110,7 @@ class MeritScoreService:
         # Compute expertise score (weighted: 70% success rate, 30% confidence)
         if merit_score.success_rate is not None:
             confidence_component = merit_score.average_confidence or PROB_MEDIUM
-            merit_score.expertise_score = 0.7 * merit_score.success_rate + 0.3 * confidence_component
+            merit_score.expertise_score = MERIT_SUCCESS_RATE_WEIGHT * merit_score.success_rate + MERIT_CONFIDENCE_WEIGHT * confidence_component
 
         # Update time-windowed metrics
         self._update_time_windowed_metrics(session, merit_score, agent_name)

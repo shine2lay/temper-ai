@@ -23,6 +23,12 @@ _INFRA_KEYS = frozenset({
     "tool_executor", "show_details", "detail_console", "visualizer",
 })
 
+# Table column width constants for agent outputs display
+TABLE_COL_AGENT_MAX_WIDTH = 20
+TABLE_COL_OUTPUT_RATIO = 3
+TABLE_COL_CONF_MAX_WIDTH = 8
+TABLE_COL_TOOLS_MAX_WIDTH = 8
+
 
 def _tool_calls_count(tool_calls: Any) -> int:
     """Get tool call count from either list (new) or int (legacy)."""
@@ -80,7 +86,7 @@ def _render_agent_detail(agent_name: str, output_data: dict) -> List[Any]:
             tc_params = tc.get("parameters", tc.get("arguments", {}))
             if tc_params:
                 try:
-                    params_str = json.dumps(tc_params, indent=4, default=str)
+                    params_str = json.dumps(tc_params, indent=4, default=str)  # noqa: Standard JSON indent
                 except (TypeError, ValueError):
                     params_str = str(tc_params)
                 renderables.append(Text.from_markup("    [dim]Parameters:[/dim]"))
@@ -149,12 +155,12 @@ def print_detailed_report(result: dict, console: Console) -> None:
                 expand=True,
                 padding=(0, 1),
             )
-            table.add_column("Agent", style="cyan", max_width=20)
-            table.add_column("Output Preview", ratio=3)
-            table.add_column("Conf", justify="right", max_width=8)
+            table.add_column("Agent", style="cyan", max_width=TABLE_COL_AGENT_MAX_WIDTH)
+            table.add_column("Output Preview", ratio=TABLE_COL_OUTPUT_RATIO)
+            table.add_column("Conf", justify="right", max_width=TABLE_COL_CONF_MAX_WIDTH)
             table.add_column("Tokens", justify="right", max_width=10)
             table.add_column("Cost", justify="right", max_width=10)
-            table.add_column("Tools", justify="right", max_width=8)
+            table.add_column("Tools", justify="right", max_width=TABLE_COL_TOOLS_MAX_WIDTH)
 
             for agent_name, output_data in agent_outputs.items():
                 if not isinstance(output_data, dict):

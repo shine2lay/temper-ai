@@ -24,6 +24,7 @@ from src.safety._file_access_helpers import (
     is_forbidden_file,
     normalize_path,
 )
+from src.constants.limits import MAX_SHORT_STRING_LENGTH
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
     MAX_EXCLUDED_PATH_LENGTH,
@@ -31,6 +32,13 @@ from src.safety.constants import (
 )
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
+
+# File access policy priority
+FILE_ACCESS_PRIORITY = 95
+# Maximum extension length
+MAX_EXTENSION_LENGTH = 20
+# Maximum file name items
+MAX_FILENAME_ITEMS = 100
 
 
 class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
@@ -151,15 +159,15 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         for ext in forbidden_ext_raw:
             if not isinstance(ext, str):
                 raise ValueError(f"forbidden_extensions items must be strings, got {type(ext).__name__}")
-            if len(ext) > 20:
-                raise ValueError(f"forbidden_extensions items must be <= 20 characters, got {len(ext)}")
+            if len(ext) > MAX_EXTENSION_LENGTH:
+                raise ValueError(f"forbidden_extensions items must be <= {MAX_EXTENSION_LENGTH} characters, got {len(ext)}")
             if not ext.startswith('.'):
                 ext = '.' + ext
             forbidden_ext_validated.append(ext.lower())
 
-        if len(forbidden_ext_validated) > 100:
+        if len(forbidden_ext_validated) > MAX_FILENAME_ITEMS:
             raise ValueError(
-                f"forbidden_extensions must have <= 100 items, got {len(forbidden_ext_validated)}"
+                f"forbidden_extensions must have <= {MAX_FILENAME_ITEMS} items, got {len(forbidden_ext_validated)}"
             )
 
         self.forbidden_extensions: Set[str] = set(forbidden_ext_validated) | self.DEFAULT_FORBIDDEN_EXTENSIONS
@@ -201,8 +209,8 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         for file_name in forbidden_files_raw:
             if not isinstance(file_name, str):
                 raise ValueError(f"forbidden_files items must be strings, got {type(file_name).__name__}")
-            if len(file_name) > 255:
-                raise ValueError(f"forbidden_files items must be <= 255 characters, got {len(file_name)}")
+            if len(file_name) > MAX_SHORT_STRING_LENGTH:
+                raise ValueError(f"forbidden_files items must be <= {MAX_SHORT_STRING_LENGTH} characters, got {len(file_name)}")
             forbidden_files_validated.append(file_name)
 
         if len(forbidden_files_validated) > MAX_EXCLUDED_PATHS:
@@ -228,7 +236,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
     @property
     def priority(self) -> int:
         """Return policy priority."""
-        return 95
+        return FILE_ACCESS_PRIORITY
 
     def _validate_impl(
         self,

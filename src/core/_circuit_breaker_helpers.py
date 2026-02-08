@@ -11,6 +11,10 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# HTTP status codes
+HTTP_STATUS_SERVER_ERROR_MIN = 500
+HTTP_STATUS_TOO_MANY_REQUESTS = 429
+
 # Cache exception class imports at module level (P-17)
 try:
     import httpx as _httpx
@@ -64,7 +68,7 @@ def should_count_failure(error: Exception) -> bool:
         return True
     if isinstance(error, _httpx.HTTPStatusError):
         status = error.response.status_code
-        return status >= 500 or status == 429
+        return status >= HTTP_STATUS_SERVER_ERROR_MIN or status == HTTP_STATUS_TOO_MANY_REQUESTS
 
     return False
 

@@ -10,7 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from scipy import stats  # type: ignore[import-untyped]
 
-from src.constants.probabilities import PROB_MEDIUM
+from src.constants.limits import PERCENT_50, PERCENT_95, PERCENT_99
+from src.constants.probabilities import PROB_MEDIUM, TOLERANCE_TIGHT
 from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.models import (
     ExecutionStatus,
@@ -35,7 +36,7 @@ class StatisticalAnalyzer:
         ...     print(f"Winner: {result.recommended_winner}")
     """
 
-    def __init__(self, confidence_level: float = DEFAULT_CREDIBLE_LEVEL, min_effect_size: float = 0.05):
+    def __init__(self, confidence_level: float = DEFAULT_CREDIBLE_LEVEL, min_effect_size: float = TOLERANCE_TIGHT):
         """
         Initialize statistical analyzer.
 
@@ -173,9 +174,9 @@ class StatisticalAnalyzer:
                         "std": float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
                         "min": float(np.min(values)),
                         "max": float(np.max(values)),
-                        "p50": float(np.percentile(values, 50)),
-                        "p95": float(np.percentile(values, 95)),
-                        "p99": float(np.percentile(values, 99)) if len(values) >= 100 else float(np.max(values)),
+                        "p50": float(np.percentile(values, PERCENT_50)),
+                        "p95": float(np.percentile(values, PERCENT_95)),
+                        "p99": float(np.percentile(values, PERCENT_99)) if len(values) >= 100 else float(np.max(values)),
                     })
                 else:
                     # For other metrics (guardrails), calculate basic statistics

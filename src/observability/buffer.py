@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from src.constants.durations import SECONDS_PER_5_MINUTES
+from src.constants.durations import SECONDS_PER_5_MINUTES, TIMEOUT_VERY_SHORT
 from src.observability._buffer_helpers import (
     execute_flush,
     handle_flush_failure,
@@ -372,7 +372,7 @@ class ObservabilityBuffer:
         """
         if self._flush_thread and self._flush_thread.is_alive():
             self._stop_flush_thread.set()
-            self._flush_thread.join(timeout=5.0)
+            self._flush_thread.join(timeout=TIMEOUT_VERY_SHORT)
             if self._flush_thread.is_alive():
                 logger.warning("Background flush thread did not stop within timeout")
             self._flush_thread = None

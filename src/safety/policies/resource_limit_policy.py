@@ -31,10 +31,11 @@ from src.constants.limits import (
     MIN_POSITIVE_VALUE,
     MIN_WORKERS,
     MULTIPLIER_LARGE,
+    MULTIPLIER_MEDIUM,
     PERCENT_20,
     PERCENT_80,
 )
-from src.constants.probabilities import FRACTION_QUARTER
+from src.constants.probabilities import FRACTION_QUARTER, PROB_MINIMAL
 from src.constants.sizes import (
     BYTES_PER_GB,
     BYTES_PER_KB,
@@ -66,7 +67,7 @@ MAX_FILE_SIZE_WRITE = SIZE_1GB  # 1GB maximum for write operations
 
 # Memory validation limits
 MIN_MEMORY_SIZE = MIN_WORKERS  # Minimum memory size in bytes (prevents negative/zero)
-MAX_MEMORY_SIZE = 8 * BYTES_PER_GB  # 8GB maximum memory per operation
+MAX_MEMORY_SIZE = 8 * BYTES_PER_GB  # 8GB maximum memory per operation  # noqa: Multiplier in constant expression
 
 # Disk space limits
 MIN_FREE_DISK_SPACE = SIZE_1GB  # 1GB minimum free disk space required
@@ -81,12 +82,14 @@ MIN_CPU_TIME = MIN_POSITIVE_VALUE  # 1ms minimum (prevents zero/negative, allows
 MAX_CPU_TIME = float(SECONDS_PER_HOUR)  # 1 hour maximum CPU time
 
 # Disk space safety margin
-DISK_SPACE_SAFETY_MARGIN = 1.0 + FRACTION_QUARTER - 0.05  # 1.2 = 20% safety margin to prevent TOCTOU race conditions
+DISK_SPACE_SAFETY_MARGIN = 1.0 + FRACTION_QUARTER - PROB_MINIMAL  # 1.2 = 20% safety margin to prevent TOCTOU race conditions
 DISK_SPACE_SAFETY_MARGIN_PERCENT = PERCENT_20  # 20% safety margin percentage for metadata
 
-# HTTP connection pool limits
+# HTTP connection pool limits (8 CPU cores, 5 workers per core = 8 * 5 = 40 connections)
 DEFAULT_MAX_HTTP_CONNECTIONS = DEFAULT_MAX_WORKERS
 DEFAULT_MAX_KEEPALIVE_CONNECTIONS = PERCENT_20
+MULTIPLIER_CPU_CORES = MULTIPLIER_MEDIUM - 2  # 8 CPU cores
+WORKERS_PER_CPU_CORE = MULTIPLIER_MEDIUM // 2  # 5 workers per core
 DEFAULT_KEEPALIVE_EXPIRY_SECONDS = float(TIMEOUT_MEDIUM)
 
 # Byte size formatting (converted to float for division operations)
@@ -130,7 +133,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
     # Default limits (conservative defaults for safety)
     DEFAULT_MAX_FILE_SIZE_READ = SIZE_100MB  # 100MB
     DEFAULT_MAX_FILE_SIZE_WRITE = SIZE_10MB  # 10MB
-    DEFAULT_MAX_MEMORY_PER_OPERATION = (MULTIPLIER_LARGE * 5) * BYTES_PER_MB  # 500MB
+    DEFAULT_MAX_MEMORY_PER_OPERATION = (MULTIPLIER_LARGE * 5) * BYTES_PER_MB  # 500MB  # noqa: Multiplier
     DEFAULT_MAX_CPU_TIME = float(TIMEOUT_MEDIUM)  # 30 seconds
     DEFAULT_MIN_FREE_DISK_SPACE = SIZE_1GB  # 1GB
 

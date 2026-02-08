@@ -13,6 +13,11 @@ from rich.tree import Tree
 
 logger = logging.getLogger(__name__)
 
+# Refresh rate and poll interval constants
+LIVE_DISPLAY_REFRESH_PER_SECOND = 4
+STREAMING_POLL_INTERVAL_SECONDS = 0.25
+FINAL_STATE_DISPLAY_DURATION_SECONDS = 1.0
+
 
 class WorkflowVisualizer:
     """Visualizes workflow execution in console using Rich."""
@@ -74,7 +79,7 @@ class WorkflowVisualizer:
         """
         with Live(
             self._create_workflow_tree(workflow_execution),
-            refresh_per_second=4,
+            refresh_per_second=LIVE_DISPLAY_REFRESH_PER_SECOND,
             console=self.console
         ) as live:
             # Update loop would go here (for real-time updates)
@@ -311,7 +316,7 @@ class StreamingVisualizer(WorkflowVisualizer):
     """
 
     def __init__(self, workflow_id: str, verbosity: str = "standard",
-                 poll_interval: float = 0.25):
+                 poll_interval: float = STREAMING_POLL_INTERVAL_SECONDS):
         """Initialize streaming visualizer.
 
         Args:
@@ -367,7 +372,7 @@ class StreamingVisualizer(WorkflowVisualizer):
 
         self.live = Live(
             initial_panel,
-            refresh_per_second=4,
+            refresh_per_second=LIVE_DISPLAY_REFRESH_PER_SECOND,
             console=self.console
         )
         self.live.start()
@@ -428,7 +433,7 @@ class StreamingVisualizer(WorkflowVisualizer):
                     # Stop if workflow completed/failed
                     if workflow.status in ["completed", "failed", "timeout", "halted"]:
                         # Wait a bit to show final state
-                        time.sleep(1.0)  # Intentional blocking: brief pause to display final workflow state in UI thread
+                        time.sleep(FINAL_STATE_DISPLAY_DURATION_SECONDS)  # Intentional blocking: brief pause to display final workflow state in UI thread
                         break
 
             except Exception as e:

@@ -15,6 +15,14 @@ Output: JSON with sections:
     god_objects, layer_analysis, static_analysis, summary
 
 Changelog:
+    v2.4.3: Add suppression comments for magic numbers
+        - Support # noqa and # scanner: skip-magic comments
+        - Example: x = 42  # noqa (skips magic number check)
+        - Allows marking acceptable magic numbers (version tuples, etc.)
+    v2.4.2: Fix magic number detection in nested structures
+        - Walk parent chain to detect constants in dicts/lists/tuples
+        - Skip values in: CONST = {"key": 5000}, VERSION = (3, 9)
+        - Result: Properly ignores all values in UPPERCASE assignments
     v2.4.1: Fix magic number false positives (70% reduction)
         - Skip constant assignments (e.g., DEFAULT_TIMEOUT = 300)
         - Expanded whitelist: powers of 10, 60, 24, 1024, powers of 2
@@ -1616,6 +1624,45 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
                 if has_dunder:
                     dunder_main_lines.add(node.lineno)
 
+        # Collect lines with magic number suppression comments
+        # Supports: # noqa, # noqa: magic, # scanner: skip-magic
+        source_lines = source.splitlines()
+        suppressed_magic_lines: set[int] = set()
+        for i, line in enumerate(source_lines, 1):
+            line_lower = line.lower()
+            if "# noqa" in line_lower or "# scanner: skip-magic" in line_lower:
+                suppressed_magic_lines.add(i)
+
+        # Helper function to check if a node is inside a constant assignment
+        def is_in_constant_assignment(node: ast.AST) -> bool:
+            """Walk up the parent chain to check if we're inside an UPPERCASE assignment."""
+            current = node
+            while True:
+                parent = getattr(current, "_parent", None)
+                if parent is None:
+                    return False
+
+                # Check for simple assignment: CONST = value
+                if isinstance(parent, ast.Assign):
+                    return any(
+                        isinstance(target, ast.Name) and target.id.isupper()
+                        for target in parent.targets
+                    )
+
+                # Check for annotated assignment: CONST: type = value
+                if isinstance(parent, ast.AnnAssign):
+                    target = parent.target
+                    if isinstance(target, ast.Name) and target.id.isupper():
+                        return True
+
+                # Continue walking up for containers (Dict, List, Tuple, Set)
+                if isinstance(parent, (ast.Dict, ast.List, ast.Tuple, ast.Set)):
+                    current = parent
+                    continue
+
+                # Stop at other node types
+                return False
+
         # --- Magic numbers ---
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant):
@@ -1630,6 +1677,9 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
                 continue
             if node.lineno in dunder_main_lines:
                 continue
+            if node.lineno in suppressed_magic_lines:
+                continue
+
             # Skip annotations and constant definitions
             parent = getattr(node, "_parent", None)
             if parent is not None:
@@ -1645,21 +1695,10 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
                     if grandparent is not None and isinstance(grandparent, _annotation_types):
                         continue
 
-                # Skip constants assigned to UPPERCASE names (constant naming convention)
-                # e.g., DEFAULT_TIMEOUT = 300, MAX_RETRIES = 5
-                if isinstance(parent, ast.Assign) and node is parent.value:
-                    # Check if any target is an uppercase name (constant)
-                    is_constant_assignment = any(
-                        isinstance(target, ast.Name) and target.id.isupper()
-                        for target in parent.targets
-                    )
-                    if is_constant_assignment:
-                        continue
-
-                if isinstance(parent, ast.AnnAssign) and node is parent.value:
-                    target = parent.target
-                    if isinstance(target, ast.Name) and target.id.isupper():
-                        continue
+            # Skip constants in UPPERCASE assignments (including nested in dicts/lists/tuples)
+            # e.g., DEFAULT_TIMEOUT = 300, THRESHOLDS = {"key": 5000}, VERSION = (3, 9)
+            if is_in_constant_assignment(node):
+                continue
 
             magic_numbers.append({
                 "file": rel_path,

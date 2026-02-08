@@ -13,7 +13,12 @@ import secrets
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
+from src.constants.limits import MAX_QUEUE_SIZE
 from src.experimentation.models import AssignmentStrategyType, Experiment, Variant
+
+# Hash normalization constants
+HASH_MODULO_DIVISOR = 100000  # Divisor for normalizing hash to [0, 1)
+HASH_FRACTION_LENGTH = 16  # Number of hex digits for hash-based assignment
 
 
 class AssignmentStrategy(ABC):
@@ -180,7 +185,7 @@ class HashAssignment(AssignmentStrategy):
 
         # Compute hash using SHA-256 (FIPS 140-2 approved, collision-resistant)
         # Security: Replaced MD5 (broken, collision vulnerable) with SHA-256
-        hash_value = int(hashlib.sha256(hash_input.encode()).hexdigest(), 16)
+        hash_value = int(hashlib.sha256(hash_input.encode()).hexdigest(), 16)  # noqa: Hexadecimal base
 
         # Map hash to variant based on traffic allocation
         variant_id = self._hash_to_variant(hash_value, variants)
@@ -203,7 +208,7 @@ class HashAssignment(AssignmentStrategy):
             variant_id: Variant ID corresponding to hash bucket
         """
         # Normalize hash to [0, 1)
-        hash_fraction = (hash_value % 100000) / 100000.0
+        hash_fraction = (hash_value % MAX_QUEUE_SIZE) / float(MAX_QUEUE_SIZE)
 
         # Find variant using cumulative traffic allocation
         cumulative_traffic = 0.0

@@ -27,6 +27,9 @@ from src.self_improvement.metrics.types import SIMetricType
 
 logger = logging.getLogger(__name__)
 
+# Float comparison tolerance for numeric field matching
+FLOAT_COMPARISON_EPSILON = 1e-6  # Allow small floating point differences
+
 
 class ExtractionQualityCollector(MetricCollector):
     """Measures field-level accuracy for structured extraction tasks.
@@ -325,8 +328,7 @@ class ExtractionQualityCollector(MetricCollector):
         # Numeric comparison (handle int vs float)
         if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
             # Allow small floating point differences
-            float_comparison_epsilon = 1e-6
-            return abs(expected - actual) < float_comparison_epsilon
+            return abs(expected - actual) < FLOAT_COMPARISON_EPSILON
 
         # String comparison (case-sensitive by default)
         if isinstance(expected, str) and isinstance(actual, str):

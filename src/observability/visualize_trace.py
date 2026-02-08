@@ -33,6 +33,14 @@ CHART_TITLE_FONT_SIZE = 20  # Title font size in points
 CHART_LEGEND_Y_POSITION = 1.02  # Legend Y position (above chart)
 CHART_SEPARATOR_WIDTH = 80  # Width of separator lines in console output
 
+# Chart layout constants
+MIN_CHART_HEIGHT = 600  # Minimum chart height in pixels
+HEIGHT_PER_ITEM = 35  # Height per item in pixels
+TICK_INTERVAL_MS = 1000  # 1 second intervals for X-axis ticks
+CHART_LEFT_MARGIN = 300  # More space for long names with tree structure
+TIMELINE_BAR_WIDTH = 40  # Width of console timeline bars
+MONOSPACE_FONT_SIZE_REDUCTION = 9  # Points to subtract from title size for monospace
+
 try:
     import plotly.graph_objects as go
     PLOTLY_AVAILABLE = True
@@ -106,17 +114,11 @@ def create_hierarchical_gantt(
             ))
 
     # Calculate appropriate height
-    min_chart_height = 600
-    height_per_item = 35
-    height = max(min_chart_height, len(flat_data) * height_per_item)
+    height = max(MIN_CHART_HEIGHT, len(flat_data) * HEIGHT_PER_ITEM)
 
     # Update layout
     if title is None:
         title = trace.get("name", "Execution Trace")
-
-    # Chart layout constants
-    tick_interval_ms = 1000  # 1 second intervals
-    chart_left_margin = 300  # More space for long names with tree structure
 
     fig.update_layout(
         title=dict(
@@ -129,7 +131,7 @@ def create_hierarchical_gantt(
             title="Time (seconds from start)",
             tickmode='linear',
             tick0=0,
-            dtick=tick_interval_ms,
+            dtick=TICK_INTERVAL_MS,
             tickformat='.1f',
             ticksuffix='s',
             gridcolor='rgba(128,128,128,0.2)'
@@ -138,7 +140,7 @@ def create_hierarchical_gantt(
             title="",
             autorange="reversed",  # Top to bottom
             gridcolor='rgba(128,128,128,0.1)',
-            tickfont=dict(family='monospace', size=CHART_TITLE_FONT_SIZE - 9)  # Monospace for tree chars (11pt)
+            tickfont=dict(family='monospace', size=CHART_TITLE_FONT_SIZE - MONOSPACE_FONT_SIZE_REDUCTION)  # Monospace for tree chars (11pt)
         ),
         barmode='overlay',
         height=height,
@@ -152,7 +154,7 @@ def create_hierarchical_gantt(
             xanchor="right",
             x=1
         ),
-        margin=dict(l=chart_left_margin)
+        margin=dict(l=CHART_LEFT_MARGIN)
     )
 
     # Save to file if requested
@@ -328,8 +330,7 @@ def print_console_gantt(trace: Dict[str, Any], _max_width: int = LARGE_ITEM_LIMI
                 return f"{seconds*1000:.0f}ms"
             return f"{seconds:.3f}s"
 
-        timeline_bar_width = 40
-        def create_timeline_bar(start_offset: float, duration: float, total_duration: float, width: int = timeline_bar_width) -> str:
+        def create_timeline_bar(start_offset: float, duration: float, total_duration: float, width: int = TIMELINE_BAR_WIDTH) -> str:
             """Create a visual timeline bar."""
             if total_duration == 0:
                 return "░" * width
@@ -357,7 +358,7 @@ def print_console_gantt(trace: Dict[str, Any], _max_width: int = LARGE_ITEM_LIMI
             start_offset = (start - workflow_start).total_seconds()
 
             # Create timeline bar
-            timeline = create_timeline_bar(start_offset, duration, workflow_duration, width=timeline_bar_width)
+            timeline = create_timeline_bar(start_offset, duration, workflow_duration, width=TIMELINE_BAR_WIDTH)
 
             # Get metadata
             metadata = node.get("metadata", {})

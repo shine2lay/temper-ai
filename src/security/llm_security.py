@@ -30,6 +30,11 @@ from src.constants.limits import (
 )
 from src.constants.sizes import SIZE_10KB, SIZE_100KB
 
+# Entropy threshold for detecting obfuscated attacks
+ENTROPY_THRESHOLD_RANDOM = 5.5
+# Evidence prefix length for security violations
+EVIDENCE_PREFIX_LENGTH = 20
+
 logger = logging.getLogger(__name__)
 
 # Try to import Redis (optional dependency)
@@ -310,7 +315,7 @@ class PromptInjectionDetector:
 
         return entropy
 
-    def _high_entropy(self, text: str, threshold: float = 5.5) -> bool:
+    def _high_entropy(self, text: str, threshold: float = ENTROPY_THRESHOLD_RANDOM) -> bool:
         """
         Check if text has suspiciously high entropy.
 
@@ -433,12 +438,11 @@ class OutputSanitizer:
         # Detect secrets and collect replacements
         for pattern, secret_type, severity in self.compiled_secret_patterns:
             for match in pattern.finditer(output):
-                evidence_prefix_length = 20
                 violation = SecurityViolation(
                     violation_type="secret_leakage",
                     severity=severity,
                     description=f"Detected {secret_type} in output",
-                    evidence=f"{match.group(0)[:evidence_prefix_length]}..."
+                    evidence=f"{match.group(0)[:EVIDENCE_PREFIX_LENGTH]}..."
                 )
                 violations.append(violation)
 

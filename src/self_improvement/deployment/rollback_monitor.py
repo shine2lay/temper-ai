@@ -19,6 +19,9 @@ from src.self_improvement.performance_analyzer import PerformanceDataError
 
 logger = logging.getLogger(__name__)
 
+# Rollback monitoring defaults
+DEFAULT_MIN_EXECUTIONS_FOR_ROLLBACK = 20  # Minimum samples before checking for regression
+
 
 class RegressionThresholds:
     """
@@ -32,7 +35,7 @@ class RegressionThresholds:
         quality_drop_pct: float = float(PERCENT_10),
         cost_increase_pct: float = float(PERCENT_20),
         speed_increase_pct: float = float(PERCENT_30),
-        min_executions: int = 20,
+        min_executions: int = DEFAULT_MIN_EXECUTIONS_FOR_ROLLBACK,
     ):
         """
         Initialize regression thresholds.

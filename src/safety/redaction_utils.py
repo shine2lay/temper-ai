@@ -7,6 +7,9 @@ exposing actual values.
 import hashlib
 import hmac
 
+# Hash prefix length for deduplication (16 chars = 64 bits)
+HASH_PREFIX_LENGTH = 16
+
 
 def create_redacted_preview(text: str, pattern_name: str) -> str:
     """Create safe preview of detected secret for logging.
@@ -55,4 +58,4 @@ def hash_secret(text: str, session_key: bytes) -> str:
         session_key,
         text.encode('utf-8'),
         hashlib.sha256
-    ).hexdigest()[:16]
+    ).hexdigest()[:HASH_PREFIX_LENGTH]

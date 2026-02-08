@@ -31,6 +31,11 @@ from src.self_improvement.constants import (
     ROLLBACK_THRESHOLD,
 )
 
+# Loop configuration constants
+DEFAULT_EXPERIMENT_TIMEOUT_HOURS = 72  # 3 days maximum for experiments
+DEFAULT_ROLLBACK_MIN_EXECUTIONS = 20  # Minimum samples before checking rollback
+MAX_VARIANTS_PER_EXPERIMENT_LIMIT = 5  # Maximum variants allowed in experiments
+
 
 @dataclass
 class LoopConfig:
@@ -57,7 +62,7 @@ class LoopConfig:
 
     # Phase 4: Experimentation
     target_samples_per_variant: int = DEFAULT_BATCH_SIZE  # Samples per variant for statistical significance
-    experiment_timeout_hours: int = 72  # 3 days max
+    experiment_timeout_hours: int = DEFAULT_EXPERIMENT_TIMEOUT_HOURS  # 3 days max
     min_improvement_threshold: float = PROMPT_IMPROVEMENT_THRESHOLD  # 5% minimum improvement to deploy
     statistical_significance_level: float = DEFAULT_ALPHA  # p < 0.05 for significance
 
@@ -71,7 +76,7 @@ class LoopConfig:
     rollback_quality_drop_pct: float = float(PERCENT_10)  # 10% quality drop triggers rollback
     rollback_cost_increase_pct: float = float(PERCENT_20)  # 20% cost increase triggers rollback
     rollback_speed_increase_pct: float = float(PERCENT_30)  # 30% speed degradation triggers rollback
-    rollback_min_executions: int = 20  # Min samples before rollback check
+    rollback_min_executions: int = DEFAULT_ROLLBACK_MIN_EXECUTIONS  # Min samples before rollback check
 
     # Error handling
     max_retries_per_phase: int = DEFAULT_MAX_RETRIES  # Retry failed phases up to 3 times
@@ -107,8 +112,8 @@ class LoopConfig:
             raise ValueError("detection_window_hours must be >= 1")
         if self.min_executions_for_detection < 1:
             raise ValueError("min_executions_for_detection must be >= 1")
-        if self.max_variants_per_experiment < 1 or self.max_variants_per_experiment > 5:
-            raise ValueError("max_variants_per_experiment must be 1-5")
+        if self.max_variants_per_experiment < 1 or self.max_variants_per_experiment > MAX_VARIANTS_PER_EXPERIMENT_LIMIT:
+            raise ValueError(f"max_variants_per_experiment must be 1-{MAX_VARIANTS_PER_EXPERIMENT_LIMIT}")
         if self.target_samples_per_variant < 10:
             raise ValueError("target_samples_per_variant must be >= 10")
         if self.experiment_timeout_hours < 1:

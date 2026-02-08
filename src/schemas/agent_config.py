@@ -29,7 +29,7 @@ from src.constants.limits import (
     MAX_TEXT_LENGTH,
     MEDIUM_ITEM_LIMIT,
 )
-from src.constants.probabilities import PROB_HIGH
+from src.constants.probabilities import PROB_HIGH, PROB_NEAR_CERTAIN
 from src.constants.retries import (
     DEFAULT_MAX_RETRIES,
     SHORT_BACKOFF_SECONDS,
@@ -104,7 +104,7 @@ class MemoryConfig(BaseModel):
 
     # Episodic memory config
     max_episodes: int = Field(default=DEFAULT_QUEUE_SIZE, gt=0)
-    decay_factor: float = Field(default=0.95, ge=0.0, le=1.0)
+    decay_factor: float = Field(default=PROB_NEAR_CERTAIN, ge=0.0, le=1.0)
 
     @model_validator(mode='after')
     def validate_enabled_memory(self) -> 'MemoryConfig':

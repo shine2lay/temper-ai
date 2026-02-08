@@ -6,6 +6,9 @@ from sqlalchemy import Select
 
 from src.constants.probabilities import PROB_NEAR_CERTAIN
 
+# Percentiles for latency metrics
+PERCENTILE_P99 = 0.99
+
 
 class AggregationQueryBuilder:
     """Builds SQLAlchemy queries for metric aggregation.
@@ -126,7 +129,7 @@ class AggregationQueryBuilder:
             func.sum(case((LLMCall.status == 'success', 1), else_=0)).label('successful'),
             func.avg(LLMCall.latency_ms).label('avg_latency'),
             func.percentile_cont(PROB_NEAR_CERTAIN).within_group(LLMCall.latency_ms).label('p95_latency'),
-            func.percentile_cont(0.99).within_group(LLMCall.latency_ms).label('p99_latency'),
+            func.percentile_cont(PERCENTILE_P99).within_group(LLMCall.latency_ms).label('p99_latency'),
             func.sum(LLMCall.estimated_cost_usd).label('total_cost')
         ).where(
             LLMCall.start_time >= start_time,

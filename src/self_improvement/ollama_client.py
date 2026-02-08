@@ -20,6 +20,9 @@ from src.self_improvement.constants import (
     DEFAULT_TEMPERATURE,
 )
 
+# Default sampling parameters for Ollama client
+DEFAULT_TOP_P = 0.9  # Nucleus sampling threshold
+
 
 class OllamaClient:
     """
@@ -64,7 +67,7 @@ class OllamaClient:
         base_url: str = f"http://localhost:{DEFAULT_OLLAMA_PORT}",
         temperature: float = DEFAULT_TEMPERATURE,
         max_tokens: int = 2048,
-        top_p: float = 0.9,
+        top_p: float = DEFAULT_TOP_P,
         timeout: int = TIMEOUT_LONG,
     ):
         """
@@ -73,10 +76,10 @@ class OllamaClient:
         Args:
             model: Ollama model name (e.g., "llama3.1:8b", "mistral:7b")
             base_url: Ollama server URL (default: http://localhost:11434)
-            temperature: Sampling temperature 0.0-1.0 (default: 0.7)
+            temperature: Sampling temperature 0.0-1.0 (default: DEFAULT_TEMPERATURE)
             max_tokens: Maximum tokens to generate (default: 2048)
-            top_p: Nucleus sampling parameter (default: 0.9)
-            timeout: Request timeout in seconds (default: 60)
+            top_p: Nucleus sampling parameter (default: DEFAULT_TOP_P)
+            timeout: Request timeout in seconds (default: TIMEOUT_LONG)
         """
         self.model = model
 

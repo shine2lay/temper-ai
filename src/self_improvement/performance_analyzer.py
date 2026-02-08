@@ -31,6 +31,9 @@ from src.self_improvement.metrics_aggregator import MetricsAggregator
 
 logger = logging.getLogger(__name__)
 
+# Default baseline window for performance analysis
+DEFAULT_BASELINE_WINDOW_DAYS = 30  # Use last 30 days for baseline calculation
+
 
 class PerformanceAnalysisError(Exception):
     """Base exception for performance analysis errors."""
@@ -223,7 +226,7 @@ class PerformanceAnalyzer:
     def get_baseline(
         self,
         agent_name: str,
-        window_days: int = 30
+        window_days: int = DEFAULT_BASELINE_WINDOW_DAYS
     ) -> Optional[AgentPerformanceProfile]:
         """
         Get historical baseline performance for comparison.
@@ -273,7 +276,7 @@ class PerformanceAnalyzer:
         self,
         agent_name: str,
         profile: Optional[AgentPerformanceProfile] = None,
-        window_days: int = 30
+        window_days: int = DEFAULT_BASELINE_WINDOW_DAYS
     ) -> AgentPerformanceProfile:
         """
         Store a baseline performance profile for future comparisons.

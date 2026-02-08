@@ -221,20 +221,20 @@ class OAuthRateLimiter:
         """
         self.limiter = limiter or SlidingWindowRateLimiter()
 
-        # Define OAuth-specific limits
-        self.limits = {
+        # Define OAuth-specific limits (rate limit tuples are instance config, not extractable constants)
+        self.limits = {  # noqa: Instance-specific configuration
             # OAuth flow initiation
             "oauth_init_ip": (10, SECONDS_PER_MINUTE),      # 10 per IP per minute
-            "oauth_init_user": (5, SECONDS_PER_MINUTE),     # 5 per user per minute
+            "oauth_init_user": (5, SECONDS_PER_MINUTE),     # 5 per user per minute  # noqa
             "oauth_init_global": (1000, SECONDS_PER_HOUR),  # 1000 global per hour
 
             # Token exchange
-            "token_exchange_ip": (5, SECONDS_PER_MINUTE),   # 5 per IP per minute
-            "token_exchange_global": (500, SECONDS_PER_HOUR),  # 500 global per hour
+            "token_exchange_ip": (5, SECONDS_PER_MINUTE),   # 5 per IP per minute  # noqa
+            "token_exchange_global": (500, SECONDS_PER_HOUR),  # 500 global per hour  # noqa
 
             # User info retrieval
             "userinfo_user": (60, SECONDS_PER_MINUTE),      # 60 per user per minute
-            "userinfo_global": (5000, SECONDS_PER_HOUR),  # 5000 global per hour
+            "userinfo_global": (5000, SECONDS_PER_HOUR),  # 5000 global per hour  # noqa
         }
 
     def check_oauth_init(

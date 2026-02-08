@@ -13,6 +13,9 @@ from src.observability.merit_score_service import MeritScoreService
 
 logger = logging.getLogger(__name__)
 
+# UUID hex string length for decision IDs
+UUID_HEX_LENGTH = 12
+
 
 class DecisionTracker:
     """Tracks decision outcomes and delegates merit score updates.
@@ -77,7 +80,7 @@ class DecisionTracker:
         Returns:
             Decision ID or empty string on failure
         """
-        decision_id = f"decision-{uuid.uuid4().hex[:12]}"
+        decision_id = f"decision-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 
         safe_decision_data = self._sanitize(decision_data) if decision_data else {}
         safe_impact_metrics = self._sanitize(impact_metrics) if impact_metrics else None

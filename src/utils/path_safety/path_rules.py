@@ -17,6 +17,9 @@ from src.utils.constants import MAX_COMPONENT_LENGTH, MAX_PATH_LENGTH
 from src.utils.path_safety.exceptions import PathSafetyError
 from src.utils.path_safety.platform_detector import PlatformPathDetector
 
+# Error message truncation length for long path components
+ERROR_MSG_COMPONENT_TRUNCATE_LENGTH = 50
+
 
 class PathValidationRules:
     """Core path validation rules and safety checks."""
@@ -83,7 +86,7 @@ class PathValidationRules:
         for component in path.parts:
             if len(component) > self.MAX_COMPONENT_LENGTH:
                 raise PathSafetyError(
-                    f"Path component '{component[:50]}...' exceeds maximum length of {self.MAX_COMPONENT_LENGTH} characters"
+                    f"Path component '{component[:ERROR_MSG_COMPONENT_TRUNCATE_LENGTH]}...' exceeds maximum length of {self.MAX_COMPONENT_LENGTH} characters"
                 )
 
         return path

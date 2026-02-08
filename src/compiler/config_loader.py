@@ -27,6 +27,7 @@ from src.constants.limits import MEDIUM_ITEM_LIMIT
 
 # Import enhanced exceptions
 from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError
+from src.utils.logging import ASCII_CONTROL_CHAR_MAX
 
 # Security limit constants (imported from security_limits.py for consistency)
 MAX_CONFIG_SIZE = CONFIG_SECURITY.MAX_CONFIG_SIZE
@@ -52,8 +53,11 @@ class ConfigLoader:
     - M5 Integration: Checks ConfigDeployer for improved configs before YAML fallback
     """
 
+    # Cache size calculation constants
+    CACHE_SIZE_MULTIPLIER = 12  # Multiply base item limit by this for total cache size
+
     # Default maximum number of cached configs before LRU eviction
-    DEFAULT_MAX_CACHE_SIZE = MEDIUM_ITEM_LIMIT * 12  # 120 configs (10 * 12)
+    DEFAULT_MAX_CACHE_SIZE = MEDIUM_ITEM_LIMIT * CACHE_SIZE_MULTIPLIER  # 120 configs (10 * 12)
 
     def __init__(
         self,
@@ -268,7 +272,7 @@ class ConfigLoader:
             )
 
         # SECURITY FIX: Check for control characters
-        if any(ord(c) < 32 and c not in '\n\r\t' for c in template_path):
+        if any(ord(c) < ASCII_CONTROL_CHAR_MAX and c not in '\n\r\t' for c in template_path):
             _logger.warning(
                 "Security violation: Control characters detected in template path",
                 extra={

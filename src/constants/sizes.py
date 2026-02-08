@@ -41,3 +41,4 @@ TOKEN_BYTES_NONCE = 64  # OAuth nonce: 64 bytes = 512 bits entropy
 
 # ID/hash string lengths (characters)
 UUID_HEX_SHORT_LENGTH = 12  # Short UUID hex string (12 chars = 48 bits)
+UUID_HEX_MEDIUM_LENGTH = 16  # Medium UUID hex string (16 chars = 64 bits)

@@ -30,6 +30,9 @@ from src.database.models import (
 
 logger = logging.getLogger(__name__)
 
+# UUID hex string length for collaboration event IDs
+UUID_HEX_LENGTH = 12
+
 
 def track_safety_violation(
     workflow_id: Optional[str],
@@ -122,7 +125,7 @@ def track_collaboration_event(
         str: ID of created collaboration event record
     """
     # Generate unique event ID
-    event_id = f"collab-{uuid.uuid4().hex[:12]}"
+    event_id = f"collab-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 
     # Use current timestamp if not provided
     if timestamp is None:

@@ -15,6 +15,11 @@ from src.self_improvement.constants import (
     DEFAULT_CONFIDENCE_LEVEL,
 )
 
+# Composite score weights for variant comparison
+COMPOSITE_SCORE_QUALITY_WEIGHT = 0.7  # Primary factor
+COMPOSITE_SCORE_SPEED_WEIGHT = 0.2    # Secondary factor
+COMPOSITE_SCORE_COST_WEIGHT = 0.1     # Tertiary factor
+
 
 @dataclass
 class VariantResults:
@@ -92,26 +97,26 @@ class SIStatisticalAnalyzer:
 
     Compares variants against control using t-tests for statistical significance.
     Determines winner based on composite score weighted by:
-    - Quality (primary, weight=0.7)
-    - Speed (secondary, weight=0.2)
-    - Cost (tertiary, weight=0.1)
+    - Quality (primary, weight=COMPOSITE_SCORE_QUALITY_WEIGHT)
+    - Speed (secondary, weight=COMPOSITE_SCORE_SPEED_WEIGHT)
+    - Cost (tertiary, weight=COMPOSITE_SCORE_COST_WEIGHT)
     """
 
     def __init__(
         self,
         significance_level: float = DEFAULT_ALPHA,
-        quality_weight: float = 0.7,
-        speed_weight: float = 0.2,
-        cost_weight: float = 0.1,
+        quality_weight: float = COMPOSITE_SCORE_QUALITY_WEIGHT,
+        speed_weight: float = COMPOSITE_SCORE_SPEED_WEIGHT,
+        cost_weight: float = COMPOSITE_SCORE_COST_WEIGHT,
     ):
         """
         Initialize statistical analyzer.
 
         Args:
-            significance_level: P-value threshold for statistical significance (default: 0.05)
-            quality_weight: Weight for quality in composite score (default: 0.7)
-            speed_weight: Weight for speed in composite score (default: 0.2)
-            cost_weight: Weight for cost in composite score (default: 0.1)
+            significance_level: P-value threshold for statistical significance (default: DEFAULT_ALPHA)
+            quality_weight: Weight for quality in composite score (default: COMPOSITE_SCORE_QUALITY_WEIGHT)
+            speed_weight: Weight for speed in composite score (default: COMPOSITE_SCORE_SPEED_WEIGHT)
+            cost_weight: Weight for cost in composite score (default: COMPOSITE_SCORE_COST_WEIGHT)
         """
         self.significance_level = significance_level
         self.quality_weight = quality_weight

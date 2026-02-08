@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from src.constants.probabilities import PROB_MEDIUM
+from src.constants.probabilities import PROB_LOW_MEDIUM, PROB_MEDIUM, PROB_MODERATE
 from src.strategies.base import AgentOutput, Conflict
 
 
@@ -530,9 +530,9 @@ class AgentMerit:
             >>> merit.calculate_weight({"domain_merit": 0.5, "overall_merit": 0.3, "recent_performance": 0.2})
             0.865
         """
-        domain_weight = weights.get("domain_merit", 0.4)
-        overall_weight = weights.get("overall_merit", 0.3)
-        recent_weight = weights.get("recent_performance", 0.3)
+        domain_weight = weights.get("domain_merit", PROB_MODERATE)
+        overall_weight = weights.get("overall_merit", PROB_LOW_MEDIUM)
+        recent_weight = weights.get("recent_performance", PROB_LOW_MEDIUM)
 
         return (
             self.domain_merit * domain_weight +

@@ -3,7 +3,7 @@ Secure temporary directory management.
 
 This module manages a dedicated temporary directory within allowed_root,
 replacing unsafe /tmp access. Features:
-- Owner-only permissions (0o700)
+- Owner-only permissions (SECURE_TEMP_DIR_PERMISSIONS)
 - Scoped to allowed_root/.tmp
 - Path traversal prevention
 - Cleanup operations
@@ -13,6 +13,9 @@ from typing import Optional
 
 from src.utils.constants import MAX_COMPONENT_LENGTH
 from src.utils.path_safety.exceptions import PathSafetyError
+
+# File permissions for secure temporary directory (owner-only read/write/execute)
+SECURE_TEMP_DIR_PERMISSIONS = 0o700
 
 
 class SecureTempDirectory:
@@ -39,12 +42,12 @@ class SecureTempDirectory:
             self._create_secure_temp_dir()
 
     def _create_secure_temp_dir(self) -> None:
-        """Create .tmp directory with owner-only permissions (0o700)."""
+        """Create .tmp directory with owner-only permissions (SECURE_TEMP_DIR_PERMISSIONS)."""
         self.temp_dir = self.allowed_root / ".tmp"
         try:
-            self.temp_dir.mkdir(mode=0o700, exist_ok=True)
+            self.temp_dir.mkdir(mode=SECURE_TEMP_DIR_PERMISSIONS, exist_ok=True)
             # Ensure restrictive permissions (owner-only)
-            self.temp_dir.chmod(0o700)
+            self.temp_dir.chmod(SECURE_TEMP_DIR_PERMISSIONS)
         except OSError as e:
             # If we can't create secure temp dir, disable it
             import logging
@@ -116,8 +119,8 @@ class SecureTempDirectory:
                 # Remove all contents
                 shutil.rmtree(self.temp_dir)
                 # Recreate with secure permissions
-                self.temp_dir.mkdir(mode=0o700, exist_ok=True)
-                self.temp_dir.chmod(0o700)
+                self.temp_dir.mkdir(mode=SECURE_TEMP_DIR_PERMISSIONS, exist_ok=True)
+                self.temp_dir.chmod(SECURE_TEMP_DIR_PERMISSIONS)
             except OSError as e:
                 import logging
                 logging.warning(f"Could not cleanup temp directory: {e}")

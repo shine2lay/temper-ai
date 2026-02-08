@@ -45,6 +45,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Table column widths for formatted output
+TABLE_AGENT_NAME_WIDTH = 30
+TABLE_PHASE_WIDTH = 15
+TABLE_STATUS_WIDTH = 15
+TABLE_ITERATION_WIDTH = 10
+
 
 class M5CLI:
     """M5 Self-Improvement CLI."""
@@ -390,11 +396,11 @@ class M5CLI:
             print("   No agents found")
             return 0
 
-        print(f"\n   {'Agent':<30} {'Phase':<15} {'Status':<15} {'Iteration':<10}")
-        print(f"   {'-'*30} {'-'*15} {'-'*15} {'-'*10}")
+        print(f"\n   {'Agent':<{TABLE_AGENT_NAME_WIDTH}} {'Phase':<{TABLE_PHASE_WIDTH}} {'Status':<{TABLE_STATUS_WIDTH}} {'Iteration':<{TABLE_ITERATION_WIDTH}}")
+        print(f"   {'-'*TABLE_AGENT_NAME_WIDTH} {'-'*TABLE_PHASE_WIDTH} {'-'*TABLE_STATUS_WIDTH} {'-'*TABLE_ITERATION_WIDTH}")
 
         for row in rows:
-            print(f"   {row['agent_name']:<30} {row['current_phase']:<15} {row['status']:<15} {row['iteration_number']:<10}")
+            print(f"   {row['agent_name']:<{TABLE_AGENT_NAME_WIDTH}} {row['current_phase']:<{TABLE_PHASE_WIDTH}} {row['status']:<{TABLE_STATUS_WIDTH}} {row['iteration_number']:<{TABLE_ITERATION_WIDTH}}")
 
         return 0
 

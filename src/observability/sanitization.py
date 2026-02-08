@@ -26,6 +26,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# Sanitization limit constants
+DEFAULT_MAX_PROMPT_LENGTH = 5000  # 5KB instead of 10KB
+DEFAULT_MAX_RESPONSE_LENGTH = 20000  # 20KB instead of 50KB
+HMAC_KEY_SIZE_BYTES = 32  # 256 bits
+CONTENT_HASH_TRUNCATE_LENGTH = 16
+
 
 @dataclass
 class SanitizationConfig:
@@ -50,8 +56,8 @@ class SanitizationConfig:
     redact_ip_addresses: bool = True  # CHANGED: was False (prevents network topology exposure)
 
     # Length limiting - REDUCED for aggressive truncation
-    max_prompt_length: int = 5000   # CHANGED: was 10000 (5KB instead of 10KB)
-    max_response_length: int = 20000  # CHANGED: was 50000 (20KB instead of 50KB)
+    max_prompt_length: int = DEFAULT_MAX_PROMPT_LENGTH   # CHANGED: was 10000 (5KB instead of 10KB)
+    max_response_length: int = DEFAULT_MAX_RESPONSE_LENGTH  # CHANGED: was 50000 (20KB instead of 50KB)
 
     # Hash generation
     include_hash: bool = True  # For debugging/correlation
@@ -155,10 +161,10 @@ class DataSanitizer:
                 self._hmac_key = bytes.fromhex(hmac_key_hex)
             except ValueError:
                 # Invalid hex, generate new random key
-                self._hmac_key = os.urandom(32)
+                self._hmac_key = os.urandom(HMAC_KEY_SIZE_BYTES)
         else:
             # Generate random key (32 bytes = 256 bits)
-            self._hmac_key = os.urandom(32)
+            self._hmac_key = os.urandom(HMAC_KEY_SIZE_BYTES)
 
     def sanitize_text(
         self,
@@ -232,7 +238,7 @@ class DataSanitizer:
                 text.encode('utf-8'),
                 hashlib.sha256
             )
-            content_hash = h.hexdigest()[:16]
+            content_hash = h.hexdigest()[:CONTENT_HASH_TRUNCATE_LENGTH]
 
         return SanitizationResult(
             sanitized_text=sanitized,

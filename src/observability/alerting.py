@@ -15,6 +15,11 @@ from src.observability.constants import DEFAULT_ERROR_RATE_ALERT_THRESHOLD
 
 logger = logging.getLogger(__name__)
 
+# Alert threshold constants
+DEFAULT_WORKFLOW_COST_ALERT_THRESHOLD_USD = 5.0  # $5 per workflow
+CRITICAL_WORKFLOW_COST_ALERT_THRESHOLD_USD = 50.0  # $50 per workflow (critical)
+EXTREME_LATENCY_P99_THRESHOLD_MS = 30000  # 30 seconds
+
 
 class AlertSeverity(str, Enum):
     """Alert severity levels."""
@@ -119,7 +124,7 @@ class AlertManager:
         self.add_rule(AlertRule(
             name="high_cost_per_workflow",
             metric_type=MetricType.COST_USD,
-            threshold=5.0,  # $5 per workflow
+            threshold=DEFAULT_WORKFLOW_COST_ALERT_THRESHOLD_USD,
             severity=AlertSeverity.WARNING,
             actions=[AlertAction.LOG_WARNING],
             metadata={"description": "Workflow cost exceeds $5"}
@@ -140,7 +145,7 @@ class AlertManager:
         self.add_rule(AlertRule(
             name="extreme_latency_p99",
             metric_type=MetricType.LATENCY_P99,
-            threshold=30000,  # 30 seconds
+            threshold=EXTREME_LATENCY_P99_THRESHOLD_MS,
             severity=AlertSeverity.WARNING,
             actions=[AlertAction.LOG_WARNING],
             metadata={"description": "P99 latency exceeds 30 seconds"}
@@ -150,7 +155,7 @@ class AlertManager:
         self.add_rule(AlertRule(
             name="critical_cost_budget",
             metric_type=MetricType.COST_USD,
-            threshold=50.0,  # $50 per workflow (critical)
+            threshold=CRITICAL_WORKFLOW_COST_ALERT_THRESHOLD_USD,
             severity=AlertSeverity.CRITICAL,
             actions=[AlertAction.LOG_ERROR, AlertAction.HALT_WORKFLOW],
             enabled=False,  # Disabled by default (destructive action)

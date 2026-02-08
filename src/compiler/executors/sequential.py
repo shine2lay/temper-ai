@@ -10,6 +10,7 @@ import uuid
 from typing import Any, Dict, Optional
 
 from src.constants.probabilities import PROB_VERY_HIGH
+from src.constants.sizes import UUID_HEX_SHORT_LENGTH
 from src.utils.exceptions import (
     ConfigValidationError,
 )
@@ -119,7 +120,7 @@ class SequentialStageExecutor(StageExecutor):
             agent_outputs, agent_statuses, agent_metrics = run_all_agents(
                 executor=self,
                 agents=agents,
-                stage_id=f"stage-{uuid.uuid4().hex[:12]}",
+                stage_id=f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
                 stage_name=stage_name,
                 workflow_id=workflow_id,
                 state=state,

@@ -25,6 +25,11 @@ from src.utils.exceptions import ConfigurationError, ErrorCode, SecurityError  #
 TOKENS_PER_MILLION = MULTIPLIER_VERY_LARGE * MULTIPLIER_VERY_LARGE  # 1,000,000
 MAX_REASONABLE_PRICE_PER_MILLION = MULTIPLIER_VERY_LARGE  # $1000 per 1M tokens
 
+# Default fallback pricing (emergency when config missing/invalid)
+DEFAULT_FALLBACK_INPUT_PRICE = 3.0  # USD per 1M input tokens
+DEFAULT_FALLBACK_OUTPUT_PRICE = 15.0  # USD per 1M output tokens
+FALLBACK_PRICING_YEAR = 2026  # Year for fallback pricing effective date
+
 
 class PricingConfigNotFoundError(ConfigurationError):
     """Raised when pricing configuration file is not found."""
@@ -245,9 +250,9 @@ class PricingManager:
         logger.warning("Using emergency fallback pricing")
         return {
             '_default': ModelPricing(
-                input_price=3.00,
-                output_price=15.00,
-                effective_date=date(2026, 1, 1)
+                input_price=DEFAULT_FALLBACK_INPUT_PRICE,
+                output_price=DEFAULT_FALLBACK_OUTPUT_PRICE,
+                effective_date=date(FALLBACK_PRICING_YEAR, 1, 1)
             )
         }
 

@@ -25,6 +25,11 @@ from src.observability.constants import (
 
 logger = logging.getLogger(__name__)
 
+# Percentile values for latency tracking
+PERCENTILE_P50 = 50
+PERCENTILE_P95 = 95
+PERCENTILE_P99 = 99
+
 
 @dataclass
 class LatencyMetrics:
@@ -58,9 +63,9 @@ class LatencyMetrics:
         count = len(sorted_samples)
 
         return {
-            "p50": self._percentile(sorted_samples, 50),
-            "p95": self._percentile(sorted_samples, 95),
-            "p99": self._percentile(sorted_samples, 99),
+            "p50": self._percentile(sorted_samples, PERCENTILE_P50),
+            "p95": self._percentile(sorted_samples, PERCENTILE_P95),
+            "p99": self._percentile(sorted_samples, PERCENTILE_P99),
             "count": count,
             "min": min(sorted_samples),
             "max": max(sorted_samples),

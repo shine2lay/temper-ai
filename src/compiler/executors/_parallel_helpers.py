@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, Optional, cast
 
 from src.constants.limits import DEFAULT_MIN_ITEMS, SMALL_ITEM_LIMIT
 from src.constants.probabilities import PROB_HIGH
+from src.constants.sizes import UUID_HEX_SHORT_LENGTH
 from src.core.context import ExecutionContext
 from src.utils.exceptions import (
     ConfigNotFoundError,
@@ -78,8 +79,8 @@ def create_agent_node(
             # Create execution context
             context = ExecutionContext(
                 workflow_id=state.get("workflow_id", "unknown"),
-                stage_id=f"stage-{uuid.uuid4().hex[:12]}",
-                agent_id=f"agent-{uuid.uuid4().hex[:12]}",
+                stage_id=f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
+                agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
                 metadata={
                     "stage_name": stage_name,
                     "agent_name": agent_name,

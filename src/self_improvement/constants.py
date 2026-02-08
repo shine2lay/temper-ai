@@ -81,7 +81,7 @@ COST_INCREASE_THRESHOLD = 2.0  # 100% increase triggers detection
 IMPROVEMENT_SCORE_THRESHOLD = 0.1  # 10% improvement needed
 MIN_IMPROVEMENT_SAMPLES = 5
 IMPROVEMENT_LOOKBACK_DAYS = 7
-REGRESSION_THRESHOLD = -0.05  # -5% is regression
+REGRESSION_THRESHOLD = -0.05  # -5% is regression  # noqa: Constant definition (negative value)
 
 # Pattern mining
 MIN_PATTERN_FREQUENCY = 3

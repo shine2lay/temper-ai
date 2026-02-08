@@ -13,11 +13,15 @@ import uuid
 from typing import Any, Dict, Optional, cast
 
 from src.constants.durations import SECONDS_PER_MINUTE
+from src.constants.sizes import UUID_HEX_SHORT_LENGTH
 from src.constants.retries import (
     DEFAULT_BACKOFF_MULTIPLIER,
     MIN_BACKOFF_SECONDS,
 )
 from src.core.circuit_breaker import CircuitBreakerError
+
+# Agent retry backoff constants
+MAX_RETRY_BACKOFF_DIVISOR = 2  # Divide max time by this to get max retry delay (e.g., 60s / 2 = 30s max delay)
 from src.utils.exceptions import (
     BaseError,
     ConfigNotFoundError,
@@ -216,7 +220,7 @@ def run_agent(
     context = ExecutionContext(
         workflow_id=workflow_id,
         stage_id=stage_id,
-        agent_id=f"agent-{uuid.uuid4().hex[:12]}",
+        agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
         metadata={
             "stage_name": stage_name,
             "agent_name": agent_name,
@@ -316,7 +320,7 @@ def retry_agent_with_backoff(
     last_result: Dict[str, Any] = {}
 
     for attempt in range(1, max_retries + 1):
-        delay = min(base_delay * (DEFAULT_BACKOFF_MULTIPLIER ** (attempt - 1)), SECONDS_PER_MINUTE / 2)
+        delay = min(base_delay * (DEFAULT_BACKOFF_MULTIPLIER ** (attempt - 1)), SECONDS_PER_MINUTE / MAX_RETRY_BACKOFF_DIVISOR)
         logger.info(
             "Retrying agent %s in stage %s (attempt %d/%d, backoff %.1fs)",
             agent_name, stage_name, attempt, max_retries, delay,

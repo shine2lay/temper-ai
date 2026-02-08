@@ -40,6 +40,9 @@ from src.constants.limits import DEFAULT_MAX_ITEMS
 from src.constants.probabilities import PROB_VERY_HIGH
 from src.self_improvement.data_models import SIOptimizationConfig
 
+# Default impact estimate for strategies without historical data
+DEFAULT_STRATEGY_IMPACT_ESTIMATE = 0.1  # 10% improvement as base prior
+
 
 @dataclass
 class LearnedPattern:
@@ -203,7 +206,7 @@ class ImprovementStrategy(ABC):
         Default implementation:
         1. If learning_store available: Query historical outcomes and use
            Bayesian updating to combine historical average with base estimate
-        2. Otherwise: Return base estimate (0.1 = 10% improvement)
+        2. Otherwise: Return base estimate (DEFAULT_STRATEGY_IMPACT_ESTIMATE = 10% improvement)
 
         Concrete strategies can override this to provide custom estimates
         or call super().estimate_impact(problem) to get learned estimate
@@ -227,7 +230,7 @@ class ImprovementStrategy(ABC):
             0.35  # Learned from historical outcomes
         """
         # Base estimate (prior belief)
-        base_estimate = 0.1
+        base_estimate = DEFAULT_STRATEGY_IMPACT_ESTIMATE
 
         # If no learning store, return base estimate
         if not self.learning_store:

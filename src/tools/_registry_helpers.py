@@ -19,6 +19,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Constants
+REPORT_SEPARATOR_LENGTH = 40  # Length of separator line in registration reports
+
 # Common error suggestions for developers
 COMMON_ERROR_SUGGESTIONS = {
     "requires init arguments": (
@@ -355,7 +358,7 @@ def get_registration_report(registry: ToolRegistry) -> str:
     """Get detailed registration report for debugging."""
     lines = []
     lines.append("Tool Registry Report")
-    lines.append("=" * 40)
+    lines.append("=" * REPORT_SEPARATOR_LENGTH)
 
     total_tools = len(registry._tools)
     total_versions = len(registry)

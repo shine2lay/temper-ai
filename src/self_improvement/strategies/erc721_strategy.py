@@ -16,6 +16,15 @@ from src.self_improvement.strategies.strategy import (
     SIOptimizationConfig,
 )
 
+# Default temperature for code generation
+DEFAULT_CODE_TEMPERATURE = 0.7
+
+# Impact estimates by problem type
+IMPACT_QUALITY_LOW = 0.35
+IMPACT_ERROR_RATE_HIGH = 0.30
+IMPACT_INCONSISTENT_OUTPUT = 0.25
+IMPACT_DEFAULT = 0.1  # Default when problem type unknown
+
 
 class ERC721WorkflowStrategy(ImprovementStrategy):
     """
@@ -97,7 +106,7 @@ contract MyNFT is ERC721, Ownable {
 
         # Variant 1: Lower temperature for more deterministic code generation
         variant_temp = copy.deepcopy(current_config)
-        current_temp = variant_temp.inference.get("temperature", 0.7)
+        current_temp = variant_temp.inference.get("temperature", DEFAULT_CODE_TEMPERATURE)
         # Reduce by 50%, minimum 0.05
         new_temp = max(PROB_MINIMAL, current_temp * FRACTION_HALF)
         variant_temp.inference["temperature"] = round(new_temp, 2)
@@ -177,9 +186,9 @@ contract MyNFT is ERC721, Ownable {
         problem_type = problem.get("problem_type", problem.get("type", "unknown"))
 
         impact_by_type = {
-            "quality_low": 0.35,
-            "error_rate_high": 0.30,
-            "inconsistent_output": 0.25,
+            "quality_low": IMPACT_QUALITY_LOW,
+            "error_rate_high": IMPACT_ERROR_RATE_HIGH,
+            "inconsistent_output": IMPACT_INCONSISTENT_OUTPUT,
         }
 
-        return impact_by_type.get(problem_type, 0.1)
+        return impact_by_type.get(problem_type, IMPACT_DEFAULT)

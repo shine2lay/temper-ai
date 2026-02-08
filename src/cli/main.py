@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB_PATH = ".meta-autonomous/observability.db"
 
+# Exit codes
+EXIT_CODE_KEYBOARD_INTERRUPT = 130  # POSIX standard exit code for SIGINT (Ctrl+C)
+
 
 # ─── Helpers ──────────────────────────────────────────────────────────
 
@@ -262,7 +265,7 @@ def run(
                     tool_executor.shutdown()
                 except Exception:  # noqa: BLE001 -- defensive cleanup on interrupt
                     pass
-        raise SystemExit(130)
+        raise SystemExit(EXIT_CODE_KEYBOARD_INTERRUPT)
     except Exception as e:  # noqa: BLE001 -- CLI top-level catch-all
         console.print(f"[red]Execution error:[/red] {e}")
         if verbose:

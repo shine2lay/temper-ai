@@ -103,9 +103,16 @@ OLLAMA_DEFAULT_PORT = 11434
 # H-16: Lazy initialization with lifecycle management to avoid resource leaks.
 # M-18: Pool size configurable via AGENT_TOOL_WORKERS env var.
 # H-11: Increase default pool size based on CPU count
-_CPU_MULTIPLIER = 2
-_CPU_OFFSET = 4
-_DEFAULT_POOL_SIZE = min(_POOL_SIZE_LIMIT, (os.cpu_count() or _CPU_OFFSET) * _CPU_MULTIPLIER + _CPU_OFFSET)
+
+# CPU-based pool sizing constants
+_CPU_MULTIPLIER_FOR_POOL = 2  # Multiply CPU count by this for thread pool size
+_MIN_POOL_SIZE_PER_CPU = 4  # Minimum threads to add beyond CPU-based calculation
+_DEFAULT_CPU_COUNT_FALLBACK = 4  # Fallback CPU count when os.cpu_count() returns None
+
+_DEFAULT_POOL_SIZE = min(
+    _POOL_SIZE_LIMIT,
+    (os.cpu_count() or _DEFAULT_CPU_COUNT_FALLBACK) * _CPU_MULTIPLIER_FOR_POOL + _MIN_POOL_SIZE_PER_CPU
+)
 _TOOL_POOL_SIZE = int(os.environ.get("AGENT_TOOL_WORKERS", str(_DEFAULT_POOL_SIZE)))
 _tool_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 _executor_lock = threading.Lock()
@@ -133,7 +140,7 @@ def _shutdown_tool_executor() -> None:
     """Shutdown the tool executor pool gracefully (P-15, H-16)."""
     global _tool_executor
     if _tool_executor is not None:
-        if sys.version_info >= (3, 9):
+        if sys.version_info >= (3, 9):  # noqa: Python version check
             _tool_executor.shutdown(wait=True, cancel_futures=True)
         else:
             _tool_executor.shutdown(wait=True)

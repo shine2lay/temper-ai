@@ -5,6 +5,9 @@ from typing import Optional
 from src.constants.durations import MILLISECONDS_PER_SECOND, SECONDS_PER_MINUTE
 from src.constants.sizes import BYTES_PER_KB
 
+# Text truncation default max length
+DEFAULT_TRUNCATE_MAX_LENGTH = 50
+
 
 def format_duration(seconds: Optional[float]) -> str:
     """Format duration in human-readable form.
@@ -176,7 +179,7 @@ def format_percentage(value: Optional[float]) -> str:
     return f"{value * 100:.1f}%"
 
 
-def truncate_text(text: str, max_length: int = 50, suffix: str = "...") -> str:
+def truncate_text(text: str, max_length: int = DEFAULT_TRUNCATE_MAX_LENGTH, suffix: str = "...") -> str:
     """Truncate text to maximum length.
 
     Args:

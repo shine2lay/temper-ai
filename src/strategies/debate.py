@@ -14,7 +14,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.constants.probabilities import PROB_MEDIUM, PROB_VERY_LOW
+from src.constants.probabilities import PROB_MEDIUM, PROB_VERY_HIGH, PROB_VERY_LOW
 from src.strategies.base import (
     AgentOutput,
     CollaborationStrategy,
@@ -119,7 +119,7 @@ class DebateAndSynthesize(CollaborationStrategy):
 
         # Get config with defaults
         max_rounds = config.get("max_rounds", DEFAULT_DEBATE_ROUNDS)
-        convergence_threshold = config.get("convergence_threshold", CONFLICT_SEVERITY_HIGH)
+        convergence_threshold = config.get("convergence_threshold", PROB_VERY_HIGH)
         require_unanimous = config.get("require_unanimous", False)
         min_rounds = config.get("min_rounds", DEFAULT_MIN_ROUNDS)
 
@@ -434,12 +434,12 @@ class DebateAndSynthesize(CollaborationStrategy):
             "config_schema": {
                 "max_rounds": {
                     "type": "int",
-                    "default": 3,
+                    "default": DEFAULT_DEBATE_ROUNDS,
                     "description": "Maximum debate rounds"
                 },
                 "convergence_threshold": {
                     "type": "float",
-                    "default": 0.8,
+                    "default": PROB_VERY_HIGH,
                     "description": "Stop when this % agents unchanged (0-1)"
                 },
                 "debate_structure": {

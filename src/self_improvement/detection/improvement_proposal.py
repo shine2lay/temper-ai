@@ -13,6 +13,10 @@ from typing import Any, Dict
 from src.self_improvement.data_models import AgentPerformanceProfile
 from src.self_improvement.detection.problem_models import PerformanceProblem
 
+# Priority constants for improvement proposals
+PRIORITY_DEFAULT = 2  # Default medium priority
+PRIORITY_LOWEST = 3   # Lowest priority level
+
 
 @dataclass
 class ImprovementProposal:
@@ -66,7 +70,7 @@ class ImprovementProposal:
 
     # Metadata
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    priority: int = 2  # 0 (highest) to 3 (lowest)
+    priority: int = PRIORITY_DEFAULT  # 0 (highest) to 3 (lowest)
     extra_metadata: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -76,9 +80,9 @@ class ImprovementProposal:
                 f"estimated_impact must be in range [0.0, 1.0], "
                 f"got {self.estimated_impact}"
             )
-        if self.priority not in (0, 1, 2, 3):
+        if self.priority not in (0, 1, 2, PRIORITY_LOWEST):
             raise ValueError(
-                f"priority must be 0-3, got {self.priority}"
+                f"priority must be 0-{PRIORITY_LOWEST}, got {self.priority}"
             )
 
     def get_summary(self) -> str:
@@ -94,8 +98,8 @@ class ImprovementProposal:
         priority_labels = {
             0: "CRITICAL",
             1: "HIGH",
-            2: "MEDIUM",
-            3: "LOW",
+            PRIORITY_DEFAULT: "MEDIUM",
+            PRIORITY_LOWEST: "LOW",
         }
         priority_label = priority_labels.get(self.priority, "UNKNOWN")
 

@@ -24,6 +24,10 @@ from src.constants.limits import DEFAULT_MAX_ITEMS
 from src.constants.probabilities import PROB_VERY_HIGH
 from src.constants.sizes import SIZE_10KB
 
+# ASCII control character boundaries
+ASCII_CONTROL_CHAR_MAX = 0x20  # Characters below this (0x00-0x1F) are control characters
+ASCII_DELETE_CHAR = 0x7F  # DEL character (also a control character)
+
 # Import secret detection for redaction
 detect_secret_patterns: Optional[Callable[[str], Tuple[bool, Optional[str]]]] = None
 SECRETS_AVAILABLE = False
@@ -120,6 +124,8 @@ def _sanitize_control_characters(text: str) -> str:
     - Printable characters (including Unicode): preserved
     - Unicode line terminators: escaped as \\uNNNN
 
+    ASCII control character range: 0x00-0x1F (0-31) and 0x7F (127 DEL)
+
     Args:
         text: Input text to sanitize
 
@@ -144,7 +150,7 @@ def _sanitize_control_characters(text: str) -> str:
         if char in _UNICODE_LINE_TERMINATORS:
             # Escape Unicode line terminators
             sanitized_chars.append(f'\\u{ord(char):04x}')
-        elif ord(char) < 0x20 or ord(char) == 0x7F:
+        elif ord(char) < ASCII_CONTROL_CHAR_MAX or ord(char) == ASCII_DELETE_CHAR:
             # Control characters (should be mostly handled above, but double-check)
             sanitized_chars.append(f'\\x{ord(char):02x}')
         else:

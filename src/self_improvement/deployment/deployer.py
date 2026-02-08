@@ -26,10 +26,13 @@ from src.self_improvement.data_models import (
 
 logger = logging.getLogger(__name__)
 
+# Deployment ID configuration
+DEPLOYMENT_ID_HEX_LENGTH = 12  # Length of hex portion in deployment ID
+
 
 def generate_id() -> str:
     """Generate unique deployment ID."""
-    return f"deploy-{uuid.uuid4().hex[:12]}"
+    return f"deploy-{uuid.uuid4().hex[:DEPLOYMENT_ID_HEX_LENGTH]}"
 
 
 class ConfigDeployer:

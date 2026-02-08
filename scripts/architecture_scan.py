@@ -13,6 +13,17 @@ Usage:
 Output: JSON with sections:
     metadata, files, imports, classes, anti_patterns, naming_collisions,
     god_objects, layer_analysis, static_analysis, summary
+
+Changelog:
+    v2.4.0: Enhanced parallelization
+        - Parallelized file reading (16 workers)
+        - Parallelized AST parsing in file cache (16 workers)
+        - Parallelized dependent computations (7 workers)
+        - Total: 33+ concurrent workers across 4 parallel stages
+    v2.3.1: Fix external tool detection
+    v2.3.0: Added 6 AST analysis features (function_complexity, magic_values,
+            dead_code, import_density, duplicate_code, test_quality)
+    v2.2.0: Anti-patterns, file caching, parallel scans, scoring gaps
 """
 
 import ast
@@ -213,21 +224,31 @@ MAGIC_STRING_MIN_LENGTH = 3
 # File Scanning
 # ---------------------------------------------------------------------------
 
+def _count_file_lines(py_file: Path, src_dir: Path) -> dict:
+    """Count lines in a single file (helper for parallel processing)."""
+    rel_path = str(py_file.relative_to(src_dir.parent))
+    try:
+        content = py_file.read_text(encoding="utf-8", errors="replace")
+        lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
+    except OSError:
+        lines = 0
+    return {"path": rel_path, "lines": lines, "abs_path": str(py_file)}
+
+
 def scan_files(src_dir: Path) -> dict:
-    """Collect file inventory with line counts."""
+    """Collect file inventory with line counts (parallelized)."""
+    py_files = sorted(src_dir.rglob("*.py"))
+
+    # Parallelize file reading
     files = []
-    total_lines = 0
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        futures = [executor.submit(_count_file_lines, py_file, src_dir) for py_file in py_files]
+        for future in as_completed(futures):
+            files.append(future.result())
 
-    for py_file in sorted(src_dir.rglob("*.py")):
-        rel_path = str(py_file.relative_to(src_dir.parent))
-        try:
-            content = py_file.read_text(encoding="utf-8", errors="replace")
-            lines = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
-        except OSError:
-            lines = 0
-        total_lines += lines
-        files.append({"path": rel_path, "lines": lines, "abs_path": str(py_file)})
-
+    # Sort by path for deterministic output
+    files.sort(key=lambda f: f["path"])
+    total_lines = sum(f["lines"] for f in files)
     large_files = [f for f in files if f["lines"] >= LARGE_FILE_LINES]
 
     return {
@@ -245,26 +266,36 @@ def scan_files(src_dir: Path) -> dict:
 # File Cache (single-pass read + parse)
 # ---------------------------------------------------------------------------
 
+def _parse_single_file(abs_path: str) -> tuple[str, tuple[str, "ast.Module | None"]]:
+    """Parse a single file (helper for parallel processing)."""
+    try:
+        source = Path(abs_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return (abs_path, ("", None))
+    try:
+        tree = ast.parse(source, filename=abs_path)
+    except (SyntaxError, ValueError):
+        tree = None
+    return (abs_path, (source, tree))
+
+
 def _build_file_cache(
     files: list[dict],
 ) -> dict[str, tuple[str, "ast.Module | None"]]:
     """Read and parse all files once, returning {abs_path: (source, tree|None)}.
 
     The cache is immutable after construction and safe for concurrent reads.
+    Parallelized for faster parsing.
     """
     cache: dict[str, tuple[str, ast.Module | None]] = {}
-    for file_info in files:
-        abs_path = file_info["abs_path"]
-        try:
-            source = Path(abs_path).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            cache[abs_path] = ("", None)
-            continue
-        try:
-            tree = ast.parse(source, filename=abs_path)
-        except (SyntaxError, ValueError):
-            tree = None
-        cache[abs_path] = (source, tree)
+
+    # Parallelize file reading and parsing
+    with ThreadPoolExecutor(max_workers=16) as executor:
+        futures = [executor.submit(_parse_single_file, f["abs_path"]) for f in files]
+        for future in as_completed(futures):
+            abs_path, result = future.result()
+            cache[abs_path] = result
+
     return cache
 
 
@@ -2366,16 +2397,35 @@ def main() -> None:
     dead_code = ast_results["dead_code"]
     duplicate_code = ast_results["duplicate_code"]
 
-    # Dependent computations (need imports/classes results)
-    collisions = find_naming_collisions(classes["details"])
-    god_objects = find_god_objects(files["details"], classes["details"])
-    layers = analyze_layers(imports)
-    import_density = compute_import_density(imports)
+    # Parallelize dependent computations and external tools
+    # Group 1: Depends on classes
+    # Group 2: Depends on imports
+    # Group 3: Independent (external tools)
+    dependent_runners = {
+        "collisions": lambda: find_naming_collisions(classes["details"]),
+        "god_objects": lambda: find_god_objects(files["details"], classes["details"]),
+        "layers": lambda: analyze_layers(imports),
+        "import_density": lambda: compute_import_density(imports),
+        "static": lambda: run_static_analysis(src_dir),
+        "test_coverage": lambda: _run_test_coverage(src_dir),
+        "test_quality": lambda: scan_test_quality(src_dir, src_total_lines=files["summary"]["total_lines"]),
+    }
+    dependent_results: dict[str, Any] = {}
+    with ThreadPoolExecutor(max_workers=7) as executor:
+        futures = {
+            executor.submit(runner): name
+            for name, runner in dependent_runners.items()
+        }
+        for future in as_completed(futures):
+            dependent_results[futures[future]] = future.result()
 
-    # External tools (already parallelized internally)
-    static = run_static_analysis(src_dir)
-    test_coverage = _run_test_coverage(src_dir)
-    test_quality = scan_test_quality(src_dir, src_total_lines=files["summary"]["total_lines"])
+    collisions = dependent_results["collisions"]
+    god_objects = dependent_results["god_objects"]
+    layers = dependent_results["layers"]
+    import_density = dependent_results["import_density"]
+    static = dependent_results["static"]
+    test_coverage = dependent_results["test_coverage"]
+    test_quality = dependent_results["test_quality"]
 
     # Step 2: Compute deterministic score
     det_score = compute_deterministic_score(
@@ -2401,11 +2451,12 @@ def main() -> None:
     for f in files["details"]:
         f.pop("abs_path", None)
 
+    # Build results dict with deterministic key ordering
     results = {
         "metadata": {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "src_dir": str(src_dir),
-            "scanner_version": "2.3.1",
+            "scanner_version": "2.4.0",
             "content_hash": compute_content_hash(src_dir),
         },
         "files": files,
@@ -2416,15 +2467,15 @@ def main() -> None:
         "god_objects": god_objects,
         "layer_analysis": layers,
         "static_analysis": static,
-        # Flatten external tool results to top level for easy access
-        "ruff": static.get("ruff", {}),
-        "black": static.get("black", {}),
-        "vulture": static.get("vulture", {}),
+        # Flatten external tool results to top level for easy access (sorted order)
         "bandit": static.get("bandit", {}),
+        "black": static.get("black", {}),
+        "mypy": static.get("mypy", {}),
+        "pip_audit": static.get("pip_audit", {}),
         "radon_cc": static.get("radon_cc", {}),
         "radon_mi": static.get("radon_mi", {}),
-        "pip_audit": static.get("pip_audit", {}),
-        "mypy": static.get("mypy", {}),
+        "ruff": static.get("ruff", {}),
+        "vulture": static.get("vulture", {}),
         "coverage": test_coverage,
         "unused_imports": unused_imports,
         "missing_docstrings": missing_docstrings,
@@ -2439,7 +2490,8 @@ def main() -> None:
         "deterministic_score": det_score,
     }
 
-    output = json.dumps(results, indent=2, default=str)
+    # Ensure deterministic JSON output (sort keys)
+    output = json.dumps(results, indent=2, default=str, sort_keys=True)
 
     if args.output:
         Path(args.output).write_text(output, encoding="utf-8")

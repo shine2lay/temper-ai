@@ -4,27 +4,28 @@ PerformanceAnalyzer for M5 Self-Improvement System.
 Analyzes agent execution metrics over time windows, generating performance
 profiles used by ImprovementDetector to identify optimization opportunities.
 
+Refactored to follow Single Responsibility Principle:
+- MetricsAggregator: SQL-based metric queries
+- BaselineStorage: File I/O and persistence
+- AgentPathValidator: Security validation
+- PerformanceAnalyzer: Orchestration and public API
+
 Design Principles:
-- SQL aggregation (100x faster than Python loops)
-- Stateless (no caching, no shared state)
-- Graceful degradation (handle missing metrics)
+- Thin orchestrator (delegates to specialized modules)
+- Backward compatible public API
 - Clear error messages
 """
 
-import json
 import logging
-import os
-import re
-import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
-from sqlalchemy import and_, case
-from sqlmodel import Session, func, select
+from sqlmodel import Session
 
-from src.database.models import AgentExecution
+from src.self_improvement.baseline_storage import BaselineStorage
 from src.self_improvement.data_models import AgentPerformanceProfile
+from src.self_improvement.metrics_aggregator import MetricsAggregator
 
 logger = logging.getLogger(__name__)
 
@@ -46,13 +47,14 @@ class DatabaseQueryError(PerformanceAnalysisError):
 
 class PerformanceAnalyzer:
     """
-    Analyzes agent performance over time windows.
+    Orchestrates agent performance analysis over time windows.
 
-    Core responsibilities:
-    1. Query observability database for agent executions
-    2. Aggregate built-in metrics (success_rate, cost, duration, tokens)
-    3. Aggregate custom metrics (quality_score, etc.) - future
-    4. Generate AgentPerformanceProfile with statistical aggregates
+    Thin orchestrator that delegates to specialized modules:
+    - MetricsAggregator: SQL queries and metric calculations
+    - BaselineStorage: File I/O and persistence
+    - AgentPathValidator: Security validation (via BaselineStorage)
+
+    Public API remains unchanged for backward compatibility.
 
     Example:
         >>> from src.database import get_session
@@ -62,14 +64,11 @@ class PerformanceAnalyzer:
         ...     print(f"Success rate: {profile.get_metric('success_rate', 'mean')}")
 
     Design:
-        - SQL aggregation for performance (vs Python loops)
-        - Stateless (no instance variables beyond session)
+        - Delegates to specialized modules (SRP)
+        - Stateless (no instance variables beyond session and modules)
         - Graceful degradation (missing metrics return partial profile)
         - Fail fast (invalid inputs raise immediately)
     """
-
-    # Allowlist: starts with letter, alphanumerics/hyphens/underscores, max 64 chars
-    _AGENT_NAME_PATTERN = re.compile(r'^[a-zA-Z][a-zA-Z0-9_-]{0,63}$')
 
     def __init__(self, session: Session, baseline_storage_path: Optional[Path] = None):
         """
@@ -81,19 +80,31 @@ class PerformanceAnalyzer:
         """
         self.session = session
 
-        # Set up baseline storage directory
-        if baseline_storage_path is None:
-            baseline_storage_path = Path(".baselines")
-        raw_path = Path(baseline_storage_path)
-        # Reject symlinked storage directories to prevent escape attacks
-        if raw_path.exists() and raw_path.is_symlink():
-            raise ValueError("Baseline storage path must not be a symlink")
-        self.baseline_storage_path = raw_path.resolve()
-        self.baseline_storage_path.mkdir(parents=True, exist_ok=True)
+        # Initialize specialized modules
+        self.metrics = MetricsAggregator(session)
+        self.storage = BaselineStorage(
+            baseline_storage_path if baseline_storage_path else Path(".baselines")
+        )
+
+    @property
+    def baseline_storage_path(self) -> Path:
+        """
+        Get baseline storage path.
+
+        DEPRECATED: This property is kept for backward compatibility.
+        New code should use self.storage.storage_path directly.
+
+        Returns:
+            Path to baseline storage directory
+        """
+        return self.storage.storage_path
 
     def _validate_baseline_path(self, agent_name: str) -> Path:
         """
         Validate agent_name and return a safe path within baseline storage.
+
+        DEPRECATED: This method is kept for backward compatibility with existing tests.
+        New code should use BaselineStorage directly.
 
         Args:
             agent_name: Name of agent to validate
@@ -104,30 +115,8 @@ class PerformanceAnalyzer:
         Raises:
             ValueError: If agent_name is invalid or path escapes storage directory
         """
-        if not isinstance(agent_name, str):
-            raise ValueError("Invalid agent name")
-
-        if not self._AGENT_NAME_PATTERN.match(agent_name):
-            raise ValueError(
-                "Invalid agent name: must start with a letter, "
-                "contain only alphanumerics, hyphens, or underscores, "
-                "and be at most 64 characters"
-            )
-
-        baseline_file = self.baseline_storage_path / f"{agent_name}_baseline.json"
-        resolved = baseline_file.resolve()
-
-        # Containment check: ensure resolved path is within storage directory
-        try:
-            resolved.relative_to(self.baseline_storage_path)
-        except ValueError:
-            raise ValueError("Invalid agent name: path escape detected")
-
-        # Reject symlinks pointing outside storage
-        if baseline_file.is_symlink():
-            raise ValueError("Invalid agent name: symlink detected")
-
-        return resolved
+        # Delegate to BaselineStorage's validator
+        return self.storage.validator.validate_and_resolve(agent_name)
 
     def analyze_agent_performance(
         self,
@@ -189,8 +178,8 @@ class PerformanceAnalyzer:
         )
 
         try:
-            # Query built-in metrics from agent_executions
-            metrics_data = self._query_builtin_metrics(
+            # Delegate to MetricsAggregator for SQL queries
+            metrics_data = self.metrics.aggregate_metrics(
                 agent_name, window_start, window_end, include_failed
             )
 
@@ -228,86 +217,6 @@ class PerformanceAnalyzer:
             logger.error(f"Performance analysis failed: {e}", exc_info=True)
             raise DatabaseQueryError(f"Query failed: {e}") from e
 
-    def _query_builtin_metrics(
-        self,
-        agent_name: str,
-        window_start: datetime,
-        window_end: datetime,
-        include_failed: bool
-    ) -> Dict[str, Any]:
-        """
-        Query built-in metrics from agent_executions table.
-
-        Aggregates:
-        - success_rate (mean)
-        - duration_seconds (mean)
-        - cost_usd (mean)
-        - total_tokens (mean)
-
-        Args:
-            agent_name: Name of agent to query
-            window_start: Start of time window
-            window_end: End of time window
-            include_failed: Whether to include failed executions
-
-        Returns:
-            Dict with metric names as keys, aggregates as values
-            Always includes "total_executions" key
-        """
-        # Build query filters
-        filters = [
-            AgentExecution.agent_name == agent_name,
-            AgentExecution.start_time >= window_start,
-            AgentExecution.start_time < window_end
-        ]
-
-        if not include_failed:
-            filters.append(AgentExecution.status == "completed")
-
-        # Aggregate query
-        statement = select(
-            func.count(AgentExecution.id).label("total"),
-            func.sum(
-                case((AgentExecution.status == "completed", 1), else_=0)
-            ).label("completed"),
-            func.avg(AgentExecution.duration_seconds).label("avg_duration"),
-            func.avg(AgentExecution.estimated_cost_usd).label("avg_cost"),
-            func.avg(AgentExecution.total_tokens).label("avg_tokens"),
-        ).where(and_(*filters))
-
-        result = self.session.exec(statement).first()
-
-        if not result or result.total == 0:
-            return {"total_executions": 0}
-
-        # Calculate success_rate
-        success_rate = result.completed / result.total if result.total > 0 else 0.0
-
-        # Build metrics dict
-        metrics = {
-            "total_executions": result.total,
-            "success_rate": {"mean": success_rate}
-        }
-
-        # Add duration metrics (if available)
-        if result.avg_duration is not None:
-            metrics["duration_seconds"] = {"mean": float(result.avg_duration)}
-
-        # Add cost metrics (if available)
-        if result.avg_cost is not None:
-            metrics["cost_usd"] = {"mean": float(result.avg_cost)}
-
-        # Add token metrics (if available)
-        if result.avg_tokens is not None:
-            metrics["total_tokens"] = {"mean": float(result.avg_tokens)}
-
-        logger.debug(
-            f"Queried metrics: agent={agent_name}, "
-            f"executions={metrics['total_executions']}, "
-            f"success_rate={success_rate:.2%}"
-        )
-
-        return metrics
 
     def get_baseline(
         self,
@@ -333,8 +242,8 @@ class PerformanceAnalyzer:
             ...     delta = current.get_metric("success_rate", "mean") - baseline.get_metric("success_rate", "mean")
             ...     print(f"Success rate change: {delta:+.2%}")
         """
-        # First, try to retrieve stored baseline
-        stored_baseline = self.retrieve_baseline(agent_name)
+        # Delegate to BaselineStorage for retrieval
+        stored_baseline = self.storage.retrieve(agent_name)
         if stored_baseline is not None:
             logger.info(
                 f"Retrieved stored baseline for {agent_name}: "
@@ -398,41 +307,8 @@ class PerformanceAnalyzer:
                 min_executions=50  # Higher threshold for baseline
             )
 
-        # Generate profile ID if not present
-        if profile.profile_id is None:
-            profile.profile_id = str(uuid.uuid4())
-
-        # Ensure agent_name matches
-        if profile.agent_name != agent_name:
-            raise ValueError(
-                f"Profile agent_name '{profile.agent_name}' does not match "
-                f"provided agent_name '{agent_name}'"
-            )
-
-        # Store to file system (validated path)
-        baseline_file = self._validate_baseline_path(agent_name)
-        try:
-            # Use O_NOFOLLOW to prevent TOCTOU symlink attacks at write time
-            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
-            if hasattr(os, 'O_NOFOLLOW'):
-                flags |= os.O_NOFOLLOW
-            fd = os.open(str(baseline_file), flags, 0o644)
-            with os.fdopen(fd, 'w') as f:
-                json.dump(profile.to_dict(), f, indent=2)
-
-            logger.info(
-                f"Stored baseline for {agent_name}: "
-                f"{profile.total_executions} executions, "
-                f"window {profile.window_start} to {profile.window_end}"
-            )
-
-            return profile
-
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.error(f"Failed to store baseline for {agent_name}: {e}")
-            raise IOError(f"Baseline storage failed: {e}") from e
+        # Delegate to BaselineStorage for persistence
+        return self.storage.store(profile, agent_name)
 
     def retrieve_baseline(
         self,
@@ -452,35 +328,8 @@ class PerformanceAnalyzer:
             >>> if baseline:
             ...     print(f"Baseline from {baseline.window_start}")
         """
-        baseline_file = self._validate_baseline_path(agent_name)
-
-        if not baseline_file.exists():
-            logger.debug(f"No stored baseline found for {agent_name}")
-            return None
-
-        try:
-            # Use O_NOFOLLOW to prevent TOCTOU symlink attacks at read time
-            flags = os.O_RDONLY
-            if hasattr(os, 'O_NOFOLLOW'):
-                flags |= os.O_NOFOLLOW
-            fd = os.open(str(baseline_file), flags)
-            with os.fdopen(fd, 'r') as f:
-                data = json.load(f)
-
-            profile = AgentPerformanceProfile.from_dict(data)
-
-            logger.debug(
-                f"Retrieved baseline for {agent_name}: "
-                f"{profile.total_executions} executions"
-            )
-
-            return profile
-
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.warning(f"Failed to retrieve baseline for {agent_name}: {e}")
-            return None
+        # Delegate to BaselineStorage
+        return self.storage.retrieve(agent_name)
 
     def delete_baseline(
         self,
@@ -499,25 +348,8 @@ class PerformanceAnalyzer:
             >>> analyzer.delete_baseline("my_agent")
             True
         """
-        baseline_file = self._validate_baseline_path(agent_name)
-
-        if not baseline_file.exists():
-            logger.debug(f"No baseline to delete for {agent_name}")
-            return False
-
-        try:
-            # Re-check symlink immediately before delete to reduce TOCTOU window
-            if baseline_file.is_symlink():
-                raise ValueError("Invalid agent name: symlink detected")
-            baseline_file.unlink()
-            logger.info(f"Deleted baseline for {agent_name}")
-            return True
-
-        except ValueError:
-            raise
-        except Exception as e:
-            logger.error(f"Failed to delete baseline for {agent_name}: {e}")
-            raise IOError(f"Baseline deletion failed: {e}") from e
+        # Delegate to BaselineStorage
+        return self.storage.delete(agent_name)
 
     def list_baselines(self) -> List[str]:
         """
@@ -530,17 +362,8 @@ class PerformanceAnalyzer:
             >>> agents_with_baselines = analyzer.list_baselines()
             >>> print(f"Found {len(agents_with_baselines)} baselines")
         """
-        baselines = []
-
-        for baseline_file in self.baseline_storage_path.glob("*_baseline.json"):
-            # Extract agent name from filename (remove "_baseline.json")
-            agent_name = baseline_file.stem.replace("_baseline", "")
-            # Only include names that pass validation
-            if self._AGENT_NAME_PATTERN.match(agent_name):
-                baselines.append(agent_name)
-
-        logger.debug(f"Found {len(baselines)} stored baselines")
-        return sorted(baselines)
+        # Delegate to BaselineStorage
+        return self.storage.list_all()
 
     def analyze_all_agents(
         self,
@@ -567,15 +390,8 @@ class PerformanceAnalyzer:
         window_end = datetime.now(timezone.utc)
         window_start = window_end - timedelta(hours=window_hours)
 
-        # Get unique agent names in time window
-        statement = select(AgentExecution.agent_name).where(
-            and_(
-                AgentExecution.start_time >= window_start,
-                AgentExecution.start_time < window_end
-            )
-        ).distinct()
-
-        agent_names = self.session.exec(statement).all()
+        # Delegate to MetricsAggregator to get agent names
+        agent_names = self.metrics.get_agent_names_in_window(window_start, window_end)
 
         logger.info(
             f"Found {len(agent_names)} agents with executions in window "

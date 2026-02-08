@@ -36,7 +36,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 from src.constants.durations import DAYS_90
-from src.constants.limits import DEFAULT_MIN_ITEMS, DEFAULT_MAX_ITEMS
+from src.constants.limits import DEFAULT_MAX_ITEMS
 from src.constants.probabilities import PROB_VERY_HIGH
 from src.self_improvement.data_models import SIOptimizationConfig
 

@@ -16,7 +16,7 @@ from src.constants.probabilities import (
     WEIGHT_VERY_LARGE,
 )
 from src.database.datetime_utils import utcnow
-from src.observability.constants import DEFAULT_MERIT_DECAY_RATE, DEFAULT_MERIT_WINDOW_DAYS
+from src.observability.constants import DEFAULT_MERIT_WINDOW_DAYS
 
 logger = logging.getLogger(__name__)
 

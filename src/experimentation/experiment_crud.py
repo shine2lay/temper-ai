@@ -14,8 +14,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-from src.database import get_session
 from src.constants.limits import THRESHOLD_LARGE_COUNT
+from src.database import get_session
 from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.models import (
     AssignmentStrategyType,

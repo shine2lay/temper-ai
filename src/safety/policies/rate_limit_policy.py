@@ -19,11 +19,8 @@ from typing import Any, Dict, List, Optional
 
 from src.constants.durations import SECONDS_PER_HOUR, SECONDS_PER_MINUTE
 from src.constants.limits import (
-    DEFAULT_MAX_ITEMS,
     LARGE_ITEM_LIMIT,
-    MEDIUM_ITEM_LIMIT,
     MULTIPLIER_LARGE,
-    PERCENT_20,
     SMALL_ITEM_LIMIT,
     THRESHOLD_MEDIUM_COUNT,
     VERY_LARGE_ITEM_LIMIT,

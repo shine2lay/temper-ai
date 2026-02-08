@@ -11,12 +11,6 @@ Higher-merit agents have more influence in close decisions.
 from typing import Any, Dict, List, Optional
 
 from src.strategies.base import AgentOutput, Conflict
-from src.strategies.constants import (
-    DEFAULT_AGREEMENT_THRESHOLD,
-    DEFAULT_CONVERGENCE_THRESHOLD,
-    DEFAULT_MERIT_LOOKBACK_DAYS,
-    LOW_AGREEMENT_THRESHOLD,
-)
 from src.strategies.conflict_resolution import (
     AgentMerit,
     ConflictResolver,
@@ -25,6 +19,11 @@ from src.strategies.conflict_resolution import (
     ResolutionResult,
     calculate_merit_weighted_votes,
     get_highest_weighted_decision,
+)
+from src.strategies.constants import (
+    DEFAULT_CONVERGENCE_THRESHOLD,
+    DEFAULT_MERIT_LOOKBACK_DAYS,
+    LOW_AGREEMENT_THRESHOLD,
 )
 
 

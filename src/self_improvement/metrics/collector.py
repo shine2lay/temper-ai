@@ -5,7 +5,6 @@ from abc import ABC, abstractmethod
 from threading import RLock
 from typing import Any, Dict, List, Optional, Protocol
 
-from src.constants.probabilities import PROB_MINIMAL, PROB_MEDIUM
 from src.self_improvement.metrics.types import SIMetricType
 
 logger = logging.getLogger(__name__)

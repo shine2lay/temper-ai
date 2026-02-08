@@ -35,7 +35,6 @@ from src.compiler.schemas import (
 # Import security limits from shared configuration
 from src.compiler.security_limits import CONFIG_SECURITY
 from src.constants.limits import MEDIUM_ITEM_LIMIT
-from src.constants.durations import SECONDS_PER_5_MINUTES
 
 # Import enhanced exceptions
 from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError

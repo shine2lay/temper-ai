@@ -25,7 +25,12 @@ from src.auth.oauth.config import OAuthConfig, get_provider_endpoints
 from src.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
 from src.auth.oauth.state_store import StateStore, create_state_store
 from src.auth.oauth.token_store import SecureTokenStore
-from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_MEDIUM, TIMEOUT_SHORT, TIMEOUT_NETWORK_CONNECT
+from src.constants.durations import (
+    SECONDS_PER_10_MINUTES,
+    TIMEOUT_MEDIUM,
+    TIMEOUT_NETWORK_CONNECT,
+    TIMEOUT_SHORT,
+)
 from src.constants.limits import VERY_LARGE_ITEM_LIMIT
 from src.constants.sizes import TOKEN_BYTES_NONCE, TOKEN_BYTES_STATE
 from src.utils.exceptions import FrameworkException

@@ -15,9 +15,9 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import JSON, DateTime, ForeignKey, String, func
 from sqlmodel import Column, Field, Index, Relationship, SQLModel
 
-from src.database.datetime_utils import utcnow
-from src.constants.probabilities import PROB_NEAR_CERTAIN, FRACTION_HALF
 from src.constants.limits import THRESHOLD_LARGE_COUNT
+from src.constants.probabilities import FRACTION_HALF, PROB_NEAR_CERTAIN
+from src.database.datetime_utils import utcnow
 
 
 # Enum types for type safety

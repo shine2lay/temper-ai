@@ -5,8 +5,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
 
-from src.constants.probabilities import PROB_MINIMAL, PROB_MEDIUM
-
 
 class SIMetricType(Enum):
     """Classification of metric collection methods.

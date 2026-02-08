@@ -19,13 +19,9 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from src.constants.durations import (
-    RATE_LIMIT_WINDOW_DAY,
-    RATE_LIMIT_WINDOW_HOUR,
-    RATE_LIMIT_WINDOW_MINUTE,
-    RATE_LIMIT_WINDOW_SECOND,
     SECONDS_PER_DAY,
 )
-from src.constants.limits import PERCENT_10, PERCENT_100, THRESHOLD_MASSIVE_COUNT
+from src.constants.limits import PERCENT_100, THRESHOLD_MASSIVE_COUNT
 
 # Token bucket safety limits
 MAX_TOKENS_SAFETY_LIMIT = 1_000_000

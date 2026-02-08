@@ -21,7 +21,6 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from src.constants.limits import ZERO_THRESHOLD
 from src.self_improvement.metrics.collector import ExecutionProtocol, MetricCollector
 from src.self_improvement.metrics.types import SIMetricType
 

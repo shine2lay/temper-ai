@@ -7,7 +7,7 @@ and reasoning guides to improve LLM output quality.
 import copy
 from typing import Dict, List
 
-from src.constants.limits import SMALL_ITEM_LIMIT, MULTIPLIER_SMALL
+from src.constants.limits import MULTIPLIER_SMALL, SMALL_ITEM_LIMIT
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
     LearnedPattern,

@@ -23,10 +23,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.constants.limits import (
-    DEFAULT_MIN_ITEMS,
-    MEDIUM_ITEM_LIMIT,
     LARGE_ITEM_LIMIT,
-    THRESHOLD_LARGE_COUNT,
 )
 
 try:

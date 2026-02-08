@@ -23,7 +23,6 @@ from rich.console import Console
 from rich.table import Table
 
 from src.constants.durations import HOURS_PER_WEEK
-from src.constants.limits import DEFAULT_MAX_ITEMS, MEDIUM_ITEM_LIMIT
 
 console = Console()
 logger = logging.getLogger(__name__)

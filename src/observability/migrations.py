@@ -74,7 +74,8 @@ def check_schema_version(db_manager: DatabaseManager) -> Optional[str]:
     try:
         with db_manager.session() as session:
             result = session.execute(
-                text(f"SELECT version FROM schema_version ORDER BY applied_at DESC LIMIT {DEFAULT_MIN_ITEMS}")
+                text("SELECT version FROM schema_version ORDER BY applied_at DESC LIMIT :limit"),
+                {"limit": DEFAULT_MIN_ITEMS}
             )
             row = result.fetchone()
             return row[0] if row else None

@@ -10,9 +10,13 @@ from typing import Any, Dict
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.constants import (
-    MAX_NESTING_DEPTH as _MAX_NESTING_DEPTH,
-    MAX_EXPONENT as _MAX_EXPONENT,
     MAX_COLLECTION_SIZE,
+)
+from src.tools.constants import (
+    MAX_EXPONENT as _MAX_EXPONENT,
+)
+from src.tools.constants import (
+    MAX_NESTING_DEPTH as _MAX_NESTING_DEPTH,
 )
 
 # Safe operators allowed in expressions

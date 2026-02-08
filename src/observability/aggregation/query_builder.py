@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import Select
 
-from src.constants.probabilities import PROB_NEAR_CERTAIN, PROB_VERY_HIGH_PLUS
+from src.constants.probabilities import PROB_NEAR_CERTAIN
 
 
 class AggregationQueryBuilder:

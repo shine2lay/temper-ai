@@ -18,7 +18,6 @@ from typing import Any, Dict, List, Optional, Set
 
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
-    FILE_ACCESS_PRIORITY,
     MAX_EXCLUDED_PATH_LENGTH,
     MAX_EXCLUDED_PATHS,
 )

@@ -26,8 +26,8 @@ from src.constants.durations import (
 )
 from src.constants.limits import (
     DEFAULT_QUEUE_SIZE,
-    MEDIUM_ITEM_LIMIT,
     MAX_TEXT_LENGTH,
+    MEDIUM_ITEM_LIMIT,
 )
 from src.constants.probabilities import PROB_HIGH
 from src.constants.retries import (

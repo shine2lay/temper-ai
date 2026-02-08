@@ -28,6 +28,10 @@ if TYPE_CHECKING:
 
 from src.agents.agent_observer import AgentObserver
 from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
+from src.agents.constants import (
+    OUTPUT_PREVIEW_LENGTH,
+    PROMPT_PREVIEW_LENGTH,
+)
 from src.agents.cost_estimator import estimate_cost
 from src.agents.llm import (  # M-04: Import from new location
     AnthropicLLM,
@@ -48,6 +52,8 @@ from src.agents.response_parser import (
     parse_tool_calls,
     sanitize_tool_output,
 )
+from src.constants.limits import DEFAULT_POOL_SIZE as _POOL_SIZE_LIMIT
+from src.constants.retries import DEFAULT_BACKOFF_MULTIPLIER, RETRY_JITTER_MIN
 from src.tools.registry import ToolRegistry
 from src.utils.exceptions import (
     ConfigValidationError,
@@ -55,14 +61,6 @@ from src.utils.exceptions import (
     ToolNotFoundError,
     sanitize_error_message,
 )
-from src.constants.limits import DEFAULT_POOL_SIZE as _POOL_SIZE_LIMIT
-from src.agents.constants import (
-    PROMPT_PREVIEW_LENGTH,
-    OUTPUT_PREVIEW_LENGTH,
-)
-from src.constants.probabilities import PROB_MEDIUM, WEIGHT_LARGE
-from src.constants.retries import DEFAULT_BACKOFF_MULTIPLIER, RETRY_JITTER_MIN
-from src.constants.sizes import SIZE_256KB
 
 logger = logging.getLogger(__name__)
 

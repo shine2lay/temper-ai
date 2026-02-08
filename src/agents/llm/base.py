@@ -30,6 +30,20 @@ except ImportError:
 
 # Import canonical execution context for cache isolation
 # Import circuit breaker for resilience
+from src.agents.constants import (
+    DEFAULT_KEEPALIVE_EXPIRY_SECONDS,
+    DEFAULT_MAX_CIRCUIT_BREAKERS,
+    DEFAULT_MAX_HTTP_CLIENTS,
+    DEFAULT_MAX_HTTP_CONNECTIONS,
+    DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
+    MAX_ERROR_MESSAGE_LENGTH,
+)
+from src.constants.durations import SLEEP_VERY_SHORT, TIMEOUT_HTTP_DEFAULT
+from src.constants.retries import (
+    DEFAULT_BACKOFF_MULTIPLIER,
+    DEFAULT_MAX_RETRIES,
+    RETRY_JITTER_MIN,
+)
 from src.core.circuit_breaker import (  # M-03: Use canonical import
     CircuitBreaker,
     CircuitBreakerConfig,
@@ -43,22 +57,6 @@ from src.utils.exceptions import (
     LLMRateLimitError,
     LLMTimeoutError,
     sanitize_error_message,
-)
-from src.agents.constants import (
-    DEFAULT_MAX_HTTP_CLIENTS,
-    DEFAULT_MAX_CIRCUIT_BREAKERS,
-    DEFAULT_MAX_HTTP_CONNECTIONS,
-    DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
-    DEFAULT_KEEPALIVE_EXPIRY_SECONDS,
-    MAX_ERROR_MESSAGE_LENGTH,
-    RATE_LIMIT_CRITICAL_THRESHOLD_SECONDS,
-)
-from src.constants.durations import TIMEOUT_HTTP_DEFAULT, SLEEP_VERY_SHORT
-from src.constants.retries import (
-    DEFAULT_MAX_RETRIES,
-    DEFAULT_BACKOFF_MULTIPLIER,
-    RETRY_JITTER_MIN,
-    RETRY_JITTER_MAX,
 )
 
 # Module logger for connection management warnings

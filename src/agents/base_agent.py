@@ -11,17 +11,16 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict
 
 if TYPE_CHECKING:
     from src.schemas import AgentConfig
-from src.core.context import ExecutionContext  # canonical definition; re-exported here
 from src.agents.constants import (
     BASE_CONFIDENCE,
+    MIN_OUTPUT_LENGTH,
+    MIN_REASONING_LENGTH,
     REASONING_BONUS,
     TOOL_FAILURE_MAJOR_PENALTY,
     TOOL_FAILURE_MINOR_PENALTY,
-    MIN_OUTPUT_LENGTH,
-    MIN_REASONING_LENGTH,
 )
-from src.constants.probabilities import CONFIDENCE_LOW, CONFIDENCE_MEDIUM, PROB_MEDIUM
-from src.constants.limits import THRESHOLD_MIN_COUNT, THRESHOLD_SMALL_COUNT
+from src.constants.probabilities import CONFIDENCE_LOW, PROB_MEDIUM
+from src.core.context import ExecutionContext  # canonical definition; re-exported here
 
 
 class ToolCallRecord(TypedDict):

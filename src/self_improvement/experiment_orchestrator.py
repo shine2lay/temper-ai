@@ -21,6 +21,11 @@ from typing import Any, Callable, Dict, Generator, List, Optional
 from sqlalchemy.orm import Session
 from sqlmodel import func, select
 
+from src.constants.limits import DEFAULT_BATCH_SIZE
+from src.self_improvement.constants import (
+    DEFAULT_ALPHA,
+    MAX_CONCURRENT_EXPERIMENTS,
+)
 from src.self_improvement.data_models import (
     ExecutionResult,
     SelfImprovementExperiment,
@@ -35,11 +40,6 @@ from src.self_improvement.statistical_analyzer import (
 from src.self_improvement.storage.experiment_models import (
     M5ExecutionResult,
     M5Experiment,
-)
-from src.constants.limits import DEFAULT_BATCH_SIZE
-from src.self_improvement.constants import (
-    DEFAULT_ALPHA,
-    MAX_CONCURRENT_EXPERIMENTS,
 )
 from src.utils.exceptions import FrameworkException
 

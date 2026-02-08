@@ -18,8 +18,8 @@ from typing import Any, Dict, Optional, Set
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.constants import (
     DEFAULT_BASH_TIMEOUT,
-    MAX_BASH_TIMEOUT,
     MAX_BASH_OUTPUT_LENGTH,
+    MAX_BASH_TIMEOUT,
 )
 
 logger = logging.getLogger(__name__)

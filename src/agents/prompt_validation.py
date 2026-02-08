@@ -6,7 +6,7 @@ Server-Side Template Injection (SSTI) attacks.
 """
 from typing import Any, Dict
 
-from src.constants.limits import MEDIUM_ITEM_LIMIT, MULTIPLIER_MEDIUM, MULTIPLIER_SMALL
+from src.constants.limits import MULTIPLIER_MEDIUM, MULTIPLIER_SMALL
 from src.constants.sizes import SIZE_100MB
 from src.utils.exceptions import AgentError, ErrorCode
 

@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional
 
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
-    BLAST_RADIUS_PRIORITY,
     DEFAULT_MAX_ENTITIES,
     DEFAULT_MAX_FILES,
     DEFAULT_MAX_LINES_PER_FILE,

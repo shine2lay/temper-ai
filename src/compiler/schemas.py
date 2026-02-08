@@ -13,14 +13,13 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.constants.durations import (
+    SECONDS_PER_5_MINUTES,
     SECONDS_PER_10_MINUTES,
     SECONDS_PER_HOUR,
     SECONDS_PER_MINUTE,
-    SECONDS_PER_5_MINUTES,
     SECONDS_PER_WEEK,
 )
 from src.constants.limits import (
-    DEFAULT_MAX_ITEMS,
     DEFAULT_MIN_ITEMS,
     DEFAULT_QUEUE_SIZE,
     MEDIUM_ITEM_LIMIT,

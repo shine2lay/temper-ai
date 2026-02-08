@@ -13,11 +13,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
+from src.constants.limits import THRESHOLD_LARGE_COUNT
 from src.core.service import Service
 from src.database import get_session
 from src.experimentation.analyzer import StatisticalAnalyzer
 from src.experimentation.assignment import VariantAssigner
 from src.experimentation.config_manager import ConfigManager
+from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.experiment_crud import ExperimentCRUD
 from src.experimentation.models import (
     AssignmentStrategyType,
@@ -30,10 +32,8 @@ from src.experimentation.models import (
     VariantAssignment,
     utcnow,
 )
-from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.validators import validate_experiment_name, validate_variant_list
 from src.utils.logging import get_logger
-from src.constants.limits import THRESHOLD_LARGE_COUNT
 
 logger = get_logger(__name__)
 

@@ -9,7 +9,7 @@ Generates configuration variants for improving ERC721 code generation:
 import copy
 from typing import Dict, List
 
-from src.constants.probabilities import PROB_MINIMAL, FRACTION_HALF
+from src.constants.probabilities import FRACTION_HALF, PROB_MINIMAL
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
     LearnedPattern,

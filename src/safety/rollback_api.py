@@ -29,7 +29,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from src.constants.durations import SECONDS_PER_HOUR
 from src.constants.limits import THRESHOLD_LARGE_COUNT
-
 from src.safety.rollback import RollbackManager, RollbackResult, RollbackSnapshot
 from src.utils.logging import get_logger
 

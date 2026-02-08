@@ -32,7 +32,6 @@ from src.constants.limits import (
     MIN_POSITIVE_VALUE,
     MIN_WORKERS,
     MULTIPLIER_LARGE,
-    MULTIPLIER_MEDIUM,
     PERCENT_20,
     PERCENT_80,
 )
@@ -42,9 +41,9 @@ from src.constants.sizes import (
     BYTES_PER_KB,
     BYTES_PER_MB,
     BYTES_PER_TB,
+    SIZE_1GB,
     SIZE_10MB,
     SIZE_100MB,
-    SIZE_1GB,
 )
 from src.safety.base import BaseSafetyPolicy
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity

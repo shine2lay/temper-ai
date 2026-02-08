@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from src.constants.durations import DEFAULT_TOKEN_TTL_SECONDS, SECONDS_PER_MINUTE, SECONDS_PER_DAY
+from src.constants.durations import DEFAULT_TOKEN_TTL_SECONDS, SECONDS_PER_DAY, SECONDS_PER_MINUTE
 
 
 class OAuthConfigurationError(Exception):

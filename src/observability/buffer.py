@@ -12,12 +12,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional, Union
 
+from src.constants.durations import SECONDS_PER_5_MINUTES
 from src.observability.constants import (
     DEFAULT_BUFFER_SIZE,
     DEFAULT_DLQ_MAX_SIZE,
     MAX_RETRY_ATTEMPTS,
 )
-from src.constants.durations import SECONDS_PER_5_MINUTES
 
 logger = logging.getLogger(__name__)
 

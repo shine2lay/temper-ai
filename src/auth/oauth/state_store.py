@@ -18,9 +18,8 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_SHORT, TIMEOUT_NETWORK_CONNECT
-from src.constants.limits import PERCENT_80, PERCENT_20, THRESHOLD_MASSIVE_COUNT
-from src.constants.probabilities import WEIGHT_LARGE
+from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_SHORT
+from src.constants.limits import PERCENT_20, PERCENT_80, THRESHOLD_MASSIVE_COUNT
 
 logger = logging.getLogger(__name__)
 

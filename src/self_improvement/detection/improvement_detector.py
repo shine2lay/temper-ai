@@ -10,9 +10,8 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session
 
-from src.constants.durations import HOURS_PER_DAY, DAYS_PER_WEEK
+from src.constants.durations import DAYS_PER_WEEK, HOURS_PER_DAY
 from src.constants.limits import DEFAULT_BATCH_SIZE
-
 from src.self_improvement.detection.improvement_proposal import ImprovementProposal
 from src.self_improvement.detection.problem_detector import (
     ProblemDetectionDataError as DetectorInsufficientDataError,

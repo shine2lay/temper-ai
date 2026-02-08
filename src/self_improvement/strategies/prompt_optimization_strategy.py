@@ -14,6 +14,14 @@ from src.self_improvement.strategies.strategy import (
     SIOptimizationConfig,
 )
 
+# Expected impact estimates by problem type
+IMPACT_QUALITY_LOW = 0.40  # High impact on quality issues
+IMPACT_ERROR_RATE_HIGH = 0.30  # Moderate impact on error rates
+IMPACT_INCONSISTENT_OUTPUT = 0.35  # Good impact on consistency
+IMPACT_HALLUCINATION = 0.45  # Very high impact on hallucination
+IMPACT_INCORRECT_OUTPUT = 0.35  # Good impact on correctness
+IMPACT_DEFAULT = 0.15  # Default impact for unknown problem types
+
 
 class PromptOptimizationStrategy(ImprovementStrategy):
     """
@@ -192,11 +200,11 @@ Structure your response as follows:
         problem_type = problem.get("problem_type", problem.get("type", "unknown"))
 
         impact_by_type = {
-            "quality_low": 0.40,  # High impact on quality
-            "error_rate_high": 0.30,  # Moderate impact on errors
-            "inconsistent_output": 0.35,  # Good impact on consistency
-            "hallucination": 0.45,  # Very high impact on hallucination
-            "incorrect_output": 0.35,  # Good impact on correctness
+            "quality_low": IMPACT_QUALITY_LOW,
+            "error_rate_high": IMPACT_ERROR_RATE_HIGH,
+            "inconsistent_output": IMPACT_INCONSISTENT_OUTPUT,
+            "hallucination": IMPACT_HALLUCINATION,
+            "incorrect_output": IMPACT_INCORRECT_OUTPUT,
         }
 
-        return impact_by_type.get(problem_type, 0.15)
+        return impact_by_type.get(problem_type, IMPACT_DEFAULT)

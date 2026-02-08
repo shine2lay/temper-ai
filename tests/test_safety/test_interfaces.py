@@ -784,6 +784,7 @@ class TestEdgeCases:
         )
         # Should not raise
         policy.report_violation(violation)
+        assert True  # Verifies no exception raised
 
     def test_validator_interface(self):
         """Test Validator interface."""
@@ -858,6 +859,7 @@ class TestEdgeCases:
         # These should not raise (default implementations)
         service.initialize()
         service.shutdown()
+        assert True  # Verifies no exception raised
 
     def test_metadata_no_override(self):
         """Test that child metadata doesn't override parent metadata."""
@@ -962,6 +964,7 @@ class TestEdgeCases:
 
         # Should not raise when raise_exception=False
         service.handle_violations([violation], raise_exception=False)
+        assert True  # Verifies no exception raised
 
     def test_service_mixin_handle_empty_violations(self):
         """Test handle_violations with empty list."""
@@ -973,6 +976,7 @@ class TestEdgeCases:
         service = TestService()
         # Should not raise with empty list
         service.handle_violations([])
+        assert True  # Verifies no exception raised
 
     def test_validation_with_metadata_merge(self):
         """Test that metadata from child and parent are merged correctly."""

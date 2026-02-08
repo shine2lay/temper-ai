@@ -56,7 +56,7 @@ from src.tools.web_scraper import WebScraper
 
 
 @pytest.fixture
-def test_db():
+def db_fixture():
     """Create in-memory test database."""
     db = init_database("sqlite:///:memory:")
     db.create_all_tables()
@@ -82,7 +82,7 @@ def tool_registry():
 
 
 @pytest.fixture
-def tracker(test_db):
+def tracker(db_fixture):
     """Create execution tracker (if available)."""
     if TRACKER_READY:
         from src.observability.tracker import ExecutionTracker
@@ -253,7 +253,7 @@ def test_agent_execution_real_ollama(config_loader, ollama_available):
 
 
 @pytest.mark.integration
-def test_database_tracking_manual(test_db):
+def test_database_tracking_manual(db_fixture):
     """
     Test manual database tracking of execution.
 
@@ -307,7 +307,7 @@ def test_database_tracking_manual(test_db):
 
 
 @pytest.mark.integration
-def test_console_visualization(test_db):
+def test_console_visualization(db_fixture):
     """
     Test console visualization of workflow execution.
 
@@ -389,7 +389,7 @@ def test_console_visualization(test_db):
 @pytest.mark.skipif(not FULL_WORKFLOW_READY, reason="Engine registry (m2.5-03) or observability hooks (m2-06) not ready")
 @pytest.mark.integration
 def test_m2_full_workflow(
-    test_db,
+    db_fixture,
     config_loader,
     tool_registry,
     tracker,
@@ -502,7 +502,7 @@ def test_m2_full_workflow(
 @pytest.mark.skipif(not FULL_WORKFLOW_READY, reason="Engine registry (m2.5-03) or observability hooks (m2-06) not ready")
 @pytest.mark.integration
 def test_agent_with_calculator(
-    test_db,
+    db_fixture,
     config_loader,
     tool_registry,
     tracker,
@@ -593,7 +593,7 @@ def test_agent_with_calculator(
 @pytest.mark.skipif(not FULL_WORKFLOW_READY, reason="Engine registry (m2.5-03) or observability hooks (m2-06) not ready")
 @pytest.mark.integration
 def test_console_streaming(
-    test_db,
+    db_fixture,
     config_loader,
     tool_registry,
     tracker,

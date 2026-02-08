@@ -25,7 +25,7 @@ class TestWorkflowRecovery:
     """Test workflow error recovery and retry mechanisms."""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
             from src.observability.database import get_database
@@ -35,7 +35,7 @@ class TestWorkflowRecovery:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -44,7 +44,7 @@ class TestWorkflowRecovery:
     @pytest.mark.integration
     def test_workflow_with_agent_retry_on_transient_failure(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test workflow retries agent execution on transient failures.
@@ -176,7 +176,7 @@ class TestWorkflowRecovery:
     @pytest.mark.integration
     def test_workflow_with_stage_retry(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test workflow handles stage failure and recovery.
@@ -255,7 +255,7 @@ class TestWorkflowRecovery:
     @pytest.mark.integration
     def test_workflow_with_exponential_backoff(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test workflow uses exponential backoff for retries.
@@ -374,7 +374,7 @@ class TestCheckpointResume:
     """Test workflow checkpoint and resume capabilities."""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
             from src.observability.database import get_database
@@ -384,7 +384,7 @@ class TestCheckpointResume:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -393,7 +393,7 @@ class TestCheckpointResume:
     @pytest.mark.integration
     def test_workflow_checkpoint_and_resume(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test workflow can be checkpointed and resumed.
@@ -524,7 +524,7 @@ class TestCheckpointResume:
     @pytest.mark.integration
     def test_partial_checkpoint_recovery(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test workflow can recover from partial checkpoint.

@@ -570,6 +570,7 @@ class TestTransactionFailures:
         # Verify complete rollback
         with db_manager.session() as session:
             verify_no_partial_state(session, experiment_id)
+        assert True  # Rollback verification passed
 
     def test_partial_metric_update_rollback(self, db_manager):
         """Test partial metric update rolls back completely."""

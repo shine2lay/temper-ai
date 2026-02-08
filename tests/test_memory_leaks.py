@@ -167,7 +167,7 @@ def simple_workflow_config():
 
 
 @pytest.fixture
-def test_db():
+def leak_db():
     """In-memory database for testing."""
     db = DatabaseManager("sqlite:///:memory:")
     db.create_all_tables()
@@ -337,7 +337,7 @@ def test_llm_provider_no_memory_leak(minimal_agent_config):
 # ============================================================================
 
 @pytest.mark.memory
-def test_observability_tracking_no_memory_leak(test_db):
+def test_observability_tracking_no_memory_leak(leak_db):
     """Test that observability tracking doesn't leak memory.
 
     Acceptance Criteria:
@@ -345,7 +345,7 @@ def test_observability_tracking_no_memory_leak(test_db):
     - Database connections properly closed
     """
     # Setup tracker
-    tracker = ExecutionTracker(db=test_db)
+    tracker = ExecutionTracker(db=leak_db)
 
     # Define operation
     event_counter = count()
@@ -610,7 +610,7 @@ async def test_concurrent_workflows_no_memory_leak(simple_workflow_config):
 # ============================================================================
 
 @pytest.mark.memory
-def test_database_connection_pool_no_memory_leak(test_db):
+def test_database_connection_pool_no_memory_leak(leak_db):
     """Test that database connection pool doesn't leak memory.
 
     Acceptance Criteria:
@@ -622,7 +622,7 @@ def test_database_connection_pool_no_memory_leak(test_db):
     # Define operation
     db_counter = count()
     def db_operation():
-        with test_db.session() as session:
+        with leak_db.session() as session:
             # Simulate database operation
             workflow = WorkflowExecution(
                 id=f"workflow_{next(db_counter)}",  # Add explicit id

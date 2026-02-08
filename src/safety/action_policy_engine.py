@@ -22,8 +22,6 @@ Example:
     >>> if not result.allowed:
     ...     print(f"Action blocked: {result.violations[0].message}")
 """
-import hashlib
-import json
 import logging
 import time
 from collections import OrderedDict
@@ -33,6 +31,22 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.constants.durations import MILLISECONDS_PER_SECOND, TTL_LONG
 from src.constants.limits import THRESHOLD_MEDIUM_COUNT
 from src.core.circuit_breaker import CircuitBreakerError
+from src.safety._action_policy_helpers import (
+    cache_result as _cache_result_helper,
+)
+from src.safety._action_policy_helpers import (
+    canonical_json,
+    context_to_dict,
+    get_cache_key,
+    get_cached_result,
+    get_policy_snapshot,
+)
+from src.safety._action_policy_helpers import (
+    log_violations as _log_violations_helper,
+)
+from src.safety._action_policy_helpers import (
+    log_violations_sync as _log_violations_sync_helper,
+)
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.policy_registry import PolicyRegistry
 
@@ -436,74 +450,7 @@ class ActionPolicyEngine:
         if self._sanitizer is None:
             from src.observability.sanitization import DataSanitizer
             self._sanitizer = DataSanitizer()
-
-        for violation in violations:
-            safe_message = self._sanitizer.sanitize_text(violation.message).sanitized_text
-            logger.warning(
-                f"Safety violation: [{violation.severity.name}] "
-                f"{violation.policy_name}: {safe_message}",
-                extra={
-                    'agent_id': context.agent_id,
-                    'workflow_id': context.workflow_id,
-                    'stage_id': context.stage_id,
-                    'policy': violation.policy_name,
-                    'severity': violation.severity.name,
-                    'action_type': context.action_type
-                }
-            )
-
-    def _canonical_json(self, obj: Any) -> str:
-        """Create canonical JSON representation for deterministic hashing.
-
-        This function ensures that identical logical data always produces
-        identical JSON strings, preventing cache collision attacks.
-
-        Security properties:
-        - Recursively sorts all dict keys (not just top-level)
-        - Deterministic handling of all Python types
-        - Resistant to collision attacks via crafted nested structures
-        - Platform-independent serialization
-
-        Args:
-            obj: Python object to serialize
-
-        Returns:
-            Canonical JSON string
-
-        Example:
-            >>> engine._canonical_json({"b": {"d": 1, "c": 2}, "a": 3})
-            '{"a":3,"b":{"c":2,"d":1}}'  # All keys sorted at all levels
-        """
-        def canonicalize(o: Any) -> Any:
-            """Recursively canonicalize an object."""
-            if isinstance(o, dict):
-                # Sort dict keys recursively
-                return {k: canonicalize(v) for k, v in sorted(o.items())}
-            elif isinstance(o, (list, tuple)):
-                # Lists/tuples: canonicalize elements (preserve order)
-                return [canonicalize(item) for item in o]
-            elif isinstance(o, set):
-                # Sets: sort for determinism (sets are unordered)
-                return sorted([canonicalize(item) for item in o])
-            elif isinstance(o, (str, int, float, bool, type(None))):
-                # Primitives: return as-is
-                return o
-            else:
-                # Unsupported types: convert to string representation
-                # This ensures determinism for custom types
-                return str(o)
-
-        # Canonicalize the object structure
-        canonical_obj = canonicalize(obj)
-
-        # Serialize with sorted keys and no whitespace
-        # Use separators for minimal, deterministic output
-        return json.dumps(
-            canonical_obj,
-            sort_keys=True,
-            separators=(',', ':'),  # No whitespace
-            ensure_ascii=True  # ASCII-only for platform independence
-        )
+        _log_violations_sync_helper(violations, context, self._sanitizer)
 
     def _get_cache_key(
         self,
@@ -511,74 +458,27 @@ class ActionPolicyEngine:
         action: Dict[str, Any],
         context: PolicyExecutionContext
     ) -> str:
-        """Generate cache key for policy result.
-
-        Creates deterministic hash of policy + action + context.
-
-        SECURITY: Uses canonical JSON serialization to prevent cache
-        collision attacks. Standard json.dumps(sort_keys=True) only sorts
-        top-level keys, allowing collision via crafted nested structures.
-
-        Args:
-            policy: Safety policy being validated
-            action: Action dict (may contain nested structures)
-            context: Execution context
-
-        Returns:
-            SHA-256 hex digest of canonical representation
-        """
-        # Create deterministic representation
-        data = {
-            'policy': policy.name,
-            'policy_version': policy.version,
-            'action': action,
-            'agent_id': context.agent_id,
-            'action_type': context.action_type,
-            'workflow_id': context.workflow_id,
-            'stage_id': context.stage_id,
-        }
-
-        # Use canonical JSON to prevent collision attacks
-        json_str = self._canonical_json(data)
-        return hashlib.sha256(json_str.encode()).hexdigest()
+        """Generate cache key for policy result."""
+        return get_cache_key(
+            policy, action, context.agent_id,
+            context.action_type, context.workflow_id, context.stage_id,
+        )
 
     def _get_cached_result(self, cache_key: str) -> Optional[ValidationResult]:
         """Get cached validation result if available and not expired."""
-        if cache_key in self._cache:
-            cached_result, timestamp = self._cache[cache_key]
-
-            # Check if expired
-            if time.time() - timestamp < self.cache_ttl:
-                # Move to end (most recently used) for O(1) LRU
-                self._cache.move_to_end(cache_key)
-                return cached_result
-            else:
-                # Expired - remove from cache
-                del self._cache[cache_key]
-
-        return None
+        return get_cached_result(self._cache, cache_key, self.cache_ttl)
 
     def _cache_result(self, cache_key: str, result: ValidationResult) -> None:
-        """Cache validation result with timestamp.
+        """Cache validation result with timestamp."""
+        _cache_result_helper(self._cache, cache_key, result, self.max_cache_size)
 
-        Uses OrderedDict for O(1) LRU eviction instead of O(n log n) sorted eviction.
-        """
-        self._cache[cache_key] = (result, time.time())
-        self._cache.move_to_end(cache_key)
-
-        # Evict LRU entries (oldest are at the front of the OrderedDict)
-        while len(self._cache) > self.max_cache_size:
-            evicted_key, _ = self._cache.popitem(last=False)
-            logger.debug("Cache eviction: removed LRU entry %s", evicted_key)
-
-    def _get_policy_snapshot(self) -> str:
-        """Get a fingerprint of the current set of registered policies."""
-        names = sorted(self.registry.list_policies())
-        return hashlib.sha256(",".join(names).encode()).hexdigest()
+    def _canonical_json(self, obj: Any) -> str:
+        """Create canonical JSON representation for deterministic hashing."""
+        return canonical_json(obj)
 
     def _invalidate_cache_if_policies_changed(self) -> None:
         """SA-06: Clear cache when registered policies change."""
-        snapshot = self._get_policy_snapshot()
+        snapshot = get_policy_snapshot(self.registry)
         if self._cached_policy_snapshot is None:
             self._cached_policy_snapshot = snapshot
         elif snapshot != self._cached_policy_snapshot:
@@ -594,49 +494,18 @@ class ActionPolicyEngine:
 
     def _context_to_dict(self, context: PolicyExecutionContext) -> Dict[str, Any]:
         """Convert PolicyExecutionContext to dict for policy validation."""
-        return {
-            'agent_id': context.agent_id,
-            'workflow_id': context.workflow_id,
-            'stage_id': context.stage_id,
-            'action_type': context.action_type,
-            'action_data': context.action_data,
-            'metadata': context.metadata
-        }
+        return context_to_dict(context)
 
     async def _log_violations(
         self,
         violations: List[SafetyViolation],
         context: PolicyExecutionContext
     ) -> None:
-        """Log violations to observability system.
-
-        Note: This is a placeholder for M1 observability integration.
-        Actual implementation would write to database.
-        """
-        # SECURITY: Lazy-load sanitizer for defense-in-depth
-        # Even though policies should sanitize, we add an extra layer
+        """Log violations to observability system."""
         if self._sanitizer is None:
             from src.observability.sanitization import DataSanitizer
             self._sanitizer = DataSanitizer()
-
-        for violation in violations:
-            # SECURITY: Sanitize violation message for defense-in-depth
-            safe_message = self._sanitizer.sanitize_text(violation.message).sanitized_text
-
-            logger.warning(
-                f"Safety violation: [{violation.severity.name}] "
-                f"{violation.policy_name}: {safe_message}",
-                extra={
-                    'agent_id': context.agent_id,
-                    'workflow_id': context.workflow_id,
-                    'stage_id': context.stage_id,
-                    'policy': violation.policy_name,
-                    'severity': violation.severity.name,
-                    'action_type': context.action_type
-                    # NOTE: Intentionally omit violation.context for security
-                }
-            )
-
+        await _log_violations_helper(violations, context, self._sanitizer)
         self._violations_logged += len(violations)
 
     def get_metrics(self) -> Dict[str, Any]:

@@ -284,7 +284,7 @@ class TestTimeoutHandling:
         assert result.metadata["timeout"] == 1
         assert str(workspace) in result.result
 
-    @patch("src.tools.bash.subprocess.run")
+    @patch("src.tools._bash_helpers.subprocess.run")
     def test_timeout_expired(self, mock_run, bash_tool, workspace):
         """TimeoutExpired should be caught and reported."""
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="sleep", timeout=1)
@@ -364,14 +364,14 @@ class TestEdgeCases:
         assert result.success is False
         assert "non-empty string" in result.error
 
-    @patch("src.tools.bash.subprocess.run")
+    @patch("src.tools._bash_helpers.subprocess.run")
     def test_command_not_found(self, mock_run, bash_tool, workspace):
         mock_run.side_effect = FileNotFoundError()
         result = bash_tool.execute(command="ls", working_directory=str(workspace))
         assert result.success is False
         assert "not found" in result.error.lower()
 
-    @patch("src.tools.bash.subprocess.run")
+    @patch("src.tools._bash_helpers.subprocess.run")
     def test_permission_denied(self, mock_run, bash_tool, workspace):
         mock_run.side_effect = PermissionError()
         result = bash_tool.execute(command="ls", working_directory=str(workspace))
@@ -388,7 +388,7 @@ class TestEdgeCases:
         assert result.success is True
         assert "test content" in result.result
 
-    @patch("src.tools.bash.subprocess.run")
+    @patch("src.tools._bash_helpers.subprocess.run")
     def test_long_output_truncation(self, mock_run, bash_tool, workspace):
         """Very long output should be truncated."""
         long_output = "x" * 60000

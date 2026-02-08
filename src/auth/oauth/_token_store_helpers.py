@@ -1,0 +1,245 @@
+"""Helper functions extracted from SecureTokenStore to reduce class size.
+
+These are internal implementation details - use SecureTokenStore's public API.
+"""
+import json
+import logging
+import os
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Optional
+
+from cryptography.fernet import Fernet, InvalidToken
+
+logger = logging.getLogger(__name__)
+
+# Optional keyring import
+try:
+    import keyring
+    from keyring.errors import KeyringError
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
+    KeyringError = Exception
+
+from src.utils.exceptions import SecurityError
+
+
+def get_or_create_keyring_key(
+    keyring_service: str,
+    keyring_key_name: str,
+) -> str:
+    """Get encryption key from OS keyring or create new one.
+
+    Args:
+        keyring_service: Keyring service name
+        keyring_key_name: Keyring key identifier
+
+    Returns:
+        Fernet encryption key (base64-encoded)
+
+    Raises:
+        KeyringError: If keyring backend not available
+        ImportError: If keyring library not installed
+    """
+    if not KEYRING_AVAILABLE:
+        raise ImportError(
+            "Keyring library not installed. "
+            "Install with: pip install keyring"
+        )
+
+    key = keyring.get_password(keyring_service, keyring_key_name)
+
+    if key is None:
+        logger.info(
+            f"Generating new encryption key in OS keyring: "
+            f"{keyring_service}/{keyring_key_name}"
+        )
+        key = Fernet.generate_key().decode()
+        keyring.set_password(keyring_service, keyring_key_name, key)
+
+    return key
+
+
+def acquire_encryption_key(
+    encryption_key: Optional[str],
+    use_keyring: bool,
+    keyring_service: str,
+    keyring_key_name: str,
+    require_keyring: bool,
+) -> tuple:
+    """Acquire encryption key from available sources.
+
+    Key acquisition priority:
+    1. Explicit parameter (testing/override)
+    2. OS Keyring (most secure)
+    3. Environment variable (fallback)
+    4. Fail (no insecure defaults)
+
+    Args:
+        encryption_key: Explicit Fernet key
+        use_keyring: Whether to try keyring
+        keyring_service: Keyring service name
+        keyring_key_name: Keyring key identifier
+        require_keyring: Fail if keyring not available
+
+    Returns:
+        Tuple of (key_string, using_keyring_bool)
+
+    Raises:
+        ValueError: If no encryption key available
+        SecurityError: If keyring required but not available
+    """
+    key = None
+    using_keyring = False
+
+    if encryption_key:
+        key = encryption_key
+        logger.warning(
+            "Using explicit encryption key. For production, use OS keyring."
+        )
+    elif use_keyring:
+        try:
+            key = get_or_create_keyring_key(keyring_service, keyring_key_name)
+            using_keyring = True
+            logger.info(
+                f"Using OS keyring for key storage: "
+                f"{keyring_service}/{keyring_key_name}"
+            )
+        except KeyringError as e:
+            if require_keyring:
+                raise SecurityError(
+                    f"Keyring required but not available: {e}\n"
+                    "Install keyring backend: pip install keyring"
+                ) from e
+            else:
+                logger.warning(
+                    f"OS keyring backend not configured ({e}), falling back to environment variable. "
+                    "For production security, configure keyring backend."
+                )
+        except ImportError as e:
+            if require_keyring:
+                raise SecurityError(
+                    f"Keyring library required but not installed: {e}\n"
+                    "Install with: pip install keyring"
+                ) from e
+            else:
+                logger.warning(
+                    "Keyring library not installed, falling back to environment variable. "
+                    "For production security, install keyring: pip install keyring"
+                )
+        except (RuntimeError, OSError, AttributeError) as e:
+            logger.error(f"Keyring error: {e}", exc_info=True)
+            if require_keyring:
+                raise SecurityError(
+                    f"Keyring error (keyring required): {e}\n"
+                    "Check keyring configuration and logs"
+                ) from e
+            else:
+                logger.warning(
+                    "Falling back to environment variable due to keyring error. "
+                    "See logs for details."
+                )
+
+    if key is None:
+        key = os.getenv("OAUTH_TOKEN_ENCRYPTION_KEY")
+        if key:
+            logger.warning(
+                "SECURITY: Using environment variable for encryption key. "
+                "For production, use OS keyring (install 'keyring' package)."
+            )
+            env_name = (
+                os.getenv("ENVIRONMENT")
+                or os.getenv("ENV")
+                or os.getenv("APP_ENV")
+                or ""
+            ).lower()
+            if env_name in ("production", "prod"):
+                logger.warning(
+                    "PRODUCTION SECURITY WARNING: Encryption key loaded from "
+                    "environment variable OAUTH_TOKEN_ENCRYPTION_KEY in a "
+                    "production environment (%s). Environment variables are "
+                    "visible in /proc/<pid>/environ, process listings, and "
+                    "may leak into logs or crash dumps. Migrate to OS keyring "
+                    "for compliance (PCI DSS, SOC 2).",
+                    env_name,
+                )
+
+    if not key:
+        raise ValueError(
+            "No encryption key available. Options:\n"
+            "1. Install keyring: pip install keyring (RECOMMENDED for production)\n"
+            "2. Set OAUTH_TOKEN_ENCRYPTION_KEY environment variable (development only)\n"
+            "3. Pass encryption_key parameter (testing only)\n"
+            "\n"
+            "Generate key: python -c 'from cryptography.fernet import Fernet; "
+            "print(Fernet.generate_key().decode())'"
+        )
+
+    return key, using_keyring
+
+
+def re_encrypt_tokens(
+    tokens: Dict[str, bytes],
+    old_cipher: Fernet,
+    new_cipher: Fernet,
+) -> Dict[str, bytes]:
+    """Re-encrypt all tokens with a new cipher.
+
+    Args:
+        tokens: Dict of user_id -> encrypted bytes
+        old_cipher: Fernet cipher with old key
+        new_cipher: Fernet cipher with new key
+
+    Returns:
+        Dict of user_id -> re-encrypted bytes
+    """
+    re_encrypted = {}
+
+    for user_id in list(tokens.keys()):
+        encrypted = tokens.get(user_id)
+        if not encrypted:
+            continue
+
+        try:
+            decrypted = old_cipher.decrypt(encrypted)
+            token_data = json.loads(decrypted.decode())
+        except (InvalidToken, json.JSONDecodeError):
+            continue
+
+        if token_data.get("expires_at"):
+            try:
+                expires_at = datetime.fromisoformat(token_data["expires_at"])
+                expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
+                if expires_in > 0:
+                    clean_token = {
+                        k: v
+                        for k, v in token_data.items()
+                        if k not in ["stored_at", "expires_at"]
+                    }
+                    token_with_metadata = {
+                        **clean_token,
+                        "stored_at": datetime.now(timezone.utc).isoformat(),
+                        "expires_at": (
+                            datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                        ).isoformat(),
+                    }
+                    token_json = json.dumps(token_with_metadata)
+                    re_encrypted[user_id] = new_cipher.encrypt(token_json.encode())
+            except (ValueError, TypeError):
+                continue
+        else:
+            try:
+                clean_token = {
+                    k: v for k, v in token_data.items()
+                    if k not in ["stored_at"]
+                }
+                token_with_metadata = {
+                    **clean_token,
+                    "stored_at": datetime.now(timezone.utc).isoformat(),
+                }
+                token_json = json.dumps(token_with_metadata)
+                re_encrypted[user_id] = new_cipher.encrypt(token_json.encode())
+            except (ValueError, TypeError):
+                continue
+
+    return re_encrypted

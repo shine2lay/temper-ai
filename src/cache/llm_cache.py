@@ -20,7 +20,6 @@ from dataclasses import asdict, dataclass
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.agents.constants import DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 from src.cache.constants import (
     DEFAULT_CACHE_SIZE,
     DEFAULT_REDIS_DB,
@@ -28,7 +27,7 @@ from src.cache.constants import (
     DEFAULT_TTL_SECONDS,
 )
 from src.constants.durations import TIMEOUT_VERY_SHORT, TTL_LONG
-from src.constants.limits import DEFAULT_BATCH_SIZE
+from src.constants.limits import DEFAULT_BATCH_SIZE, DEFAULT_MAX_TOKENS, DEFAULT_TEMPERATURE
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)

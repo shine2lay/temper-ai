@@ -29,7 +29,7 @@ class TestToolToAgentErrorPropagation:
     """Test errors from tools to agents"""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize test database."""
         try:
             from src.observability.database import get_database
@@ -39,7 +39,7 @@ class TestToolToAgentErrorPropagation:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -47,7 +47,7 @@ class TestToolToAgentErrorPropagation:
 
     def test_tool_exception_caught_by_agent(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test tool exception is caught and handled by agent."""
@@ -99,7 +99,7 @@ class TestToolToAgentErrorPropagation:
 
     def test_tool_timeout_propagated(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test tool timeout is propagated to agent."""
@@ -147,7 +147,7 @@ class TestToolToAgentErrorPropagation:
 
     def test_tool_error_context_preserved(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test tool error context includes tool details."""
@@ -200,7 +200,7 @@ class TestAgentToStageErrorPropagation:
     """Test errors from agents to stages"""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize test database."""
         try:
             from src.observability.database import get_database
@@ -210,7 +210,7 @@ class TestAgentToStageErrorPropagation:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -218,7 +218,7 @@ class TestAgentToStageErrorPropagation:
 
     def test_agent_failure_stops_stage(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test single-agent stage fails when agent fails."""
@@ -295,7 +295,7 @@ class TestAgentToStageErrorPropagation:
 
     def test_agent_failure_partial_success(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test stage with multiple agents handles partial failure."""
@@ -409,7 +409,7 @@ class TestAgentToStageErrorPropagation:
 
     def test_min_successful_agents_enforcement(
         self,
-        test_database
+        sample_database
     ):
         """Test stage fails if below min_successful_agents threshold."""
         workflow_id = str(uuid.uuid4())
@@ -490,7 +490,7 @@ class TestStageToWorkflowErrorPropagation:
     """Test errors from stages to workflow"""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize test database."""
         try:
             from src.observability.database import get_database
@@ -501,7 +501,7 @@ class TestStageToWorkflowErrorPropagation:
 
     def test_stage_failure_stops_workflow(
         self,
-        test_database
+        sample_database
     ):
         """Test workflow stops when critical stage fails."""
         workflow_id = str(uuid.uuid4())
@@ -585,7 +585,7 @@ class TestTimeoutCascading:
     """Test timeout propagation through layers"""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize test database."""
         try:
             from src.observability.database import get_database
@@ -595,7 +595,7 @@ class TestTimeoutCascading:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -603,7 +603,7 @@ class TestTimeoutCascading:
 
     def test_timeout_enforcement_at_each_layer(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test timeout is enforced at tool, agent, and stage layers."""

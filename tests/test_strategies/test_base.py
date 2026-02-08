@@ -327,6 +327,7 @@ class TestValidateInputs:
 
         # Should not raise
         strategy.validate_inputs(outputs)
+        assert True  # Verifies no exception raised
 
 
 class TestDetectConflicts:

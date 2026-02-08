@@ -1,24 +1,28 @@
 """Forbidden Operations Safety Policy.
 
-Detects and blocks forbidden operations including:
-- Bash file write commands (cat >, echo >, tee, etc.)
-- Dangerous bash commands (rm -rf, dd, mkfs, etc.)
-- Command injection patterns
-- Destructive operations
-- Security-sensitive operations
-
-This policy enforces the rule that file operations MUST use dedicated tools
-(Write, Edit, Read) instead of bash commands, as bash commands:
-- Bypass file locks in multi-agent environments
-- Provide no validation or safety checks
-- Have silent failures and obscure errors
-- Can cause data races and corruption
-
-Reference: CLAUDE.md file operation rules
+Detects and blocks forbidden bash operations, dangerous commands,
+command injection, and security-sensitive operations.
+See _forbidden_ops_helpers.py for extracted logic.
 """
 import re
 from typing import Any, Dict, List, Optional, Set
 
+# Helper functions extracted to reduce class size
+from src.safety._forbidden_ops_helpers import (
+    compile_all_patterns as _compile_all_patterns,
+)
+from src.safety._forbidden_ops_helpers import (
+    extract_command as _extract_command,
+)
+from src.safety._forbidden_ops_helpers import (
+    get_remediation_hint as _get_remediation_hint,
+)
+from src.safety._forbidden_ops_helpers import (
+    is_whitelisted as _is_whitelisted,
+)
+from src.safety._forbidden_ops_helpers import (
+    validate_redirect_context as _validate_redirect_context,
+)
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
     MAX_EXCLUDED_PATH_LENGTH,
@@ -31,36 +35,8 @@ from src.safety.validation import ValidationMixin
 class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
     """Detects forbidden bash operations and dangerous patterns.
 
-    Configuration options:
-        check_file_writes: Detect bash file write operations (default: True)
-        check_dangerous_commands: Detect dangerous/destructive commands (default: True)
-        check_injection_patterns: Detect command injection (default: True)
-        allow_read_only: Allow read-only bash commands like cat, head (default: True)
-        custom_forbidden_patterns: Additional regex patterns to block
-        whitelist_commands: Specific commands to allow despite matching patterns
-
-    Security Considerations:
-        This policy uses bounded quantifiers (e.g., {0,200}) in regex patterns to prevent
-        ReDoS (Regular Expression Denial of Service) attacks. As a result:
-
-        - Commands with >200 characters between the command and redirect may evade detection
-        - This is an acceptable security tradeoff: ReDoS prevention > pattern completeness
-        - Attackers would need to intentionally craft unusually long commands to bypass
-        - Most legitimate commands are well under 200 characters
-
-        For extremely long commands, consider using the whitelist feature or refactoring
-        to use dedicated file operation tools (Write/Edit/Read).
-
-    Example:
-        >>> config = {
-        ...     "check_file_writes": True,
-        ...     "check_dangerous_commands": True
-        ... }
-        >>> policy = ForbiddenOperationsPolicy(config)
-        >>> result = policy.validate(
-        ...     action={"command": "cat > file.txt", "tool": "bash"},
-        ...     context={"agent": "coder"}
-        ... )
+    Uses bounded regex quantifiers to prevent ReDoS attacks.
+    See _forbidden_ops_helpers.py for extracted internal logic.
     """
 
     # Forbidden file write operations (NEVER allowed)
@@ -359,65 +335,13 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
 
     def _compile_all_patterns(self) -> Dict[str, Dict[str, Any]]:
         """Compile all regex patterns based on configuration."""
-        patterns = {}
-
-        if self.check_file_writes:
-            patterns.update({
-                f"file_write_{name}": {
-                    "regex": re.compile(info["pattern"], re.IGNORECASE),
-                    "message": info["message"],
-                    "severity": info["severity"],
-                    "category": "file_write",
-                    "requires_context_check": info.get("requires_context_check", False)
-                }
-                for name, info in self.FILE_WRITE_PATTERNS.items()
-            })
-
-        if self.check_dangerous_commands:
-            patterns.update({
-                f"dangerous_{name}": {
-                    "regex": re.compile(info["pattern"], re.IGNORECASE),
-                    "message": info["message"],
-                    "severity": info["severity"],
-                    "category": "dangerous"
-                }
-                for name, info in self.DANGEROUS_COMMAND_PATTERNS.items()
-            })
-
-        if self.check_injection_patterns:
-            patterns.update({
-                f"injection_{name}": {
-                    "regex": re.compile(info["pattern"], re.IGNORECASE),
-                    "message": info["message"],
-                    "severity": info["severity"],
-                    "category": "injection"
-                }
-                for name, info in self.INJECTION_PATTERNS.items()
-            })
-
-        if self.check_security_sensitive:
-            patterns.update({
-                f"security_{name}": {
-                    "regex": re.compile(info["pattern"], re.IGNORECASE),
-                    "message": info["message"],
-                    "severity": info["severity"],
-                    "category": "security"
-                }
-                for name, info in self.SECURITY_SENSITIVE_PATTERNS.items()
-            })
-
-        # Add custom patterns
-        # FIX (code-high-pattern-mismatch-17): info is a string, not a dict
-        # self.custom_forbidden_patterns is Dict[str, str] (validated in __init__)
-        for name, pattern_str in self.custom_forbidden_patterns.items():
-            patterns[f"custom_{name}"] = {
-                "regex": re.compile(pattern_str, re.IGNORECASE),
-                "message": f"Custom forbidden pattern: {name}",
-                "severity": ViolationSeverity.HIGH,
-                "category": "custom"
-            }
-
-        return patterns
+        return _compile_all_patterns(
+            self.check_file_writes, self.check_dangerous_commands,
+            self.check_injection_patterns, self.check_security_sensitive,
+            self.FILE_WRITE_PATTERNS, self.DANGEROUS_COMMAND_PATTERNS,
+            self.INJECTION_PATTERNS, self.SECURITY_SENSITIVE_PATTERNS,
+            self.custom_forbidden_patterns,
+        )
 
     @property
     def name(self) -> str:
@@ -435,81 +359,16 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         return 200  # P0 priority
 
     def _extract_command(self, action: Dict[str, Any]) -> Optional[str]:
-        """Extract command string from action.
-
-        Supports various action formats:
-        - {"command": "..."}
-        - {"bash": "..."}
-        - {"tool": "bash", "args": {"command": "..."}}
-        - {"content": "..."}  (for code content)
-        """
-        # Direct command field
-        if "command" in action:
-            cmd = action["command"]
-            return str(cmd) if cmd is not None else None
-
-        # Bash field
-        if "bash" in action:
-            bash = action["bash"]
-            return str(bash) if bash is not None else None
-
-        # Tool with args
-        if action.get("tool") == "bash" and "args" in action:
-            if isinstance(action["args"], dict):
-                return action["args"].get("command")
-            elif isinstance(action["args"], str):
-                return action["args"]
-
-        # Content field (for code snippets)
-        if "content" in action:
-            content = action["content"]
-            return str(content) if content is not None else None
-
-        return None
+        """Extract command string from action."""
+        return _extract_command(action)
 
     def _is_whitelisted(self, command: str) -> bool:
         """Check if command matches whitelist."""
-        command_lower = command.lower().strip()
-        return any(wl in command_lower for wl in self.whitelist_commands)
+        return _is_whitelisted(command, self.whitelist_commands)
 
     def _validate_redirect_context(self, command: str, match: re.Match) -> bool:
-        """Validate that a redirect match is not in an excluded context.
-
-        This method provides additional validation for the redirect_output pattern
-        to handle exclusions that are difficult to express in regex without
-        causing ReDoS vulnerabilities.
-
-        Args:
-            command: Full command string
-            match: Regex match object for the redirect pattern
-
-        Returns:
-            True if this is a forbidden redirect (violation)
-            False if this redirect should be excluded (comment, test, control flow, etc.)
-        """
-        # Get the line containing the match
-        line_start = command.rfind('\n', 0, match.start()) + 1
-        line = command[line_start:match.end()]
-
-        # Exclude comments (line starts with #)
-        if line.lstrip().startswith('#'):
-            return False
-
-        # Exclude test commands
-        if re.match(r'\s*test\s+', line, re.IGNORECASE):
-            return False
-
-        # Exclude control flow (if/while)
-        if re.match(r'\s*(if|while)\s+', line, re.IGNORECASE):
-            return False
-
-        # Exclude piped commands (has | before > on the same line)
-        before_redirect = command[line_start:match.start()]
-        if '|' in before_redirect:
-            return False
-
-        # This is a forbidden redirect
-        return True
+        """Validate that a redirect match is not in an excluded context."""
+        return _validate_redirect_context(command, match)
 
     def validate(
         self,
@@ -587,30 +446,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
 
     def _get_remediation_hint(self, category: str) -> str:
         """Get remediation hint based on violation category."""
-        hints = {
-            "file_write": (
-                "Use dedicated file operation tools: "
-                "Write() for creating files, Edit() for modifying files, Read() for reading files. "
-                "These tools provide proper validation, locking, and error handling."
-            ),
-            "dangerous": (
-                "Destructive operations require explicit user approval. "
-                "Consider safer alternatives or request user confirmation before proceeding."
-            ),
-            "injection": (
-                "Avoid constructing commands from untrusted input. "
-                "Use parameterized tools or validate/sanitize all inputs before use."
-            ),
-            "security": (
-                "Use secure configuration and credential management. "
-                "Store sensitive data in environment variables or secure vaults, not in commands."
-            ),
-            "custom": (
-                "This operation matches a custom forbidden pattern. "
-                "Review the operation and ensure it's safe and necessary."
-            )
-        }
-        return hints.get(category, "Review operation for safety and use approved alternatives.")
+        return _get_remediation_hint(category)
 
     def get_pattern_categories(self) -> Set[str]:
         """Get all pattern categories currently enabled.

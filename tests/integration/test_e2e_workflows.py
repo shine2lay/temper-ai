@@ -33,7 +33,7 @@ class TestThreeStageWorkflow:
     """Test complete 3-stage workflow (research → analyze → synthesize)"""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
             from src.observability.database import get_database
@@ -44,7 +44,7 @@ class TestThreeStageWorkflow:
         # Cleanup handled by in-memory database
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -155,7 +155,7 @@ class TestThreeStageWorkflow:
 
     def test_three_stage_sequential_success(
         self,
-        test_database,
+        sample_database,
         execution_tracker,
         three_stage_workflow_config,
         stage_configs,
@@ -317,7 +317,7 @@ class TestThreeStageWorkflow:
 
     def test_parallel_agents_within_stage(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test parallel agent execution within a single stage."""
@@ -372,7 +372,7 @@ class TestThreeStageWorkflow:
 
     def test_stage_output_flow_to_next_stage(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test stage outputs flow correctly to next stage."""
@@ -430,7 +430,7 @@ class TestWorkflowWithToolExecution:
     """Test workflows where agents use tools"""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize test database."""
         try:
             from src.observability.database import get_database
@@ -440,7 +440,7 @@ class TestWorkflowWithToolExecution:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -448,7 +448,7 @@ class TestWorkflowWithToolExecution:
 
     def test_tool_execution_in_workflow_context(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test tool execution within workflow is tracked."""
@@ -500,7 +500,7 @@ class TestWorkflowWithToolExecution:
 
     def test_tool_failure_handling_in_stage(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test tool failures are handled and tracked correctly."""
@@ -554,7 +554,7 @@ class TestSingleAgentWorkflows:
     """Test complete single-agent workflows from user input to final output."""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
             from src.observability.database import get_database
@@ -564,7 +564,7 @@ class TestSingleAgentWorkflows:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -615,7 +615,7 @@ class TestSingleAgentWorkflows:
     @pytest.mark.critical_path
     def test_simple_code_generation_workflow(
         self,
-        test_database,
+        sample_database,
         execution_tracker,
         mock_llm_provider
     ):
@@ -781,7 +781,7 @@ class TestSingleAgentWorkflows:
     @pytest.mark.integration
     def test_data_analysis_workflow(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test end-to-end data analysis workflow.

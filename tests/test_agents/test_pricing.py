@@ -23,7 +23,7 @@ def reset_pricing_singleton():
 
 
 @pytest.fixture
-def test_config_path():
+def config_path():
     """Path to test pricing configuration."""
     return "tests/fixtures/pricing.yaml"
 
@@ -120,24 +120,24 @@ class TestModelPricing:
 class TestPricingManager:
     """Test PricingManager class."""
 
-    def test_singleton_pattern(self, test_config_path):
+    def test_singleton_pattern(self, config_path):
         """Test that PricingManager is a singleton."""
-        manager1 = PricingManager(test_config_path)
-        manager2 = PricingManager(test_config_path)
+        manager1 = PricingManager(config_path)
+        manager2 = PricingManager(config_path)
 
         assert manager1 is manager2
 
-    def test_load_pricing_from_config(self, test_config_path):
+    def test_load_pricing_from_config(self, config_path):
         """Test loading pricing from config file."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         assert 'test-model-1' in manager.pricing
         assert 'test-model-2' in manager.pricing
         assert '_default' in manager.pricing
 
-    def test_get_cost_known_model(self, test_config_path):
+    def test_get_cost_known_model(self, config_path):
         """Test cost calculation for known model."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         # test-model-1: input=$1/1M, output=$2/1M
         # 1M input + 1M output = $1 + $2 = $3
@@ -147,11 +147,11 @@ class TestPricingManager:
 
     def test_get_cost_unknown_model_uses_default(
         self,
-        test_config_path,
+        config_path,
         caplog
     ):
         """Test that unknown models use default pricing."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         # Unknown model should use default: input=$3/1M, output=$15/1M
         cost = manager.get_cost('unknown-model', 1_000_000, 1_000_000)
@@ -159,9 +159,9 @@ class TestPricingManager:
         assert cost == 18.0
         assert "not in pricing config" in caplog.text
 
-    def test_get_cost_calculation_accuracy(self, test_config_path):
+    def test_get_cost_calculation_accuracy(self, config_path):
         """Test cost calculation accuracy."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         # test-model-2: input=$10/1M, output=$20/1M
         # 500K input + 250K output = $5 + $5 = $10
@@ -216,9 +216,9 @@ class TestPricingManager:
         assert "not found" in caplog.text
         assert "hardcoded defaults" in caplog.text
 
-    def test_list_supported_models(self, test_config_path):
+    def test_list_supported_models(self, config_path):
         """Test listing supported models."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         models = manager.list_supported_models()
 
@@ -226,9 +226,9 @@ class TestPricingManager:
         assert 'test-model-2' in models
         assert '_default' not in models  # Should exclude internal default
 
-    def test_get_pricing_info(self, test_config_path):
+    def test_get_pricing_info(self, config_path):
         """Test getting pricing info for a model."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         info = manager.get_pricing_info('test-model-1')
 
@@ -236,17 +236,17 @@ class TestPricingManager:
         assert info.input_price == 1.0
         assert info.output_price == 2.0
 
-    def test_get_pricing_info_unknown_model(self, test_config_path):
+    def test_get_pricing_info_unknown_model(self, config_path):
         """Test getting pricing info for unknown model."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         info = manager.get_pricing_info('unknown-model')
 
         assert info is None
 
-    def test_health_check(self, test_config_path):
+    def test_health_check(self, config_path):
         """Test health check returns correct status."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         health = manager.health_check()
 
@@ -309,9 +309,9 @@ class TestPricingManager:
         finally:
             config_file.unlink(missing_ok=True)
 
-    def test_negative_token_counts_rejected(self, test_config_path):
+    def test_negative_token_counts_rejected(self, config_path):
         """Test that negative token counts are rejected."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         with pytest.raises(ValueError, match="non-negative"):
             manager.get_cost('test-model-1', -100, 100)
@@ -319,9 +319,9 @@ class TestPricingManager:
         with pytest.raises(ValueError, match="non-negative"):
             manager.get_cost('test-model-1', 100, -100)
 
-    def test_zero_tokens(self, test_config_path):
+    def test_zero_tokens(self, config_path):
         """Test cost calculation with zero tokens."""
-        manager = PricingManager(test_config_path)
+        manager = PricingManager(config_path)
 
         cost = manager.get_cost('test-model-1', 0, 0)
 
@@ -331,10 +331,10 @@ class TestPricingManager:
 class TestGetPricingManager:
     """Test get_pricing_manager() function."""
 
-    def test_returns_singleton(self, test_config_path):
+    def test_returns_singleton(self, config_path):
         """Test that get_pricing_manager returns singleton."""
-        manager1 = get_pricing_manager(test_config_path)
-        manager2 = get_pricing_manager(test_config_path)
+        manager1 = get_pricing_manager(config_path)
+        manager2 = get_pricing_manager(config_path)
 
         assert manager1 is manager2
 

@@ -33,7 +33,7 @@ from src.tools.registry import ToolRegistry
 # ============================================================================
 
 @pytest.fixture
-def test_db():
+def db_fixture():
     """Create in-memory test database."""
     db = DatabaseManager("sqlite:///:memory:")
     db.create_all_tables()
@@ -41,7 +41,7 @@ def test_db():
 
 
 @pytest.fixture
-def init_test_db():
+def init_db_fixture():
     """Initialize database for tracker."""
     init_database("sqlite:///:memory:")
     yield
@@ -64,7 +64,7 @@ def config_loader():
 
 
 @pytest.fixture
-def execution_tracker(init_test_db):
+def execution_tracker(init_db_fixture):
     """Create execution tracker."""
     return ExecutionTracker()
 

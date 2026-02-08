@@ -31,13 +31,13 @@ from .conftest import (
 # Benchmark Tests: Database and Async Operations
 # ============================================================================
 
-def test_database_query_performance(benchmark, test_db):
+def test_database_query_performance(benchmark, perf_db):
     """Benchmark database query performance.
 
     Target: <10ms for simple queries
     """
     # Insert test data
-    with test_db.session() as session:
+    with perf_db.session() as session:
         from sqlalchemy import text
         session.execute(text(
             "CREATE TABLE IF NOT EXISTS test_table (id INTEGER PRIMARY KEY, value TEXT)"
@@ -49,7 +49,7 @@ def test_database_query_performance(benchmark, test_db):
 
     # Benchmark query
     def query_database():
-        with test_db.session() as session:
+        with perf_db.session() as session:
             result = session.execute(text(
                 "SELECT value FROM test_table WHERE id = 1"
             ))

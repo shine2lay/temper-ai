@@ -136,6 +136,16 @@ class ApprovalRequest:
         }
 
 
+# Import helpers after ApprovalStatus/ApprovalRequest are defined (avoids circular import)
+from src.safety._approval_helpers import (  # noqa: E402
+    check_approver_authorized,
+    evict_oldest_completed,
+    expire_request,
+    trigger_approved_callbacks,
+    trigger_rejected_callbacks,
+)
+
+
 class ApprovalWorkflow:
     """Manages approval workflow for high-risk actions.
 
@@ -247,70 +257,9 @@ class ApprovalWorkflow:
 
             # Evict oldest completed requests when over limit
             if len(self._requests) > self._max_requests:
-                self._evict_oldest_completed()
+                evict_oldest_completed(self._requests, self._max_requests)
 
         return request
-
-    def _evict_oldest_completed(self) -> None:
-        """Remove oldest requests to stay within max_requests limit.
-
-        SA-07: Evicts completed requests first, then oldest pending requests
-        as a fallback to prevent unbounded growth of pending requests.
-
-        C-02: MUST be called while holding self._lock (caller's responsibility).
-        This method is private and only called from request_approval() which
-        already holds the lock.
-        """
-        if len(self._requests) <= self._max_requests:
-            return
-        # Prefer evicting completed/rejected/expired over pending
-        completed_ids = [
-            rid for rid, req in self._requests.items()
-            if not req.is_pending()
-        ]
-        # Sort by creation time (oldest first) - request.id contains UUID so use created_at
-        completed_ids.sort(key=lambda rid: self._requests[rid].created_at)
-        to_remove = len(self._requests) - self._max_requests
-        for rid in completed_ids[:to_remove]:
-            del self._requests[rid]
-
-        # SA-07: If still over limit (too many pending), evict oldest pending
-        if len(self._requests) > self._max_requests:
-            pending_ids = [
-                rid for rid, req in self._requests.items()
-                if req.is_pending()
-            ]
-            pending_ids.sort(key=lambda rid: self._requests[rid].created_at)
-            still_to_remove = len(self._requests) - self._max_requests
-            for rid in pending_ids[:still_to_remove]:
-                del self._requests[rid]
-
-    def _check_approver_authorized(self, approver: str, request: ApprovalRequest) -> Optional[str]:
-        """Validate that the approver is authorized and not self-approving.
-
-        Args:
-            approver: Identity of the approver
-            request: The approval request
-
-        Returns:
-            None if authorized, or an error message string if not.
-        """
-        if self._authorized_approvers is None:
-            return None
-
-        # Self-approval check: requester cannot approve their own request
-        if request.requester and approver == request.requester:
-            return (
-                f"Self-approval denied: '{approver}' cannot approve their own request"
-            )
-
-        # Authorization check
-        if approver not in self._authorized_approvers:
-            return (
-                f"Unauthorized approver: '{approver}' is not in the authorized approvers list"
-            )
-
-        return None
 
     def approve(
         self,
@@ -341,7 +290,8 @@ class ApprovalWorkflow:
 
             # Check if expired
             if self.auto_reject_on_timeout and request.has_expired():
-                self._expire_request(request)
+                expire_request(request)
+                trigger_rejected_callbacks(request, self._on_rejected_callbacks)
                 return False
 
             # Can only approve pending requests
@@ -349,7 +299,7 @@ class ApprovalWorkflow:
                 return False
 
             # Authorization check
-            error = self._check_approver_authorized(approver, request)
+            error = check_approver_authorized(approver, request, self._authorized_approvers)
             if error:
                 raise PermissionError(error)
 
@@ -361,7 +311,7 @@ class ApprovalWorkflow:
             if not request.needs_more_approvals():
                 request.status = ApprovalStatus.APPROVED
                 request.decision_reason = reason
-                self._trigger_approved_callbacks(request)
+                trigger_approved_callbacks(request, self._on_approved_callbacks)
 
             return True
 
@@ -411,7 +361,7 @@ class ApprovalWorkflow:
             # One rejection is enough to reject the request
             request.status = ApprovalStatus.REJECTED
             request.decision_reason = reason
-            self._trigger_rejected_callbacks(request)
+            trigger_rejected_callbacks(request, self._on_rejected_callbacks)
 
             return True
 
@@ -491,7 +441,8 @@ class ApprovalWorkflow:
 
             # Check expiration
             if self.auto_reject_on_timeout and request.has_expired():
-                self._expire_request(request)
+                expire_request(request)
+                trigger_rejected_callbacks(request, self._on_rejected_callbacks)
                 return False
 
             return request.is_pending()
@@ -508,7 +459,8 @@ class ApprovalWorkflow:
                 if request.is_pending():
                     # Check expiration
                     if self.auto_reject_on_timeout and request.has_expired():
-                        self._expire_request(request)
+                        expire_request(request)
+                        trigger_rejected_callbacks(request, self._on_rejected_callbacks)
                     else:
                         pending.append(request)
             return pending
@@ -526,7 +478,8 @@ class ApprovalWorkflow:
             expired_count = 0
             for request in list(self._requests.values()):
                 if request.is_pending() and request.has_expired():
-                    self._expire_request(request)
+                    expire_request(request)
+                    trigger_rejected_callbacks(request, self._on_rejected_callbacks)
                     expired_count += 1
 
             return expired_count
@@ -556,31 +509,6 @@ class ApprovalWorkflow:
             >>> workflow.on_rejected(notify_rejected)
         """
         self._on_rejected_callbacks.append(callback)
-
-    def _expire_request(self, request: ApprovalRequest) -> None:
-        """Mark request as expired."""
-        if request.is_pending():
-            request.status = ApprovalStatus.EXPIRED
-            request.decision_reason = "Request expired without approval"
-            self._trigger_rejected_callbacks(request)
-
-    def _trigger_approved_callbacks(self, request: ApprovalRequest) -> None:
-        """Trigger all approved callbacks."""
-        for callback in self._on_approved_callbacks:
-            try:
-                callback(request)
-            except Exception as e:  # noqa: BLE001 -- defensive cleanup for arbitrary callback
-                # H-12: Log callback errors instead of silently ignoring
-                logger.warning("Approval callback failed: %s", e, exc_info=True)
-
-    def _trigger_rejected_callbacks(self, request: ApprovalRequest) -> None:
-        """Trigger all rejected callbacks."""
-        for callback in self._on_rejected_callbacks:
-            try:
-                callback(request)
-            except Exception as e:  # noqa: BLE001 -- defensive cleanup for arbitrary callback
-                # H-12: Log callback errors instead of silently ignoring
-                logger.warning("Rejection callback failed: %s", e, exc_info=True)
 
     def clear_requests(self) -> None:
         """Clear all approval requests. Use with caution!"""

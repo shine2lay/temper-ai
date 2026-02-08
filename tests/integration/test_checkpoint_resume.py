@@ -25,7 +25,7 @@ class TestCheckpointCreation:
     """Test checkpoint save after each stage"""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize test database."""
         try:
             from src.observability.database import get_database
@@ -35,7 +35,7 @@ class TestCheckpointCreation:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -49,7 +49,7 @@ class TestCheckpointCreation:
 
     def test_checkpoint_after_stage_one(
         self,
-        test_database,
+        sample_database,
         checkpoint_manager,
         execution_tracker
     ):
@@ -104,7 +104,7 @@ class TestCheckpointCreation:
 
     def test_checkpoint_after_stage_two(
         self,
-        test_database,
+        sample_database,
         checkpoint_manager,
         execution_tracker
     ):
@@ -181,7 +181,7 @@ class TestCheckpointCreation:
 
     def test_checkpoint_includes_complete_state(
         self,
-        test_database,
+        sample_database,
         checkpoint_manager,
         execution_tracker
     ):
@@ -219,7 +219,7 @@ class TestWorkflowResume:
     """Test resume from checkpoints"""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize test database."""
         try:
             from src.observability.database import get_database
@@ -229,7 +229,7 @@ class TestWorkflowResume:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -243,7 +243,7 @@ class TestWorkflowResume:
 
     def test_resume_from_stage_one(
         self,
-        test_database,
+        sample_database,
         checkpoint_manager,
         execution_tracker
     ):
@@ -329,7 +329,7 @@ class TestWorkflowResume:
 
     def test_resume_skips_completed_stages(
         self,
-        test_database,
+        sample_database,
         checkpoint_manager,
         execution_tracker
     ):
@@ -416,7 +416,7 @@ class TestWorkflowResume:
 
     def test_resume_preserves_state(
         self,
-        test_database,
+        sample_database,
         checkpoint_manager
     ):
         """Test resume preserves all state from checkpoint."""
@@ -457,7 +457,7 @@ class TestCheckpointFailureRecovery:
     """Test recovery scenarios"""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize test database."""
         try:
             from src.observability.database import get_database
@@ -474,7 +474,7 @@ class TestCheckpointFailureRecovery:
 
     def test_resume_after_agent_failure(
         self,
-        test_database,
+        sample_database,
         checkpoint_manager
     ):
         """Test resume after agent failure mid-stage."""
@@ -499,7 +499,7 @@ class TestCheckpointFailureRecovery:
 
     def test_resume_after_timeout(
         self,
-        test_database,
+        sample_database,
         checkpoint_manager
     ):
         """Test resume after timeout."""

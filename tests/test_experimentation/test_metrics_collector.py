@@ -33,7 +33,7 @@ def db():
 
 
 @pytest.fixture
-def test_session(db):
+def db_session(db):
     """Create test database session."""
     with get_session() as session:
         yield session
@@ -157,9 +157,9 @@ def sample_workflows(db):
 class TestMetricsCollector:
     """Test experiment metrics collection."""
 
-    def test_collect_assignments_basic(self, test_session, sample_workflows):
+    def test_collect_assignments_basic(self, db_session, sample_workflows):
         """Test basic assignment collection from workflows."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
         assignments = collector.collect_assignments("exp-001")
 
         assert len(assignments) == 5
@@ -173,9 +173,9 @@ class TestMetricsCollector:
         treatment_assignments = [a for a in assignments if a.variant_id == "var-treatment"]
         assert len(treatment_assignments) == 3
 
-    def test_collect_assignments_with_status_filter(self, test_session, sample_workflows):
+    def test_collect_assignments_with_status_filter(self, db_session, sample_workflows):
         """Test filtering assignments by execution status."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
 
         # Filter for completed only
         completed = collector.collect_assignments("exp-001", status="completed")
@@ -187,9 +187,9 @@ class TestMetricsCollector:
         assert len(failed) == 1
         assert failed[0].execution_status == ExecutionStatus.FAILED
 
-    def test_extract_metrics_from_workflow(self, test_session, sample_workflows):
+    def test_extract_metrics_from_workflow(self, db_session, sample_workflows):
         """Test metric extraction from workflow execution."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
         assignments = collector.collect_assignments("exp-001")
 
         # Check first assignment metrics
@@ -210,9 +210,9 @@ class TestMetricsCollector:
         assert assignment.metrics["quality_score"] == 85.0
         assert assignment.metrics["error_rate"] == 0.0
 
-    def test_extract_metrics_with_failure(self, test_session, sample_workflows):
+    def test_extract_metrics_with_failure(self, db_session, sample_workflows):
         """Test metric extraction from failed workflow."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
         failed_assignments = collector.collect_assignments("exp-001", status="failed")
 
         assert len(failed_assignments) == 1
@@ -222,9 +222,9 @@ class TestMetricsCollector:
         assert assignment.metrics["error_rate"] == 1.0
         assert assignment.execution_status == ExecutionStatus.FAILED
 
-    def test_aggregate_metrics_by_variant(self, test_session, sample_workflows):
+    def test_aggregate_metrics_by_variant(self, db_session, sample_workflows):
         """Test metrics aggregation grouped by variant."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
         aggregated = collector.aggregate_metrics_by_variant("exp-001")
 
         assert "var-control" in aggregated
@@ -246,9 +246,9 @@ class TestMetricsCollector:
         assert treatment["failed"] == 1
         assert treatment["success_rate"] == pytest.approx(2/3, rel=0.01)
 
-    def test_aggregate_metric_calculations(self, test_session, sample_workflows):
+    def test_aggregate_metric_calculations(self, db_session, sample_workflows):
         """Test correctness of aggregate metric calculations."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
         aggregated = collector.aggregate_metrics_by_variant("exp-001")
 
         control = aggregated["var-control"]
@@ -265,9 +265,9 @@ class TestMetricsCollector:
         assert control["min_quality_score"] == 82.0
         assert control["max_quality_score"] == 85.0
 
-    def test_get_experiment_summary(self, test_session, sample_workflows):
+    def test_get_experiment_summary(self, db_session, sample_workflows):
         """Test comprehensive experiment summary generation."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
         summary = collector.get_experiment_summary("exp-001")
 
         assert summary["experiment_id"] == "exp-001"
@@ -280,9 +280,9 @@ class TestMetricsCollector:
         assert "variants" in summary
         assert "collected_at" in summary
 
-    def test_query_workflows_by_variant(self, test_session, sample_workflows):
+    def test_query_workflows_by_variant(self, db_session, sample_workflows):
         """Test querying workflows for specific variant."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
 
         # Query control variant
         control_workflows = collector.query_workflows_by_variant("exp-001", "var-control")
@@ -294,16 +294,16 @@ class TestMetricsCollector:
         assert len(treatment_workflows) == 3
         assert all(w.extra_metadata["variant_id"] == "var-treatment" for w in treatment_workflows)
 
-    def test_query_workflows_with_limit(self, test_session, sample_workflows):
+    def test_query_workflows_with_limit(self, db_session, sample_workflows):
         """Test limit parameter in workflow queries."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
 
         workflows = collector.query_workflows_by_variant("exp-001", "var-treatment", limit=2)
         assert len(workflows) == 2
 
-    def test_get_time_series_metrics(self, test_session, sample_workflows):
+    def test_get_time_series_metrics(self, db_session, sample_workflows):
         """Test time-series metrics extraction."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
 
         time_series = collector.get_time_series_metrics("exp-001", "quality_score")
 
@@ -320,9 +320,9 @@ class TestMetricsCollector:
         treatment_series = time_series["var-treatment"]
         assert len(treatment_series) == 2
 
-    def test_empty_experiment(self, test_session):
+    def test_empty_experiment(self, db_session):
         """Test collecting from non-existent experiment."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
 
         assignments = collector.collect_assignments("exp-nonexistent")
         assert len(assignments) == 0
@@ -334,9 +334,9 @@ class TestMetricsCollector:
         assert summary["total_executions"] == 0
         assert summary["completion_rate"] == 0.0
 
-    def test_assignment_metadata_preserved(self, test_session, sample_workflows):
+    def test_assignment_metadata_preserved(self, db_session, sample_workflows):
         """Test that assignment metadata is correctly preserved."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
         assignments = collector.collect_assignments("exp-001")
 
         for assignment in assignments:
@@ -360,7 +360,7 @@ class TestMetricsCollector:
 class TestMetricsCollectorEdgeCases:
     """Test edge cases and error handling."""
 
-    def test_workflow_without_variant_id(self, test_session):
+    def test_workflow_without_variant_id(self, db_session):
         """Test handling of workflows with experiment_id but no variant_id."""
         # Create workflow with experiment_id but missing variant_id
         workflow = WorkflowExecution(
@@ -371,16 +371,16 @@ class TestMetricsCollectorEdgeCases:
             status="running",
             extra_metadata={"experiment_id": "exp-001"}  # Missing variant_id
         )
-        test_session.add(workflow)
-        test_session.commit()
+        db_session.add(workflow)
+        db_session.commit()
 
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
         assignments = collector.collect_assignments("exp-001")
 
         # Should be skipped with warning
         assert len(assignments) == 0
 
-    def test_workflow_without_metrics(self, test_session):
+    def test_workflow_without_metrics(self, db_session):
         """Test handling of workflows with missing metrics."""
         workflow = WorkflowExecution(
             id="wf-no-metrics",
@@ -395,10 +395,10 @@ class TestMetricsCollectorEdgeCases:
             }
             # No duration, cost, tokens, etc.
         )
-        test_session.add(workflow)
-        test_session.commit()
+        db_session.add(workflow)
+        db_session.commit()
 
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
         assignments = collector.collect_assignments("exp-001")
 
         assert len(assignments) == 1
@@ -408,9 +408,9 @@ class TestMetricsCollectorEdgeCases:
         assert assignment.metrics is not None
         assert "error_rate" in assignment.metrics  # Always present
 
-    def test_aggregate_empty_variant(self, test_session):
+    def test_aggregate_empty_variant(self, db_session):
         """Test aggregating variant with no assignments."""
-        collector = ExperimentMetricsCollector(session=test_session)
+        collector = ExperimentMetricsCollector(session=db_session)
 
         # Create aggregation with empty list
         aggregated = collector._aggregate_assignments([])

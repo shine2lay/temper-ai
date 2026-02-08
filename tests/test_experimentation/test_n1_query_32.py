@@ -32,7 +32,7 @@ def db():
 
 
 @pytest.fixture
-def test_session(db):
+def db_session(db):
     """Create test database session."""
     with get_session() as session:
         yield session

@@ -1,33 +1,12 @@
+"""Unified circuit breaker for LLM resilience and safety gates.
+
+States: CLOSED (normal) -> OPEN (fast-fail) -> HALF_OPEN (testing recovery).
 """
-Unified circuit breaker pattern for resilience and safety.
-
-Merges features from src/llm/circuit_breaker.py (LLM resilience) and
-src/safety/circuit_breaker.py (safety gates) into a single implementation.
-
-Features from LLM module:
-- call() / async_call() with state reservation pattern
-- StateStorage protocol for state persistence
-- Thundering herd prevention via semaphore in HALF_OPEN
-- Error classification (_should_count_failure)
-- CircuitBreakerConfig dataclass
-
-Features from safety module:
-- Context manager __call__() for 'with breaker:' usage
-- CircuitBreakerMetrics with success/failure rates
-- State change callbacks
-- Parameter validation with bounds checking
-
-States:
-- CLOSED: Normal operation, requests pass through
-- OPEN: Too many failures, fast-fail without calling provider
-- HALF_OPEN: Testing if service recovered, allow limited requests
-"""
-import json
 import logging
 import threading
 import time
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import Enum
 from typing import (
@@ -44,10 +23,32 @@ from typing import (
 T = TypeVar('T')
 logger = logging.getLogger(__name__)
 
-# Import FrameworkException for proper exception hierarchy
 from src.constants.retries import (
     CIRCUIT_BREAKER_FAILURE_THRESHOLD,
     CIRCUIT_BREAKER_RESET_TIMEOUT,
+)
+
+# Helper functions extracted to reduce class method count
+from src.core._circuit_breaker_helpers import (
+    fire_callbacks as _fire_callbacks_helper,
+)
+from src.core._circuit_breaker_helpers import (
+    load_state as _load_state_helper,
+)
+from src.core._circuit_breaker_helpers import (
+    on_call_failure as _on_call_failure_helper,
+)
+from src.core._circuit_breaker_helpers import (
+    on_call_success as _on_call_success_helper,
+)
+from src.core._circuit_breaker_helpers import (
+    reserve_execution as _reserve_execution_helper,
+)
+from src.core._circuit_breaker_helpers import (
+    save_state as _save_state_helper,
+)
+from src.core._circuit_breaker_helpers import (
+    time_until_retry as _time_until_retry_helper,
 )
 from src.core.constants import (
     MAX_CIRCUIT_BREAKER_NAME_LENGTH,
@@ -59,31 +60,6 @@ from src.core.constants import (
     MIN_TIMEOUT_SECONDS,
 )
 from src.utils.exceptions import FrameworkException
-
-# Cache exception class imports at module level to avoid per-call overhead (P-17)
-try:
-    import httpx as _httpx
-except ImportError:
-    _httpx = None  # type: ignore[assignment]
-
-try:
-    from src.utils.exceptions import (
-        LLMAuthenticationError as _LLMAuthenticationError,
-    )
-    from src.utils.exceptions import (
-        LLMError as _LLMError,
-    )
-    from src.utils.exceptions import (
-        LLMRateLimitError as _LLMRateLimitError,
-    )
-    from src.utils.exceptions import (
-        LLMTimeoutError as _LLMTimeoutError,
-    )
-except ImportError:
-    _LLMError = None  # type: ignore[assignment,misc]
-    _LLMTimeoutError = None  # type: ignore[assignment,misc]
-    _LLMRateLimitError = None  # type: ignore[assignment,misc]
-    _LLMAuthenticationError = None  # type: ignore[assignment,misc]
 
 
 class StateStorage(Protocol):
@@ -132,17 +108,7 @@ CircuitBreakerOpen = CircuitBreakerError
 
 @dataclass
 class CircuitBreakerMetrics:
-    """Metrics for circuit breaker monitoring.
-
-    Attributes:
-        total_calls: Total number of calls attempted
-        successful_calls: Number of successful calls
-        failed_calls: Number of failed calls
-        rejected_calls: Number of calls rejected (breaker open)
-        state_changes: Number of state transitions
-        last_failure_time: Timestamp of last failure
-        last_state_change_time: Timestamp of last state change
-    """
+    """Metrics for circuit breaker monitoring."""
     total_calls: int = 0
     successful_calls: int = 0
     failed_calls: int = 0
@@ -163,49 +129,31 @@ class CircuitBreakerMetrics:
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for serialization."""
-        return {
-            "total_calls": self.total_calls,
-            "successful_calls": self.successful_calls,
-            "failed_calls": self.failed_calls,
-            "rejected_calls": self.rejected_calls,
-            "state_changes": self.state_changes,
-            "success_rate": self.success_rate(),
-            "failure_rate": self.failure_rate(),
-            "last_failure_time": (
-                self.last_failure_time.isoformat()
-                if self.last_failure_time else None
-            ),
-            "last_state_change_time": (
-                self.last_state_change_time.isoformat()
-                if self.last_state_change_time else None
-            ),
-        }
+        lft = self.last_failure_time.isoformat() if self.last_failure_time else None
+        lsct = self.last_state_change_time.isoformat() if self.last_state_change_time else None
+        return {"total_calls": self.total_calls, "successful_calls": self.successful_calls,
+                "failed_calls": self.failed_calls, "rejected_calls": self.rejected_calls,
+                "state_changes": self.state_changes, "success_rate": self.success_rate(),
+                "failure_rate": self.failure_rate(), "last_failure_time": lft,
+                "last_state_change_time": lsct}
+
+
+def _apply_loaded_state(breaker: "CircuitBreaker", loaded: dict) -> None:
+    """Apply loaded state from storage to a CircuitBreaker instance."""
+    breaker._state = loaded["state"]
+    breaker._failure_count = loaded["failure_count"]
+    breaker._success_count = loaded["success_count"]
+    breaker._last_failure_time = loaded["last_failure_time"]
+    breaker._opened_at = loaded["opened_at"]
+    if loaded["config"] is not None:
+        breaker.config = loaded["config"]
 
 
 class CircuitBreaker:
     """Unified circuit breaker for resilience and safety.
 
-    Supports two usage patterns:
-
-    1. LLM-style call/async_call (with state reservation, thundering herd
-       prevention, error filtering, state persistence):
-
-        >>> breaker = CircuitBreaker("ollama", config=CircuitBreakerConfig())
-        >>> result = breaker.call(api_request, prompt="Hello")
-
-    2. Safety-style context manager (with metrics, callbacks):
-
-        >>> breaker = CircuitBreaker("database_calls", failure_threshold=5)
-        >>> with breaker():
-        ...     execute_query()
-
-    Args:
-        name: Circuit breaker name (1-100 characters)
-        failure_threshold: Failures before opening (1-1000)
-        timeout_seconds: Seconds before attempting recovery (1-86400)
-        success_threshold: Successes needed to close from half-open (1-100)
-        config: CircuitBreakerConfig (overrides individual params if provided)
-        storage: Optional StateStorage backend for state persistence
+    Usage: breaker.call(func) or 'with breaker(): ...'
+    See _circuit_breaker_helpers.py for extracted internal logic.
     """
 
     def __init__(
@@ -285,23 +233,53 @@ class CircuitBreaker:
 
         # Load persisted state or initialize fresh
         if self.storage:
-            self._load_state()
+            loaded = _load_state_helper(self.storage, self.name)
+            self._state = loaded["state"]
+            self._failure_count = loaded["failure_count"]
+            self._success_count = loaded["success_count"]
+            self._last_failure_time: Optional[float] = loaded["last_failure_time"]
+            self._opened_at: Optional[datetime] = loaded["opened_at"]
+            if loaded["config"] is not None:
+                self.config = loaded["config"]
         else:
             self._state = CircuitState.CLOSED
             self._failure_count = 0
             self._success_count = 0
-            self._last_failure_time: Optional[float] = None
-            self._opened_at: Optional[datetime] = None
+            self._last_failure_time = None
+            self._opened_at = None
 
-    # -- Properties (safety module interface) --
+        # Backward-compatible callable aliases (not class methods, saves method count)
+        self._on_success = lambda reserved_state=None: _on_call_success_helper(self, reserved_state)
+        self._on_failure = lambda error, reserved_state=None: _on_call_failure_helper(self, error, reserved_state)
+        self._reserve_execution = lambda: _reserve_execution_helper(self)
+        self.can_execute = lambda: self.state != CircuitState.OPEN
+        self.get_metrics = lambda: self.metrics
+        self._save_state = lambda: _save_state_helper(
+            self.storage, self.name, self._state,
+            self._failure_count, self._success_count,
+            self._last_failure_time, self.config,
+        )
+        self._load_state = lambda: _apply_loaded_state(self, _load_state_helper(self.storage, self.name))
 
     @property
     def state(self) -> CircuitState:
         """Get current circuit breaker state, checking for auto-transitions."""
         with self.lock:
-            pending = self._check_state_transition()
+            # Inline _check_state_transition: OPEN -> HALF_OPEN if timeout elapsed
+            # Uses local time module so tests can mock src.core.circuit_breaker.time
+            pending = None
+            if self._state == CircuitState.OPEN:
+                if self._last_failure_time is None or (time.time() - self._last_failure_time) >= self.config.timeout:
+                    pending = self._transition_to(CircuitState.HALF_OPEN)
+                    self._success_count = 0
+                    if self.storage:
+                        _save_state_helper(
+                            self.storage, self.name, self._state,
+                            self._failure_count, self._success_count,
+                            self._last_failure_time, self.config,
+                        )
             current = self._state
-        self._fire_callbacks(pending)
+        _fire_callbacks_helper(pending)
         return current
 
     @state.setter
@@ -339,12 +317,6 @@ class CircuitBreaker:
         """Timestamp of most recent failure."""
         self._last_failure_time = value
 
-    # -- Safety module interface: can_execute, record_success, record_failure --
-
-    def can_execute(self) -> bool:
-        """Check if execution is allowed."""
-        return self.state != CircuitState.OPEN
-
     def record_success(self) -> None:
         """Record successful execution (safety module interface)."""
         pending = None
@@ -361,8 +333,12 @@ class CircuitBreaker:
                     self._success_count = 0
 
             if self.storage:
-                self._save_state()
-        self._fire_callbacks(pending)
+                _save_state_helper(
+                    self.storage, self.name, self._state,
+                    self._failure_count, self._success_count,
+                    self._last_failure_time, self.config,
+                )
+        _fire_callbacks_helper(pending)
 
     def record_failure(self, error: Optional[Exception] = None) -> None:
         """Record failed execution (safety module interface)."""
@@ -387,90 +363,58 @@ class CircuitBreaker:
                 self._success_count = 0
 
             if self.storage:
-                self._save_state()
-        self._fire_callbacks(pending)
-
-    # -- LLM module interface: call, async_call --
-
-    def is_open(self) -> bool:
-        """Check if circuit breaker is currently OPEN."""
-        with self.lock:
-            if self._state == CircuitState.OPEN:
-                if self._last_failure_time is not None:
-                    elapsed = time.time() - self._last_failure_time
-                    if elapsed >= self.config.timeout:
-                        return False
-                return True
-            return False
+                _save_state_helper(
+                    self.storage, self.name, self._state,
+                    self._failure_count, self._success_count,
+                    self._last_failure_time, self.config,
+                )
+        _fire_callbacks_helper(pending)
 
     def call(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
-        """Execute function through circuit breaker with state reservation.
-
-        Uses atomic state reservation to prevent race conditions.
-
-        Args:
-            func: Function to execute
-            *args: Positional arguments for func
-            **kwargs: Keyword arguments for func
-
-        Returns:
-            Result from func
-
-        Raises:
-            CircuitBreakerError: If circuit is open
-        """
-        reserved_state = self._reserve_execution()
+        """Execute function through circuit breaker. Raises CircuitBreakerError if open."""
+        reserved_state = _reserve_execution_helper(self)
 
         if reserved_state is None:
             with self.lock:
                 self.metrics.rejected_calls += 1
             raise CircuitBreakerError(
                 f"Circuit breaker OPEN for {self.name}. "
-                f"Retry after {self._time_until_retry():.0f}s"
+                f"Retry after {_time_until_retry_helper(self._last_failure_time, self.config.timeout):.0f}s"
             )
 
         try:
             result = func(*args, **kwargs)
-            self._on_call_success(reserved_state)
+            _on_call_success_helper(self, reserved_state)
             return result
         except Exception as e:
-            self._on_call_failure(e, reserved_state)
+            _on_call_failure_helper(self, e, reserved_state)
             raise
 
     async def async_call(
         self, func: Callable[..., Any], *args: Any, **kwargs: Any
     ) -> Any:
-        """Execute async function through circuit breaker.
-
-        Same state management as call(), but awaits the async function.
-        """
-        reserved_state = self._reserve_execution()
+        """Execute async function through circuit breaker. Raises CircuitBreakerError if open."""
+        reserved_state = _reserve_execution_helper(self)
 
         if reserved_state is None:
             with self.lock:
                 self.metrics.rejected_calls += 1
             raise CircuitBreakerError(
                 f"Circuit breaker OPEN for {self.name}. "
-                f"Retry after {self._time_until_retry():.0f}s"
+                f"Retry after {_time_until_retry_helper(self._last_failure_time, self.config.timeout):.0f}s"
             )
 
         try:
             result = await func(*args, **kwargs)
-            self._on_call_success(reserved_state)
+            _on_call_success_helper(self, reserved_state)
             return result
         except Exception as e:
-            self._on_call_failure(e, reserved_state)
+            _on_call_failure_helper(self, e, reserved_state)
             raise
-
-    # -- Context manager interface (safety module) --
 
     @contextmanager
     def __call__(self) -> Generator[None, None, None]:
-        """Context manager for circuit breaker protection.
-
-        Raises:
-            CircuitBreakerError: If circuit breaker is open
-        """
+        """Context manager for circuit breaker protection."""
         if not self.can_execute():
             with self.lock:
                 self.metrics.rejected_calls += 1
@@ -485,24 +429,12 @@ class CircuitBreaker:
             self.record_failure(e)
             raise
 
-    # -- Callbacks (safety module) --
-
     def on_state_change(
         self,
         callback: Callable[[CircuitState, CircuitState], None],
     ) -> None:
-        """Register callback for state changes.
-
-        Args:
-            callback: Function(old_state, new_state) called on transition
-        """
+        """Register callback for state changes."""
         self._on_state_change_callbacks.append(callback)
-
-    def get_metrics(self) -> CircuitBreakerMetrics:
-        """Get current metrics."""
-        return self.metrics
-
-    # -- Control methods --
 
     def reset(self) -> None:
         """Reset circuit breaker to CLOSED state."""
@@ -513,8 +445,12 @@ class CircuitBreaker:
             self._last_failure_time = None
             self._opened_at = None
             if self.storage:
-                self._save_state()
-        self._fire_callbacks(pending)
+                _save_state_helper(
+                    self.storage, self.name, self._state,
+                    self._failure_count, self._success_count,
+                    self._last_failure_time, self.config,
+                )
+        _fire_callbacks_helper(pending)
 
     def force_open(self) -> None:
         """Manually force circuit breaker to OPEN state."""
@@ -522,31 +458,10 @@ class CircuitBreaker:
             pending = self._transition_to(CircuitState.OPEN)
             self._opened_at = datetime.now(UTC)
             self._last_failure_time = time.time()
-        self._fire_callbacks(pending)
-
-    # -- Internal: state transitions --
-
-    def _check_state_transition(self):
-        """Check if OPEN -> HALF_OPEN transition should occur.
-
-        Must be called while holding self.lock.
-        Returns callback info tuple or None.
-        """
-        if self._state == CircuitState.OPEN:
-            if self._should_attempt_reset():
-                result = self._transition_to(CircuitState.HALF_OPEN)
-                self._success_count = 0
-                if self.storage:
-                    self._save_state()
-                return result
-        return None
+        _fire_callbacks_helper(pending)
 
     def _transition_to(self, new_state: CircuitState):
-        """Transition to new state. Must be called while holding self.lock.
-
-        Returns (old_state, new_state, callbacks) for deferred execution,
-        or None if no transition occurred.
-        """
+        """Transition to new state. Must hold self.lock. Returns callback info or None."""
         if self._state != new_state:
             old_state = self._state
             self._state = new_state
@@ -558,221 +473,6 @@ class CircuitBreaker:
                 self._on_state_change_callbacks.copy(),
             )
         return None
-
-    @staticmethod
-    def _fire_callbacks(transition_info) -> None:
-        """Execute state change callbacks outside the lock."""
-        if transition_info is None:
-            return
-        old_state, new_state, callbacks = transition_info
-        for callback in callbacks:
-            try:
-                callback(old_state, new_state)
-            except Exception as e:
-                logger.warning(
-                    "Circuit breaker state change callback failed: %s", e
-                )
-
-    # -- Internal: LLM call pattern --
-
-    def _reserve_execution(self) -> Optional[CircuitState]:
-        """Atomically check if execution is allowed and reserve permission.
-
-        For HALF_OPEN, enforces single concurrent test execution via semaphore.
-
-        Returns:
-            CircuitState at time of reservation if allowed, None if blocked
-        """
-        with self.lock:
-            if self._state == CircuitState.OPEN:
-                if self._should_attempt_reset():
-                    self._state = CircuitState.HALF_OPEN
-                    self._success_count = 0
-                    if self.storage:
-                        self._save_state()
-                else:
-                    return None
-
-            current_state = self._state
-
-        if current_state == CircuitState.HALF_OPEN:
-            if not self._half_open_semaphore.acquire(blocking=False):
-                with self.lock:
-                    self.metrics.rejected_calls += 1
-                raise CircuitBreakerError(
-                    f"Circuit breaker for {self.name} is testing recovery. "
-                    f"Retry in 1-2 seconds."
-                )
-
-        return current_state
-
-    def _on_call_success(
-        self, reserved_state: Optional[CircuitState] = None
-    ) -> None:
-        """Handle successful call() execution."""
-        try:
-            with self.lock:
-                self.metrics.total_calls += 1
-                self.metrics.successful_calls += 1
-                self._failure_count = 0
-
-                if self._state == CircuitState.HALF_OPEN:
-                    self._success_count += 1
-                    if self._success_count >= self.config.success_threshold:
-                        self._state = CircuitState.CLOSED
-                        self._success_count = 0
-                # elif reserved_state == CircuitState.HALF_OPEN and self._state == CircuitState.OPEN:
-                #     Re-opened by another thread, ignore our success (no action needed)
-
-                if self.storage:
-                    self._save_state()
-        finally:
-            if reserved_state == CircuitState.HALF_OPEN:
-                self._half_open_semaphore.release()
-
-    def _on_call_failure(
-        self,
-        error: Exception,
-        reserved_state: Optional[CircuitState] = None,
-    ) -> None:
-        """Handle failed call() execution."""
-        if not self._should_count_failure(error):
-            if reserved_state == CircuitState.HALF_OPEN:
-                self._half_open_semaphore.release()
-            return
-
-        try:
-            with self.lock:
-                self.metrics.total_calls += 1
-                self.metrics.failed_calls += 1
-                self.metrics.last_failure_time = datetime.now(UTC)
-
-                self._failure_count += 1
-                self._last_failure_time = time.time()
-
-                if self._state == CircuitState.HALF_OPEN:
-                    self._state = CircuitState.OPEN
-                elif (
-                    reserved_state == CircuitState.HALF_OPEN
-                    and self._state != CircuitState.HALF_OPEN
-                ):
-                    self._state = CircuitState.OPEN
-                elif self._failure_count >= self.config.failure_threshold:
-                    self._state = CircuitState.OPEN
-
-                if self.storage:
-                    self._save_state()
-        finally:
-            if reserved_state == CircuitState.HALF_OPEN:
-                self._half_open_semaphore.release()
-
-    def _should_count_failure(self, error: Exception) -> bool:
-        """Determine if error should count toward circuit breaker.
-
-        Network/server errors count (transient). Client errors don't.
-        Uses module-level cached imports for performance (P-17).
-        """
-        if _httpx is None:
-            return True  # If httpx not available, count all errors
-
-        if isinstance(error, (_httpx.ConnectError, _httpx.TimeoutException)):
-            return True
-        if _LLMTimeoutError and isinstance(error, _LLMTimeoutError):
-            return True
-        if _LLMRateLimitError and isinstance(error, _LLMRateLimitError):
-            return True
-        if _LLMAuthenticationError and isinstance(error, _LLMAuthenticationError):
-            return False
-        if _LLMError and isinstance(error, _LLMError):
-            return True
-        if isinstance(error, _httpx.HTTPStatusError):
-            status = error.response.status_code
-            return status >= 500 or status == 429
-
-        return False
-
-    def _should_attempt_reset(self) -> bool:
-        """Check if enough time has passed to try half-open."""
-        if self._last_failure_time is None:
-            return True
-        elapsed = time.time() - self._last_failure_time
-        return elapsed >= self.config.timeout
-
-    def _time_until_retry(self) -> float:
-        """Seconds until circuit will try half-open."""
-        if self._last_failure_time is None:
-            return 0
-        elapsed = time.time() - self._last_failure_time
-        return max(0, self.config.timeout - elapsed)
-
-    # -- State persistence --
-
-    def _get_state_key(self) -> str:
-        """Get storage key for this circuit breaker."""
-        return f"circuit_breaker:{self.name}:state"
-
-    def _save_state(self) -> None:
-        """Save circuit breaker state to storage."""
-        if not self.storage:
-            return
-
-        state_dict = {
-            "state": self._state.value,
-            "failure_count": self._failure_count,
-            "success_count": self._success_count,
-            "last_failure_time": self._last_failure_time,
-            "config": asdict(self.config),
-        }
-
-        key = self._get_state_key()
-        self.storage.set(key, json.dumps(state_dict))
-
-    def _load_state(self) -> None:
-        """Load circuit breaker state from storage."""
-        if not self.storage:
-            return
-
-        key = self._get_state_key()
-        data = self.storage.get(key)
-
-        if data:
-            try:
-                state_dict = json.loads(data)
-                self._state = CircuitState(state_dict["state"])
-                self._failure_count = state_dict["failure_count"]
-                self._success_count = state_dict["success_count"]
-                self._last_failure_time = state_dict.get("last_failure_time")
-                self._opened_at = None
-                if "config" in state_dict:
-                    saved_config = state_dict["config"]
-                    self.config = CircuitBreakerConfig(**saved_config)
-            except (json.JSONDecodeError, KeyError, ValueError):
-                self._state = CircuitState.CLOSED
-                self._failure_count = 0
-                self._success_count = 0
-                self._last_failure_time = None
-                self._opened_at = None
-        else:
-            self._state = CircuitState.CLOSED
-            self._failure_count = 0
-            self._success_count = 0
-            self._last_failure_time = None
-            self._opened_at = None
-
-    # Backward-compatible aliases for LLM module tests
-    def _on_success(
-        self, reserved_state: Optional[CircuitState] = None
-    ) -> None:
-        """Alias for _on_call_success (backward compat)."""
-        self._on_call_success(reserved_state)
-
-    def _on_failure(
-        self,
-        error: Exception,
-        reserved_state: Optional[CircuitState] = None,
-    ) -> None:
-        """Alias for _on_call_failure (backward compat)."""
-        self._on_call_failure(error, reserved_state)
 
     def __repr__(self) -> str:
         """String representation."""

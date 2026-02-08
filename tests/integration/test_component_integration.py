@@ -31,7 +31,7 @@ from src.tools.registry import ToolRegistry
 # ============================================================================
 
 @pytest.fixture
-def test_db():
+def db_fixture():
     """Create in-memory test database."""
     db = DatabaseManager("sqlite:///:memory:")
     db.create_all_tables()
@@ -54,7 +54,7 @@ def config_loader():
 
 
 @pytest.fixture
-def execution_tracker(test_db):
+def execution_tracker(db_fixture):
     """Create execution tracker."""
     # ExecutionTracker uses get_session() internally
     # For tests, we need to initialize the database first
@@ -372,7 +372,7 @@ def test_config_to_execution_pipeline(mock_config_loader):
 # ============================================================================
 
 @patch('src.agents.standard_agent.ToolRegistry')
-def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_config, test_db):
+def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_config, db_fixture):
     """Test full workflow execution with database trace persistence.
 
     Tests that all execution events are properly persisted to database.

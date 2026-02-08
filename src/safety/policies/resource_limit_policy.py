@@ -20,7 +20,6 @@ This policy integrates with system resource monitoring to track:
 """
 import os
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import psutil  # type: ignore[import-untyped]
@@ -46,7 +45,19 @@ from src.constants.sizes import (
     SIZE_100MB,
 )
 from src.safety.base import BaseSafetyPolicy
-from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
+from src.safety.interfaces import SafetyViolation, ValidationResult
+from src.safety.policies._resource_limit_helpers import (
+    check_disk_space,
+    check_file_size,
+    check_memory_usage,
+    format_bytes,
+    validate_bool,
+    validate_size,
+    validate_time,
+)
+from src.safety.policies._resource_limit_helpers import (
+    get_current_usage as _get_current_usage_helper,
+)
 
 # File size validation limits
 MIN_FILE_SIZE = MIN_WORKERS  # Minimum file size in bytes (prevents negative/zero)
@@ -132,116 +143,6 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         "file_write", "write", "write_file", "save", "create"
     }
 
-    def _validate_size(
-        self,
-        name: str,
-        value: Any,
-        min_value: int,
-        max_value: int,
-        default: int
-    ) -> int:
-        """Validate size parameter (bytes).
-
-        Args:
-            name: Parameter name
-            value: Value to validate
-            min_value: Minimum allowed value
-            max_value: Maximum allowed value
-            default: Default value
-
-        Returns:
-            Validated value
-
-        Raises:
-            ValueError: If value is invalid
-        """
-        if not isinstance(value, (int, float)):
-            raise ValueError(
-                f"{name} must be numeric, got {type(value).__name__}"
-            )
-
-        value = int(value)
-
-        if value < min_value:
-            raise ValueError(
-                f"{name} must be >= {min_value} bytes ({self._format_bytes(min_value)}), "
-                f"got {value} ({self._format_bytes(value)})"
-            )
-
-        if value > max_value:
-            raise ValueError(
-                f"{name} must be <= {max_value} bytes ({self._format_bytes(max_value)}), "
-                f"got {value} ({self._format_bytes(value)})"
-            )
-
-        return value
-
-    def _validate_time(
-        self,
-        name: str,
-        value: Any,
-        min_value: float,
-        max_value: float,
-        default: float
-    ) -> float:
-        """Validate time parameter (seconds).
-
-        Args:
-            name: Parameter name
-            value: Value to validate
-            min_value: Minimum allowed value
-            max_value: Maximum allowed value
-            default: Default value
-
-        Returns:
-            Validated value
-
-        Raises:
-            ValueError: If value is invalid
-        """
-        if not isinstance(value, (int, float)):
-            raise ValueError(
-                f"{name} must be numeric, got {type(value).__name__}"
-            )
-
-        value = float(value)
-
-        if value < min_value:
-            raise ValueError(
-                f"{name} must be >= {min_value} seconds, got {value}"
-            )
-
-        if value > max_value:
-            raise ValueError(
-                f"{name} must be <= {max_value} seconds, got {value}"
-            )
-
-        return value
-
-    def _validate_bool(
-        self,
-        name: str,
-        value: Any
-    ) -> bool:
-        """Validate boolean parameter.
-
-        Args:
-            name: Parameter name
-            value: Value to validate
-
-        Returns:
-            Validated value
-
-        Raises:
-            ValueError: If value is invalid
-        """
-        if not isinstance(value, bool):
-            raise ValueError(
-                f"{name} must be boolean, got {type(value).__name__}"
-            )
-
-        return value
-
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize resource limit policy.
 
@@ -254,7 +155,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         super().__init__(config or {})
 
         # Validate and set file size limits
-        self.max_file_size_read = self._validate_size(
+        self.max_file_size_read = validate_size(
             "max_file_size_read",
             self.config.get("max_file_size_read", self.DEFAULT_MAX_FILE_SIZE_READ),
             min_value=MIN_FILE_SIZE,
@@ -262,7 +163,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             default=self.DEFAULT_MAX_FILE_SIZE_READ
         )
 
-        self.max_file_size_write = self._validate_size(
+        self.max_file_size_write = validate_size(
             "max_file_size_write",
             self.config.get("max_file_size_write", self.DEFAULT_MAX_FILE_SIZE_WRITE),
             min_value=MIN_FILE_SIZE,
@@ -270,7 +171,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             default=self.DEFAULT_MAX_FILE_SIZE_WRITE
         )
 
-        self.max_memory_per_operation = self._validate_size(
+        self.max_memory_per_operation = validate_size(
             "max_memory_per_operation",
             self.config.get("max_memory_per_operation", self.DEFAULT_MAX_MEMORY_PER_OPERATION),
             min_value=MIN_MEMORY_SIZE,
@@ -279,7 +180,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         )
 
         # Validate CPU time
-        self.max_cpu_time = self._validate_time(
+        self.max_cpu_time = validate_time(
             "max_cpu_time",
             self.config.get("max_cpu_time", self.DEFAULT_MAX_CPU_TIME),
             min_value=MIN_CPU_TIME,
@@ -288,7 +189,7 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         )
 
         # Validate disk space
-        self.min_free_disk_space = self._validate_size(
+        self.min_free_disk_space = validate_size(
             "min_free_disk_space",
             self.config.get("min_free_disk_space", self.DEFAULT_MIN_FREE_DISK_SPACE),
             min_value=MIN_MEMORY_SIZE,
@@ -297,15 +198,15 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         )
 
         # Validate tracking flags
-        self.track_memory = self._validate_bool(
+        self.track_memory = validate_bool(
             "track_memory",
             self.config.get("track_memory", True)
         )
-        self.track_cpu = self._validate_bool(
+        self.track_cpu = validate_bool(
             "track_cpu",
             self.config.get("track_cpu", True)
         )
-        self.track_disk = self._validate_bool(
+        self.track_disk = validate_bool(
             "track_disk",
             self.config.get("track_disk", True)
         )
@@ -357,19 +258,29 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
         # Check file size limits
         if file_path and os.path.exists(file_path):
-            file_violation = self._check_file_size(operation, file_path, context)
+            file_violation = check_file_size(
+                operation, file_path, context,
+                self.max_file_size_read, self.max_file_size_write,
+                self.FILE_READ_OPERATIONS, self.FILE_WRITE_OPERATIONS, self.name,
+            )
             if file_violation:
                 violations.append(file_violation)
 
         # Check disk space for write operations
         if operation in self.FILE_WRITE_OPERATIONS and file_path:
-            disk_violation = self._check_disk_space(file_path, context)
+            disk_violation = check_disk_space(
+                file_path, context, self.track_disk,
+                self.min_free_disk_space, self.name,
+            )
             if disk_violation:
                 violations.append(disk_violation)
 
         # Check current memory usage
         if self.track_memory:
-            memory_violation = self._check_memory_usage(context)
+            memory_violation = check_memory_usage(
+                context, self.track_memory,
+                self.max_memory_per_operation, self.name,
+            )
             if memory_violation:
                 violations.append(memory_violation)
 
@@ -391,184 +302,8 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             policy_name=self.name
         )
 
-    def _check_file_size(
-        self,
-        operation: str,
-        file_path: str,
-        context: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
-        """Check if file size is within limits.
-
-        Args:
-            operation: Operation type
-            file_path: Path to file
-            context: Execution context
-
-        Returns:
-            SafetyViolation if file too large, None otherwise
-        """
-        try:
-            file_size = os.path.getsize(file_path)
-
-            # Determine limit based on operation type
-            if operation in self.FILE_READ_OPERATIONS:
-                max_size = self.max_file_size_read
-                operation_name = "read"
-            elif operation in self.FILE_WRITE_OPERATIONS:
-                max_size = self.max_file_size_write
-                operation_name = "write"
-            else:
-                # Unknown operation, skip check
-                return None
-
-            # Check against limit
-            if file_size > max_size:
-                return SafetyViolation(
-                    policy_name=self.name,
-                    severity=ViolationSeverity.HIGH,
-                    message=f"File size exceeds {operation_name} limit: {self._format_bytes(file_size)} > {self._format_bytes(max_size)}",
-                    action=operation,
-                    context=context,
-                    remediation_hint=f"Use smaller files or increase max_file_size_{operation_name} limit",
-                    metadata={
-                        "file_path": file_path,
-                        "file_size": file_size,
-                        "max_size": max_size,
-                        "operation": operation_name,
-                        "exceeded_by": file_size - max_size
-                    }
-                )
-
-            return None
-
-        except (OSError, IOError):
-            # File doesn't exist or can't be accessed - not a resource limit issue
-            return None
-
-    def _check_disk_space(
-        self,
-        file_path: str,
-        context: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
-        """Check if sufficient disk space is available with safety margin.
-
-        Includes 20% safety margin to prevent TOCTOU race conditions where
-        disk space is consumed between check and write operations.
-
-        Args:
-            file_path: Path where file will be written
-            context: Execution context
-
-        Returns:
-            SafetyViolation if insufficient disk space, None otherwise
-        """
-        if not self.track_disk:
-            return None
-
-        try:
-            # Get disk usage for the target path
-            path_obj = Path(file_path).parent
-            if not path_obj.exists():
-                # Use root directory if path doesn't exist yet
-                path_obj = Path("/")
-
-            disk_usage = psutil.disk_usage(str(path_obj))
-            free_space = disk_usage.free
-
-            # Apply 20% safety margin to prevent TOCTOU race conditions
-            # This accounts for:
-            # - Other processes writing to disk between check and write
-            # - File system metadata overhead
-            # - Buffer space needed for atomic writes
-            required_space_with_margin = int(self.min_free_disk_space * DISK_SPACE_SAFETY_MARGIN)
-
-            if free_space < required_space_with_margin:
-                return SafetyViolation(
-                    policy_name=self.name,
-                    severity=ViolationSeverity.CRITICAL,
-                    message=f"Insufficient disk space: {self._format_bytes(free_space)} < {self._format_bytes(required_space_with_margin)} required (includes {DISK_SPACE_SAFETY_MARGIN_PERCENT}% safety margin)",
-                    action="file_write",
-                    context=context,
-                    remediation_hint="Free up disk space or reduce min_free_disk_space requirement",
-                    metadata={
-                        "file_path": file_path,
-                        "free_space": free_space,
-                        "required_space_base": self.min_free_disk_space,
-                        "required_space_with_margin": required_space_with_margin,
-                        "safety_margin_percent": DISK_SPACE_SAFETY_MARGIN_PERCENT,
-                        "total_space": disk_usage.total,
-                        "used_space": disk_usage.used,
-                        "disk_usage_percent": disk_usage.percent
-                    }
-                )
-
-            return None
-
-        except (psutil.Error, OSError):
-            # Error checking disk space - don't block operation
-            return None
-
-    def _check_memory_usage(
-        self,
-        context: Dict[str, Any]
-    ) -> Optional[SafetyViolation]:
-        """Check current memory usage.
-
-        Args:
-            context: Execution context
-
-        Returns:
-            SafetyViolation if memory usage too high, None otherwise
-        """
-        if not self.track_memory:
-            return None
-
-        try:
-            # Get current process memory usage
-            process = psutil.Process()
-            memory_info = process.memory_info()
-            current_memory = memory_info.rss  # Resident Set Size
-
-            # Get system memory
-            system_memory = psutil.virtual_memory()
-
-            # Check if current memory is approaching limit
-            # We check process memory, not per-operation
-            if current_memory > self.max_memory_per_operation:
-                return SafetyViolation(
-                    policy_name=self.name,
-                    severity=ViolationSeverity.HIGH,
-                    message=f"Memory usage exceeds limit: {self._format_bytes(current_memory)} > {self._format_bytes(self.max_memory_per_operation)}",
-                    action="memory_check",
-                    context=context,
-                    remediation_hint="Reduce memory usage or increase max_memory_per_operation limit",
-                    metadata={
-                        "current_memory": current_memory,
-                        "max_memory": self.max_memory_per_operation,
-                        "system_memory_total": system_memory.total,
-                        "system_memory_available": system_memory.available,
-                        "system_memory_percent": system_memory.percent
-                    }
-                )
-
-            return None
-
-        except (psutil.Error, OSError):
-            # Error checking memory - don't block operation
-            return None
-
     def start_operation(self, operation_id: str) -> None:
-        """Mark the start of an operation for CPU/memory tracking.
-
-        Args:
-            operation_id: Unique identifier for the operation
-
-        Example:
-            >>> policy = ResourceLimitPolicy()
-            >>> policy.start_operation("task-123")
-            >>> # ... perform operation ...
-            >>> policy.end_operation("task-123")
-        """
+        """Mark the start of an operation for CPU/memory tracking."""
         if self.track_cpu:
             self._operation_start_times[operation_id] = time.time()
 
@@ -579,25 +314,8 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             except (psutil.Error, OSError):
                 pass
 
-    def end_operation(
-        self,
-        operation_id: str
-    ) -> Dict[str, Any]:
-        """Mark the end of an operation and check resource usage.
-
-        Args:
-            operation_id: Unique identifier for the operation
-
-        Returns:
-            Dictionary with operation resource usage stats
-
-        Example:
-            >>> policy = ResourceLimitPolicy()
-            >>> policy.start_operation("task-123")
-            >>> # ... perform operation ...
-            >>> stats = policy.end_operation("task-123")
-            >>> print(f"CPU time: {stats['cpu_time']}s")
-        """
+    def end_operation(self, operation_id: str) -> Dict[str, Any]:
+        """Mark the end of an operation and check resource usage."""
         stats: Dict[str, Any] = {
             "operation_id": operation_id,
             "cpu_time": None,
@@ -628,72 +346,9 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         return stats
 
     def get_current_usage(self) -> Dict[str, Any]:
-        """Get current system resource usage.
-
-        Returns:
-            Dictionary with current resource usage
-
-        Example:
-            >>> policy = ResourceLimitPolicy()
-            >>> usage = policy.get_current_usage()
-            >>> print(f"Memory: {usage['memory']['percent']}%")
-            >>> print(f"Disk: {usage['disk']['percent']}%")
-        """
-        usage: Dict[str, Any] = {}
-
-        # Memory usage
-        try:
-            process = psutil.Process()
-            memory_info = process.memory_info()
-            system_memory = psutil.virtual_memory()
-
-            usage["memory"] = {
-                "process_rss": memory_info.rss,
-                "process_vms": memory_info.vms,
-                "system_total": system_memory.total,
-                "system_available": system_memory.available,
-                "system_used": system_memory.used,
-                "percent": system_memory.percent
-            }
-        except (psutil.Error, OSError):
-            usage["memory"] = None
-
-        # Disk usage
-        try:
-            disk_usage = psutil.disk_usage("/")
-            usage["disk"] = {
-                "total": disk_usage.total,
-                "used": disk_usage.used,
-                "free": disk_usage.free,
-                "percent": disk_usage.percent
-            }
-        except (psutil.Error, OSError):
-            usage["disk"] = None
-
-        # CPU usage (requires time to sample)
-        try:
-            cpu_percent = psutil.cpu_percent(interval=CPU_SAMPLE_INTERVAL_SECONDS)
-            usage["cpu"] = {
-                "percent": cpu_percent,
-                "count": psutil.cpu_count()
-            }
-        except (psutil.Error, OSError):
-            usage["cpu"] = None
-
-        return usage
+        """Get current system resource usage."""
+        return _get_current_usage_helper()
 
     def _format_bytes(self, size_bytes: int) -> str:
-        """Format bytes for human readability.
-
-        Args:
-            size_bytes: Size in bytes
-
-        Returns:
-            Formatted string (e.g., "10.5 MB", "1.2 GB")
-        """
-        size: float = float(size_bytes)
-        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
-            if size < BYTES_PER_KB_FLOAT:
-                return f"{size:.1f} {unit}"
-            size /= BYTES_PER_KB_FLOAT
-        return f"{size:.1f} PB"
+        """Format bytes for human readability."""
+        return format_bytes(size_bytes)

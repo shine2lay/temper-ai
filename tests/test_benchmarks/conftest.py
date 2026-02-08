@@ -149,7 +149,7 @@ def mock_llm_provider():
 
 
 @pytest.fixture
-def test_db():
+def perf_db():
     """Function-scoped in-memory database for benchmarking."""
     db = DatabaseManager("sqlite:///:memory:")
     db.create_all_tables()

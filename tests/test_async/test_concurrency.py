@@ -26,8 +26,7 @@ from src.observability.database import DatabaseManager
 # ============================================================================
 
 @pytest.fixture
-@pytest.fixture
-def test_db():
+def db_fixture():
     """Create in-memory test database."""
     db = DatabaseManager("sqlite:///:memory:")
     db.create_all_tables()
@@ -289,7 +288,7 @@ async def test_shared_resource_access():
 # ============================================================================
 
 @pytest.mark.asyncio
-async def test_database_transaction_isolation(test_db):
+async def test_database_transaction_isolation(db_fixture):
     """Test database ACID properties with SERIALIZABLE isolation.
 
     Tests: Transaction isolation prevents lost updates
@@ -299,7 +298,7 @@ async def test_database_transaction_isolation(test_db):
 
 
     # Setup test table
-    with test_db.session() as session:
+    with db_fixture.session() as session:
         session.execute(text(
             "CREATE TABLE IF NOT EXISTS test_counter (id INTEGER PRIMARY KEY, value INTEGER)"
         ))
@@ -309,7 +308,7 @@ async def test_database_transaction_isolation(test_db):
     # Function to increment counter atomically (works on SQLite and PostgreSQL)
     async def increment_db_counter():
         await asyncio.sleep(0.001)  # Simulate async work
-        with test_db.session() as session:
+        with db_fixture.session() as session:
             # Atomic increment - no race condition possible
             # This is the correct pattern for simple counters
             session.execute(
@@ -322,7 +321,7 @@ async def test_database_transaction_isolation(test_db):
     await asyncio.gather(*tasks)
 
     # Verify final count - MUST be exactly 10 (no lost updates)
-    with test_db.session() as session:
+    with db_fixture.session() as session:
         result = session.execute(text("SELECT value FROM test_counter WHERE id = 1"))
         final_value = result.fetchone()[0]
 
@@ -551,7 +550,7 @@ async def test_cancellation_handling():
 # ============================================================================
 
 @pytest.mark.asyncio
-async def test_concurrent_database_writes(test_db):
+async def test_concurrent_database_writes(db_fixture):
     """Test concurrent database writes with proper isolation.
 
     Tests: Multiple concurrent writes don't corrupt data
@@ -559,7 +558,7 @@ async def test_concurrent_database_writes(test_db):
     from sqlalchemy import text
 
     # Setup test table
-    with test_db.session() as session:
+    with db_fixture.session() as session:
         session.execute(text(
             "CREATE TABLE IF NOT EXISTS test_writes (id INTEGER PRIMARY KEY, data TEXT)"
         ))
@@ -568,7 +567,7 @@ async def test_concurrent_database_writes(test_db):
     # Function to write to database
     async def write_data(record_id, data):
         await asyncio.sleep(0.001)  # Simulate async work
-        with test_db.session() as session:
+        with db_fixture.session() as session:
             session.execute(
                 text("INSERT INTO test_writes (id, data) VALUES (:id, :data)"),
                 {"id": record_id, "data": data}
@@ -580,7 +579,7 @@ async def test_concurrent_database_writes(test_db):
     await asyncio.gather(*tasks)
 
     # Verify all writes succeeded
-    with test_db.session() as session:
+    with db_fixture.session() as session:
         result = session.execute(text("SELECT COUNT(*) FROM test_writes"))
         count = result.fetchone()[0]
 

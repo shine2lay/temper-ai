@@ -22,7 +22,7 @@ from src.tools.registry import ToolRegistry
 # ============================================================================
 
 @pytest.fixture
-def test_db():
+def stress_db():
     """In-memory database for testing."""
     db = DatabaseManager("sqlite:///:memory:")
     db.create_all_tables()
@@ -157,7 +157,7 @@ async def test_concurrent_tool_execution():
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_1000_database_writes(test_db):
+async def test_1000_database_writes(stress_db):
     """Test 1000+ database write operations.
 
     Validates database handles high write volume.
@@ -165,7 +165,7 @@ async def test_1000_database_writes(test_db):
     num_writes = 1000
 
     async def write_operation(op_id: int):
-        with test_db.session() as session:
+        with stress_db.session() as session:
             # Simulate database write (actual SQL execution)
             await asyncio.sleep(0)
             return op_id
@@ -184,7 +184,7 @@ async def test_1000_database_writes(test_db):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_concurrent_database_access(test_db):
+async def test_concurrent_database_access(stress_db):
     """Test 100+ concurrent database operations.
 
     Validates:
@@ -195,7 +195,7 @@ async def test_concurrent_database_access(test_db):
     num_operations = 100
 
     async def db_operation(op_id: int):
-        with test_db.session() as session:
+        with stress_db.session() as session:
             await asyncio.sleep(0.001)
             return op_id
 
@@ -212,7 +212,7 @@ async def test_concurrent_database_access(test_db):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_database_write_contention(test_db):
+async def test_database_write_contention(stress_db):
     """Test database under heavy concurrent write load.
 
     Validates:
@@ -226,7 +226,7 @@ async def test_database_write_contention(test_db):
     async def concurrent_writer(writer_id: int):
         results = []
         for i in range(writes_per_writer):
-            with test_db.session() as session:
+            with stress_db.session() as session:
                 await asyncio.sleep(0.001)
                 results.append(f"writer_{writer_id}_write_{i}")
         return results
@@ -250,7 +250,7 @@ async def test_database_write_contention(test_db):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_database_read_write_mix(test_db):
+async def test_database_read_write_mix(stress_db):
     """Test database under mixed read/write load.
 
     Validates proper handling of mixed workload.
@@ -261,13 +261,13 @@ async def test_database_read_write_mix(test_db):
 
     async def reader(reader_id: int):
         for i in range(operations_per_task):
-            with test_db.session() as session:
+            with stress_db.session() as session:
                 await asyncio.sleep(0.001)
         return reader_id
 
     async def writer(writer_id: int):
         for i in range(operations_per_task):
-            with test_db.session() as session:
+            with stress_db.session() as session:
                 await asyncio.sleep(0.002)
         return writer_id
 
@@ -376,7 +376,7 @@ def test_memory_leak_detection_database():
 # ============================================================================
 
 @pytest.mark.slow
-def test_file_descriptor_management(test_db):
+def test_file_descriptor_management(stress_db):
     """Test file descriptor management.
 
     Validates proper cleanup of file descriptors.
@@ -387,7 +387,7 @@ def test_file_descriptor_management(test_db):
 
     # Perform many operations
     for i in range(100):
-        with test_db.session() as session:
+        with stress_db.session() as session:
             pass
 
     # Check file descriptor count

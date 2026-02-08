@@ -43,15 +43,15 @@ def db():
 
 
 @pytest.fixture
-def test_backend():
+def obs_backend():
     """Create SQL observability backend with test database."""
     return SQLObservabilityBackend()
 
 
 @pytest.fixture
-def tracker(db, test_backend):
+def tracker(db, obs_backend):
     """Create execution tracker with test backend."""
-    return ExecutionTracker(backend=test_backend)
+    return ExecutionTracker(backend=obs_backend)
 
 
 @pytest.fixture
@@ -100,7 +100,7 @@ def variants():
 class TestObservabilityIntegration:
     """Test integration between experimentation and observability systems."""
 
-    def test_track_workflow_with_experiment_metadata(self, tracker, test_backend):
+    def test_track_workflow_with_experiment_metadata(self, tracker, obs_backend):
         """Test tracking workflow execution with experiment metadata."""
         with tracker.track_workflow(
             workflow_name="test_workflow",
@@ -114,7 +114,7 @@ class TestObservabilityIntegration:
             assert workflow_id is not None
 
         # Verify workflow was created with experiment metadata
-        with test_backend.get_session_context() as session:
+        with obs_backend.get_session_context() as session:
             from src.observability.models import WorkflowExecution
             workflow = session.get(WorkflowExecution, workflow_id)
 
@@ -129,7 +129,7 @@ class TestObservabilityIntegration:
     def test_end_to_end_experiment_workflow(
         self,
         tracker,
-        test_backend,
+        obs_backend,
         experiment,
         variants
     ):
@@ -214,7 +214,7 @@ class TestObservabilityIntegration:
             # Treatment should be around 94 (90, 92, 94, 96, 98)
             assert 90 <= treatment_metrics["mean"] <= 98
 
-    def test_multiple_experiments_isolation(self, tracker, test_backend):
+    def test_multiple_experiments_isolation(self, tracker, obs_backend):
         """Test that multiple experiments are properly isolated."""
         # Create workflows for experiment 1
         for i in range(5):
@@ -239,7 +239,7 @@ class TestObservabilityIntegration:
                 pass
 
         # Collect metrics for each experiment separately
-        with test_backend.get_session_context() as session:
+        with obs_backend.get_session_context() as session:
             collector = ExperimentMetricsCollector(session=session)
 
             exp1_assignments = collector.collect_assignments("exp-001")
@@ -251,7 +251,7 @@ class TestObservabilityIntegration:
             assert all(a.experiment_id == "exp-001" for a in exp1_assignments)
             assert all(a.experiment_id == "exp-002" for a in exp2_assignments)
 
-    def test_failed_workflow_tracking(self, tracker, test_backend, experiment, variants):
+    def test_failed_workflow_tracking(self, tracker, obs_backend, experiment, variants):
         """Test that failed workflows are tracked correctly."""
         assigner = VariantAssigner()
 
@@ -279,7 +279,7 @@ class TestObservabilityIntegration:
             pass  # Expected
 
         # Collect and verify
-        with test_backend.get_session_context() as session:
+        with obs_backend.get_session_context() as session:
             collector = ExperimentMetricsCollector(session=session)
 
             all_assignments = collector.collect_assignments(experiment.id)
@@ -294,7 +294,7 @@ class TestObservabilityIntegration:
             # Failed assignment should have error_rate = 1.0
             assert failed[0].metrics["error_rate"] == 1.0
 
-    def test_experiment_summary_with_tracking(self, tracker, test_backend, experiment):
+    def test_experiment_summary_with_tracking(self, tracker, obs_backend, experiment):
         """Test experiment summary with tracked workflows."""
         # Track multiple workflows
         for i in range(10):
@@ -315,7 +315,7 @@ class TestObservabilityIntegration:
                 pass
 
         # Get summary
-        with test_backend.get_session_context() as session:
+        with obs_backend.get_session_context() as session:
             collector = ExperimentMetricsCollector(session=session)
             summary = collector.get_experiment_summary(experiment.id)
 
@@ -325,7 +325,7 @@ class TestObservabilityIntegration:
             assert summary["completion_rate"] == 0.8
             assert summary["variant_count"] == 2
 
-    def test_custom_metrics_preservation(self, tracker, test_backend):
+    def test_custom_metrics_preservation(self, tracker, obs_backend):
         """Test that custom metrics are preserved through tracking."""
         custom_metrics = {
             "quality_score": 85.0,
@@ -344,7 +344,7 @@ class TestObservabilityIntegration:
             pass
 
         # Collect and verify custom metrics
-        with test_backend.get_session_context() as session:
+        with obs_backend.get_session_context() as session:
             collector = ExperimentMetricsCollector(session=session)
             assignments = collector.collect_assignments("exp-001")
 
@@ -356,7 +356,7 @@ class TestObservabilityIntegration:
                 assert metric_name in assignment.metrics
                 assert assignment.metrics[metric_name] == pytest.approx(metric_value, rel=0.01)
 
-    def test_time_series_with_tracking(self, tracker, test_backend, experiment):
+    def test_time_series_with_tracking(self, tracker, obs_backend, experiment):
         """Test time-series metrics extraction from tracked workflows."""
         import time
 
@@ -375,7 +375,7 @@ class TestObservabilityIntegration:
                 time.sleep(0.01)
 
         # Get time series
-        with test_backend.get_session_context() as session:
+        with obs_backend.get_session_context() as session:
             collector = ExperimentMetricsCollector(session=session)
             time_series = collector.get_time_series_metrics(
                 experiment.id,
@@ -399,7 +399,7 @@ class TestObservabilityIntegration:
 class TestBackwardsCompatibility:
     """Test that tracking without experiment metadata still works."""
 
-    def test_track_workflow_without_experiment_metadata(self, tracker, test_backend):
+    def test_track_workflow_without_experiment_metadata(self, tracker, obs_backend):
         """Test that workflows can be tracked without experiment metadata."""
         # Should work exactly as before
         with tracker.track_workflow(
@@ -409,7 +409,7 @@ class TestBackwardsCompatibility:
             assert workflow_id is not None
 
         # Verify workflow was created without experiment metadata
-        with test_backend.get_session_context() as session:
+        with obs_backend.get_session_context() as session:
             from src.observability.models import WorkflowExecution
             workflow = session.get(WorkflowExecution, workflow_id)
 
@@ -417,7 +417,7 @@ class TestBackwardsCompatibility:
             # extra_metadata should be None or empty
             assert workflow.extra_metadata is None or len(workflow.extra_metadata) == 0
 
-    def test_partial_experiment_metadata(self, tracker, test_backend):
+    def test_partial_experiment_metadata(self, tracker, obs_backend):
         """Test tracking with only some experiment metadata fields."""
         with tracker.track_workflow(
             workflow_name="test_workflow",
@@ -427,7 +427,7 @@ class TestBackwardsCompatibility:
         ) as workflow_id:
             assert workflow_id is not None
 
-        with test_backend.get_session_context() as session:
+        with obs_backend.get_session_context() as session:
             from src.observability.models import WorkflowExecution
             workflow = session.get(WorkflowExecution, workflow_id)
 

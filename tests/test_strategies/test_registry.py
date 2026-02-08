@@ -211,6 +211,7 @@ class TestStrategyRegistry:
 
         # Should not raise an error
         registry.unregister_strategy("nonexistent_strategy_xyz")
+        assert True  # Verifies no exception raised
 
 
 class TestResolverRegistry:

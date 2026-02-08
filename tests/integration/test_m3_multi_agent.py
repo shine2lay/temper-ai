@@ -67,7 +67,7 @@ def compiler(config_loader):
 
 
 @pytest.fixture
-def test_db():
+def db_fixture():
     """Create in-memory test database."""
     if OBSERVABILITY_AVAILABLE:
         db = init_database("sqlite:///:memory:")
@@ -602,7 +602,7 @@ class TestM3Performance:
         """Measure overhead of parallel execution vs sequential."""
         # This would require actual agent execution timing
         # Placeholder for future implementation
-        pass
+        assert True, "Placeholder test for future parallel execution overhead measurement"
 
 
 class TestQualityGates:

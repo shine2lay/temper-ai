@@ -263,3 +263,4 @@ def test_performance_summary(benchmark):
     """
 
     print(summary)
+    assert isinstance(summary, str) and len(summary) > 0

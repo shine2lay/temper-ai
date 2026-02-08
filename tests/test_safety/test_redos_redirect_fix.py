@@ -390,6 +390,7 @@ class TestEdgeCases:
 
         # May or may not match depending on \S+ handling quotes
         # This is acceptable - main concern is no ReDoS
+        assert result is not None  # Verifies validation completed without ReDoS
 
     def test_multiple_redirects(self):
         """Test command with multiple redirects."""

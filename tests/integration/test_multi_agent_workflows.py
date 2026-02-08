@@ -24,7 +24,7 @@ class TestAgentHandoffWorkflows:
     """Test workflows with explicit agent handoff between stages."""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
             from src.observability.database import get_database
@@ -34,7 +34,7 @@ class TestAgentHandoffWorkflows:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -43,7 +43,7 @@ class TestAgentHandoffWorkflows:
     @pytest.mark.integration
     def test_sequential_agent_handoff_with_state_transfer(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test agent handoff with complete state transfer.
@@ -181,7 +181,7 @@ class TestAgentHandoffWorkflows:
     @pytest.mark.integration
     def test_agent_handoff_with_partial_output(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test agent handoff when previous stage has partial output.
@@ -283,7 +283,7 @@ class TestConsensusWorkflows:
     """Test workflows where multiple agents must reach consensus."""
 
     @pytest.fixture
-    def test_database(self):
+    def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
             from src.observability.database import get_database
@@ -293,7 +293,7 @@ class TestConsensusWorkflows:
         yield
 
     @pytest.fixture
-    def execution_tracker(self, test_database):
+    def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
         from src.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
@@ -302,7 +302,7 @@ class TestConsensusWorkflows:
     @pytest.mark.integration
     def test_multi_agent_consensus_workflow(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test workflow where multiple agents must reach consensus.
@@ -429,7 +429,7 @@ class TestConsensusWorkflows:
     @pytest.mark.integration
     def test_debate_strategy_workflow(
         self,
-        test_database,
+        sample_database,
         execution_tracker
     ):
         """Test workflow with debate strategy between agents.

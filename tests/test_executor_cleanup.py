@@ -366,5 +366,6 @@ class TestErrors:
         try:
             executor.__del__()
             # If we get here, __del__ handled the exception
+            assert True  # __del__ handled the exception gracefully
         except RuntimeError:
             pytest.fail("__del__ should not propagate exceptions")

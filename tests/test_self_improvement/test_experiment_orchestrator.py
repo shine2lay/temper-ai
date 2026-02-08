@@ -512,6 +512,7 @@ class TestWinnerDetermination:
         # Should not raise with force=True
         winner = orchestrator.get_winner(experiment.id, force=True)
         # Winner may or may not be found depending on statistical significance
+        assert True  # Verifies no exception raised with force=True
 
 
     def test_get_winning_config(

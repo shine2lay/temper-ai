@@ -7,29 +7,18 @@ Supports environment variable substitution, secret references, and prompt templa
 M5 Integration: Automatically checks ConfigDeployer for M5-improved configs before
 falling back to YAML files. This closes the self-improvement feedback loop.
 """
-import json
 import logging
-import os
-import re
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, List, Match, Optional, Union, cast
+from typing import Any, Dict, List, Optional, Union, cast
 
-import yaml
-from pydantic import ValidationError
-
-# Import context-aware environment variable validator
-from src.compiler.env_var_validator import EnvVarValidator
-
-# Import schemas for validation
-from src.compiler.schemas import (
-    AgentConfig,
-    CronTrigger,
-    EventTrigger,
-    StageConfig,
-    ThresholdTrigger,
-    ToolConfig,
-    WorkflowConfig,
+from src.compiler._config_loader_helpers import (
+    load_config_file,
+    resolve_secrets,
+    substitute_env_vars,
+    substitute_template_vars,
+    validate_config,
+    validate_config_structure,
 )
 
 # Import security limits from shared configuration
@@ -39,15 +28,8 @@ from src.constants.limits import MEDIUM_ITEM_LIMIT
 # Import enhanced exceptions
 from src.utils.exceptions import ConfigNotFoundError, ConfigValidationError
 
-# Import secrets management
-from src.utils.secrets import SecretReference, resolve_secret
-
 # Security limit constants (imported from security_limits.py for consistency)
 MAX_CONFIG_SIZE = CONFIG_SECURITY.MAX_CONFIG_SIZE
-MAX_ENV_VAR_SIZE = CONFIG_SECURITY.MAX_ENV_VAR_SIZE
-MAX_YAML_NESTING_DEPTH = CONFIG_SECURITY.MAX_YAML_NESTING_DEPTH
-MAX_YAML_NODES = CONFIG_SECURITY.MAX_YAML_NODES
-
 
 __all__ = [
     "ConfigLoader",
@@ -172,27 +154,17 @@ class ConfigLoader:
         return cast(Dict[str, Any], config)
 
     def _ensure_config_deployer(self) -> None:
-        """
-        Lazy-initialize ConfigDeployer for M5 integration.
-
-        Attempts to import and initialize ConfigDeployer with coordination database.
-        If initialization fails (no database, import error, etc.), gracefully disables
-        M5 integration and logs the issue.
-
-        This enables seamless M5 integration: when coordination database is available,
-        ConfigLoader automatically uses M5-improved configs. When not available, it
-        falls back to YAML-only mode.
-        """
+        """Lazy-initialize ConfigDeployer for M5 integration."""
         if self._config_deployer_initialized:
             return
 
         self._config_deployer_initialized = True
-        logger = logging.getLogger(__name__)
+        _logger = logging.getLogger(__name__)
 
         # If ConfigDeployer was explicitly provided, use it
         if self.config_deployer is not None:
             self._config_deployer_available = True
-            logger.debug("Using provided ConfigDeployer for M5 integration")
+            _logger.debug("Using provided ConfigDeployer for M5 integration")
             return
 
         # ConfigDeployer integration removed (coordination system obsolete)
@@ -204,13 +176,7 @@ class ConfigLoader:
         Load agent configuration.
 
         M5 Integration: Checks ConfigDeployer first for improved configs deployed by M5,
-        then falls back to YAML files if no deployed config exists. This closes the
-        self-improvement feedback loop.
-
-        Flow:
-        1. If config_deployer provided, check for deployed config
-        2. If deployed config exists and valid, return it (M5-improved config)
-        3. Otherwise, fall back to loading from YAML file (baseline config)
+        then falls back to YAML files if no deployed config exists.
 
         Args:
             agent_name: Name of the agent (without extension)
@@ -223,7 +189,7 @@ class ConfigLoader:
             ConfigNotFoundError: If agent config not found in either source
             ConfigValidationError: If validation fails
         """
-        logger = logging.getLogger(__name__)
+        _logger = logging.getLogger(__name__)
 
         # M5 Integration: Ensure ConfigDeployer is initialized (lazy init)
         self._ensure_config_deployer()
@@ -232,28 +198,21 @@ class ConfigLoader:
         if self._config_deployer_available and self.config_deployer:
             try:
                 deployed_config_obj = self.config_deployer.get_agent_config(agent_name)
-                # Convert AgentConfig object to dict
                 deployed_config = deployed_config_obj.to_dict()
 
-                # If we got a non-default config (has deployed settings), use it
                 if deployed_config.get("inference") or deployed_config.get("prompt"):
-                    logger.info(
+                    _logger.info(
                         f"Loading M5-improved config for {agent_name} from ConfigDeployer"
                     )
-
-                    # Validate if requested
                     if validate:
                         self._validate_config("agent", deployed_config)
-
                     return deployed_config
                 else:
-                    # Got default config from ConfigDeployer, fall back to YAML
-                    logger.debug(
+                    _logger.debug(
                         f"No deployed config for {agent_name}, falling back to YAML"
                     )
             except Exception as e:
-                # ConfigDeployer failed, fall back to YAML
-                logger.debug(
+                _logger.debug(
                     f"ConfigDeployer lookup failed for {agent_name}, falling back to YAML: {e}"
                 )
 
@@ -261,55 +220,19 @@ class ConfigLoader:
         return self._load_config("agent", agent_name, self.agents_dir, validate)
 
     def load_stage(self, stage_name: str, validate: bool = True) -> Dict[str, Any]:
-        """
-        Load stage configuration.
-
-        Args:
-            stage_name: Name of the stage (without extension)
-            validate: Whether to validate the config
-
-        Returns:
-            Stage configuration dictionary
-        """
+        """Load stage configuration."""
         return self._load_config("stage", stage_name, self.stages_dir, validate)
 
     def load_workflow(self, workflow_name: str, validate: bool = True) -> Dict[str, Any]:
-        """
-        Load workflow configuration.
-
-        Args:
-            workflow_name: Name of the workflow (without extension)
-            validate: Whether to validate the config
-
-        Returns:
-            Workflow configuration dictionary
-        """
+        """Load workflow configuration."""
         return self._load_config("workflow", workflow_name, self.workflows_dir, validate)
 
     def load_tool(self, tool_name: str, validate: bool = True) -> Dict[str, Any]:
-        """
-        Load tool configuration.
-
-        Args:
-            tool_name: Name of the tool (without extension)
-            validate: Whether to validate the config
-
-        Returns:
-            Tool configuration dictionary
-        """
+        """Load tool configuration."""
         return self._load_config("tool", tool_name, self.tools_dir, validate)
 
     def load_trigger(self, trigger_name: str, validate: bool = True) -> Dict[str, Any]:
-        """
-        Load trigger configuration.
-
-        Args:
-            trigger_name: Name of the trigger (without extension)
-            validate: Whether to validate the config
-
-        Returns:
-            Trigger configuration dictionary
-        """
+        """Load trigger configuration."""
         return self._load_config("trigger", trigger_name, self.triggers_dir, validate)
 
     def load_prompt_template(self, template_path: str, variables: Optional[Dict[str, str]] = None) -> str:
@@ -323,21 +246,16 @@ class ConfigLoader:
         Returns:
             Rendered prompt string
 
-        Example:
-            >>> loader.load_prompt_template("agent_base.txt", {"domain": "SaaS", "tone": "professional"})
-            "You are an expert in SaaS products. Use a professional tone..."
-
         Raises:
             ConfigNotFoundError: If template not found
             ConfigValidationError: If path attempts directory traversal, contains null bytes,
                                    contains control characters, or file too large
         """
-        logger = logging.getLogger(__name__)
+        _logger = logging.getLogger(__name__)
 
         # SECURITY FIX: Check for null bytes FIRST (before any path operations)
-        # Prevents null byte injection attacks where attacker provides: "safe.txt\x00../../etc/passwd"
         if '\x00' in template_path:
-            logger.warning(
+            _logger.warning(
                 "Security violation: Null byte detected in template path",
                 extra={
                     "template_path": repr(template_path),
@@ -349,10 +267,9 @@ class ConfigLoader:
                 'This may indicate a path traversal attack attempt.'
             )
 
-        # SECURITY FIX: Check for control characters (0x00-0x1F except newline, carriage return, tab)
-        # Control characters can bypass validation or cause unexpected behavior
+        # SECURITY FIX: Check for control characters
         if any(ord(c) < 32 and c not in '\n\r\t' for c in template_path):
-            logger.warning(
+            _logger.warning(
                 "Security violation: Control characters detected in template path",
                 extra={
                     "template_path": repr(template_path),
@@ -364,14 +281,13 @@ class ConfigLoader:
                 'Only printable characters are allowed in paths.'
             )
 
-        # Resolve full path and validate it's within prompts directory (prevent directory traversal)
+        # Resolve full path and validate it's within prompts directory
         full_path = (self.prompts_dir / template_path).resolve()
 
         try:
-            # Check if path is relative to prompts_dir (Python 3.9+)
             full_path.relative_to(self.prompts_dir.resolve())
         except ValueError:
-            logger.warning(
+            _logger.warning(
                 "Security violation: Path traversal attempt detected",
                 extra={
                     "template_path": repr(template_path),
@@ -397,26 +313,16 @@ class ConfigLoader:
                 f"Template file too large: {file_size} bytes (max: {MAX_CONFIG_SIZE})"
             )
 
-        # Load template content
         with open(full_path, 'r', encoding='utf-8') as f:
             template = f.read()
 
-        # Substitute variables if provided
         if variables:
             template = self._substitute_template_vars(template, variables)
 
         return template
 
     def list_configs(self, config_type: str) -> List[str]:
-        """
-        List available configuration files of a given type.
-
-        Args:
-            config_type: One of: agent, stage, workflow, tool, trigger
-
-        Returns:
-            List of config names (without extensions)
-        """
+        """List available configuration files of a given type."""
         type_dirs = {
             "agent": self.agents_dir,
             "stage": self.stages_dir,
@@ -444,329 +350,34 @@ class ConfigLoader:
         self._cache.clear()
 
     def _load_config_file(self, directory: Path, name: str) -> Dict[str, Any]:
-        """
-        Load a configuration file (YAML or JSON).
-
-        Tries both .yaml, .yml, and .json extensions.
-        """
-        # Try different extensions
-        for ext in ['.yaml', '.yml', '.json']:
-            file_path = directory / f"{name}{ext}"
-            if file_path.exists():
-                return self._parse_config_file(file_path)
-
-        raise ConfigNotFoundError(
-            message=f"Config file not found: {name} in {directory}\nTried extensions: .yaml, .yml, .json",
-            config_path=str(directory / name)
-        )
+        """Load a configuration file (YAML or JSON). Delegates to helper."""
+        return load_config_file(directory, name)
 
     def _parse_config_file(self, file_path: Path) -> Dict[str, Any]:
-        """
-        Parse a YAML or JSON configuration file with security protections.
-
-        Args:
-            file_path: Path to config file
-
-        Returns:
-            Parsed configuration dictionary
-
-        Raises:
-            ConfigValidationError: If file too large, parsing fails, or security limits exceeded
-        """
-        # Check file size to prevent memory exhaustion
-        file_size = file_path.stat().st_size
-        if file_size > MAX_CONFIG_SIZE:
-            raise ConfigValidationError(
-                f"Config file too large: {file_size} bytes (max: {MAX_CONFIG_SIZE})"
-            )
-
-        try:
-            with open(file_path, 'r', encoding='utf-8') as f:
-                if file_path.suffix == '.json':
-                    config = json.load(f)
-                else:
-                    # Use safe_load with additional security checks
-                    config = yaml.safe_load(f)
-
-            # Validate the parsed config for security issues
-            self._validate_config_structure(config, file_path)
-
-            return cast(Dict[str, Any], config)
-
-        except yaml.YAMLError as e:
-            raise ConfigValidationError(
-                f"YAML parsing failed for {file_path}: {e}"
-            )
-        except json.JSONDecodeError as e:
-            raise ConfigValidationError(
-                f"JSON parsing failed for {file_path}: {e}"
-            )
-        except Exception as e:
-            raise ConfigValidationError(
-                f"Failed to parse config file {file_path}: {e}"
-            )
+        """Parse a YAML or JSON configuration file. Delegates to helper."""
+        from src.compiler._config_loader_helpers import parse_config_file
+        return parse_config_file(file_path)
 
     def _validate_config_structure(
-        self,
-        config: Any,
-        file_path: Path,
-        current_depth: int = 0,
-        visited: Optional[set[int]] = None,
-        node_count: Optional[list[int]] = None
+        self, config: Any, file_path: Path,
+        current_depth: int = 0, visited: Optional[set] = None,
+        node_count: Optional[list] = None
     ) -> None:
-        """
-        Validate config structure for security issues.
-
-        Checks for:
-        - Excessive nesting depth (>50 levels) - prevents stack overflow
-        - Too many nodes (>100k) - prevents YAML bomb (billion laughs)
-        - Circular references - prevents infinite loops
-
-        Args:
-            config: Configuration to validate
-            file_path: Path to config file (for error messages)
-            current_depth: Current nesting depth
-            visited: Set of visited object IDs (for circular reference detection)
-            node_count: List containing single integer (mutable counter for nodes)
-
-        Raises:
-            ConfigValidationError: If security limits exceeded
-        """
-        # Initialize tracking on first call
-        if visited is None:
-            visited = set()
-        if node_count is None:
-            node_count = [0]  # Use list to make it mutable in nested calls
-
-        # Check nesting depth
-        if current_depth > MAX_YAML_NESTING_DEPTH:
-            raise ConfigValidationError(
-                f"Config file {file_path} exceeds maximum nesting depth of {MAX_YAML_NESTING_DEPTH} levels. "
-                f"This may indicate a YAML bomb attack or malformed config."
-            )
-
-        # Increment node count
-        node_count[0] += 1
-        if node_count[0] > MAX_YAML_NODES:
-            raise ConfigValidationError(
-                f"Config file {file_path} exceeds maximum node count of {MAX_YAML_NODES}. "
-                f"This may indicate a YAML bomb (billion laughs) attack."
-            )
-
-        # Check for circular references (only for mutable objects)
-        if isinstance(config, (dict, list)):
-            obj_id = id(config)
-            if obj_id in visited:
-                raise ConfigValidationError(
-                    f"Circular reference detected in config file {file_path}. "
-                    f"This may cause infinite loops during processing."
-                )
-            visited.add(obj_id)
-
-            try:
-                # Recursively validate nested structures
-                if isinstance(config, dict):
-                    for key, value in config.items():
-                        self._validate_config_structure(
-                            value,
-                            file_path,
-                            current_depth + 1,
-                            visited,
-                            node_count
-                        )
-                elif isinstance(config, list):
-                    for item in config:
-                        self._validate_config_structure(
-                            item,
-                            file_path,
-                            current_depth + 1,
-                            visited,
-                            node_count
-                        )
-            finally:
-                # Remove from visited after processing children
-                # This allows the same object to appear in different branches
-                # but prevents cycles within a single branch
-                visited.discard(obj_id)
+        """Validate config structure for security issues. Delegates to helper."""
+        validate_config_structure(config, file_path, current_depth, visited, node_count)
 
     def _substitute_env_vars(self, config: Any) -> Any:
-        """
-        Recursively substitute environment variables in config.
-
-        Replaces ${VAR_NAME} with os.environ['VAR_NAME']
-        Replaces ${VAR_NAME:default_value} with os.environ.get('VAR_NAME', 'default_value')
-        """
-        if isinstance(config, dict):
-            return {k: self._substitute_env_vars(v) for k, v in config.items()}
-        elif isinstance(config, list):
-            return [self._substitute_env_vars(item) for item in config]
-        elif isinstance(config, str):
-            return self._substitute_env_var_string(config)
-        else:
-            return config
-
-    def _substitute_env_var_string(self, value: str) -> str:
-        """
-        Substitute environment variables in a string with security validation.
-
-        Supports:
-        - ${VAR_NAME} - required variable
-        - ${VAR_NAME:default} - optional variable with default
-
-        Note: This is for legacy env var substitution. Prefer secret references
-        (${env:VAR_NAME}) for credentials, which are handled by _resolve_secrets.
-
-        Validates environment variable values to prevent injection attacks.
-        """
-        # Skip if value looks like a secret reference (will be handled by _resolve_secrets)
-        if SecretReference.is_reference(value):
-            return value
-
-        # Pattern: ${VAR_NAME} or ${VAR_NAME:default}
-        pattern = r'\$\{([A-Za-z_][A-Za-z0-9_]*)(?::([^}]*))?\}'
-
-        def replacer(match: Match[str]) -> str:
-            """Replace config placeholders with environment variables."""
-            var_name = match.group(1)
-            default_value = match.group(2)
-
-            if var_name in os.environ:
-                env_value = os.environ[var_name]
-                # Validate environment variable value for security
-                self._validate_env_var_value(var_name, env_value)
-                return env_value
-            elif default_value is not None:
-                # Validate default values as well (they could contain malicious content)
-                self._validate_env_var_value(var_name, default_value)
-                return default_value
-            else:
-                raise ConfigValidationError(
-                    f"Environment variable '{var_name}' is required but not set"
-                )
-
-        return re.sub(pattern, replacer, value)
-
-    def _validate_env_var_value(self, var_name: str, value: str) -> None:
-        """
-        Validate environment variable value for security issues using context-aware validation.
-
-        This method uses the EnvVarValidator which provides defense-in-depth through:
-        - Context detection from variable name patterns
-        - Whitelist-based validation (defines what IS allowed)
-        - Multiple validation layers (pattern + context-specific checks)
-        - Protection against: command injection, SQL injection, path traversal, etc.
-
-        Key Security Improvements (vs previous implementation):
-        - Validates ALL variables based on context, not just those matching specific name patterns
-        - Prevents command injection bypass via non-obvious variable names
-        - Uses whitelist approach instead of blacklist for better security
-        - Context-aware rules: executable, path, structured, identifier, data, unrestricted
-
-        Args:
-            var_name: Name of environment variable
-            value: Value to validate
-
-        Raises:
-            ConfigValidationError: If value fails validation for its detected context
-
-        Example:
-            # OLD (VULNERABLE): Only checked if name contained 'cmd', 'command', etc.
-            # API_ENDPOINT = "http://api.com; rm -rf /" would PASS (bypassed validation)
-
-            # NEW (SECURE): Checks ALL variables based on detected context
-            # API_ENDPOINT = "http://api.com; rm -rf /" will FAIL (semicolon not allowed in STRUCTURED context)
-        """
-        # Use context-aware validator
-        validator = EnvVarValidator()
-        is_valid, error_message = validator.validate(
-            var_name=var_name,
-            value=value,
-            max_length=MAX_ENV_VAR_SIZE
-        )
-
-        if not is_valid:
-            raise ConfigValidationError(error_message)
+        """Recursively substitute environment variables. Delegates to helper."""
+        return substitute_env_vars(config)
 
     def _resolve_secrets(self, config: Any) -> Any:
-        """
-        Recursively resolve secret references in configuration.
-
-        Resolves references like:
-        - ${env:VAR_NAME} - environment variable
-        - ${vault:path} - HashiCorp Vault (future)
-        - ${aws:secret-id} - AWS Secrets Manager (future)
-
-        Args:
-            config: Configuration to process (dict, list, str, etc.)
-
-        Returns:
-            Configuration with resolved secrets
-
-        Raises:
-            ConfigValidationError: If secret resolution fails
-        """
-        try:
-            return resolve_secret(config)
-        except (ValueError, NotImplementedError) as e:
-            raise ConfigValidationError(f"Secret resolution failed: {e}")
+        """Recursively resolve secret references. Delegates to helper."""
+        return resolve_secrets(config)
 
     def _substitute_template_vars(self, template: str, variables: Dict[str, str]) -> str:
-        """
-        Substitute variables in a prompt template.
-
-        Replaces {{var_name}} with variables['var_name']
-        """
-        pattern = r'\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}'
-
-        def replacer(match: Match[str]) -> str:
-            """Replace config placeholders with environment variables."""
-            var_name = match.group(1)
-            if var_name not in variables:
-                raise ConfigValidationError(
-                    f"Template variable '{var_name}' is required but not provided"
-                )
-            return variables[var_name]
-
-        return re.sub(pattern, replacer, template)
+        """Substitute variables in a prompt template. Delegates to helper."""
+        return substitute_template_vars(template, variables)
 
     def _validate_config(self, config_type: str, config: Dict[str, Any]) -> None:
-        """
-        Validate configuration against Pydantic schemas.
-
-        Args:
-            config_type: Type of config (agent, stage, workflow, tool, trigger)
-            config: Configuration dictionary to validate
-
-        Raises:
-            ConfigValidationError: If validation fails
-        """
-        schema_map = {
-            "agent": AgentConfig,
-            "stage": StageConfig,
-            "workflow": WorkflowConfig,
-            "tool": ToolConfig,
-        }
-
-        try:
-            if config_type == "trigger":
-                # Triggers have multiple possible schemas - try each
-                trigger_type = config.get("trigger", {}).get("type")
-                if trigger_type == "EventTrigger":
-                    EventTrigger(**config)
-                elif trigger_type == "CronTrigger":
-                    CronTrigger(**config)
-                elif trigger_type == "ThresholdTrigger":
-                    ThresholdTrigger(**config)
-                else:
-                    raise ConfigValidationError(
-                        f"Unknown trigger type: {trigger_type}"
-                    )
-            elif config_type in schema_map:
-                # Validate with appropriate schema
-                schema_map[config_type](**config)
-            # else: Unknown config type - skip validation (no action needed)
-
-        except ValidationError as e:
-            raise ConfigValidationError(
-                f"Config validation failed for {config_type}: {e}"
-            )
+        """Validate configuration against Pydantic schemas. Delegates to helper."""
+        validate_config(config_type, config)

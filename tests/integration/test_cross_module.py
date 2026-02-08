@@ -38,7 +38,7 @@ from src.tools.registry import ToolRegistry
 # ============================================================================
 
 @pytest.fixture
-def test_db():
+def db_fixture():
     """Create in-memory test database."""
     db = DatabaseManager("sqlite:///:memory:")
     db.create_all_tables()
@@ -62,7 +62,7 @@ def config_loader():
 
 
 @pytest.fixture
-def execution_tracker(test_db):
+def execution_tracker(db_fixture):
     """Create execution tracker."""
     # ExecutionTracker uses get_session() internally
     tracker = ExecutionTracker()
@@ -72,7 +72,7 @@ def execution_tracker(test_db):
 
 
 @pytest.fixture
-def integrated_system(test_db, config_loader, tool_registry, execution_tracker):
+def integrated_system(db_fixture, config_loader, tool_registry, execution_tracker):
     """Create fully integrated system with all modules."""
     # Compiler with observability
     compiler = LangGraphCompiler(
@@ -85,7 +85,7 @@ def integrated_system(test_db, config_loader, tool_registry, execution_tracker):
         "config_loader": config_loader,
         "tool_registry": tool_registry,
         "execution_tracker": execution_tracker,
-        "test_db": test_db
+        "db_fixture": db_fixture
     }
 
 
@@ -510,6 +510,10 @@ class TestModuleBoundaryContracts:
                     import uuid as uuid_module
 
                     # These should not raise ValueError
-                    uuid_module.UUID(wf_id)
-                    uuid_module.UUID(stage_id)
-                    uuid_module.UUID(agent_id)
+                    wf_uuid = uuid_module.UUID(wf_id)
+                    stage_uuid = uuid_module.UUID(stage_id)
+                    agent_uuid = uuid_module.UUID(agent_id)
+
+                    assert wf_uuid.version is not None, "Workflow ID is not a valid UUID"
+                    assert stage_uuid.version is not None, "Stage ID is not a valid UUID"
+                    assert agent_uuid.version is not None, "Agent ID is not a valid UUID"

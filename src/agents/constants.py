@@ -4,6 +4,8 @@ Centralized constants for HTTP configuration, LLM defaults, timeout settings,
 rate limiting, and agent execution parameters.
 """
 
+from src.constants.limits import DEFAULT_MAX_TOKENS as DEFAULT_MAX_TOKENS  # noqa: F401
+from src.constants.limits import DEFAULT_TEMPERATURE as DEFAULT_TEMPERATURE  # noqa: F401
 
 # ============================================================================
 # HTTP Pool & Connection Limits
@@ -19,8 +21,6 @@ DEFAULT_MAX_CIRCUIT_BREAKERS = 100  # LRU eviction threshold for circuit breaker
 # LLM Model Defaults
 # ============================================================================
 
-DEFAULT_TEMPERATURE = 0.7
-DEFAULT_MAX_TOKENS = 2048
 DEFAULT_TOP_P = 0.9
 DEFAULT_TIMEOUT_SECONDS = 600  # 10 minutes for LLM calls
 DEFAULT_RETRY_DELAY_SECONDS = 2.0

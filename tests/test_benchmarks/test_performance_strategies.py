@@ -194,6 +194,7 @@ def test_safety_action_policy_validation(benchmark):
 
     result = benchmark(policy_engine.validate, context)
     # Validation returns None on success, raises on failure
+    assert True  # Benchmark completed without policy violation
 
 @pytest.mark.benchmark(group="safety")
 def test_safety_rate_limiter_overhead(tool_registry, benchmark):

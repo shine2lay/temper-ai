@@ -77,6 +77,7 @@ def test_agent_with_tools(minimal_agent_config, mock_llm_fast, benchmark):
         )
 
         result = benchmark(agent.execute, {"input": "calculate 2+2"})
+        assert result is not None
         check_budget("agent_with_tools", benchmark.stats['mean'])
 
 @pytest.mark.benchmark(group="agents")
@@ -123,6 +124,7 @@ def test_agent_error_handling(minimal_agent_config, benchmark):
                 pass  # Expected error
 
         benchmark(execute_with_error)
+        assert True  # Benchmark completed without crashing
 
 @pytest.mark.benchmark(group="agents")
 def test_agent_factory_creation(minimal_agent_config, benchmark):

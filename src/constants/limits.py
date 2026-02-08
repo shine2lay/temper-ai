@@ -3,6 +3,10 @@
 These constants define various system limits and boundaries.
 """
 
+# LLM Model Defaults (cross-cutting, used by agents + cache layers)
+DEFAULT_TEMPERATURE = 0.7
+DEFAULT_MAX_TOKENS = 2048
+
 # Item/collection limits
 DEFAULT_MAX_ITEMS = 10
 DEFAULT_MIN_ITEMS = 1

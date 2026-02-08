@@ -23,7 +23,7 @@ from src.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture
-def test_database():
+def sample_database():
     """Initialize in-memory database for testing."""
     try:
         get_database()
@@ -34,7 +34,7 @@ def test_database():
 
 
 @pytest.fixture
-def execution_tracker(test_database):
+def execution_tracker(sample_database):
     """Execution tracker with test database."""
     from src.observability.backends.sql_backend import SQLObservabilityBackend
     backend = SQLObservabilityBackend()

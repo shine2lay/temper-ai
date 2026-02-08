@@ -88,7 +88,7 @@ def config_root():
 
 
 @pytest.fixture
-def test_tool_config(config_root):
+def tool_config(config_root):
     """Create test tool configuration file."""
     tools_dir = config_root / "tools"
 
@@ -142,7 +142,7 @@ def config_loader(config_root):
 # Tests for load_from_config
 # ============================================================================
 
-def test_load_from_config_success(test_tool_config, config_loader):
+def test_load_from_config_success(tool_config, config_loader):
     """Test successfully loading tool from configuration."""
     registry = ToolRegistry()
 
@@ -159,7 +159,7 @@ def test_load_from_config_success(test_tool_config, config_loader):
     assert registry.get("TestTool") == tool
 
 
-def test_load_from_config_creates_config_loader(test_tool_config, config_root):
+def test_load_from_config_creates_config_loader(tool_config, config_root):
     """Test that load_from_config creates ConfigLoader if not provided."""
     registry = ToolRegistry()
 
@@ -193,7 +193,7 @@ def test_load_from_config_creates_config_loader(test_tool_config, config_root):
         assert isinstance(tool, MockTestTool)
 
 
-def test_load_from_config_tool_execution(test_tool_config, config_loader):
+def test_load_from_config_tool_execution(tool_config, config_loader):
     """Test that loaded tool can execute properly."""
     registry = ToolRegistry()
 
@@ -541,7 +541,7 @@ def test_load_calculator_from_real_config():
         pytest.skip(f"Calculator config not available or invalid: {e}")
 
 
-def test_load_and_use_tool_end_to_end(test_tool_config, config_loader):
+def test_load_and_use_tool_end_to_end(tool_config, config_loader):
     """End-to-end test: Load tool, register, and use it."""
     registry = ToolRegistry()
 

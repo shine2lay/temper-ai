@@ -83,7 +83,7 @@ class StageCompiler:
 
         # Add initialization node for workflow state
         init_node = self.state_manager.create_init_node()
-        graph.add_node("init", init_node)  # type: ignore[call-overload]
+        graph.add_node("init", init_node)
 
         # Add execution node for each stage
         for stage_name in stage_names:
@@ -91,7 +91,7 @@ class StageCompiler:
                 stage_name,
                 workflow_config
             )
-            graph.add_node(stage_name, stage_node)  # type: ignore[call-overload]
+            graph.add_node(stage_name, stage_node)
 
         # Add edges for sequential execution
         self._add_sequential_edges(graph, stage_names)

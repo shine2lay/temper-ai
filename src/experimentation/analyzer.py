@@ -7,7 +7,7 @@ using scipy statistical methods.
 
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np  # type: ignore[import-not-found]
+import numpy as np
 from scipy import stats  # type: ignore[import-untyped]
 
 from src.constants.probabilities import PROB_MEDIUM

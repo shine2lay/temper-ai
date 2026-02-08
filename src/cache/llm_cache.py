@@ -35,7 +35,7 @@ logger = get_logger(__name__)
 
 # Import redis at module level for exception handling
 try:
-    import redis  # type: ignore[import-not-found]
+    import redis
     REDIS_AVAILABLE = True
 except ImportError:
     redis = None  # type: ignore

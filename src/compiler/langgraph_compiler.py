@@ -150,7 +150,7 @@ class LangGraphCompiler:
             node_builder=self.node_builder
         )
 
-    def compile(self, workflow_config: Dict[str, Any]) -> StateGraph:  # type: ignore[type-arg]
+    def compile(self, workflow_config: Dict[str, Any]) -> StateGraph:
         """Compile workflow configuration to executable LangGraph StateGraph.
 
         Orchestration Steps:
@@ -310,7 +310,7 @@ class LangGraphCompiler:
         """
         return workflow_config.get("workflow", workflow_config)  # type: ignore[no-any-return]
 
-    def _validate_all_configs(self, stages: list, workflow_config: Dict[str, Any]) -> None:  # type: ignore[type-arg]
+    def _validate_all_configs(self, stages: list, workflow_config: Dict[str, Any]) -> None:
         """Validate all stage and agent configs against Pydantic schemas.
 
         Validates configs at compile time to catch errors early before execution.
@@ -387,7 +387,7 @@ class LangGraphCompiler:
 
         logger.info(f"Configuration validation passed for {len(stages)} stages")
 
-    def _extract_stage_names(self, stages: list) -> list[str]:  # type: ignore[type-arg]
+    def _extract_stage_names(self, stages: list) -> list[str]:
         """Extract stage names from stage references.
 
         Delegates to NodeBuilder to handle various stage reference formats:

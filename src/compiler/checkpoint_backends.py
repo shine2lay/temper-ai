@@ -567,7 +567,7 @@ class RedisCheckpointBackend(CheckpointBackend):
             ttl: Optional time-to-live in seconds for checkpoints
         """
         try:
-            import redis  # type: ignore[import-not-found]
+            import redis
         except ImportError:
             raise ImportError(
                 "Redis backend requires 'redis' package. "

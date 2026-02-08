@@ -329,22 +329,22 @@ class ToolExecutor:
                 )
 
                 # Block on policy violations
-                if not enforcement.allowed:  # type: ignore
+                if not enforcement.allowed:
                     return ToolResult(
                         success=False,
                         result=None,
-                        error=f"Action blocked by policy: {enforcement.violations[0].message}",  # type: ignore
-                        metadata={"violations": [v.to_dict() for v in enforcement.violations]}  # type: ignore
+                        error=f"Action blocked by policy: {enforcement.violations[0].message}",
+                        metadata={"violations": [v.to_dict() for v in enforcement.violations]}
                     )
 
                 # Request approval for HIGH/CRITICAL violations
-                if enforcement.has_blocking_violations() and self.approval_workflow:  # type: ignore
+                if enforcement.has_blocking_violations() and self.approval_workflow:
                     approval_request = self.approval_workflow.request_approval(
                         action={"tool": tool_name, "params": params},
                         reason="HIGH/CRITICAL policy violations detected",
                         context=context,
-                        violations=enforcement.violations,  # type: ignore
-                        metadata={"enforcement_result": enforcement.metadata}  # type: ignore
+                        violations=enforcement.violations,
+                        metadata={"enforcement_result": enforcement.metadata}
                     )
 
                     # Wait for approval (blocking, with timeout)

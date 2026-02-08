@@ -74,8 +74,6 @@ def sanitize_tool_output(text: str) -> str:
     Returns:
         Sanitized string with tool_call tags escaped
     """
-    if not isinstance(text, str):
-        text = str(text)
     return _TOOL_RESULT_SANITIZE_PATTERN.sub(
         lambda m: m.group(0).replace('<', '&lt;').replace('>', '&gt;'),
         text,

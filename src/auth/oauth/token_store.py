@@ -43,7 +43,7 @@ try:
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
-    KeyringError = Exception  # type: ignore
+    KeyringError = Exception
 
 from src.constants.limits import THRESHOLD_MASSIVE_COUNT
 

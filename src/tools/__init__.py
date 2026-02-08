@@ -13,7 +13,7 @@ from src.tools.bash import Bash
 from src.tools.executor import (
     ToolExecutor,
 )
-from src.tools.registry import (  # type: ignore[attr-defined]
+from src.tools.registry import (
     ToolRegistry,
     ToolRegistryError,
 )

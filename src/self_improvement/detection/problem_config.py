@@ -79,7 +79,7 @@ class ProblemDetectionConfig:
     # Data quality requirements
     min_executions_for_detection: int = DEFAULT_BATCH_SIZE
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate configuration."""
         if not (0 < self.quality_relative_threshold < 1):
             raise ValueError("quality_relative_threshold must be in (0, 1)")

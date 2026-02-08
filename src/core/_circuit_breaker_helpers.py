@@ -54,17 +54,17 @@ def should_count_failure(error: Exception) -> bool:
         True if the error should count as a failure
     """
     if _httpx is None:
-        return True
+        return True  # type: ignore[unreachable]
 
     if isinstance(error, (_httpx.ConnectError, _httpx.TimeoutException)):
         return True
-    if _LLMTimeoutError and isinstance(error, _LLMTimeoutError):
+    if _LLMTimeoutError is not None and isinstance(error, _LLMTimeoutError):
         return True
-    if _LLMRateLimitError and isinstance(error, _LLMRateLimitError):
+    if _LLMRateLimitError is not None and isinstance(error, _LLMRateLimitError):
         return True
-    if _LLMAuthenticationError and isinstance(error, _LLMAuthenticationError):
+    if _LLMAuthenticationError is not None and isinstance(error, _LLMAuthenticationError):
         return False
-    if _LLMError and isinstance(error, _LLMError):
+    if _LLMError is not None and isinstance(error, _LLMError):
         return True
     if isinstance(error, _httpx.HTTPStatusError):
         status = error.response.status_code
@@ -195,7 +195,7 @@ def load_state(storage: Any, name: str) -> dict:
     return defaults
 
 
-def fire_callbacks(transition_info) -> None:
+def fire_callbacks(transition_info: Optional[tuple]) -> None:
     """Execute state change callbacks outside the lock.
 
     Args:
@@ -213,7 +213,7 @@ def fire_callbacks(transition_info) -> None:
             )
 
 
-def on_call_success(breaker, reserved_state=None) -> None:
+def on_call_success(breaker: Any, reserved_state: Optional[Any] = None) -> None:
     """Handle successful call() execution.
 
     Args:
@@ -245,7 +245,7 @@ def on_call_success(breaker, reserved_state=None) -> None:
             breaker._half_open_semaphore.release()
 
 
-def on_call_failure(breaker, error: Exception, reserved_state=None) -> None:
+def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any] = None) -> None:
     """Handle failed call() execution.
 
     Args:
@@ -290,7 +290,7 @@ def on_call_failure(breaker, error: Exception, reserved_state=None) -> None:
             breaker._half_open_semaphore.release()
 
 
-def reserve_execution(breaker):
+def reserve_execution(breaker: Any) -> Optional[Any]:
     """Atomically check if execution is allowed and reserve permission.
 
     For HALF_OPEN, enforces single concurrent test execution via semaphore.

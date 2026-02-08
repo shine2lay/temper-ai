@@ -58,7 +58,7 @@ class SlidingWindowRateLimiter:
         ...     return error_response(429, f"Retry after {e.retry_after}s")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize rate limiter."""
         # Storage: {limit_type: {identifier: deque of timestamps}}
         self._windows: Dict[str, Dict[str, deque]] = defaultdict(lambda: defaultdict(deque))
@@ -157,7 +157,7 @@ class SlidingWindowRateLimiter:
 
             return remaining, reset_after
 
-    def cleanup(self, older_than_seconds: int = SECONDS_PER_HOUR):
+    def cleanup(self, older_than_seconds: int = SECONDS_PER_HOUR) -> None:
         """Clean up old rate limit data.
 
         Removes limit data for identifiers with no recent requests.

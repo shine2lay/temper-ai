@@ -46,7 +46,7 @@ class ERC721QualityScore:
     total_score: float
     breakdown: Dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         self.total_score = max(0.0, min(1.0, self.total_score))
 
 

@@ -91,9 +91,9 @@ def auto_discover(
     registry: ToolRegistry,
     tools_package: str,
     use_cache: bool,
-    global_lock,
-    get_cache_fn,
-    set_cache_fn,
+    global_lock: Any,
+    get_cache_fn: Any,
+    set_cache_fn: Any,
 ) -> int:
     """Auto-discover and register tools from a package with detailed logging."""
     # TO-07: Read cache under lock
@@ -428,7 +428,8 @@ class ToolRegistryReportingMixin:
         tool = self.get(name)  # type: ignore[attr-defined]
         if not tool:
             raise ToolRegistryError(f"Tool not found: {name}")
-        return tool.to_llm_schema()
+        schema: Dict[str, Any] = tool.to_llm_schema()
+        return schema
 
     def get_all_tool_schemas(self) -> List[Dict[str, Any]]:
         """Get schemas for all registered tools."""

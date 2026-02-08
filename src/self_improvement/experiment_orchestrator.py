@@ -400,7 +400,7 @@ class ExperimentOrchestrator:
         """Check if experiment has collected enough data for analysis."""
         self._validate_experiment_id(experiment_id)
         progress = self.get_experiment_progress(experiment_id)
-        return progress["is_complete"]
+        return bool(progress["is_complete"])
 
     def get_experiment_progress(self, experiment_id: str) -> Dict[str, Any]:
         """Get current progress for each variant in experiment."""

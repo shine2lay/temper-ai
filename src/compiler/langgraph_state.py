@@ -94,7 +94,7 @@ class LangGraphWorkflowState(WorkflowDomainState):
         self._dict_cache = None
         self._dict_cache_exclude_internal = None
 
-    def to_dict(self, exclude_internal: bool = False, exclude_none: bool = False) -> Dict[str, Any]:
+    def to_dict(self, exclude_none: bool = False, exclude_internal: bool = False) -> Dict[str, Any]:
         """Convert state to dictionary with caching.
 
         Args:

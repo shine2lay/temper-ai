@@ -682,7 +682,7 @@ class ValidationError(FrameworkValidationError):
 
     DEPRECATED: Use FrameworkValidationError directly.
     """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         import warnings
         warnings.warn(
             "ValidationError is deprecated. Use FrameworkValidationError instead.",

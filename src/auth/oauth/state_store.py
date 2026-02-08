@@ -70,9 +70,17 @@ class StateStore:
         """
         raise NotImplementedError
 
-    async def close(self):
+    async def close(self) -> None:
         """Clean up resources."""
         pass
+
+    async def cleanup_expired(self) -> int:
+        """Clean up expired state tokens.
+
+        Returns:
+            Number of expired states cleaned up
+        """
+        raise NotImplementedError
 
 
 class InMemoryStateStore(StateStore):
@@ -88,7 +96,7 @@ class InMemoryStateStore(StateStore):
 
     MAX_ENTRIES = THRESHOLD_MASSIVE_COUNT * MAX_ENTRIES_MULTIPLIER  # 50000
 
-    def __init__(self, max_entries: int = None):
+    def __init__(self, max_entries: Optional[int] = None):
         """Initialize in-memory state storage.
 
         Args:
@@ -106,7 +114,7 @@ class InMemoryStateStore(StateStore):
         self,
         state: str,
         data: Dict[str, Any],
-        ttl_seconds: int = None
+        ttl_seconds: Optional[int] = None
     ) -> None:
         """Store state data with expiration time."""
         if ttl_seconds is None:
@@ -229,6 +237,8 @@ class RedisStateStore(StateStore):
         >>> # state_data is now deleted from Redis (one-time use)
     """
 
+    redis_url: str
+
     def __init__(
         self,
         redis_url: Optional[str] = None,
@@ -240,7 +250,9 @@ class RedisStateStore(StateStore):
             redis_url: Redis connection URL (default: from REDIS_URL env var)
             key_prefix: Key prefix for namespacing (default: "oauth:state:")
         """
-        self.redis_url = redis_url or os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        # Always resolve to a string (default is provided)
+        resolved_url = redis_url if redis_url is not None else os.getenv("REDIS_URL", "redis://localhost:6379/0")
+        self.redis_url = resolved_url if resolved_url is not None else "redis://localhost:6379/0"
         self.key_prefix = key_prefix
         self._redis: Optional[Any] = None
         self._redis_available = False
@@ -257,7 +269,7 @@ class RedisStateStore(StateStore):
             )
             self._redis_available = False
 
-    async def connect(self):
+    async def connect(self) -> None:
         """Establish Redis connection."""
         if not self._redis_available:
             return
@@ -280,7 +292,7 @@ class RedisStateStore(StateStore):
                 self._redis = None
                 raise
 
-    async def close(self):
+    async def close(self) -> None:
         """Close Redis connection."""
         if self._redis:
             await self._redis.close()
@@ -295,7 +307,7 @@ class RedisStateStore(StateStore):
         self,
         state: str,
         data: Dict[str, Any],
-        ttl_seconds: int = None
+        ttl_seconds: Optional[int] = None
     ) -> None:
         """Store state data with automatic TTL.
 
@@ -359,7 +371,7 @@ class RedisStateStore(StateStore):
             return None
 
         try:
-            data = json.loads(value)
+            data: Dict[str, Any] = json.loads(value)
             # SEC-14: Truncate state token in logs
             logger.debug(f"Retrieved and deleted state: {state[:STATE_TOKEN_LOG_LENGTH]}...")
             return data
@@ -383,7 +395,7 @@ class RedisStateStore(StateStore):
             raise RuntimeError("Redis connection not available")
 
         key = self._make_key(state)
-        deleted = await self._redis.delete(key)
+        deleted: int = await self._redis.delete(key)
 
         return deleted > 0
 

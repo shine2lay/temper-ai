@@ -97,7 +97,7 @@ def get_cache_key(
 
 
 def get_cached_result(
-    cache: OrderedDict,
+    cache: "OrderedDict[str, tuple[ValidationResult, float]]",
     cache_key: str,
     cache_ttl: float,
 ) -> Optional[ValidationResult]:

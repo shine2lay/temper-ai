@@ -63,7 +63,7 @@ class AggregationOrchestrator:
             List of created SystemMetric IDs
         """
         # Default time window
-        if start_time is None:
+        if start_time is None or end_time is None:
             start_time, end_time = TimeWindowCalculator.get_default_time_window(
                 period, end_time
             )
@@ -120,7 +120,7 @@ class AggregationOrchestrator:
             List of created SystemMetric IDs
         """
         # Default time window
-        if start_time is None:
+        if start_time is None or end_time is None:
             start_time, end_time = TimeWindowCalculator.get_default_time_window(
                 period, end_time
             )
@@ -177,7 +177,7 @@ class AggregationOrchestrator:
             List of created SystemMetric IDs
         """
         # Default time window
-        if start_time is None:
+        if start_time is None or end_time is None:
             start_time, end_time = TimeWindowCalculator.get_default_time_window(
                 period, end_time
             )

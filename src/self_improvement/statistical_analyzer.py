@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 import numpy as np
-from scipy import stats
+from scipy import stats  # type: ignore[import-untyped]
 
 from src.self_improvement.constants import (
     DEFAULT_ALPHA,
@@ -256,7 +256,7 @@ class SIStatisticalAnalyzer:
                 # For metrics where lower is better, flip the sign
                 improvement = ((control_mean - variant_mean) / control_mean) * 100
         else:
-            improvement = 0.0
+            improvement = np.float64(0.0)
 
         # Check for zero variance (constant values)
         control_std = np.std(control_values, ddof=1) if len(control_values) > 1 else 0

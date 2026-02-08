@@ -73,7 +73,7 @@ class ImprovementProposal:
     priority: int = PRIORITY_DEFAULT  # 0 (highest) to 3 (lowest)
     extra_metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate proposal attributes."""
         if not (0.0 <= self.estimated_impact <= 1.0):
             raise ValueError(

@@ -10,7 +10,7 @@ import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Dict, Generator, List, Optional
+from typing import Any, Dict, Generator, List, Literal, Optional
 
 from src.core.context import ExecutionContext
 from src.database.datetime_utils import utcnow
@@ -79,9 +79,16 @@ class ExecutionTracker:
             backend=self.backend,
             metric_registry=metric_registry,
         )
+
+        # Wrapper for CollaborationEventTracker's expected signature
+        def sanitize_dict_optional(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+            if data is None:
+                return None
+            return self._sanitize_dict(data)
+
         self._collaboration_tracker = CollaborationEventTracker(
             backend=self.backend,
-            sanitize_fn=self._sanitize_dict,
+            sanitize_fn=sanitize_dict_optional,
             get_context=lambda: self.context,
         )
 
@@ -369,8 +376,12 @@ class ExecutionTracker:
         self._metric_aggregator.set_stage_output(stage_id=stage_id, output_data=output_data)
 
     def track_safety_violation(
-        self, violation_severity: str, violation_message: str, policy_name: str,
-        service_name: Optional[str] = None, context: Optional[Dict[str, Any]] = None
+        self,
+        violation_severity: Literal["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+        violation_message: str,
+        policy_name: str,
+        service_name: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None
     ) -> None:
         """Track safety violation."""
         self._collaboration_tracker.track_safety_violation(

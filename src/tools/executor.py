@@ -364,13 +364,16 @@ class ToolExecutor:
 # god-class threshold while preserving backward compatibility.
 # --------------------------------------------------------------------------
 
-def _acquire_concurrent_slot_method(self) -> bool:
+def _acquire_concurrent_slot_method(self: ToolExecutor) -> bool:
+    """Acquire a concurrent slot."""
     return acquire_concurrent_slot(self)
 
-def _release_concurrent_slot_method(self) -> None:
+def _release_concurrent_slot_method(self: ToolExecutor) -> None:
+    """Release a concurrent slot."""
     release_concurrent_slot(self)
 
-def _check_rate_limit_method(self) -> None:
+def _check_rate_limit_method(self: ToolExecutor) -> None:
+    """Check rate limit."""
     check_rate_limit(self)
 
 ToolExecutor._acquire_concurrent_slot = _acquire_concurrent_slot_method  # type: ignore[attr-defined]

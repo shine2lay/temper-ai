@@ -55,7 +55,7 @@ class ConfigDeployer:
         policy_engine: Optional[ActionPolicyEngine] = None,
         approval_workflow: Optional[ApprovalWorkflow] = None,
         enable_safety_checks: bool = True
-    ):
+    ) -> None:
         """
         Initialize deployer with database connection and safety components.
 
@@ -78,7 +78,7 @@ class ConfigDeployer:
         experiment_id: Optional[str] = None,
         workflow_id: Optional[str] = None,
         deployed_by: str = "m5_system"
-    ):
+    ) -> None:
         """
         Deploy winning configuration with rollback tracking and safety validation.
 
@@ -160,7 +160,7 @@ class ConfigDeployer:
             f"Deployed new config for {agent_name} (deployment_id={deployment.id})"
         )
 
-    def rollback(self, agent_name: str, rollback_reason: str = "Manual rollback"):
+    def rollback(self, agent_name: str, rollback_reason: str = "Manual rollback") -> None:
         """
         Rollback to previous configuration.
 
@@ -281,7 +281,7 @@ class ConfigDeployer:
         new_config: SIOptimizationConfig,
         workflow_id: str,
         deployed_by: str
-    ):
+    ) -> Any:
         """
         Validate config change through M4 safety stack.
 
@@ -333,7 +333,7 @@ class ConfigDeployer:
         agent_name: str,
         old_config: SIOptimizationConfig,
         new_config: SIOptimizationConfig,
-        enforcement_result,
+        enforcement_result: Any,
         deployed_by: str,
         approval_timeout_minutes: int = MINUTES_PER_HOUR
     ) -> bool:
@@ -415,7 +415,7 @@ class ConfigDeployer:
         required_fields = ["inference", "prompt"]
         return all(hasattr(config, field) for field in required_fields)
 
-    def _store_deployment(self, conn, deployment: ConfigDeployment):
+    def _store_deployment(self, conn: Any, deployment: ConfigDeployment) -> None:
         """
         Store deployment record in database.
 
@@ -443,7 +443,7 @@ class ConfigDeployer:
             ),
         )
 
-    def _update_agent_config(self, conn, agent_name: str, config: SIOptimizationConfig):
+    def _update_agent_config(self, conn: Any, agent_name: str, config: SIOptimizationConfig) -> None:
         """
         Update agent configuration (atomic operation).
 

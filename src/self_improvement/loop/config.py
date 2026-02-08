@@ -123,7 +123,7 @@ class LoopConfig:
         if self.retry_backoff_multiplier < 1.0:
             raise ValueError("retry_backoff_multiplier must be >= 1.0")
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         """Convert config to dictionary."""
         return {
             k: v for k, v in self.__dict__.items()

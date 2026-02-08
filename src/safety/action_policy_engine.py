@@ -33,19 +33,11 @@ from src.constants.limits import THRESHOLD_MEDIUM_COUNT
 from src.core.circuit_breaker import CircuitBreakerError
 from src.safety._action_policy_helpers import (
     cache_result as _cache_result_helper,
-)
-from src.safety._action_policy_helpers import (
     canonical_json,
     context_to_dict,
     get_cache_key,
     get_cached_result,
     get_policy_snapshot,
-)
-from src.safety._action_policy_helpers import (
-    log_violations as _log_violations_helper,
-)
-from src.safety._action_policy_helpers import (
-    log_violations_sync as _log_violations_sync_helper,
 )
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.policy_registry import PolicyRegistry
@@ -170,7 +162,7 @@ class ActionPolicyEngine:
 
         # SECURITY: Initialize sanitizer for defense-in-depth violation message sanitization
         # Lazy loaded to avoid import overhead if sanitization is not needed
-        self._sanitizer = None
+        self._sanitizer: Optional[Any] = None
 
         # Metrics
         self._validations_performed = 0
@@ -447,10 +439,11 @@ class ActionPolicyEngine:
         context: PolicyExecutionContext
     ) -> None:
         """Synchronous version of _log_violations."""
+        from src.safety._action_policy_helpers import log_violations_sync
         if self._sanitizer is None:
             from src.observability.sanitization import DataSanitizer
             self._sanitizer = DataSanitizer()
-        _log_violations_sync_helper(violations, context, self._sanitizer)
+        log_violations_sync(violations, context, self._sanitizer)
 
     def _get_cache_key(
         self,
@@ -502,10 +495,11 @@ class ActionPolicyEngine:
         context: PolicyExecutionContext
     ) -> None:
         """Log violations to observability system."""
+        from src.safety._action_policy_helpers import log_violations
         if self._sanitizer is None:
             from src.observability.sanitization import DataSanitizer
             self._sanitizer = DataSanitizer()
-        await _log_violations_helper(violations, context, self._sanitizer)
+        await log_violations(violations, context, self._sanitizer)
         self._violations_logged += len(violations)
 
     def get_metrics(self) -> Dict[str, Any]:

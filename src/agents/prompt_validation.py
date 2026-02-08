@@ -14,7 +14,7 @@ from src.utils.exceptions import AgentError, ErrorCode
 class PromptRenderError(AgentError):
     """Raised when prompt rendering fails."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message=message,
             error_code=ErrorCode.AGENT_EXECUTION_ERROR,

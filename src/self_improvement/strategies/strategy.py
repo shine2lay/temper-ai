@@ -33,7 +33,7 @@ Example:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Any, Dict, List, Optional
 
 from src.constants.durations import DAYS_90
 from src.constants.limits import DEFAULT_MAX_ITEMS
@@ -68,7 +68,7 @@ class LearnedPattern:
     confidence: float
     evidence: Dict = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate pattern attributes are in valid ranges."""
         if not (0.0 <= self.confidence <= 1.0):
             raise ValueError(
@@ -109,7 +109,7 @@ class ImprovementStrategy(ABC):
       Default implementation queries learning_store if available
     """
 
-    def __init__(self, learning_store=None):
+    def __init__(self, learning_store: Optional[Any] = None) -> None:
         """
         Initialize strategy with optional learning store.
 
@@ -275,4 +275,4 @@ class ImprovementStrategy(ABC):
             (prior_weight + data_weight)
         )
 
-        return weighted_estimate
+        return float(weighted_estimate)

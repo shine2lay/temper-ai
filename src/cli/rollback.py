@@ -130,40 +130,60 @@ def info(snapshot_id: str) -> None:
 @click.option("--force", is_flag=True, help="Skip safety checks")
 def execute(snapshot_id: str, reason: str, operator: str, dry_run: bool, force: bool) -> None:
     """Execute manual rollback."""
+    # Initialize manager and API
     try:
         manager = RollbackManager()
         api = RollbackAPI(manager)
+    except (ImportError, RuntimeError) as e:
+        click.echo(f"❌ Failed to initialize rollback system: {e}", err=True)
+        raise click.Abort()
 
-        # Validate safety
+    # Validate safety
+    try:
         is_safe, warnings = api.validate_rollback_safety(snapshot_id)
+    except ValueError as e:
+        click.echo(f"❌ Invalid snapshot ID: {e}", err=True)
+        raise click.Abort()
+    except (OSError, IOError) as e:
+        click.echo(f"❌ Error reading snapshot: {e}", err=True)
+        raise click.Abort()
 
-        if warnings:
-            click.echo("⚠️  Warnings:")
-            for warning in warnings:
-                click.echo(f"  - {warning}")
-            click.echo()
+    if warnings:
+        click.echo("⚠️  Warnings:")
+        for warning in warnings:
+            click.echo(f"  - {warning}")
+        click.echo()
 
-        if not is_safe and not force:
-            click.echo("❌ Safety check failed. Use --force to override.", err=True)
+    if not is_safe and not force:
+        click.echo("❌ Safety check failed. Use --force to override.", err=True)
+        raise click.Abort()
+
+    if dry_run:
+        click.echo("🔍 Dry run mode - no changes will be made\n")
+
+    # Confirm before execution (unless dry run)
+    if not dry_run:
+        try:
+            details = api.get_snapshot_details(snapshot_id)
+        except ValueError as e:
+            click.echo(f"❌ Invalid snapshot: {e}", err=True)
+            raise click.Abort()
+        except (OSError, IOError) as e:
+            click.echo(f"❌ Error reading snapshot details: {e}", err=True)
             raise click.Abort()
 
-        if dry_run:
-            click.echo("🔍 Dry run mode - no changes will be made\n")
+        if details:
+            click.echo(f"About to rollback {details['file_count']} file(s)")
+            click.echo(f"Operator: {operator}")
+            click.echo(f"Reason: {reason}\n")
 
-        # Confirm before execution (unless dry run)
-        if not dry_run:
-            details = api.get_snapshot_details(snapshot_id)
-            if details:
-                click.echo(f"About to rollback {details['file_count']} file(s)")
-                click.echo(f"Operator: {operator}")
-                click.echo(f"Reason: {reason}\n")
+            if not force:
+                if not click.confirm("Proceed with rollback?"):
+                    click.echo("Rollback cancelled.")
+                    return
 
-                if not force:
-                    if not click.confirm("Proceed with rollback?"):
-                        click.echo("Rollback cancelled.")
-                        return
-
-        # Execute
+    # Execute rollback
+    try:
         result = api.execute_manual_rollback(
             snapshot_id=snapshot_id,
             operator=operator,
@@ -171,28 +191,32 @@ def execute(snapshot_id: str, reason: str, operator: str, dry_run: bool, force: 
             dry_run=dry_run,
             force=force
         )
-
-        if result.success:
-            click.echo(f"✅ Rollback completed: {result.status.value}")
-            click.echo(f"Reverted: {len(result.reverted_items)} items")
-            if result.failed_items:
-                click.echo(f"Failed: {len(result.failed_items)} items")
-                for item in result.failed_items:
-                    click.echo(f"  - {item}")
-        else:
-            click.echo(f"❌ Rollback failed: {result.status.value}", err=True)
-            if result.errors:
-                click.echo("\nErrors:")
-                for error in result.errors:
-                    click.echo(f"  - {error}")
-            raise click.Abort()
-
     except ValueError as e:
-        click.echo(f"❌ {e}", err=True)
+        click.echo(f"❌ Invalid rollback parameters: {e}", err=True)
         raise click.Abort()
-    except Exception as e:
-        click.echo(f"Error executing rollback: {e}", err=True)
+    except (OSError, IOError, PermissionError) as e:
+        click.echo(f"❌ File system error during rollback: {e}", err=True)
         raise click.Abort()
+    except RuntimeError as e:
+        click.echo(f"❌ Rollback execution error: {e}", err=True)
+        raise click.Abort()
+
+    # Display results
+    if result.success:
+        click.echo(f"✅ Rollback completed: {result.status.value}")
+        click.echo(f"Reverted: {len(result.reverted_items)} items")
+        if result.failed_items:
+            click.echo(f"Failed: {len(result.failed_items)} items")
+            for item in result.failed_items:
+                click.echo(f"  - {item}")
+    else:
+        click.echo(f"❌ Rollback failed: {result.status.value}", err=True)
+        if result.errors:
+            click.echo("\nErrors:")
+            for error in result.errors:
+                click.echo(f"  - {error}")
+        raise click.Abort()
+
 
 
 @rollback.command()

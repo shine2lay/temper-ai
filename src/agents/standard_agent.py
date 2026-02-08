@@ -260,7 +260,7 @@ class StandardAgent(BaseAgent):
                     if isinstance(tool_instance.config, dict):
                         tool_instance.config.update(tool_config)
                     else:
-                        tool_instance.config = tool_config
+                        tool_instance.config = tool_config  # type: ignore[unreachable]
 
     def execute(
         self,
@@ -290,7 +290,7 @@ class StandardAgent(BaseAgent):
             for iteration in range(max_iterations):
                 elapsed = time.time() - start_time
                 if elapsed >= max_execution_time:
-                    return _build_final_response(
+                    return _build_final_response(  # type: ignore[no-any-return]
                         self, output=llm_response.content if llm_response else "",
                         reasoning=extract_reasoning(llm_response.content) if llm_response else None,
                         tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
@@ -312,7 +312,7 @@ class StandardAgent(BaseAgent):
                 total_cost = iteration_result["total_cost"]
                 tool_calls_made = iteration_result["tool_calls_made"]
 
-            return _build_final_response(
+            return _build_final_response(  # type: ignore[no-any-return]
                 self, output=llm_response.content if llm_response else "",
                 reasoning=extract_reasoning(llm_response.content) if llm_response else None,
                 tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
@@ -323,7 +323,7 @@ class StandardAgent(BaseAgent):
         except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:
             safe_msg = sanitize_error_message(str(e))
             logger.warning("Agent execution error: %s", safe_msg, exc_info=True)
-            return _build_final_response(
+            return _build_final_response(  # type: ignore[no-any-return]
                 self, output="", reasoning=None, tool_calls=tool_calls_made,
                 tokens=total_tokens, cost=total_cost, start_time=start_time,
                 error=f"Agent execution error: {safe_msg}"
@@ -343,7 +343,7 @@ class StandardAgent(BaseAgent):
         total_tokens = 0
         total_cost = 0.0
         llm_response = None
-        self._conversation_turns: List[str] = []
+        self._conversation_turns = []  # Redefinition is intentional for async path
 
         try:
             prompt = self._render_prompt(input_data, context)
@@ -357,7 +357,7 @@ class StandardAgent(BaseAgent):
             for iteration in range(max_iterations):
                 elapsed = time.time() - start_time
                 if elapsed >= max_execution_time:
-                    return _build_final_response(
+                    return _build_final_response(  # type: ignore[no-any-return]
                         self, output=llm_response.content if llm_response else "",
                         reasoning=extract_reasoning(llm_response.content) if llm_response else None,
                         tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
@@ -379,7 +379,7 @@ class StandardAgent(BaseAgent):
                 total_cost = iteration_result["total_cost"]
                 tool_calls_made = iteration_result["tool_calls_made"]
 
-            return _build_final_response(
+            return _build_final_response(  # type: ignore[no-any-return]
                 self, output=llm_response.content if llm_response else "",
                 reasoning=extract_reasoning(llm_response.content) if llm_response else None,
                 tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
@@ -390,7 +390,7 @@ class StandardAgent(BaseAgent):
         except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:
             safe_msg = sanitize_error_message(str(e))
             logger.warning("Agent async execution error: %s", safe_msg, exc_info=True)
-            return _build_final_response(
+            return _build_final_response(  # type: ignore[no-any-return]
                 self, output="", reasoning=None, tool_calls=tool_calls_made,
                 tokens=total_tokens, cost=total_cost, start_time=start_time,
                 error=f"Agent execution error: {safe_msg}"
@@ -624,25 +624,41 @@ class StandardAgent(BaseAgent):
 # and callers that use ``agent._execute_tool_calls()`` etc.
 # --------------------------------------------------------------------------
 
-def _execute_tool_calls_method(self, tool_calls):
+def _execute_tool_calls_method(self: "StandardAgent", tool_calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return _execute_tool_calls(self, tool_calls, _get_tool_executor)
 
-def _execute_single_tool_method(self, tool_call):
+def _execute_single_tool_method(self: "StandardAgent", tool_call: Dict[str, Any]) -> Dict[str, Any]:
     return _execute_single_tool(self, tool_call)
 
-def _execute_via_tool_executor_method(self, tool_name, tool_params):
+def _execute_via_tool_executor_method(self: "StandardAgent", tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
     return _execute_via_tool_executor(self, tool_name, tool_params)
 
-def _build_final_response_method(self, output, reasoning, tool_calls, tokens, cost, start_time, error=None, metadata=None):
+def _build_final_response_method(
+    self: "StandardAgent",
+    output: str,
+    reasoning: Optional[str],
+    tool_calls: List[Dict[str, Any]],
+    tokens: int,
+    cost: float,
+    start_time: float,
+    error: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Any:
     return _build_final_response(self, output, reasoning, tool_calls, tokens, cost, start_time, error, metadata)
 
-def _get_cached_tool_schemas_method(self):
+def _get_cached_tool_schemas_method(self: "StandardAgent") -> Optional[str]:
     return _get_cached_tool_schemas(self)
 
-def _get_native_tool_definitions_method(self):
+def _get_native_tool_definitions_method(self: "StandardAgent") -> Optional[List[Dict[str, Any]]]:
     return _get_native_tool_definitions(self)
 
-def _inject_tool_results_method(self, original_prompt, llm_response, tool_results, remaining_tool_calls=None):
+def _inject_tool_results_method(
+    self: "StandardAgent",
+    original_prompt: str,
+    llm_response: str,
+    tool_results: List[Dict[str, Any]],
+    remaining_tool_calls: Optional[int] = None
+) -> str:
     return _inject_tool_results(self, original_prompt, llm_response, tool_results, remaining_tool_calls)
 
 StandardAgent._execute_tool_calls = _execute_tool_calls_method  # type: ignore[attr-defined]

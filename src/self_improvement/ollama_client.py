@@ -137,7 +137,7 @@ class OllamaClient:
             kwargs["max_tokens"] = max_tokens
 
         # Call underlying LLM provider
-        response: LLMResponse = self._llm.complete(prompt, **kwargs)
+        response: LLMResponse = self._llm.complete(prompt, context=None, **kwargs)
 
         # Return just the text content
         return response.content

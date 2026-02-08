@@ -6,7 +6,7 @@ tight coupling between components.
 """
 from typing import Any, List, Optional, Protocol, TypeVar, runtime_checkable
 
-T = TypeVar('T')
+T = TypeVar('T', covariant=True)
 
 
 @runtime_checkable

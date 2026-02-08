@@ -121,7 +121,11 @@ def track_deployment_outcome(
                 "agent_name": agent_name,
                 "deployment_id": deployment_id,
                 "experiment_id": experiment_result.experiment_id,
-                "deployed_config": experiment_result.winner_config.model_dump() if hasattr(experiment_result.winner_config, 'model_dump') else dict(experiment_result.winner_config),
+                "deployed_config": (
+                    experiment_result.winner_config.model_dump()
+                    if experiment_result.winner_config and hasattr(experiment_result.winner_config, 'model_dump')
+                    else dict(experiment_result.winner_config) if experiment_result.winner_config else {}
+                ),
                 "previous_config": previous_config.model_dump() if hasattr(previous_config, 'model_dump') else dict(previous_config),
                 "rollback_monitoring_enabled": enable_auto_rollback,
             },

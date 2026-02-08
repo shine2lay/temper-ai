@@ -46,10 +46,13 @@ def track_safety_violation(
     timestamp: Optional[datetime] = None,
 ) -> None:
     """Track safety violation in SQL database."""
+    timestamp_utc: datetime
     if timestamp is None:
-        timestamp = datetime.now(timezone.utc)
+        timestamp_utc = datetime.now(timezone.utc)
     else:
-        timestamp = ensure_utc(timestamp)
+        result = ensure_utc(timestamp)
+        assert result is not None, "Timestamp conversion failed"
+        timestamp_utc = result
 
     # Build metadata
     violation_metadata = {
@@ -61,7 +64,7 @@ def track_safety_violation(
         "workflow_id": workflow_id,
         "stage_id": stage_id,
         "agent_id": agent_id,
-        "timestamp": timestamp.isoformat()
+        "timestamp": timestamp_utc.isoformat()
     }
 
     with get_session() as session:
@@ -70,7 +73,7 @@ def track_safety_violation(
             statement = select(AgentExecution).where(AgentExecution.id == agent_id)
             agent = session.exec(statement).first()
             if agent:
-                metadata = cast(Dict[str, Any], agent.extra_metadata or {})
+                metadata = agent.extra_metadata or {}
                 if "safety_violations" not in metadata:
                     metadata["safety_violations"] = []
                 metadata["safety_violations"].append(violation_metadata)
@@ -83,26 +86,26 @@ def track_safety_violation(
             stage_stmt = select(StageExecution).where(StageExecution.id == stage_id)
             stage = session.exec(stage_stmt).first()
             if stage:
-                stage_metadata = cast(Dict[str, Any], stage.extra_metadata or {})
+                stage_metadata = stage.extra_metadata or {}
                 if "safety_violations" not in stage_metadata:
                     stage_metadata["safety_violations"] = []
                 stage_metadata["safety_violations"].append(violation_metadata)
                 stage_metadata["has_safety_violations"] = True
                 stage_metadata["safety_violation_count"] = len(stage_metadata["safety_violations"])
-                stage.extra_metadata = cast(Any, stage_metadata)
+                stage.extra_metadata = stage_metadata
 
         # Update workflow execution with violation (if workflow context exists)
         if workflow_id:
             wf_stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
             workflow = session.exec(wf_stmt).first()
             if workflow:
-                wf_metadata = cast(Dict[str, Any], workflow.extra_metadata or {})
+                wf_metadata = workflow.extra_metadata or {}
                 if "safety_violations" not in wf_metadata:
                     wf_metadata["safety_violations"] = []
                 wf_metadata["safety_violations"].append(violation_metadata)
                 wf_metadata["has_safety_violations"] = True
                 wf_metadata["safety_violation_count"] = len(wf_metadata["safety_violations"])
-                workflow.extra_metadata = cast(Any, wf_metadata)
+                workflow.extra_metadata = wf_metadata
 
         session.commit()
 
@@ -239,22 +242,22 @@ def aggregate_workflow_metrics(workflow_id: str) -> Dict[str, Any]:
     """Aggregate metrics across all agents in a workflow."""
     with get_session() as session:
         metrics_statement = select(
-            func.sum(AgentExecution.num_llm_calls).label('total_llm_calls'),  # type: ignore[arg-type]
-            func.sum(AgentExecution.num_tool_calls).label('total_tool_calls'),  # type: ignore[arg-type]
-            func.sum(AgentExecution.total_tokens).label('total_tokens'),  # type: ignore[arg-type]
-            func.sum(AgentExecution.estimated_cost_usd).label('total_cost_usd')  # type: ignore[arg-type]
+            func.sum(AgentExecution.num_llm_calls).label('total_llm_calls'),
+            func.sum(AgentExecution.num_tool_calls).label('total_tool_calls'),
+            func.sum(AgentExecution.total_tokens).label('total_tokens'),
+            func.sum(AgentExecution.estimated_cost_usd).label('total_cost_usd')
         ).join(
             StageExecution,
-            AgentExecution.stage_execution_id == StageExecution.id
+            AgentExecution.stage_execution_id == StageExecution.id  # type: ignore[arg-type]
         ).where(StageExecution.workflow_execution_id == workflow_id)
 
-        metrics = session.exec(metrics_statement).first()
-        if metrics:
+        result = session.exec(metrics_statement).first()
+        if result:
             return {
-                'total_llm_calls': int(metrics.total_llm_calls or 0),
-                'total_tool_calls': int(metrics.total_tool_calls or 0),
-                'total_tokens': int(metrics.total_tokens or 0),
-                'total_cost_usd': float(metrics.total_cost_usd or 0.0),
+                'total_llm_calls': int(result[0] or 0),
+                'total_tool_calls': int(result[1] or 0),
+                'total_tokens': int(result[2] or 0),
+                'total_cost_usd': float(result[3] or 0.0),
             }
         return {
             'total_llm_calls': 0,
@@ -273,12 +276,12 @@ def aggregate_stage_metrics(stage_id: str) -> Dict[str, int]:
             func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
         ).where(AgentExecution.stage_execution_id == stage_id)
 
-        metrics = session.exec(metrics_statement).first()
-        if metrics:
+        result = session.exec(metrics_statement).first()
+        if result:
             return {
-                'num_agents_executed': int(metrics.total or 0),
-                'num_agents_succeeded': int(metrics.succeeded or 0),
-                'num_agents_failed': int(metrics.failed or 0),
+                'num_agents_executed': int(result[0] or 0),
+                'num_agents_succeeded': int(result[1] or 0),
+                'num_agents_failed': int(result[2] or 0),
             }
         return {
             'num_agents_executed': 0,
@@ -354,24 +357,25 @@ def flush_buffer(
 
         # Batch insert tool calls
         if tool_calls:
-            tool_models = [
-                ToolExecution(
+            tool_models = []
+            for call in tool_calls:
+                start_time_utc = ensure_utc(call.start_time)
+                assert start_time_utc is not None, "Tool call start_time cannot be None"
+                tool_models.append(ToolExecution(
                     id=call.tool_execution_id,
                     agent_execution_id=call.agent_id,
                     tool_name=call.tool_name,
                     input_params=call.input_params,
                     output_data=call.output_data,
-                    start_time=ensure_utc(call.start_time),
-                    end_time=ensure_utc(call.start_time) + timedelta(seconds=call.duration_seconds),
+                    start_time=start_time_utc,
+                    end_time=start_time_utc + timedelta(seconds=call.duration_seconds),
                     duration_seconds=call.duration_seconds,
                     status=call.status,
                     error_message=call.error_message,
                     safety_checks_applied=call.safety_checks,
                     approval_required=call.approval_required,
                     retry_count=0
-                )
-                for call in tool_calls
-            ]
+                ))
             session.add_all(tool_models)
             logger.debug(f"Batch inserted {len(tool_models)} tool calls")
 

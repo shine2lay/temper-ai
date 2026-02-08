@@ -494,8 +494,8 @@ class StageExecutor(ABC):
             agent_outputs.append(AgentOutput(
                 agent_name=agent_name,
                 decision=response.output,
-                reasoning=response.reasoning,
-                confidence=response.confidence,
+                reasoning=response.reasoning or "",
+                confidence=response.confidence or 0.0,
                 metadata={
                     "tokens": response.tokens,
                     "cost_usd": response.estimated_cost_usd,

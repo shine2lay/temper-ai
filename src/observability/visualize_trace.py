@@ -473,8 +473,16 @@ def visualize_trace(
             import webbrowser
             webbrowser.open(output_file)
             print(f"✓ Opened in browser: {output_file}")
-        except Exception:
-            print(f"Could not auto-open. Manually open: {output_file}")
+        except ImportError as e:
+            print(f"Could not import webbrowser module: {e}")
+            print(f"Manually open: {output_file}")
+        except OSError as e:
+            print(f"Could not open browser (OS error): {e}")
+            print(f"Manually open: {output_file}")
+        except Exception as e:
+            # Catch any other webbrowser-specific errors
+            print(f"Could not auto-open browser: {e}")
+            print(f"Manually open: {output_file}")
 
     return fig
 

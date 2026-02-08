@@ -26,7 +26,7 @@ class WorkflowCancelledError(WorkflowError):
     via the cancel() method, not due to an error or failure.
     """
 
-    def __init__(self, message: str = "Workflow was cancelled", **kwargs):
+    def __init__(self, message: str = "Workflow was cancelled", **kwargs: Any) -> None:
         super().__init__(
             message=message,
             error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,

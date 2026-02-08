@@ -4,7 +4,7 @@ Extracted from ExecutionTracker to separate collaboration/safety
 concerns from core execution tracking.
 """
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 from src.database.datetime_utils import utcnow
 from src.observability.backend import ObservabilityBackend
@@ -139,7 +139,7 @@ class CollaborationEventTracker:
 
     def track_safety_violation(
         self,
-        violation_severity: str,
+        violation_severity: Literal["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
         violation_message: str,
         policy_name: str,
         service_name: Optional[str] = None,

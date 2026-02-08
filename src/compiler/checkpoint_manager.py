@@ -357,7 +357,7 @@ class CheckpointManager:
 class CheckpointSaveError(ConfigurationError):
     """Raised when checkpoint save fails."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message=message,
             error_code=ErrorCode.CONFIG_INVALID,
@@ -368,7 +368,7 @@ class CheckpointSaveError(ConfigurationError):
 class CheckpointLoadError(ConfigurationError):
     """Raised when checkpoint load fails."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message=message,
             error_code=ErrorCode.CONFIG_INVALID,

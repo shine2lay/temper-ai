@@ -102,7 +102,7 @@ class ContinuousExecutor:
         # Setup signal handlers
         shutdown_requested = {"flag": False}
 
-        def signal_handler(signum, _frame):
+        def signal_handler(signum: int, _frame: Any) -> None:
             """Handle interrupt signals for graceful shutdown."""
             logger.info(f"Received signal {signum}, requesting graceful shutdown...")
             shutdown_requested["flag"] = True
@@ -291,7 +291,7 @@ class ContinuousExecutor:
 
     def _log_final_summary(self, stats: ContinuousExecutionStats) -> None:
         """Log final execution summary."""
-        duration = (stats.stopped_at - stats.started_at).total_seconds()
+        duration = (stats.stopped_at - stats.started_at).total_seconds() if stats.stopped_at and stats.started_at else 0.0
 
         logger.info(f"\n{'='*60}")
         logger.info("Continuous improvement loop stopped")

@@ -44,13 +44,14 @@ class AggregationQueryBuilder:
 
         from src.database.models import WorkflowExecution
 
-        return select(
+        # SQLAlchemy/mypy complex expression typing issue - using Any return type
+        return select(  # type: ignore
             WorkflowExecution.workflow_name,
-            func.count(WorkflowExecution.id).label('total'),
-            func.sum(case((WorkflowExecution.status == 'completed', 1), else_=0)).label('successful'),
+            func.count(WorkflowExecution.id).label('total'),  # type: ignore
+            func.sum(case((WorkflowExecution.status == 'completed', 1), else_=0)).label('successful'),  # type: ignore
             func.avg(WorkflowExecution.duration_seconds).label('avg_duration'),
             func.sum(WorkflowExecution.total_cost_usd).label('total_cost'),
-            func.percentile_cont(PROB_NEAR_CERTAIN).within_group(WorkflowExecution.duration_seconds).label('p95_duration')
+            func.percentile_cont(PROB_NEAR_CERTAIN).within_group(WorkflowExecution.duration_seconds).label('p95_duration')  # type: ignore
         ).where(
             WorkflowExecution.start_time >= start_time,
             WorkflowExecution.start_time < end_time
@@ -83,10 +84,11 @@ class AggregationQueryBuilder:
 
         from src.database.models import AgentExecution
 
-        return select(
+        # SQLAlchemy/mypy complex expression typing issue - using Any return type
+        return select(  # type: ignore
             AgentExecution.agent_name,
-            func.count(AgentExecution.id).label('total'),
-            func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('successful'),
+            func.count(AgentExecution.id).label('total'),  # type: ignore
+            func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('successful'),  # type: ignore
             func.avg(AgentExecution.duration_seconds).label('avg_duration'),
             func.sum(AgentExecution.estimated_cost_usd).label('total_cost'),
             func.avg(AgentExecution.total_tokens).label('avg_tokens')
@@ -122,14 +124,15 @@ class AggregationQueryBuilder:
 
         from src.database.models import LLMCall
 
-        return select(
+        # SQLAlchemy/mypy complex expression typing issue - using Any return type
+        return select(  # type: ignore
             LLMCall.provider,
             LLMCall.model,
-            func.count(LLMCall.id).label('total'),
-            func.sum(case((LLMCall.status == 'success', 1), else_=0)).label('successful'),
+            func.count(LLMCall.id).label('total'),  # type: ignore
+            func.sum(case((LLMCall.status == 'success', 1), else_=0)).label('successful'),  # type: ignore
             func.avg(LLMCall.latency_ms).label('avg_latency'),
-            func.percentile_cont(PROB_NEAR_CERTAIN).within_group(LLMCall.latency_ms).label('p95_latency'),
-            func.percentile_cont(PERCENTILE_P99).within_group(LLMCall.latency_ms).label('p99_latency'),
+            func.percentile_cont(PROB_NEAR_CERTAIN).within_group(LLMCall.latency_ms).label('p95_latency'),  # type: ignore
+            func.percentile_cont(PERCENTILE_P99).within_group(LLMCall.latency_ms).label('p99_latency'),  # type: ignore
             func.sum(LLMCall.estimated_cost_usd).label('total_cost')
         ).where(
             LLMCall.start_time >= start_time,

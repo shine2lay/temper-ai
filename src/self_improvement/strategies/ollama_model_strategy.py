@@ -5,7 +5,7 @@ Generates config variants by selecting different Ollama models based on
 the detected performance problem (quality, cost, speed).
 """
 import copy
-from typing import List
+from typing import Any, List
 
 from src.constants.limits import SMALL_ITEM_LIMIT
 from src.self_improvement.model_registry import ModelMetadata, ModelRegistry
@@ -56,7 +56,7 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
         >>> # Variants use different models: llama3.1:8b, mistral:7b, qwen2.5:32b
     """
 
-    def __init__(self, model_registry: ModelRegistry, learning_store=None):
+    def __init__(self, model_registry: ModelRegistry, learning_store: Any = None) -> None:
         """
         Initialize strategy with model registry and optional learning store.
 

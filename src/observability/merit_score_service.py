@@ -150,11 +150,12 @@ class MeritScoreService:
 
             # 30-day success rate
             recent_statement = select(
-                func.count(DecisionOutcome.id).label('total'),
+                func.count().label('total'),
                 func.sum(func.case((DecisionOutcome.outcome == 'success', 1), else_=0)).label('successful')
-            ).where(
+            ).select_from(DecisionOutcome).where(
                 agent_name_field == agent_name,
-                DecisionOutcome.validation_timestamp >= thirty_days_ago
+                DecisionOutcome.validation_timestamp.is_not(None),  # type: ignore[union-attr]
+                DecisionOutcome.validation_timestamp >= thirty_days_ago  # type: ignore[operator]
             )
 
             recent_result = session.exec(recent_statement).first()
@@ -163,11 +164,12 @@ class MeritScoreService:
 
             # 90-day success rate
             ninety_statement = select(
-                func.count(DecisionOutcome.id).label('total'),
+                func.count().label('total'),
                 func.sum(func.case((DecisionOutcome.outcome == 'success', 1), else_=0)).label('successful')
-            ).where(
+            ).select_from(DecisionOutcome).where(
                 agent_name_field == agent_name,
-                DecisionOutcome.validation_timestamp >= ninety_days_ago
+                DecisionOutcome.validation_timestamp.is_not(None),  # type: ignore[union-attr]
+                DecisionOutcome.validation_timestamp >= ninety_days_ago  # type: ignore[operator]
             )
 
             ninety_result = session.exec(ninety_statement).first()

@@ -147,7 +147,7 @@ class SafetyViolationException(FrameworkException):  # noqa: N818 — public API
             severity=violation.severity,
             message=violation.message,
             action=violation.action,
-            context=sanitized_context,
+            context=sanitized_context or {},
             remediation_hint=violation.remediation_hint,
             metadata=sanitized_metadata
         )

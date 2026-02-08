@@ -158,7 +158,7 @@ async def validate_state(
     """
     from src.auth.oauth.service import OAuthStateError
 
-    state_data = await state_store.get_state(state)
+    state_data: Optional[Dict[str, Any]] = await state_store.get_state(state)
 
     if not state_data:
         raise OAuthStateError(
@@ -235,6 +235,8 @@ async def exchange_code(
     # Get token endpoint
     endpoints = get_provider_endpoints(provider_config)
     token_endpoint = endpoints['token_endpoint']
+    if not token_endpoint:
+        raise OAuthError(f"Token endpoint not configured for provider '{provider}'", provider=provider)
 
     # Prepare token exchange request
     token_data = {
@@ -260,7 +262,7 @@ async def exchange_code(
                 provider=provider
             )
 
-        tokens = response.json()
+        tokens: Dict[str, Any] = response.json()
 
         if 'access_token' not in tokens:
             raise OAuthProviderError(
@@ -335,6 +337,8 @@ async def refresh_token(
 
     endpoints = get_provider_endpoints(provider_config)
     token_endpoint = endpoints['token_endpoint']
+    if not token_endpoint:
+        raise OAuthError(f"Token endpoint not configured for provider '{provider}'", provider=provider)
 
     refresh_data = {
         'client_id': provider_config.client_id,
@@ -356,7 +360,7 @@ async def refresh_token(
                 provider=provider
             )
 
-        new_tokens = response.json()
+        new_tokens: Dict[str, Any] = response.json()
 
         if 'refresh_token' not in new_tokens:
             new_tokens['refresh_token'] = refresh_token_val
@@ -471,7 +475,7 @@ async def fetch_user_info(
                 provider=provider
             )
 
-        user_info = response.json()
+        user_info: Dict[str, Any] = response.json()
 
         logger.info(
             f"Retrieved user info: provider={provider}, user={user_id}"
@@ -541,6 +545,9 @@ async def revoke_at_provider(
     try:
         provider_config = config.get_provider_config(provider)
     except (AttributeError, KeyError, TypeError):
+        return False
+
+    if not provider_config:
         return False
 
     endpoints = get_provider_endpoints(provider_config)

@@ -411,5 +411,6 @@ class BaseLLM(ABC):
 
             raise LLMError(f"Failed after {self.max_retries} attempts")
 
-        return await self._circuit_breaker.async_call(_make_async_api_call)
+        result: LLMResponse = await self._circuit_breaker.async_call(_make_async_api_call)
+        return result
 

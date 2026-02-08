@@ -2,7 +2,7 @@
 
 import logging
 from threading import RLock
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from src.self_improvement.strategies.strategy import ImprovementStrategy
 
@@ -33,7 +33,7 @@ class ImprovementStrategyRegistry:
         >>> all_strategies = registry.get_all_strategies()
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize an empty strategy registry."""
         self._strategies: Dict[str, ImprovementStrategy] = {}
         self._lock = RLock()  # Thread-safe registration/retrieval
@@ -167,7 +167,7 @@ class ImprovementStrategyRegistry:
             self._strategies.clear()
             logger.info(f"Cleared all {count} strategies from registry")
 
-    def health_check(self) -> Dict[str, any]:
+    def health_check(self) -> Dict[str, Any]:
         """Check the health of the strategy registry.
 
         Returns:

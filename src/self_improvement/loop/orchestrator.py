@@ -49,10 +49,10 @@ class M5SelfImprovementLoop:
 
     def __init__(
         self,
-        coord_db,
+        coord_db: Any,
         obs_session: Session,
         config: Optional[LoopConfig] = None,
-    ):
+    ) -> None:
         """
         Initialize M5 improvement loop.
 
@@ -183,7 +183,7 @@ class M5SelfImprovementLoop:
             ... )
             # Runs every 30 minutes until convergence or interrupt
         """
-        return self.continuous_executor.execute(agent_names, check_interval_minutes)
+        return self.continuous_executor.execute(agent_names or [], check_interval_minutes)
 
     def run_scheduled(self, _cron_expression: str) -> None:
         """

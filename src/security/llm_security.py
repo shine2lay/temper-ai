@@ -671,6 +671,9 @@ class LLMSecurityRateLimiter:
         Returns:
             Tuple of (allowed, reason_if_blocked)
         """
+        if self._rate_limit_script is None:
+            raise RuntimeError("Rate limit script not initialized")
+
         minute_key = f"rate_limit:{entity_id}:minute"
         hour_key = f"rate_limit:{entity_id}:hour"
         burst_key = f"rate_limit:{entity_id}:burst"

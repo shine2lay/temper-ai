@@ -4,23 +4,24 @@ Tests for ExecutionTracker.
 
 import pytest
 
-from src.observability.database import get_session, init_database
-from src.observability.models import (
+from src.database import get_session, init_database
+from src.database.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.tracker import ExecutionContext, ExecutionTracker
+from src.observability.tracker import ExecutionTracker
+from src.core.context import ExecutionContext
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import src.observability.database as db_module
-    from src.observability.database import _db_lock
+    import src.database as db_module
+    from src.database.manager import _db_lock
     with _db_lock:
         db_module._db_manager = None
 

@@ -32,6 +32,7 @@ class EngineRegistry:
 
     _lock: threading.Lock = threading.Lock()
     _instance: Optional["EngineRegistry"] = None
+    _engines: Dict[str, Type[ExecutionEngine]]
 
     def __new__(cls) -> "EngineRegistry":
         """Thread-safe singleton pattern with double-checked locking."""
@@ -39,7 +40,7 @@ class EngineRegistry:
             with cls._lock:
                 if cls._instance is None:
                     instance = super().__new__(cls)
-                    instance._engines: Dict[str, Type[ExecutionEngine]] = {}
+                    instance._engines = {}
                     instance._initialize_default_engines()
                     cls._instance = instance
         return cls._instance

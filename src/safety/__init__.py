@@ -39,6 +39,7 @@ Example usage:
     ...             )
     ...         return ValidationResult(valid=True, policy_name=self.name)
 """
+from typing import Any
 
 # Lazy-loading: imports are deferred until first access to reduce startup cost.
 # Map attribute names to (module_path, object_name) for lazy resolution.
@@ -129,7 +130,7 @@ _DEPRECATED_ALIASES = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in _LAZY_IMPORTS:
         module_path, obj_name = _LAZY_IMPORTS[name]
         import importlib

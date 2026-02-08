@@ -338,7 +338,7 @@ class PatternMiner:
         avg_cost = sum(o.actual_cost_improvement for o in outcomes) / total
 
         # Problem type breakdown
-        problem_types = {}
+        problem_types: Dict[str, Dict[str, Any]] = {}
         for outcome in outcomes:
             pt = outcome.problem_type
             if pt not in problem_types:
@@ -349,7 +349,7 @@ class PatternMiner:
 
         # Calculate win rates by problem type
         for pt, stats in problem_types.items():
-            stats["win_rate"] = stats["wins"] / stats["count"]
+            stats["win_rate"] = float(stats["wins"]) / float(stats["count"])
 
         return {
             "strategy_name": strategy_name,

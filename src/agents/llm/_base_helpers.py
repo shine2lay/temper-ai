@@ -12,7 +12,7 @@ import logging
 import threading
 import time
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Any, Dict, Literal, Optional, Tuple, Type, cast
 from urllib.parse import urlparse
 
 import httpx
@@ -82,7 +82,7 @@ def validate_base_url(url: str) -> str:
 
 def get_shared_circuit_breaker(
     instance: BaseLLM,
-    circuit_breakers: collections.OrderedDict,
+    circuit_breakers: collections.OrderedDict[Tuple[str, str, str], CircuitBreaker],
     lock: threading.Lock,
     max_breakers: int,
 ) -> CircuitBreaker:
@@ -119,7 +119,7 @@ def reset_shared_circuit_breakers(
 # ---------------------------------------------------------------------------
 
 def get_shared_http_client(
-    clients: Dict,
+    clients: Dict[Tuple[str, str], httpx.Client],
     lock: threading.Lock,
     max_clients: int,
     provider: str,
@@ -138,7 +138,7 @@ def get_shared_http_client(
 
 
 def reset_shared_http_clients(
-    clients: Dict,
+    clients: Dict[Tuple[str, str], httpx.Client],
     lock: threading.Lock,
 ) -> None:
     """Close and remove all shared HTTP clients."""
@@ -404,11 +404,11 @@ def build_bearer_auth_headers(instance: BaseLLM) -> Dict[str, str]:
 # Async lock helper
 # ---------------------------------------------------------------------------
 
-def get_async_lock(cls: type) -> asyncio.Lock:
+def get_async_lock(cls: Any) -> asyncio.Lock:
     """Get or lazily create the class-level async lock."""
     if cls._async_client_lock is None:
         cls._async_client_lock = asyncio.Lock()
-    return cls._async_client_lock
+    return cast(asyncio.Lock, cls._async_client_lock)
 
 
 # ---------------------------------------------------------------------------

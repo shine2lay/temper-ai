@@ -86,8 +86,12 @@ class CacheBackend(ABC):
         pass
 
     @abstractmethod
-    def clear(self) -> None:
-        """Clear entire cache."""
+    def clear(self, **kwargs: Any) -> None:
+        """Clear entire cache.
+
+        Args:
+            **kwargs: Backend-specific options (e.g., pattern, dry_run for Redis)
+        """
         pass
 
     @abstractmethod
@@ -171,7 +175,7 @@ class InMemoryCache(CacheBackend):
                 return True
             return False
 
-    def clear(self) -> None:
+    def clear(self, **kwargs: Any) -> None:
         """Clear entire cache."""
         with self._lock:
             self._cache.clear()
@@ -295,6 +299,7 @@ class RedisCache(CacheBackend):
             )
 
         # Handle deprecated password parameter
+        redis_password: Optional[str]
         if password is not None:
             warnings.warn(
                 "Passing password to RedisCache() is deprecated and insecure. "
@@ -367,7 +372,7 @@ class RedisCache(CacheBackend):
             return False
         # KeyboardInterrupt and SystemExit propagate automatically
 
-    def clear(self, pattern: str = "*", dry_run: bool = False, batch_size: int = DEFAULT_BATCH_SIZE) -> int:
+    def clear(self, pattern: str = "*", dry_run: bool = False, batch_size: int = DEFAULT_BATCH_SIZE, **kwargs: Any) -> None:
         """
         Clear cache keys safely using SCAN.
 
@@ -429,12 +434,9 @@ class RedisCache(CacheBackend):
                 f"{deleted_count} keys {'would be' if dry_run else ''} deleted"
             )
 
-            return deleted_count
-
         except redis.RedisError as e:
             # Specific exception for Redis operations
             logger.error(f"Redis clear error: {e}")
-            return 0
         # KeyboardInterrupt and SystemExit propagate automatically
 
     def exists(self, key: str) -> bool:

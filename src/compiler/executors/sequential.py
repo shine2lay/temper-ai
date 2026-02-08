@@ -7,7 +7,7 @@ agent-to-agent context sharing within a stage.
 import logging
 import threading
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional, cast
 
 from src.constants.probabilities import PROB_VERY_HIGH
 from src.constants.sizes import UUID_HEX_SHORT_LENGTH
@@ -91,7 +91,9 @@ class SequentialStageExecutor(StageExecutor):
 
         # If no error_handling config, create default based on halt_on_failure param
         if error_handling_config is None:
-            on_failure = "halt_stage" if halt_on_failure else "continue_with_remaining"
+            on_failure: Literal["halt_stage", "continue_with_remaining"] = (
+                "halt_stage" if halt_on_failure else "continue_with_remaining"
+            )
             error_handling_config = StageErrorHandlingConfig(on_agent_failure=on_failure)
 
         # Track stage execution if tracker available

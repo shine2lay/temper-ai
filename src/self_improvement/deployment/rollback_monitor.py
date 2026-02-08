@@ -66,10 +66,10 @@ class RollbackMonitor:
 
     def __init__(
         self,
-        performance_analyzer,
-        config_deployer,
+        performance_analyzer: Any,
+        config_deployer: Any,
         thresholds: Optional[RegressionThresholds] = None,
-    ):
+    ) -> None:
         """
         Initialize rollback monitor.
 
@@ -108,7 +108,7 @@ class RollbackMonitor:
                 "baseline_metrics": dict,
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "regression_detected": False,
             "rolled_back": False,
             "reason": None,
@@ -189,11 +189,12 @@ class RollbackMonitor:
         # SI-05: Handle PerformanceDataError gracefully instead of letting
         # it propagate as an unhandled exception.
         try:
-            return self.performance_analyzer.analyze_agent_performance(
+            result = self.performance_analyzer.analyze_agent_performance(
                 agent_name=agent_name,
                 window_start=window_start,
                 window_end=window_end,
             )
+            return result if isinstance(result, AgentPerformanceProfile) else None
         except PerformanceDataError:
             logger.info(f"Insufficient baseline data for {agent_name}")
             return None
@@ -212,11 +213,12 @@ class RollbackMonitor:
         window_start = now - timedelta(hours=window_hours)
 
         try:
-            return self.performance_analyzer.analyze_agent_performance(
+            result = self.performance_analyzer.analyze_agent_performance(
                 agent_name=agent_name,
                 window_start=window_start,
                 window_end=now,
             )
+            return result if isinstance(result, AgentPerformanceProfile) else None
         except PerformanceDataError:
             logger.info(f"Insufficient current data for {agent_name}")
             return None

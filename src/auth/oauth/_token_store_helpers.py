@@ -14,8 +14,8 @@ logger = logging.getLogger(__name__)
 
 # Optional keyring import
 try:
-    import keyring
-    from keyring.errors import KeyringError
+    import keyring  # type: ignore[import-not-found]
+    from keyring.errors import KeyringError  # type: ignore[import-not-found]
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
@@ -47,15 +47,16 @@ def get_or_create_keyring_key(
             "Install with: pip install keyring"
         )
 
-    key = keyring.get_password(keyring_service, keyring_key_name)
+    key: Optional[str] = keyring.get_password(keyring_service, keyring_key_name)
 
     if key is None:
         logger.info(
             f"Generating new encryption key in OS keyring: "
             f"{keyring_service}/{keyring_key_name}"
         )
-        key = Fernet.generate_key().decode()
-        keyring.set_password(keyring_service, keyring_key_name, key)
+        new_key: str = Fernet.generate_key().decode()
+        keyring.set_password(keyring_service, keyring_key_name, new_key)
+        return new_key
 
     return key
 

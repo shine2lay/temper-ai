@@ -257,7 +257,7 @@ class StatisticalAnalyzer:
 
         # Calculate improvement percentage
         if control_mean != 0:
-            improvement = (treatment_mean - control_mean) / abs(control_mean)
+            improvement = float((treatment_mean - control_mean) / abs(control_mean))
         else:
             improvement = 0.0
 

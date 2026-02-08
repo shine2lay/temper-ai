@@ -56,8 +56,10 @@ class SQLObservabilityBackend(ObservabilityBackend):
 
     def __init__(self, buffer: Any = None) -> None:
         """Initialize SQL backend."""
+        from src.observability.buffer import ObservabilityBuffer
+
+        self._buffer: Optional[ObservabilityBuffer]
         if buffer is None:
-            from src.observability.buffer import ObservabilityBuffer
             from src.observability.constants import (
                 DEFAULT_BUFFER_SIZE,
                 DEFAULT_BUFFER_TIMEOUT_SECONDS,
@@ -112,8 +114,10 @@ class SQLObservabilityBackend(ObservabilityBackend):
             wf = session.exec(statement).first()
             if wf:
                 wf.status = status
-                wf.end_time = ensure_utc(end_time)
-                wf.duration_seconds = safe_duration_seconds(wf.start_time, wf.end_time, context=f"workflow {workflow_id}")
+                end_time_utc = ensure_utc(end_time)
+                assert end_time_utc is not None, "Workflow end_time cannot be None"
+                wf.end_time = end_time_utc
+                wf.duration_seconds = safe_duration_seconds(wf.start_time, end_time_utc, context=f"workflow {workflow_id}")
                 wf.error_message = error_message
                 wf.error_stack_trace = error_stack_trace
                 session.commit()
@@ -167,8 +171,10 @@ class SQLObservabilityBackend(ObservabilityBackend):
             st = session.exec(statement).first()
             if st:
                 st.status = status
-                st.end_time = ensure_utc(end_time)
-                st.duration_seconds = safe_duration_seconds(st.start_time, st.end_time, context=f"stage {stage_id}")
+                end_time_utc = ensure_utc(end_time)
+                assert end_time_utc is not None, "Stage end_time cannot be None"
+                st.end_time = end_time_utc
+                st.duration_seconds = safe_duration_seconds(st.start_time, end_time_utc, context=f"stage {stage_id}")
                 st.error_message = error_message
 
                 if num_agents_executed > 0:
@@ -181,11 +187,11 @@ class SQLObservabilityBackend(ObservabilityBackend):
                         func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
                         func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
                     ).where(AgentExecution.stage_execution_id == stage_id)
-                    metrics = session.exec(metrics_statement).first()
-                    if metrics:
-                        st.num_agents_executed = int(metrics.total or 0)
-                        st.num_agents_succeeded = int(metrics.succeeded or 0)
-                        st.num_agents_failed = int(metrics.failed or 0)
+                    result = session.exec(metrics_statement).first()
+                    if result:
+                        st.num_agents_executed = int(result[0] or 0)
+                        st.num_agents_succeeded = int(result[1] or 0)
+                        st.num_agents_failed = int(result[2] or 0)
 
                 session.commit()
 
@@ -230,8 +236,10 @@ class SQLObservabilityBackend(ObservabilityBackend):
             ag = session.exec(statement).first()
             if ag:
                 ag.status = status
-                ag.end_time = ensure_utc(end_time)
-                ag.duration_seconds = safe_duration_seconds(ag.start_time, ag.end_time, context=f"agent {agent_id}")
+                end_time_utc = ensure_utc(end_time)
+                assert end_time_utc is not None, "Agent end_time cannot be None"
+                ag.end_time = end_time_utc
+                ag.duration_seconds = safe_duration_seconds(ag.start_time, end_time_utc, context=f"agent {agent_id}")
                 ag.error_message = error_message
                 session.commit()
 
@@ -328,6 +336,7 @@ class SQLObservabilityBackend(ObservabilityBackend):
             return
 
         start_time_utc = ensure_utc(start_time)
+        assert start_time_utc is not None, "Tool call start_time cannot be None"
         end_time = start_time_utc + timedelta(seconds=duration_seconds)
         tool_exec = ToolExecution(
             id=tool_execution_id, agent_execution_id=agent_id,
@@ -371,29 +380,49 @@ class SQLObservabilityBackend(ObservabilityBackend):
         """Create database indexes for common query patterns."""
         logger.info("SQL backend indexes are defined in models.py")
 
+    # ========== Abstract Method Implementations ==========
 
-# --------------------------------------------------------------------------
-# Methods attached outside the class body to keep method_count under the
-# god-class threshold while preserving backward compatibility.
-# --------------------------------------------------------------------------
+    def track_safety_violation(
+        self, workflow_id: Optional[str], stage_id: Optional[str], agent_id: Optional[str],
+        violation_severity: str, violation_message: str, policy_name: str,
+        service_name: Optional[str] = None, context: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None
+    ) -> None:
+        """Track safety violation."""
+        _track_safety_violation(
+            workflow_id, stage_id, agent_id, violation_severity,
+            violation_message, policy_name, service_name, context, timestamp
+        )
 
-def _track_safety_violation_method(self, workflow_id, stage_id, agent_id, violation_severity, violation_message, policy_name, service_name=None, context=None, timestamp=None) -> None:
-    _track_safety_violation(workflow_id, stage_id, agent_id, violation_severity, violation_message, policy_name, service_name, context, timestamp)
+    def track_collaboration_event(
+        self, stage_id: str, event_type: str, agents_involved: List[str],
+        event_data: Optional[Dict[str, Any]] = None, round_number: Optional[int] = None,
+        resolution_strategy: Optional[str] = None, outcome: Optional[str] = None,
+        confidence_score: Optional[float] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None
+    ) -> str:
+        """Track collaboration event."""
+        return _track_collaboration_event(
+            stage_id, event_type, agents_involved, event_data,
+            round_number, resolution_strategy, outcome, confidence_score,
+            extra_metadata, timestamp
+        )
 
-def _track_collaboration_event_method(self, stage_id, event_type, agents_involved, event_data=None, round_number=None, resolution_strategy=None, outcome=None, confidence_score=None, extra_metadata=None, timestamp=None) -> str:
-    return _track_collaboration_event(stage_id, event_type, agents_involved, event_data, round_number, resolution_strategy, outcome, confidence_score, extra_metadata, timestamp)
+    def cleanup_old_records(self, retention_days: int, dry_run: bool = False) -> Dict[str, int]:
+        """Clean up old records."""
+        return _cleanup_old_records(retention_days, dry_run)
 
-def _cleanup_old_records_method(self, retention_days: int, dry_run: bool = False) -> Dict[str, int]:
-    return _cleanup_old_records(retention_days, dry_run)
+    def aggregate_workflow_metrics(self, workflow_id: str) -> Dict[str, Any]:
+        """Aggregate workflow metrics."""
+        return _aggregate_workflow_metrics(workflow_id)
 
-def _aggregate_workflow_metrics_method(self, workflow_id: str) -> Dict[str, Any]:
-    return _aggregate_workflow_metrics(workflow_id)
+    def aggregate_stage_metrics(self, stage_id: str) -> Dict[str, int]:
+        """Aggregate stage metrics."""
+        return _aggregate_stage_metrics(stage_id)
 
-def _aggregate_stage_metrics_method(self, stage_id: str) -> Dict[str, int]:
-    return _aggregate_stage_metrics(stage_id)
 
-SQLObservabilityBackend.track_safety_violation = _track_safety_violation_method  # type: ignore[attr-defined]
-SQLObservabilityBackend.track_collaboration_event = _track_collaboration_event_method  # type: ignore[attr-defined]
-SQLObservabilityBackend.cleanup_old_records = _cleanup_old_records_method  # type: ignore[attr-defined]
-SQLObservabilityBackend.aggregate_workflow_metrics = _aggregate_workflow_metrics_method  # type: ignore[attr-defined]
-SQLObservabilityBackend.aggregate_stage_metrics = _aggregate_stage_metrics_method  # type: ignore[attr-defined]
+# Note: Methods track_safety_violation, track_collaboration_event, cleanup_old_records,
+# aggregate_workflow_metrics, and aggregate_stage_metrics are now defined in the class body
+# to satisfy ABC requirements. Previously they were attached dynamically which caused
+# instantiation errors in tests.

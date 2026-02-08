@@ -174,7 +174,7 @@ class CheckpointBackend(ABC):
 class CheckpointNotFoundError(ConfigurationError):
     """Raised when a checkpoint cannot be found."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message=message,
             error_code=ErrorCode.CONFIG_NOT_FOUND,
@@ -644,7 +644,8 @@ class RedisCheckpointBackend(CheckpointBackend):
         pipe.zadd(index_key, {checkpoint_id: timestamp})
         # CO-09: Set TTL on the index sorted set so it doesn't leak memory.
         # Use 2x the checkpoint TTL to ensure index outlives its entries.
-        pipe.expire(index_key, self.ttl * 2)
+        if self.ttl is not None:
+            pipe.expire(index_key, self.ttl * 2)
         pipe.execute()
 
         return checkpoint_id
@@ -762,5 +763,5 @@ class RedisCheckpointBackend(CheckpointBackend):
         # Get the highest-scored item (most recent)
         checkpoint_ids = self.redis_client.zrevrange(index_key, 0, 0)
         if checkpoint_ids:
-            return cast(str, checkpoint_ids[0])
+            return str(checkpoint_ids[0])
         return None

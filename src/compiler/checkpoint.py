@@ -93,10 +93,10 @@ class CheckpointManager:
 
     def save_checkpoint(
         self,
-        workflow_id_or_state,
+        workflow_id_or_state: Any,
         domain_state: Optional[WorkflowDomainState] = None,
         **kwargs: Any,
-    ):
+    ) -> Any:
         """Save workflow checkpoint (supports both old and new calling conventions).
 
         Old API: save_checkpoint(workflow_id, domain_state) -> CheckpointMetadata
@@ -163,8 +163,8 @@ class CheckpointManager:
             List of checkpoint metadata
         """
         # The new backend is per-workflow; scan the checkpoint directory
-        results = []
-        checkpoint_dir = self._manager.backend.checkpoint_dir
+        results: List[CheckpointMetadata] = []
+        checkpoint_dir = self._manager.backend.checkpoint_dir  # type: ignore[attr-defined]
         if not checkpoint_dir.exists():
             return results
 
@@ -251,7 +251,7 @@ class FileCheckpointStorage:
 
     def list_checkpoints(self) -> List[CheckpointMetadata]:
         """List all checkpoints across all workflows."""
-        results = []
+        results: List[CheckpointMetadata] = []
         if not self.storage_path.exists():
             return results
         for workflow_dir in self.storage_path.iterdir():

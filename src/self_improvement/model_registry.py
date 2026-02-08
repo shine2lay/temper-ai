@@ -66,12 +66,12 @@ class ModelRegistry:
         all_ollama = registry.get_by_provider("ollama")
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize registry with built-in Ollama models."""
         self._models: Dict[str, ModelMetadata] = {}
         self._load_default_models()
 
-    def _load_default_models(self):
+    def _load_default_models(self) -> None:
         """Load default Ollama models for M5 MVP."""
         # Based on M5 architecture doc (line 1571-1586)
         default_models = [
@@ -116,7 +116,7 @@ class ModelRegistry:
         for model in default_models:
             self.register(model)
 
-    def register(self, model: ModelMetadata):
+    def register(self, model: ModelMetadata) -> None:
         """
         Register a new model in the registry.
 
@@ -187,7 +187,7 @@ class ModelRegistry:
             - "medium": 5B - 15B parameters
             - "large": > 15B parameters
         """
-        tiers = {"small": [], "medium": [], "large": []}
+        tiers: Dict[str, List[ModelMetadata]] = {"small": [], "medium": [], "large": []}
 
         for model in self._models.values():
             # Extract numeric size (e.g., "8B" -> 8)

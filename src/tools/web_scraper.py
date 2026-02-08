@@ -173,10 +173,10 @@ def resolve_hostname_with_timeout(hostname: str, timeout: float = DNS_RESOLUTION
         socket.gaierror: DNS resolution failed
         TimeoutError: DNS resolution timed out
     """
-    result = []
-    exception = None
+    result: list[Any] = []
+    exception: Optional[Exception] = None
 
-    def resolve():
+    def resolve() -> None:
         """Thread target for DNS resolution."""
         nonlocal result, exception
         try:

@@ -37,8 +37,8 @@ from cryptography.fernet import Fernet, InvalidToken
 
 # Optional keyring import (fallback gracefully if not available)
 try:
-    import keyring
-    from keyring.errors import KeyringError
+    import keyring  # type: ignore[import-not-found]
+    from keyring.errors import KeyringError  # type: ignore[import-not-found]
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
@@ -103,7 +103,7 @@ class SecureTokenStore:
         keyring_service: Optional[str] = None,
         keyring_key_name: Optional[str] = None,
         require_keyring: bool = False,  # Fail if keyring not available
-        max_access_log_size: int = None,
+        max_access_log_size: Optional[int] = None,
     ):
         """Initialize token store with secure key management.
 
@@ -223,7 +223,7 @@ class SecureTokenStore:
             # Decrypt
             try:
                 decrypted = self.cipher.decrypt(encrypted)
-                token_data = json.loads(decrypted.decode())
+                token_data: Dict[str, Any] = json.loads(decrypted.decode())
             except (InvalidToken, json.JSONDecodeError):
                 # Decryption failed (corrupted data, wrong key, or tampered)
                 # SECURITY: Delete corrupted token (lock is reentrant, safe to call)
@@ -293,9 +293,8 @@ class SecureTokenStore:
 
             # Update cipher with new key
             try:
-                if isinstance(new_key, str):
-                    new_key = new_key.encode()
-                new_cipher = Fernet(new_key)
+                new_key_bytes = new_key.encode() if isinstance(new_key, str) else new_key
+                new_cipher = Fernet(new_key_bytes)
             except (ValueError, TypeError) as e:
                 raise ValueError(f"Invalid new encryption key: {e}") from e
 

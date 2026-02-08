@@ -22,7 +22,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-import psutil  # type: ignore[import-untyped]
+import psutil
 
 from src.constants.durations import SECONDS_PER_HOUR, SLEEP_VERY_SHORT, TIMEOUT_MEDIUM
 from src.constants.limits import (

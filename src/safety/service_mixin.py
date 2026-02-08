@@ -17,7 +17,7 @@ logger = get_logger(__name__)
 _sanitizer = None
 _sanitizer_lock = threading.Lock()
 
-def _get_sanitizer():
+def _get_sanitizer() -> Any:
     """Get or create DataSanitizer instance (lazy loading, thread-safe)."""
     global _sanitizer
     if _sanitizer is None:
@@ -55,18 +55,18 @@ def _sanitize_violation_context(context: Optional[Dict[str, Any]]) -> Optional[D
     sanitizer = _get_sanitizer()
 
     # Recursively sanitize dictionary values
-    def sanitize_dict(data: Dict[str, Any]) -> Dict[str, Any]:
+    def sanitize_dict(data: Any) -> Any:
         """Remove sensitive keys from dictionary."""
         if not isinstance(data, dict):
             return data
 
-        result = {}
+        result: Dict[str, Any] = {}
         for key, value in data.items():
             if isinstance(value, dict):
                 result[key] = sanitize_dict(value)
             elif isinstance(value, list):
                 # Sanitize list elements recursively
-                sanitized_list = []
+                sanitized_list: List[Any] = []
                 for v in value:
                     if isinstance(v, dict):
                         sanitized_list.append(sanitize_dict(v))
@@ -83,7 +83,8 @@ def _sanitize_violation_context(context: Optional[Dict[str, Any]]) -> Optional[D
                 result[key] = value
         return result
 
-    return sanitize_dict(context)
+    sanitized = sanitize_dict(context)
+    return sanitized if isinstance(sanitized, dict) else {}
 
 
 class SafetyServiceMixin:

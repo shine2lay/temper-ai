@@ -28,7 +28,7 @@ MAX_TOKENS_SAFETY_LIMIT = 1_000_000
 MAX_REFILL_RATE_SAFETY_LIMIT = 1_000_000
 
 
-def requires_lock(method: Callable) -> Callable:
+def requires_lock(method: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator to enforce that a method is called with the instance lock held.
 
     Raises:
@@ -50,7 +50,7 @@ def requires_lock(method: Callable) -> Callable:
         ...         self._internal_method()  # RuntimeError!
     """
     @functools.wraps(method)
-    def wrapper(self, *args, **kwargs):
+    def wrapper(self: Any, *args: Any, **kwargs: Any) -> Any:
         """Decorator wrapper for rate limiting."""
         # Check if lock is held by attempting to acquire it with blocking=False
         # If we can acquire it, that means it wasn't held - this is an error!

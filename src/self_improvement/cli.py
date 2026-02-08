@@ -55,7 +55,7 @@ TABLE_ITERATION_WIDTH = 10
 class M5CLI:
     """M5 Self-Improvement CLI."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize CLI."""
         pass
 
@@ -77,7 +77,8 @@ class M5CLI:
 
         # Run iteration
         with get_session() as session:
-            loop = M5SelfImprovementLoop(self.coord_db, session, config)
+            # Note: M5CLI doesn't have coord_db attribute, using None for now
+            loop = M5SelfImprovementLoop(None, session, config)
 
             try:
                 result = loop.run_iteration(agent_name)
@@ -176,7 +177,8 @@ class M5CLI:
         print(f"📋 M5 Loop Status: {agent_name}")
 
         with get_session() as session:
-            loop = M5SelfImprovementLoop(self.coord_db, session)
+            # Note: M5CLI doesn't have coord_db attribute, using None for now
+            loop = M5SelfImprovementLoop(None, session)
 
             # Get state
             state = loop.get_state(agent_name)
@@ -213,7 +215,8 @@ class M5CLI:
         print(f"📊 M5 Metrics: {agent_name}")
 
         with get_session() as session:
-            loop = M5SelfImprovementLoop(self.coord_db, session)
+            # Note: M5CLI doesn't have coord_db attribute, using None for now
+            loop = M5SelfImprovementLoop(None, session)
 
             metrics = loop.get_metrics(agent_name)
             if not metrics:
@@ -254,7 +257,8 @@ class M5CLI:
         print(f"⏸️  Pausing M5 loop for: {agent_name}")
 
         with get_session() as session:
-            loop = M5SelfImprovementLoop(self.coord_db, session)
+            # Note: M5CLI doesn't have coord_db attribute, using None for now
+            loop = M5SelfImprovementLoop(None, session)
 
             try:
                 loop.pause(agent_name)
@@ -277,7 +281,8 @@ class M5CLI:
         print(f"▶️  Resuming M5 loop for: {agent_name}")
 
         with get_session() as session:
-            loop = M5SelfImprovementLoop(self.coord_db, session)
+            # Note: M5CLI doesn't have coord_db attribute, using None for now
+            loop = M5SelfImprovementLoop(None, session)
 
             try:
                 loop.resume(agent_name)
@@ -306,7 +311,8 @@ class M5CLI:
         print(f"🔄 Resetting M5 loop state for: {agent_name}")
 
         with get_session() as session:
-            loop = M5SelfImprovementLoop(self.coord_db, session)
+            # Note: M5CLI doesn't have coord_db attribute, using None for now
+            loop = M5SelfImprovementLoop(None, session)
 
             try:
                 loop.reset_state(agent_name)
@@ -326,7 +332,8 @@ class M5CLI:
         print("🏥 M5 System Health Check")
 
         with get_session() as session:
-            loop = M5SelfImprovementLoop(self.coord_db, session)
+            # Note: M5CLI doesn't have coord_db attribute, using None for now
+            loop = M5SelfImprovementLoop(None, session)
 
             health = loop.health_check()
 
@@ -353,12 +360,20 @@ class M5CLI:
         print(f"🧪 Checking experiments for: {agent_name}")
 
         with get_session() as session:
+            from sqlmodel import select
+            from src.self_improvement.storage.experiment_models import M5Experiment
             from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
 
             orchestrator = ExperimentOrchestrator(session)
 
-            # Get all experiments for agent
-            experiments = session.query("SELECT * FROM experiments WHERE agent_name = ? ORDER BY created_at DESC LIMIT 5", (agent_name,))
+            # Get all experiments for agent using SQLModel
+            stmt = (
+                select(M5Experiment)
+                .where(M5Experiment.agent_name == agent_name)
+                .order_by(M5Experiment.created_at.desc())  # type: ignore[attr-defined]
+                .limit(5)
+            )
+            experiments = session.exec(stmt).all()
 
             if not experiments:
                 print("   No experiments found")
@@ -366,15 +381,15 @@ class M5CLI:
 
             print("\n   Recent Experiments:")
             for exp in experiments:
-                print(f"\n   Experiment: {exp['id']}")
-                print(f"   - Status: {exp['status']}")
-                print(f"   - Created: {exp['created_at']}")
+                print(f"\n   Experiment: {exp.id}")
+                print(f"   - Status: {exp.status}")
+                print(f"   - Created: {exp.created_at}")
 
                 # Get results if completed
-                if exp['status'] == 'completed':
+                if exp.status == 'completed':
                     try:
-                        analysis = orchestrator.analyze_experiment(exp['id'], force=True)
-                        winner = analysis.get('winner_variant_id', 'none')
+                        analysis = orchestrator.analyze_experiment(exp.id)
+                        winner = analysis.winner.variant_id if analysis.winner else 'none'
                         print(f"   - Winner: {winner}")
                     except Exception as e:
                         print(f"   - Analysis error: {e}")
@@ -389,19 +404,9 @@ class M5CLI:
             Exit code
         """
         print("📋 Agents with M5 Loop State")
-
-        rows = self.coord_db.query("SELECT agent_name, current_phase, status, iteration_number FROM m5_loop_state ORDER BY updated_at DESC")
-
-        if not rows:
-            print("   No agents found")
-            return 0
-
-        print(f"\n   {'Agent':<{TABLE_AGENT_NAME_WIDTH}} {'Phase':<{TABLE_PHASE_WIDTH}} {'Status':<{TABLE_STATUS_WIDTH}} {'Iteration':<{TABLE_ITERATION_WIDTH}}")
-        print(f"   {'-'*TABLE_AGENT_NAME_WIDTH} {'-'*TABLE_PHASE_WIDTH} {'-'*TABLE_STATUS_WIDTH} {'-'*TABLE_ITERATION_WIDTH}")
-
-        for row in rows:
-            print(f"   {row['agent_name']:<{TABLE_AGENT_NAME_WIDTH}} {row['current_phase']:<{TABLE_PHASE_WIDTH}} {row['status']:<{TABLE_STATUS_WIDTH}} {row['iteration_number']:<{TABLE_ITERATION_WIDTH}}")
-
+        print("   (Not yet implemented: requires coord_db attribute)")
+        # TODO: Implement proper database query for M5 loop state
+        # rows = self.coord_db.query("SELECT agent_name, current_phase, status, iteration_number FROM m5_loop_state ORDER BY updated_at DESC")
         return 0
 
     def _load_config(self, config_file: Optional[str]) -> LoopConfig:
@@ -431,7 +436,7 @@ class M5CLI:
             return LoopConfig()
 
 
-def main():
+def main() -> int:
     """Main CLI entry point."""
     parser = argparse.ArgumentParser(
         description='M5 Self-Improvement CLI',

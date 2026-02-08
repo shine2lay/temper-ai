@@ -39,14 +39,15 @@ def sanitize_dict(
     Returns:
         Sanitized dictionary with secrets redacted
     """
+    # Defensive check - should not be hit given type signature
     if not isinstance(data, dict):
-        return data
+        return {}  # type: ignore[unreachable]
 
     # OB-09: Prevent RecursionError on deeply nested structures
     if _depth > THRESHOLD_MEDIUM_COUNT:
         return {"__truncated__": "max depth exceeded"}
 
-    sanitized = {}
+    sanitized: Dict[str, Any] = {}
     for key, value in data.items():
         try:
             # Sanitize key as well (keys might contain secrets)
@@ -57,13 +58,14 @@ def sanitize_dict(
             if isinstance(value, dict):
                 sanitized[safe_key] = sanitize_dict(sanitizer, value, _depth + 1)
             elif isinstance(value, list):
-                sanitized[safe_key] = [
+                sanitized_list: List[Any] = [
                     sanitize_dict(sanitizer, item, _depth + 1) if isinstance(item, dict)
                     else sanitizer.sanitize_text(str(item), context="config").sanitized_text
                     if isinstance(item, str)
                     else item
                     for item in value
                 ]
+                sanitized[safe_key] = sanitized_list
             elif isinstance(value, str):
                 result = sanitizer.sanitize_text(value, context="config")
                 sanitized[safe_key] = result.sanitized_text
@@ -98,7 +100,8 @@ def sanitize_dict(
 def get_stack_trace(sanitizer: Any) -> str:
     """Get current exception stack trace, sanitized to remove secrets."""
     raw_trace = traceback.format_exc()
-    return sanitizer.sanitize_text(raw_trace, context="stack_trace").sanitized_text
+    result = sanitizer.sanitize_text(raw_trace, context="stack_trace")
+    return str(result.sanitized_text)
 
 
 def track_llm_call(
@@ -352,13 +355,16 @@ def track_decision_outcome(
         extra_metadata=extra_metadata,
     )
 
+    result: str
     if session_stack:
-        return decision_tracker.track(
+        result = str(decision_tracker.track(
             session=session_stack[-1], **kwargs
-        )
+        ))
+    else:
+        with backend.get_session_context() as session:
+            result = str(decision_tracker.track(session=session, **kwargs))
 
-    with backend.get_session_context() as session:
-        return decision_tracker.track(session=session, **kwargs)
+    return result
 
 
 def update_agent_merit_score(

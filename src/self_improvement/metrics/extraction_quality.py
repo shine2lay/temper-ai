@@ -353,4 +353,4 @@ class ExtractionQualityCollector(MetricCollector):
             )
 
         # Default: direct equality
-        return expected == actual
+        return bool(expected == actual)

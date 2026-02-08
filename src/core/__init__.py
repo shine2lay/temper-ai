@@ -15,7 +15,7 @@ from src.core.protocols import (
 
 
 # Lazy imports to avoid circular dependencies
-def __getattr__(name: str):
+def __getattr__(name: str) -> type:
     if name == "CircuitBreaker":
         from src.core.circuit_breaker import CircuitBreaker
         return CircuitBreaker

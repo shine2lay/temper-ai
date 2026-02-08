@@ -86,7 +86,7 @@ class PathSafetyValidator:
             PathSafetyValidator.FORBIDDEN_PATHS = PlatformPathDetector.get_forbidden_paths()
 
         # Build full forbidden list
-        self.forbidden = self.FORBIDDEN_PATHS.copy()
+        self.forbidden = self.FORBIDDEN_PATHS.copy() if self.FORBIDDEN_PATHS is not None else []
         if additional_forbidden:
             self.forbidden.extend(additional_forbidden)
 

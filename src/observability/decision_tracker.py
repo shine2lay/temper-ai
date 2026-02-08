@@ -7,7 +7,7 @@ ExecutionTracker to separate SQL model manipulation from observability tracking.
 import logging
 import uuid
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from src.observability.merit_score_service import MeritScoreService
 
@@ -30,14 +30,18 @@ class DecisionTracker:
         )
     """
 
-    def __init__(self, sanitize_fn=None):
+    def __init__(self, sanitize_fn: Optional[Callable[[Dict[str, Any], int], Dict[str, Any]]] = None) -> None:
         """Initialize decision tracker.
 
         Args:
             sanitize_fn: Function to sanitize dicts (removes secrets/PII).
-                         Signature: (dict) -> dict
+                         Signature: (dict, depth) -> dict
         """
-        self._sanitize = sanitize_fn or (lambda d: d)
+        # Default no-op sanitizer with explicit type
+        def default_sanitize(d: Dict[str, Any], _depth: int = 0) -> Dict[str, Any]:
+            return d
+
+        self._sanitize = sanitize_fn or default_sanitize
         self._merit_service = MeritScoreService()
 
     def track(
@@ -82,12 +86,23 @@ class DecisionTracker:
         """
         decision_id = f"decision-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 
-        safe_decision_data = self._sanitize(decision_data) if decision_data else {}
-        safe_impact_metrics = self._sanitize(impact_metrics) if impact_metrics else None
+        safe_decision_data = self._sanitize(decision_data, 0) if decision_data else {}
+        safe_impact_metrics = self._sanitize(impact_metrics, 0) if impact_metrics else None
 
         try:
             from src.database.models import DecisionOutcome
+        except ImportError as e:
+            logger.error(
+                f"Failed to import DecisionOutcome model: {e}",
+                exc_info=True,
+                extra={
+                    "decision_type": decision_type,
+                    "outcome": outcome
+                }
+            )
+            return ""
 
+        try:
             decision_record = DecisionOutcome(
                 id=decision_id,
                 agent_execution_id=agent_execution_id,
@@ -105,6 +120,19 @@ class DecisionTracker:
                 tags=tags or [],
                 extra_metadata=extra_metadata
             )
+        except (TypeError, ValueError) as e:
+            logger.error(
+                f"Failed to create DecisionOutcome record (invalid data): {e}",
+                exc_info=True,
+                extra={
+                    "decision_type": decision_type,
+                    "outcome": outcome,
+                    "decision_id": decision_id
+                }
+            )
+            return ""
+
+        try:
             session.add(decision_record)
 
             # Update agent merit score if agent_name present in decision_data
@@ -140,13 +168,30 @@ class DecisionTracker:
 
             return decision_id
 
-        except Exception as e:
+        except AttributeError as e:
             logger.error(
-                f"Failed to track decision outcome: {e}",
+                f"Invalid session object (missing required methods): {e}",
                 exc_info=True,
                 extra={
                     "decision_type": decision_type,
-                    "outcome": outcome
+                    "outcome": outcome,
+                    "decision_id": decision_id
                 }
             )
+            return ""
+        except Exception as e:
+            # Catch database-specific errors (SQLAlchemy exceptions)
+            logger.error(
+                f"Database error while tracking decision outcome: {e}",
+                exc_info=True,
+                extra={
+                    "decision_type": decision_type,
+                    "outcome": outcome,
+                    "decision_id": decision_id
+                }
+            )
+            try:
+                session.rollback()
+            except Exception as rollback_e:
+                logger.error(f"Failed to rollback session: {rollback_e}")
             return ""

@@ -22,8 +22,12 @@ class ExecutionProtocol(Protocol):
     Attributes:
         id: Unique identifier for the execution
         status: Execution status (e.g., "completed", "failed", "in_progress")
+        input_data: Optional input data dictionary for the execution
+        output: Optional output data from the execution
     """
     id: str
+    input_data: Any
+    output: Any
     status: str
 
 
@@ -161,7 +165,7 @@ class MetricRegistry:
         >>> # Returns: {"success_rate": 1.0, "cost_usd": 0.5}
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize an empty metric registry."""
         self._collectors: Dict[str, MetricCollector] = {}
         self._lock = RLock()  # Thread-safe registration/collection

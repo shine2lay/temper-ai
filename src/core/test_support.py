@@ -25,7 +25,7 @@ Usage as a pytest fixture (see tests/conftest.py)::
 """
 import logging
 from contextlib import contextmanager
-from typing import Callable, List
+from typing import Callable, Generator, List
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ def reset_all_globals() -> None:
 
 
 @contextmanager
-def isolated_globals():
+def isolated_globals() -> Generator[None, None, None]:
     """Context manager that resets globals on entry and exit.
 
     Ensures tests start and finish with clean global state::
@@ -130,8 +130,8 @@ def _get_all_reset_functions() -> List[Callable[[], None]]:
         pass
 
     try:
-        from src.agents.pricing import PricingRegistry
-        fns.append(PricingRegistry.reset_for_testing)
+        from src.agents.pricing import PricingManager
+        fns.append(PricingManager.reset_for_testing)
     except ImportError:
         pass
 

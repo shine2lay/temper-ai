@@ -311,7 +311,7 @@ def run_command(
     """Execute a validated command via subprocess."""
     try:
         use_shell = shell_mode
-        cmd_arg = command if use_shell else parts
+        cmd_arg: str | List[str] = command if use_shell else (parts or [])
         result = subprocess.run(  # noqa: S603 — bash tool requires subprocess  # nosec B602
             cmd_arg,
             cwd=str(resolved_cwd),
@@ -359,7 +359,7 @@ def run_command(
         )
 
     except FileNotFoundError:
-        cmd_display = command.split()[0] if use_shell else parts[0]
+        cmd_display = command.split()[0] if use_shell else (parts[0] if parts else "unknown")
         return ToolResult(
             success=False,
             error=f"Command not found: {cmd_display}",
@@ -367,7 +367,7 @@ def run_command(
         )
 
     except PermissionError:
-        cmd_display = command.split()[0] if use_shell else parts[0]
+        cmd_display = command.split()[0] if use_shell else (parts[0] if parts else "unknown")
         return ToolResult(
             success=False,
             error=f"Permission denied executing: {cmd_display}",

@@ -133,7 +133,8 @@ def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:
         else:
             raise ValueError(f"No API key or api_key_ref provided for {provider_enum}")
 
-    return provider_class(**common_params)
+    instance: BaseLLM = provider_class(**common_params)
+    return instance
 
 
 def create_llm_client(
@@ -170,9 +171,10 @@ def create_llm_client(
             f"Unknown provider '{provider}'. Valid providers: {valid}"
         )
 
-    return llm_class(
+    instance: BaseLLM = llm_class(
         model=model,
         base_url=base_url,
         api_key=api_key,
         **kwargs,
     )
+    return instance

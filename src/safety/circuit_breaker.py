@@ -53,7 +53,7 @@ from src.core.circuit_breaker import (  # noqa: E402
 )
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in _SHIM_EXPORTS:
         mapping = _SHIM_EXPORTS[name]
         if isinstance(mapping, tuple):

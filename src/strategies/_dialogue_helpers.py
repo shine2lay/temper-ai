@@ -100,7 +100,7 @@ def merit_weighted_synthesis(
 
     merit_weights = get_merit_weights(agent_outputs, merit_domain)
 
-    weighted_votes = defaultdict(float)
+    weighted_votes: Dict[Any, float] = defaultdict(float)
     agent_votes = {}
 
     for output in agent_outputs:
@@ -116,7 +116,7 @@ def merit_weighted_synthesis(
     if not weighted_votes:
         raise ValueError("No votes recorded")
 
-    winning_decision = max(weighted_votes, key=weighted_votes.get)
+    winning_decision = max(weighted_votes, key=lambda k: weighted_votes[k])
     total_weight = sum(weighted_votes.values())
     decision_support = weighted_votes[winning_decision] / total_weight if total_weight > 0 else 0
 
@@ -239,7 +239,7 @@ def curate_recent(
     Returns:
         Recent rounds only
     """
-    rounds_dict = {}
+    rounds_dict: Dict[int, List[Dict[str, Any]]] = {}
     for entry in dialogue_history:
         round_num = entry["round"]
         if round_num not in rounds_dict:
@@ -316,7 +316,7 @@ def curate_relevant(
 def calculate_semantic_similarity(
     current_outputs: List[AgentOutput],
     previous_outputs: List[AgentOutput],
-    get_embedding_model_fn,
+    get_embedding_model_fn: Any,
 ) -> float:
     """Calculate semantic similarity between current and previous outputs.
 
@@ -328,7 +328,7 @@ def calculate_semantic_similarity(
     Returns:
         Similarity score (0.0-1.0)
     """
-    from sentence_transformers.util import cos_sim
+    from sentence_transformers.util import cos_sim  # type: ignore[import-not-found]
 
     model = get_embedding_model_fn()
     if model is None:

@@ -69,7 +69,7 @@ class WorkflowExecution(SQLModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         """Initialize with JSON size validation."""
         # Validate large JSON fields before persisting
         if "workflow_config_snapshot" in data:
@@ -143,7 +143,7 @@ class StageExecution(SQLModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         """Initialize with JSON size validation."""
         if "stage_config_snapshot" in data:
             validate_json_size(
@@ -243,7 +243,7 @@ class AgentExecution(SQLModel, table=True):
         sa_relationship_kwargs={"cascade": "all, delete-orphan"}
     )
 
-    def __init__(self, **data):
+    def __init__(self, **data: Any) -> None:
         """Initialize with JSON size validation."""
         if "agent_config_snapshot" in data:
             validate_json_size(
@@ -363,7 +363,7 @@ class ToolExecution(SQLModel, table=True):
 
     # Safety
     safety_checks_applied: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
-    approval_required: bool = False
+    approval_required: bool = Field(default=False, index=True)
     approved_by: Optional[str] = None
     approval_timestamp: Optional[datetime] = None
 
@@ -548,7 +548,6 @@ Index("idx_llm_status", LLMCall.status, LLMCall.start_time)  # type: ignore[arg-
 Index("idx_tool_agent", ToolExecution.agent_execution_id, ToolExecution.tool_name)
 Index("idx_tool_name", ToolExecution.tool_name, ToolExecution.start_time)  # type: ignore[arg-type]
 Index("idx_tool_status", ToolExecution.status, ToolExecution.start_time)  # type: ignore[arg-type]
-Index("idx_tool_approval", ToolExecution.approval_required)  # For querying approval-required executions
 Index("idx_collab_stage", CollaborationEvent.stage_execution_id, CollaborationEvent.event_type)
 Index("idx_merit_agent", AgentMeritScore.agent_name, AgentMeritScore.domain)
 Index("idx_outcome_agent", DecisionOutcome.agent_execution_id, DecisionOutcome.outcome)  # type: ignore[arg-type]

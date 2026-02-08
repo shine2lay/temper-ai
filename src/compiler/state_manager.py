@@ -150,7 +150,8 @@ class StateManager:
         if "stage_outputs" not in state:
             errors.append("Missing stage_outputs")
         if hasattr(state, "validate"):
-            return state.validate()
+            result: tuple[bool, list[str]] = state.validate()
+            return result
         return (len(errors) == 0, errors)
 
     def prepare_stage_input(

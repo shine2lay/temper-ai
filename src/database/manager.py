@@ -5,7 +5,7 @@ import threading
 import urllib.parse
 from contextlib import contextmanager
 from enum import Enum
-from typing import Generator, Optional
+from typing import Any, Generator, Optional
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
@@ -94,7 +94,7 @@ class DatabaseManager:
             # SECURITY FIX (test-crit-foreign-keys-01): Enable foreign key constraints
             # SQLite disables foreign keys by default - must enable per connection
             @event.listens_for(engine, "connect")
-            def set_sqlite_pragma(dbapi_connection, _connection_record):
+            def set_sqlite_pragma(dbapi_connection: Any, _connection_record: Any) -> None:
                 """Enable foreign keys and verify on every connection.
 
                 CRITICAL: This prevents orphaned records and enforces referential integrity.

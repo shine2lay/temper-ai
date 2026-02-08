@@ -207,7 +207,7 @@ class NoOpBackend(ObservabilityBackend):
     # ========== Context Management ==========
 
     @contextmanager
-    def get_session_context(self):
+    def get_session_context(self) -> Any:
         """Get session context (no-op)."""
         yield None
 

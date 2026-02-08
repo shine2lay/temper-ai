@@ -156,6 +156,13 @@ class CircuitBreaker:
     See _circuit_breaker_helpers.py for extracted internal logic.
     """
 
+    # Class-level attribute declarations for type checker
+    _state: CircuitState
+    _failure_count: int
+    _success_count: int
+    _last_failure_time: Optional[float]
+    _opened_at: Optional[datetime]
+
     def __init__(
         self,
         name: str,
@@ -460,7 +467,7 @@ class CircuitBreaker:
             self._last_failure_time = time.time()
         _fire_callbacks_helper(pending)
 
-    def _transition_to(self, new_state: CircuitState):
+    def _transition_to(self, new_state: CircuitState) -> Optional[tuple]:
         """Transition to new state. Must hold self.lock. Returns callback info or None."""
         if self._state != new_state:
             old_state = self._state

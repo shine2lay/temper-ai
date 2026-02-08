@@ -208,7 +208,7 @@ def validate_env_var_value(var_name: str, value: str) -> None:
     )
 
     if not is_valid:
-        raise ConfigValidationError(error_message)
+        raise ConfigValidationError(error_message or "Validation failed")
 
 
 def resolve_secrets(config: Any) -> Any:

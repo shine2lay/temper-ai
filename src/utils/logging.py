@@ -45,7 +45,7 @@ _CONTROL_CHAR_PATTERN = re.compile(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]')
 
 # Sensitive data patterns for redaction
 # Note: Patterns should not match template references like ${env:VAR} or ${vault:...}
-def _build_sensitive_patterns():
+def _build_sensitive_patterns() -> list[tuple[re.Pattern[str], str]]:
     """Build redaction patterns from centralized registry + log-specific rules."""
     from src.utils.secret_patterns import SECRET_PATTERNS
 

@@ -112,12 +112,12 @@ class OAuthProviderConfig(BaseModel):
         def resolve_value(value: str) -> str:
             """Resolve ${env:VAR} pattern in a string."""
             if not isinstance(value, str):
-                return value
+                return value  # type: ignore
 
             # Match ${env:VARIABLE_NAME}
             pattern = r'\$\{env:([A-Z_][A-Z0-9_]*)\}'
 
-            def replacer(match):
+            def replacer(match: "re.Match[str]") -> str:
                 """Replace OAuth config placeholders with environment variables."""
                 var_name = match.group(1)
                 env_value = os.getenv(var_name)
@@ -252,11 +252,11 @@ class OAuthConfig(BaseModel):
         def resolve_value(value: str) -> str:
             """Resolve ${env:VAR} pattern."""
             if not isinstance(value, str):
-                return value
+                return value  # type: ignore
 
             pattern = r'\$\{env:([A-Z_][A-Z0-9_]*)\}'
 
-            def replacer(match):
+            def replacer(match: "re.Match[str]") -> str:
                 """Replace OAuth config placeholders with environment variables."""
                 var_name = match.group(1)
                 env_value = os.getenv(var_name)
@@ -347,7 +347,7 @@ PROVIDER_DEFAULTS = {
 }
 
 
-def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, str]:
+def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, Optional[str]]:
     """Get OAuth endpoints for a provider (with fallback to defaults).
 
     Args:

@@ -213,7 +213,7 @@ class InMemorySessionStore(SessionStoreProtocol):
                 return True
             return False
 
-    async def cleanup_expired(self):
+    async def cleanup_expired(self) -> None:
         """Remove all expired sessions."""
         async with self._lock:
             now = datetime.now(timezone.utc)
@@ -243,7 +243,7 @@ class UserStore:
     - Database migrations for schema changes
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize user store."""
         self._users: Dict[str, User] = {}  # user_id -> User
         self._emails: Dict[str, str] = {}  # email -> user_id
@@ -409,13 +409,14 @@ class RedisSessionStore(SessionStoreProtocol):
         }
 
     def _dict_to_session(self, data: Dict[str, Any]) -> Session:
+        provider = data.get("provider")
         return Session(
             session_id=data["session_id"],
             user_id=data["user_id"],
             email=data["email"],
             name=data["name"],
             picture=data.get("picture"),
-            provider=data.get("provider"),
+            provider=provider if provider is not None else "",
             authenticated_at=datetime.fromisoformat(data["authenticated_at"]),
             expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
             ip_address=data.get("ip_address"),

@@ -84,7 +84,7 @@ class MetricsCollector:
     aggregated metrics for monitoring and dashboards.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize metrics collector."""
         self._metrics: Dict[str, LoopMetrics] = {}
         self._phase_starts: Dict[str, Dict[Phase, datetime]] = {}

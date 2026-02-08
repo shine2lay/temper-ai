@@ -238,28 +238,8 @@ class ExperimentService(Service):
 
     def get_experiment(self, experiment_id: str) -> Optional[Experiment]:
         """Get experiment by ID."""
-        # Check cache first (ST-07: thread-safe access)
-        with self._cache_lock:
-            if experiment_id in self._experiment_cache:
-                return self._experiment_cache[experiment_id]
-
-        # Load from database with eager relationship loading
-        with get_session() as session:
-            statement = (
-                select(Experiment)
-                .where(Experiment.id == experiment_id)
-                .options(
-                    selectinload(Experiment.variants),
-                    selectinload(Experiment.assignments),
-                    selectinload(Experiment.results),
-                )
-            )
-            experiment = session.exec(statement).first()
-            if experiment:
-                # Detach from session so cached object can be used after session closes
-                session.expunge(experiment)
-                self._cache_put(experiment_id, experiment)
-            return experiment
+        # Delegate to CRUD layer which handles caching
+        return self._crud.get_experiment(experiment_id)
 
     def list_experiments(
         self,
@@ -291,7 +271,7 @@ class ExperimentService(Service):
             session.commit()
 
             # Invalidate cache — next get_experiment() will reload with eager loading
-            self._experiment_cache.pop(experiment_id, None)
+            self._crud.invalidate_cache(experiment_id)
 
         logger.info(f"Started experiment: {experiment_id}")
 
@@ -307,7 +287,7 @@ class ExperimentService(Service):
             session.commit()
 
             # Invalidate cache — next get_experiment() will reload with eager loading
-            self._experiment_cache.pop(experiment_id, None)
+            self._crud.invalidate_cache(experiment_id)
 
         logger.info(f"Paused experiment: {experiment_id}")
 
@@ -330,7 +310,7 @@ class ExperimentService(Service):
             session.commit()
 
             # Invalidate cache — next get_experiment() will reload with eager loading
-            self._experiment_cache.pop(experiment_id, None)
+            self._crud.invalidate_cache(experiment_id)
 
         logger.info(f"Stopped experiment: {experiment_id}, winner: {winner}")
 
@@ -397,7 +377,7 @@ class ExperimentService(Service):
             session.commit()
 
             # Invalidate experiment cache after new assignment (H-25)
-            self._experiment_cache.pop(experiment_id, None)
+            self._crud.invalidate_cache(experiment_id)
 
         logger.info(f"Assigned workflow {workflow_id} to variant {variant_id}")
         return assignment
@@ -441,7 +421,7 @@ class ExperimentService(Service):
             # Atomic increment of total_executions
             session.execute(
                 update(Variant)
-                .where(Variant.id == variant_id)
+                .where(Variant.id == variant_id)  # type: ignore[arg-type]
                 .values(total_executions=Variant.total_executions + 1)
             )
 
@@ -449,20 +429,20 @@ class ExperimentService(Service):
             if status == "completed":
                 session.execute(
                     update(Variant)
-                    .where(Variant.id == variant_id)
+                    .where(Variant.id == variant_id)  # type: ignore[arg-type]
                     .values(successful_executions=Variant.successful_executions + 1)
                 )
             elif status == "failed":
                 session.execute(
                     update(Variant)
-                    .where(Variant.id == variant_id)
+                    .where(Variant.id == variant_id)  # type: ignore[arg-type]
                     .values(failed_executions=Variant.failed_executions + 1)
                 )
 
             # Invalidate experiment cache (H-25: ensure fresh data)
             experiment = session.get(Experiment, assignment.experiment_id)
             if experiment:
-                self._experiment_cache.pop(experiment.id, None)
+                self._crud.invalidate_cache(experiment.id)
 
             session.commit()
 

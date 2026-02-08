@@ -108,7 +108,7 @@ class AlertManager:
         >>> manager.check_metric("cost_usd", 15.0, context={"workflow_id": "wf-123"})
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialize alert manager with default rules."""
         self.rules: Dict[str, AlertRule] = {}
         self.alert_history: List[Alert] = []
@@ -217,7 +217,7 @@ class AlertManager:
         Returns:
             List of triggered alerts
         """
-        triggered_alerts = []
+        triggered_alerts: List[Alert] = []
         context = context or {}
 
         # Normalize metric_type to enum

@@ -50,7 +50,7 @@ class MetricValue:
     collector_version: str = DEFAULT_VERSION
     metadata: Optional[Dict[str, Any]] = field(default_factory=dict)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Validate metric value is in valid range."""
         if not (self.METRIC_MIN <= self.value <= self.METRIC_MAX):
             raise ValueError(

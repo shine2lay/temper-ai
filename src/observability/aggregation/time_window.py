@@ -2,6 +2,8 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
+from typing_extensions import assert_never
+
 from src.observability.aggregation.period import AggregationPeriod
 
 
@@ -34,7 +36,8 @@ class TimeWindowCalculator:
         elif period == AggregationPeriod.DAY:
             return end_time - timedelta(days=1)
         else:
-            return end_time - timedelta(hours=1)  # Default to 1 hour
+            # Exhaustive check - all enum values handled above
+            assert_never(period)
 
     @staticmethod
     def get_default_time_window(

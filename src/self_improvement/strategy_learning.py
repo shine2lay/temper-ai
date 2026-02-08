@@ -56,7 +56,7 @@ class StrategyLearningStore:
         ... )
     """
 
-    def __init__(self, db):
+    def __init__(self, db: Any) -> None:
         """
         Initialize learning store with database connection.
 
@@ -246,7 +246,8 @@ class StrategyLearningStore:
         if not rows or rows[0]["count"] == 0:
             return None
 
-        return rows[0]["weighted_avg"]
+        result = rows[0]["weighted_avg"]
+        return float(result) if result is not None else None
 
     def get_win_rate(
         self,
@@ -288,7 +289,7 @@ class StrategyLearningStore:
         if not rows or rows[0]["total"] == 0:
             return 0.0
 
-        return rows[0]["wins"] / rows[0]["total"]
+        return float(rows[0]["wins"]) / float(rows[0]["total"])
 
     def get_sample_count(
         self,

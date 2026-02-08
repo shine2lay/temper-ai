@@ -63,9 +63,9 @@ class ConfigLoader:
         self,
         config_root: Optional[Union[str, Path]] = None,
         cache_enabled: bool = True,
-        config_deployer=None,
+        config_deployer: Any = None,
         max_cache_size: int = DEFAULT_MAX_CACHE_SIZE
-    ):
+    ) -> None:
         """
         Initialize config loader.
 
@@ -202,7 +202,7 @@ class ConfigLoader:
         if self._config_deployer_available and self.config_deployer:
             try:
                 deployed_config_obj = self.config_deployer.get_agent_config(agent_name)
-                deployed_config = deployed_config_obj.to_dict()
+                deployed_config: Dict[str, Any] = deployed_config_obj.to_dict()
 
                 if deployed_config.get("inference") or deployed_config.get("prompt"):
                     _logger.info(

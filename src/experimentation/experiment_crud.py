@@ -229,9 +229,9 @@ class ExperimentCRUD:
                 select(Experiment)
                 .where(Experiment.id == experiment_id)
                 .options(
-                    selectinload(Experiment.variants),
-                    selectinload(Experiment.assignments),
-                    selectinload(Experiment.results),
+                    selectinload(Experiment.variants),  # type: ignore[arg-type]
+                    selectinload(Experiment.assignments),  # type: ignore[arg-type]
+                    selectinload(Experiment.results),  # type: ignore[arg-type]
                 )
             )
             experiment = session.exec(statement).first()

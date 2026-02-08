@@ -107,5 +107,5 @@ class AgentPathValidator:
             False
         """
         if not isinstance(name, str):
-            return False
+            return False  # type: ignore[unreachable]
         return bool(AgentPathValidator._AGENT_NAME_PATTERN.match(name))

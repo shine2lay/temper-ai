@@ -194,42 +194,44 @@ class ToolRegistry:
 # compatibility (callers can still do ``registry.list_all()`` etc.).
 # --------------------------------------------------------------------------
 
-def _list(self) -> List[str]:
+def _list(self: ToolRegistry) -> List[str]:
     """List all registered tool names (Registry Protocol method)."""
     return self.list_tools()
 
-def _list_all(self) -> List[str]:
+def _list_all(self: ToolRegistry) -> List[str]:
     """DEPRECATED: Use list() instead."""
     return self.list_tools()
 
-def _count(self) -> int:
+def _count(self: ToolRegistry) -> int:
     """Get total number of registered tool instances (Registry Protocol method)."""
     return len(self)
 
-def _get_tool_metadata_method(self, name: str) -> Dict[str, Any]:
+def _get_tool_metadata_method(self: ToolRegistry, name: str) -> Dict[str, Any]:
     """Get tool metadata."""
     return _get_tool_metadata(self, name)
 
-def _list_available_tools_method(self) -> Dict[str, Dict[str, Any]]:
+def _list_available_tools_method(self: ToolRegistry) -> Dict[str, Dict[str, Any]]:
     """List all registered tools with detailed information."""
     return _list_available_tools(self)
 
-def _get_registration_report_method(self) -> str:
+def _get_registration_report_method(self: ToolRegistry) -> str:
     """Get detailed registration report for debugging."""
     return _get_registration_report(self)
 
-def _load_from_config_method(self, config_name: str, config_loader: Optional[Any] = None) -> BaseTool:
+def _load_from_config_method(self: ToolRegistry, config_name: str, config_loader: Optional[Any] = None) -> BaseTool:
     """Load and register a tool from configuration file."""
     return _load_from_config(self, config_name, config_loader)
 
-def _load_all_from_configs_method(self, config_loader: Optional[Any] = None) -> int:
+def _load_all_from_configs_method(self: ToolRegistry, config_loader: Optional[Any] = None) -> int:
     """Load and register all tools from configuration files."""
     return _load_all_from_configs(self, config_loader)
 
-def _validate_tool_interface_method(self, tool_class):
+def _validate_tool_interface_method(self: ToolRegistry, tool_class: Any) -> tuple[bool, List[str]]:
+    """Validate tool interface."""
     return _validate_tool_interface(tool_class)
 
-def _get_error_suggestion_method(self, error_msg):
+def _get_error_suggestion_method(self: ToolRegistry, error_msg: str) -> Optional[str]:
+    """Get error suggestion."""
     return _get_error_suggestion(error_msg)
 
 ToolRegistry.list = _list  # type: ignore[attr-defined]

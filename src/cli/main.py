@@ -15,7 +15,7 @@ Commands:
 import json
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import click
 import yaml
@@ -40,7 +40,7 @@ EXIT_CODE_KEYBOARD_INTERRUPT = 130  # POSIX standard exit code for SIGINT (Ctrl+
 
 def _load_and_validate_workflow(
     workflow_path: str, verbose: bool = False
-) -> dict:
+) -> Any:
     """Load a workflow YAML file and validate against schema.
 
     Returns the parsed workflow config dict.
@@ -65,6 +65,28 @@ def _load_and_validate_workflow(
 
     return workflow_config
 
+def _cleanup_tool_executor(engine: Any) -> None:
+    """Clean up tool executor resources.
+    
+    Args:
+        engine: The workflow engine instance
+    """
+    logger.debug(f"Starting cleanup, engine type: {type(engine)}")
+    tool_executor = None
+    if hasattr(engine, 'tool_executor'):
+        tool_executor = engine.tool_executor
+    elif hasattr(engine, 'compiler') and hasattr(engine.compiler, 'tool_executor'):
+        tool_executor = engine.compiler.tool_executor
+
+    if tool_executor is not None:
+        try:
+            logger.debug("Calling tool_executor.shutdown()")
+            tool_executor.shutdown()
+            logger.debug("tool_executor.shutdown() completed")
+        except Exception as e:  # noqa: BLE001 -- defensive cleanup
+            logger.debug(f"Error during tool executor shutdown: {e}")
+    else:
+        logger.debug("No tool_executor found to cleanup")
 
 # ─── Root group ───────────────────────────────────────────────────────
 
@@ -153,23 +175,35 @@ def run(
         console.print("Provide them in an input file: --input inputs.yaml")
         raise SystemExit(1)
 
+    # Import dependencies
     try:
         from src.compiler.config_loader import ConfigLoader
         from src.compiler.engine_registry import EngineRegistry
         from src.observability.tracker import ExecutionTracker
         from src.tools.registry import ToolRegistry
+    except ImportError as e:
+        console.print(f"[red]Import error:[/red] {e}")
+        if verbose:
+            logger.exception("Failed to import required modules")
+        raise SystemExit(1)
 
-        # 5. Init database
+    # 5. Init database
+    try:
         db_path = db or DEFAULT_DB_PATH
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         ExecutionTracker.ensure_database(f"sqlite:///{db_path}")
+    except (OSError, PermissionError) as e:
+        console.print(f"[red]Database initialization error:[/red] {e}")
+        if verbose:
+            logger.exception("Failed to initialize database")
+        raise SystemExit(1)
 
-        # 6. Create infrastructure
+    # 6-7. Create infrastructure and compile
+    try:
         config_loader = ConfigLoader(config_root=config_root)
         tool_registry = ToolRegistry(auto_discover=True)
         tracker = ExecutionTracker()
 
-        # 7. Compile via EngineRegistry
         registry = EngineRegistry()
         engine = registry.get_engine_from_config(
             workflow_config,
@@ -177,8 +211,14 @@ def run(
             config_loader=config_loader,
         )
         compiled = engine.compile(workflow_config)
+    except (ValueError, KeyError, AttributeError) as e:
+        console.print(f"[red]Workflow compilation error:[/red] {e}")
+        if verbose:
+            logger.exception("Failed to compile workflow")
+        raise SystemExit(1)
 
-        # 8. Execute with tracking
+    # 8. Execute with tracking
+    try:
         workflow_name = wf.get("name", Path(workflow).stem)
         with tracker.track_workflow(
             workflow_name=workflow_name,
@@ -196,93 +236,72 @@ def run(
                 "detail_console": console if show_details else None,
             }
             result = compiled.invoke(state)
-
-        # 9. Display Rich summary
-        _print_run_summary(workflow_name, workflow_id, result)
-
-        # 9b. Display detailed report if --show-details
-        if show_details and isinstance(result, dict):
-            from src.cli.detail_report import print_detailed_report
-            print_detailed_report(result, console)
-
-        # 10. Display hierarchical gantt chart
-        try:
-            import sys
-            from pathlib import Path as ImportPath
-            # Add project root to Python path for examples module
-            project_root = ImportPath(__file__).parent.parent.parent
-            if str(project_root) not in sys.path:
-                sys.path.insert(0, str(project_root))
-
-            from examples.export_waterfall import export_waterfall_trace
-            from src.observability.visualize_trace import print_console_gantt
-
-            trace = export_waterfall_trace(workflow_id)
-            if "error" not in trace:
-                print_console_gantt(trace)
-        except Exception as e:  # noqa: BLE001 -- optional visualization, non-fatal
-            logger.debug(f"Could not display gantt chart: {e}")
-
-        # 11. Save results if --output
-        if output:
-            output_path = Path(output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, "w") as f:
-                json.dump(result, f, indent=2, default=str)
-            console.print(f"\nResults saved to [cyan]{output}[/cyan]")
-
-        # 12. Cleanup resources
-        logger.debug(f"Starting cleanup, engine type: {type(engine)}")
-        tool_executor = None
-        if hasattr(engine, 'tool_executor'):
-            tool_executor = engine.tool_executor
-        elif hasattr(engine, 'compiler') and hasattr(engine.compiler, 'tool_executor'):
-            tool_executor = engine.compiler.tool_executor
-
-        if tool_executor is not None:
-            try:
-                logger.debug("Calling tool_executor.shutdown()")
-                tool_executor.shutdown()
-                logger.debug("tool_executor.shutdown() completed")
-            except Exception as e:  # noqa: BLE001 -- defensive cleanup
-                logger.debug(f"Error during tool executor shutdown: {e}")
-        else:
-            logger.debug("No tool_executor found to cleanup")
-
+    except (RuntimeError, ValueError) as e:
+        console.print(f"[red]Workflow execution error:[/red] {e}")
+        if verbose:
+            logger.exception("Workflow execution failed")
+        # Cleanup on error
+        _cleanup_tool_executor(engine)
+        raise SystemExit(1)
     except SystemExit:
         raise
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted[/yellow]")
         # Cleanup on interrupt
         if 'engine' in locals():
-            tool_executor = None
-            if hasattr(engine, 'tool_executor'):
-                tool_executor = engine.tool_executor
-            elif hasattr(engine, 'compiler') and hasattr(engine.compiler, 'tool_executor'):
-                tool_executor = engine.compiler.tool_executor
-            if tool_executor is not None:
-                try:
-                    tool_executor.shutdown()
-                except Exception:  # noqa: BLE001 -- defensive cleanup on interrupt
-                    pass
+            _cleanup_tool_executor(engine)
         raise SystemExit(EXIT_CODE_KEYBOARD_INTERRUPT)
-    except Exception as e:  # noqa: BLE001 -- CLI top-level catch-all
-        console.print(f"[red]Execution error:[/red] {e}")
-        if verbose:
-            logger.exception("Workflow execution failed")
-        # Cleanup on error
-        if 'engine' in locals():
-            tool_executor = None
-            if hasattr(engine, 'tool_executor'):
-                tool_executor = engine.tool_executor
-            elif hasattr(engine, 'compiler') and hasattr(engine.compiler, 'tool_executor'):
-                tool_executor = engine.compiler.tool_executor
-            if tool_executor is not None:
-                try:
-                    tool_executor.shutdown()
-                except Exception:  # noqa: BLE001 -- defensive cleanup on error
-                    pass
-        raise SystemExit(1)
+
+    # 9. Display Rich summary
+    _print_run_summary(workflow_name, workflow_id, result)
+
+    # 9b. Display detailed report if --show-details
+    if show_details and isinstance(result, dict):
+        try:
+            from src.cli.detail_report import print_detailed_report
+            print_detailed_report(result, console)
+        except ImportError as e:
+            logger.debug(f"Could not display detailed report: {e}")
+        except Exception as e:  # noqa: BLE001 -- optional feature, non-fatal
+            logger.debug(f"Error displaying detailed report: {e}")
+
+    # 10. Display hierarchical gantt chart
+    try:
+        import sys
+        from pathlib import Path as ImportPath
+        # Add project root to Python path for examples module
+        project_root = ImportPath(__file__).parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
+        from examples.export_waterfall import export_waterfall_trace
+        from src.observability.visualize_trace import print_console_gantt
+
+        trace = export_waterfall_trace(workflow_id)
+        if "error" not in trace:
+            print_console_gantt(trace)
+    except ImportError as e:
+        logger.debug(f"Could not display gantt chart - module not found: {e}")
+    except Exception as e:  # noqa: BLE001 -- optional visualization, non-fatal
+        logger.debug(f"Could not display gantt chart: {e}")
+
+    # 11. Save results if --output
+    if output:
+        try:
+            output_path = Path(output)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(output_path, "w") as f:
+                json.dump(result, f, indent=2, default=str)
+            console.print(f"\nResults saved to [cyan]{output}[/cyan]")
+        except (IOError, OSError, PermissionError) as e:
+            console.print(f"[red]Error saving results:[/red] {e}")
+            if verbose:
+                logger.exception("Failed to save results")
+            # Non-fatal, continue to cleanup
+
+    # 12. Cleanup resources
+    _cleanup_tool_executor(engine)
+
 
 
 def _print_run_summary(
@@ -499,7 +518,7 @@ def m5() -> None:
     pass
 
 
-def _get_m5_cli():
+def _get_m5_cli() -> Any:
     """Lazy-load M5CLI to avoid import-time side effects."""
     try:
         from src.self_improvement.cli import M5CLI

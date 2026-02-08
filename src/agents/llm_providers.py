@@ -16,6 +16,7 @@ Shim mapping:
 """
 import importlib
 import warnings
+from typing import Any
 
 # Preserve module-level names that tests mock (e.g., src.agents.llm_providers.httpx)
 import httpx  # noqa: F401
@@ -44,7 +45,7 @@ _SHIM_EXPORTS = {
 __all__ = list(_SHIM_EXPORTS.keys())
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in _SHIM_EXPORTS:
         warnings.warn(
             f"Importing {name} from src.agents.llm_providers is deprecated. "

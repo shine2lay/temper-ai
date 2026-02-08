@@ -168,7 +168,7 @@ class OAuthService:
             )
         return self._http_client
 
-    async def close(self):
+    async def close(self) -> None:
         """Clean up resources."""
         if self._owns_http_client and self._http_client:
             await self._http_client.aclose()

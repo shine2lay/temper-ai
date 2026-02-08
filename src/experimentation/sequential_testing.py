@@ -7,7 +7,7 @@ is gathered, reducing experiment runtime while maintaining statistical rigor.
 
 from typing import Any, Dict, List, Tuple
 
-import numpy as np  # type: ignore[import-not-found]
+import numpy as np
 from scipy import stats  # type: ignore[import-untyped]
 
 from src.experimentation.constants import (

@@ -226,12 +226,13 @@ class LangGraphCompiler:
         """
         # Delegate to ParallelStageExecutor which has the validation logic
         # Pass empty state dict for backward compatibility (state not used in validation)
-        return self.executors['parallel']._validate_quality_gates(
+        result: tuple[bool, list[str]] = self.executors['parallel']._validate_quality_gates(  # type: ignore[attr-defined]
             synthesis_result=synthesis_result,
             stage_config=stage_config,
             stage_name=stage_name,
             state={}  # Empty state for testing/backward compatibility
         )
+        return result
 
     def _get_agent_mode(self, stage_config: Dict[str, Any]) -> str:
         """Get agent execution mode from stage configuration.
@@ -251,7 +252,8 @@ class LangGraphCompiler:
             >>> assert mode == "parallel"
         """
         if "execution" in stage_config and "agent_mode" in stage_config["execution"]:
-            return stage_config["execution"]["agent_mode"]
+            mode: str = stage_config["execution"]["agent_mode"]
+            return mode
         return "sequential"  # Default mode
 
     def _execute_parallel_stage(

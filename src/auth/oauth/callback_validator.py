@@ -44,8 +44,9 @@ class CallbackURLValidator:
 
     # SECURITY: Only allow http/https schemes (blocks javascript:, file:, data:, etc.)
     ALLOWED_SCHEMES = {'http', 'https'}
+    MAX_HOSTNAME_LENGTH = MAX_HOSTNAME_LENGTH
 
-    def __init__(self, allowed_urls: List[str], allow_localhost: bool = None):
+    def __init__(self, allowed_urls: List[str], allow_localhost: Optional[bool] = None):
         """Initialize validator with whitelist.
 
         Args:

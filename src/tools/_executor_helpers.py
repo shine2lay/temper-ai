@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _log_rollback_event(**kwargs) -> None:
+def _log_rollback_event(**kwargs: Any) -> None:
     """Lazy-import and call log_rollback_event (M-06)."""
     try:
         from src.observability.rollback_logger import log_rollback_event
@@ -202,7 +202,7 @@ def handle_approval_rejection(executor: ToolExecutor, request: Any) -> None:
 # Rollback helpers
 # ---------------------------------------------------------------------------
 
-def handle_auto_rollback(executor: ToolExecutor, snapshot, tool_name, result, context):
+def handle_auto_rollback(executor: ToolExecutor, snapshot: Any, tool_name: str, result: ToolResult, context: Dict[str, Any]) -> None:
     """Handle auto-rollback on tool failure."""
     try:
         rollback_result = executor.rollback_manager.execute_rollback(snapshot.id)  # type: ignore[union-attr]
@@ -225,10 +225,10 @@ def handle_auto_rollback(executor: ToolExecutor, snapshot, tool_name, result, co
         result.metadata["rollback_error"] = str(e)
 
 
-def handle_timeout_rollback(executor: ToolExecutor, snapshot, context, reason="Tool execution timeout"):
+def handle_timeout_rollback(executor: ToolExecutor, snapshot: Any, context: Dict[str, Any], reason: str = "Tool execution timeout") -> None:
     """Handle auto-rollback on timeout."""
     try:
-        rollback_result = executor.rollback_manager.execute_rollback(snapshot.id)
+        rollback_result = executor.rollback_manager.execute_rollback(snapshot.id)  # type: ignore[union-attr]
         logger.warning(f"Auto-rollback on timeout: {rollback_result.status.value}")
 
         _log_rollback_event(
@@ -241,10 +241,10 @@ def handle_timeout_rollback(executor: ToolExecutor, snapshot, context, reason="T
         logger.error(f"Auto-rollback on timeout failed: {e}")
 
 
-def handle_exception_rollback(executor: ToolExecutor, snapshot, tool_name, error, context):
+def handle_exception_rollback(executor: ToolExecutor, snapshot: Any, tool_name: str, error: Exception, context: Dict[str, Any]) -> None:
     """Handle auto-rollback on exception."""
     try:
-        rollback_result = executor.rollback_manager.execute_rollback(snapshot.id)
+        rollback_result = executor.rollback_manager.execute_rollback(snapshot.id)  # type: ignore[union-attr]
         logger.error(
             f"Auto-rollback on exception for tool '{tool_name}': {error}",
             extra={"rollback_result": rollback_result.to_dict()}
@@ -266,13 +266,13 @@ def handle_exception_rollback(executor: ToolExecutor, snapshot, tool_name, error
 
 def execute_batch(
     executor: ToolExecutor,
-    executions: list,
+    executions: list[tuple[str, Dict[str, Any]]],
     timeout: Optional[int] = None,
     overall_timeout: Optional[int] = None,
-) -> list:
+) -> list[ToolResult]:
     """Execute multiple tools in parallel."""
-    results = [None] * len(executions)
-    futures = {}
+    results: list[Optional[ToolResult]] = [None] * len(executions)
+    futures: Dict[Any, int] = {}
 
     for idx, (tool_name, params) in enumerate(executions):
         future = executor._executor.submit(executor.execute, tool_name, params, timeout)
@@ -299,7 +299,8 @@ def execute_batch(
                     error=f"Batch overall timeout ({overall_timeout}s) exceeded"
                 )
 
-    return results
+    # All results should be non-None at this point
+    return [r for r in results if r is not None]
 
 
 # ---------------------------------------------------------------------------

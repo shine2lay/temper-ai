@@ -111,24 +111,32 @@ def load_safety_config(config_path: Optional[str] = None, environment: str = "de
     Returns:
         Merged configuration dict with environment overrides applied
     """
+    path_obj: Path
     if config_path is None:
         # Default path relative to project root
         project_root = Path(__file__).parent.parent.parent
-        config_path = project_root / "config" / "safety" / "action_policies.yaml"
+        path_obj = project_root / "config" / "safety" / "action_policies.yaml"
+    else:
+        path_obj = Path(config_path)
 
-    if not Path(config_path).exists():
-        logger.warning(f"Safety config not found at {config_path}, using defaults")
+    if not path_obj.exists():
+        logger.warning(f"Safety config not found at {path_obj}, using defaults")
         return _get_default_config()
 
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+    with open(path_obj, 'r') as f:
+        loaded_config = yaml.safe_load(f)
+
+    if not isinstance(loaded_config, dict):
+        logger.warning(f"Invalid config format in {path_obj}, using defaults")
+        return _get_default_config()
 
     # Apply environment overrides
-    if 'environments' in config and environment in config['environments']:
-        env_config = config['environments'][environment]
-        config = _merge_configs(config, env_config)
+    if 'environments' in loaded_config and environment in loaded_config['environments']:
+        env_config = loaded_config['environments'][environment]
+        if isinstance(env_config, dict):
+            loaded_config = _merge_configs(loaded_config, env_config)
 
-    return config
+    return dict(loaded_config)
 
 
 def _get_default_config() -> Dict[str, Any]:
@@ -183,11 +191,11 @@ def create_policy_registry(config: Dict[str, Any]) -> PolicyRegistry:
     # Collect all unique policy names referenced in the config, together
     # with the action types they should be registered for.
     # Key: policy config name  →  Value: set of action types (empty = global)
-    policy_action_map: Dict[str, set] = {}
+    policy_action_map: Dict[str, set[str]] = {}
 
     for action_type, policy_names in policy_mappings.items():
         for pname in policy_names:
-            policy_action_map.setdefault(pname, set()).add(action_type)
+            policy_action_map.setdefault(pname, set()).add(str(action_type))
 
     for pname in global_policy_names:
         # None sentinel will be handled below to register as global
@@ -287,6 +295,7 @@ def create_safety_stack(
 
     # Create ApprovalWorkflow
     approval_mode = config.get("approval_mode", None)
+    approval_workflow: Any
     if approval_mode == "noop":
         # Explicit opt-in to auto-approve in any environment
         approval_workflow = NoOpApprover()

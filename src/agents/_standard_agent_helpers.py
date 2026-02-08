@@ -9,7 +9,7 @@ import hashlib
 import json
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
     from src.agents.standard_agent import StandardAgent
@@ -42,9 +42,9 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 def execute_tool_calls(
-    agent: StandardAgent,
+    agent: "StandardAgent",
     tool_calls: List[Dict[str, Any]],
-    get_tool_executor_fn,
+    get_tool_executor_fn: Callable[[], concurrent.futures.ThreadPoolExecutor],
 ) -> List[Dict[str, Any]]:
     """Execute a list of tool calls (parallel if independent, sequential if dependent)."""
     if not isinstance(tool_calls, list):
@@ -87,7 +87,7 @@ def execute_tool_calls(
     return tool_results
 
 
-def execute_single_tool(agent: StandardAgent, tool_call: Dict[str, Any]) -> Dict[str, Any]:
+def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Dict[str, Any]:
     """Execute a single tool call."""
     if not isinstance(tool_call, dict):
         raise TypeError(f"tool_call must be a dictionary, got {type(tool_call).__name__}")
@@ -157,14 +157,14 @@ def execute_single_tool(agent: StandardAgent, tool_call: Dict[str, Any]) -> Dict
 
 
 def execute_via_tool_executor(
-    agent: StandardAgent,
+    agent: "StandardAgent",
     tool_name: str,
     tool_params: Dict[str, Any],
 ) -> Dict[str, Any]:
     """Execute tool through the safety-integrated ToolExecutor."""
     tool_start_time = time.time()
     try:
-        result = agent.tool_executor.execute(tool_name, tool_params)
+        result = agent.tool_executor.execute(tool_name, tool_params)  # type: ignore[attr-defined]
         duration_seconds = time.time() - tool_start_time
         logger.info(
             "[%s] Tool '%s' %s (%.1fs)",
@@ -173,7 +173,7 @@ def execute_via_tool_executor(
             duration_seconds,
         )
 
-        agent._observer.track_tool_call(
+        agent._observer.track_tool_call(  # type: ignore[attr-defined]
             tool_name=tool_name,
             input_params=tool_params,
             output_data={"result": result.result} if result.success else {},
@@ -192,7 +192,7 @@ def execute_via_tool_executor(
     except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
         duration_seconds = time.time() - tool_start_time
 
-        agent._observer.track_tool_call(
+        agent._observer.track_tool_call(  # type: ignore[attr-defined]
             tool_name=tool_name,
             input_params=tool_params,
             output_data={},
@@ -214,7 +214,7 @@ def execute_via_tool_executor(
 # Prompt / tool-schema helpers
 # ---------------------------------------------------------------------------
 
-def get_cached_tool_schemas(agent: StandardAgent) -> Optional[str]:
+def get_cached_tool_schemas(agent: "StandardAgent") -> Optional[str]:
     """Get cached tool schemas or build and cache them."""
     tools_dict = agent.tool_registry.get_all_tools()
     if not tools_dict:
@@ -240,7 +240,7 @@ def get_cached_tool_schemas(agent: StandardAgent) -> Optional[str]:
     return tools_section
 
 
-def get_native_tool_definitions(agent: StandardAgent) -> Optional[List[Dict[str, Any]]]:
+def get_native_tool_definitions(agent: "StandardAgent") -> Optional[List[Dict[str, Any]]]:
     """Build native tool definitions for providers that support them.
 
     M-20: Results are cached and only recomputed when the tool registry
@@ -292,7 +292,7 @@ def get_native_tool_definitions(agent: StandardAgent) -> Optional[List[Dict[str,
 
 
 def inject_tool_results(
-    agent: StandardAgent,
+    agent: "StandardAgent",
     original_prompt: str,
     llm_response: str,
     tool_results: List[Dict[str, Any]],
@@ -393,7 +393,7 @@ def inject_tool_results(
 # ---------------------------------------------------------------------------
 
 def build_final_response(
-    agent: StandardAgent,
+    agent: "StandardAgent",
     output: str,
     reasoning: Optional[str],
     tool_calls: List[Dict[str, Any]],
@@ -402,7 +402,7 @@ def build_final_response(
     start_time: float,
     error: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
-):
+) -> Any:  # Return type must be Any to avoid circular import issues with AgentResponse
     """Build final AgentResponse."""
     from src.agents.base_agent import AgentResponse
 
@@ -415,7 +415,7 @@ def build_final_response(
     return AgentResponse(
         output=output,
         reasoning=reasoning,
-        tool_calls=tool_calls,
+        tool_calls=tool_calls,  # type: ignore[arg-type]  # Dict structure differs from ToolCallRecord
         tokens=tokens,
         estimated_cost_usd=cost,
         latency_seconds=time.time() - start_time,
@@ -428,7 +428,15 @@ def build_final_response(
 # Safety validation (shared between sync and async iteration paths)
 # ---------------------------------------------------------------------------
 
-def validate_safety_for_llm_call(agent: StandardAgent, inf_config, prompt, tool_calls_made, total_tokens, total_cost, start_time):
+def validate_safety_for_llm_call(
+    agent: "StandardAgent",
+    inf_config: Any,
+    prompt: str,
+    tool_calls_made: List[Dict[str, Any]],
+    total_tokens: int,
+    total_cost: float,
+    start_time: float
+) -> Optional[Dict[str, Any]]:
     """Run safety validation for an LLM call. Returns error dict or None."""
     if hasattr(agent, 'tool_executor') and agent.tool_executor is not None:
         if agent.tool_executor.policy_engine is not None:
@@ -488,9 +496,15 @@ def validate_safety_for_llm_call(agent: StandardAgent, inf_config, prompt, tool_
     return None
 
 
-def track_llm_call(agent: StandardAgent, inf_config, prompt, llm_response, cost):
+def track_llm_call(
+    agent: "StandardAgent",
+    inf_config: Any,
+    prompt: str,
+    llm_response: Any,
+    cost: float
+) -> None:
     """Track an LLM call via the observer."""
-    agent._observer.track_llm_call(
+    agent._observer.track_llm_call(  # type: ignore[attr-defined]
         provider=inf_config.provider,
         model=inf_config.model,
         prompt=prompt,
@@ -505,7 +519,17 @@ def track_llm_call(agent: StandardAgent, inf_config, prompt, llm_response, cost)
     )
 
 
-def process_llm_response(agent: StandardAgent, llm_response, tool_calls_made, total_tokens, total_cost, start_time, prompt, max_iterations, get_tool_executor_fn):
+def process_llm_response(
+    agent: "StandardAgent",
+    llm_response: Any,
+    tool_calls_made: List[Dict[str, Any]],
+    total_tokens: int,
+    total_cost: float,
+    start_time: float,
+    prompt: str,
+    max_iterations: Optional[int],
+    get_tool_executor_fn: Callable[[], concurrent.futures.ThreadPoolExecutor]
+) -> Dict[str, Any]:
     """Process LLM response: parse tool calls, execute if any, build result dict."""
     # Parse tool calls
     tool_calls = parse_tool_calls(llm_response.content)
@@ -556,12 +580,17 @@ def process_llm_response(agent: StandardAgent, llm_response, tool_calls_made, to
 # Execution setup
 # ---------------------------------------------------------------------------
 
-def setup_execution(agent: StandardAgent, input_data, context, async_mode=False):
+def setup_execution(
+    agent: "StandardAgent",
+    input_data: Dict[str, Any],
+    context: Any,
+    async_mode: bool = False
+) -> None:
     """Common setup for sync and async execute paths."""
     from src.agents.agent_observer import AgentObserver
     from src.tools.executor import ToolExecutor
 
-    agent._execution_context = context
+    agent._execution_context = context  # type: ignore[attr-defined]
     _tool_executor = input_data.get('tool_executor', None)
     if _tool_executor is not None:
         if not isinstance(_tool_executor, ToolExecutor):
@@ -569,12 +598,12 @@ def setup_execution(agent: StandardAgent, input_data, context, async_mode=False)
                 f"tool_executor must be a ToolExecutor instance, "
                 f"got {type(_tool_executor).__name__}"
             )
-    agent.tool_executor = _tool_executor
-    agent.tracker = input_data.get('tracker', None)
-    agent._observer = AgentObserver(agent.tracker, agent._execution_context)
+    agent.tool_executor = _tool_executor  # type: ignore[attr-defined]
+    agent.tracker = input_data.get('tracker', None)  # type: ignore[attr-defined]
+    agent._observer = AgentObserver(agent.tracker, agent._execution_context)  # type: ignore[attr-defined]
     logger.info("[%s] Starting %sexecution", agent.name, "async " if async_mode else "")
 
 
-def estimate_cost_for_response(agent: StandardAgent, llm_response):
+def estimate_cost_for_response(agent: "StandardAgent", llm_response: Any) -> float:
     """Estimate cost for an LLM response."""
     return estimate_cost(llm_response, fallback_model=getattr(agent.llm, 'model', 'unknown'))

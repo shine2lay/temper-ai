@@ -54,14 +54,16 @@ class M5Experiment(SQLModel, table=True):
 
     def get_control_config_dict(self) -> Dict[str, Any]:
         """Return control config dict (already deserialized by JSON column)."""
-        if isinstance(self.control_config, str):
-            return json.loads(self.control_config)
+        # JSON column automatically deserializes, but handle legacy string data
+        if isinstance(self.control_config, str):  # type: ignore[unreachable]
+            return json.loads(self.control_config)  # type: ignore[unreachable]
         return self.control_config
 
     def get_variant_configs_dicts(self) -> List[Dict[str, Any]]:
         """Return variant configs list (already deserialized by JSON column)."""
-        if isinstance(self.variant_configs, str):
-            return json.loads(self.variant_configs)
+        # JSON column automatically deserializes, but handle legacy string data
+        if isinstance(self.variant_configs, str):  # type: ignore[unreachable]
+            return json.loads(self.variant_configs)  # type: ignore[unreachable]
         return self.variant_configs
 
     def get_variant_count(self) -> int:
@@ -73,8 +75,9 @@ class M5Experiment(SQLModel, table=True):
         """Return extra metadata dict (already deserialized by JSON column)."""
         if self.extra_metadata is None:
             return {}
-        if isinstance(self.extra_metadata, str):
-            return json.loads(self.extra_metadata)
+        # JSON column automatically deserializes, but handle legacy string data
+        if isinstance(self.extra_metadata, str):  # type: ignore[unreachable]
+            return json.loads(self.extra_metadata)  # type: ignore[unreachable]
         return self.extra_metadata
 
 
@@ -112,6 +115,7 @@ class M5ExecutionResult(SQLModel, table=True):
         """Return extra metrics dict (already deserialized by JSON column)."""
         if self.extra_metrics is None:
             return {}
-        if isinstance(self.extra_metrics, str):
-            return json.loads(self.extra_metrics)
+        # JSON column automatically deserializes, but handle legacy string data
+        if isinstance(self.extra_metrics, str):  # type: ignore[unreachable]
+            return json.loads(self.extra_metrics)  # type: ignore[unreachable]
         return self.extra_metrics

@@ -342,6 +342,8 @@ class Bash(BaseTool):
             return error_result
 
         # --- Execute command ---
+        # resolved_cwd is guaranteed to be non-None after validate_sandbox
+        assert resolved_cwd is not None, "resolved_cwd should not be None after validate_sandbox"
         return run_command(
             command, parts, resolved_cwd, timeout,
             self.shell_mode, get_safe_env(self.SAFE_ENV_VARS),

@@ -73,7 +73,7 @@ class LoopExecutor:
 
     def __init__(
         self,
-        coord_db,
+        coord_db: Any,
         obs_session: Session,
         config: LoopConfig,
         state_manager: LoopStateManager,
@@ -82,7 +82,7 @@ class LoopExecutor:
         tracker: Optional[Any] = None,
         policy_engine: Optional[Any] = None,
         approval_workflow: Optional[Any] = None,
-    ):
+    ) -> None:
         self.coord_db = coord_db
         self.obs_session = obs_session
         self.config = config
@@ -164,19 +164,27 @@ class LoopExecutor:
 
             # Phase 3: Strategy
             if len(result.phases_completed) >= 2 or start_phase == Phase.STRATEGY:
+                # Ensure analysis_result is available
+                if result.analysis_result is None:
+                    raise ValueError("Cannot execute strategy phase without analysis result")
+                analysis_result = result.analysis_result
                 result.strategy_result = self._execute_with_retry(
                     agent_name,
                     Phase.STRATEGY,
-                    lambda name: self._execute_phase_3_strategy(name, result.analysis_result)
+                    lambda name: self._execute_phase_3_strategy(name, analysis_result)
                 )
                 result.phases_completed.append(Phase.STRATEGY)
 
             # Phase 4: Experiment
             if len(result.phases_completed) >= PHASES_BEFORE_EXPERIMENT or start_phase == Phase.EXPERIMENT:
+                # Ensure strategy_result is available
+                if result.strategy_result is None:
+                    raise ValueError("Cannot execute experiment phase without strategy result")
+                strategy_result = result.strategy_result
                 result.experiment_result = self._execute_with_retry(
                     agent_name,
                     Phase.EXPERIMENT,
-                    lambda name: self._execute_phase_4_experiment(name, result.strategy_result)
+                    lambda name: self._execute_phase_4_experiment(name, strategy_result)
                 )
                 result.phases_completed.append(Phase.EXPERIMENT)
 
@@ -218,10 +226,10 @@ class LoopExecutor:
 
         return result
 
-    def _execute_with_retry(self, agent_name: str, phase: Phase, phase_func):
+    def _execute_with_retry(self, agent_name: str, phase: Phase, phase_func: Any) -> Any:
         """Execute phase with retry logic."""
         attempt = 0
-        last_error = None
+        last_error: Optional[Exception] = None
 
         while attempt < self.config.max_retries_per_phase:
             attempt += 1
@@ -258,6 +266,9 @@ class LoopExecutor:
                     raise
 
         # Max retries exhausted
+        if last_error is None:
+            # This should never happen, but handle it just in case
+            last_error = RuntimeError(f"Max retries exhausted for {phase.value} ({agent_name}) with no error captured")
         logger.error(
             f"Max retries exhausted for {phase.value} ({agent_name}): {last_error}"
         )
@@ -479,6 +490,10 @@ class LoopExecutor:
             )
 
             deployment = self.config_deployer.get_last_deployment(agent_name)
+
+            # Deployment should always succeed if deploy() doesn't raise
+            if deployment is None:
+                raise RuntimeError(f"Deployment record not found after successful deploy for {agent_name}")
 
             logger.info(
                 f"Deployed config {deployment.id} for {agent_name}. "

@@ -5,7 +5,7 @@ These are internal implementation details - use ExperimentOrchestrator's public 
 import hashlib
 import logging
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from sqlmodel import func, select
 
@@ -77,8 +77,8 @@ def aggregate_variant_results(
 
 def get_experiment_progress(
     experiment_id: str,
-    session_factory,
-    get_db_experiment_fn,
+    session_factory: Callable[[], Any],
+    get_db_experiment_fn: Callable[..., Any],
 ) -> Dict[str, Any]:
     """Get current progress for each variant in experiment.
 
@@ -143,7 +143,7 @@ def record_result_to_db(
     cost_usd: Optional[float],
     success: Optional[bool],
     extra_metrics: Optional[Dict[str, float]],
-    session_factory,
+    session_factory: Callable[[], Any],
 ) -> None:
     """Create and store an execution result ORM record.
 
@@ -184,7 +184,7 @@ def create_experiment_in_db(
     target: int,
     proposal_id: Optional[str],
     extra_metadata: Optional[Dict[str, Any]],
-    session_factory,
+    session_factory: Callable[[], Any],
 ) -> SelfImprovementExperiment:
     """Create experiment ORM record and return domain model.
 

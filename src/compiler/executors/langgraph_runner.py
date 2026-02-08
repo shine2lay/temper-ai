@@ -48,11 +48,11 @@ class LangGraphParallelRunner(ParallelRunner):
             graph.add_edge(START, "init")
         else:
             graph.add_edge(START, "init")
-            graph.add_node("init", lambda s: {})  # type: ignore[call-overload]
+            graph.add_node("init", lambda s: {})
 
         # Add parallel nodes
         for name, fn in nodes.items():
-            graph.add_node(name, fn)  # type: ignore[call-overload]
+            graph.add_node(name, fn)  # type: ignore[arg-type]
             graph.add_edge("init", name)
             if collect_node is not None:
                 graph.add_edge(name, "collect")
@@ -61,7 +61,7 @@ class LangGraphParallelRunner(ParallelRunner):
 
         # Add collect node
         if collect_node is not None:
-            graph.add_node("collect", collect_node)  # type: ignore[call-overload]
+            graph.add_node("collect", collect_node)  # type: ignore[arg-type]
             graph.add_edge("collect", END)
 
         graph.set_entry_point("init")

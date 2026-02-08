@@ -463,7 +463,7 @@ class DomainExecutionContext(InfrastructureContext):
 
     DEPRECATED: Use InfrastructureContext directly.
     """
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls, **kwargs: Any) -> None:
         import warnings
         warnings.warn(
             "DomainExecutionContext is deprecated. Use InfrastructureContext.",

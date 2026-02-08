@@ -96,15 +96,15 @@ class MetricsAggregator:
             filters.append(AgentExecution.status == "completed")
 
         # Aggregate query
-        statement = select(
-            func.count(AgentExecution.id).label("total"),
+        statement = select(  # type: ignore[call-overload]
+            func.count(AgentExecution.id).label("total"),  # type: ignore[arg-type]
             func.sum(
-                case((AgentExecution.status == "completed", 1), else_=0)
+                case((AgentExecution.status == "completed", 1), else_=0)  # type: ignore[arg-type]
             ).label("completed"),
             func.avg(AgentExecution.duration_seconds).label("avg_duration"),
             func.avg(AgentExecution.estimated_cost_usd).label("avg_cost"),
             func.avg(AgentExecution.total_tokens).label("avg_tokens"),
-        ).where(and_(*filters))
+        ).where(and_(*filters))  # type: ignore[arg-type]
 
         result = self.session.exec(statement).first()
 
@@ -164,8 +164,8 @@ class MetricsAggregator:
         """
         statement = select(AgentExecution.agent_name).where(
             and_(
-                AgentExecution.start_time >= window_start,
-                AgentExecution.start_time < window_end
+                AgentExecution.start_time >= window_start,  # type: ignore[arg-type]
+                AgentExecution.start_time < window_end  # type: ignore[arg-type]
             )
         ).distinct()
 

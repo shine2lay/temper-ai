@@ -7,7 +7,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import psutil  # type: ignore[import-untyped]
+import psutil
 
 from src.constants.durations import SLEEP_VERY_SHORT
 from src.constants.limits import PERCENT_20
@@ -66,21 +66,21 @@ def validate_size(
             f"{name} must be numeric, got {type(value).__name__}"
         )
 
-    value = int(value)
+    int_value = int(value)
 
-    if value < min_value:
+    if int_value < min_value:
         raise ValueError(
             f"{name} must be >= {min_value} bytes ({format_bytes(min_value)}), "
-            f"got {value} ({format_bytes(value)})"
+            f"got {int_value} ({format_bytes(int_value)})"
         )
 
-    if value > max_value:
+    if int_value > max_value:
         raise ValueError(
             f"{name} must be <= {max_value} bytes ({format_bytes(max_value)}), "
-            f"got {value} ({format_bytes(value)})"
+            f"got {int_value} ({format_bytes(int_value)})"
         )
 
-    return value
+    return int_value
 
 
 def validate_time(
@@ -110,19 +110,19 @@ def validate_time(
             f"{name} must be numeric, got {type(value).__name__}"
         )
 
-    value = float(value)
+    float_value = float(value)
 
-    if value < min_value:
+    if float_value < min_value:
         raise ValueError(
-            f"{name} must be >= {min_value} seconds, got {value}"
+            f"{name} must be >= {min_value} seconds, got {float_value}"
         )
 
-    if value > max_value:
+    if float_value > max_value:
         raise ValueError(
-            f"{name} must be <= {max_value} seconds, got {value}"
+            f"{name} must be <= {max_value} seconds, got {float_value}"
         )
 
-    return value
+    return float_value
 
 
 def validate_bool(name: str, value: Any) -> bool:

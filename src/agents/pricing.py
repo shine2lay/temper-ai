@@ -34,7 +34,7 @@ FALLBACK_PRICING_YEAR = 2026  # Year for fallback pricing effective date
 class PricingConfigNotFoundError(ConfigurationError):
     """Raised when pricing configuration file is not found."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message=message,
             error_code=ErrorCode.CONFIG_NOT_FOUND,
@@ -45,7 +45,7 @@ class PricingConfigNotFoundError(ConfigurationError):
 class PricingConfigInvalidError(ConfigurationError):
     """Raised when pricing configuration is invalid."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message=message,
             error_code=ErrorCode.CONFIG_INVALID,
@@ -121,7 +121,7 @@ class PricingManager:
     # Supported schema versions
     SUPPORTED_SCHEMA_VERSIONS = {"1.0"}
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "PricingManager":
         """Thread-safe singleton instantiation."""
         with cls._lock:
             if cls._instance is None:
@@ -252,7 +252,8 @@ class PricingManager:
             '_default': ModelPricing(
                 input_price=DEFAULT_FALLBACK_INPUT_PRICE,
                 output_price=DEFAULT_FALLBACK_OUTPUT_PRICE,
-                effective_date=date(FALLBACK_PRICING_YEAR, 1, 1)
+                effective_date=date(FALLBACK_PRICING_YEAR, 1, 1),
+                source_url=None
             )
         }
 

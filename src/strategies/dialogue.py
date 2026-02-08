@@ -97,7 +97,7 @@ class DialogueOrchestrator(CollaborationStrategy):
             True if model was loaded successfully, False otherwise.
         """
         try:
-            from sentence_transformers import SentenceTransformer
+            from sentence_transformers import SentenceTransformer  # type: ignore[import-not-found]
             if not cls._embedding_model_loaded:
                 logger.info("Loading sentence-transformers model (paraphrase-MiniLM-L6-v2)...")
                 cls._embedding_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
@@ -174,7 +174,7 @@ class DialogueOrchestrator(CollaborationStrategy):
         self.context_window_size = context_window_size
         self.use_merit_weighting = use_merit_weighting
         self.merit_domain = merit_domain
-        self._embeddings_available = None  # Lazy check for sentence-transformers
+        self._embeddings_available: Optional[bool] = None  # Lazy check for sentence-transformers
 
     @property
     def requires_requery(self) -> bool:
@@ -247,17 +247,17 @@ class DialogueOrchestrator(CollaborationStrategy):
             return self._embeddings_available
 
         try:
-            import sentence_transformers  # noqa: F401
+            import sentence_transformers  # noqa: F401 # type: ignore[import-not-found]
             self._embeddings_available = True
             logger.debug("sentence-transformers available for semantic convergence")
+            return True
         except ImportError:
             self._embeddings_available = False
             logger.warning(
                 "sentence-transformers not available, falling back to exact match convergence. "
                 "Install with: pip install sentence-transformers"
             )
-
-        return self._embeddings_available
+            return False
 
     def calculate_convergence(
         self,

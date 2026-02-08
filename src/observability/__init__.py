@@ -5,6 +5,7 @@ are lazily imported via __getattr__ to avoid pulling in SQLAlchemy/Rich at
 module load time. Lightweight re-exports (backend ABC, context, models, hooks,
 tracker) remain eager.
 """
+from typing import Any
 
 # Lightweight / frequently-used — keep eager
 from src.core.context import ExecutionContext
@@ -64,7 +65,7 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in _LAZY_IMPORTS:
         module_path, attr = _LAZY_IMPORTS[name]
         import importlib

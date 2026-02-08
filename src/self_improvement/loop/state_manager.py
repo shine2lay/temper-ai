@@ -47,9 +47,7 @@ class M5LoopStateRecord(SQLModel, table=True):
 
 def _record_to_state(record: M5LoopStateRecord) -> LoopState:
     """Convert ORM record to domain LoopState."""
-    phase_data = record.phase_data
-    if isinstance(phase_data, str):
-        phase_data = json.loads(phase_data)
+    phase_data = record.phase_data if not isinstance(record.phase_data, str) else json.loads(record.phase_data)
     return LoopState(
         agent_name=record.agent_name,
         current_phase=Phase(record.current_phase),
@@ -65,7 +63,7 @@ def _record_to_state(record: M5LoopStateRecord) -> LoopState:
 class StateTransitionError(WorkflowError):
     """Raised when an invalid state transition is attempted."""
 
-    def __init__(self, message: str, **kwargs):
+    def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message=message,
             error_code=ErrorCode.WORKFLOW_EXECUTION_ERROR,

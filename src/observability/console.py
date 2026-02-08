@@ -428,7 +428,7 @@ class StreamingVisualizer(WorkflowVisualizer):
                     # Stop if workflow completed/failed
                     if workflow.status in ["completed", "failed", "timeout", "halted"]:
                         # Wait a bit to show final state
-                        time.sleep(1.0)
+                        time.sleep(1.0)  # Intentional blocking: brief pause to display final workflow state in UI thread
                         break
 
             except Exception as e:
@@ -436,7 +436,7 @@ class StreamingVisualizer(WorkflowVisualizer):
                 logger.debug(f"Error in _update_loop polling: {e}")
 
             # Wait before next poll
-            time.sleep(self.poll_interval)
+            time.sleep(self.poll_interval)  # Intentional blocking: polling interval for UI update thread
 
     def _get_border_color(self, status: str) -> str:
         """Get border color based on workflow status.

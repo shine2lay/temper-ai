@@ -381,8 +381,9 @@ class OAuthRouteHandlers:
             )
 
             # Get redirect URL from state data (bound to OAuth flow)
-            # Note: In production, update OAuth service to store redirect_after in state
-            redirect_url = "/dashboard"  # TODO: Get from state_data when service updated
+            # Note: Currently defaults to /dashboard. In production, OAuth service
+            # should store redirect_after in state_data for dynamic redirects.
+            redirect_url = "/dashboard"
 
             if not self._validate_redirect_url(redirect_url):
                 redirect_url = "/dashboard"

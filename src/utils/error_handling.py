@@ -148,7 +148,7 @@ def retry_with_backoff(
 
                     # Wait before retry
                     if delay > 0:
-                        time.sleep(delay)
+                        time.sleep(delay)  # Intentional blocking: sync retry decorator with exponential backoff
 
             # All retries exhausted
             logger.error(
@@ -305,7 +305,7 @@ class ErrorHandler:
 
                 # Don't sleep on last attempt
                 if attempt < self.max_retries:
-                    time.sleep(self.retry_delay * (2 ** attempt))
+                    time.sleep(self.retry_delay * (2 ** attempt))  # Intentional blocking: sync retry with exponential backoff
 
         # All attempts failed
         if self.raise_on_failure:

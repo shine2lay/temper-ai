@@ -316,7 +316,7 @@ class M5SelfImprovementLoop:
                     if shutdown_requested["flag"]:
                         stats["stop_reason"] = "manual_interrupt"
                         break
-                    time.sleep(min(5, sleep_seconds - (time.time() - sleep_start)))
+                    time.sleep(min(5, sleep_seconds - (time.time() - sleep_start)))  # Intentional blocking: interval sleep with periodic shutdown checks in sync continuous loop
 
                 if shutdown_requested["flag"]:
                     break

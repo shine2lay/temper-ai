@@ -389,7 +389,7 @@ class ConfigDeployer:
                     f"{approval_request.decision_reason}"
                 )
                 return False
-            time.sleep(poll_interval)
+            time.sleep(poll_interval)  # Intentional blocking: polling for approval decision in sync method
 
         # Timeout - approval not granted in time
         logger.warning(

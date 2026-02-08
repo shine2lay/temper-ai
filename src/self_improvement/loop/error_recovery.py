@@ -144,7 +144,7 @@ class ErrorRecoveryStrategy:
         """
         delay = self.get_retry_delay(attempt)
         logger.info(f"Waiting {delay:.1f}s before retry (attempt {attempt})")
-        time.sleep(delay)
+        time.sleep(delay)  # Intentional blocking: exponential backoff before retry in sync error recovery
 
     def should_rollback(self, error: Exception) -> bool:
         """

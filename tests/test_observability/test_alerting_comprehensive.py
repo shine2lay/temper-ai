@@ -205,17 +205,29 @@ class TestAlertManagerAdvanced:
     def test_remove_nonexistent_rule(self, clean_manager):
         """Test removing nonexistent rule does not raise error."""
         # Should not raise
+        initial_rules = len(clean_manager.rules)
         clean_manager.remove_rule("nonexistent")
+        # State should be unchanged
+        assert len(clean_manager.rules) == initial_rules
+        assert "nonexistent" not in clean_manager.rules
 
     def test_enable_nonexistent_rule(self, clean_manager):
         """Test enabling nonexistent rule does not raise error."""
         # Should not raise
+        initial_rules = len(clean_manager.rules)
         clean_manager.enable_rule("nonexistent")
+        # State should be unchanged
+        assert len(clean_manager.rules) == initial_rules
+        assert "nonexistent" not in clean_manager.rules
 
     def test_disable_nonexistent_rule(self, clean_manager):
         """Test disabling nonexistent rule does not raise error."""
         # Should not raise
+        initial_rules = len(clean_manager.rules)
         clean_manager.disable_rule("nonexistent")
+        # State should be unchanged
+        assert len(clean_manager.rules) == initial_rules
+        assert "nonexistent" not in clean_manager.rules
 
     def test_check_metric_with_exact_threshold(self, clean_manager):
         """Test metric exactly at threshold does not trigger."""

@@ -585,12 +585,39 @@ class TestLogContext:
     def test_log_context_nested(self):
         """Test nested LogContext works correctly."""
         logger = get_logger("test")
+        stream = StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(StructuredFormatter())
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
 
         with LogContext(logger, outer="value1"):
+            # Log in outer context
+            logger.info("Outer message")
+            outer_output = stream.getvalue()
+            assert "outer" in outer_output
+            assert "value1" in outer_output
+            stream.truncate(0)
+            stream.seek(0)
+
             with LogContext(logger, inner="value2"):
-                # Inner context active
-                pass
-            # Outer context restored
+                # Log in inner context - should have both fields
+                logger.info("Inner message")
+                inner_output = stream.getvalue()
+                assert "outer" in inner_output
+                assert "value1" in inner_output
+                assert "inner" in inner_output
+                assert "value2" in inner_output
+                stream.truncate(0)
+                stream.seek(0)
+
+            # Back to outer context - should only have outer field
+            logger.info("Outer again")
+            restored_output = stream.getvalue()
+            assert "outer" in restored_output
+            assert "value1" in restored_output
+            # Inner field should not be present after exiting inner context
+            assert "inner" not in restored_output or "value2" not in restored_output
 
 
 class TestLogFunctionCall:

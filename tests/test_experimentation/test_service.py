@@ -104,9 +104,18 @@ class TestExperimentServiceInitialization:
         """Test service initialize and shutdown."""
         service = ExperimentService()
 
+        # Verify initial state
+        assert service._crud is not None
+        assert service._assigner is not None
+        assert service._config_manager is not None
+        assert service._analyzer is not None
+
         # Should not raise
         service.initialize()
+
+        # After shutdown, cache should be cleared
         service.shutdown()
+        assert len(service._crud._experiment_cache) == 0
 
 
 class TestCreateExperiment:
@@ -479,13 +488,17 @@ class TestTracking:
         mock_session.execute.assert_called()
 
     @patch('src.experimentation.service.get_session')
-    def test_track_execution_complete_no_assignment(self, mock_get_session, experiment_service, mock_session):
+    def test_track_execution_complete_no_assignment(self, mock_get_session, experiment_service, mock_session, caplog):
         """Test tracking execution with no assignment found."""
         mock_session.exec.return_value.first.return_value = None
         mock_get_session.return_value = mock_session
 
         # Should not raise, just log warning
         experiment_service.track_execution_complete("wf_123", {}, status="completed")
+
+        # Verify warning was logged
+        assert "No assignment found for workflow: wf_123" in caplog.text
+        assert any(record.levelname == "WARNING" for record in caplog.records)
 
 
 class TestAnalysis:

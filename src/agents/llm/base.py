@@ -344,13 +344,13 @@ class BaseLLM(ABC):
                     # Exponential backoff with jitter (R-15) to decorrelate
                     # retries across concurrent callers.
                     delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
-                    time.sleep(delay)
+                    time.sleep(delay)  # Intentional blocking: sync retry uses sleep; use acomplete() for async contexts
 
                 except LLMRateLimitError:
                     if attempt == self.max_retries - 1:
                         raise
                     delay = self.retry_delay * (DEFAULT_BACKOFF_FACTOR ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
-                    time.sleep(delay)
+                    time.sleep(delay)  # Intentional blocking: sync rate limit backoff; use acomplete() for async contexts
 
                 except (LLMAuthenticationError, httpx.HTTPStatusError):
                     raise

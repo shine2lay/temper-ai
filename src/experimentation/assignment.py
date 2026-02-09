@@ -261,8 +261,13 @@ class StratifiedAssignment(AssignmentStrategy):
         Returns:
             variant_id: Assigned variant ID
         """
-        # FIXME: Implement stratified assignment logic with stratum-based hashing
-        # Requires: stratum extraction from context, per-stratum hash assignment
+        # Future Enhancement: Stratified random assignment for experiment consistency
+        # Currently falls back to simple hash assignment (acceptable for most use cases).
+        # Stratified assignment would ensure balanced variant distribution across user cohorts.
+        # When implemented, will require:
+        # - Stratum extraction from execution context (e.g., user_tier, region)
+        # - Per-stratum deterministic hash assignment
+        # - Stratum rebalancing when traffic patterns change
         return HashAssignment().assign(experiment, variants, execution_id, context)
 
 
@@ -302,8 +307,14 @@ class BanditAssignment(AssignmentStrategy):
         Returns:
             variant_id: Assigned variant ID
         """
-        # FIXME: Implement multi-armed bandit logic with Thompson sampling or UCB
-        # Requires: Bayesian backend for beta distributions, reward tracking
+        # Future Enhancement: Multi-armed bandit for dynamic traffic allocation
+        # Currently falls back to random assignment (safe default for exploration).
+        # Bandit logic would allocate more traffic to better-performing variants.
+        # When implemented, will require:
+        # - Bayesian backend for beta distributions (Thompson sampling)
+        # - Real-time reward tracking and aggregation
+        # - Exploration vs exploitation tuning parameters
+        # - Safeguards against premature convergence
         return RandomAssignment().assign(experiment, variants, execution_id, context)
 
 

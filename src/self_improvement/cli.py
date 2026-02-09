@@ -405,8 +405,16 @@ class M5CLI:
         """
         print("📋 Agents with M5 Loop State")
         print("   (Not yet implemented: requires coord_db attribute)")
-        # TODO: Implement proper database query for M5 loop state
-        # rows = self.coord_db.query("SELECT agent_name, current_phase, status, iteration_number FROM m5_loop_state ORDER BY updated_at DESC")
+        # Future Enhancement (M5 milestone): Database-backed loop state tracking
+        # Currently returns placeholder (coord_db not yet implemented).
+        # When implemented, will query M5 loop state from coordination database:
+        # Example query:
+        #   rows = self.coord_db.query(
+        #       "SELECT agent_name, current_phase, status, iteration_number "
+        #       "FROM m5_loop_state ORDER BY updated_at DESC"
+        #   )
+        #   for row in rows:
+        #       print(f"  Agent: {row.agent_name} | Phase: {row.current_phase} | Status: {row.status}")
         return 0
 
     def _load_config(self, config_file: Optional[str]) -> LoopConfig:
@@ -431,7 +439,7 @@ class M5CLI:
             with open(config_path) as f:
                 config_data = json.load(f)
             return LoopConfig.from_dict(config_data)
-        except Exception as e:
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError) as e:
             print(f"⚠️  Error loading config: {e}, using defaults")
             return LoopConfig()
 

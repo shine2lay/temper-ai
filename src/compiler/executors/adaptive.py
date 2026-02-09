@@ -160,8 +160,8 @@ class AdaptiveStageExecutor(StageExecutor):
 
                 return parallel_state
 
-        except Exception as e:
-            # If parallel execution fails, fall back to sequential
+        except (KeyError, TypeError, AttributeError, ValueError, RuntimeError) as e:
+            # Parallel execution failed, fall back to sequential
             mode_switch_metadata["switched_to"] = "sequential"
             mode_switch_metadata["disagreement_rate"] = None
             mode_switch_metadata["error"] = str(e)

@@ -154,7 +154,13 @@ class Calculator(BaseTool):
                 error=f"Invalid expression syntax: {str(e)}"
             )
 
-        except Exception as e:
+        except OverflowError as e:
+            return ToolResult(
+                success=False,
+                error=f"Math error: {str(e)}"
+            )
+
+        except (TypeError, AttributeError) as e:
             return ToolResult(
                 success=False,
                 error=f"Evaluation error: {str(e)}"

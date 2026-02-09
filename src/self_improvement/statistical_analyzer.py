@@ -4,6 +4,7 @@ Statistical analyzer for M5 experiment results.
 Provides statistical analysis of experiment results to determine winning configurations
 using t-tests and confidence intervals.
 """
+import logging
 from dataclasses import dataclass
 from typing import List, Optional
 
@@ -14,6 +15,8 @@ from src.self_improvement.constants import (
     DEFAULT_ALPHA,
     DEFAULT_CONFIDENCE_LEVEL,
 )
+
+logger = logging.getLogger(__name__)
 
 # Composite score weights for variant comparison
 COMPOSITE_SCORE_QUALITY_WEIGHT = 0.7  # Primary factor
@@ -287,8 +290,9 @@ class SIStatisticalAnalyzer:
                     p_value = p_value / 2 if t_stat > 0 else 1 - (p_value / 2)
 
                 is_significant = bool(p_value < self.significance_level)
-        except Exception:
-            # Handle edge cases (e.g., NaN values)
+        except (ValueError, TypeError) as e:
+            # Handle edge cases (NaN values, invalid array shapes from scipy)
+            logger.warning(f"Statistical test failed: {e}, treating as non-significant")
             p_value = 1.0
             is_significant = False
 

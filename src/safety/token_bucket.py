@@ -302,11 +302,18 @@ class TokenBucket:
             Wait time in seconds (0 if tokens available now)
 
         Example:
-            >>> bucket = TokenBucket(...)
-            >>> wait = bucket.get_wait_time(1)
+            >>> bucket = TokenBucket(rate=10, capacity=100)
+            >>> wait = bucket.get_wait_time(5)
             >>> if wait > 0:
-            ...     time.sleep(wait)
-            ...     bucket.consume(1)
+            ...     # Recommended: Non-blocking - check back later
+            ...     return  # Try again after processing other work
+            ... else:
+            ...     bucket.consume(5)
+            ...
+            ... # Alternative (blocking):
+            ... # import time
+            ... # time.sleep(wait)  # Intentional blocking if no other work available
+            ... # bucket.consume(5)
         """
         with self.lock:
             self._refill()

@@ -115,7 +115,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
             if wf:
                 wf.status = status
                 end_time_utc = ensure_utc(end_time)
-                assert end_time_utc is not None, "Workflow end_time cannot be None"
+                if end_time_utc is None:
+                    raise ValueError("Workflow end_time cannot be None")
                 wf.end_time = end_time_utc
                 wf.duration_seconds = safe_duration_seconds(wf.start_time, end_time_utc, context=f"workflow {workflow_id}")
                 wf.error_message = error_message
@@ -172,7 +173,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
             if st:
                 st.status = status
                 end_time_utc = ensure_utc(end_time)
-                assert end_time_utc is not None, "Stage end_time cannot be None"
+                if end_time_utc is None:
+                    raise ValueError("Stage end_time cannot be None")
                 st.end_time = end_time_utc
                 st.duration_seconds = safe_duration_seconds(st.start_time, end_time_utc, context=f"stage {stage_id}")
                 st.error_message = error_message
@@ -237,7 +239,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
             if ag:
                 ag.status = status
                 end_time_utc = ensure_utc(end_time)
-                assert end_time_utc is not None, "Agent end_time cannot be None"
+                if end_time_utc is None:
+                    raise ValueError("Agent end_time cannot be None")
                 ag.end_time = end_time_utc
                 ag.duration_seconds = safe_duration_seconds(ag.start_time, end_time_utc, context=f"agent {agent_id}")
                 ag.error_message = error_message
@@ -336,7 +339,8 @@ class SQLObservabilityBackend(ObservabilityBackend):
             return
 
         start_time_utc = ensure_utc(start_time)
-        assert start_time_utc is not None, "Tool call start_time cannot be None"
+        if start_time_utc is None:
+            raise ValueError("Tool call start_time cannot be None")
         end_time = start_time_utc + timedelta(seconds=duration_seconds)
         tool_exec = ToolExecution(
             id=tool_execution_id, agent_execution_id=agent_id,

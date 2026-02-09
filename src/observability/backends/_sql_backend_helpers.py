@@ -11,7 +11,7 @@ Contains:
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, cast
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy import case
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -51,7 +51,8 @@ def track_safety_violation(
         timestamp_utc = datetime.now(timezone.utc)
     else:
         result = ensure_utc(timestamp)
-        assert result is not None, "Timestamp conversion failed"
+        if result is None:
+            raise ValueError("Timestamp conversion failed")
         timestamp_utc = result
 
     # Build metadata
@@ -360,7 +361,8 @@ def flush_buffer(
             tool_models = []
             for call in tool_calls:
                 start_time_utc = ensure_utc(call.start_time)
-                assert start_time_utc is not None, "Tool call start_time cannot be None"
+                if start_time_utc is None:
+                    raise ValueError("Tool call start_time cannot be None")
                 tool_models.append(ToolExecution(
                     id=call.tool_execution_id,
                     agent_execution_id=call.agent_id,

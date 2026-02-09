@@ -370,7 +370,8 @@ class ExperimentMetricsCollector:
         if self._session_provided:
             # Return a no-op context manager that yields the provided session
             from contextlib import nullcontext
-            assert self.session is not None, "Session must be provided when _session_provided is True"
+            if self.session is None:
+                raise ValueError("Session must be provided when _session_provided is True")
             return nullcontext(self.session)
         else:
             # Return new session context manager

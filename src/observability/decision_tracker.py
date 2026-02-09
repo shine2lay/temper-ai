@@ -39,6 +39,7 @@ class DecisionTracker:
         """
         # Default no-op sanitizer with explicit type
         def default_sanitize(d: Dict[str, Any], _depth: int = 0) -> Dict[str, Any]:
+            """Default no-op sanitizer that returns dict unchanged."""
             return d
 
         self._sanitize = sanitize_fn or default_sanitize

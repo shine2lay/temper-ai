@@ -82,6 +82,7 @@ class ExecutionTracker:
 
         # Wrapper for CollaborationEventTracker's expected signature
         def sanitize_dict_optional(data: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+            """Wrapper that sanitizes dict or returns None if data is None."""
             if data is None:
                 return None
             return self._sanitize_dict(data)

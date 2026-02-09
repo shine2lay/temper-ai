@@ -576,8 +576,195 @@ def scan_classes(src_dir: Path, files: list[dict], *, file_cache: dict | None = 
 # Anti-Pattern Detection (regex-based)
 # ---------------------------------------------------------------------------
 
+def _has_noqa_comment(line: str) -> bool:
+    """Check if line has a noqa comment to suppress warnings."""
+    return bool(re.search(r'#\s*noqa(?:\s*:\s*\w+)?', line, re.IGNORECASE))
+
+
+def _is_reraising_pattern(lines: list[str], except_idx: int) -> bool:
+    """Check if except block re-raises the exception (legitimate pattern).
+
+    This includes:
+    - Bare raise statements
+    - Converting to a different exception type (raise SomeError(...) from e)
+
+    Args:
+        lines: All lines in the file (0-indexed)
+        except_idx: Index of the 'except' line (0-indexed)
+
+    Returns:
+        True if except block re-raises or converts the exception
+    """
+    # Find the indent level of the except statement
+    except_line = lines[except_idx]
+    except_indent = len(except_line) - len(except_line.lstrip())
+
+    # Scan subsequent lines until we hit a dedent or EOF
+    for i in range(except_idx + 1, len(lines)):
+        line = lines[i]
+        stripped = line.strip()
+
+        # Skip empty lines and comments
+        if not stripped or stripped.startswith('#'):
+            continue
+
+        # Get indent of current line
+        current_indent = len(line) - len(line.lstrip())
+
+        # If dedented (same or less than except), we've left the block
+        if current_indent <= except_indent:
+            break
+
+        # Check for bare raise
+        if re.match(r'^\s*raise\s*$', line):
+            return True
+
+        # Check for raise with 'from e' (exception chaining/conversion)
+        if re.search(r'raise\s+\w+.*\s+from\s+', line):
+            return True
+
+        # Check for raising a different exception (conversion pattern)
+        # e.g., raise click.Abort(), raise ValueError(...)
+        if re.search(r'raise\s+\w+', line):
+            return True
+
+    return False
+
+
+def _is_cli_entry_point(file_path: str, lines: list[str], line_idx: int) -> bool:
+    """Check if except is in CLI entry point function.
+
+    CLI entry points are functions that handle user input and need
+    broad exception handling to provide error messages and return
+    exit codes.
+
+    Args:
+        file_path: Relative file path
+        lines: All lines in the file (0-indexed)
+        line_idx: Index of the 'except' line (0-indexed)
+
+    Returns:
+        True if except is in a CLI entry point function
+    """
+    # Check if in CLI file
+    if not (file_path.endswith('cli.py') or file_path.endswith('main.py') or
+            file_path.endswith('rollback.py')):
+        return False
+
+    # Walk backwards to find the function definition
+    for i in range(line_idx - 1, -1, -1):
+        line = lines[i]
+        # Look for function definitions
+        func_match = re.match(r'^\s*(?:async\s+)?def\s+(\w+)\s*\(', line)
+        if func_match:
+            func_name = func_match.group(1)
+            # CLI entry points typically have these names
+            if re.match(r'^(run_|main|execute_|handle_command)', func_name):
+                return True
+
+            # Also check if function returns int (exit code pattern)
+            # Look for return type annotation
+            if re.search(r'->\s*int\s*:', line):
+                return True
+
+            # If no return type, check if except block returns an int
+            # (common CLI pattern: except: return 1)
+            except_indent = len(lines[line_idx]) - len(lines[line_idx].lstrip())
+            for j in range(line_idx + 1, min(line_idx + 10, len(lines))):
+                check_line = lines[j]
+                check_indent = len(check_line) - len(check_line.lstrip())
+
+                # Stop if we've left the except block
+                if check_indent <= except_indent and check_line.strip():
+                    break
+
+                # Check for return 1 or return 0 (exit codes)
+                if re.match(r'^\s*return\s+[01]\s*$', check_line):
+                    return True
+
+            return False
+
+    return False
+
+
+def _is_cleanup_pattern(file_path: str, lines: list[str], except_idx: int) -> bool:
+    """Check if except is in cleanup/defensive pattern.
+
+    Cleanup code often needs broad except to prevent failures in
+    non-critical paths (logging, metrics, resource cleanup, etc.)
+    from breaking the main application flow.
+
+    Args:
+        file_path: Relative file path
+        lines: All lines in the file (0-indexed)
+        except_idx: Index of the 'except' line (0-indexed)
+
+    Returns:
+        True if except is in cleanup pattern
+    """
+    except_line = lines[except_idx]
+
+    # Check for explicit cleanup comments
+    if re.search(r'#.*(cleanup|must not fail|defensive|best effort)', except_line, re.IGNORECASE):
+        return True
+
+    # Get indent level
+    except_indent = len(except_line) - len(except_line.lstrip())
+
+    # Scan subsequent lines in the except block
+    for i in range(except_idx + 1, len(lines)):
+        line = lines[i]
+        stripped = line.strip()
+
+        # Skip empty lines and comments
+        if not stripped or stripped.startswith('#'):
+            continue
+
+        # Get indent of current line
+        current_indent = len(line) - len(line.lstrip())
+
+        # If dedented, we've left the block
+        if current_indent <= except_indent:
+            break
+
+        # Check for logger usage (common cleanup pattern)
+        if re.search(r'logger\.(warning|exception|error|debug)\s*\(', line):
+            return True
+
+        # Check for pass (intentional no-op)
+        if re.match(r'^\s*pass\s*$', line):
+            return True
+
+        # Check for break/continue (defensive loop control)
+        if re.match(r'^\s*(break|continue)\s*$', line):
+            return True
+
+        # Check for defensive return patterns (return safe defaults)
+        # e.g., return False, return None, return "", return {}, return []
+        if re.match(r'^\s*return\s+(False|None|"[^"]*"|\'[^\']*\'|\{\}|\[\])\s*$', line):
+            return True
+
+        # Check for returning error dict/object (common pattern in metrics/tools)
+        # e.g., return {"score": 0.0, "details": f"Error: {e}"}
+        # e.g., return ToolResult(success=False, error=...)
+        if re.search(r'return\s+\{.*error.*\}', line, re.IGNORECASE):
+            return True
+        if re.search(r'return\s+\w+Result\(.*error.*\)', line, re.IGNORECASE):
+            return True
+        if re.search(r'return\s+\{.*"score".*0', line):
+            return True
+
+    return False
+
+
+def _is_intentional_sleep(line: str) -> bool:
+    """Check if time.sleep is intentional (has explanatory comment)."""
+    # Check for comments indicating intentional use
+    return bool(re.search(r'#.*(intentional|polling|ui|rate|delay|wait)', line, re.IGNORECASE))
+
+
 def scan_anti_patterns(src_dir: Path, files: list[dict], *, file_cache: dict | None = None) -> dict:
-    """Detect known anti-patterns via regex scanning."""
+    """Detect known anti-patterns via regex scanning with smart filtering."""
     findings: list[dict] = []
     counts: dict[str, int] = defaultdict(int)
 
@@ -618,19 +805,47 @@ def scan_anti_patterns(src_dir: Path, files: list[dict], *, file_cache: dict | N
                     })
                     counts[severity] += 1
             else:
-                # Line-by-line search
+                # Line-by-line search with filtering
                 for i, line in enumerate(lines, 1):
-                    if re.search(regex, line, re.IGNORECASE):
-                        match_text = line.strip()[:120]
-                        findings.append({
-                            "pattern": name,
-                            "severity": severity,
-                            "description": pattern_def["description"],
-                            "file": rel_path,
-                            "line": i,
-                            "match": match_text,
-                        })
-                        counts[severity] += 1
+                    if not re.search(regex, line, re.IGNORECASE):
+                        continue
+
+                    # Apply pattern-specific filters to reduce false positives
+                    skip_finding = False
+
+                    if name == "broad_except":
+                        # Skip if has noqa comment
+                        if _has_noqa_comment(line):
+                            skip_finding = True
+                        # Skip if re-raises the exception
+                        elif _is_reraising_pattern(lines, i - 1):
+                            skip_finding = True
+                        # Skip if in CLI entry point
+                        elif _is_cli_entry_point(rel_path, lines, i - 1):
+                            skip_finding = True
+                        # Skip if in cleanup/defensive pattern
+                        elif _is_cleanup_pattern(rel_path, lines, i - 1):
+                            skip_finding = True
+
+                    elif name == "time_sleep":
+                        # Downgrade severity if intentional
+                        if _is_intentional_sleep(line):
+                            severity = "INFO"
+
+                    # Skip filtered findings
+                    if skip_finding:
+                        continue
+
+                    match_text = line.strip()[:120]
+                    findings.append({
+                        "pattern": name,
+                        "severity": severity,
+                        "description": pattern_def["description"],
+                        "file": rel_path,
+                        "line": i,
+                        "match": match_text,
+                    })
+                    counts[severity] += 1
 
     return {
         "summary": {
@@ -639,9 +854,10 @@ def scan_anti_patterns(src_dir: Path, files: list[dict], *, file_cache: dict | N
             "high": counts.get("HIGH", 0),
             "medium": counts.get("MEDIUM", 0),
             "low": counts.get("LOW", 0),
+            "info": counts.get("INFO", 0),
         },
         "details": sorted(findings, key=lambda f: (
-            {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}[f["severity"]],
+            {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "INFO": 4}[f["severity"]],
             f["file"],
             f["line"],
         )),

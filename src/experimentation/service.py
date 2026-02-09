@@ -10,7 +10,6 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
 from src.constants.limits import THRESHOLD_LARGE_COUNT

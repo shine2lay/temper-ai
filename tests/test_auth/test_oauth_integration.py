@@ -36,14 +36,20 @@ from src.auth.session import SessionStore, UserStore
 def mock_oauth_config():
     """Create mock OAuth configuration."""
     return OAuthConfig(
-        providers={
-            "google": {
+        providers=[
+            {
+                "provider": "google",
                 "client_id": "test_client_id",
                 "client_secret": "test_client_secret",
                 "redirect_uri": "http://localhost/auth/oauth/google/callback",
                 "scopes": ["openid", "email", "profile"],
             }
-        }
+        ],
+        allowed_callback_urls=["http://localhost/auth/oauth/google/callback"],
+        token_encryption_key="test_encryption_key_32_chars!!",
+        state_secret_key="test_state_secret_32_chars!!!!",
+        token_expiry_seconds=3600,
+        allow_localhost=True,
     )
 
 

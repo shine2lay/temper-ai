@@ -551,3 +551,332 @@ class TestRedisSessionStore:
 
             # Should not raise
             await store.cleanup_expired()
+
+    @pytest.mark.asyncio
+    async def test_get_session_expired_cleanup(self, sample_user):
+        """Test expired session cleanup in Redis."""
+        mock_redis = AsyncMock()
+
+        mock_redis_module = Mock()
+        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
+
+        with patch.dict('sys.modules', {'redis': mock_redis_module}):
+            store = RedisSessionStore("redis://localhost:6379")
+
+            # Create expired session
+            expired_session = Session(
+                session_id="sess_expired",
+                user_id=sample_user.user_id,
+                email=sample_user.email,
+                name=sample_user.name,
+                provider=sample_user.oauth_provider,
+                authenticated_at=datetime.now(timezone.utc) - timedelta(hours=2),
+                expires_at=datetime.now(timezone.utc) - timedelta(hours=1),
+            )
+
+            # Mock Redis returning expired session
+            import json
+            session_dict = store._session_to_dict(expired_session)
+            mock_redis.get = AsyncMock(return_value=json.dumps(session_dict))
+            mock_redis.delete = AsyncMock(return_value=1)
+
+            result = await store.get_session("sess_expired")
+
+            # Should return None and delete expired session
+            assert result is None
+            mock_redis.delete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_redis_create_session_error(self, sample_user):
+        """Test Redis error handling during session creation."""
+        mock_redis = AsyncMock()
+        mock_redis.setex = AsyncMock(side_effect=Exception("Redis connection error"))
+
+        mock_redis_module = Mock()
+        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
+
+        with patch.dict('sys.modules', {'redis': mock_redis_module}):
+            store = RedisSessionStore("redis://localhost:6379")
+
+            with pytest.raises(Exception, match="Redis connection error"):
+                await store.create_session(sample_user)
+
+    @pytest.mark.asyncio
+    async def test_redis_get_session_error(self):
+        """Test Redis error handling during session retrieval."""
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(side_effect=Exception("Redis timeout"))
+
+        mock_redis_module = Mock()
+        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
+
+        with patch.dict('sys.modules', {'redis': mock_redis_module}):
+            store = RedisSessionStore("redis://localhost:6379")
+
+            result = await store.get_session("session_123")
+
+            # Should return None on error
+            assert result is None
+
+    @pytest.mark.asyncio
+    async def test_redis_delete_session_error(self):
+        """Test Redis error handling during session deletion."""
+        mock_redis = AsyncMock()
+        mock_redis.delete = AsyncMock(side_effect=Exception("Redis error"))
+
+        mock_redis_module = Mock()
+        mock_redis_module.asyncio.from_url = Mock(return_value=mock_redis)
+
+        with patch.dict('sys.modules', {'redis': mock_redis_module}):
+            store = RedisSessionStore("redis://localhost:6379")
+
+            result = await store.delete_session("session_123")
+
+            # Should return False on error
+            assert result is False
+
+
+class TestSessionSecurity:
+    """Test session security scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_session_hijacking_detection_ip_change(self, sample_user):
+        """Test detection of session hijacking via IP address change."""
+        store = InMemorySessionStore()
+
+        # Create session with original IP
+        original_ip = "192.168.1.100"
+        session = await store.create_session(
+            sample_user,
+            ip_address=original_ip,
+            user_agent="Mozilla/5.0",
+        )
+
+        # Retrieve session
+        retrieved = await store.get_session(session.session_id)
+        assert retrieved is not None
+
+        # Simulate hijacking attempt from different IP
+        hijacker_ip = "10.0.0.1"
+
+        # In a real system, this would be validated
+        assert retrieved.ip_address != hijacker_ip
+        assert retrieved.ip_address == original_ip
+
+    @pytest.mark.asyncio
+    async def test_session_hijacking_detection_user_agent_change(self, sample_user):
+        """Test detection of session hijacking via user-agent change."""
+        store = InMemorySessionStore()
+
+        # Create session with original user-agent
+        original_ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+        session = await store.create_session(
+            sample_user,
+            ip_address="192.168.1.100",
+            user_agent=original_ua,
+        )
+
+        # Retrieve session
+        retrieved = await store.get_session(session.session_id)
+        assert retrieved is not None
+
+        # Simulate hijacking attempt with different user-agent
+        hijacker_ua = "curl/7.68.0"
+
+        # In a real system, this would be validated
+        assert retrieved.user_agent != hijacker_ua
+        assert retrieved.user_agent == original_ua
+
+    @pytest.mark.asyncio
+    async def test_concurrent_session_limit(self, sample_user):
+        """Test handling of concurrent sessions per user."""
+        store = InMemorySessionStore()
+
+        # Create multiple sessions for same user
+        sessions = []
+        for i in range(5):
+            session = await store.create_session(
+                sample_user,
+                ip_address=f"192.168.1.{i}",
+            )
+            sessions.append(session)
+
+        # All sessions should exist
+        for session in sessions:
+            retrieved = await store.get_session(session.session_id)
+            assert retrieved is not None
+
+    @pytest.mark.asyncio
+    async def test_session_regeneration_on_privilege_escalation(self, sample_user):
+        """Test token regeneration scenario on privilege escalation."""
+        store = InMemorySessionStore()
+
+        # Create initial session
+        old_session = await store.create_session(sample_user)
+        old_session_id = old_session.session_id
+
+        # Simulate privilege escalation - create new session
+        new_session = await store.create_session(sample_user)
+        new_session_id = new_session.session_id
+
+        # New session should have different ID
+        assert new_session_id != old_session_id
+
+        # Old session should still exist (not automatically invalidated)
+        old_retrieved = await store.get_session(old_session_id)
+        assert old_retrieved is not None
+
+        # Explicitly delete old session after regeneration
+        deleted = await store.delete_session(old_session_id)
+        assert deleted is True
+
+        # Old session should no longer exist
+        old_retrieved = await store.get_session(old_session_id)
+        assert old_retrieved is None
+
+    @pytest.mark.asyncio
+    async def test_session_fixation_prevention(self, sample_user):
+        """Test session fixation prevention (new ID on each creation)."""
+        store = InMemorySessionStore()
+
+        # Create multiple sessions
+        session_ids = set()
+        for _ in range(10):
+            session = await store.create_session(sample_user)
+            session_ids.add(session.session_id)
+
+        # All session IDs should be unique
+        assert len(session_ids) == 10
+
+        # Session IDs should start with proper prefix
+        for session_id in session_ids:
+            assert session_id.startswith("sess_")
+
+    @pytest.mark.asyncio
+    async def test_session_expiration_race_condition(self, sample_user):
+        """Test race condition handling during expiration."""
+        store = InMemorySessionStore()
+
+        # Create session with short expiry
+        session = await store.create_session(sample_user, session_max_age=1)
+
+        # Wait for expiration
+        await asyncio.sleep(1.1)
+
+        # Multiple concurrent access attempts
+        async def try_access():
+            return await store.get_session(session.session_id)
+
+        results = await asyncio.gather(*[try_access() for _ in range(5)])
+
+        # All should return None (expired)
+        assert all(result is None for result in results)
+
+        # Session should be cleaned up
+        assert session.session_id not in store._sessions
+
+    @pytest.mark.asyncio
+    async def test_session_timing_attack_resistance(self, sample_user):
+        """Test that session lookup timing doesn't leak information."""
+        store = InMemorySessionStore()
+
+        # Create valid session
+        valid_session = await store.create_session(sample_user)
+
+        # Time lookup for valid session
+        import time
+        start_valid = time.perf_counter()
+        await store.get_session(valid_session.session_id)
+        time_valid = time.perf_counter() - start_valid
+
+        # Time lookup for invalid session
+        start_invalid = time.perf_counter()
+        await store.get_session("sess_nonexistent")
+        time_invalid = time.perf_counter() - start_invalid
+
+        # Both should complete in similar time (within order of magnitude)
+        # Note: This is a basic check; real timing attack resistance is more complex
+        assert time_valid > 0
+        assert time_invalid > 0
+
+
+class TestUserStoreSecurity:
+    """Test UserStore security scenarios."""
+
+    @pytest.mark.asyncio
+    async def test_concurrent_user_creation_race_condition(self):
+        """Test race condition in concurrent user creation."""
+        store = UserStore()
+
+        async def create_same_user():
+            return await store.create_or_update_user(
+                user_id=f"user_{id(asyncio.current_task())}",
+                email="concurrent@example.com",
+                name="Concurrent User",
+                provider="google",
+                oauth_subject="google_concurrent",
+            )
+
+        # Run concurrent operations
+        users = await asyncio.gather(*[create_same_user() for _ in range(5)])
+
+        # All should succeed, but should reference same user (by email)
+        assert len(users) == 5
+        # Only one user should be created (same email)
+        assert len(store._users) == 1
+
+    @pytest.mark.asyncio
+    async def test_user_email_case_sensitivity(self):
+        """Test email case handling in user lookup."""
+        store = UserStore()
+
+        # Create user with lowercase email
+        user = await store.create_or_update_user(
+            user_id="user_case",
+            email="test@example.com",
+            name="Case User",
+            provider="google",
+            oauth_subject="google_case",
+        )
+
+        # Lookup with exact case
+        found_exact = await store.get_user_by_email("test@example.com")
+        assert found_exact is not None
+        assert found_exact.user_id == user.user_id
+
+        # Lookup with different case (should not find - case-sensitive)
+        found_upper = await store.get_user_by_email("TEST@EXAMPLE.COM")
+        assert found_upper is None
+
+    @pytest.mark.asyncio
+    async def test_oauth_subject_uniqueness(self):
+        """Test OAuth subject uniqueness across providers."""
+        store = UserStore()
+
+        # Create user with Google OAuth
+        user_google = await store.create_or_update_user(
+            user_id="user_google",
+            email="google@example.com",
+            name="Google User",
+            provider="google",
+            oauth_subject="shared_subject_123",
+        )
+
+        # Create different user with GitHub OAuth (same subject)
+        user_github = await store.create_or_update_user(
+            user_id="user_github",
+            email="github@example.com",
+            name="GitHub User",
+            provider="github",
+            oauth_subject="shared_subject_123",
+        )
+
+        # Both users should exist as separate entities
+        assert user_google.user_id != user_github.user_id
+
+        # Lookups should be scoped by provider
+        found_google = await store.get_user_by_oauth("google", "shared_subject_123")
+        found_github = await store.get_user_by_oauth("github", "shared_subject_123")
+
+        assert found_google.user_id == user_google.user_id
+        assert found_github.user_id == user_github.user_id

@@ -913,3 +913,94 @@ class TestToolVersioning:
         assert len(tools["calculator"]["all_versions"]) == 2
         assert "1.0" in tools["calculator"]["all_versions"]
         assert "2.0" in tools["calculator"]["all_versions"]
+
+
+class TestRegistryEdgeCases:
+    """Test error paths and edge cases in registry operations."""
+
+    def test_unregister_specific_version_not_found(self):
+        """Test unregistering a version that doesn't exist."""
+        from src.utils.exceptions import ToolRegistryError
+        registry = ToolRegistry()
+        calc = MockCalculator()
+        registry.register(calc)
+
+        with pytest.raises(ToolRegistryError) as exc:
+            registry.unregister("calculator", version="9.9.9")
+
+        assert "version '9.9.9' not found" in str(exc.value)
+
+    def test_get_tool_empty_versions_dict(self):
+        """Test getting tool when versions dict exists but is empty."""
+        registry = ToolRegistry()
+        calc = MockCalculator()
+        registry.register(calc)
+
+        # Manually corrupt the registry to have empty versions dict
+        registry._tools["calculator"] = {}
+
+        result = registry.get("calculator")
+        assert result is None
+
+    def test_list_tool_versions_nonexistent(self):
+        """Test listing versions for nonexistent tool."""
+        registry = ToolRegistry()
+        versions = registry.list_tool_versions("nonexistent")
+        assert versions == []
+
+    def test_global_registry_singleton(self):
+        """Test that get_global_registry returns same instance."""
+        from src.tools.registry import get_global_registry, clear_global_cache, _GLOBAL_LOCK
+
+        # Clear first to ensure clean state
+        with _GLOBAL_LOCK:
+            clear_global_cache()
+
+        # Get registry twice
+        registry1 = get_global_registry()
+        registry2 = get_global_registry()
+
+        # Should be same instance
+        assert registry1 is registry2
+
+        # Cleanup
+        with _GLOBAL_LOCK:
+            clear_global_cache()
+
+    def test_clear_global_cache(self):
+        """Test clearing global cache and registry."""
+        from src.tools.registry import get_global_registry, clear_global_cache, _GLOBAL_LOCK
+
+        # Get initial registry
+        with _GLOBAL_LOCK:
+            clear_global_cache()
+
+        registry1 = get_global_registry()
+
+        # Clear and get new one
+        with _GLOBAL_LOCK:
+            clear_global_cache()
+
+        registry2 = get_global_registry()
+
+        # Should be different instances after clear
+        assert registry1 is not registry2
+
+        # Cleanup
+        with _GLOBAL_LOCK:
+            clear_global_cache()
+
+    def test_registry_protocol_methods(self):
+        """Test attached protocol methods work correctly."""
+        registry = ToolRegistry()
+        calc = MockCalculator()
+        registry.register(calc)
+
+        # Test list() method
+        assert "calculator" in registry.list()
+
+        # Test count() method
+        assert registry.count() == 1
+
+        # Test list_all() deprecated method
+        assert "calculator" in registry.list_all()

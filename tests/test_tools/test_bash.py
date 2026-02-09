@@ -793,3 +793,87 @@ class TestShellModeCommandChaining:
         )
         assert result.success is False
         assert "stderr redirection" in result.error.lower()
+
+
+class TestShellCommandParsing:
+    """Test _split_shell_commands with various edge cases for escape/quote handling."""
+
+    def test_single_quoted_pipe_not_split(self):
+        """Pipe inside single quotes should not split command."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands("echo 'hello|world'")
+        assert len(result) == 1
+        assert "hello|world" in result[0]
+
+    def test_double_quoted_pipe_not_split(self):
+        """Pipe inside double quotes should not split command."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands('echo "hello|world"')
+        assert len(result) == 1
+        assert "hello|world" in result[0]
+
+    def test_escaped_pipe_not_split(self):
+        """Escaped pipe should not split command."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands("echo hello\\|world")
+        assert len(result) == 1
+        assert "|" in result[0]
+
+    def test_single_quote_toggle(self):
+        """Single quotes toggle in/out correctly."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands("echo 'test' | cat")
+        assert len(result) == 2
+        assert "'test'" in result[0]
+
+    def test_double_quote_toggle(self):
+        """Double quotes toggle in/out correctly."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands('echo "test" | cat')
+        assert len(result) == 2
+        assert '"test"' in result[0]
+
+    def test_escape_in_double_quotes(self):
+        """Backslash escape works in double quotes."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands('echo "hello\\"world"')
+        assert len(result) == 1
+        assert '\\"' in result[0]
+
+    def test_no_escape_in_single_quotes(self):
+        """Backslash has no special meaning in single quotes."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands("echo 'hello\\nworld'")
+        assert len(result) == 1
+        assert "\\n" in result[0]
+
+    def test_and_operator_split(self):
+        """&& operator splits commands correctly."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands("ls && pwd")
+        assert len(result) == 2
+        assert "ls" in result[0]
+        assert "pwd" in result[1]
+
+    def test_or_operator_split(self):
+        """|| operator splits commands correctly."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands("ls || pwd")
+        assert len(result) == 2
+        assert "ls" in result[0]
+        assert "pwd" in result[1]
+
+    def test_semicolon_split(self):
+        """Semicolon splits commands correctly."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands("ls ; pwd")
+        assert len(result) == 2
+        assert "ls" in result[0]
+        assert "pwd" in result[1]
+
+    def test_nested_quotes(self):
+        """Single quotes inside double quotes preserved."""
+        from src.tools.bash import _split_shell_commands
+        result = _split_shell_commands("""echo "it's working" """)
+        assert len(result) == 1
+        assert "it's" in result[0]

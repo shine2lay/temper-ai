@@ -4,6 +4,13 @@ Provides automatic global state isolation between tests.
 """
 import pytest
 
+# Register shared fixture plugins
+pytest_plugins = [
+    "tests.fixtures.database_fixtures",
+    "tests.fixtures.mock_helpers",
+    "tests.fixtures.auth_fixtures",
+]
+
 
 @pytest.fixture(autouse=True)
 def _reset_globals_after_test():

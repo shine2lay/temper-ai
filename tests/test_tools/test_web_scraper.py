@@ -5,7 +5,7 @@ Tests web scraping with mocked HTTP responses.
 """
 import socket
 import time
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, PropertyMock, patch
 
 import httpx
 import pytest
@@ -1135,3 +1135,209 @@ class TestContentTypeValidation:
 
         assert result.success is False
         assert "unsupported content type" in result.error.lower()
+
+
+class TestDNSCacheEdgeCases:
+    """Test DNSCache expiration, size limits, and thread safety."""
+
+    def test_dns_cache_expiration(self):
+        """Test that DNS cache entries expire after TTL."""
+        from src.tools.web_scraper import DNSCache
+        cache = DNSCache(ttl=1, max_size=10)
+
+        addr_info = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('1.2.3.4', 80))]
+        cache.set("example.com", addr_info)
+
+        # Immediately available
+        result = cache.get("example.com")
+        assert result == addr_info
+
+        # Wait for expiration
+        import time
+        time.sleep(1.1)
+
+        # Should be None after expiration
+        result = cache.get("example.com")
+        assert result is None
+
+    def test_dns_cache_max_size_lru(self):
+        """Test that DNS cache enforces max size with LRU eviction."""
+        from src.tools.web_scraper import DNSCache
+        cache = DNSCache(ttl=60, max_size=2)
+
+        addr1 = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('1.1.1.1', 80))]
+        addr2 = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('2.2.2.2', 80))]
+        addr3 = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('3.3.3.3', 80))]
+
+        cache.set("host1.com", addr1)
+        cache.set("host2.com", addr2)
+
+        # Both should be in cache
+        assert cache.get("host1.com") == addr1
+        assert cache.get("host2.com") == addr2
+
+        # Adding third should evict first (LRU)
+        cache.set("host3.com", addr3)
+
+        # host1 should be evicted
+        assert cache.get("host1.com") is None
+        assert cache.get("host2.com") == addr2
+        assert cache.get("host3.com") == addr3
+
+    def test_dns_cache_clear(self):
+        """Test clearing all cache entries."""
+        from src.tools.web_scraper import DNSCache
+        cache = DNSCache(ttl=60, max_size=10)
+
+        addr_info = [(socket.AF_INET, socket.SOCK_STREAM, 0, '', ('1.2.3.4', 80))]
+        cache.set("example.com", addr_info)
+
+        assert cache.get("example.com") is not None
+
+        cache.clear()
+
+        assert cache.get("example.com") is None
+
+
+class TestURLValidationEdgeCases:
+    """Test URL validation error paths and edge cases."""
+
+    def test_invalid_hostname_in_url(self):
+        """Test URL with invalid hostname format."""
+        from src.tools.web_scraper import validate_url_safety
+        is_safe, error = validate_url_safety("http://")
+        assert is_safe is False
+        assert "missing hostname" in error.lower()
+
+    def test_url_parse_type_error(self):
+        """Test URL validation with None."""
+        from src.tools.web_scraper import validate_url_safety
+        is_safe, error = validate_url_safety(None)
+        assert is_safe is False
+        assert "invalid url" in error.lower()
+
+    def test_dns_resolution_os_error(self):
+        """Test DNS resolution OSError handling."""
+        from src.tools.web_scraper import validate_url_safety
+        with patch('src.tools.web_scraper.resolve_hostname_with_timeout') as mock_resolve:
+            mock_resolve.side_effect = OSError("Network error")
+            is_safe, error = validate_url_safety("http://example.com", use_cache=False)
+            assert is_safe is False
+            assert "dns resolution error" in error.lower()
+
+    def test_dns_resolution_value_error(self):
+        """Test DNS resolution ValueError handling."""
+        from src.tools.web_scraper import validate_url_safety
+        with patch('src.tools.web_scraper.resolve_hostname_with_timeout') as mock_resolve:
+            mock_resolve.side_effect = ValueError("Invalid hostname")
+            is_safe, error = validate_url_safety("http://example.com", use_cache=False)
+            assert is_safe is False
+            assert "dns resolution error" in error.lower()
+
+    def test_invalid_ip_in_resolved_addresses(self):
+        """Test handling of invalid IP in DNS response."""
+        from src.tools.web_scraper import validate_url_safety
+        with patch('src.tools.web_scraper.resolve_hostname_with_timeout') as mock_resolve:
+            # Return malformed IP address
+            mock_resolve.return_value = [
+                (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('invalid_ip', 80))
+            ]
+            is_safe, error = validate_url_safety("http://example.com", use_cache=False)
+            assert is_safe is False
+            assert "invalid ip" in error.lower()
+
+
+class TestWebScraperClientManagement:
+    """Test httpx client lifecycle management."""
+
+    def test_client_reuse(self):
+        """Test that client is reused across calls."""
+        scraper = WebScraper()
+        client1 = scraper._get_client()
+        client2 = scraper._get_client()
+        assert client1 is client2
+
+    def test_client_recreation_after_close(self):
+        """Test that client is recreated after close."""
+        scraper = WebScraper()
+        client1 = scraper._get_client()
+        scraper.close()
+        client2 = scraper._get_client()
+        assert client1 is not client2
+
+    def test_del_cleanup(self):
+        """Test that __del__ closes client gracefully."""
+        scraper = WebScraper()
+        scraper._get_client()
+        # Should not raise even if client cleanup fails
+        try:
+            scraper.__del__()
+        except Exception as e:
+            pytest.fail(f"__del__ raised exception: {e}")
+
+    def test_del_with_os_error(self):
+        """Test __del__ handles OSError gracefully."""
+        scraper = WebScraper()
+        client = scraper._get_client()
+
+        # Mock close to raise OSError
+        with patch.object(client, 'close', side_effect=OSError("Mock error")):
+            # Should not raise
+            try:
+                scraper.__del__()
+            except Exception as e:
+                pytest.fail(f"__del__ raised exception: {e}")
+
+
+class TestWebScraperTextExtraction:
+    """Test text extraction error handling."""
+
+    @patch('src.tools.web_scraper.socket.getaddrinfo')
+    def test_text_extraction_value_error(self, mock_getaddrinfo, mock_httpx_client):
+        """Test text extraction ValueError handling."""
+        scraper = WebScraper()
+
+        mock_getaddrinfo.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+        ]
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.is_redirect = False
+        mock_response.content = b"<html><body>Test</body></html>"
+        mock_response.headers = {"content-type": "text/html"}
+        # Simulate decoding error - make .text property raise
+        type(mock_response).text = PropertyMock(side_effect=ValueError("Decode error"))
+        mock_httpx_client.get.return_value = mock_response
+
+        result = scraper.execute(url="http://example.com")
+
+        assert result.success is False
+        assert "content processing error" in result.error.lower()
+
+    @patch('src.tools.web_scraper.socket.getaddrinfo')
+    def test_extract_text_error_handling(self, mock_getaddrinfo, mock_httpx_client):
+        """Test _extract_text internal error handling."""
+        scraper = WebScraper()
+
+        mock_getaddrinfo.return_value = [
+            (socket.AF_INET, socket.SOCK_STREAM, 0, '', ('8.8.8.8', 80)),
+        ]
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.is_redirect = False
+        mock_response.text = "<html><body>Test</body></html>"
+        mock_response.content = b"<html><body>Test</body></html>"
+        mock_response.headers = {"content-type": "text/html"}
+        mock_httpx_client.get.return_value = mock_response
+
+        # Mock BeautifulSoup to raise error
+        with patch('src.tools.web_scraper.BeautifulSoup') as mock_bs:
+            mock_bs.side_effect = TypeError("Parse error")
+
+            result = scraper.execute(url="http://example.com", extract_text=True)
+
+            # Should still succeed but with error message in text
+            assert result.success is True
+            assert "error extracting text" in result.result.lower()

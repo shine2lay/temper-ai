@@ -326,3 +326,176 @@ class TestM5Subcommands:
         result = runner.invoke(main, ["m5", "--help"])
         assert result.exit_code == 0
         assert "M5 self-improvement commands" in result.output
+
+
+class TestRunCommandAdvanced:
+    """Test advanced run command scenarios."""
+
+    def test_run_with_verbose_logging(self, runner, tmp_path):
+        wf = {
+            "workflow": {
+                "name": "test_wf",
+                "description": "Test",
+                "stages": [{"name": "s1", "stage_ref": "stages/s1.yaml"}],
+                "error_handling": {"escalation_policy": "halt"},
+            }
+        }
+        wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
+
+        with patch("src.compiler.config_loader.ConfigLoader"), \
+             patch("src.tools.registry.ToolRegistry"), \
+             patch("src.observability.tracker.ExecutionTracker") as mock_et, \
+             patch("src.compiler.engine_registry.EngineRegistry") as mock_er:
+            mock_engine = MagicMock()
+            mock_compiled = MagicMock()
+            mock_compiled.invoke.return_value = {"status": "completed"}
+            mock_engine.compile.return_value = mock_compiled
+            mock_er.return_value.get_engine_from_config.return_value = mock_engine
+            mock_et.return_value.track_workflow.return_value.__enter__ = MagicMock(return_value="wf-123")
+            mock_et.return_value.track_workflow.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = runner.invoke(main, ["run", str(wf_path), "-v"])
+            assert result.exit_code == 0
+
+    def test_run_with_output_file(self, runner, tmp_path):
+        wf = {
+            "workflow": {
+                "name": "test_wf",
+                "description": "Test",
+                "stages": [{"name": "s1", "stage_ref": "stages/s1.yaml"}],
+                "error_handling": {"escalation_policy": "halt"},
+            }
+        }
+        wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
+        output_path = tmp_path / "output.json"
+
+        with patch("src.compiler.config_loader.ConfigLoader"), \
+             patch("src.tools.registry.ToolRegistry"), \
+             patch("src.observability.tracker.ExecutionTracker") as mock_et, \
+             patch("src.compiler.engine_registry.EngineRegistry") as mock_er:
+            mock_engine = MagicMock()
+            mock_compiled = MagicMock()
+            mock_compiled.invoke.return_value = {"status": "completed", "result": "test"}
+            mock_engine.compile.return_value = mock_compiled
+            mock_er.return_value.get_engine_from_config.return_value = mock_engine
+            mock_et.return_value.track_workflow.return_value.__enter__ = MagicMock(return_value="wf-123")
+            mock_et.return_value.track_workflow.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = runner.invoke(main, ["run", str(wf_path), "-o", str(output_path)])
+            assert result.exit_code == 0
+            assert output_path.exists()
+
+    def test_run_database_initialization_error(self, runner, tmp_path):
+        wf = {
+            "workflow": {
+                "name": "test_wf",
+                "description": "Test",
+                "stages": [{"name": "s1", "stage_ref": "stages/s1.yaml"}],
+                "error_handling": {"escalation_policy": "halt"},
+            }
+        }
+        wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
+
+        with patch("src.compiler.config_loader.ConfigLoader"), \
+             patch("src.tools.registry.ToolRegistry"), \
+             patch("src.observability.tracker.ExecutionTracker") as mock_et:
+            mock_et.ensure_database.side_effect = PermissionError("Cannot create database")
+
+            result = runner.invoke(main, ["run", str(wf_path)])
+            assert result.exit_code != 0
+
+    def test_run_compilation_error(self, runner, tmp_path):
+        wf = {
+            "workflow": {
+                "name": "test_wf",
+                "description": "Test",
+                "stages": [{"name": "s1", "stage_ref": "stages/s1.yaml"}],
+                "error_handling": {"escalation_policy": "halt"},
+            }
+        }
+        wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
+
+        with patch("src.compiler.config_loader.ConfigLoader"), \
+             patch("src.tools.registry.ToolRegistry"), \
+             patch("src.observability.tracker.ExecutionTracker") as mock_et, \
+             patch("src.compiler.engine_registry.EngineRegistry") as mock_er:
+            mock_engine = MagicMock()
+            mock_engine.compile.side_effect = ValueError("Invalid workflow structure")
+            mock_er.return_value.get_engine_from_config.return_value = mock_engine
+
+            result = runner.invoke(main, ["run", str(wf_path)])
+            assert result.exit_code != 0
+            assert "compilation error" in result.output
+
+    def test_run_execution_error(self, runner, tmp_path):
+        wf = {
+            "workflow": {
+                "name": "test_wf",
+                "description": "Test",
+                "stages": [{"name": "s1", "stage_ref": "stages/s1.yaml"}],
+                "error_handling": {"escalation_policy": "halt"},
+            }
+        }
+        wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
+
+        with patch("src.compiler.config_loader.ConfigLoader"), \
+             patch("src.tools.registry.ToolRegistry"), \
+             patch("src.observability.tracker.ExecutionTracker") as mock_et, \
+             patch("src.compiler.engine_registry.EngineRegistry") as mock_er:
+            mock_engine = MagicMock()
+            mock_compiled = MagicMock()
+            mock_compiled.invoke.side_effect = RuntimeError("Execution failed")
+            mock_engine.compile.return_value = mock_compiled
+            mock_er.return_value.get_engine_from_config.return_value = mock_engine
+            mock_et.return_value.track_workflow.return_value.__enter__ = MagicMock(return_value="wf-123")
+            mock_et.return_value.track_workflow.return_value.__exit__ = MagicMock(return_value=False)
+
+            result = runner.invoke(main, ["run", str(wf_path)])
+            assert result.exit_code != 0
+            assert "execution error" in result.output
+
+
+class TestCleanupToolExecutor:
+    """Test the _cleanup_tool_executor helper function."""
+
+    def test_cleanup_with_tool_executor_direct(self):
+        from src.cli.main import _cleanup_tool_executor
+
+        mock_engine = MagicMock()
+        mock_tool_executor = MagicMock()
+        mock_engine.tool_executor = mock_tool_executor
+
+        _cleanup_tool_executor(mock_engine)
+        mock_tool_executor.shutdown.assert_called_once()
+
+    def test_cleanup_with_tool_executor_via_compiler(self):
+        from src.cli.main import _cleanup_tool_executor
+
+        mock_engine = MagicMock()
+        mock_tool_executor = MagicMock()
+        del mock_engine.tool_executor  # Remove direct attribute
+        mock_engine.compiler.tool_executor = mock_tool_executor
+
+        _cleanup_tool_executor(mock_engine)
+        mock_tool_executor.shutdown.assert_called_once()
+
+    def test_cleanup_with_no_tool_executor(self):
+        from src.cli.main import _cleanup_tool_executor
+
+        mock_engine = MagicMock()
+        del mock_engine.tool_executor
+        del mock_engine.compiler
+
+        # Should not raise exception
+        _cleanup_tool_executor(mock_engine)
+
+    def test_cleanup_with_shutdown_error(self):
+        from src.cli.main import _cleanup_tool_executor
+
+        mock_engine = MagicMock()
+        mock_tool_executor = MagicMock()
+        mock_tool_executor.shutdown.side_effect = Exception("Shutdown failed")
+        mock_engine.tool_executor = mock_tool_executor
+
+        # Should not raise exception, just log
+        _cleanup_tool_executor(mock_engine)

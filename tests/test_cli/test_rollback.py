@@ -405,6 +405,162 @@ class TestExecuteCommand:
         ])
         assert result.exit_code != 0
 
+    @patch("src.cli.rollback.RollbackManager")
+    @patch("src.cli.rollback.RollbackAPI")
+    def test_execute_manager_initialization_error(self, mock_api_cls, mock_manager_cls, runner):
+        """Test execute command with manager initialization error."""
+        mock_manager_cls.side_effect = RuntimeError("Failed to initialize manager")
+
+        result = runner.invoke(execute, [
+            "snap-123",
+            "--reason", "Test",
+            "--operator", "alice",
+        ])
+        assert result.exit_code != 0
+        assert "Failed to initialize" in result.output
+
+    @patch("src.cli.rollback.RollbackManager")
+    @patch("src.cli.rollback.RollbackAPI")
+    def test_execute_io_error_on_safety_check(self, mock_api_cls, mock_manager_cls, runner):
+        """Test execute command with IO error during safety check."""
+        mock_manager = Mock(spec=["execute_rollback"])
+        mock_manager_cls.return_value = mock_manager
+
+        mock_api = Mock(spec=["validate_rollback_safety"])
+        mock_api.validate_rollback_safety.side_effect = IOError("Cannot read snapshot file")
+        mock_api_cls.return_value = mock_api
+
+        result = runner.invoke(execute, [
+            "snap-123",
+            "--reason", "Test",
+            "--operator", "alice",
+        ])
+        assert result.exit_code != 0
+        assert "Error reading snapshot" in result.output
+
+    @patch("src.cli.rollback.RollbackManager")
+    @patch("src.cli.rollback.RollbackAPI")
+    def test_execute_value_error_on_snapshot_details(self, mock_api_cls, mock_manager_cls, runner):
+        """Test execute command with ValueError when getting snapshot details."""
+        mock_manager = Mock(spec=["execute_rollback"])
+        mock_manager_cls.return_value = mock_manager
+
+        mock_api = Mock(spec=["validate_rollback_safety", "get_snapshot_details"])
+        mock_api.validate_rollback_safety.return_value = (True, [])
+        mock_api.get_snapshot_details.side_effect = ValueError("Invalid snapshot")
+        mock_api_cls.return_value = mock_api
+
+        result = runner.invoke(execute, [
+            "snap-123",
+            "--reason", "Test",
+            "--operator", "alice",
+        ])
+        assert result.exit_code != 0
+        assert "Invalid snapshot" in result.output
+
+    @patch("src.cli.rollback.RollbackManager")
+    @patch("src.cli.rollback.RollbackAPI")
+    def test_execute_io_error_on_snapshot_details(self, mock_api_cls, mock_manager_cls, runner):
+        """Test execute command with IOError when getting snapshot details."""
+        mock_manager = Mock(spec=["execute_rollback"])
+        mock_manager_cls.return_value = mock_manager
+
+        mock_api = Mock(spec=["validate_rollback_safety", "get_snapshot_details"])
+        mock_api.validate_rollback_safety.return_value = (True, [])
+        mock_api.get_snapshot_details.side_effect = IOError("Cannot read snapshot")
+        mock_api_cls.return_value = mock_api
+
+        result = runner.invoke(execute, [
+            "snap-123",
+            "--reason", "Test",
+            "--operator", "alice",
+        ])
+        assert result.exit_code != 0
+
+    @patch("src.cli.rollback.RollbackManager")
+    @patch("src.cli.rollback.RollbackAPI")
+    def test_execute_value_error_on_execution(self, mock_api_cls, mock_manager_cls, runner):
+        """Test execute command with ValueError during execution."""
+        mock_manager = Mock(spec=["execute_rollback"])
+        mock_manager_cls.return_value = mock_manager
+
+        mock_api = Mock(spec=["validate_rollback_safety", "get_snapshot_details", "execute_manual_rollback"])
+        mock_api.validate_rollback_safety.return_value = (True, [])
+        mock_api.get_snapshot_details.return_value = {"file_count": 1}
+        mock_api.execute_manual_rollback.side_effect = ValueError("Invalid parameters")
+        mock_api_cls.return_value = mock_api
+
+        result = runner.invoke(execute, [
+            "snap-123",
+            "--reason", "Test",
+            "--operator", "alice",
+        ], input="y\n")
+        assert result.exit_code != 0
+        assert "Invalid rollback parameters" in result.output
+
+    @patch("src.cli.rollback.RollbackManager")
+    @patch("src.cli.rollback.RollbackAPI")
+    def test_execute_io_error_on_execution(self, mock_api_cls, mock_manager_cls, runner):
+        """Test execute command with IOError during execution."""
+        mock_manager = Mock(spec=["execute_rollback"])
+        mock_manager_cls.return_value = mock_manager
+
+        mock_api = Mock(spec=["validate_rollback_safety", "get_snapshot_details", "execute_manual_rollback"])
+        mock_api.validate_rollback_safety.return_value = (True, [])
+        mock_api.get_snapshot_details.return_value = {"file_count": 1}
+        mock_api.execute_manual_rollback.side_effect = IOError("File system error")
+        mock_api_cls.return_value = mock_api
+
+        result = runner.invoke(execute, [
+            "snap-123",
+            "--reason", "Test",
+            "--operator", "alice",
+        ], input="y\n")
+        assert result.exit_code != 0
+        assert "File system error" in result.output
+
+    @patch("src.cli.rollback.RollbackManager")
+    @patch("src.cli.rollback.RollbackAPI")
+    def test_execute_permission_error_on_execution(self, mock_api_cls, mock_manager_cls, runner):
+        """Test execute command with PermissionError during execution."""
+        mock_manager = Mock(spec=["execute_rollback"])
+        mock_manager_cls.return_value = mock_manager
+
+        mock_api = Mock(spec=["validate_rollback_safety", "get_snapshot_details", "execute_manual_rollback"])
+        mock_api.validate_rollback_safety.return_value = (True, [])
+        mock_api.get_snapshot_details.return_value = {"file_count": 1}
+        mock_api.execute_manual_rollback.side_effect = PermissionError("Permission denied")
+        mock_api_cls.return_value = mock_api
+
+        result = runner.invoke(execute, [
+            "snap-123",
+            "--reason", "Test",
+            "--operator", "alice",
+        ], input="y\n")
+        assert result.exit_code != 0
+        assert "File system error" in result.output
+
+    @patch("src.cli.rollback.RollbackManager")
+    @patch("src.cli.rollback.RollbackAPI")
+    def test_execute_runtime_error_on_execution(self, mock_api_cls, mock_manager_cls, runner):
+        """Test execute command with RuntimeError during execution."""
+        mock_manager = Mock(spec=["execute_rollback"])
+        mock_manager_cls.return_value = mock_manager
+
+        mock_api = Mock(spec=["validate_rollback_safety", "get_snapshot_details", "execute_manual_rollback"])
+        mock_api.validate_rollback_safety.return_value = (True, [])
+        mock_api.get_snapshot_details.return_value = {"file_count": 1}
+        mock_api.execute_manual_rollback.side_effect = RuntimeError("Execution failed")
+        mock_api_cls.return_value = mock_api
+
+        result = runner.invoke(execute, [
+            "snap-123",
+            "--reason", "Test",
+            "--operator", "alice",
+        ], input="y\n")
+        assert result.exit_code != 0
+        assert "Rollback execution error" in result.output
+
 
 class TestHistoryCommand:
     """Test the history subcommand."""

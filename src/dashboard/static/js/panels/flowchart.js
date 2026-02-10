@@ -107,11 +107,17 @@ const CYTOSCAPE_STYLE = [
 const DAGRE_LAYOUT = {
     name: 'dagre',
     rankDir: 'LR',
+    align: 'UL',
     nodeSep: 30,
     rankSep: 80,
     padding: 20,
     animate: true,
     animationDuration: 300,
+    // Collaboration edges (within a stage) should not force agents into
+    // separate ranks — keep them stacked top-to-bottom inside their stage.
+    minLen: function(edge) {
+        return edge.data('type') === 'collaboration' ? 0 : 1;
+    },
 };
 
 export class FlowchartPanel {

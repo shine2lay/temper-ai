@@ -37,7 +37,7 @@ stage:
   execution:
     agent_mode: sequential
     max_iterations: 1  # Single round (no debate)
-    timeout_seconds: 180
+    timeout_seconds: 600  # 10 minutes for stage execution
 
   # Collaboration: Simple consensus
   collaboration:

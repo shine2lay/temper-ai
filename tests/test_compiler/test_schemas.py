@@ -54,7 +54,7 @@ class TestInferenceConfig:
         assert config.temperature == 0.7
         assert config.max_tokens == 2048
         assert config.top_p == 0.9
-        assert config.timeout_seconds == 60
+        assert config.timeout_seconds == 600  # 10 minutes default for LLM calls
         assert config.max_retries == 3
         assert config.retry_delay_seconds == 2
 
@@ -808,7 +808,7 @@ class TestDefaultValues:
         assert config.temperature == 0.7
         assert config.max_tokens == 2048
         assert config.top_p == 0.9
-        assert config.timeout_seconds == 60
+        assert config.timeout_seconds == 600  # 10 minutes default for LLM calls
         assert config.max_retries == 3
 
     def test_safety_config_defaults(self):
@@ -823,7 +823,7 @@ class TestDefaultValues:
         """Test stage execution defaults."""
         config = StageExecutionConfig()
         assert config.agent_mode == "parallel"
-        assert config.timeout_seconds == 600
+        assert config.timeout_seconds == 600  # 10 minutes default for LLM calls0
 
     def test_workflow_observability_defaults(self):
         """Test workflow observability defaults."""

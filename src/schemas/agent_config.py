@@ -22,6 +22,7 @@ from src.agents.constants import (
 )
 from src.constants.durations import (
     DAYS_90,
+    SECONDS_PER_10_MINUTES,
     SECONDS_PER_MINUTE,
 )
 from src.constants.limits import (
@@ -54,7 +55,7 @@ class InferenceConfig(BaseModel):
     temperature: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
     max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, gt=0)
     top_p: float = Field(default=DEFAULT_TOP_P, ge=0.0, le=1.0)
-    timeout_seconds: int = Field(default=SECONDS_PER_MINUTE, gt=0)
+    timeout_seconds: int = Field(default=SECONDS_PER_10_MINUTES, gt=0)
     max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0)
     retry_delay_seconds: int = Field(default=int(SHORT_BACKOFF_SECONDS), ge=0)
 

@@ -104,20 +104,14 @@ const CYTOSCAPE_STYLE = [
     },
 ];
 
-const DAGRE_LAYOUT = {
-    name: 'dagre',
-    rankDir: 'LR',
-    align: 'UL',
-    nodeSep: 30,
-    rankSep: 80,
-    padding: 20,
-    animate: true,
-    animationDuration: 300,
-    // Collaboration edges (within a stage) should not force agents into
-    // separate ranks — keep them stacked top-to-bottom inside their stage.
-    minLen: function(edge) {
-        return edge.data('type') === 'collaboration' ? 0 : 1;
-    },
+// Spacing constants for manual LR layout (stages left-to-right, agents top-to-bottom)
+const LAYOUT = {
+    AGENT_WIDTH: 160,
+    AGENT_HEIGHT: 60,
+    AGENT_GAP_Y: 20,       // vertical gap between agents
+    STAGE_GAP_X: 120,      // horizontal gap between stages
+    STAGE_PAD_X: 30,       // horizontal padding inside stage
+    STAGE_PAD_Y: 40,       // vertical padding inside stage (top has label)
 };
 
 export class FlowchartPanel {
@@ -212,27 +206,47 @@ export class FlowchartPanel {
         const currentTopology = this._cy.elements().map(e => e.id()).sort().join(',');
         if (currentTopology !== this._lastTopology) {
             this._lastTopology = currentTopology;
-            if (this._cy.elements().length > 0) {
-                try {
-                    this._cy.layout(DAGRE_LAYOUT).run();
-                } catch (err) {
-                    console.debug('Dagre layout unavailable, falling back to grid:', err.message);
-                    this._cy.layout({ name: 'grid', animate: true }).run();
-                }
-            }
+            this._applyLayout();
         }
+    }
+
+    _applyLayout() {
+        if (!this._cy || this._cy.elements().length === 0) return;
+
+        // Position map: agent id → { x, y }
+        const positions = {};
+        const agentNodes = this._cy.nodes('[type="agent"]');
+        agentNodes.forEach(n => {
+            positions[n.id()] = { x: n.data('_px'), y: n.data('_py') };
+        });
+
+        this._cy.layout({
+            name: 'preset',
+            positions: (node) => {
+                // Only position agent (child) nodes — compound parents auto-wrap
+                if (node.data('type') === 'agent') {
+                    return positions[node.id()] || { x: 0, y: 0 };
+                }
+                return undefined;
+            },
+            fit: true,
+            padding: 30,
+            animate: true,
+            animationDuration: 300,
+        }).run();
     }
 
     _buildElements(wf) {
         const elements = [];
         const stages = wf.stages || [];
         let collabIdx = 0;
+        let xCursor = 0;
 
         for (let i = 0; i < stages.length; i++) {
             const stage = stages[i];
             const stageData = this.dataStore.stages.get(stage.id) || stage;
 
-            // Stage compound node
+            // Stage compound node (position derived from children)
             elements.push({
                 group: 'nodes',
                 data: {
@@ -243,8 +257,12 @@ export class FlowchartPanel {
                 },
             });
 
-            // Agent child nodes
+            // Agent child nodes — positioned left-to-right by stage, top-to-bottom within
             const agents = stageData.agents || stage.agents || [];
+            const agentCount = agents.filter(a => a.id).length;
+            const stageX = xCursor + LAYOUT.STAGE_PAD_X + LAYOUT.AGENT_WIDTH / 2;
+            let agentIdx = 0;
+
             for (const agent of agents) {
                 if (!agent.id) continue;
                 const agentData = this.dataStore.agents.get(agent.id) || agent;
@@ -262,6 +280,10 @@ export class FlowchartPanel {
                 if (cost != null && cost > 0) metricParts.push(`$${cost.toFixed(4)}`);
                 if (metricParts.length) lines.push(metricParts.join(' | '));
 
+                // Compute position: x = stage column, y = agent row within stage
+                const px = stageX;
+                const py = LAYOUT.STAGE_PAD_Y + agentIdx * (LAYOUT.AGENT_HEIGHT + LAYOUT.AGENT_GAP_Y);
+
                 elements.push({
                     group: 'nodes',
                     data: {
@@ -272,8 +294,21 @@ export class FlowchartPanel {
                         type: 'agent',
                         status: status,
                         model: model,
+                        _px: px,
+                        _py: py,
                     },
                 });
+                agentIdx++;
+            }
+
+            // Advance x cursor past this stage
+            const stageWidth = LAYOUT.STAGE_PAD_X * 2 + LAYOUT.AGENT_WIDTH;
+            xCursor += stageWidth + LAYOUT.STAGE_GAP_X;
+
+            // If stage has no agents, add a placeholder width
+            if (agentCount === 0) {
+                // Stage still needs some width even without agents
+                // xCursor already advanced above
             }
 
             // Collaboration edges within stage

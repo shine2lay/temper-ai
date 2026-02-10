@@ -66,7 +66,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const fp = registry.panels.get('flowchart');
                 if (fp) {
                     fp.render();
-                    if (fp._cy) { fp._cy.resize(); fp._cy.fit(); }
+                    if (fp._cy) fp._cy.resize();
                 }
             }
         });

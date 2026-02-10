@@ -18,7 +18,8 @@ class TestValidateJsonSize:
         """Test that small JSON passes validation."""
         data = {"key": "value", "number": 123}
         # Should not raise
-        validate_json_size(data, max_bytes=1024 * 1024)
+        result = validate_json_size(data, max_bytes=1024 * 1024)
+        assert result is None
 
     def test_valid_with_nested_data(self):
         """Test validation with nested structures."""
@@ -32,7 +33,8 @@ class TestValidateJsonSize:
             "metadata": {"version": "1.0"}
         }
         # Should not raise
-        validate_json_size(data)
+        result = validate_json_size(data)
+        assert result is None
 
     def test_exceeds_max_size(self):
         """Test that oversized JSON raises error."""
@@ -47,7 +49,8 @@ class TestValidateJsonSize:
         data = {"key": "value" * 1000}  # Moderate size
 
         # Should pass with large limit
-        validate_json_size(data, max_bytes=100000)
+        result = validate_json_size(data, max_bytes=100000)
+        assert result is None
 
         # Should fail with small limit
         with pytest.raises(JSONSizeError):
@@ -76,27 +79,31 @@ class TestValidateJsonSize:
         """Test that empty dict is valid."""
         data = {}
         # Should not raise
-        validate_json_size(data)
+        result = validate_json_size(data)
+        assert result is None
 
     def test_list_data(self):
         """Test validation with list instead of dict."""
         # The function takes Dict[str, Any] but JSON serialization should work
         data = {"items": [1, 2, 3, 4, 5]}
         # Should not raise
-        validate_json_size(data)
+        result = validate_json_size(data)
+        assert result is None
 
     def test_unicode_data(self):
         """Test validation with Unicode characters."""
         data = {"message": "Hello 世界 🌍"}
         # Should not raise
-        validate_json_size(data)
+        result = validate_json_size(data)
+        assert result is None
 
     def test_size_calculation_accurate(self):
         """Test that size calculation is accurate."""
         # Known size: {"a":"b"} = 9 bytes with compact JSON
         data = {"a": "b"}
         # Should pass with 10 byte limit
-        validate_json_size(data, max_bytes=10)
+        result = validate_json_size(data, max_bytes=10)
+        assert result is None
 
         # Should fail with 5 byte limit
         with pytest.raises(JSONSizeError):
@@ -109,13 +116,15 @@ class TestValidateOptionalJsonSize:
     def test_none_value(self):
         """Test that None value is allowed."""
         # Should not raise
-        validate_optional_json_size(None)
+        result = validate_optional_json_size(None)
+        assert result is None
 
     def test_valid_data(self):
         """Test with valid data."""
         data = {"key": "value"}
         # Should not raise
-        validate_optional_json_size(data)
+        result = validate_optional_json_size(data)
+        assert result is None
 
     def test_exceeds_max_size(self):
         """Test that oversized data raises error."""
@@ -129,11 +138,12 @@ class TestValidateOptionalJsonSize:
         data = {"key": "value"}
 
         # Should not raise
-        validate_optional_json_size(
+        result = validate_optional_json_size(
             data,
             max_bytes=100,
             field_name="custom_field"
         )
+        assert result is None
 
 
 class TestJSONSizeError:
@@ -158,13 +168,15 @@ class TestEdgeCases:
         # Create a deeply nested structure
         data = {"level1": {"level2": {"level3": {"level4": {"value": "deep"}}}}}
         # Should not raise
-        validate_json_size(data)
+        result = validate_json_size(data)
+        assert result is None
 
     def test_large_array(self):
         """Test with large array."""
         data = {"numbers": list(range(1000))}
         # Should not raise
-        validate_json_size(data, max_bytes=100000)
+        result = validate_json_size(data, max_bytes=100000)
+        assert result is None
 
     def test_special_characters(self):
         """Test with special characters that need escaping."""
@@ -175,7 +187,8 @@ class TestEdgeCases:
             "tab": "col1\tcol2"
         }
         # Should not raise
-        validate_json_size(data)
+        result = validate_json_size(data)
+        assert result is None
 
     def test_boolean_and_null_values(self):
         """Test with boolean and null values."""
@@ -185,7 +198,8 @@ class TestEdgeCases:
             "optional": None
         }
         # Should not raise
-        validate_json_size(data)
+        result = validate_json_size(data)
+        assert result is None
 
     def test_numeric_values(self):
         """Test with various numeric types."""
@@ -196,4 +210,5 @@ class TestEdgeCases:
             "zero": 0
         }
         # Should not raise
-        validate_json_size(data)
+        result = validate_json_size(data)
+        assert result is None

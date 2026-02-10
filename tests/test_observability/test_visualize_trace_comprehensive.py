@@ -401,11 +401,14 @@ class TestVisualizeTrace:
 
         with patch('webbrowser.open', side_effect=OSError("No browser")):
             # Should not crash
-            visualize_trace(
+            result = visualize_trace(
                 minimal_trace,
                 output_file=str(output_file),
                 auto_open=True
             )
+            # visualize_trace should complete without raising, even if browser fails
+            # Returns a Figure object on success
+            assert result is not None
 
 
 class TestMainCLI:

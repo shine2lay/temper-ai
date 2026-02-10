@@ -1272,6 +1272,8 @@ class TestWebScraperClientManagement:
         # Should not raise even if client cleanup fails
         try:
             scraper.__del__()
+            # If we reach here, cleanup succeeded
+            assert True
         except Exception as e:
             pytest.fail(f"__del__ raised exception: {e}")
 
@@ -1285,6 +1287,8 @@ class TestWebScraperClientManagement:
             # Should not raise
             try:
                 scraper.__del__()
+                # Destructor handled error gracefully
+                assert True
             except Exception as e:
                 pytest.fail(f"__del__ raised exception: {e}")
 

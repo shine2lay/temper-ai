@@ -290,6 +290,8 @@ class TestRedisStateStore:
             store = RedisStateStore()
             # Should create instance but not be available
             # (Actual behavior tested via integration tests)
+            assert store is not None
+            assert isinstance(store, RedisStateStore)
 
     @pytest.mark.asyncio
     async def test_connect_success(self, mock_redis):

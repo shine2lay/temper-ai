@@ -8,6 +8,7 @@ Tests cover:
 - Context management
 - Proper stub behavior (no errors, logs only)
 """
+import logging
 import uuid
 from datetime import datetime
 from unittest.mock import patch
@@ -62,232 +63,274 @@ def test_init_without_gateway():
 # ========== Workflow Tracking Tests ==========
 
 
-def test_track_workflow_start(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_workflow_start(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test workflow start tracking (stub)."""
     workflow_id = make_workflow_id()
 
-    # Should not raise any errors
-    prometheus_backend.track_workflow_start(
-        workflow_id=workflow_id,
-        workflow_name="test_workflow",
-        workflow_config={"workflow": {"version": "1.0"}},
-        start_time=datetime.utcnow(),
-        trigger_type="manual"
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_workflow_start(
+            workflow_id=workflow_id,
+            workflow_name="test_workflow",
+            workflow_config={"workflow": {"version": "1.0"}},
+            start_time=datetime.utcnow(),
+            trigger_type="manual"
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
-def test_track_workflow_end(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_workflow_end(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test workflow end tracking (stub)."""
     workflow_id = make_workflow_id()
 
-    # Should not raise any errors
-    prometheus_backend.track_workflow_end(
-        workflow_id=workflow_id,
-        end_time=datetime.utcnow(),
-        status="completed"
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_workflow_end(
+            workflow_id=workflow_id,
+            end_time=datetime.utcnow(),
+            status="completed"
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
-def test_update_workflow_metrics(prometheus_backend: PrometheusObservabilityBackend):
+def test_update_workflow_metrics(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test workflow metrics update (stub)."""
     workflow_id = make_workflow_id()
 
-    # Should not raise any errors
-    prometheus_backend.update_workflow_metrics(
-        workflow_id=workflow_id,
-        total_llm_calls=10,
-        total_tool_calls=5,
-        total_tokens=1000,
-        total_cost_usd=0.05
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.update_workflow_metrics(
+            workflow_id=workflow_id,
+            total_llm_calls=10,
+            total_tool_calls=5,
+            total_tokens=1000,
+            total_cost_usd=0.05
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
 # ========== Stage Tracking Tests ==========
 
 
-def test_track_stage_start(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_stage_start(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test stage start tracking (stub)."""
     workflow_id = make_workflow_id()
     stage_id = make_stage_id()
 
-    # Should not raise any errors
-    prometheus_backend.track_stage_start(
-        stage_id=stage_id,
-        workflow_id=workflow_id,
-        stage_name="analysis",
-        stage_config={"stage": {"version": "1.0"}},
-        start_time=datetime.utcnow()
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_stage_start(
+            stage_id=stage_id,
+            workflow_id=workflow_id,
+            stage_name="analysis",
+            stage_config={"stage": {"version": "1.0"}},
+            start_time=datetime.utcnow()
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
-def test_track_stage_end(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_stage_end(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test stage end tracking (stub)."""
     stage_id = make_stage_id()
 
-    # Should not raise any errors
-    prometheus_backend.track_stage_end(
-        stage_id=stage_id,
-        end_time=datetime.utcnow(),
-        status="completed"
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_stage_end(
+            stage_id=stage_id,
+            end_time=datetime.utcnow(),
+            status="completed"
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
-def test_set_stage_output(prometheus_backend: PrometheusObservabilityBackend):
+def test_set_stage_output(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test setting stage output (stub)."""
     stage_id = make_stage_id()
 
-    # Should not raise any errors
-    prometheus_backend.set_stage_output(
-        stage_id=stage_id,
-        output_data={"result": "success"}
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.set_stage_output(
+            stage_id=stage_id,
+            output_data={"result": "success"}
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
 # ========== Agent Tracking Tests ==========
 
 
-def test_track_agent_start(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_agent_start(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test agent start tracking (stub)."""
     stage_id = make_stage_id()
     agent_id = make_agent_id()
 
-    # Should not raise any errors
-    prometheus_backend.track_agent_start(
-        agent_id=agent_id,
-        stage_id=stage_id,
-        agent_name="researcher",
-        agent_config={"agent": {"version": "1.0"}},
-        start_time=datetime.utcnow()
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_agent_start(
+            agent_id=agent_id,
+            stage_id=stage_id,
+            agent_name="researcher",
+            agent_config={"agent": {"version": "1.0"}},
+            start_time=datetime.utcnow()
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
-def test_track_agent_end(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_agent_end(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test agent end tracking (stub)."""
     agent_id = make_agent_id()
 
-    # Should not raise any errors
-    prometheus_backend.track_agent_end(
-        agent_id=agent_id,
-        end_time=datetime.utcnow(),
-        status="completed"
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_agent_end(
+            agent_id=agent_id,
+            end_time=datetime.utcnow(),
+            status="completed"
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
-def test_set_agent_output(prometheus_backend: PrometheusObservabilityBackend):
+def test_set_agent_output(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test setting agent output (stub)."""
     agent_id = make_agent_id()
 
-    # Should not raise any errors
-    prometheus_backend.set_agent_output(
-        agent_id=agent_id,
-        output_data={"analysis": "complete"},
-        reasoning="Based on data",
-        confidence_score=0.9
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.set_agent_output(
+            agent_id=agent_id,
+            output_data={"analysis": "complete"},
+            reasoning="Based on data",
+            confidence_score=0.9
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
 # ========== LLM Call Tracking Tests ==========
 
 
-def test_track_llm_call(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_llm_call(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test LLM call tracking (stub)."""
     agent_id = make_agent_id()
     llm_call_id = f"llm-{uuid.uuid4().hex[:12]}"
 
-    # Should not raise any errors
-    prometheus_backend.track_llm_call(
-        llm_call_id=llm_call_id,
-        agent_id=agent_id,
-        provider="openai",
-        model="gpt-4",
-        prompt="Test prompt",
-        response="Test response",
-        prompt_tokens=10,
-        completion_tokens=20,
-        latency_ms=500,
-        estimated_cost_usd=0.001,
-        start_time=datetime.utcnow()
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_llm_call(
+            llm_call_id=llm_call_id,
+            agent_id=agent_id,
+            provider="openai",
+            model="gpt-4",
+            prompt="Test prompt",
+            response="Test response",
+            prompt_tokens=10,
+            completion_tokens=20,
+            latency_ms=500,
+            estimated_cost_usd=0.001,
+            start_time=datetime.utcnow()
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
-def test_track_llm_call_with_optional_params(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_llm_call_with_optional_params(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test LLM call tracking with optional parameters (stub)."""
     agent_id = make_agent_id()
     llm_call_id = f"llm-{uuid.uuid4().hex[:12]}"
 
-    # Should not raise any errors
-    prometheus_backend.track_llm_call(
-        llm_call_id=llm_call_id,
-        agent_id=agent_id,
-        provider="openai",
-        model="gpt-4",
-        prompt="Test",
-        response="Response",
-        prompt_tokens=10,
-        completion_tokens=20,
-        latency_ms=500,
-        estimated_cost_usd=0.001,
-        start_time=datetime.utcnow(),
-        temperature=0.7,
-        max_tokens=100,
-        status="success"
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_llm_call(
+            llm_call_id=llm_call_id,
+            agent_id=agent_id,
+            provider="openai",
+            model="gpt-4",
+            prompt="Test",
+            response="Response",
+            prompt_tokens=10,
+            completion_tokens=20,
+            latency_ms=500,
+            estimated_cost_usd=0.001,
+            start_time=datetime.utcnow(),
+            temperature=0.7,
+            max_tokens=100,
+            status="success"
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
 # ========== Tool Call Tracking Tests ==========
 
 
-def test_track_tool_call(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_tool_call(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test tool call tracking (stub)."""
     agent_id = make_agent_id()
     tool_id = f"tool-{uuid.uuid4().hex[:12]}"
 
-    # Should not raise any errors
-    prometheus_backend.track_tool_call(
-        tool_execution_id=tool_id,
-        agent_id=agent_id,
-        tool_name="web_scraper",
-        input_params={"url": "https://example.com"},
-        output_data={"content": "scraped"},
-        start_time=datetime.utcnow(),
-        duration_seconds=2.5,
-        status="success"
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_tool_call(
+            tool_execution_id=tool_id,
+            agent_id=agent_id,
+            tool_name="web_scraper",
+            input_params={"url": "https://example.com"},
+            output_data={"content": "scraped"},
+            start_time=datetime.utcnow(),
+            duration_seconds=2.5,
+            status="success"
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
-def test_track_tool_call_with_error(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_tool_call_with_error(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test tool call tracking with error (stub)."""
     agent_id = make_agent_id()
     tool_id = f"tool-{uuid.uuid4().hex[:12]}"
 
-    # Should not raise any errors
-    prometheus_backend.track_tool_call(
-        tool_execution_id=tool_id,
-        agent_id=agent_id,
-        tool_name="web_scraper",
-        input_params={"url": "https://example.com"},
-        output_data={},
-        start_time=datetime.utcnow(),
-        duration_seconds=1.0,
-        status="failed",
-        error_message="Timeout"
-    )
+    with caplog.at_level(logging.DEBUG):
+        result = prometheus_backend.track_tool_call(
+            tool_execution_id=tool_id,
+            agent_id=agent_id,
+            tool_name="web_scraper",
+            input_params={"url": "https://example.com"},
+            output_data={},
+            start_time=datetime.utcnow(),
+            duration_seconds=1.0,
+            status="failed",
+            error_message="Timeout"
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
 # ========== Safety and Collaboration Tests ==========
 
 
-def test_track_safety_violation(prometheus_backend: PrometheusObservabilityBackend):
+def test_track_safety_violation(prometheus_backend: PrometheusObservabilityBackend, caplog):
     """Test safety violation tracking (stub)."""
-    # Should not raise any errors
-    prometheus_backend.track_safety_violation(
-        workflow_id=make_workflow_id(),
-        stage_id=make_stage_id(),
-        agent_id=make_agent_id(),
-        violation_severity="HIGH",
-        violation_message="Unsafe action",
-        policy_name="action_policy"
-    )
+    with caplog.at_level(logging.WARNING):
+        result = prometheus_backend.track_safety_violation(
+            workflow_id=make_workflow_id(),
+            stage_id=make_stage_id(),
+            agent_id=make_agent_id(),
+            violation_severity="HIGH",
+            violation_message="Unsafe action",
+            policy_name="action_policy"
+        )
+
+    assert result is None
+    assert any("Prometheus STUB" in record.message for record in caplog.records)
 
 
 def test_track_collaboration_event(prometheus_backend: PrometheusObservabilityBackend):

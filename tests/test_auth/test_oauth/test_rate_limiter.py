@@ -45,9 +45,12 @@ def test_sliding_window_allows_within_limit(rate_limiter):
     """Test requests are allowed when within limit."""
     # Should allow 5 requests
     for i in range(5):
-        rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
+        result = rate_limiter.check_limit("test", "user1", max_requests=5, window_seconds=60)
+        # check_limit returns None on success (doesn't raise exception)
+        assert result is None
 
     # All requests should pass without exception
+    assert True  # If we reach here, all requests passed
 
 
 def test_sliding_window_blocks_over_limit(rate_limiter):

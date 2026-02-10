@@ -140,15 +140,17 @@ class TestDatabaseManager:
     def test_create_all_tables(self):
         """Test creating all tables."""
         manager = DatabaseManager("sqlite:///:memory:")
-        # Should not raise exception
         manager.create_all_tables()
+        assert manager.engine is not None
+        with manager.session() as session:
+            assert session is not None
 
     def test_drop_all_tables(self):
         """Test dropping all tables."""
         manager = DatabaseManager("sqlite:///:memory:")
         manager.create_all_tables()
-        # Should not raise exception
         manager.drop_all_tables()
+        assert manager.engine is not None
 
 
 class TestGlobalDatabaseFunctions:
@@ -179,6 +181,7 @@ class TestGlobalDatabaseFunctions:
         with patch.dict(os.environ, {"ALEMBIC_MANAGED": "1"}):
             manager = init_database("sqlite:///:memory:")
             assert manager is not None
+            assert isinstance(manager, DatabaseManager)
             # create_all_tables should have been skipped
 
     def test_init_database_connection_error(self):

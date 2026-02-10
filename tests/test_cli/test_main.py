@@ -486,8 +486,10 @@ class TestCleanupToolExecutor:
         del mock_engine.tool_executor
         del mock_engine.compiler
 
-        # Should not raise exception
-        _cleanup_tool_executor(mock_engine)
+        # Should not raise exception - verify it completes successfully
+        result = _cleanup_tool_executor(mock_engine)
+        # Function returns None, verify no exception was raised
+        assert result is None
 
     def test_cleanup_with_shutdown_error(self):
         from src.cli.main import _cleanup_tool_executor
@@ -497,5 +499,7 @@ class TestCleanupToolExecutor:
         mock_tool_executor.shutdown.side_effect = Exception("Shutdown failed")
         mock_engine.tool_executor = mock_tool_executor
 
-        # Should not raise exception, just log
-        _cleanup_tool_executor(mock_engine)
+        # Should not raise exception, just log - verify it completes successfully
+        result = _cleanup_tool_executor(mock_engine)
+        # Function returns None, verify no exception was raised
+        assert result is None

@@ -559,7 +559,9 @@ class TestCacheManagement:
     def test_invalidate_cache_nonexistent(self, crud_instance):
         """Test invalidating non-existent cache entry (should not raise)."""
         # Should not raise error
-        crud_instance.invalidate_cache("nonexistent_id")
+        result = crud_instance.invalidate_cache("nonexistent_id")
+        # invalidate_cache returns None for both existent and non-existent keys
+        assert result is None
 
     def test_clear_cache(self, crud_instance):
         """Test clearing entire cache."""

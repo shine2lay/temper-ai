@@ -404,7 +404,9 @@ class TestMetricsCollector:
         collector = MetricsCollector()
 
         # Should not crash
-        collector.reset_metrics("nonexistent")
+        result = collector.reset_metrics("nonexistent")
+        # reset_metrics returns None for both existent and non-existent agents
+        assert result is None
 
     def test_export_metrics(self):
         """Test exporting metrics as dictionary."""

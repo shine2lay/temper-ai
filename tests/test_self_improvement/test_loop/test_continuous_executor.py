@@ -423,7 +423,9 @@ class TestContinuousExecutor:
         )
 
         # Should not raise
-        executor._log_iteration_complete(stats, iteration=7)
+        result = executor._log_iteration_complete(stats, iteration=7)
+        # _log_iteration_complete returns None on success
+        assert result is None
 
     @patch("time.sleep")
     @patch("signal.signal")
@@ -446,7 +448,9 @@ class TestContinuousExecutor:
         stats.stop_reason = "converged"
 
         # Should not raise
-        executor._log_final_summary(stats)
+        result = executor._log_final_summary(stats)
+        # _log_final_summary returns None on success
+        assert result is None
 
     @patch("time.sleep")
     @patch("signal.signal")

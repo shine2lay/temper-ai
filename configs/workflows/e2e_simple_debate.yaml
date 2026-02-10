@@ -18,7 +18,7 @@ workflow:
     model: llama3.3:latest
     temperature: 0.7
     max_tokens: 500
-    timeout: 120
+    timeout: 600  # 10 minutes
 
   # Workflow stages
   stages:

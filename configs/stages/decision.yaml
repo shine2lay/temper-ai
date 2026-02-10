@@ -12,7 +12,7 @@ stage:
   # Execution settings
   execution:
     agent_mode: parallel
-    timeout_seconds: 180
+    timeout_seconds: 600  # 10 minutes for LLM calls
 
   # Input schema
   inputs:

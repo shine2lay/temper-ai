@@ -10,12 +10,12 @@ workflow:
 
   # Workflow metadata
   lifecycle_type: decision_making
-  product_type: llm_powered_decision
+  product_type: data_product  # Decision outputs are data products
 
   # Workflow stages
   stages:
     - name: llm_debate
-      config_path: configs/stages/llm_debate_stage.yaml
+      stage_ref: configs/stages/llm_debate_stage.yaml
       inputs:
         scenario: "{{ workflow.inputs.scenario }}"
         initial_positions: "{{ workflow.inputs.initial_positions }}"
@@ -26,6 +26,13 @@ workflow:
 
       on_failure:
         action: escalate
+
+  # Error handling
+  error_handling:
+    on_stage_failure: retry
+    max_stage_retries: 2
+    escalation_policy: GracefulDegradation
+    enable_rollback: false
 
   # Workflow inputs
   inputs:
@@ -70,7 +77,7 @@ workflow:
     model: llama3.2:3b
     temperature: 0.7
     max_tokens: 512
-    timeout: 60
+    timeout: 600  # 10 minutes
 
   # Execution settings
   execution:

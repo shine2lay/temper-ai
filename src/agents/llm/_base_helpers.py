@@ -170,13 +170,15 @@ def get_or_create_sync_client(instance: BaseLLM) -> httpx.Client:
 
                 provider_name = instance.__class__.__name__.replace("LLM", "").lower()
                 from src.agents.llm.base import BaseLLM as _BaseLLM
+                # Create explicit timeout object to ensure all timeout types are set
+                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=30.0)
                 instance._client = get_shared_http_client(
                     _BaseLLM._http_clients,
                     _BaseLLM._http_client_lock,
                     _BaseLLM._MAX_HTTP_CLIENTS,
                     provider=provider_name,
                     base_url=instance.base_url,
-                    timeout=instance.timeout,
+                    timeout=timeout_config,
                     limits=limits,
                     http2=http2_enabled
                 )
@@ -201,8 +203,10 @@ async def get_or_create_async_client_safe(instance: BaseLLM) -> httpx.AsyncClien
                 except ImportError:
                     http2_enabled = False
 
+                # Create explicit timeout object to ensure all timeout types are set
+                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=30.0)
                 instance._async_client = httpx.AsyncClient(
-                    timeout=instance.timeout,
+                    timeout=timeout_config,
                     limits=limits,
                     http2=http2_enabled
                 )
@@ -226,8 +230,10 @@ def get_or_create_async_client_sync(instance: BaseLLM) -> httpx.AsyncClient:
                 except ImportError:
                     http2_enabled = False
 
+                # Create explicit timeout object to ensure all timeout types are set
+                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=30.0)
                 instance._async_client = httpx.AsyncClient(
-                    timeout=instance.timeout,
+                    timeout=timeout_config,
                     limits=limits,
                     http2=http2_enabled
                 )

@@ -240,7 +240,7 @@ def run_agent(
         # Allowlist of known non-serializable/infrastructure keys
         _non_serializable_keys: frozenset[str] = frozenset({
             'tracker', 'tool_registry', 'config_loader', 'visualizer',
-            'show_details', 'detail_console',
+            'show_details', 'detail_console', 'tool_executor',
         })
 
         tracking_input_data = {

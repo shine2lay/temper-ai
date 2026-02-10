@@ -43,7 +43,7 @@ stage:
   execution:
     agent_mode: sequential_llm  # Each agent queries LLM in sequence
     max_iterations: 3  # Max 3 debate rounds
-    timeout_seconds: 180  # 3 minutes total (LLM calls can be slow)
+    timeout_seconds: 1800  # 30 minutes total (3 rounds × 10 min per LLM call)
     retry_on_llm_error: true
     max_llm_retries: 2
 

@@ -9,12 +9,12 @@ workflow:
 
   # Workflow metadata
   lifecycle_type: decision_making
-  product_type: reasoned_decision
+  product_type: data_product  # Decision outputs are data products
 
   # Workflow stages
   stages:
     - name: debate_and_decide
-      config_path: configs/stages/debate_stage.yaml
+      stage_ref: configs/stages/debate_stage.yaml
       inputs:
         decision_prompt: "{{ workflow.inputs.decision_prompt }}"
         context: "{{ workflow.inputs.context }}"
@@ -25,6 +25,13 @@ workflow:
 
       on_failure:
         action: escalate  # Escalate if no convergence
+
+  # Error handling
+  error_handling:
+    on_stage_failure: retry
+    max_stage_retries: 2
+    escalation_policy: GracefulDegradation
+    enable_rollback: false
 
   # Workflow inputs
   inputs:

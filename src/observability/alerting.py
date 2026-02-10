@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Alert threshold constants
 DEFAULT_WORKFLOW_COST_ALERT_THRESHOLD_USD = 5.0  # $5 per workflow
 CRITICAL_WORKFLOW_COST_ALERT_THRESHOLD_USD = 50.0  # $50 per workflow (critical)
-EXTREME_LATENCY_P99_THRESHOLD_MS = 30000  # 30 seconds
+EXTREME_LATENCY_P99_THRESHOLD_MS = 600000  # 10 minutes
 
 
 class AlertSeverity(str, Enum):
@@ -148,7 +148,7 @@ class AlertManager:
             threshold=EXTREME_LATENCY_P99_THRESHOLD_MS,
             severity=AlertSeverity.WARNING,
             actions=[AlertAction.LOG_WARNING],
-            metadata={"description": "P99 latency exceeds 30 seconds"}
+            metadata={"description": "P99 latency exceeds 10 minutes"}
         ))
 
         # Critical cost threshold

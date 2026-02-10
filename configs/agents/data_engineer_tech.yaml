@@ -30,6 +30,7 @@ agent:
     base_url: http://localhost:11434
     temperature: 0.5
     max_tokens: 1500
+    timeout_seconds: 600  # 10 minutes
 
   tools: []
 

@@ -184,6 +184,31 @@ class StatisticalAnalyzer:
 
         return variant_metrics
 
+    @staticmethod
+    def _resolve_control_id(
+        variant_assignments: Dict[str, List[VariantAssignment]],
+        control_variant_id: Optional[str],
+    ) -> Optional[str]:
+        """Resolve control variant ID (use provided or default to first)."""
+        control_id = control_variant_id
+        if not control_id:
+            for variant_id in variant_assignments.keys():
+                control_id = variant_id
+                break
+        if not control_id or control_id not in variant_assignments:
+            return None
+        return control_id
+
+    @staticmethod
+    def _extract_metric_values(
+        assignments: List[VariantAssignment], metric: str,
+    ) -> List[float]:
+        """Extract metric values from assignments that have the given metric."""
+        return [
+            a.metrics[metric] for a in assignments
+            if a.metrics and metric in a.metrics
+        ]
+
     def _run_hypothesis_tests(
         self,
         variant_assignments: Dict[str, List[VariantAssignment]],
@@ -192,43 +217,24 @@ class StatisticalAnalyzer:
         control_variant_id: Optional[str] = None
     ) -> Dict[str, Dict[str, Any]]:
         """Run t-tests comparing each variant to control."""
-        statistical_tests: Dict[str, Dict[str, Any]] = {}
-
-        # Use provided control ID, or default to first variant
-        control_id = control_variant_id
-        if not control_id:
-            for variant_id in variant_assignments.keys():
-                control_id = variant_id
-                break
-
-        if not control_id or control_id not in variant_assignments:
+        control_id = self._resolve_control_id(variant_assignments, control_variant_id)
+        if control_id is None:
             return {}
 
-        control_values = [
-            a.metrics[primary_metric]
-            for a in variant_assignments[control_id]
-            if a.metrics and primary_metric in a.metrics
-        ]
-
-        # Compare each treatment to control
+        control_values = self._extract_metric_values(
+            variant_assignments[control_id], primary_metric,
+        )
+        statistical_tests: Dict[str, Dict[str, Any]] = {}
         for variant_id, assignments in variant_assignments.items():
             if variant_id == control_id:
                 continue
-
-            treatment_values = [
-                a.metrics[primary_metric]
-                for a in assignments
-                if a.metrics and primary_metric in a.metrics
-            ]
-
+            treatment_values = self._extract_metric_values(assignments, primary_metric)
             if len(treatment_values) < 2 or len(control_values) < 2:
                 continue
-
-            # Perform t-test
-            test_result = self._t_test(control_values, treatment_values, confidence_level)
             test_key = f"control_vs_{variant_id}"
-            statistical_tests[test_key] = test_result
-
+            statistical_tests[test_key] = self._t_test(
+                control_values, treatment_values, confidence_level,
+            )
         return statistical_tests
 
     def _t_test(

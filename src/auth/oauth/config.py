@@ -324,25 +324,31 @@ class OAuthConfig(BaseModel):
             ) from e
 
 
+# OAuth endpoint key names (used in endpoint dicts and provider defaults)
+ENDPOINT_AUTHORIZATION = "authorization_endpoint"
+ENDPOINT_TOKEN = "token_endpoint"  # noqa: S105 — endpoint name, not password
+ENDPOINT_REVOCATION = "revocation_endpoint"
+ENDPOINT_USERINFO = "userinfo_endpoint"
+
 # Provider defaults (used when custom endpoints not specified)
 PROVIDER_DEFAULTS = {
     'google': {
-        'authorization_endpoint': 'https://accounts.google.com/o/oauth2/v2/auth',
-        'token_endpoint': 'https://oauth2.googleapis.com/token',
-        'revocation_endpoint': 'https://oauth2.googleapis.com/revoke',
-        'userinfo_endpoint': 'https://www.googleapis.com/oauth2/v2/userinfo',
+        ENDPOINT_AUTHORIZATION: 'https://accounts.google.com/o/oauth2/v2/auth',
+        ENDPOINT_TOKEN: 'https://oauth2.googleapis.com/token',
+        ENDPOINT_REVOCATION: 'https://oauth2.googleapis.com/revoke',
+        ENDPOINT_USERINFO: 'https://www.googleapis.com/oauth2/v2/userinfo',
     },
     'github': {
-        'authorization_endpoint': 'https://github.com/login/oauth/authorize',
-        'token_endpoint': 'https://github.com/login/oauth/access_token',
+        ENDPOINT_AUTHORIZATION: 'https://github.com/login/oauth/authorize',
+        ENDPOINT_TOKEN: 'https://github.com/login/oauth/access_token',
         # GitHub does not support RFC 7009 token revocation via API
-        'userinfo_endpoint': 'https://api.github.com/user',
+        ENDPOINT_USERINFO: 'https://api.github.com/user',
     },
     'microsoft': {
-        'authorization_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
-        'token_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
-        'revocation_endpoint': 'https://login.microsoftonline.com/common/oauth2/v2.0/logout',
-        'userinfo_endpoint': 'https://graph.microsoft.com/v1.0/me',
+        ENDPOINT_AUTHORIZATION: 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize',
+        ENDPOINT_TOKEN: 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
+        ENDPOINT_REVOCATION: 'https://login.microsoftonline.com/common/oauth2/v2.0/logout',
+        ENDPOINT_USERINFO: 'https://graph.microsoft.com/v1.0/me',
     },
 }
 
@@ -361,10 +367,10 @@ def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, Optional[st
     """
     defaults = PROVIDER_DEFAULTS.get(config.provider, {})
 
-    auth_endpoint = config.authorization_endpoint or defaults.get('authorization_endpoint')
-    token_endpoint = config.token_endpoint or defaults.get('token_endpoint')
-    revocation_endpoint = config.revocation_endpoint or defaults.get('revocation_endpoint')
-    userinfo_endpoint = defaults.get('userinfo_endpoint')
+    auth_endpoint = config.authorization_endpoint or defaults.get(ENDPOINT_AUTHORIZATION)
+    token_endpoint = config.token_endpoint or defaults.get(ENDPOINT_TOKEN)
+    revocation_endpoint = config.revocation_endpoint or defaults.get(ENDPOINT_REVOCATION)
+    userinfo_endpoint = defaults.get(ENDPOINT_USERINFO)
 
     if not auth_endpoint or not token_endpoint:
         raise OAuthConfigurationError(
@@ -374,8 +380,8 @@ def get_provider_endpoints(config: OAuthProviderConfig) -> Dict[str, Optional[st
         )
 
     return {
-        'authorization_endpoint': auth_endpoint,
-        'token_endpoint': token_endpoint,
-        'revocation_endpoint': revocation_endpoint,
-        'userinfo_endpoint': userinfo_endpoint,
+        ENDPOINT_AUTHORIZATION: auth_endpoint,
+        ENDPOINT_TOKEN: token_endpoint,
+        ENDPOINT_REVOCATION: revocation_endpoint,
+        ENDPOINT_USERINFO: userinfo_endpoint,
     }

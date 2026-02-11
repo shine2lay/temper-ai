@@ -649,12 +649,13 @@ def make_stream_callback(agent: "StandardAgent") -> Optional[Callable]:
         return None
 
     def combined_callback(chunk: Any) -> None:
+        """Forward stream chunks to user callback and observer."""
         if user_cb is not None:
             try:
                 user_cb(chunk)
             except Exception:  # noqa: BLE001 -- streaming display must not disrupt execution
                 pass
-        if has_observer:
+        if has_observer and observer is not None:
             try:
                 observer.emit_stream_chunk(
                     content=chunk.content,

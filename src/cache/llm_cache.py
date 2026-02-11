@@ -474,6 +474,91 @@ class RedisCache(CacheBackend):
         return self.__repr__()
 
 
+def _validate_cache_key_isolation(
+    user_id: Optional[str], tenant_id: Optional[str],
+) -> None:
+    """Enforce user/tenant context to prevent cross-tenant data leakage."""
+    if not user_id and not tenant_id:
+        raise ValueError(
+            "Cache key generation requires user_id or tenant_id for security. "
+            "Multi-tenant caching without isolation is a privacy violation. "
+            "See: HIPAA 164.312(a)(1), GDPR Article 32, SOC 2 CC6.6"
+        )
+
+
+_CACHE_KEY_TYPE_RULES: list[tuple[str, type | tuple[type, ...], bool]] = [
+    # (param_name, expected_types, nullable)
+    ("model", str, False),
+    ("prompt", str, False),
+    ("temperature", (int, float), False),
+    ("max_tokens", int, False),
+    ("user_id", str, True),
+    ("tenant_id", str, True),
+    ("session_id", str, True),
+]
+
+
+def _validate_cache_key_types(
+    model: str, prompt: str, temperature: float, max_tokens: int,
+    user_id: Optional[str], tenant_id: Optional[str], session_id: Optional[str],
+) -> None:
+    """Validate parameter types to prevent type confusion attacks."""
+    values = {
+        "model": model, "prompt": prompt, "temperature": temperature,
+        "max_tokens": max_tokens, "user_id": user_id,
+        "tenant_id": tenant_id, "session_id": session_id,
+    }
+    for param_name, expected, nullable in _CACHE_KEY_TYPE_RULES:
+        value = values[param_name]
+        if nullable and value is None:
+            continue
+        if not isinstance(value, expected):
+            label = "str or None" if nullable else expected.__name__ if isinstance(expected, type) else "numeric"
+            raise TypeError(f"{param_name} must be {label}, got {type(value).__name__}")
+
+
+def _validate_cache_kwargs(reserved: frozenset, kwargs: Dict[str, Any]) -> None:
+    """Validate kwargs to prevent parameter override attacks (code-crit-15)."""
+    conflicting_params = reserved.intersection(kwargs.keys())
+    if conflicting_params:
+        raise ValueError(
+            f"Cannot override reserved parameters via kwargs: {conflicting_params}. "
+            f"Reserved parameters: {reserved}. "
+            f"Use explicit arguments instead of **kwargs for these parameters."
+        )
+
+
+def _build_security_context(
+    user_id: Optional[str], tenant_id: Optional[str], session_id: Optional[str],
+) -> Dict[str, str]:
+    """Build security context dict for cache key isolation."""
+    ctx: Dict[str, str] = {}
+    if tenant_id:
+        ctx["tenant_id"] = tenant_id
+    if user_id:
+        ctx["user_id"] = user_id
+    if session_id:
+        ctx["session_id"] = session_id
+    return ctx
+
+
+def _hash_cache_key(request: Dict[str, Any], security_context: Dict[str, str]) -> str:
+    """Hash request + security context into a SHA-256 cache key."""
+    try:
+        canonical = json.dumps(
+            {"request": request, "security_context": security_context},
+            sort_keys=True,
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+    except (TypeError, ValueError) as e:
+        raise ValueError(
+            f"Cache key generation failed: parameters must be JSON-serializable. "
+            f"Error: {e}"
+        )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 class LLMCache:
     """
     LLM response cache with content-based hashing.
@@ -556,124 +641,38 @@ class LLMCache:
         tools: Optional[List[Dict[str, Any]]] = None,
         **kwargs: Any
     ) -> str:
-        """
-        Generate cache key with mandatory user/tenant isolation.
+        """Generate cache key with mandatory user/tenant isolation.
 
-        SECURITY: This method requires user_id OR tenant_id to prevent
-        cross-tenant data leakage. Without isolation, identical prompts
-        from different users/tenants would share cache entries, causing
-        privacy violations and compliance breaches (HIPAA, GDPR, SOC 2).
-
-        Uses SHA-256 hash of canonicalized request parameters including
-        security context to ensure proper isolation.
-
-        Args:
-            model: Model name
-            prompt: Prompt text
-            temperature: Temperature parameter
-            max_tokens: Max tokens parameter
-            user_id: User identifier (REQUIRED for user-level caching)
-            tenant_id: Tenant identifier (REQUIRED for tenant-level caching)
-            session_id: Session identifier (optional, for session-level caching)
-            **kwargs: Additional parameters to include in key
-
-        Returns:
-            Cache key (hex string) with user/tenant isolation
+        SECURITY: Requires user_id OR tenant_id to prevent cross-tenant
+        data leakage (HIPAA, GDPR, SOC 2).
 
         Raises:
             ValueError: If neither user_id nor tenant_id provided
-
-        Example:
-            >>> cache = LLMCache()
-            >>> # Different tenants get different keys
-            >>> key1 = cache.generate_key("gpt-4", "Hello", tenant_id="tenant_a")
-            >>> key2 = cache.generate_key("gpt-4", "Hello", tenant_id="tenant_b")
-            >>> key1 != key2  # Different tenants = different keys
-            True
         """
-        # SECURITY: Enforce user/tenant context to prevent cross-tenant data leakage
-        if not user_id and not tenant_id:
-            raise ValueError(
-                "Cache key generation requires user_id or tenant_id for security. "
-                "Multi-tenant caching without isolation is a privacy violation. "
-                "See: HIPAA 164.312(a)(1), GDPR Article 32, SOC 2 CC6.6"
-            )
+        _validate_cache_key_isolation(user_id, tenant_id)
+        _validate_cache_key_types(
+            model, prompt, temperature, max_tokens,
+            user_id, tenant_id, session_id,
+        )
+        _validate_cache_kwargs(self._RESERVED_PARAMS, kwargs)
 
-        # SECURITY FIX: Validate parameter types to prevent type confusion attacks
-        if not isinstance(model, str):
-            raise TypeError(f"model must be str, got {type(model).__name__}")
-        if not isinstance(prompt, str):
-            raise TypeError(f"prompt must be str, got {type(prompt).__name__}")
-        if not isinstance(temperature, (int, float)):
-            raise TypeError(f"temperature must be numeric, got {type(temperature).__name__}")
-        if not isinstance(max_tokens, int):
-            raise TypeError(f"max_tokens must be int, got {type(max_tokens).__name__}")
-        if user_id is not None and not isinstance(user_id, str):
-            raise TypeError(f"user_id must be str or None, got {type(user_id).__name__}")
-        if tenant_id is not None and not isinstance(tenant_id, str):
-            raise TypeError(f"tenant_id must be str or None, got {type(tenant_id).__name__}")
-        if session_id is not None and not isinstance(session_id, str):
-            raise TypeError(f"session_id must be str or None, got {type(session_id).__name__}")
-
-        # SECURITY FIX: Validate kwargs to prevent parameter override attacks
-        # Prevents cache poisoning via reserved parameter injection (code-crit-15)
-        conflicting_params = self._RESERVED_PARAMS.intersection(kwargs.keys())
-        if conflicting_params:
-            raise ValueError(
-                f"Cannot override reserved parameters via kwargs: {conflicting_params}. "
-                f"Reserved parameters: {self._RESERVED_PARAMS}. "
-                f"Use explicit arguments instead of **kwargs for these parameters."
-            )
-
-        # Build canonical request dict
         request = {
-            'model': model,
-            'prompt': prompt,
-            'temperature': temperature,
-            'max_tokens': max_tokens,
+            'model': model, 'prompt': prompt,
+            'temperature': temperature, 'max_tokens': max_tokens,
             'system_prompt': system_prompt or '',
             'tools': self._normalize_tools(tools) if tools else [],
             **kwargs
         }
-
-        # SECURITY: Add user context to separate namespace (prevents collision)
-        security_context = {}
-        if tenant_id:
-            security_context['tenant_id'] = tenant_id
-        if user_id:
-            security_context['user_id'] = user_id
-        if session_id:
-            security_context['session_id'] = session_id
-
-        # Combine request and security context with strict JSON serialization
-        try:
-            canonical = json.dumps(
-                {
-                    'request': request,
-                    'security_context': security_context
-                },
-                sort_keys=True,
-                ensure_ascii=True,  # Consistent Unicode handling
-                separators=(',', ':')  # Consistent whitespace
-            )
-        except (TypeError, ValueError) as e:
-            raise ValueError(
-                f"Cache key generation failed: parameters must be JSON-serializable. "
-                f"Error: {e}"
-            )
-
-        # Hash with SHA-256
-        hash_obj = hashlib.sha256(canonical.encode('utf-8'))
-        cache_key = hash_obj.hexdigest()
+        security_context = _build_security_context(user_id, tenant_id, session_id)
+        cache_key = _hash_cache_key(request, security_context)
 
         logger.debug(
-            f"Generated cache key with isolation: {cache_key[:CACHE_KEY_LOG_LENGTH]}...",
+            "Generated cache key with isolation: %s...",
+            cache_key[:CACHE_KEY_LOG_LENGTH],
             extra={
-                'model': model,
-                'tenant_id': tenant_id,
-                'user_id': user_id,
-                'has_session': bool(session_id)
-            }
+                'model': model, 'tenant_id': tenant_id,
+                'user_id': user_id, 'has_session': bool(session_id),
+            },
         )
         return cache_key
 

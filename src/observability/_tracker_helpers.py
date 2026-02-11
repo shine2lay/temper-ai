@@ -21,6 +21,25 @@ from src.database.datetime_utils import utcnow
 
 logger = logging.getLogger(__name__)
 
+# Sanitization context identifiers
+_CTX_CONFIG = "config"
+_CTX_PROMPT = "prompt"
+_CTX_RESPONSE = "response"
+_CTX_ERROR = "error"
+_CTX_STACK_TRACE = "stack_trace"
+
+# Metric type identifiers for AlertManager.check_metric()
+_METRIC_LATENCY_P99 = "latency_p99"
+_METRIC_COST_USD = "cost_usd"
+_METRIC_DURATION = "duration"
+
+# Event type identifiers for ObservabilityEventBus
+_EVENT_LLM_CALL = "llm_call"
+_EVENT_TOOL_CALL = "tool_call"
+_EVENT_LLM_STREAM_CHUNK = "llm_stream_chunk"
+_EVENT_SAFETY_VIOLATION = "safety_violation"
+_EVENT_COLLABORATION = "collaboration_event"
+
 
 def sanitize_dict(
     sanitizer: Any,
@@ -53,7 +72,7 @@ def sanitize_dict(
     for key, value in data.items():
         try:
             # Sanitize key as well (keys might contain secrets)
-            safe_key_result = sanitizer.sanitize_text(str(key), context="config")
+            safe_key_result = sanitizer.sanitize_text(str(key), context=_CTX_CONFIG)
             safe_key = safe_key_result.sanitized_text
 
             # Recursively sanitize value based on type
@@ -62,14 +81,14 @@ def sanitize_dict(
             elif isinstance(value, list):
                 sanitized_list: List[Any] = [
                     sanitize_dict(sanitizer, item, _depth + 1) if isinstance(item, dict)
-                    else sanitizer.sanitize_text(str(item), context="config").sanitized_text
+                    else sanitizer.sanitize_text(str(item), context=_CTX_CONFIG).sanitized_text
                     if isinstance(item, str)
                     else item
                     for item in value
                 ]
                 sanitized[safe_key] = sanitized_list
             elif isinstance(value, str):
-                result = sanitizer.sanitize_text(value, context="config")
+                result = sanitizer.sanitize_text(value, context=_CTX_CONFIG)
                 sanitized[safe_key] = result.sanitized_text
             elif value is None or isinstance(value, (bool, int, float)):
                 # Safe primitive types - no sanitization needed
@@ -102,7 +121,7 @@ def sanitize_dict(
 def get_stack_trace(sanitizer: Any) -> str:
     """Get current exception stack trace, sanitized to remove secrets."""
     raw_trace = traceback.format_exc()
-    result = sanitizer.sanitize_text(raw_trace, context="stack_trace")
+    result = sanitizer.sanitize_text(raw_trace, context=_CTX_STACK_TRACE)
     return str(result.sanitized_text)
 
 
@@ -165,13 +184,13 @@ def track_llm_call(
     start_time = utcnow()
 
     # SECURITY: Sanitize prompt and response before storage
-    prompt_result = sanitizer.sanitize_text(prompt, context="prompt")
-    response_result = sanitizer.sanitize_text(response, context="response")
+    prompt_result = sanitizer.sanitize_text(prompt, context=_CTX_PROMPT)
+    response_result = sanitizer.sanitize_text(response, context=_CTX_RESPONSE)
 
     # SECURITY: Sanitize error message as well (may contain prompt fragments)
     safe_error_message = None
     if error_message:
-        error_result = sanitizer.sanitize_text(error_message, context="error")
+        error_result = sanitizer.sanitize_text(error_message, context=_CTX_ERROR)
         safe_error_message = error_result.sanitized_text
 
     # Log sanitization activity if redactions were made
@@ -213,7 +232,7 @@ def track_llm_call(
         from src.observability.event_bus import ObservabilityEvent
 
         event_bus.emit(ObservabilityEvent(
-            event_type="llm_call",
+            event_type=_EVENT_LLM_CALL,
             timestamp=start_time,
             data={
                 "llm_call_id": llm_call_id,
@@ -238,7 +257,7 @@ def track_llm_call(
     if alert_manager:
         if latency_ms > 0:
             alert_manager.check_metric(
-                metric_type="latency_p99",
+                metric_type=_METRIC_LATENCY_P99,
                 value=latency_ms,
                 context={
                     "agent_id": agent_id,
@@ -250,7 +269,7 @@ def track_llm_call(
 
         if estimated_cost_usd > 0:
             alert_manager.check_metric(
-                metric_type="cost_usd",
+                metric_type=_METRIC_COST_USD,
                 value=estimated_cost_usd,
                 context={
                     "agent_id": agent_id,
@@ -323,7 +342,7 @@ def track_tool_call(
         from src.observability.event_bus import ObservabilityEvent
 
         event_bus.emit(ObservabilityEvent(
-            event_type="tool_call",
+            event_type=_EVENT_TOOL_CALL,
             timestamp=start_time,
             data={
                 "tool_execution_id": tool_execution_id,
@@ -344,7 +363,7 @@ def track_tool_call(
     if alert_manager and duration_seconds > 0:
         duration_ms = duration_seconds * MILLISECONDS_PER_SECOND
         alert_manager.check_metric(
-            metric_type="duration",
+            metric_type=_METRIC_DURATION,
             value=duration_ms,
             context={
                 "agent_id": agent_id,
@@ -497,7 +516,7 @@ def aggregate_workflow_metrics_on_success(
                 )
                 if alert_manager and total_cost > 0:
                     alert_manager.check_metric(
-                        metric_type="cost_usd", value=total_cost,
+                        metric_type=_METRIC_COST_USD, value=total_cost,
                         context={"workflow_id": workflow_id}
                     )
     except Exception as e:
@@ -530,7 +549,7 @@ def emit_llm_stream_chunk(
         from src.observability.event_bus import ObservabilityEvent
 
         event_bus.emit(ObservabilityEvent(
-            event_type="llm_stream_chunk",
+            event_type=_EVENT_LLM_STREAM_CHUNK,
             timestamp=utcnow(),
             data={
                 "agent_id": agent_id,
@@ -557,6 +576,16 @@ class TrackerCollaborationMixin:
     self.backend, self._session_stack, self._emit_event().
     """
 
+    _collaboration_tracker: Any
+    _decision_tracker: Any
+    backend: Any
+    _emit_event: Any
+
+    @property
+    def _session_stack(self) -> List[Any]:
+        """Session stack for current workflow context (overridden in subclass)."""
+        return []
+
     def track_safety_violation(
         self,
         violation_severity: Literal["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
@@ -573,7 +602,7 @@ class TrackerCollaborationMixin:
             service_name=service_name,
             context=context,
         )
-        self._emit_event("safety_violation", {
+        self._emit_event(_EVENT_SAFETY_VIOLATION, {
             "violation_severity": violation_severity,
             "violation_message": violation_message,
             "policy_name": policy_name,
@@ -607,14 +636,14 @@ class TrackerCollaborationMixin:
             agents=agents, decision=decision, confidence=confidence,
             metadata=metadata,
         )
-        self._emit_event("collaboration_event", {
+        self._emit_event(_EVENT_COLLABORATION, {
             "event_type": event_type,
             "stage_id": stage_id,
             "agents_involved": agents_involved,
             "outcome": outcome,
             "confidence_score": confidence_score,
         })
-        return result
+        return str(result)
 
     def update_agent_merit_score(
         self,

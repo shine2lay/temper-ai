@@ -223,51 +223,50 @@ class RollbackMonitor:
             logger.info(f"Insufficient current data for {agent_name}")
             return None
 
+    # Regression check definitions: (metric_key, threshold_attr, direction, label, value_fmt)
+    # direction="drop" means baseline > current is bad; "increase" means current > baseline is bad
+    # value_fmt is a format template with {v} placeholder
+    _REGRESSION_CHECKS: list[tuple[str, str, str, str, str]] = [
+        ("quality_score", "quality_drop_pct", "drop", "Quality dropped", "{v:.3f}"),
+        ("cost_usd", "cost_increase_pct", "increase", "Cost increased", "${v:.4f}"),
+        ("duration_seconds", "speed_increase_pct", "increase", "Speed degraded", "{v:.1f}s"),
+    ]
+
     def _detect_regression(
         self,
         baseline: AgentPerformanceProfile,
         current: AgentPerformanceProfile,
     ) -> Optional[str]:
-        """
-        Detect if current performance has regressed from baseline.
-
-        Returns:
-            Reason string if regression detected, None otherwise
-        """
-        # Check quality regression
-        baseline_quality = baseline.get_metric("quality_score", "mean")
-        current_quality = current.get_metric("quality_score", "mean")
-
-        if baseline_quality is not None and current_quality is not None:
-            quality_drop_pct = (
-                (baseline_quality - current_quality) / baseline_quality * 100
+        """Detect if current performance has regressed from baseline."""
+        for metric, threshold_attr, direction, label, value_fmt in self._REGRESSION_CHECKS:
+            reason = self._check_metric_regression(
+                baseline, current, metric, getattr(self.thresholds, threshold_attr),
+                direction, label, value_fmt,
             )
-            if quality_drop_pct > self.thresholds.quality_drop_pct:
-                return f"Quality dropped {quality_drop_pct:.1f}% (from {baseline_quality:.3f} to {current_quality:.3f})"
+            if reason:
+                return reason
+        return None
 
-        # Check cost regression
-        baseline_cost = baseline.get_metric("cost_usd", "mean")
-        current_cost = current.get_metric("cost_usd", "mean")
-
-        if baseline_cost is not None and current_cost is not None and baseline_cost > 0:
-            cost_increase_pct = (
-                (current_cost - baseline_cost) / baseline_cost * 100
-            )
-            if cost_increase_pct > self.thresholds.cost_increase_pct:
-                return f"Cost increased {cost_increase_pct:.1f}% (from ${baseline_cost:.4f} to ${current_cost:.4f})"
-
-        # Check speed regression
-        baseline_speed = baseline.get_metric("duration_seconds", "mean")
-        current_speed = current.get_metric("duration_seconds", "mean")
-
-        if baseline_speed is not None and current_speed is not None and baseline_speed > 0:
-            speed_increase_pct = (
-                (current_speed - baseline_speed) / baseline_speed * 100
-            )
-            if speed_increase_pct > self.thresholds.speed_increase_pct:
-                return f"Speed degraded {speed_increase_pct:.1f}% (from {baseline_speed:.1f}s to {current_speed:.1f}s)"
-
-        # No regression detected
+    @staticmethod
+    def _check_metric_regression(
+        baseline: AgentPerformanceProfile,
+        current: AgentPerformanceProfile,
+        metric_key: str, threshold_pct: float,
+        direction: str, label: str, value_fmt: str,
+    ) -> Optional[str]:
+        """Check a single metric for regression. Returns reason string or None."""
+        b_val = baseline.get_metric(metric_key, "mean")
+        c_val = current.get_metric(metric_key, "mean")
+        if b_val is None or c_val is None or b_val == 0:
+            return None
+        if direction == "drop":
+            pct = (b_val - c_val) / b_val * 100
+        else:
+            pct = (c_val - b_val) / b_val * 100
+        if pct > threshold_pct:
+            b_str = value_fmt.format(v=b_val)
+            c_str = value_fmt.format(v=c_val)
+            return f"{label} {pct:.1f}% (from {b_str} to {c_str})"
         return None
 
     def monitor_all_agents(

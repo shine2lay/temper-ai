@@ -36,6 +36,25 @@ MAX_VARIANTS = 4  # Maximum number of variants to generate
 DEFAULT_TEMPERATURE = 0.7  # Default temperature if not specified
 DEFAULT_TOP_P = 0.9  # Default top_p if not specified
 
+# Problem type constants
+PROBLEM_QUALITY_LOW = "quality_low"
+PROBLEM_ERROR_RATE_HIGH = "error_rate_high"
+PROBLEM_INCONSISTENT_OUTPUT = "inconsistent_output"
+PROBLEM_HALLUCINATION = "hallucination"
+PROBLEM_INCORRECT_OUTPUT = "incorrect_output"
+PROBLEM_TOO_VERBOSE = "too_verbose"
+PROBLEM_TOO_BRIEF = "too_brief"
+PROBLEM_UNKNOWN = "unknown"
+
+# Metadata key constants
+META_STRATEGY = "strategy"
+META_VARIANT_TYPE = "variant_type"
+META_CHANGE = "change"
+
+# Inference parameter key constants
+PARAM_TEMPERATURE = "temperature"
+PARAM_TOP_P = "top_p"
+
 # Expected impact estimates by problem type
 IMPACT_QUALITY_LOW = 0.25  # Moderate impact on quality issues
 IMPACT_ERROR_RATE_HIGH = 0.20  # Some impact on error rates
@@ -107,8 +126,8 @@ class TemperatureSearchStrategy(ImprovementStrategy):
             List of 3-4 configuration variants
         """
         variants = []
-        current_temp = current_config.inference.get("temperature", DEFAULT_TEMPERATURE)
-        current_top_p = current_config.inference.get("top_p", DEFAULT_TOP_P)
+        current_temp = current_config.inference.get(PARAM_TEMPERATURE, DEFAULT_TEMPERATURE)
+        current_top_p = current_config.inference.get(PARAM_TOP_P, DEFAULT_TOP_P)
         # Infer problem type from patterns (if available)
         problem_type = self._infer_problem_type(patterns)
 
@@ -117,10 +136,10 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         if current_temp > MIN_TEMP_FOR_REDUCTION:
             target_temp = self.DETERMINISTIC_TEMP if current_temp > TEMP_BOUNDARY_BALANCED else current_temp * LOW_TEMP_MULTIPLIER
             variant_low_temp = copy.deepcopy(current_config)
-            variant_low_temp.inference["temperature"] = round(target_temp, 2)
-            variant_low_temp.extra_metadata["strategy"] = self.name
-            variant_low_temp.extra_metadata["variant_type"] = "lower_temperature"
-            variant_low_temp.extra_metadata["change"] = (
+            variant_low_temp.inference[PARAM_TEMPERATURE] = round(target_temp, 2)
+            variant_low_temp.extra_metadata[META_STRATEGY] = self.name
+            variant_low_temp.extra_metadata[META_VARIANT_TYPE] = "lower_temperature"
+            variant_low_temp.extra_metadata[META_CHANGE] = (
                 f"temperature: {current_temp} -> {target_temp:.2f} (more deterministic)"
             )
             variants.append(variant_low_temp)
@@ -128,27 +147,27 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         # Variant 2: Higher temperature (more creative)
         # Only if problem suggests need for creativity or diversity
         # Skip higher temperature for quality/correctness problems
-        if problem_type not in ("quality_low", "incorrect_output", "hallucination") and current_temp < MAX_TEMP_FOR_INCREASE:
+        if problem_type not in (PROBLEM_QUALITY_LOW, PROBLEM_INCORRECT_OUTPUT, PROBLEM_HALLUCINATION) and current_temp < MAX_TEMP_FOR_INCREASE:
             target_temp = self.CREATIVE_TEMP if current_temp < CREATIVE_TEMP_THRESHOLD else min(MAX_CREATIVE_TEMP, current_temp * HIGH_TEMP_MULTIPLIER)
             variant_high_temp = copy.deepcopy(current_config)
-            variant_high_temp.inference["temperature"] = round(target_temp, 2)
-            variant_high_temp.extra_metadata["strategy"] = self.name
-            variant_high_temp.extra_metadata["variant_type"] = "higher_temperature"
-            variant_high_temp.extra_metadata["change"] = (
+            variant_high_temp.inference[PARAM_TEMPERATURE] = round(target_temp, 2)
+            variant_high_temp.extra_metadata[META_STRATEGY] = self.name
+            variant_high_temp.extra_metadata[META_VARIANT_TYPE] = "higher_temperature"
+            variant_high_temp.extra_metadata[META_CHANGE] = (
                 f"temperature: {current_temp} -> {target_temp:.2f} (more creative)"
             )
             variants.append(variant_high_temp)
 
         # Variant 3: Adjusted top_p for better quality/diversity balance
         # For quality issues, use more focused sampling
-        if problem_type in ("quality_low", "error_rate_high", "incorrect_output"):
+        if problem_type in (PROBLEM_QUALITY_LOW, PROBLEM_ERROR_RATE_HIGH, PROBLEM_INCORRECT_OUTPUT):
             if current_top_p > TOP_P_INCREASE_THRESHOLD:
                 target_top_p = self.FOCUSED_TOP_P
                 variant_top_p = copy.deepcopy(current_config)
-                variant_top_p.inference["top_p"] = target_top_p
-                variant_top_p.extra_metadata["strategy"] = self.name
-                variant_top_p.extra_metadata["variant_type"] = "focused_top_p"
-                variant_top_p.extra_metadata["change"] = (
+                variant_top_p.inference[PARAM_TOP_P] = target_top_p
+                variant_top_p.extra_metadata[META_STRATEGY] = self.name
+                variant_top_p.extra_metadata[META_VARIANT_TYPE] = "focused_top_p"
+                variant_top_p.extra_metadata[META_CHANGE] = (
                     f"top_p: {current_top_p} -> {target_top_p} (more focused)"
                 )
                 variants.append(variant_top_p)
@@ -157,10 +176,10 @@ class TemperatureSearchStrategy(ImprovementStrategy):
             if abs(current_top_p - self.BALANCED_TOP_P) > TOP_P_TOLERANCE:
                 target_top_p = self.BALANCED_TOP_P
                 variant_top_p = copy.deepcopy(current_config)
-                variant_top_p.inference["top_p"] = target_top_p
-                variant_top_p.extra_metadata["strategy"] = self.name
-                variant_top_p.extra_metadata["variant_type"] = "balanced_top_p"
-                variant_top_p.extra_metadata["change"] = (
+                variant_top_p.inference[PARAM_TOP_P] = target_top_p
+                variant_top_p.extra_metadata[META_STRATEGY] = self.name
+                variant_top_p.extra_metadata[META_VARIANT_TYPE] = "balanced_top_p"
+                variant_top_p.extra_metadata[META_CHANGE] = (
                     f"top_p: {current_top_p} -> {target_top_p} (balanced)"
                 )
                 variants.append(variant_top_p)
@@ -169,7 +188,7 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         # Only add if we have 2+ variants already
         if len(variants) >= 2:
             # Choose optimal temperature based on problem type
-            if problem_type in ("quality_low", "error_rate_high", "incorrect_output"):
+            if problem_type in (PROBLEM_QUALITY_LOW, PROBLEM_ERROR_RATE_HIGH, PROBLEM_INCORRECT_OUTPUT):
                 optimal_temp = self.DETERMINISTIC_TEMP
                 optimal_top_p = self.FOCUSED_TOP_P
             else:
@@ -179,11 +198,11 @@ class TemperatureSearchStrategy(ImprovementStrategy):
             # Only add if different from current
             if abs(current_temp - optimal_temp) > TEMP_COMPARISON_TOLERANCE or abs(current_top_p - optimal_top_p) > TOP_P_TOLERANCE:
                 variant_combined = copy.deepcopy(current_config)
-                variant_combined.inference["temperature"] = optimal_temp
-                variant_combined.inference["top_p"] = optimal_top_p
-                variant_combined.extra_metadata["strategy"] = self.name
-                variant_combined.extra_metadata["variant_type"] = "combined_optimal"
-                variant_combined.extra_metadata["change"] = (
+                variant_combined.inference[PARAM_TEMPERATURE] = optimal_temp
+                variant_combined.inference[PARAM_TOP_P] = optimal_top_p
+                variant_combined.extra_metadata[META_STRATEGY] = self.name
+                variant_combined.extra_metadata[META_VARIANT_TYPE] = "combined_optimal"
+                variant_combined.extra_metadata[META_CHANGE] = (
                     f"temperature: {current_temp} -> {optimal_temp}, "
                     f"top_p: {current_top_p} -> {optimal_top_p}"
                 )
@@ -208,13 +227,13 @@ class TemperatureSearchStrategy(ImprovementStrategy):
             True if strategy can help
         """
         applicable_types = {
-            "quality_low",
-            "error_rate_high",
-            "inconsistent_output",
-            "hallucination",
-            "incorrect_output",
-            "too_verbose",
-            "too_brief",
+            PROBLEM_QUALITY_LOW,
+            PROBLEM_ERROR_RATE_HIGH,
+            PROBLEM_INCONSISTENT_OUTPUT,
+            PROBLEM_HALLUCINATION,
+            PROBLEM_INCORRECT_OUTPUT,
+            PROBLEM_TOO_VERBOSE,
+            PROBLEM_TOO_BRIEF,
         }
         return problem_type in applicable_types
 
@@ -236,16 +255,16 @@ class TemperatureSearchStrategy(ImprovementStrategy):
             return super().estimate_impact(problem)
 
         # Fallback: Problem-type-specific estimates (used as priors if no data)
-        problem_type = problem.get("problem_type", problem.get("type", "unknown"))
+        problem_type = problem.get("problem_type", problem.get("type", PROBLEM_UNKNOWN))
 
         impact_by_type = {
-            "quality_low": IMPACT_QUALITY_LOW,
-            "error_rate_high": IMPACT_ERROR_RATE_HIGH,
-            "inconsistent_output": IMPACT_INCONSISTENT_OUTPUT,
-            "hallucination": IMPACT_HALLUCINATION,
-            "incorrect_output": IMPACT_INCORRECT_OUTPUT,
-            "too_verbose": IMPACT_TOO_VERBOSE,
-            "too_brief": IMPACT_TOO_BRIEF,
+            PROBLEM_QUALITY_LOW: IMPACT_QUALITY_LOW,
+            PROBLEM_ERROR_RATE_HIGH: IMPACT_ERROR_RATE_HIGH,
+            PROBLEM_INCONSISTENT_OUTPUT: IMPACT_INCONSISTENT_OUTPUT,
+            PROBLEM_HALLUCINATION: IMPACT_HALLUCINATION,
+            PROBLEM_INCORRECT_OUTPUT: IMPACT_INCORRECT_OUTPUT,
+            PROBLEM_TOO_VERBOSE: IMPACT_TOO_VERBOSE,
+            PROBLEM_TOO_BRIEF: IMPACT_TOO_BRIEF,
         }
 
         return impact_by_type.get(problem_type, IMPACT_DEFAULT)
@@ -261,18 +280,18 @@ class TemperatureSearchStrategy(ImprovementStrategy):
             Inferred problem type (or "unknown" if unclear)
         """
         if not patterns:
-            return "unknown"
+            return PROBLEM_UNKNOWN
 
         # Map pattern types to problem types
         for pattern in patterns:
             pattern_type_lower = pattern.pattern_type.lower()
             if "quality" in pattern_type_lower:
-                return "quality_low"
+                return PROBLEM_QUALITY_LOW
             elif "inconsistent" in pattern_type_lower or "variance" in pattern_type_lower:
-                return "inconsistent_output"
+                return PROBLEM_INCONSISTENT_OUTPUT
             elif "error" in pattern_type_lower:
-                return "error_rate_high"
+                return PROBLEM_ERROR_RATE_HIGH
             elif "hallucin" in pattern_type_lower:
-                return "hallucination"
+                return PROBLEM_HALLUCINATION
 
-        return "unknown"
+        return PROBLEM_UNKNOWN

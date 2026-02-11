@@ -44,169 +44,126 @@ class SequentialStageExecutor(StageExecutor):
         # H-13: Shared shutdown event for interruptible retry waits
         self.shutdown_event = threading.Event()
 
-    def execute_stage(
-        self,
-        stage_name: str,
-        stage_config: Any,
-        state: Dict[str, Any],
-        config_loader: ConfigLoaderProtocol,
-        tool_registry: Optional[DomainToolRegistryProtocol] = None,
-        halt_on_failure: bool = True
-    ) -> Dict[str, Any]:
-        """Execute stage with sequential agent execution.
-
-        Agents run one at a time. Each agent's output is accumulated so that
-        subsequent agents can see prior agents' work via ``current_stage_agents``
-        in their input data. The final stage output is a dict containing all
-        per-agent outputs, statuses, and metrics.
-
-        Args:
-            stage_name: Stage name
-            stage_config: Stage configuration
-            state: Current workflow state
-            config_loader: ConfigLoader for loading agent configs
-            tool_registry: ToolRegistry for agent tool access
-            halt_on_failure: DEPRECATED - use stage error_handling config instead
-
-        Returns:
-            Updated workflow state
-        """
-        # Get tracker if available
-        tracker = state.get("tracker")
-        workflow_id = state.get("workflow_id", "unknown")
-
-        # Get error handling config from stage_config
+    def _parse_stage_config(
+        self, stage_config: Any, halt_on_failure: bool,
+    ) -> tuple[list, Any]:
+        """Extract agents list and error handling config from stage config."""
         error_handling_config = None
         if hasattr(stage_config, 'stage'):
-            # Pydantic model
             agents = stage_config.stage.agents
             if hasattr(stage_config.stage, 'error_handling'):
                 error_handling_config = stage_config.stage.error_handling
         else:
-            # Dict - try nested path first, then direct
             agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
             error_handling_dict = get_nested_value(stage_config, 'stage.error_handling')
             if error_handling_dict:
                 error_handling_config = StageErrorHandlingConfig(**error_handling_dict)
 
-        # If no error_handling config, create default based on halt_on_failure param
         if error_handling_config is None:
             on_failure: Literal["halt_stage", "continue_with_remaining"] = (
                 "halt_stage" if halt_on_failure else "continue_with_remaining"
             )
             error_handling_config = StageErrorHandlingConfig(on_agent_failure=on_failure)
 
-        # Track stage execution if tracker available
-        stage_config_dict = stage_config.model_dump() if hasattr(stage_config, 'model_dump') else stage_config
+        return agents, error_handling_config
 
+    def _run_agents_tracked(
+        self, agents: list, stage_name: str, state: Dict[str, Any],
+        config_loader: ConfigLoaderProtocol, error_handling: Any,
+        tracker: Any, workflow_id: str,
+    ) -> tuple:
+        """Run all agents with optional tracker context."""
         if tracker:
+            stage_config_dict = state.get("_stage_config_dict", {})
             with tracker.track_stage(
-                stage_name=stage_name,
-                stage_config=stage_config_dict,
-                workflow_id=workflow_id,
-                input_data=state.get("stage_outputs", {})
+                stage_name=stage_name, stage_config=stage_config_dict,
+                workflow_id=workflow_id, input_data=state.get("stage_outputs", {}),
             ) as stage_id:
-                agent_outputs, agent_statuses, agent_metrics = run_all_agents(
-                    executor=self,
-                    agents=agents,
-                    stage_id=stage_id,
-                    stage_name=stage_name,
-                    workflow_id=workflow_id,
-                    state=state,
-                    tracker=tracker,
-                    config_loader=config_loader,
-                    error_handling=error_handling_config,
-                    agent_factory_cls=AgentFactory,
+                return run_all_agents(
+                    executor=self, agents=agents, stage_id=stage_id,
+                    stage_name=stage_name, workflow_id=workflow_id, state=state,
+                    tracker=tracker, config_loader=config_loader,
+                    error_handling=error_handling, agent_factory_cls=AgentFactory,
                 )
-        else:
-            agent_outputs, agent_statuses, agent_metrics = run_all_agents(
-                executor=self,
-                agents=agents,
-                stage_id=f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
-                stage_name=stage_name,
-                workflow_id=workflow_id,
-                state=state,
-                tracker=None,
-                config_loader=config_loader,
-                error_handling=error_handling_config,
-                agent_factory_cls=AgentFactory,
-            )
+        return run_all_agents(
+            executor=self, agents=agents,
+            stage_id=f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
+            stage_name=stage_name, workflow_id=workflow_id, state=state,
+            tracker=None, config_loader=config_loader,
+            error_handling=error_handling, agent_factory_cls=AgentFactory,
+        )
 
-        # Check if collaboration is configured
+    def _resolve_final_output(
+        self, agent_outputs: Dict[str, Any], stage_config: Any,
+        stage_name: str, state: Dict[str, Any],
+        config_loader: ConfigLoaderProtocol, agents: list,
+    ) -> tuple[str, Any]:
+        """Determine final output via synthesis or last agent fallback."""
         collaboration_config = None
         if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'collaboration'):
             collaboration_config = stage_config.stage.collaboration
         elif isinstance(stage_config, dict):
             collaboration_config = get_nested_value(stage_config, 'stage.collaboration')
 
-        # Determine final output
-        final_output = ""
-        synthesis_result = None
-
         if collaboration_config and len(agent_outputs) > 1:
-            # Run collaboration synthesis
             try:
                 from src.strategies.base import AgentOutput
-                agent_output_list = []
-                for agent_name, output_data in agent_outputs.items():
-                    agent_output_list.append(AgentOutput(
-                        agent_name=agent_name,
-                        decision=output_data.get("output", ""),
-                        reasoning=output_data.get("reasoning", ""),
-                        confidence=output_data.get("confidence", PROB_VERY_HIGH),
-                        metadata=output_data.get("metadata", {})
-                    ))
-
-                synthesis_result = self._run_synthesis(
-                    agent_output_list,
-                    stage_config,
-                    stage_name,
-                    state=state,
-                    config_loader=config_loader,
-                    agents=agents
+                agent_output_list = [
+                    AgentOutput(
+                        agent_name=name,
+                        decision=data.get("output", ""),
+                        reasoning=data.get("reasoning", ""),
+                        confidence=data.get("confidence", PROB_VERY_HIGH),
+                        metadata=data.get("metadata", {}),
+                    )
+                    for name, data in agent_outputs.items()
+                ]
+                result = self._run_synthesis(
+                    agent_output_list, stage_config, stage_name,
+                    state=state, config_loader=config_loader, agents=agents,
                 )
-
-                final_output = synthesis_result.decision
-
                 logger.info(
-                    f"Sequential stage {stage_name} used collaboration synthesis: "
-                    f"{synthesis_result.method} (confidence={synthesis_result.confidence:.2f})"
+                    "Sequential stage %s used collaboration synthesis: "
+                    "%s (confidence=%.2f)", stage_name, result.method, result.confidence,
                 )
-
+                return result.decision, result
             except (RuntimeError, ConfigValidationError, ValueError, KeyError) as e:
                 logger.warning(
-                    f"Collaboration synthesis failed for sequential stage {stage_name}: {e}. "
-                    f"Falling back to last agent output."
+                    "Collaboration synthesis failed for sequential stage %s: %s. "
+                    "Falling back to last agent output.", stage_name, e,
                 )
-                if agent_outputs:
-                    last_key = list(agent_outputs.keys())[-1]
-                    final_output = agent_outputs[last_key].get("output", "")
-        else:
-            # No collaboration - use last agent's output for backward compatibility
-            if agent_outputs:
-                last_key = list(agent_outputs.keys())[-1]
-                final_output = agent_outputs[last_key].get("output", "")
 
-        # Store structured stage output in state
+        final_output = ""
+        if agent_outputs:
+            last_key = list(agent_outputs.keys())[-1]
+            final_output = agent_outputs[last_key].get("output", "")
+        return final_output, None
+
+    @staticmethod
+    def _store_stage_output(
+        state: Dict[str, Any], stage_name: str,
+        final_output: str, synthesis_result: Any,
+        agent_outputs: Dict[str, Any], agent_statuses: Dict[str, Any],
+        agent_metrics: Dict[str, Any], agents: list,
+    ) -> None:
+        """Build and store stage output in state."""
         if not isinstance(state.get("stage_outputs"), dict):
             state["stage_outputs"] = {}
 
-        stage_output = {
+        stage_output: Dict[str, Any] = {
             "output": final_output,
             "agent_outputs": agent_outputs,
             "agent_statuses": agent_statuses,
             "agent_metrics": agent_metrics,
         }
-
         if synthesis_result:
             stage_output["synthesis_result"] = {
                 "method": synthesis_result.method,
                 "confidence": synthesis_result.confidence,
-                "votes": synthesis_result.votes if hasattr(synthesis_result, "votes") else {},
-                "metadata": synthesis_result.metadata if hasattr(synthesis_result, "metadata") else {}
+                "votes": getattr(synthesis_result, "votes", {}),
+                "metadata": getattr(synthesis_result, "metadata", {}),
             }
 
-        # Compute stage_status based on agent results
         failed_count = sum(
             1 for s in agent_statuses.values()
             if (isinstance(s, dict) and s.get("status") == "failed") or s == "failed"
@@ -221,6 +178,38 @@ class SequentialStageExecutor(StageExecutor):
 
         state["stage_outputs"][stage_name] = stage_output
         state["current_stage"] = stage_name
+
+    def execute_stage(
+        self,
+        stage_name: str,
+        stage_config: Any,
+        state: Dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+        tool_registry: Optional[DomainToolRegistryProtocol] = None,
+        halt_on_failure: bool = True
+    ) -> Dict[str, Any]:
+        """Execute stage with sequential agent execution. Returns updated state."""
+        tracker = state.get("tracker")
+        workflow_id = state.get("workflow_id", "unknown")
+
+        agents, error_handling = self._parse_stage_config(stage_config, halt_on_failure)
+
+        state["_stage_config_dict"] = (
+            stage_config.model_dump() if hasattr(stage_config, 'model_dump') else stage_config
+        )
+        agent_outputs, agent_statuses, agent_metrics = self._run_agents_tracked(
+            agents, stage_name, state, config_loader, error_handling, tracker, workflow_id,
+        )
+        state.pop("_stage_config_dict", None)
+
+        final_output, synthesis_result = self._resolve_final_output(
+            agent_outputs, stage_config, stage_name, state, config_loader, agents,
+        )
+
+        self._store_stage_output(
+            state, stage_name, final_output, synthesis_result,
+            agent_outputs, agent_statuses, agent_metrics, agents,
+        )
 
         return state
 

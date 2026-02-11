@@ -37,6 +37,28 @@ UUID_HEX_LENGTH = 12
 # Index of total_cost_usd in aggregate_workflow_metrics query result tuple
 _TOTAL_COST_INDEX = 3
 
+# Metadata keys for safety violation tracking
+_KEY_SAFETY_VIOLATIONS = "safety_violations"
+_KEY_HAS_SAFETY_VIOLATIONS = "has_safety_violations"
+_KEY_SAFETY_VIOLATION_COUNT = "safety_violation_count"
+
+# Execution status values
+_STATUS_RUNNING = "running"
+_STATUS_COMPLETED = "completed"
+_STATUS_FAILED = "failed"
+
+# Foreign key error detection patterns
+_FK_ERROR_PATTERNS = ("foreign key", "foreign_key", "violates foreign key constraint", "foreign key constraint failed")
+
+# Collaboration event ID prefix
+_COLLAB_ID_PREFIX = "collab-"
+
+# Backend type identifier
+_BACKEND_TYPE_SQL = "sql"
+
+# Default version string for config snapshots
+_DEFAULT_VERSION = "1.0"
+
 
 def track_safety_violation(
     workflow_id: Optional[str],
@@ -79,11 +101,11 @@ def track_safety_violation(
             agent = session.exec(statement).first()
             if agent:
                 metadata = agent.extra_metadata or {}
-                if "safety_violations" not in metadata:
-                    metadata["safety_violations"] = []
-                metadata["safety_violations"].append(violation_metadata)
-                metadata["has_safety_violations"] = True
-                metadata["safety_violation_count"] = len(metadata["safety_violations"])
+                if _KEY_SAFETY_VIOLATIONS not in metadata:
+                    metadata[_KEY_SAFETY_VIOLATIONS] = []
+                metadata[_KEY_SAFETY_VIOLATIONS].append(violation_metadata)
+                metadata[_KEY_HAS_SAFETY_VIOLATIONS] = True
+                metadata[_KEY_SAFETY_VIOLATION_COUNT] = len(metadata[_KEY_SAFETY_VIOLATIONS])
                 agent.extra_metadata = metadata
 
         # Update stage execution with violation (if stage context exists)
@@ -92,11 +114,11 @@ def track_safety_violation(
             stage = session.exec(stage_stmt).first()
             if stage:
                 stage_metadata = stage.extra_metadata or {}
-                if "safety_violations" not in stage_metadata:
-                    stage_metadata["safety_violations"] = []
-                stage_metadata["safety_violations"].append(violation_metadata)
-                stage_metadata["has_safety_violations"] = True
-                stage_metadata["safety_violation_count"] = len(stage_metadata["safety_violations"])
+                if _KEY_SAFETY_VIOLATIONS not in stage_metadata:
+                    stage_metadata[_KEY_SAFETY_VIOLATIONS] = []
+                stage_metadata[_KEY_SAFETY_VIOLATIONS].append(violation_metadata)
+                stage_metadata[_KEY_HAS_SAFETY_VIOLATIONS] = True
+                stage_metadata[_KEY_SAFETY_VIOLATION_COUNT] = len(stage_metadata[_KEY_SAFETY_VIOLATIONS])
                 stage.extra_metadata = stage_metadata
 
         # Update workflow execution with violation (if workflow context exists)
@@ -105,11 +127,11 @@ def track_safety_violation(
             workflow = session.exec(wf_stmt).first()
             if workflow:
                 wf_metadata = workflow.extra_metadata or {}
-                if "safety_violations" not in wf_metadata:
-                    wf_metadata["safety_violations"] = []
-                wf_metadata["safety_violations"].append(violation_metadata)
-                wf_metadata["has_safety_violations"] = True
-                wf_metadata["safety_violation_count"] = len(wf_metadata["safety_violations"])
+                if _KEY_SAFETY_VIOLATIONS not in wf_metadata:
+                    wf_metadata[_KEY_SAFETY_VIOLATIONS] = []
+                wf_metadata[_KEY_SAFETY_VIOLATIONS].append(violation_metadata)
+                wf_metadata[_KEY_HAS_SAFETY_VIOLATIONS] = True
+                wf_metadata[_KEY_SAFETY_VIOLATION_COUNT] = len(wf_metadata[_KEY_SAFETY_VIOLATIONS])
                 workflow.extra_metadata = wf_metadata
 
         session.commit()
@@ -133,7 +155,7 @@ def track_collaboration_event(
         str: ID of created collaboration event record
     """
     # Generate unique event ID
-    event_id = f"collab-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
+    event_id = f"{_COLLAB_ID_PREFIX}{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 
     # Use current timestamp if not provided
     if timestamp is None:
@@ -172,11 +194,8 @@ def track_collaboration_event(
             error_msg = str(e).lower()
             orig_error = str(e.orig).lower() if hasattr(e, 'orig') else ""
             is_fk_violation = (
-                'foreign key' in error_msg or
-                'foreign_key' in error_msg or
-                'violates foreign key constraint' in error_msg or
-                'foreign key constraint failed' in error_msg or
-                'foreign key' in orig_error
+                any(pat in error_msg for pat in _FK_ERROR_PATTERNS) or
+                any(pat in orig_error for pat in _FK_ERROR_PATTERNS)
             )
 
             if is_fk_violation:
@@ -277,8 +296,8 @@ def aggregate_stage_metrics(stage_id: str) -> Dict[str, int]:
     with get_session() as session:
         metrics_statement = select(
             func.count(AgentExecution.id).label('total'),  # type: ignore[arg-type]
-            func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
-            func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
+            func.sum(case((AgentExecution.status == _STATUS_COMPLETED, 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
+            func.sum(case((AgentExecution.status == _STATUS_FAILED, 1), else_=0)).label('failed')  # type: ignore[arg-type]
         ).where(AgentExecution.stage_execution_id == stage_id)
 
         result = session.exec(metrics_statement).first()
@@ -624,7 +643,7 @@ def get_backend_stats() -> Dict[str, Any]:
         ).first()
 
         return {
-            "backend_type": "sql",
+            "backend_type": _BACKEND_TYPE_SQL,
             "total_workflows": total_workflows,
             "total_stages": total_stages,
             "total_agents": total_agents,
@@ -714,3 +733,82 @@ def flush_buffer(
                     agent.estimated_cost_usd = (agent.estimated_cost_usd or 0) + metrics.estimated_cost_usd
             session.commit()
             logger.debug(f"Batch updated {len(agent_metrics)} agent metrics")
+
+
+# ---------------------------------------------------------------------------
+# Mixin: delegates thin-wrapper methods to module-level helpers
+# ---------------------------------------------------------------------------
+
+class SQLDelegatedMethodsMixin:
+    """Mixin providing read, safety, collaboration, and aggregation methods.
+
+    Reduces SQLObservabilityBackend method count by moving thin wrappers
+    into this mixin. All methods delegate to module-level helper functions.
+    """
+
+    def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+        """Get workflow execution with full hierarchy."""
+        return read_get_workflow(workflow_id)
+
+    def list_workflows(self, limit: int = DEFAULT_LIST_LIMIT, offset: int = 0, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List workflow executions (summary only, no children)."""
+        return read_list_workflows(limit, offset, status)
+
+    def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+        """Get stage with agents and collaboration events."""
+        return read_get_stage(stage_id)
+
+    def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """Get agent with LLM calls and tool calls."""
+        return read_get_agent(agent_id)
+
+    def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get single LLM call with full prompt/response."""
+        return read_get_llm_call(llm_call_id)
+
+    def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get single tool execution with full params/output."""
+        return read_get_tool_call(tool_call_id)
+
+    def track_safety_violation(
+        self, workflow_id: Optional[str], stage_id: Optional[str], agent_id: Optional[str],
+        violation_severity: str, violation_message: str, policy_name: str,
+        service_name: Optional[str] = None, context: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None
+    ) -> None:
+        """Track safety violation."""
+        track_safety_violation(
+            workflow_id, stage_id, agent_id, violation_severity,
+            violation_message, policy_name, service_name, context, timestamp
+        )
+
+    def track_collaboration_event(
+        self, stage_id: str, event_type: str, agents_involved: List[str],
+        event_data: Optional[Dict[str, Any]] = None, round_number: Optional[int] = None,
+        resolution_strategy: Optional[str] = None, outcome: Optional[str] = None,
+        confidence_score: Optional[float] = None,
+        extra_metadata: Optional[Dict[str, Any]] = None,
+        timestamp: Optional[datetime] = None
+    ) -> str:
+        """Track collaboration event."""
+        return track_collaboration_event(
+            stage_id, event_type, agents_involved, event_data,
+            round_number, resolution_strategy, outcome, confidence_score,
+            extra_metadata, timestamp
+        )
+
+    def cleanup_old_records(self, retention_days: int, dry_run: bool = False) -> Dict[str, int]:
+        """Clean up old records."""
+        return cleanup_old_records(retention_days, dry_run)
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Return backend statistics."""
+        return get_backend_stats()
+
+    def aggregate_workflow_metrics(self, workflow_id: str) -> Dict[str, Any]:
+        """Aggregate workflow metrics."""
+        return aggregate_workflow_metrics(workflow_id)
+
+    def aggregate_stage_metrics(self, stage_id: str) -> Dict[str, int]:
+        """Aggregate stage metrics."""
+        return aggregate_stage_metrics(stage_id)

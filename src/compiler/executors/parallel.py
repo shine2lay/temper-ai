@@ -62,6 +62,101 @@ class ParallelStageExecutor(StageExecutor):
         # Avoids recreating agents on every parallel invocation.
         self._agent_cache: Dict[str, Any] = {}
 
+    @staticmethod
+    def _get_wall_clock_timeout(stage_config: Any) -> float:
+        """Extract wall-clock timeout from stage config."""
+        if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'execution'):
+            return float(
+                getattr(stage_config.stage.execution, 'timeout_seconds', SECONDS_PER_10_MINUTES)
+            )
+        if isinstance(stage_config, dict):
+            exec_cfg = get_nested_value(stage_config, 'stage.execution') or {}
+            return float(exec_cfg.get('timeout_seconds', SECONDS_PER_10_MINUTES))
+        return float(SECONDS_PER_10_MINUTES)
+
+    @staticmethod
+    def _get_agents(stage_config: Any) -> list:
+        """Extract agents list from stage config."""
+        if hasattr(stage_config, 'stage'):
+            return list(stage_config.stage.agents)
+        return list(get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', []))
+
+    def _build_agent_nodes(
+        self, agents: list, stage_name: str, state: Dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+    ) -> Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]]:
+        """Build agent node callables for parallel execution."""
+        nodes: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
+        for agent_ref in agents:
+            name = self._extract_agent_name(agent_ref)
+            nodes[name] = create_agent_node(
+                agent_name=name, agent_ref=agent_ref, stage_name=stage_name,
+                state=state, config_loader=config_loader,
+                agent_cache=self._agent_cache, agent_factory_cls=AgentFactory,
+            )
+        return nodes
+
+    def _run_parallel_and_synthesize(
+        self, agents: list, stage_name: str, stage_config: Any,
+        state: Dict[str, Any], config_loader: ConfigLoaderProtocol,
+    ) -> tuple:
+        """Run agents in parallel, synthesize, return (parallel_result, agent_outputs_dict, aggregate_metrics, synthesis_result)."""
+        init_parallel = build_init_parallel_node(state)
+        collect_outputs = build_collect_outputs_node(agents, stage_config)
+        agent_nodes = self._build_agent_nodes(agents, stage_name, state, config_loader)
+
+        initial_state: Dict[str, Any] = {
+            "agent_outputs": {}, "agent_statuses": {},
+            "agent_metrics": {}, "errors": {}, "stage_input": {},
+        }
+        parallel_result = self.parallel_runner.run_parallel(
+            nodes=agent_nodes, initial_state=initial_state,
+            init_node=init_parallel, collect_node=collect_outputs,
+        )
+
+        agent_outputs_dict = parallel_result["agent_outputs"]
+        if state.get("show_details") and state.get("detail_console"):
+            print_parallel_progress(parallel_result, state["detail_console"])
+        logger.info("Stage '%s' parallel execution complete", stage_name)
+
+        aggregate_metrics = agent_outputs_dict.pop("__aggregate_metrics__", {})
+
+        from src.strategies.base import AgentOutput
+        agent_output_list = [
+            AgentOutput(
+                agent_name=a_name,
+                decision=data.get("output", ""),
+                reasoning=data.get("reasoning", ""),
+                confidence=data.get("confidence", PROB_VERY_HIGH),
+                metadata=data.get("metadata", {}),
+            )
+            for a_name, data in agent_outputs_dict.items()
+        ]
+        synthesis_result = self._run_synthesis(
+            agent_outputs=agent_output_list, stage_config=stage_config,
+            stage_name=stage_name, state=state,
+            config_loader=config_loader, agents=agents,
+        )
+        return parallel_result, agent_outputs_dict, aggregate_metrics, synthesis_result
+
+    @staticmethod
+    def _handle_stage_error(stage_name: str, stage_config: Any, state: Dict[str, Any], exc: Exception) -> Dict[str, Any]:
+        """Handle error based on error_handling policy. Returns state or re-raises."""
+        logger.error(
+            "Stage '%s' failed during parallel execution: %s: %s",
+            stage_name, type(exc).__name__, exc, exc_info=True,
+        )
+        stage_dict = stage_config if isinstance(stage_config, dict) else {}
+        on_failure = stage_dict.get("error_handling", {}).get("on_stage_failure", "halt")
+        if on_failure == "skip":
+            logger.warning(
+                "Stage '%s' error_handling policy is 'skip'; continuing without this stage's output.",
+                stage_name,
+            )
+            state["stage_outputs"][stage_name] = None
+            return state
+        raise exc
+
     def execute_stage(
         self,
         stage_name: str,
@@ -70,179 +165,39 @@ class ParallelStageExecutor(StageExecutor):
         config_loader: ConfigLoaderProtocol,
         tool_registry: Optional[DomainToolRegistryProtocol] = None
     ) -> Dict[str, Any]:
-        """Execute stage with parallel agent execution.
+        """Execute stage with parallel agent execution. Returns updated state."""
+        wc_timeout = self._get_wall_clock_timeout(stage_config)
+        wc_start = time.monotonic()
 
-        Creates a nested LangGraph with parallel branches for agents,
-        collects outputs, and synthesizes via collaboration strategy.
-
-        Uses an iterative loop for quality gate retries to avoid stack
-        overflow with high max_retries values.
-
-        Args:
-            stage_name: Stage name
-            stage_config: Stage configuration
-            state: Current workflow state
-            config_loader: ConfigLoader for loading agent configs
-            tool_registry: ToolRegistry for agent tool access
-
-        Returns:
-            Updated workflow state with synthesized output
-
-        Raises:
-            RuntimeError: If stage execution fails
-        """
-        # Derive wall-clock timeout for the entire retry loop from stage config.
-        _wall_clock_timeout: float = SECONDS_PER_10_MINUTES
-        if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'execution'):
-            _wall_clock_timeout = float(
-                getattr(stage_config.stage.execution, 'timeout_seconds', SECONDS_PER_10_MINUTES)
-            )
-        elif isinstance(stage_config, dict):
-            _exec_cfg = get_nested_value(stage_config, 'stage.execution') or {}
-            _wall_clock_timeout = float(_exec_cfg.get('timeout_seconds', SECONDS_PER_10_MINUTES))
-
-        _wall_clock_start = time.monotonic()
-
-        # Iterative retry loop -- replaces former recursive self.execute_stage() call.
         while True:
-            # Get agents for this stage
-            if hasattr(stage_config, 'stage'):
-                agents = stage_config.stage.agents
-            else:
-                agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
-
-            # Build init and collection nodes via helpers
-            init_parallel = build_init_parallel_node(state)
-            collect_outputs = build_collect_outputs_node(agents, stage_config)
-
-            # Build agent nodes
-            agent_nodes: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
-            for agent_ref in agents:
-                agent_name = self._extract_agent_name(agent_ref)
-                agent_nodes[agent_name] = create_agent_node(
-                    agent_name=agent_name,
-                    agent_ref=agent_ref,
-                    stage_name=stage_name,
-                    state=state,
-                    config_loader=config_loader,
-                    agent_cache=self._agent_cache,
-                    agent_factory_cls=AgentFactory,
-                )
-
-            prior_stages = list(state.get("stage_outputs", {}).keys())
-            input_info = f"prior stages: {prior_stages}" if prior_stages else "workflow inputs only"
-            logger.info("Stage '%s' starting parallel execution with %d agent(s) (%s)", stage_name, len(agents), input_info)
-
-            show_details = state.get("show_details", False)
-            detail_console = state.get("detail_console")
-            if show_details and detail_console:
-                detail_console.print(f"\n[bold cyan]\u2500\u2500 Stage: {stage_name} \u2500\u2500[/bold cyan]")
+            agents = self._get_agents(stage_config)
+            if state.get("show_details") and state.get("detail_console"):
+                state["detail_console"].print(f"\n[bold cyan]\u2500\u2500 Stage: {stage_name} \u2500\u2500[/bold cyan]")
 
             try:
-                initial_state: Dict[str, Any] = {
-                    "agent_outputs": {},
-                    "agent_statuses": {},
-                    "agent_metrics": {},
-                    "errors": {},
-                    "stage_input": {}
-                }
-                parallel_result = self.parallel_runner.run_parallel(
-                    nodes=agent_nodes,
-                    initial_state=initial_state,
-                    init_node=init_parallel,
-                    collect_node=collect_outputs,
+                pr, ao_dict, agg, synth = self._run_parallel_and_synthesize(
+                    agents, stage_name, stage_config, state, config_loader,
                 )
-
-                agent_outputs_dict = parallel_result["agent_outputs"]
-
-                # Print progress for parallel agents (after all complete)
-                if show_details and detail_console:
-                    print_parallel_progress(parallel_result, detail_console)
-
-                logger.info("Stage '%s' parallel execution complete", stage_name)
-
-                # Extract aggregate metrics (stored with special key)
-                aggregate_metrics = agent_outputs_dict.pop("__aggregate_metrics__", {})
-
-                # Create AgentOutput objects for synthesis
-                from src.strategies.base import AgentOutput
-
-                agent_outputs = []
-                for a_name, output_data in agent_outputs_dict.items():
-                    agent_outputs.append(AgentOutput(
-                        agent_name=a_name,
-                        decision=output_data.get("output", ""),
-                        reasoning=output_data.get("reasoning", ""),
-                        confidence=output_data.get("confidence", PROB_VERY_HIGH),
-                        metadata=output_data.get("metadata", {})
-                    ))
-
-                # Run synthesis
-                synthesis_result = self._run_synthesis(
-                    agent_outputs=agent_outputs,
-                    stage_config=stage_config,
-                    stage_name=stage_name,
-                    state=state,
-                    config_loader=config_loader,
-                    agents=agents
-                )
-
-                # Validate quality gates (M3-12)
                 passed, violations = self._validate_quality_gates(
-                    synthesis_result=synthesis_result,
-                    stage_config=stage_config,
-                    stage_name=stage_name,
-                    state=state
+                    synthesis_result=synth, stage_config=stage_config,
+                    stage_name=stage_name, state=state,
                 )
-
-                # Handle quality gate failures via helper
                 action = handle_quality_gate_failure(
-                    passed=passed,
-                    violations=violations,
-                    synthesis_result=synthesis_result,
-                    stage_config=stage_config,
-                    stage_name=stage_name,
-                    state=state,
-                    wall_clock_start=_wall_clock_start,
-                    wall_clock_timeout=_wall_clock_timeout,
+                    passed=passed, violations=violations, synthesis_result=synth,
+                    stage_config=stage_config, stage_name=stage_name, state=state,
+                    wall_clock_start=wc_start, wall_clock_timeout=wc_timeout,
                 )
                 if action == "continue":
                     continue
-
-                # Update state with results via helper
                 update_state_with_results(
-                    state=state,
-                    stage_name=stage_name,
-                    synthesis_result=synthesis_result,
-                    agent_outputs_dict=agent_outputs_dict,
-                    parallel_result=parallel_result,
-                    aggregate_metrics=aggregate_metrics,
+                    state=state, stage_name=stage_name, synthesis_result=synth,
+                    agent_outputs_dict=ao_dict, parallel_result=pr,
+                    aggregate_metrics=agg,
                 )
-
                 return state
 
             except (RuntimeError, ConfigNotFoundError, ConfigValidationError, ToolExecutionError, LLMError, ValueError) as exc:
-                logger.error(
-                    "Stage '%s' failed during parallel execution: %s: %s",
-                    stage_name, type(exc).__name__, exc, exc_info=True,
-                )
-
-                stage_dict = stage_config if isinstance(stage_config, dict) else {}
-                error_handling = stage_dict.get("error_handling", {})
-                on_failure = error_handling.get("on_stage_failure", "halt")
-
-                if on_failure == "halt":
-                    raise
-                elif on_failure == "skip":
-                    logger.warning(
-                        "Stage '%s' error_handling policy is 'skip'; "
-                        "continuing workflow without this stage's output.",
-                        stage_name,
-                    )
-                    state["stage_outputs"][stage_name] = None
-                    return state
-                else:
-                    raise
+                return self._handle_stage_error(stage_name, stage_config, state, exc)
 
     def supports_stage_type(self, stage_type: str) -> bool:
         """Check if executor supports this stage type.

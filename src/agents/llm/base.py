@@ -8,8 +8,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
-from types import TracebackType
-from typing import Any, Callable, Dict, Literal, Optional, Tuple, Type
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import httpx
 
@@ -28,6 +27,7 @@ from src.agents.constants import (
 
 # Helper functions extracted to reduce class size
 from src.agents.llm._base_helpers import (
+    LLMContextManagerMixin,
     build_bearer_auth_headers,
 )
 from src.agents.llm._base_helpers import (
@@ -145,7 +145,7 @@ class LLMStreamChunk:
 StreamCallback = Callable[[LLMStreamChunk], None]
 
 
-class BaseLLM(ABC):
+class BaseLLM(LLMContextManagerMixin, ABC):
     """Abstract base class for LLM providers.
 
     See _base_helpers.py for extracted internal logic.
@@ -268,30 +268,6 @@ class BaseLLM(ABC):
                 ResourceWarning,
                 stacklevel=2
             )
-
-    def __enter__(self) -> "BaseLLM":
-        return self
-
-    def __exit__(
-        self,
-        _exc_type: Optional[Type[BaseException]],
-        _exc_val: Optional[BaseException],
-        _exc_tb: Optional[TracebackType]
-    ) -> Literal[False]:
-        self.close()
-        return False
-
-    async def __aenter__(self) -> "BaseLLM":
-        return self
-
-    async def __aexit__(
-        self,
-        _exc_type: Optional[Type[BaseException]],
-        _exc_val: Optional[BaseException],
-        _exc_tb: Optional[TracebackType]
-    ) -> Literal[False]:
-        await self.aclose()
-        return False
 
     @abstractmethod
     def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:

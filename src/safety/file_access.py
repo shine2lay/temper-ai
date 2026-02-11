@@ -33,6 +33,19 @@ from src.safety.constants import (
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
 
+# File access violation types
+VIOLATION_PARENT_TRAVERSAL = "parent_traversal"
+VIOLATION_ABSOLUTE_PATH = "absolute_path"
+VIOLATION_FORBIDDEN_FILE = "forbidden_file"
+VIOLATION_FORBIDDEN_DIRECTORY = "forbidden_directory"
+VIOLATION_FORBIDDEN_EXTENSION = "forbidden_extension"
+VIOLATION_NOT_IN_ALLOWLIST = "not_in_allowlist"
+VIOLATION_IN_DENYLIST = "in_denylist"
+
+# File access modes
+MODE_ALLOWLIST = "allowlist"
+MODE_DENYLIST = "denylist"
+
 # File access policy priority
 FILE_ACCESS_PRIORITY = 95
 # Maximum extension length
@@ -221,7 +234,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         self.forbidden_files: Set[str] = set(forbidden_files_validated) | self.DEFAULT_FORBIDDEN_FILES
 
         # Mode detection
-        self.mode = "allowlist" if self.allowed_paths else "denylist"
+        self.mode = MODE_ALLOWLIST if self.allowed_paths else MODE_DENYLIST
 
     @property
     def name(self) -> str:
@@ -267,7 +280,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=f"Path traversal detected: {path}",
                     action=str(action), context=context,
                     remediation_hint="Remove parent directory references (../)",
-                    metadata={"path": path, "violation": "parent_traversal"}
+                    metadata={"path": path, "violation": VIOLATION_PARENT_TRAVERSAL}
                 ))
                 continue
 
@@ -277,7 +290,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=f"Absolute path not allowed: {path}",
                     action=str(action), context=context,
                     remediation_hint="Use relative paths only",
-                    metadata={"path": path, "violation": "absolute_path"}
+                    metadata={"path": path, "violation": VIOLATION_ABSOLUTE_PATH}
                 ))
                 continue
 
@@ -287,7 +300,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=f"Access to forbidden file: {path}",
                     action=str(action), context=context,
                     remediation_hint="This file contains sensitive data and cannot be accessed",
-                    metadata={"path": path, "violation": "forbidden_file"}
+                    metadata={"path": path, "violation": VIOLATION_FORBIDDEN_FILE}
                 ))
                 continue
 
@@ -297,7 +310,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=f"Access to forbidden directory: {path}",
                     action=str(action), context=context,
                     remediation_hint="This directory is protected and cannot be accessed",
-                    metadata={"path": path, "violation": "forbidden_directory"}
+                    metadata={"path": path, "violation": VIOLATION_FORBIDDEN_DIRECTORY}
                 ))
                 continue
 
@@ -308,18 +321,18 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=f"Access to file with forbidden extension: {ext}",
                     action=str(action), context=context,
                     remediation_hint=f"Files with {ext} extension are not allowed",
-                    metadata={"path": path, "extension": ext, "violation": "forbidden_extension"}
+                    metadata={"path": path, "extension": ext, "violation": VIOLATION_FORBIDDEN_EXTENSION}
                 ))
                 continue
 
-            if self.mode == "allowlist":
+            if self.mode == MODE_ALLOWLIST:
                 if not self._is_allowed(normalized_path):
                     violations.append(SafetyViolation(
                         policy_name=self.name, severity=ViolationSeverity.CRITICAL,
                         message=f"Path not in allowlist: {path}",
                         action=str(action), context=context,
                         remediation_hint="Add path to allowed_paths or use an allowed directory",
-                        metadata={"path": path, "violation": "not_in_allowlist"}
+                        metadata={"path": path, "violation": VIOLATION_NOT_IN_ALLOWLIST}
                     ))
             else:
                 if self._is_denied(normalized_path):
@@ -328,7 +341,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                         message=f"Path in denylist: {path}",
                         action=str(action), context=context,
                         remediation_hint="Use a different path not in denied_paths",
-                        metadata={"path": path, "violation": "in_denylist"}
+                        metadata={"path": path, "violation": VIOLATION_IN_DENYLIST}
                     ))
 
         valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)

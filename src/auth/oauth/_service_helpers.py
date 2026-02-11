@@ -13,7 +13,14 @@ from urllib.parse import urlencode
 
 import httpx
 
-from src.auth.oauth.config import OAuthConfig, get_provider_endpoints
+from src.auth.oauth.config import (
+    ENDPOINT_AUTHORIZATION,
+    ENDPOINT_REVOCATION,
+    ENDPOINT_TOKEN,
+    ENDPOINT_USERINFO,
+    OAuthConfig,
+    get_provider_endpoints,
+)
 from src.auth.oauth.rate_limiter import RateLimitExceeded
 from src.auth.oauth.token_store import SecureTokenStore
 from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_NETWORK_CONNECT
@@ -129,7 +136,7 @@ async def build_authorization_url(
     if extra_params:
         params.update(extra_params)
 
-    auth_url = f"{endpoints['authorization_endpoint']}?{urlencode(params)}"
+    auth_url = f"{endpoints[ENDPOINT_AUTHORIZATION]}?{urlencode(params)}"
 
     logger.info(
         f"Generated OAuth authorization URL for provider={provider}, user={user_id}"
@@ -234,7 +241,7 @@ async def exchange_code(
 
     # Get token endpoint
     endpoints = get_provider_endpoints(provider_config)
-    token_endpoint = endpoints['token_endpoint']
+    token_endpoint = endpoints[ENDPOINT_TOKEN]
     if not token_endpoint:
         raise OAuthError(f"Token endpoint not configured for provider '{provider}'", provider=provider)
 
@@ -252,7 +259,7 @@ async def exchange_code(
         response = await http_client.post(
             token_endpoint,
             data=token_data,
-            headers={'Accept': 'application/json'}
+            headers={"Accept": "application/json"}
         )
 
         if response.status_code != HTTP_OK:
@@ -336,7 +343,7 @@ async def refresh_token(
         raise OAuthError(f"Provider '{provider}' not configured", provider=provider)
 
     endpoints = get_provider_endpoints(provider_config)
-    token_endpoint = endpoints['token_endpoint']
+    token_endpoint = endpoints[ENDPOINT_TOKEN]
     if not token_endpoint:
         raise OAuthError(f"Token endpoint not configured for provider '{provider}'", provider=provider)
 
@@ -351,7 +358,7 @@ async def refresh_token(
         response = await http_client.post(
             token_endpoint,
             data=refresh_data,
-            headers={'Accept': 'application/json'}
+            headers={"Accept": "application/json"}
         )
 
         if response.status_code != HTTP_OK:
@@ -442,7 +449,7 @@ async def fetch_user_info(
         raise OAuthError(f"Provider '{provider}' not configured", provider=provider)
 
     endpoints = get_provider_endpoints(provider_config)
-    userinfo_endpoint = endpoints.get('userinfo_endpoint')
+    userinfo_endpoint = endpoints.get(ENDPOINT_USERINFO)
     if not userinfo_endpoint:
         raise OAuthError(
             f"Provider '{provider}' does not have userinfo endpoint configured",
@@ -453,8 +460,8 @@ async def fetch_user_info(
         response = await http_client.get(
             userinfo_endpoint,
             headers={
-                'Authorization': f'Bearer {access_token}',
-                'Accept': 'application/json'
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json"
             }
         )
 
@@ -551,7 +558,7 @@ async def revoke_at_provider(
         return False
 
     endpoints = get_provider_endpoints(provider_config)
-    revocation_endpoint = endpoints.get('revocation_endpoint')
+    revocation_endpoint = endpoints.get(ENDPOINT_REVOCATION)
     if not revocation_endpoint:
         return False
 

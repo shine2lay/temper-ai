@@ -25,20 +25,20 @@ from src.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.backend import ObservabilityBackend
+from src.observability.backend import ObservabilityBackend, ReadableBackendMixin
 from src.observability.backends._sql_backend_helpers import (
-    SQLReadAndAggregateMixin,
-    cleanup_old_records as _cleanup_old_records,
+    SQLDelegatedMethodsMixin,
+    _DEFAULT_VERSION,
+    _STATUS_COMPLETED,
+    _STATUS_FAILED,
+    _STATUS_RUNNING,
     flush_buffer as _flush_buffer,
-    get_backend_stats as _get_backend_stats,
-    track_collaboration_event as _track_collaboration_event,
-    track_safety_violation as _track_safety_violation,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class SQLObservabilityBackend(ObservabilityBackend, SQLReadAndAggregateMixin):
+class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, ReadableBackendMixin):
     """SQL-based observability backend with per-operation sessions and buffering."""
 
     def __init__(self, buffer: Any = None) -> None:
@@ -79,10 +79,10 @@ class SQLObservabilityBackend(ObservabilityBackend, SQLReadAndAggregateMixin):
         """Record workflow execution start."""
         workflow_exec = WorkflowExecution(
             id=workflow_id, workflow_name=workflow_name,
-            workflow_version=workflow_config.get("workflow", {}).get("version", "1.0"),
+            workflow_version=workflow_config.get("workflow", {}).get("version", _DEFAULT_VERSION),
             workflow_config_snapshot=workflow_config,
             trigger_type=trigger_type, trigger_data=trigger_data,
-            status="running", start_time=ensure_utc(start_time),
+            status=_STATUS_RUNNING, start_time=ensure_utc(start_time),
             optimization_target=optimization_target, product_type=product_type,
             environment=environment, tags=tags, extra_metadata=extra_metadata,
             total_llm_calls=0, total_tool_calls=0, total_tokens=0, total_cost_usd=0.0
@@ -136,9 +136,9 @@ class SQLObservabilityBackend(ObservabilityBackend, SQLReadAndAggregateMixin):
         stage_exec = StageExecution(
             id=stage_id, workflow_execution_id=workflow_id,
             stage_name=stage_name,
-            stage_version=stage_config.get("stage", {}).get("version", "1.0"),
+            stage_version=stage_config.get("stage", {}).get("version", _DEFAULT_VERSION),
             stage_config_snapshot=stage_config,
-            status="running", start_time=ensure_utc(start_time),
+            status=_STATUS_RUNNING, start_time=ensure_utc(start_time),
             input_data=input_data,
             num_agents_executed=0, num_agents_succeeded=0, num_agents_failed=0
         )
@@ -173,8 +173,8 @@ class SQLObservabilityBackend(ObservabilityBackend, SQLReadAndAggregateMixin):
                 else:
                     metrics_statement = select(
                         func.count(AgentExecution.id).label('total'),  # type: ignore[arg-type]
-                        func.sum(case((AgentExecution.status == 'completed', 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
-                        func.sum(case((AgentExecution.status == 'failed', 1), else_=0)).label('failed')  # type: ignore[arg-type]
+                        func.sum(case((AgentExecution.status == _STATUS_COMPLETED, 1), else_=0)).label('succeeded'),  # type: ignore[arg-type]
+                        func.sum(case((AgentExecution.status == _STATUS_FAILED, 1), else_=0)).label('failed')  # type: ignore[arg-type]
                     ).where(AgentExecution.stage_execution_id == stage_id)
                     result = session.exec(metrics_statement).first()
                     if result:
@@ -204,9 +204,9 @@ class SQLObservabilityBackend(ObservabilityBackend, SQLReadAndAggregateMixin):
         agent_exec = AgentExecution(
             id=agent_id, stage_execution_id=stage_id,
             agent_name=agent_name,
-            agent_version=agent_config.get("agent", {}).get("version", "1.0"),
+            agent_version=agent_config.get("agent", {}).get("version", _DEFAULT_VERSION),
             agent_config_snapshot=agent_config,
-            status="running", start_time=ensure_utc(start_time),
+            status=_STATUS_RUNNING, start_time=ensure_utc(start_time),
             input_data=input_data,
             retry_count=0, num_llm_calls=0, num_tool_calls=0,
             total_tokens=0, prompt_tokens=0, completion_tokens=0, estimated_cost_usd=0.0
@@ -353,39 +353,20 @@ class SQLObservabilityBackend(ObservabilityBackend, SQLReadAndAggregateMixin):
         with get_session() as session:
             yield session
 
-    # ========== Abstract Method Implementations ==========
+    def get_agent_execution(self, agent_id: str) -> Optional[AgentExecution]:
+        """Fetch a single agent execution record by ID."""
+        with get_session() as session:
+            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+            agent = session.exec(statement).first()
+            if agent:
+                session.expunge(agent)
+            return agent
 
-    def track_safety_violation(
-        self, workflow_id: Optional[str], stage_id: Optional[str], agent_id: Optional[str],
-        violation_severity: str, violation_message: str, policy_name: str,
-        service_name: Optional[str] = None, context: Optional[Dict[str, Any]] = None,
-        timestamp: Optional[datetime] = None
-    ) -> None:
-        """Track safety violation."""
-        _track_safety_violation(
-            workflow_id, stage_id, agent_id, violation_severity,
-            violation_message, policy_name, service_name, context, timestamp
-        )
+    @staticmethod
+    def create_indexes() -> None:
+        """Create database indexes for common query patterns."""
+        logger.info("SQL backend indexes are defined in models.py")
 
-    def track_collaboration_event(
-        self, stage_id: str, event_type: str, agents_involved: List[str],
-        event_data: Optional[Dict[str, Any]] = None, round_number: Optional[int] = None,
-        resolution_strategy: Optional[str] = None, outcome: Optional[str] = None,
-        confidence_score: Optional[float] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
-        timestamp: Optional[datetime] = None
-    ) -> str:
-        """Track collaboration event."""
-        return _track_collaboration_event(
-            stage_id, event_type, agents_involved, event_data,
-            round_number, resolution_strategy, outcome, confidence_score,
-            extra_metadata, timestamp
-        )
-
-    def cleanup_old_records(self, retention_days: int, dry_run: bool = False) -> Dict[str, int]:
-        """Clean up old records."""
-        return _cleanup_old_records(retention_days, dry_run)
-
-    def get_stats(self) -> Dict[str, Any]:
-        """Return backend statistics."""
-        return _get_backend_stats()
+    # track_safety_violation, track_collaboration_event, cleanup_old_records,
+    # get_stats, aggregate_workflow_metrics, aggregate_stage_metrics
+    # are provided by SQLDelegatedMethodsMixin

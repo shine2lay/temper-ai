@@ -49,10 +49,10 @@ from src.agents._standard_agent_helpers import (
     inject_tool_results as _inject_tool_results,
 )
 from src.agents._standard_agent_helpers import (
-    process_llm_response as _process_llm_response,
+    make_stream_callback as _make_stream_callback,
 )
 from src.agents._standard_agent_helpers import (
-    make_stream_callback as _make_stream_callback,
+    process_llm_response as _process_llm_response,
 )
 from src.agents._standard_agent_helpers import (
     setup_execution as _setup_execution,
@@ -102,6 +102,9 @@ _SANITIZE_TAGS = [TOOL_CALL_TAG, ANSWER_TAG] + REASONING_TAGS
 # Note: Cost estimation constants removed - now using config/model_pricing.yaml
 # See src/agents/pricing.py for pricing configuration
 
+# Minimum Python version supporting cancel_futures in ThreadPoolExecutor.shutdown()
+_MIN_PYTHON_CANCEL_FUTURES = (3, 9)
+
 # Default port numbers for LLM providers (kept for backward compatibility)
 OLLAMA_DEFAULT_PORT = 11434
 
@@ -146,7 +149,7 @@ def _shutdown_tool_executor() -> None:
     """Shutdown the tool executor pool gracefully (P-15, H-16)."""
     global _tool_executor
     if _tool_executor is not None:
-        if sys.version_info >= (3, 9):  # noqa: Python version check
+        if sys.version_info >= _MIN_PYTHON_CANCEL_FUTURES:
             _tool_executor.shutdown(wait=True, cancel_futures=True)
         else:
             _tool_executor.shutdown(wait=True)

@@ -20,6 +20,17 @@ from src.utils.exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)
 
+# Rate limit type keys
+LIMIT_OAUTH_INIT_IP = "oauth_init_ip"
+LIMIT_OAUTH_INIT_USER = "oauth_init_user"
+LIMIT_OAUTH_INIT_GLOBAL = "oauth_init_global"
+LIMIT_TOKEN_EXCHANGE_IP = "token_exchange_ip"  # noqa: S105 — rate limit key, not password
+LIMIT_TOKEN_EXCHANGE_GLOBAL = "token_exchange_global"  # noqa: S105 — rate limit key, not password
+LIMIT_USERINFO_USER = "userinfo_user"
+LIMIT_USERINFO_GLOBAL = "userinfo_global"
+# Global identifier for rate limiting
+GLOBAL_IDENTIFIER = "global"
+
 
 class RateLimitExceeded(RateLimitError):  # noqa: N818 — public API name
     """Raised when rate limit is exceeded.
@@ -224,17 +235,17 @@ class OAuthRateLimiter:
         # Define OAuth-specific limits (rate limit tuples are instance config, not extractable constants)
         self.limits = {  # noqa: Instance-specific configuration
             # OAuth flow initiation
-            "oauth_init_ip": (10, SECONDS_PER_MINUTE),      # 10 per IP per minute
-            "oauth_init_user": (5, SECONDS_PER_MINUTE),     # 5 per user per minute  # noqa
-            "oauth_init_global": (1000, SECONDS_PER_HOUR),  # 1000 global per hour
+            LIMIT_OAUTH_INIT_IP: (10, SECONDS_PER_MINUTE),      # 10 per IP per minute
+            LIMIT_OAUTH_INIT_USER: (5, SECONDS_PER_MINUTE),     # 5 per user per minute  # noqa
+            LIMIT_OAUTH_INIT_GLOBAL: (1000, SECONDS_PER_HOUR),  # 1000 global per hour
 
             # Token exchange
-            "token_exchange_ip": (5, SECONDS_PER_MINUTE),   # 5 per IP per minute  # noqa
-            "token_exchange_global": (500, SECONDS_PER_HOUR),  # 500 global per hour  # noqa
+            LIMIT_TOKEN_EXCHANGE_IP: (5, SECONDS_PER_MINUTE),   # 5 per IP per minute  # noqa
+            LIMIT_TOKEN_EXCHANGE_GLOBAL: (500, SECONDS_PER_HOUR),  # 500 global per hour  # noqa
 
             # User info retrieval
-            "userinfo_user": (60, SECONDS_PER_MINUTE),      # 60 per user per minute
-            "userinfo_global": (5000, SECONDS_PER_HOUR),  # 5000 global per hour  # noqa
+            LIMIT_USERINFO_USER: (60, SECONDS_PER_MINUTE),      # 60 per user per minute
+            LIMIT_USERINFO_GLOBAL: (5000, SECONDS_PER_HOUR),  # 5000 global per hour  # noqa
         }
 
     def check_oauth_init(
@@ -252,16 +263,16 @@ class OAuthRateLimiter:
             RateLimitExceeded: If any limit exceeded
         """
         # Check IP limit
-        max_requests, window = self.limits["oauth_init_ip"]
-        self.limiter.check_limit("oauth_init_ip", ip_address, max_requests, window)
+        max_requests, window = self.limits[LIMIT_OAUTH_INIT_IP]
+        self.limiter.check_limit(LIMIT_OAUTH_INIT_IP, ip_address, max_requests, window)
 
         # Check user limit
-        max_requests, window = self.limits["oauth_init_user"]
-        self.limiter.check_limit("oauth_init_user", user_id, max_requests, window)
+        max_requests, window = self.limits[LIMIT_OAUTH_INIT_USER]
+        self.limiter.check_limit(LIMIT_OAUTH_INIT_USER, user_id, max_requests, window)
 
         # Check global limit
-        max_requests, window = self.limits["oauth_init_global"]
-        self.limiter.check_limit("oauth_init_global", "global", max_requests, window)
+        max_requests, window = self.limits[LIMIT_OAUTH_INIT_GLOBAL]
+        self.limiter.check_limit(LIMIT_OAUTH_INIT_GLOBAL, GLOBAL_IDENTIFIER, max_requests, window)
 
     def check_token_exchange(
         self,
@@ -276,12 +287,12 @@ class OAuthRateLimiter:
             RateLimitExceeded: If any limit exceeded
         """
         # Check IP limit
-        max_requests, window = self.limits["token_exchange_ip"]
-        self.limiter.check_limit("token_exchange_ip", ip_address, max_requests, window)
+        max_requests, window = self.limits[LIMIT_TOKEN_EXCHANGE_IP]
+        self.limiter.check_limit(LIMIT_TOKEN_EXCHANGE_IP, ip_address, max_requests, window)
 
         # Check global limit
-        max_requests, window = self.limits["token_exchange_global"]
-        self.limiter.check_limit("token_exchange_global", "global", max_requests, window)
+        max_requests, window = self.limits[LIMIT_TOKEN_EXCHANGE_GLOBAL]
+        self.limiter.check_limit(LIMIT_TOKEN_EXCHANGE_GLOBAL, GLOBAL_IDENTIFIER, max_requests, window)
 
     def check_userinfo(
         self,
@@ -296,9 +307,9 @@ class OAuthRateLimiter:
             RateLimitExceeded: If any limit exceeded
         """
         # Check user limit
-        max_requests, window = self.limits["userinfo_user"]
-        self.limiter.check_limit("userinfo_user", user_id, max_requests, window)
+        max_requests, window = self.limits[LIMIT_USERINFO_USER]
+        self.limiter.check_limit(LIMIT_USERINFO_USER, user_id, max_requests, window)
 
         # Check global limit
-        max_requests, window = self.limits["userinfo_global"]
-        self.limiter.check_limit("userinfo_global", "global", max_requests, window)
+        max_requests, window = self.limits[LIMIT_USERINFO_GLOBAL]
+        self.limiter.check_limit(LIMIT_USERINFO_GLOBAL, GLOBAL_IDENTIFIER, max_requests, window)

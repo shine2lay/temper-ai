@@ -47,6 +47,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Argparse constants
+ARG_AGENT_NAME = "agent_name"
+HELP_AGENT_NAME = "Name of agent"
+
 # Table column widths for formatted output
 TABLE_AGENT_NAME_WIDTH = 30
 TABLE_PHASE_WIDTH = 15
@@ -472,45 +476,45 @@ Examples:
 
     # run command
     run_parser = subparsers.add_parser('run', help='Run improvement iteration')
-    run_parser.add_argument('agent_name', help='Name of agent')
+    run_parser.add_argument(ARG_AGENT_NAME, help=HELP_AGENT_NAME)
     run_parser.add_argument('--config', help='Path to config file')
 
     # analyze command
     analyze_parser = subparsers.add_parser('analyze', help='Analyze agent performance')
-    analyze_parser.add_argument('agent_name', help='Name of agent')
+    analyze_parser.add_argument(ARG_AGENT_NAME, help=HELP_AGENT_NAME)
     analyze_parser.add_argument('--window', type=int, default=HOURS_PER_WEEK, help=f'Analysis window in hours (default: {HOURS_PER_WEEK})')
 
     # optimize command (alias for run)
     optimize_parser = subparsers.add_parser('optimize', help='Optimize agent (alias for run)')
-    optimize_parser.add_argument('agent_name', help='Name of agent')
+    optimize_parser.add_argument(ARG_AGENT_NAME, help=HELP_AGENT_NAME)
     optimize_parser.add_argument('--config', help='Path to config file')
 
     # status command
     status_parser = subparsers.add_parser('status', help='Show loop status')
-    status_parser.add_argument('agent_name', help='Name of agent')
+    status_parser.add_argument(ARG_AGENT_NAME, help=HELP_AGENT_NAME)
 
     # metrics command
     metrics_parser = subparsers.add_parser('metrics', help='Show metrics')
-    metrics_parser.add_argument('agent_name', help='Name of agent')
+    metrics_parser.add_argument(ARG_AGENT_NAME, help=HELP_AGENT_NAME)
 
     # pause command
     pause_parser = subparsers.add_parser('pause', help='Pause loop')
-    pause_parser.add_argument('agent_name', help='Name of agent')
+    pause_parser.add_argument(ARG_AGENT_NAME, help=HELP_AGENT_NAME)
 
     # resume command
     resume_parser = subparsers.add_parser('resume', help='Resume loop')
-    resume_parser.add_argument('agent_name', help='Name of agent')
+    resume_parser.add_argument(ARG_AGENT_NAME, help=HELP_AGENT_NAME)
 
     # reset command
     reset_parser = subparsers.add_parser('reset', help='Reset loop state')
-    reset_parser.add_argument('agent_name', help='Name of agent')
+    reset_parser.add_argument(ARG_AGENT_NAME, help=HELP_AGENT_NAME)
 
     # health command
     subparsers.add_parser('health', help='Check system health')
 
     # check-experiments command
     check_exp_parser = subparsers.add_parser('check-experiments', help='Check experiments')
-    check_exp_parser.add_argument('agent_name', help='Name of agent')
+    check_exp_parser.add_argument(ARG_AGENT_NAME, help=HELP_AGENT_NAME)
 
     # list-agents command
     subparsers.add_parser('list-agents', help='List all agents')

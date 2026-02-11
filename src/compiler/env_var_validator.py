@@ -337,6 +337,35 @@ class EnvVarValidator:
         except (ValueError, OSError) as e:
             return False, f"Invalid path: {e}"
 
+    def _check_context_specific(
+        self, var_name: str, value: str, level: "ValidationLevel",
+    ) -> Tuple[bool, Optional[str]]:
+        """Run context-specific pre-validation checks for better error messages."""
+        if level == ValidationLevel.PATH:
+            is_safe, error_msg = self._validate_path_traversal(value, base_dir=os.getcwd())
+            if not is_safe:
+                return False, (
+                    f"Environment variable '{var_name}' failed path validation: "
+                    f"{error_msg}"
+                )
+        elif level == ValidationLevel.EXECUTABLE:
+            for pattern_regex, description in self.DANGEROUS_EXECUTABLE_PATTERNS:
+                if re.search(pattern_regex, value):
+                    return False, (
+                        f"Environment variable '{var_name}' contains dangerous "
+                        f"pattern in executable context: {description}"
+                    )
+        elif level == ValidationLevel.IDENTIFIER:
+            db_patterns = ['db', 'database', 'table', 'schema', 'query', 'sql']
+            if any(pattern in var_name.lower() for pattern in db_patterns):
+                for pattern, description in self.SQL_INJECTION_PATTERNS:
+                    if pattern.upper() in value.upper():
+                        return False, (
+                            f"Environment variable '{var_name}' contains SQL "
+                            f"injection pattern: {description}"
+                        )
+        return True, None
+
     def validate(
         self,
         var_name: str,
@@ -344,25 +373,11 @@ class EnvVarValidator:
         context: Optional[ValidationLevel] = None,
         max_length: int = MAX_ENV_VAR_SIZE
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Validate environment variable value with context-aware rules.
-
-        Args:
-            var_name: Variable name
-            value: Variable value to validate
-            context: Explicit validation context (overrides auto-detection)
-            max_length: Maximum allowed length in bytes
+        """Validate environment variable value with context-aware rules.
 
         Returns:
             (is_valid, error_message) - error_message is None if valid
-
-        Example:
-            >>> validator = EnvVarValidator()
-            >>> is_valid, error = validator.validate("API_ENDPOINT", "http://api.com; rm -rf /")
-            >>> print(is_valid, error)
-            False, "Environment variable 'API_ENDPOINT' failed validation..."
         """
-        # 1. Check basic constraints (all contexts)
         if len(value) > max_length:
             return False, (
                 f"Environment variable '{var_name}' value too long: "
@@ -372,50 +387,17 @@ class EnvVarValidator:
         if '\x00' in value:
             return False, f"Environment variable '{var_name}' contains null bytes"
 
-        # 2. Detect or use provided context
         validation_level = context or self.detect_context(var_name)
         rule = self.VALIDATION_RULES[validation_level]
 
-        # 3. Pre-validation: Check for specific attack patterns FIRST
-        #    This provides better error messages than generic pattern failures
+        is_valid, error = self._check_context_specific(var_name, value, validation_level)
+        if not is_valid:
+            return False, error
 
-        if validation_level == ValidationLevel.PATH:
-            # Check for path traversal using robust cross-platform validation
-            # Use current working directory as base to prevent absolute path access
-            is_safe, error_msg = self._validate_path_traversal(value, base_dir=os.getcwd())
-            if not is_safe:
-                return False, (
-                    f"Environment variable '{var_name}' failed path validation: "
-                    f"{error_msg}"
-                )
-
-        elif validation_level == ValidationLevel.EXECUTABLE:
-            # Extra strict: Check for known dangerous patterns first
-            for pattern_regex, description in self.DANGEROUS_EXECUTABLE_PATTERNS:
-                if re.search(pattern_regex, value):
-                    return False, (
-                        f"Environment variable '{var_name}' contains dangerous "
-                        f"pattern in executable context: {description}"
-                    )
-
-        elif validation_level == ValidationLevel.IDENTIFIER:
-            # Check for SQL injection patterns in database-related identifiers
-            # This provides specific error messages
-            db_patterns = ['db', 'database', 'table', 'schema', 'query', 'sql']
-            if any(pattern in var_name.lower() for pattern in db_patterns):
-                for pattern, description in self.SQL_INJECTION_PATTERNS:
-                    if pattern.upper() in value.upper():
-                        return False, (
-                            f"Environment variable '{var_name}' contains SQL "
-                            f"injection pattern: {description}"
-                        )
-
-        # 4. Apply pattern validation (whitelist approach)
         if not rule.pattern.match(value):
             return False, (
                 f"Environment variable '{var_name}' failed validation for "
                 f"{validation_level.value} context: {rule.message}"
             )
 
-        # All checks passed
         return True, None

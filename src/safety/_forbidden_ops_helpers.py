@@ -8,6 +8,13 @@ from typing import Any, Dict, Optional, Set
 
 from src.safety.interfaces import ViolationSeverity
 
+# Pattern categories (used in compile_all_patterns and get_remediation_hint)
+CATEGORY_FILE_WRITE = "file_write"
+CATEGORY_DANGEROUS = "dangerous"
+CATEGORY_INJECTION = "injection"
+CATEGORY_SECURITY = "security"
+CATEGORY_CUSTOM = "custom"
+
 
 def compile_all_patterns(
     check_file_writes: bool,
@@ -29,7 +36,7 @@ def compile_all_patterns(
                 "regex": re.compile(info["pattern"], re.IGNORECASE),
                 "message": info["message"],
                 "severity": info["severity"],
-                "category": "file_write",
+                "category": CATEGORY_FILE_WRITE,
                 "requires_context_check": info.get("requires_context_check", False)
             }
             for name, info in file_write_patterns.items()
@@ -41,7 +48,7 @@ def compile_all_patterns(
                 "regex": re.compile(info["pattern"], re.IGNORECASE),
                 "message": info["message"],
                 "severity": info["severity"],
-                "category": "dangerous"
+                "category": CATEGORY_DANGEROUS
             }
             for name, info in dangerous_command_patterns.items()
         })
@@ -52,7 +59,7 @@ def compile_all_patterns(
                 "regex": re.compile(info["pattern"], re.IGNORECASE),
                 "message": info["message"],
                 "severity": info["severity"],
-                "category": "injection"
+                "category": CATEGORY_INJECTION
             }
             for name, info in injection_patterns.items()
         })
@@ -63,7 +70,7 @@ def compile_all_patterns(
                 "regex": re.compile(info["pattern"], re.IGNORECASE),
                 "message": info["message"],
                 "severity": info["severity"],
-                "category": "security"
+                "category": CATEGORY_SECURITY
             }
             for name, info in security_sensitive_patterns.items()
         })
@@ -74,7 +81,7 @@ def compile_all_patterns(
             "regex": re.compile(pattern_str, re.IGNORECASE),
             "message": f"Custom forbidden pattern: {name}",
             "severity": ViolationSeverity.HIGH,
-            "category": "custom"
+            "category": CATEGORY_CUSTOM
         }
 
     return patterns
@@ -149,24 +156,24 @@ def validate_redirect_context(command: str, match: re.Match) -> bool:
 def get_remediation_hint(category: str) -> str:
     """Get remediation hint based on violation category."""
     hints = {
-        "file_write": (
+        CATEGORY_FILE_WRITE: (
             "Use dedicated file operation tools: "
             "Write() for creating files, Edit() for modifying files, Read() for reading files. "
             "These tools provide proper validation, locking, and error handling."
         ),
-        "dangerous": (
+        CATEGORY_DANGEROUS: (
             "Destructive operations require explicit user approval. "
             "Consider safer alternatives or request user confirmation before proceeding."
         ),
-        "injection": (
+        CATEGORY_INJECTION: (
             "Avoid constructing commands from untrusted input. "
             "Use parameterized tools or validate/sanitize all inputs before use."
         ),
-        "security": (
+        CATEGORY_SECURITY: (
             "Use secure configuration and credential management. "
             "Store sensitive data in environment variables or secure vaults, not in commands."
         ),
-        "custom": (
+        CATEGORY_CUSTOM: (
             "This operation matches a custom forbidden pattern. "
             "Review the operation and ensure it's safe and necessary."
         )

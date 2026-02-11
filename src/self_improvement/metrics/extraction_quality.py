@@ -305,52 +305,29 @@ class ExtractionQualityCollector(MetricCollector):
         return correct, total
 
     def _values_equal(self, expected: Any, actual: Any) -> bool:
-        """Check if two values are equal.
-
-        Handles special cases:
-        - Numeric types (int vs float)
-        - Case-insensitive strings (optional)
-        - Lists (order matters)
-
-        Args:
-            expected: Expected value from ground truth
-            actual: Actual extracted value
-
-        Returns:
-            bool: True if values are considered equal
-        """
-        # Handle None
+        """Check if two values are equal, handling numeric, string, list, and dict types."""
         if expected is None and actual is None:
             return True
         if expected is None or actual is None:
             return False
-
-        # Numeric comparison (handle int vs float)
         if isinstance(expected, (int, float)) and isinstance(actual, (int, float)):
-            # Allow small floating point differences
             return abs(expected - actual) < FLOAT_COMPARISON_EPSILON
-
-        # String comparison (case-sensitive by default)
         if isinstance(expected, str) and isinstance(actual, str):
             return expected == actual
-
-        # List comparison (order matters)
         if isinstance(expected, list) and isinstance(actual, list):
-            if len(expected) != len(actual):
-                return False
-            return all(
-                self._values_equal(e, a)
-                for e, a in zip(expected, actual)
-            )
-
-        # Dict comparison (recursive)
+            return self._lists_equal(expected, actual)
         if isinstance(expected, dict) and isinstance(actual, dict):
-            if set(expected.keys()) != set(actual.keys()):
-                return False
-            return all(
-                self._values_equal(expected[k], actual[k])
-                for k in expected.keys()
-            )
-
-        # Default: direct equality
+            return self._dicts_equal(expected, actual)
         return bool(expected == actual)
+
+    def _lists_equal(self, expected: list, actual: list) -> bool:
+        """Compare two lists element-wise (order matters)."""
+        if len(expected) != len(actual):
+            return False
+        return all(self._values_equal(e, a) for e, a in zip(expected, actual))
+
+    def _dicts_equal(self, expected: dict, actual: dict) -> bool:
+        """Compare two dicts recursively."""
+        if set(expected.keys()) != set(actual.keys()):
+            return False
+        return all(self._values_equal(expected[k], actual[k]) for k in expected.keys())

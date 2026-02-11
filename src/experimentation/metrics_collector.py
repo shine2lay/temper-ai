@@ -214,6 +214,24 @@ class ExperimentMetricsCollector:
 
         return aggregated
 
+    @staticmethod
+    def _compute_metric_stats(
+        assignments: List[VariantAssignment], metric_name: str,
+    ) -> Dict[str, float]:
+        """Compute avg/sum/min/max for a single metric across assignments."""
+        values = [
+            a.metrics[metric_name] for a in assignments
+            if a.metrics and metric_name in a.metrics
+        ]
+        if not values:
+            return {}
+        return {
+            f"avg_{metric_name}": sum(values) / len(values),
+            f"sum_{metric_name}": sum(values),
+            f"min_{metric_name}": min(values),
+            f"max_{metric_name}": max(values),
+        }
+
     def _aggregate_assignments(
         self,
         assignments: List[VariantAssignment]
@@ -223,34 +241,19 @@ class ExperimentMetricsCollector:
         successful = sum(1 for a in assignments if a.execution_status == ExecutionStatus.COMPLETED)
         failed = sum(1 for a in assignments if a.execution_status == ExecutionStatus.FAILED)
 
-        # Collect all metric names
         all_metric_names: set[str] = set()
         for assignment in assignments:
             if assignment.metrics:
                 all_metric_names.update(assignment.metrics.keys())
 
-        # Aggregate each metric
-        aggregated = {
+        aggregated: Dict[str, Any] = {
             "count": total,
             "successful": successful,
             "failed": failed,
             "success_rate": successful / total if total > 0 else 0.0,
         }
-
-        # For each metric, compute mean and sum
         for metric_name in all_metric_names:
-            values = [
-                a.metrics[metric_name]
-                for a in assignments
-                if a.metrics and metric_name in a.metrics
-            ]
-
-            if values:
-                aggregated[f"avg_{metric_name}"] = sum(values) / len(values)
-                aggregated[f"sum_{metric_name}"] = sum(values)
-                aggregated[f"min_{metric_name}"] = min(values)
-                aggregated[f"max_{metric_name}"] = max(values)
-
+            aggregated.update(self._compute_metric_stats(assignments, metric_name))
         return aggregated
 
     def get_experiment_summary(

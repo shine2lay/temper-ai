@@ -99,6 +99,23 @@ def parse_config_file(file_path: Path) -> Dict[str, Any]:
         )
 
 
+def _check_config_limits(
+    file_path: Path, current_depth: int, node_count: list[int],
+) -> None:
+    """Raise if config exceeds depth or node count limits."""
+    if current_depth > MAX_YAML_NESTING_DEPTH:
+        raise ConfigValidationError(
+            f"Config file {file_path} exceeds maximum nesting depth of "
+            f"{MAX_YAML_NESTING_DEPTH} levels. This may indicate a YAML bomb attack or malformed config."
+        )
+    node_count[0] += 1
+    if node_count[0] > MAX_YAML_NODES:
+        raise ConfigValidationError(
+            f"Config file {file_path} exceeds maximum node count of "
+            f"{MAX_YAML_NODES}. This may indicate a YAML bomb (billion laughs) attack."
+        )
+
+
 def validate_config_structure(
     config: Any,
     file_path: Path,
@@ -106,53 +123,33 @@ def validate_config_structure(
     visited: Optional[set[int]] = None,
     node_count: Optional[list[int]] = None,
 ) -> None:
-    """Validate config structure for security issues.
-
-    Checks for:
-    - Excessive nesting depth (>50 levels) - prevents stack overflow
-    - Too many nodes (>100k) - prevents YAML bomb (billion laughs)
-    - Circular references - prevents infinite loops
-    """
+    """Validate config structure for security (depth, node count, circular refs)."""
     if visited is None:
         visited = set()
     if node_count is None:
         node_count = [0]
 
-    if current_depth > MAX_YAML_NESTING_DEPTH:
-        raise ConfigValidationError(
-            f"Config file {file_path} exceeds maximum nesting depth of {MAX_YAML_NESTING_DEPTH} levels. "
-            f"This may indicate a YAML bomb attack or malformed config."
-        )
+    _check_config_limits(file_path, current_depth, node_count)
 
-    node_count[0] += 1
-    if node_count[0] > MAX_YAML_NODES:
-        raise ConfigValidationError(
-            f"Config file {file_path} exceeds maximum node count of {MAX_YAML_NODES}. "
-            f"This may indicate a YAML bomb (billion laughs) attack."
-        )
+    if not isinstance(config, (dict, list)):
+        return
 
-    if isinstance(config, (dict, list)):
-        obj_id = id(config)
-        if obj_id in visited:
-            raise ConfigValidationError(
-                f"Circular reference detected in config file {file_path}. "
-                f"This may cause infinite loops during processing."
+    obj_id = id(config)
+    if obj_id in visited:
+        raise ConfigValidationError(
+            f"Circular reference detected in config file {file_path}. "
+            f"This may cause infinite loops during processing."
+        )
+    visited.add(obj_id)
+
+    children = config.values() if isinstance(config, dict) else config
+    try:
+        for child in children:
+            validate_config_structure(
+                child, file_path, current_depth + 1, visited, node_count
             )
-        visited.add(obj_id)
-
-        try:
-            if isinstance(config, dict):
-                for key, value in config.items():
-                    validate_config_structure(
-                        value, file_path, current_depth + 1, visited, node_count
-                    )
-            elif isinstance(config, list):
-                for item in config:
-                    validate_config_structure(
-                        item, file_path, current_depth + 1, visited, node_count
-                    )
-        finally:
-            visited.discard(obj_id)
+    finally:
+        visited.discard(obj_id)
 
 
 def substitute_env_vars(config: Any) -> Any:

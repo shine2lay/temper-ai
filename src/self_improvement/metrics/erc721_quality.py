@@ -34,6 +34,13 @@ EXPECTED_DIRECTORY_COUNT = 4  # root files + contract + test + deploy + node_mod
 # Output truncation limit (characters)
 MAX_OUTPUT_LENGTH = 500  # Maximum length for stdout/stderr in details
 
+# Result dictionary key constants
+KEY_SCORE = "score"
+KEY_DETAILS = "details"
+KEY_EXIT_CODE = "exit_code"
+KEY_STDOUT = "stdout"
+KEY_STDERR = "stderr"
+
 
 @dataclass
 class ERC721QualityScore:
@@ -115,7 +122,7 @@ def score_project_structure(workspace: Path, contract_name: str = "SimpleNFT") -
         Dict with 'score' (0.0-1.0) and 'details'
     """
     if not workspace.exists():
-        return {"score": 0.0, "details": "Workspace directory does not exist"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "Workspace directory does not exist"}
 
     found = []
     missing = []
@@ -166,8 +173,8 @@ def score_project_structure(workspace: Path, contract_name: str = "SimpleNFT") -
     score = len(found) / total_expected if total_expected > 0 else 0.0
 
     return {
-        "score": min(1.0, score),
-        "details": {
+        KEY_SCORE: min(1.0, score),
+        KEY_DETAILS: {
             "found": found,
             "missing": missing,
         },
@@ -185,7 +192,7 @@ def score_compilation(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict
         Dict with 'score' (0.0 or 1.0) and 'details'
     """
     if not workspace.exists() or not (workspace / "hardhat.config.js").exists():
-        return {"score": 0.0, "details": "No hardhat.config.js found"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "No hardhat.config.js found"}
 
     try:
         result = subprocess.run(
@@ -199,24 +206,24 @@ def score_compilation(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict
 
         if result.returncode == 0:
             return {
-                "score": 1.0,
-                "details": {"stdout": result.stdout[:MAX_OUTPUT_LENGTH], "exit_code": 0},
+                KEY_SCORE: 1.0,
+                KEY_DETAILS: {KEY_STDOUT: result.stdout[:MAX_OUTPUT_LENGTH], KEY_EXIT_CODE: 0},
             }
         else:
             return {
-                "score": 0.0,
-                "details": {
-                    "stdout": result.stdout[:MAX_OUTPUT_LENGTH],
-                    "stderr": result.stderr[:MAX_OUTPUT_LENGTH],
-                    "exit_code": result.returncode,
+                KEY_SCORE: 0.0,
+                KEY_DETAILS: {
+                    KEY_STDOUT: result.stdout[:MAX_OUTPUT_LENGTH],
+                    KEY_STDERR: result.stderr[:MAX_OUTPUT_LENGTH],
+                    KEY_EXIT_CODE: result.returncode,
                 },
             }
     except subprocess.TimeoutExpired:
-        return {"score": 0.0, "details": "Compilation timed out"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "Compilation timed out"}
     except FileNotFoundError:
-        return {"score": 0.0, "details": "npx not found"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "npx not found"}
     except Exception as e:
-        return {"score": 0.0, "details": f"Error: {e}"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: f"Error: {e}"}
 
 
 def score_tests(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[str, Any]:
@@ -230,7 +237,7 @@ def score_tests(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[str, 
         Dict with 'score' (0.0-1.0) and 'details'
     """
     if not workspace.exists() or not (workspace / "hardhat.config.js").exists():
-        return {"score": 0.0, "details": "No hardhat.config.js found"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "No hardhat.config.js found"}
 
     try:
         result = subprocess.run(
@@ -268,21 +275,21 @@ def score_tests(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[str, 
             score = 0.0
 
         return {
-            "score": score,
-            "details": {
+            KEY_SCORE: score,
+            KEY_DETAILS: {
                 "passing": passing,
                 "failing": failing,
-                "exit_code": result.returncode,
-                "stdout": stdout[:MAX_OUTPUT_LENGTH],
-                "stderr": result.stderr[:MAX_OUTPUT_LENGTH],
+                KEY_EXIT_CODE: result.returncode,
+                KEY_STDOUT: stdout[:MAX_OUTPUT_LENGTH],
+                KEY_STDERR: result.stderr[:MAX_OUTPUT_LENGTH],
             },
         }
     except subprocess.TimeoutExpired:
-        return {"score": 0.0, "details": "Tests timed out"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "Tests timed out"}
     except FileNotFoundError:
-        return {"score": 0.0, "details": "npx not found"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "npx not found"}
     except Exception as e:
-        return {"score": 0.0, "details": f"Error: {e}"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: f"Error: {e}"}
 
 
 def score_code_quality(workspace: Path, contract_name: str = "SimpleNFT") -> Dict[str, Any]:
@@ -310,14 +317,14 @@ def score_code_quality(workspace: Path, contract_name: str = "SimpleNFT") -> Dic
             if sol_files:
                 contract_path = sol_files[0]
             else:
-                return {"score": 0.0, "details": "No .sol files found"}
+                return {KEY_SCORE: 0.0, KEY_DETAILS: "No .sol files found"}
         else:
-            return {"score": 0.0, "details": "No contracts/ directory"}
+            return {KEY_SCORE: 0.0, KEY_DETAILS: "No contracts/ directory"}
 
     try:
         content = contract_path.read_text(encoding="utf-8")
-    except Exception as e:
-        return {"score": 0.0, "details": f"Cannot read contract: {e}"}
+    except (OSError, UnicodeDecodeError) as e:
+        return {KEY_SCORE: 0.0, KEY_DETAILS: f"Cannot read contract: {e}"}
 
     checks = {
         "imports_erc721": "ERC721" in content,
@@ -332,8 +339,8 @@ def score_code_quality(workspace: Path, contract_name: str = "SimpleNFT") -> Dic
     score = passed / len(checks)
 
     return {
-        "score": score,
-        "details": checks,
+        KEY_SCORE: score,
+        KEY_DETAILS: checks,
     }
 
 
@@ -348,7 +355,7 @@ def score_deployment(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[
         Dict with 'score' (0.0 or 1.0) and 'details'
     """
     if not workspace.exists() or not (workspace / "scripts" / "deploy.js").exists():
-        return {"score": 0.0, "details": "No deploy script found"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "No deploy script found"}
 
     try:
         result = subprocess.run(
@@ -362,24 +369,24 @@ def score_deployment(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[
 
         if result.returncode == 0:
             return {
-                "score": 1.0,
-                "details": {"stdout": result.stdout[:MAX_OUTPUT_LENGTH], "exit_code": 0},
+                KEY_SCORE: 1.0,
+                KEY_DETAILS: {KEY_STDOUT: result.stdout[:MAX_OUTPUT_LENGTH], KEY_EXIT_CODE: 0},
             }
         else:
             return {
-                "score": 0.0,
-                "details": {
-                    "stdout": result.stdout[:MAX_OUTPUT_LENGTH],
-                    "stderr": result.stderr[:MAX_OUTPUT_LENGTH],
-                    "exit_code": result.returncode,
+                KEY_SCORE: 0.0,
+                KEY_DETAILS: {
+                    KEY_STDOUT: result.stdout[:MAX_OUTPUT_LENGTH],
+                    KEY_STDERR: result.stderr[:MAX_OUTPUT_LENGTH],
+                    KEY_EXIT_CODE: result.returncode,
                 },
             }
     except subprocess.TimeoutExpired:
-        return {"score": 0.0, "details": "Deployment timed out"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "Deployment timed out"}
     except FileNotFoundError:
-        return {"score": 0.0, "details": "npx not found"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: "npx not found"}
     except Exception as e:
-        return {"score": 0.0, "details": f"Error: {e}"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: f"Error: {e}"}
 
 
 def score_erc721_workflow(
@@ -421,14 +428,14 @@ def score_erc721_workflow(
     if run_commands:
         compilation = score_compilation(workspace, timeout)
     else:
-        compilation = {"score": 0.0, "details": "Skipped (run_commands=False)"}
+        compilation = {KEY_SCORE: 0.0, KEY_DETAILS: "Skipped (run_commands=False)"}
     breakdown["compilation"] = compilation
 
     # 3. Tests (30%)
-    if run_commands and compilation["score"] > 0:
+    if run_commands and compilation[KEY_SCORE] > 0:
         tests = score_tests(workspace, timeout)
     else:
-        tests = {"score": 0.0, "details": "Skipped (compilation failed or commands disabled)"}
+        tests = {KEY_SCORE: 0.0, KEY_DETAILS: "Skipped (compilation failed or commands disabled)"}
     breakdown["tests_pass"] = tests
 
     # 4. Code quality (10%)
@@ -436,15 +443,15 @@ def score_erc721_workflow(
     breakdown["code_quality"] = quality
 
     # 5. Deployment (10%)
-    if run_commands and compilation["score"] > 0:
+    if run_commands and compilation[KEY_SCORE] > 0:
         deployment = score_deployment(workspace, timeout)
     else:
-        deployment = {"score": 0.0, "details": "Skipped (compilation failed or commands disabled)"}
+        deployment = {KEY_SCORE: 0.0, KEY_DETAILS: "Skipped (compilation failed or commands disabled)"}
     breakdown["deployment"] = deployment
 
     # Calculate weighted total
     total = sum(
-        breakdown[metric]["score"] * weight
+        breakdown[metric][KEY_SCORE] * weight
         for metric, weight in WEIGHTS.items()
     )
 

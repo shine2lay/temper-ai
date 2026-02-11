@@ -37,6 +37,16 @@ from typing import Any, Dict, List, Optional
 from src.constants.probabilities import PROB_LOW_MEDIUM, PROB_MEDIUM, PROB_MODERATE
 from src.strategies.base import AgentOutput, Conflict
 
+# Capability flag keys
+CAP_SUPPORTS_NEGOTIATION = "supports_negotiation"
+CAP_SUPPORTS_ESCALATION = "supports_escalation"
+CAP_SUPPORTS_MERIT_WEIGHTING = "supports_merit_weighting"
+CAP_SUPPORTS_ITERATIVE = "supports_iterative"
+CAP_DETERMINISTIC = "deterministic"
+
+# Metadata keys
+META_WINNER = "winner"
+
 
 class ResolutionMethod(Enum):
     """Methods for resolving conflicts.
@@ -279,7 +289,7 @@ class HighestConfidenceResolver(ConflictResolutionStrategy):
             success=True,
             confidence=winner.confidence,
             metadata={
-                "winner": winner.agent_name,
+                META_WINNER: winner.agent_name,
                 "all_confidences": {
                     o.agent_name: o.confidence for o in conflicting_outputs
                 }
@@ -289,11 +299,11 @@ class HighestConfidenceResolver(ConflictResolutionStrategy):
     def get_capabilities(self) -> Dict[str, bool]:
         """Capabilities of highest confidence resolver."""
         return {
-            "supports_negotiation": False,
-            "supports_escalation": False,
-            "supports_merit_weighting": False,
-            "supports_iterative": False,
-            "deterministic": True
+            CAP_SUPPORTS_NEGOTIATION: False,
+            CAP_SUPPORTS_ESCALATION: False,
+            CAP_SUPPORTS_MERIT_WEIGHTING: False,
+            CAP_SUPPORTS_ITERATIVE: False,
+            CAP_DETERMINISTIC: True
         }
 
 
@@ -346,7 +356,7 @@ class RandomTiebreakerResolver(ConflictResolutionStrategy):
             success=True,
             confidence=avg_confidence,
             metadata={
-                "winner": winner.agent_name,
+                META_WINNER: winner.agent_name,
                 "seed": self.seed,
                 "candidates": [o.agent_name for o in conflicting_outputs]
             }
@@ -355,11 +365,11 @@ class RandomTiebreakerResolver(ConflictResolutionStrategy):
     def get_capabilities(self) -> Dict[str, bool]:
         """Capabilities of random tiebreaker."""
         return {
-            "supports_negotiation": False,
-            "supports_escalation": False,
-            "supports_merit_weighting": False,
-            "supports_iterative": False,
-            "deterministic": self.seed is not None
+            CAP_SUPPORTS_NEGOTIATION: False,
+            CAP_SUPPORTS_ESCALATION: False,
+            CAP_SUPPORTS_MERIT_WEIGHTING: False,
+            CAP_SUPPORTS_ITERATIVE: False,
+            CAP_DETERMINISTIC: self.seed is not None
         }
 
 
@@ -417,7 +427,7 @@ class MeritWeightedResolver(ConflictResolutionStrategy):
             success=True,
             confidence=winner_merit,
             metadata={
-                "winner": winner.agent_name,
+                META_WINNER: winner.agent_name,
                 "merit_scores": merit_scores,
                 "note": "Using confidence as merit proxy (full merit in M4)"
             }
@@ -426,11 +436,11 @@ class MeritWeightedResolver(ConflictResolutionStrategy):
     def get_capabilities(self) -> Dict[str, bool]:
         """Capabilities of merit-weighted resolver."""
         return {
-            "supports_negotiation": False,
-            "supports_escalation": False,
-            "supports_merit_weighting": True,
-            "supports_iterative": False,
-            "deterministic": True
+            CAP_SUPPORTS_NEGOTIATION: False,
+            CAP_SUPPORTS_ESCALATION: False,
+            CAP_SUPPORTS_MERIT_WEIGHTING: True,
+            CAP_SUPPORTS_ITERATIVE: False,
+            CAP_DETERMINISTIC: True
         }
 
 

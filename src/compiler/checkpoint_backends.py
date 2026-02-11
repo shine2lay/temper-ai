@@ -605,18 +605,7 @@ class RedisCheckpointBackend(CheckpointBackend):
         checkpoint_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Save checkpoint to Redis.
-
-        Args:
-            workflow_id: Unique workflow execution ID
-            domain_state: Serializable domain state to checkpoint
-            checkpoint_id: Optional checkpoint ID (auto-generated if not provided)
-            metadata: Optional metadata to store with checkpoint
-
-        Returns:
-            Checkpoint ID of the saved checkpoint
-        """
-        # Generate checkpoint ID if not provided
+        """Save checkpoint to Redis. Returns checkpoint ID."""
         if checkpoint_id is None:
             checkpoint_id = self._generate_checkpoint_id()
 

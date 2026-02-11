@@ -19,21 +19,27 @@ class ReadableBackendMixin:
     """
 
     def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+        """Get workflow execution data by ID, or None if not found."""
         return None
 
     def list_workflows(self, limit: int = DEFAULT_LIST_LIMIT, offset: int = 0, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List workflow executions with optional filtering."""
         return []
 
     def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+        """Get stage execution data by ID, or None if not found."""
         return None
 
     def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """Get agent execution data by ID, or None if not found."""
         return None
 
     def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get LLM call data by ID, or None if not found."""
         return None
 
     def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get tool call data by ID, or None if not found."""
         return None
 
 

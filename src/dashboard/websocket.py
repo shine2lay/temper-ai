@@ -71,7 +71,7 @@ def create_ws_endpoint(data_service: Any) -> Callable:
                         "data": {"chunks": [c["data"] for c in batch]},
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
-                except Exception:
+                except (ConnectionError, OSError, RuntimeError):
                     break  # Connection closed
 
         flush_task = None
@@ -103,7 +103,7 @@ def create_ws_endpoint(data_service: Any) -> Callable:
                     )
         except WebSocketDisconnect:
             logger.debug("WebSocket disconnected for workflow %s", workflow_id)
-        except Exception:
+        except (ConnectionError, OSError, RuntimeError):
             logger.warning("WebSocket error", exc_info=True)
         finally:
             if flush_task is not None:

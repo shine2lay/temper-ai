@@ -40,6 +40,9 @@ class WorkflowStateDict(TypedDict, total=False):
     # Accumulated stage outputs: stage_name -> stage output dict
     stage_outputs: Dict[str, Any]
 
+    # Arbitrary user-supplied workflow inputs (survives LangGraph dataclass coercion)
+    workflow_inputs: Dict[str, Any]
+
     # Common workflow inputs
     topic: Optional[str]
     depth: Optional[str]

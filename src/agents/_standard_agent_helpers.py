@@ -519,6 +519,36 @@ def track_llm_call(
     )
 
 
+def track_failed_llm_call(
+    agent: "StandardAgent",
+    inf_config: Any,
+    prompt: str,
+    error: Exception,
+    attempt: int,
+    max_attempts: int,
+) -> None:
+    """Track a failed LLM call via the observer.
+
+    Records failed/timed-out LLM calls so they appear in observability
+    data even when no successful response was returned.
+    """
+    error_msg = sanitize_error_message(str(error))
+    agent._observer.track_llm_call(  # type: ignore[attr-defined]
+        provider=inf_config.provider,
+        model=inf_config.model,
+        prompt=prompt,
+        response="",
+        prompt_tokens=0,
+        completion_tokens=0,
+        latency_ms=0,
+        estimated_cost_usd=0.0,
+        temperature=inf_config.temperature,
+        max_tokens=inf_config.max_tokens,
+        status="failed",
+        error_message=f"[attempt {attempt}/{max_attempts}] {error_msg}",
+    )
+
+
 def process_llm_response(
     agent: "StandardAgent",
     llm_response: Any,

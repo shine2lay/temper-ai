@@ -210,8 +210,18 @@ def run_agent(
     else:
         state_dict = dict(state) if hasattr(state, '__iter__') else state
 
+    # Unwrap workflow_inputs to top level so agents see custom fields.
+    # Filter out reserved keys to prevent user inputs from overwriting framework state.
+    _RESERVED_UNWRAP_KEYS: frozenset[str] = frozenset({
+        "stage_outputs", "current_stage", "workflow_id", "tracker",
+        "tool_registry", "config_loader", "visualizer", "show_details",
+        "detail_console", "workflow_inputs", "tool_executor",
+    })
+    wi = {k: v for k, v in state_dict.get("workflow_inputs", {}).items()
+          if k not in _RESERVED_UNWRAP_KEYS}
     input_data = {
         **state_dict,
+        **wi,
         "stage_outputs": state_dict.get("stage_outputs", {}),
         "current_stage_agents": dict(prior_agent_outputs),
     }

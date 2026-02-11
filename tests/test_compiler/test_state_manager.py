@@ -18,7 +18,7 @@ class TestStateInitialization:
         state = manager.initialize_state({"input": "test data"})
 
         assert isinstance(state, dict)
-        assert state["input"] == "test data"
+        assert state["workflow_inputs"]["input"] == "test data"
         assert state["workflow_id"].startswith("wf-")
         assert state["stage_outputs"] == {}
 
@@ -243,8 +243,8 @@ class TestStateSnapshot:
         snapshot = manager.get_state_snapshot(state)
 
         assert isinstance(snapshot, dict)
-        assert snapshot["input"] == "test"
-        assert snapshot["topic"] == "research"
+        assert snapshot["workflow_inputs"]["input"] == "test"
+        assert snapshot["workflow_inputs"]["topic"] == "research"
         assert snapshot["stage_outputs"] == {"stage1": "output1"}
 
     def test_snapshot_excludes_none(self):
@@ -308,8 +308,8 @@ class TestStateSnapshot:
         restored_state = manager.restore_state_from_snapshot(snapshot)
 
         # Values should match
-        assert restored_state["input"] == original_state["input"]
-        assert restored_state["topic"] == original_state["topic"]
+        assert restored_state["workflow_inputs"]["input"] == original_state["workflow_inputs"]["input"]
+        assert restored_state["workflow_inputs"]["topic"] == original_state["workflow_inputs"]["topic"]
         assert restored_state["stage_outputs"] == original_state["stage_outputs"]
 
 

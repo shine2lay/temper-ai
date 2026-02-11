@@ -68,8 +68,17 @@ def create_agent_node(
                 agent = agent_factory.create(agent_config)
                 agent_cache[agent_name] = agent
 
-            # Prepare input
+            # Prepare input (unwrap workflow_inputs to top level)
+            # Filter out reserved keys to prevent user inputs from overwriting framework state.
+            _reserved = frozenset({
+                "stage_outputs", "current_stage", "workflow_id", "tracker",
+                "tool_registry", "config_loader", "visualizer", "show_details",
+                "detail_console", "workflow_inputs", "tool_executor",
+            })
             input_data = s.get("stage_input", {})
+            wi = {k: v for k, v in input_data.get("workflow_inputs", {}).items()
+                  if k not in _reserved}
+            input_data = {**input_data, **wi}
 
             # Pass tracker to agent for direct observability reporting
             tracker = state.get("tracker")
@@ -514,12 +523,24 @@ def update_state_with_results(
         parallel_result: Full parallel runner result
         aggregate_metrics: Aggregate metrics dict
     """
+    # Compute stage_status from agent results
+    agent_statuses = parallel_result.get("agent_statuses", {})
+    failed_count = sum(1 for s in agent_statuses.values() if s != "success")
+    total_count = len(agent_statuses)
+    if failed_count == total_count and total_count > 0:
+        _stage_status = "failed"
+    elif failed_count > 0:
+        _stage_status = "degraded"
+    else:
+        _stage_status = "completed"
+
     state["stage_outputs"][stage_name] = {
         "decision": synthesis_result.decision,
         "agent_outputs": agent_outputs_dict,
-        "agent_statuses": parallel_result.get("agent_statuses", {}),
+        "agent_statuses": agent_statuses,
         "agent_metrics": parallel_result.get("agent_metrics", {}),
         "aggregate_metrics": aggregate_metrics,
+        "stage_status": _stage_status,
         "synthesis": {
             "method": synthesis_result.method,
             "confidence": synthesis_result.confidence,

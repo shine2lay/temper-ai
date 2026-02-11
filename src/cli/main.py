@@ -5,6 +5,7 @@ Entry point: `maf`
 
 Commands:
     maf run <workflow>          Run a workflow from a YAML config
+    maf dashboard               Launch dashboard to browse past executions
     maf validate <workflow>     Validate workflow config without running
     maf list workflows          List available workflows
     maf list agents             List available agents
@@ -23,6 +24,7 @@ from rich.console import Console
 from rich.table import Table
 
 from src.constants.durations import HOURS_PER_WEEK
+from src.utils.exceptions import WorkflowStageError
 
 console = Console()
 logger = logging.getLogger(__name__)
@@ -126,6 +128,14 @@ def main() -> None:
     is_flag=True,
     help="Show real-time agent progress and detailed post-execution report",
 )
+@click.option(
+    "--dashboard",
+    type=int,
+    default=None,
+    is_flag=True,
+    flag_value=8420,
+    help="Launch live dashboard (default port: 8420)",
+)
 def run(
     workflow: str,
     input_file: Optional[str],
@@ -134,6 +144,7 @@ def run(
     db: Optional[str],
     config_root: str,
     show_details: bool,
+    dashboard: Optional[int],
 ) -> None:
     """Run a workflow from a YAML config file."""
     if verbose:
@@ -202,7 +213,38 @@ def run(
     try:
         config_loader = ConfigLoader(config_root=config_root)
         tool_registry = ToolRegistry(auto_discover=True)
-        tracker = ExecutionTracker()
+
+        # Create tracker (with event_bus if dashboard is enabled)
+        event_bus = None
+        dashboard_server = None
+        if dashboard is not None:
+            try:
+                from src.observability.event_bus import ObservabilityEventBus
+                event_bus = ObservabilityEventBus()
+            except ImportError:
+                console.print("[yellow]Warning:[/yellow] Event bus not available")
+
+        tracker = ExecutionTracker(event_bus=event_bus) if event_bus else ExecutionTracker()
+
+        # Start dashboard server (if dashboard enabled)
+        if dashboard is not None and event_bus is not None:
+            try:
+                from src.dashboard.app import create_app
+                import uvicorn
+                import threading
+
+                app = create_app(backend=tracker.backend, event_bus=event_bus)
+                config = uvicorn.Config(app, host="0.0.0.0", port=dashboard, log_level="warning")
+                dashboard_server = uvicorn.Server(config)
+                thread = threading.Thread(target=dashboard_server.run, daemon=True)
+                thread.start()
+                console.print(f"\n[cyan]Dashboard:[/cyan] http://localhost:{dashboard}\n")
+            except ImportError as e:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Dashboard not available: {e}\n"
+                    "Install: pip install 'meta-autonomous-framework[dashboard]'"
+                )
+                dashboard_server = None
 
         registry = EngineRegistry()
         engine = registry.get_engine_from_config(
@@ -227,7 +269,7 @@ def run(
             environment="local",
         ) as workflow_id:
             state = {
-                **inputs,
+                "workflow_inputs": inputs,
                 "tracker": tracker,
                 "config_loader": config_loader,
                 "tool_registry": tool_registry,
@@ -236,6 +278,14 @@ def run(
                 "detail_console": console if show_details else None,
             }
             result = compiled.invoke(state)
+    except WorkflowStageError as e:
+        console.print(
+            f"[red]Stage failure:[/red] {e.stage_name} — {e}"
+        )
+        if verbose:
+            logger.exception("Stage failure halted workflow")
+        _cleanup_tool_executor(engine)
+        raise SystemExit(1)
     except (RuntimeError, ValueError) as e:
         console.print(f"[red]Workflow execution error:[/red] {e}")
         if verbose:
@@ -285,6 +335,25 @@ def run(
     except Exception as e:  # noqa: BLE001 -- optional visualization, non-fatal
         logger.debug(f"Could not display gantt chart: {e}")
 
+    # 10b. Keep dashboard alive for post-run inspection
+    if dashboard is not None and dashboard_server is not None:
+        console.print(
+            f"\n[cyan]Dashboard running at http://localhost:{dashboard}[/cyan] "
+            "(Ctrl+C to exit)"
+        )
+        try:
+            import signal
+            signal.pause()  # Wait for Ctrl+C
+        except (KeyboardInterrupt, AttributeError):
+            # AttributeError: signal.pause() not available on Windows
+            try:
+                import time
+                while True:
+                    time.sleep(1)
+            except KeyboardInterrupt:
+                pass
+        console.print("\n[yellow]Dashboard stopped[/yellow]")
+
     # 11. Save results if --output
     if output:
         try:
@@ -333,6 +402,48 @@ def _print_run_summary(
 
     console.print()
     console.print(table)
+
+
+# ─── dashboard command ────────────────────────────────────────────────
+
+
+@main.command()
+@click.option("--port", default=8420, show_default=True, help="Dashboard port")
+@click.option("--db", default=None, help="Database path")
+def dashboard(port: int, db: Optional[str]) -> None:
+    """Launch dashboard to browse past workflow executions."""
+    try:
+        from src.dashboard.app import create_app
+        import uvicorn
+    except ImportError as e:
+        console.print(
+            f"[red]Error:[/red] Dashboard dependencies not installed: {e}\n"
+            "Install with: pip install 'meta-autonomous-framework[dashboard]'"
+        )
+        raise SystemExit(1)
+
+    from src.observability.tracker import ExecutionTracker
+    from src.observability.backends import SQLObservabilityBackend
+
+    # Init database
+    db_path = db or DEFAULT_DB_PATH
+    try:
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        ExecutionTracker.ensure_database(f"sqlite:///{db_path}")
+    except (OSError, PermissionError) as e:
+        console.print(f"[red]Database error:[/red] {e}")
+        raise SystemExit(1)
+
+    backend = SQLObservabilityBackend(buffer=False)
+    app = create_app(backend=backend, event_bus=None)
+
+    console.print(f"\n[cyan]MAF Dashboard[/cyan] running at http://localhost:{port}")
+    console.print("Press Ctrl+C to stop\n")
+
+    try:
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Dashboard stopped[/yellow]")
 
 
 # ─── validate command ─────────────────────────────────────────────────

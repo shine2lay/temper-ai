@@ -183,6 +183,9 @@ class WorkflowDomainState:
     context: Optional[str] = None
     data: Optional[Dict[str, Any]] = None
 
+    # Arbitrary user-supplied workflow inputs (survives LangGraph dataclass coercion)
+    workflow_inputs: Dict[str, Any] = field(default_factory=dict)
+
     # Metadata and versioning
     version: str = "1.0"
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -327,17 +330,20 @@ class WorkflowDomainState:
         known_fields = {
             "stage_outputs", "current_stage", "workflow_id",
             "topic", "depth", "focus_areas", "query", "input", "context", "data",
-            "version", "created_at", "metadata"
+            "workflow_inputs", "version", "created_at", "metadata"
         }
 
         filtered_data = {k: v for k, v in data.items() if k in known_fields}
 
-        # Store extra fields in metadata
+        # Store extra fields in workflow_inputs so they reach agents
         extra_fields = {k: v for k, v in data.items() if k not in known_fields}
         if extra_fields:
-            metadata = filtered_data.get("metadata", {})
-            metadata["extra_fields"] = extra_fields
-            filtered_data["metadata"] = metadata
+            existing_wi = filtered_data.get("workflow_inputs", {})
+            if isinstance(existing_wi, dict):
+                existing_wi.update(extra_fields)
+            else:
+                existing_wi = extra_fields
+            filtered_data["workflow_inputs"] = existing_wi
 
         return cls(**filtered_data)
 
@@ -389,6 +395,8 @@ class WorkflowDomainState:
             state_dict["stage_outputs"] = copy_module.deepcopy(state_dict["stage_outputs"])
         if "metadata" in state_dict:
             state_dict["metadata"] = copy_module.deepcopy(state_dict["metadata"])
+        if "workflow_inputs" in state_dict:
+            state_dict["workflow_inputs"] = copy_module.deepcopy(state_dict["workflow_inputs"])
         if "focus_areas" in state_dict and state_dict["focus_areas"] is not None:
             state_dict["focus_areas"] = list(state_dict["focus_areas"])
         return WorkflowDomainState.from_dict(state_dict)

@@ -220,6 +220,45 @@ class TestWorkflowDomainState:
         assert "wf-test-123" in repr_str
         assert "num_stages=1" in repr_str
 
+    # --- workflow_inputs tests ---
+
+    def test_workflow_inputs_default_empty(self):
+        """workflow_inputs defaults to empty dict."""
+        state = WorkflowDomainState()
+        assert state.workflow_inputs == {}
+
+    def test_workflow_inputs_in_to_dict(self):
+        """workflow_inputs appears in to_dict() output."""
+        state = WorkflowDomainState(workflow_inputs={"key": "value"})
+        d = state.to_dict()
+        assert d["workflow_inputs"] == {"key": "value"}
+
+    def test_workflow_inputs_in_from_dict(self):
+        """workflow_inputs is restored from dict."""
+        data = {"workflow_inputs": {"custom": "data"}}
+        state = WorkflowDomainState.from_dict(data)
+        assert state.workflow_inputs == {"custom": "data"}
+
+    def test_workflow_inputs_extra_fields_stored(self):
+        """Extra unknown fields are stored in workflow_inputs."""
+        data = {
+            "workflow_id": "wf-test",
+            "problem_description": "Memory leak",
+            "severity": "high",
+        }
+        state = WorkflowDomainState.from_dict(data)
+        assert state.workflow_inputs["problem_description"] == "Memory leak"
+        assert state.workflow_inputs["severity"] == "high"
+
+    def test_workflow_inputs_deep_copied(self):
+        """workflow_inputs is deep-copied in copy()."""
+        state = WorkflowDomainState(
+            workflow_inputs={"nested": {"key": "original"}}
+        )
+        copied = state.copy()
+        state.workflow_inputs["nested"]["key"] = "modified"
+        assert copied.workflow_inputs["nested"]["key"] == "original"
+
 
 class TestExecutionContext:
     """Test ExecutionContext - infrastructure components."""

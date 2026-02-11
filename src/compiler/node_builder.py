@@ -3,12 +3,16 @@
 Handles creation of execution nodes for stages, with proper configuration
 loading and executor delegation.
 """
+import logging
 from typing import Any, Callable, Dict, Optional, cast
 
 from src.compiler.config_loader import ConfigLoader
 from src.compiler.langgraph_state import LangGraphWorkflowState
 from src.compiler.utils import extract_agent_name
 from src.tools.registry import ToolRegistry
+from src.utils.exceptions import WorkflowStageError
+
+logger = logging.getLogger(__name__)
 
 
 class NodeBuilder:
@@ -103,6 +107,9 @@ class NodeBuilder:
                 tool_registry=self.tool_registry
             )
 
+            # Check stage failure and enforce on_stage_failure policy
+            self._check_stage_failure(stage_name, result_dict, workflow_config)
+
             # Return the updated fields as a dict update for LangGraph
             # Executor returns full state dict, we need to return just the updates
             return {
@@ -111,6 +118,63 @@ class NodeBuilder:
             }
 
         return stage_node
+
+    def _check_stage_failure(
+        self,
+        stage_name: str,
+        result_dict: Dict[str, Any],
+        workflow_config: Any,
+    ) -> None:
+        """Check if stage failed and enforce on_stage_failure policy.
+
+        Args:
+            stage_name: Name of the stage
+            result_dict: Result from executor containing stage_outputs
+            workflow_config: Workflow configuration with error_handling settings
+
+        Raises:
+            WorkflowStageError: If stage failed and policy is 'halt'
+        """
+        stage_outputs = result_dict.get("stage_outputs", {})
+        stage_output = stage_outputs.get(stage_name, {})
+        if not isinstance(stage_output, dict):
+            return
+
+        stage_status = stage_output.get("stage_status")
+        if stage_status != "failed":
+            return
+
+        # Extract on_stage_failure policy from workflow config
+        on_stage_failure = "halt"  # default: halt on failure
+        if isinstance(workflow_config, dict):
+            wf = workflow_config.get("workflow", {})
+            eh = wf.get("error_handling", {})
+            on_stage_failure = eh.get("on_stage_failure", "halt")
+        elif hasattr(workflow_config, "workflow"):
+            wf = workflow_config.workflow
+            if hasattr(wf, "error_handling") and wf.error_handling:
+                on_stage_failure = getattr(wf.error_handling, "on_stage_failure", "halt")
+
+        if on_stage_failure == "halt":
+            agent_statuses = stage_output.get("agent_statuses", {})
+            failed_agents = [
+                name for name, status in agent_statuses.items()
+                if (isinstance(status, dict) and status.get("status") == "failed")
+                or status == "failed"
+            ]
+            raise WorkflowStageError(
+                message=(
+                    f"Stage '{stage_name}' failed: all agents failed "
+                    f"({', '.join(failed_agents)}). "
+                    f"Workflow halted per on_stage_failure='halt' policy."
+                ),
+                stage_name=stage_name,
+            )
+        elif on_stage_failure == "skip":
+            logger.warning(
+                "Stage '%s' failed but on_stage_failure='skip'; continuing workflow.",
+                stage_name,
+            )
 
     def _load_stage_config(
         self,

@@ -597,6 +597,32 @@ class WorkflowError(BaseError):
         )
 
 
+class WorkflowStageError(WorkflowError):
+    """Raised when a stage fails and the workflow's error policy requires halting.
+
+    Attributes:
+        stage_name: Name of the failed stage
+    """
+
+    def __init__(
+        self,
+        message: str,
+        stage_name: str,
+        error_code: ErrorCode = ErrorCode.WORKFLOW_EXECUTION_ERROR,
+        context: Optional["ExecutionContext"] = None,
+        cause: Optional[Exception] = None,
+        **kwargs: Any
+    ) -> None:
+        self.stage_name = stage_name
+        super().__init__(
+            message=message,
+            error_code=error_code,
+            context=context,
+            cause=cause,
+            **kwargs
+        )
+
+
 # Safety Exceptions
 
 class SecurityError(FrameworkException):

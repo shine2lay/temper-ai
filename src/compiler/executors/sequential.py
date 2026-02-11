@@ -206,6 +206,19 @@ class SequentialStageExecutor(StageExecutor):
                 "metadata": synthesis_result.metadata if hasattr(synthesis_result, "metadata") else {}
             }
 
+        # Compute stage_status based on agent results
+        failed_count = sum(
+            1 for s in agent_statuses.values()
+            if (isinstance(s, dict) and s.get("status") == "failed") or s == "failed"
+        )
+        total_count = len(agents)
+        if failed_count == total_count and total_count > 0:
+            stage_output["stage_status"] = "failed"
+        elif failed_count > 0:
+            stage_output["stage_status"] = "degraded"
+        else:
+            stage_output["stage_status"] = "completed"
+
         state["stage_outputs"][stage_name] = stage_output
         state["current_stage"] = stage_name
 

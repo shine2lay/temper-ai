@@ -55,6 +55,9 @@ from src.agents._standard_agent_helpers import (
     setup_execution as _setup_execution,
 )
 from src.agents._standard_agent_helpers import (
+    track_failed_llm_call as _track_failed_llm_call,
+)
+from src.agents._standard_agent_helpers import (
     track_llm_call as _track_llm_call,
 )
 from src.agents._standard_agent_helpers import (
@@ -434,6 +437,7 @@ class StandardAgent(BaseAgent):
             except LLMError as e:
                 last_error = e
                 safe_err = sanitize_error_message(str(e))
+                _track_failed_llm_call(self, inf_config, prompt, e, attempt + 1, max_agent_retries + 1)
                 if attempt < max_agent_retries:
                     backoff_delay = retry_delay * (DEFAULT_BACKOFF_MULTIPLIER ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     logger.warning(
@@ -505,6 +509,7 @@ class StandardAgent(BaseAgent):
             except LLMError as e:
                 last_error = e
                 safe_err = sanitize_error_message(str(e))
+                _track_failed_llm_call(self, inf_config, prompt, e, attempt + 1, max_agent_retries + 1)
                 if attempt < max_agent_retries:
                     backoff_delay = retry_delay * (DEFAULT_BACKOFF_MULTIPLIER ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
                     logger.warning(

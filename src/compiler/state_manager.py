@@ -23,6 +23,7 @@ RESERVED_STATE_KEYS = frozenset({
     "stage_outputs",
     "current_stage",
     "workflow_id",
+    "workflow_inputs",
     "tracker",
     "tool_registry",
     "config_loader",
@@ -84,7 +85,7 @@ class StateManager:
         state: Dict[str, Any] = {
             "stage_outputs": {},
             "current_stage": "",
-            **input_data,
+            "workflow_inputs": input_data,
         }
 
         state["workflow_id"] = workflow_id or f"wf-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
@@ -168,9 +169,13 @@ class StateManager:
         Returns:
             Dictionary of input data for stage
         """
-        # Exclude infrastructure keys
+        # Exclude infrastructure keys, unwrap workflow_inputs to top level
         internal_keys = {"tracker", "tool_registry", "config_loader", "visualizer"}
         stage_input = {k: v for k, v in state.items() if k not in internal_keys}
+        # Merge workflow_inputs into top level so agents see them as named fields
+        workflow_inputs = stage_input.pop("workflow_inputs", {})
+        if isinstance(workflow_inputs, dict):
+            stage_input.update(workflow_inputs)
 
         if not include_previous_outputs:
             stage_input.pop("stage_outputs", None)

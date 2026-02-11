@@ -89,6 +89,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) { console.debug('FlowchartPanel not yet available'); }
 
     try {
+        const { StageDetailPanel } = await import('./panels/stage-detail.js');
+        registry.register(StageDetailPanel, 'panel-stage-detail');
+    } catch (e) { console.debug('StageDetailPanel not yet available'); }
+
+    try {
         const { AgentDetailPanel } = await import('./panels/agent-detail.js');
         registry.register(AgentDetailPanel, 'panel-agent-detail');
     } catch (e) { console.debug('AgentDetailPanel not yet available'); }

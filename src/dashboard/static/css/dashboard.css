@@ -1,0 +1,420 @@
+/* ===========================
+   MAF Dashboard — Main Styles
+   Dark theme, CSS Grid layout
+   =========================== */
+
+/* --- Theme Custom Properties --- */
+:root {
+    --bg-primary: #1a1a2e;
+    --bg-secondary: #16213e;
+    --bg-panel: #1e2a4a;
+    --bg-panel-header: #172038;
+    --bg-input: #0f1729;
+    --border-color: #2a3a5c;
+    --border-highlight: #3a4f7a;
+
+    --text-primary: #e0e0e0;
+    --text-secondary: #a0a0b0;
+    --text-muted: #6a7080;
+
+    --accent: #4fc3f7;
+    --accent-dim: #2a7aa8;
+    --success: #66bb6a;
+    --error: #ef5350;
+    --warning: #ffa726;
+    --info: #42a5f5;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+
+    --radius: 8px;
+    --radius-sm: 4px;
+    --shadow-panel: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --transition: 0.2s ease;
+
+    --header-height: 48px;
+    --sidebar-width: 300px;
+    --event-log-height: 200px;
+}
+
+/* --- Reset & Base --- */
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    height: 100%;
+    overflow: hidden;
+}
+
+body {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    display: flex;
+    flex-direction: column;
+}
+
+/* --- Scrollbar Styling --- */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--border-highlight);
+}
+
+/* Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-color) transparent;
+}
+
+/* --- Header --- */
+#dashboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    height: var(--header-height);
+    padding: 0 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+    z-index: 100;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-left h1 {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+}
+
+.workflow-name {
+    font-size: 13px;
+    color: var(--text-secondary);
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.header-center {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* --- Status Badges --- */
+.status-badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-badge.running {
+    background: rgba(79, 195, 247, 0.2);
+    color: var(--accent);
+    animation: pulse-badge 2s ease-in-out infinite;
+}
+
+.status-badge.completed {
+    background: rgba(102, 187, 106, 0.2);
+    color: var(--success);
+}
+
+.status-badge.failed {
+    background: rgba(239, 83, 80, 0.2);
+    color: var(--error);
+}
+
+.status-badge.pending {
+    background: rgba(160, 160, 176, 0.15);
+    color: var(--text-secondary);
+}
+
+@keyframes pulse-badge {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* --- Duration --- */
+.duration {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-secondary);
+}
+
+/* --- Connection Indicator --- */
+.connection-indicator {
+    font-size: 12px;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-weight: 500;
+}
+
+.connection-indicator.connected {
+    background: rgba(102, 187, 106, 0.15);
+    color: var(--success);
+}
+
+.connection-indicator.disconnected {
+    background: rgba(239, 83, 80, 0.15);
+    color: var(--error);
+}
+
+/* --- Main Layout --- */
+#dashboard-main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+}
+
+/* --- Sidebar --- */
+#sidebar {
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+    background: var(--bg-secondary);
+    border-right: 1px solid var(--border-color);
+    overflow-y: auto;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* --- Content Area --- */
+#content-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 8px;
+    gap: 8px;
+}
+
+#detail-area {
+    display: flex;
+    flex: 1;
+    gap: 8px;
+    overflow: hidden;
+}
+
+#detail-area > .panel {
+    flex: 1;
+    min-width: 0;
+}
+
+/* --- Panels --- */
+.panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-panel);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.panel-header {
+    padding: 8px 12px;
+    background: var(--bg-panel-header);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-secondary);
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.panel-content {
+    padding: 8px 12px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.panel-full-width {
+    flex-shrink: 0;
+    max-height: 40%;
+}
+
+/* --- Event Log (Footer) --- */
+#event-log {
+    flex-shrink: 0;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+    border-bottom: none;
+}
+
+#event-log .panel-header {
+    cursor: pointer;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+#event-log .panel-header:hover {
+    background: var(--bg-panel);
+}
+
+#event-log .toggle-icon {
+    font-size: 10px;
+    transition: transform var(--transition);
+}
+
+#event-log.collapsed .panel-content {
+    display: none;
+}
+
+#event-log.collapsed .toggle-icon {
+    transform: rotate(180deg);
+}
+
+#event-log .panel-content {
+    max-height: var(--event-log-height);
+    overflow-y: auto;
+    padding: 4px 12px;
+}
+
+#event-log-entries {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.event-entry {
+    display: flex;
+    gap: 8px;
+    font-size: 12px;
+    padding: 2px 0;
+    border-bottom: 1px solid rgba(42, 58, 92, 0.3);
+}
+
+.event-time {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    flex-shrink: 0;
+    font-size: 11px;
+}
+
+.event-type {
+    color: var(--accent);
+    font-weight: 500;
+    flex-shrink: 0;
+}
+
+.event-label {
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* --- Code / JSON Display --- */
+.json-viewer,
+.code-block {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.6;
+    background: var(--bg-input);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: var(--text-primary);
+}
+
+/* --- Responsive --- */
+@media (max-width: 1024px) {
+    #sidebar {
+        display: none;
+    }
+
+    #dashboard-main {
+        flex-direction: column;
+    }
+
+    #detail-area {
+        flex-direction: column;
+    }
+
+    .header-left h1 {
+        font-size: 14px;
+    }
+
+    .workflow-name {
+        max-width: 150px;
+    }
+}
+
+/* --- Utility Classes --- */
+.text-muted {
+    color: var(--text-muted);
+}
+
+.text-accent {
+    color: var(--accent);
+}
+
+.text-success {
+    color: var(--success);
+}
+
+.text-error {
+    color: var(--error);
+}
+
+.text-warning {
+    color: var(--warning);
+}
+
+.mono {
+    font-family: var(--font-mono);
+}
+
+.truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.hidden {
+    display: none !important;
+}

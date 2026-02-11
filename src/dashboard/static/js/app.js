@@ -125,30 +125,120 @@ function updateHeader(dataStore) {
 }
 
 function updateEventLog(detail, dataStore) {
+    if (detail?.changeType === 'snapshot') {
+        populateEventLogFromSnapshot(dataStore);
+        return;
+    }
     if (detail?.changeType !== 'event') return;
     const container = document.getElementById('event-log-entries');
     if (!container) return;
 
     const event = detail;
+    container.prepend(createEventEntry(
+        event.timestamp || Date.now(),
+        event.event_type || event.changeType,
+        event.label || ''
+    ));
+
+    // Limit entries
+    while (container.children.length > 200) {
+        container.removeChild(container.lastChild);
+    }
+}
+
+function populateEventLogFromSnapshot(dataStore) {
+    const container = document.getElementById('event-log-entries');
+    if (!container) return;
+
+    const entries = [];
+
+    // Stages
+    for (const stage of dataStore.stages.values()) {
+        const name = stage.stage_name || stage.name || 'Stage';
+        if (stage.start_time) {
+            entries.push({ timestamp: stage.start_time, event_type: 'stage_start', label: name });
+        }
+        if (stage.end_time) {
+            const suffix = stage.status ? ` (${stage.status})` : '';
+            entries.push({ timestamp: stage.end_time, event_type: 'stage_end', label: name + suffix });
+        }
+
+        // Collaboration events on stage
+        for (const evt of (stage.collaboration_events || [])) {
+            const agents = (evt.agents_involved || []).join(', ');
+            entries.push({
+                timestamp: evt.timestamp,
+                event_type: evt.event_type || 'collaboration',
+                label: agents
+            });
+        }
+    }
+
+    // Agents
+    for (const agent of dataStore.agents.values()) {
+        const name = agent.agent_name || agent.name || 'Agent';
+        if (agent.start_time) {
+            entries.push({ timestamp: agent.start_time, event_type: 'agent_start', label: name });
+        }
+        if (agent.end_time) {
+            const suffix = agent.status ? ` (${agent.status})` : '';
+            entries.push({ timestamp: agent.end_time, event_type: 'agent_end', label: name + suffix });
+        }
+    }
+
+    // LLM calls
+    for (const llm of dataStore.llmCalls.values()) {
+        const parts = [llm.provider, llm.model].filter(Boolean);
+        const label = parts.length > 0 ? parts.join('/') : 'LLM Call';
+        if (llm.start_time) {
+            entries.push({ timestamp: llm.start_time, event_type: 'llm_call', label });
+        }
+    }
+
+    // Tool calls
+    for (const tool of dataStore.toolCalls.values()) {
+        const label = tool.tool_name || 'Tool Call';
+        if (tool.start_time) {
+            entries.push({ timestamp: tool.start_time, event_type: 'tool_call', label });
+        }
+    }
+
+    // Filter out entries without valid timestamps, sort chronologically
+    const sorted = entries
+        .filter(e => e.timestamp)
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    // Render: newest at top
+    container.innerHTML = '';
+    for (let i = sorted.length - 1; i >= 0; i--) {
+        const e = sorted[i];
+        container.appendChild(createEventEntry(e.timestamp, e.event_type, e.label));
+    }
+}
+
+function createEventEntry(timestamp, eventType, label) {
     const entry = document.createElement('div');
     entry.className = 'event-entry';
 
     const timeSpan = document.createElement('span');
     timeSpan.className = 'event-time';
-    timeSpan.textContent = new Date(event.timestamp || Date.now()).toLocaleTimeString();
+    timeSpan.textContent = new Date(timestamp).toLocaleTimeString();
 
     const typeSpan = document.createElement('span');
     typeSpan.className = 'event-type';
-    typeSpan.textContent = event.event_type || event.changeType;
+    typeSpan.textContent = eventType;
 
     entry.appendChild(timeSpan);
     entry.appendChild(typeSpan);
-    container.prepend(entry);
 
-    // Limit entries
-    while (container.children.length > 100) {
-        container.removeChild(container.lastChild);
+    if (label) {
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'event-label';
+        labelSpan.textContent = label;
+        entry.appendChild(labelSpan);
     }
+
+    return entry;
 }
 
 function formatDuration(seconds) {

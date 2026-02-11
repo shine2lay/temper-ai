@@ -129,8 +129,8 @@ export class StageDetailPanel {
         }
 
         // Error message
-        if (stage.status === 'failed' && stage.error) {
-            this.container.appendChild(this._buildErrorMessage(stage.error));
+        if (stage.status === 'failed' && (stage.error_message || stage.error)) {
+            this.container.appendChild(this._buildErrorMessage(stage.error_message || stage.error));
         }
 
         // Input data (collapsible, collapsed)
@@ -203,10 +203,15 @@ export class StageDetailPanel {
             totalCost += (agent.estimated_cost_usd || 0);
         }
 
+        // Use stage-level metrics from API as fallback when agents array is sparse
+        const numAgents = agents.length || stage.num_agents_executed || 0;
+        const numSucceeded = succeeded || stage.num_agents_succeeded || 0;
+        const numFailed = failed || stage.num_agents_failed || 0;
+
         const metrics = [
-            { label: 'Agents', value: agents.length },
-            { label: 'Succeeded', value: succeeded },
-            { label: 'Failed', value: failed },
+            { label: 'Agents', value: numAgents },
+            { label: 'Succeeded', value: numSucceeded },
+            { label: 'Failed', value: numFailed },
             { label: 'Duration', value: formatDuration(stage.duration_seconds) },
             { label: 'Tokens', value: formatTokens(totalTokens || null) },
             { label: 'Cost', value: formatCost(totalCost || null) },

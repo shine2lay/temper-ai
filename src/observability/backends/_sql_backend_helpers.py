@@ -27,6 +27,7 @@ from src.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
+from src.observability.backend import DEFAULT_LIST_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -492,7 +493,7 @@ def read_get_workflow(workflow_id: str) -> Optional[Dict[str, Any]]:
 
 
 def read_list_workflows(
-    limit: int = 50, offset: int = 0, status: Optional[str] = None
+    limit: int = DEFAULT_LIST_LIMIT, offset: int = 0, status: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """List workflow executions (summary only, no children)."""
     with get_session() as session:

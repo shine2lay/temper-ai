@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+from src.constants.limits import MAX_SHORT_STRING_LENGTH
 from src.safety._file_access_helpers import (
     decode_url_fully,
     extract_paths,
@@ -24,7 +25,6 @@ from src.safety._file_access_helpers import (
     is_forbidden_file,
     normalize_path,
 )
-from src.constants.limits import MAX_SHORT_STRING_LENGTH
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
     MAX_EXCLUDED_PATH_LENGTH,

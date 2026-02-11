@@ -361,8 +361,9 @@ class M5CLI:
 
         with get_session() as session:
             from sqlmodel import select
-            from src.self_improvement.storage.experiment_models import M5Experiment
+
             from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
+            from src.self_improvement.storage.experiment_models import M5Experiment
 
             orchestrator = ExperimentOrchestrator(session)
 

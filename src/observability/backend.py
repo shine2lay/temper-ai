@@ -8,6 +8,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Any, ContextManager, Dict, List, Literal, Optional
 
+DEFAULT_LIST_LIMIT = 50
+
 
 class ObservabilityBackend(ABC):
     """
@@ -388,6 +390,38 @@ class ObservabilityBackend(ABC):
         Returns:
             str: ID of created collaboration event record
         """
+        pass
+
+    # ========== Read Operations ==========
+
+    @abstractmethod
+    def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+        """Get workflow execution with stages, agents, LLM calls, tool calls."""
+        pass
+
+    @abstractmethod
+    def list_workflows(self, limit: int = DEFAULT_LIST_LIMIT, offset: int = 0, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List workflow executions (summary only, no children)."""
+        pass
+
+    @abstractmethod
+    def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+        """Get stage with agents and collaboration events."""
+        pass
+
+    @abstractmethod
+    def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """Get agent with LLM calls and tool calls."""
+        pass
+
+    @abstractmethod
+    def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get single LLM call with full prompt/response."""
+        pass
+
+    @abstractmethod
+    def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get single tool execution with full params/output."""
         pass
 
     # ========== Context Management ==========

@@ -7,7 +7,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.observability.backend import ObservabilityBackend
+from src.observability.backend import DEFAULT_LIST_LIMIT, ObservabilityBackend
 
 
 class NoOpBackend(ObservabilityBackend):
@@ -203,6 +203,32 @@ class NoOpBackend(ObservabilityBackend):
     ) -> str:
         """Track collaboration event (no-op)."""
         return ""
+
+    # ========== Read Operations ==========
+
+    def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+        """Get workflow (no-op)."""
+        return None
+
+    def list_workflows(self, limit: int = DEFAULT_LIST_LIMIT, offset: int = 0, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List workflows (no-op)."""
+        return []
+
+    def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+        """Get stage (no-op)."""
+        return None
+
+    def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """Get agent (no-op)."""
+        return None
+
+    def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get LLM call (no-op)."""
+        return None
+
+    def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get tool call (no-op)."""
+        return None
 
     # ========== Context Management ==========
 

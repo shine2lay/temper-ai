@@ -33,6 +33,8 @@ from src.constants.limits import THRESHOLD_MEDIUM_COUNT
 from src.core.circuit_breaker import CircuitBreakerError
 from src.safety._action_policy_helpers import (
     cache_result as _cache_result_helper,
+)
+from src.safety._action_policy_helpers import (
     canonical_json,
     context_to_dict,
     get_cache_key,

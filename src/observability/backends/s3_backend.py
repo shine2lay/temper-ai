@@ -16,7 +16,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.observability.backend import ObservabilityBackend
+from src.observability.backend import DEFAULT_LIST_LIMIT, ObservabilityBackend
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +155,32 @@ class S3ObservabilityBackend(ObservabilityBackend):
         )
         # Return stub event ID
         return f"collab-stub-{event_type}"
+
+    # ========== Read Operations ==========
+
+    def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+        """Get workflow (stub)."""
+        return None
+
+    def list_workflows(self, limit: int = DEFAULT_LIST_LIMIT, offset: int = 0, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List workflows (stub)."""
+        return []
+
+    def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+        """Get stage (stub)."""
+        return None
+
+    def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """Get agent (stub)."""
+        return None
+
+    def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get LLM call (stub)."""
+        return None
+
+    def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get tool call (stub)."""
+        return None
 
     @contextmanager
     def get_session_context(self) -> Any:

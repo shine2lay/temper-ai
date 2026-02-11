@@ -7,6 +7,9 @@ See _forbidden_ops_helpers.py for extracted logic.
 import re
 from typing import Any, Dict, List, Optional, Set
 
+from src.constants.limits import PERCENT_100
+from src.constants.probabilities import PROB_VERY_LOW
+
 # Helper functions extracted to reduce class size
 from src.safety._forbidden_ops_helpers import (
     compile_all_patterns as _compile_all_patterns,
@@ -23,8 +26,6 @@ from src.safety._forbidden_ops_helpers import (
 from src.safety._forbidden_ops_helpers import (
     validate_redirect_context as _validate_redirect_context,
 )
-from src.constants.limits import PERCENT_100
-from src.constants.probabilities import PROB_VERY_LOW
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
     MAX_EXCLUDED_PATH_LENGTH,

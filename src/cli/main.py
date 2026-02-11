@@ -230,12 +230,14 @@ def run(
         # Start dashboard server (if dashboard enabled)
         if dashboard is not None and event_bus is not None:
             try:
-                from src.dashboard.app import create_app
-                import uvicorn
                 import threading
 
+                import uvicorn
+
+                from src.dashboard.app import create_app
+
                 app = create_app(backend=tracker.backend, event_bus=event_bus)
-                config = uvicorn.Config(app, host="0.0.0.0", port=dashboard, log_level="warning")  # noqa: S104
+                config = uvicorn.Config(app, host="0.0.0.0", port=dashboard, log_level="warning")  # noqa: S104  # nosec B104
                 dashboard_server = uvicorn.Server(config)
                 thread = threading.Thread(target=dashboard_server.run, daemon=True)
                 thread.start()
@@ -350,7 +352,7 @@ def run(
             try:
                 import time
                 while True:
-                    time.sleep(1)
+                    time.sleep(1)  # Intentional blocking: keep-alive loop for dashboard server; Windows fallback for signal.pause()
             except KeyboardInterrupt:
                 pass
         console.print("\n[yellow]Dashboard stopped[/yellow]")
@@ -414,8 +416,9 @@ def _print_run_summary(
 def dashboard(port: int, db: Optional[str]) -> None:
     """Launch dashboard to browse past workflow executions."""
     try:
-        from src.dashboard.app import create_app
         import uvicorn
+
+        from src.dashboard.app import create_app
     except ImportError as e:
         console.print(
             f"[red]Error:[/red] Dashboard dependencies not installed: {e}\n"
@@ -423,8 +426,8 @@ def dashboard(port: int, db: Optional[str]) -> None:
         )
         raise SystemExit(1)
 
-    from src.observability.tracker import ExecutionTracker
     from src.observability.backends import SQLObservabilityBackend
+    from src.observability.tracker import ExecutionTracker
 
     # Init database
     db_path = db or DEFAULT_DB_PATH
@@ -442,7 +445,7 @@ def dashboard(port: int, db: Optional[str]) -> None:
     console.print("Press Ctrl+C to stop\n")
 
     try:
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")  # noqa: S104
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")  # noqa: S104  # nosec B104
     except KeyboardInterrupt:
         console.print("\n[yellow]Dashboard stopped[/yellow]")
 

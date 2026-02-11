@@ -25,7 +25,7 @@ from src.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.backend import ObservabilityBackend
+from src.observability.backend import DEFAULT_LIST_LIMIT, ObservabilityBackend
 from src.observability.backends._sql_backend_helpers import (
     aggregate_stage_metrics as _aggregate_stage_metrics,
 )
@@ -40,6 +40,24 @@ from src.observability.backends._sql_backend_helpers import (
 )
 from src.observability.backends._sql_backend_helpers import (
     get_backend_stats as _get_backend_stats,
+)
+from src.observability.backends._sql_backend_helpers import (
+    read_get_agent as _read_get_agent,
+)
+from src.observability.backends._sql_backend_helpers import (
+    read_get_llm_call as _read_get_llm_call,
+)
+from src.observability.backends._sql_backend_helpers import (
+    read_get_stage as _read_get_stage,
+)
+from src.observability.backends._sql_backend_helpers import (
+    read_get_tool_call as _read_get_tool_call,
+)
+from src.observability.backends._sql_backend_helpers import (
+    read_get_workflow as _read_get_workflow,
+)
+from src.observability.backends._sql_backend_helpers import (
+    read_list_workflows as _read_list_workflows,
 )
 from src.observability.backends._sql_backend_helpers import (
     track_collaboration_event as _track_collaboration_event,
@@ -357,6 +375,32 @@ class SQLObservabilityBackend(ObservabilityBackend):
             if agent:
                 agent.num_tool_calls = (agent.num_tool_calls or 0) + 1
             session.commit()
+
+    # ========== Read Operations ==========
+
+    def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+        """Get workflow execution with full hierarchy."""
+        return _read_get_workflow(workflow_id)
+
+    def list_workflows(self, limit: int = DEFAULT_LIST_LIMIT, offset: int = 0, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        """List workflow executions (summary only, no children)."""
+        return _read_list_workflows(limit, offset, status)
+
+    def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+        """Get stage with agents and collaboration events."""
+        return _read_get_stage(stage_id)
+
+    def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """Get agent with LLM calls and tool calls."""
+        return _read_get_agent(agent_id)
+
+    def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get single LLM call with full prompt/response."""
+        return _read_get_llm_call(llm_call_id)
+
+    def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get single tool execution with full params/output."""
+        return _read_get_tool_call(tool_call_id)
 
     # ========== Delegated Methods ==========
 

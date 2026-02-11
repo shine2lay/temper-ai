@@ -13,15 +13,12 @@ import uuid
 from typing import Any, Dict, Optional, cast
 
 from src.constants.durations import SECONDS_PER_MINUTE
-from src.constants.sizes import UUID_HEX_SHORT_LENGTH
 from src.constants.retries import (
     DEFAULT_BACKOFF_MULTIPLIER,
     MIN_BACKOFF_SECONDS,
 )
+from src.constants.sizes import UUID_HEX_SHORT_LENGTH
 from src.core.circuit_breaker import CircuitBreakerError
-
-# Agent retry backoff constants
-MAX_RETRY_BACKOFF_DIVISOR = 2  # Divide max time by this to get max retry delay (e.g., 60s / 2 = 30s max delay)
 from src.utils.exceptions import (
     BaseError,
     ConfigNotFoundError,
@@ -31,6 +28,9 @@ from src.utils.exceptions import (
     ToolExecutionError,
     sanitize_error_message,
 )
+
+# Agent retry backoff constants
+MAX_RETRY_BACKOFF_DIVISOR = 2  # Divide max time by this to get max retry delay (e.g., 60s / 2 = 30s max delay)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +44,13 @@ _TRANSIENT_ERROR_TYPES: frozenset[str] = frozenset({
     ErrorCode.TOOL_TIMEOUT.value,
     ErrorCode.AGENT_TIMEOUT.value,
     ErrorCode.WORKFLOW_TIMEOUT.value,
+})
+
+# Reserved keys that must not be overwritten when unwrapping workflow_inputs
+_RESERVED_UNWRAP_KEYS: frozenset[str] = frozenset({
+    "stage_outputs", "current_stage", "workflow_id", "tracker",
+    "tool_registry", "config_loader", "visualizer", "show_details",
+    "detail_console", "workflow_inputs", "tool_executor",
 })
 
 
@@ -212,11 +219,6 @@ def run_agent(
 
     # Unwrap workflow_inputs to top level so agents see custom fields.
     # Filter out reserved keys to prevent user inputs from overwriting framework state.
-    _RESERVED_UNWRAP_KEYS: frozenset[str] = frozenset({
-        "stage_outputs", "current_stage", "workflow_id", "tracker",
-        "tool_registry", "config_loader", "visualizer", "show_details",
-        "detail_console", "workflow_inputs", "tool_executor",
-    })
     wi = {k: v for k, v in state_dict.get("workflow_inputs", {}).items()
           if k not in _RESERVED_UNWRAP_KEYS}
     input_data = {

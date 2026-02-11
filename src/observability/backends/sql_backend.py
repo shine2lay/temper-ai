@@ -25,7 +25,7 @@ from src.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.backend import DEFAULT_LIST_LIMIT, ObservabilityBackend
+from src.observability.backend import DEFAULT_LIST_LIMIT, ObservabilityBackend, ReadableBackendMixin
 from src.observability.backends._sql_backend_helpers import (
     aggregate_stage_metrics as _aggregate_stage_metrics,
 )
@@ -69,7 +69,7 @@ from src.observability.backends._sql_backend_helpers import (
 logger = logging.getLogger(__name__)
 
 
-class SQLObservabilityBackend(ObservabilityBackend):
+class SQLObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
     """SQL-based observability backend with per-operation sessions and buffering."""
 
     def __init__(self, buffer: Any = None) -> None:

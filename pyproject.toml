@@ -46,7 +46,7 @@ dependencies = [
     "tenacity>=8.2,<10.0",
 
     # Security
-    "cryptography>=42.0,<44.0",
+    "cryptography>=46.0.5",
 ]
 
 [project.optional-dependencies]
@@ -78,6 +78,11 @@ llm-providers = [
 #   2. pip install -e .claude-coord/
 # The framework gracefully degrades when coord_service is unavailable.
 coord = []
+
+dashboard = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+]
 
 # TODO: Replace 'yourusername' with actual GitHub username/organization
 [project.urls]

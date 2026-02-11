@@ -30,6 +30,8 @@ from src.database import get_database, get_session, init_database
 from src.self_improvement.loop import LoopConfig, M5SelfImprovementLoop
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 
+RECENT_EXPERIMENTS_LIMIT = 5
+
 # Initialize observability database if not already initialized
 try:
     get_database()
@@ -372,7 +374,7 @@ class M5CLI:
                 select(M5Experiment)
                 .where(M5Experiment.agent_name == agent_name)
                 .order_by(M5Experiment.created_at.desc())  # type: ignore[attr-defined]
-                .limit(5)
+                .limit(RECENT_EXPERIMENTS_LIMIT)
             )
             experiments = session.exec(stmt).all()
 

@@ -10,11 +10,13 @@ import threading
 import uuid
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Dict, Generator, List, Literal, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 from src.core.context import ExecutionContext
 from src.database.datetime_utils import utcnow
 from src.observability._tracker_helpers import (
+    TrackerCollaborationMixin,
+    aggregate_workflow_metrics_on_success,
     get_stack_trace,
     sanitize_dict,
 )
@@ -27,12 +29,10 @@ from src.observability._tracker_helpers import (
 from src.observability._tracker_helpers import (
     track_tool_call as _track_tool_call,
 )
-from src.observability._tracker_helpers import (
-    update_agent_merit_score as _update_agent_merit_score,
-)
 from src.observability.backend import ObservabilityBackend
 from src.observability.collaboration_tracker import CollaborationEventTracker
 from src.observability.decision_tracker import DecisionTracker
+from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 from src.observability.metric_aggregator import MetricAggregator
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
 from src.utils.config_helpers import sanitize_config_for_display
@@ -40,7 +40,7 @@ from src.utils.config_helpers import sanitize_config_for_display
 logger = logging.getLogger(__name__)
 
 
-class ExecutionTracker:
+class ExecutionTracker(TrackerCollaborationMixin):
     """
     Tracks execution using pluggable observability backends.
 
@@ -53,7 +53,8 @@ class ExecutionTracker:
         backend: Optional[ObservabilityBackend] = None,
         sanitization_config: Optional[SanitizationConfig] = None,
         metric_registry: Optional[Any] = None,
-        alert_manager: Optional[Any] = None
+        alert_manager: Optional[Any] = None,
+        event_bus: Optional[ObservabilityEventBus] = None,
     ):
         """Initialize execution tracker."""
         self._context_var: contextvars.ContextVar[ExecutionContext] = contextvars.ContextVar(
@@ -73,6 +74,8 @@ class ExecutionTracker:
             from src.observability.alerting import AlertManager
             alert_manager = AlertManager()
         self.alert_manager = alert_manager
+
+        self._event_bus = event_bus
 
         self._decision_tracker = DecisionTracker(sanitize_fn=self._sanitize_dict)
         self._metric_aggregator = MetricAggregator(
@@ -128,6 +131,20 @@ class ExecutionTracker:
     def _collect_agent_metrics(self, agent_id: str) -> None:
         self._metric_aggregator.collect_agent_metrics(agent_id)
 
+    def _emit_event(self, event_type: str, data: Dict[str, Any]) -> None:
+        """Emit an event if event bus is configured."""
+        if self._event_bus is None:
+            return
+        event = ObservabilityEvent(
+            event_type=event_type,
+            timestamp=utcnow(),
+            data=data,
+            workflow_id=self.context.workflow_id,
+            stage_id=self.context.stage_id,
+            agent_id=self.context.agent_id,
+        )
+        self._event_bus.emit(event)
+
     @contextmanager
     def track_workflow(
         self, workflow_name: str, workflow_config: Dict[str, Any],
@@ -168,6 +185,13 @@ class ExecutionTracker:
                 environment=environment, tags=tags,
                 extra_metadata=extra_metadata if extra_metadata else None
             )
+            self._emit_event("workflow_start", {
+                "workflow_id": workflow_id,
+                "workflow_name": workflow_name,
+                "start_time": start_time.isoformat(),
+                "environment": environment,
+                "tags": tags,
+            })
 
             try:
                 yield workflow_id
@@ -177,26 +201,17 @@ class ExecutionTracker:
                     workflow_id=workflow_id, end_time=end_time, status="completed",
                     error_message=None, error_stack_trace=None
                 )
+                self._emit_event("workflow_end", {
+                    "workflow_id": workflow_id,
+                    "status": "completed",
+                    "end_time": end_time.isoformat(),
+                })
 
-                try:
-                    if hasattr(self.backend, 'aggregate_workflow_metrics'):
-                        metrics = self.backend.aggregate_workflow_metrics(workflow_id)
-                        if metrics:
-                            total_cost = metrics.get('total_cost_usd', 0.0)
-                            self.backend.update_workflow_metrics(
-                                workflow_id=workflow_id,
-                                total_llm_calls=metrics.get('total_llm_calls', 0),
-                                total_tool_calls=metrics.get('total_tool_calls', 0),
-                                total_tokens=metrics.get('total_tokens', 0),
-                                total_cost_usd=total_cost
-                            )
-                            if self.alert_manager and total_cost > 0:
-                                self.alert_manager.check_metric(
-                                    metric_type="cost_usd", value=total_cost,
-                                    context={"workflow_id": workflow_id}
-                                )
-                except Exception as e:
-                    logger.warning(f"Failed to aggregate workflow metrics for {workflow_id}: {e}", exc_info=True)
+                aggregate_workflow_metrics_on_success(
+                    backend=self.backend,
+                    alert_manager=self.alert_manager,
+                    workflow_id=workflow_id,
+                )
 
             except Exception as e:
                 end_time = utcnow()
@@ -204,6 +219,12 @@ class ExecutionTracker:
                     workflow_id=workflow_id, end_time=end_time, status="failed",
                     error_message=str(e), error_stack_trace=self._get_stack_trace()
                 )
+                self._emit_event("workflow_end", {
+                    "workflow_id": workflow_id,
+                    "status": "failed",
+                    "end_time": end_time.isoformat(),
+                    "error_message": str(e),
+                })
                 raise
 
             finally:
@@ -227,6 +248,12 @@ class ExecutionTracker:
                 stage_id=stage_id, workflow_id=workflow_id, stage_name=stage_name,
                 stage_config=sanitized_config, start_time=start_time, input_data=input_data
             )
+            self._emit_event("stage_start", {
+                "stage_id": stage_id,
+                "workflow_id": workflow_id,
+                "stage_name": stage_name,
+                "start_time": start_time.isoformat(),
+            })
             try:
                 yield stage_id
                 end_time = utcnow()
@@ -245,9 +272,20 @@ class ExecutionTracker:
                 except Exception as e:
                     logger.warning(f"Failed to aggregate stage metrics for {stage_id}: {e}", exc_info=True)
                     self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status="completed")
+                self._emit_event("stage_end", {
+                    "stage_id": stage_id,
+                    "status": "completed",
+                    "end_time": end_time.isoformat(),
+                })
             except Exception as e:
                 end_time = utcnow()
                 self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status="failed", error_message=str(e))
+                self._emit_event("stage_end", {
+                    "stage_id": stage_id,
+                    "status": "failed",
+                    "end_time": end_time.isoformat(),
+                    "error_message": str(e),
+                })
                 raise
             finally:
                 self.context.stage_id = None
@@ -258,13 +296,30 @@ class ExecutionTracker:
                     stage_id=stage_id, workflow_id=workflow_id, stage_name=stage_name,
                     stage_config=sanitized_config, start_time=start_time, input_data=input_data
                 )
+                self._emit_event("stage_start", {
+                    "stage_id": stage_id,
+                    "workflow_id": workflow_id,
+                    "stage_name": stage_name,
+                    "start_time": start_time.isoformat(),
+                })
                 try:
                     yield stage_id
                     end_time = utcnow()
                     self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status="completed")
+                    self._emit_event("stage_end", {
+                        "stage_id": stage_id,
+                        "status": "completed",
+                        "end_time": end_time.isoformat(),
+                    })
                 except Exception as e:
                     end_time = utcnow()
                     self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status="failed", error_message=str(e))
+                    self._emit_event("stage_end", {
+                        "stage_id": stage_id,
+                        "status": "failed",
+                        "end_time": end_time.isoformat(),
+                        "error_message": str(e),
+                    })
                     raise
                 finally:
                     self._session_stack.pop()
@@ -287,14 +342,31 @@ class ExecutionTracker:
                 agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
                 agent_config=sanitized_config, start_time=start_time, input_data=input_data
             )
+            self._emit_event("agent_start", {
+                "agent_id": agent_id,
+                "stage_id": stage_id,
+                "agent_name": agent_name,
+                "start_time": start_time.isoformat(),
+            })
             try:
                 yield agent_id
                 end_time = utcnow()
                 self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status="completed")
+                self._emit_event("agent_end", {
+                    "agent_id": agent_id,
+                    "status": "completed",
+                    "end_time": end_time.isoformat(),
+                })
                 self._collect_agent_metrics(agent_id)
             except Exception as e:
                 end_time = utcnow()
                 self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status="failed", error_message=str(e))
+                self._emit_event("agent_end", {
+                    "agent_id": agent_id,
+                    "status": "failed",
+                    "end_time": end_time.isoformat(),
+                    "error_message": str(e),
+                })
                 raise
             finally:
                 self.context.agent_id = None
@@ -305,14 +377,31 @@ class ExecutionTracker:
                     agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
                     agent_config=sanitized_config, start_time=start_time, input_data=input_data
                 )
+                self._emit_event("agent_start", {
+                    "agent_id": agent_id,
+                    "stage_id": stage_id,
+                    "agent_name": agent_name,
+                    "start_time": start_time.isoformat(),
+                })
                 try:
                     yield agent_id
                     end_time = utcnow()
                     self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status="completed")
+                    self._emit_event("agent_end", {
+                        "agent_id": agent_id,
+                        "status": "completed",
+                        "end_time": end_time.isoformat(),
+                    })
                     self._collect_agent_metrics(agent_id)
                 except Exception as e:
                     end_time = utcnow()
                     self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status="failed", error_message=str(e))
+                    self._emit_event("agent_end", {
+                        "agent_id": agent_id,
+                        "status": "failed",
+                        "end_time": end_time.isoformat(),
+                        "error_message": str(e),
+                    })
                     raise
                 finally:
                     self._session_stack.pop()
@@ -333,6 +422,7 @@ class ExecutionTracker:
             latency_ms=latency_ms, estimated_cost_usd=estimated_cost_usd,
             temperature=temperature, max_tokens=max_tokens, status=status,
             error_message=error_message,
+            event_bus=self._event_bus,
         )
 
     def track_tool_call(
@@ -348,6 +438,7 @@ class ExecutionTracker:
             input_params=input_params, output_data=output_data,
             duration_seconds=duration_seconds, status=status, error_message=error_message,
             safety_checks=safety_checks, approval_required=approval_required,
+            event_bus=self._event_bus,
         )
 
     def _sanitize_dict(self, data: Dict[str, Any], _depth: int = 0) -> Dict[str, Any]:
@@ -371,45 +462,21 @@ class ExecutionTracker:
             estimated_cost_usd=estimated_cost_usd, num_llm_calls=num_llm_calls,
             num_tool_calls=num_tool_calls,
         )
+        self._emit_event("agent_output", {
+            "agent_id": agent_id,
+            "confidence_score": confidence_score,
+            "total_tokens": total_tokens,
+            "estimated_cost_usd": estimated_cost_usd,
+            "num_llm_calls": num_llm_calls,
+            "num_tool_calls": num_tool_calls,
+        })
 
     def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
         """Set stage output data."""
         self._metric_aggregator.set_stage_output(stage_id=stage_id, output_data=output_data)
-
-    def track_safety_violation(
-        self,
-        violation_severity: Literal["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
-        violation_message: str,
-        policy_name: str,
-        service_name: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None
-    ) -> None:
-        """Track safety violation."""
-        self._collaboration_tracker.track_safety_violation(
-            violation_severity=violation_severity, violation_message=violation_message,
-            policy_name=policy_name, service_name=service_name, context=context,
-        )
-
-    def track_collaboration_event(
-        self, event_type: str, stage_id: Optional[str] = None,
-        agents_involved: Optional[List[str]] = None,
-        event_data: Optional[Dict[str, Any]] = None,
-        round_number: Optional[int] = None, resolution_strategy: Optional[str] = None,
-        outcome: Optional[str] = None, confidence_score: Optional[float] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
-        stage_name: Optional[str] = None, agents: Optional[List[str]] = None,
-        decision: Optional[str] = None, confidence: Optional[float] = None,
-        metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Track collaboration event."""
-        return self._collaboration_tracker.track_collaboration_event(
-            event_type=event_type, stage_id=stage_id, agents_involved=agents_involved,
-            event_data=event_data, round_number=round_number,
-            resolution_strategy=resolution_strategy, outcome=outcome,
-            confidence_score=confidence_score, extra_metadata=extra_metadata,
-            stage_name=stage_name, agents=agents, decision=decision,
-            confidence=confidence, metadata=metadata,
-        )
+        self._emit_event("stage_output", {
+            "stage_id": stage_id,
+        })
 
     def track_decision_outcome(
         self, decision_type: str, decision_data: Dict[str, Any], outcome: str,
@@ -439,13 +506,3 @@ class ExecutionTracker:
             extra_metadata=extra_metadata,
         )
 
-    def update_agent_merit_score(
-        self, agent_name: str, domain: str, decision_outcome: str,
-        confidence: Optional[float] = None
-    ) -> None:
-        """Update agent merit score based on decision outcome."""
-        _update_agent_merit_score(
-            decision_tracker=self._decision_tracker, backend=self.backend,
-            session_stack=self._session_stack, agent_name=agent_name,
-            domain=domain, decision_outcome=decision_outcome, confidence=confidence,
-        )

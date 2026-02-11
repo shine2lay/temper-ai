@@ -34,6 +34,9 @@ logger = logging.getLogger(__name__)
 # UUID hex string length for collaboration event IDs
 UUID_HEX_LENGTH = 12
 
+# Index of total_cost_usd in aggregate_workflow_metrics query result tuple
+_TOTAL_COST_INDEX = 3
+
 
 def track_safety_violation(
     workflow_id: Optional[str],
@@ -259,7 +262,7 @@ def aggregate_workflow_metrics(workflow_id: str) -> Dict[str, Any]:
                 'total_llm_calls': int(result[0] or 0),
                 'total_tool_calls': int(result[1] or 0),
                 'total_tokens': int(result[2] or 0),
-                'total_cost_usd': float(result[3] or 0.0),
+                'total_cost_usd': float(result[_TOTAL_COST_INDEX] or 0.0),
             }
         return {
             'total_llm_calls': 0,

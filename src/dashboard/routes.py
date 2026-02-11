@@ -3,6 +3,7 @@ import logging
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from starlette.status import HTTP_404_NOT_FOUND
 
 from src.dashboard.data_service import DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT
 
@@ -27,7 +28,7 @@ def create_router(data_service: Any) -> APIRouter:
         """Get full workflow snapshot by ID."""
         result = data_service.get_workflow_snapshot(workflow_id)
         if result is None:
-            raise HTTPException(status_code=404, detail="Workflow not found")
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Workflow not found")
         return result
 
     @router.get("/workflows/{workflow_id}/trace")
@@ -35,7 +36,7 @@ def create_router(data_service: Any) -> APIRouter:
         """Get hierarchical trace for a workflow."""
         result = data_service.get_workflow_trace(workflow_id)
         if result is None:
-            raise HTTPException(status_code=404, detail="Workflow trace not found")
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Workflow trace not found")
         return result
 
     @router.get("/workflows/{workflow_id}/data-flow")
@@ -48,7 +49,7 @@ def create_router(data_service: Any) -> APIRouter:
         """Get stage execution details."""
         result = data_service.get_stage(stage_id)
         if result is None:
-            raise HTTPException(status_code=404, detail="Stage not found")
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Stage not found")
         return result
 
     @router.get("/agents/{agent_id}")
@@ -56,7 +57,7 @@ def create_router(data_service: Any) -> APIRouter:
         """Get agent execution details."""
         result = data_service.get_agent(agent_id)
         if result is None:
-            raise HTTPException(status_code=404, detail="Agent not found")
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Agent not found")
         return result
 
     @router.get("/llm-calls/{llm_call_id}")
@@ -64,7 +65,7 @@ def create_router(data_service: Any) -> APIRouter:
         """Get LLM call details."""
         result = data_service.get_llm_call(llm_call_id)
         if result is None:
-            raise HTTPException(status_code=404, detail="LLM call not found")
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="LLM call not found")
         return result
 
     @router.get("/tool-calls/{tool_call_id}")
@@ -72,7 +73,7 @@ def create_router(data_service: Any) -> APIRouter:
         """Get tool call details."""
         result = data_service.get_tool_call(tool_call_id)
         if result is None:
-            raise HTTPException(status_code=404, detail="Tool call not found")
+            raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Tool call not found")
         return result
 
     return router

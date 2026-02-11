@@ -43,6 +43,9 @@ HTTP_UNAUTHORIZED = 401
 HTTP_RATE_LIMIT = 429
 HTTP_SERVER_ERROR = 500
 
+# Timeout constants
+CONNECT_TIMEOUT_SECONDS = 30.0
+
 
 # ---------------------------------------------------------------------------
 # URL validation
@@ -171,7 +174,7 @@ def get_or_create_sync_client(instance: BaseLLM) -> httpx.Client:
                 provider_name = instance.__class__.__name__.replace("LLM", "").lower()
                 from src.agents.llm.base import BaseLLM as _BaseLLM
                 # Create explicit timeout object to ensure all timeout types are set
-                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=30.0)
+                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS)
                 instance._client = get_shared_http_client(
                     _BaseLLM._http_clients,
                     _BaseLLM._http_client_lock,
@@ -204,7 +207,7 @@ async def get_or_create_async_client_safe(instance: BaseLLM) -> httpx.AsyncClien
                     http2_enabled = False
 
                 # Create explicit timeout object to ensure all timeout types are set
-                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=30.0)
+                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS)
                 instance._async_client = httpx.AsyncClient(
                     timeout=timeout_config,
                     limits=limits,
@@ -231,7 +234,7 @@ def get_or_create_async_client_sync(instance: BaseLLM) -> httpx.AsyncClient:
                     http2_enabled = False
 
                 # Create explicit timeout object to ensure all timeout types are set
-                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=30.0)
+                timeout_config = httpx.Timeout(timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS)
                 instance._async_client = httpx.AsyncClient(
                     timeout=timeout_config,
                     limits=limits,

@@ -983,11 +983,12 @@ def test_track_workflow_end_nonexistent(sql_backend: SQLObservabilityBackend):
     workflow_id = make_workflow_id()
 
     # Should not raise error
-    sql_backend.track_workflow_end(
+    result = sql_backend.track_workflow_end(
         workflow_id=workflow_id,
         end_time=utcnow(),
         status="completed"
     )
+    assert result is None
 
 
 def test_track_workflow_end_none_time_raises(sql_backend: SQLObservabilityBackend):

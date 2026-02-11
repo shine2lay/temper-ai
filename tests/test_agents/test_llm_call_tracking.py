@@ -86,7 +86,8 @@ class TestTrackFailedLLMCall:
         error = Exception("test")
 
         # Should not raise
-        track_failed_llm_call(agent, inf_config, "prompt", error, 1, 1)
+        result = track_failed_llm_call(agent, inf_config, "prompt", error, 1, 1)
+        assert result is None
 
 
 class TestStandardAgentFailedLLMTracking:

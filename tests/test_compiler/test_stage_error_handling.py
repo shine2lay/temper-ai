@@ -214,7 +214,8 @@ class TestNodeBuilderStageFailureCheck:
         }
 
         # Should not raise
-        builder._check_stage_failure("analysis", result_dict, workflow_config)
+        result = builder._check_stage_failure("analysis", result_dict, workflow_config)
+        assert result is None
 
     def test_check_stage_failure_ignores_non_failed(self):
         """_check_stage_failure does nothing for completed/degraded stages."""
@@ -236,7 +237,8 @@ class TestNodeBuilderStageFailureCheck:
             }
 
             # Should not raise
-            builder._check_stage_failure("analysis", result_dict, workflow_config)
+            result = builder._check_stage_failure("analysis", result_dict, workflow_config)
+            assert result is None
 
     def test_check_stage_failure_handles_missing_stage_output(self):
         """_check_stage_failure handles missing stage in results gracefully."""
@@ -246,4 +248,5 @@ class TestNodeBuilderStageFailureCheck:
         workflow_config = {"workflow": {"error_handling": {"on_stage_failure": "halt"}}}
 
         # Should not raise - no stage output to check
-        builder._check_stage_failure("nonexistent", result_dict, workflow_config)
+        result = builder._check_stage_failure("nonexistent", result_dict, workflow_config)
+        assert result is None

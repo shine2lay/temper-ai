@@ -4,6 +4,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_PAGE_LIMIT = 50
+MAX_PAGE_LIMIT = 500
+
 
 class DashboardDataService:
     """Provides query methods and event subscriptions for the dashboard.
@@ -13,7 +16,7 @@ class DashboardDataService:
     returns empty/None results gracefully.
     """
 
-    def __init__(self, backend=None, event_bus=None):
+    def __init__(self, backend: Any = None, event_bus: Any = None) -> None:
         self._backend = backend
         self._event_bus = event_bus
 
@@ -25,14 +28,15 @@ class DashboardDataService:
         """Full workflow state from DB."""
         if self._backend is None:
             return None
-        return self._backend.get_workflow(workflow_id)
+        return self._backend.get_workflow(workflow_id)  # type: ignore
 
     def list_workflows(
-        self, limit: int = 50, offset: int = 0, status: Optional[str] = None
+        self, limit: int = DEFAULT_PAGE_LIMIT, offset: int = 0, status: Optional[str] = None
     ) -> List[Dict[str, Any]]:
+        """List workflow executions with optional filtering."""
         if self._backend is None:
             return []
-        return self._backend.list_workflows(limit=limit, offset=offset, status=status)
+        return self._backend.list_workflows(limit=limit, offset=offset, status=status)  # type: ignore
 
     def get_workflow_trace(self, workflow_id: str) -> Optional[Dict[str, Any]]:
         """Hierarchical trace tree, reusing export_waterfall logic."""
@@ -51,24 +55,28 @@ class DashboardDataService:
             return self.get_workflow_snapshot(workflow_id)
 
     def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
+        """Get stage execution by ID."""
         if self._backend is None:
             return None
-        return self._backend.get_stage(stage_id)
+        return self._backend.get_stage(stage_id)  # type: ignore
 
     def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
+        """Get agent execution by ID."""
         if self._backend is None:
             return None
-        return self._backend.get_agent(agent_id)
+        return self._backend.get_agent(agent_id)  # type: ignore
 
     def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get LLM call by ID."""
         if self._backend is None:
             return None
-        return self._backend.get_llm_call(llm_call_id)
+        return self._backend.get_llm_call(llm_call_id)  # type: ignore
 
     def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
+        """Get tool call by ID."""
         if self._backend is None:
             return None
-        return self._backend.get_tool_call(tool_call_id)
+        return self._backend.get_tool_call(tool_call_id)  # type: ignore
 
     def get_data_flow(self, workflow_id: str) -> Dict[str, Any]:
         """Extract data flow between stages, including agent nodes and collaboration edges."""
@@ -153,11 +161,12 @@ class DashboardDataService:
         if self._event_bus is None:
             return None
 
-        def filtered_callback(event):
+        def filtered_callback(event: Any) -> None:
+            """Forward events matching the target workflow."""
             if event.workflow_id == workflow_id:
                 callback(event)
 
-        return self._event_bus.subscribe(filtered_callback)
+        return self._event_bus.subscribe(filtered_callback)  # type: ignore
 
     def unsubscribe(self, subscription_id: str) -> None:
         """Unsubscribe from event bus."""

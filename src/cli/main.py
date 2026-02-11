@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 # Project root for resolving paths
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB_PATH = ".meta-autonomous/observability.db"
+DEFAULT_DASHBOARD_PORT = 8420
 
 # Exit codes
 EXIT_CODE_KEYBOARD_INTERRUPT = 130  # POSIX standard exit code for SIGINT (Ctrl+C)
@@ -69,7 +70,7 @@ def _load_and_validate_workflow(
 
 def _cleanup_tool_executor(engine: Any) -> None:
     """Clean up tool executor resources.
-    
+
     Args:
         engine: The workflow engine instance
     """
@@ -133,7 +134,7 @@ def main() -> None:
     type=int,
     default=None,
     is_flag=True,
-    flag_value=8420,
+    flag_value=DEFAULT_DASHBOARD_PORT,
     help="Launch live dashboard (default port: 8420)",
 )
 def run(
@@ -234,7 +235,7 @@ def run(
                 import threading
 
                 app = create_app(backend=tracker.backend, event_bus=event_bus)
-                config = uvicorn.Config(app, host="0.0.0.0", port=dashboard, log_level="warning")
+                config = uvicorn.Config(app, host="0.0.0.0", port=dashboard, log_level="warning")  # noqa: S104
                 dashboard_server = uvicorn.Server(config)
                 thread = threading.Thread(target=dashboard_server.run, daemon=True)
                 thread.start()
@@ -408,7 +409,7 @@ def _print_run_summary(
 
 
 @main.command()
-@click.option("--port", default=8420, show_default=True, help="Dashboard port")
+@click.option("--port", default=DEFAULT_DASHBOARD_PORT, show_default=True, help="Dashboard port")
 @click.option("--db", default=None, help="Database path")
 def dashboard(port: int, db: Optional[str]) -> None:
     """Launch dashboard to browse past workflow executions."""
@@ -441,7 +442,7 @@ def dashboard(port: int, db: Optional[str]) -> None:
     console.print("Press Ctrl+C to stop\n")
 
     try:
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")
+        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")  # noqa: S104
     except KeyboardInterrupt:
         console.print("\n[yellow]Dashboard stopped[/yellow]")
 

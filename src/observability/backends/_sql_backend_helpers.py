@@ -291,6 +291,318 @@ def aggregate_stage_metrics(stage_id: str) -> Dict[str, int]:
         }
 
 
+# ========== Read Operation Helpers ==========
+
+
+def _workflow_to_dict(wf: Any, stages: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    """Convert a WorkflowExecution ORM object to a plain dict."""
+    return {
+        "id": wf.id,
+        "workflow_name": wf.workflow_name,
+        "workflow_version": wf.workflow_version,
+        "status": wf.status,
+        "start_time": wf.start_time.isoformat() if wf.start_time else None,
+        "end_time": wf.end_time.isoformat() if wf.end_time else None,
+        "duration_seconds": wf.duration_seconds,
+        "trigger_type": wf.trigger_type,
+        "environment": wf.environment,
+        "total_tokens": wf.total_tokens,
+        "total_cost_usd": wf.total_cost_usd,
+        "total_llm_calls": wf.total_llm_calls,
+        "total_tool_calls": wf.total_tool_calls,
+        "tags": wf.tags,
+        "error_message": wf.error_message,
+        "workflow_config_snapshot": wf.workflow_config_snapshot,
+        "extra_metadata": wf.extra_metadata,
+        "stages": stages or [],
+    }
+
+
+def _stage_to_dict(
+    stage: Any,
+    agents: Optional[List[Dict[str, Any]]] = None,
+    collaboration_events: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Convert a StageExecution ORM object to a plain dict."""
+    return {
+        "id": stage.id,
+        "workflow_execution_id": stage.workflow_execution_id,
+        "stage_name": stage.stage_name,
+        "status": stage.status,
+        "start_time": stage.start_time.isoformat() if stage.start_time else None,
+        "end_time": stage.end_time.isoformat() if stage.end_time else None,
+        "duration_seconds": stage.duration_seconds,
+        "input_data": stage.input_data,
+        "output_data": stage.output_data,
+        "num_agents_executed": stage.num_agents_executed,
+        "num_agents_succeeded": stage.num_agents_succeeded,
+        "num_agents_failed": stage.num_agents_failed,
+        "error_message": stage.error_message,
+        "agents": agents or [],
+        "collaboration_events": collaboration_events or [],
+    }
+
+
+def _agent_to_dict(
+    agent: Any,
+    llm_calls: Optional[List[Dict[str, Any]]] = None,
+    tool_calls: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Convert an AgentExecution ORM object to a plain dict."""
+    return {
+        "id": agent.id,
+        "stage_execution_id": agent.stage_execution_id,
+        "agent_name": agent.agent_name,
+        "status": agent.status,
+        "start_time": agent.start_time.isoformat() if agent.start_time else None,
+        "end_time": agent.end_time.isoformat() if agent.end_time else None,
+        "duration_seconds": agent.duration_seconds,
+        "reasoning": agent.reasoning,
+        "confidence_score": agent.confidence_score,
+        "total_tokens": agent.total_tokens,
+        "prompt_tokens": agent.prompt_tokens,
+        "completion_tokens": agent.completion_tokens,
+        "estimated_cost_usd": agent.estimated_cost_usd,
+        "num_llm_calls": agent.num_llm_calls,
+        "num_tool_calls": agent.num_tool_calls,
+        "input_data": agent.input_data,
+        "output_data": agent.output_data,
+        "error_message": agent.error_message,
+        "llm_calls": llm_calls or [],
+        "tool_calls": tool_calls or [],
+    }
+
+
+def _llm_to_dict(llm: Any) -> Dict[str, Any]:
+    """Convert an LLMCall ORM object to a plain dict."""
+    return {
+        "id": llm.id,
+        "agent_execution_id": llm.agent_execution_id,
+        "provider": llm.provider,
+        "model": llm.model,
+        "prompt": llm.prompt,
+        "response": llm.response,
+        "prompt_tokens": llm.prompt_tokens,
+        "completion_tokens": llm.completion_tokens,
+        "total_tokens": llm.total_tokens,
+        "latency_ms": llm.latency_ms,
+        "estimated_cost_usd": llm.estimated_cost_usd,
+        "temperature": llm.temperature,
+        "max_tokens": llm.max_tokens,
+        "status": llm.status,
+        "error_message": llm.error_message,
+        "start_time": llm.start_time.isoformat() if llm.start_time else None,
+        "end_time": llm.end_time.isoformat() if llm.end_time else None,
+    }
+
+
+def _tool_to_dict(tool: Any) -> Dict[str, Any]:
+    """Convert a ToolExecution ORM object to a plain dict."""
+    return {
+        "id": tool.id,
+        "agent_execution_id": tool.agent_execution_id,
+        "tool_name": tool.tool_name,
+        "input_params": tool.input_params,
+        "output_data": tool.output_data,
+        "start_time": tool.start_time.isoformat() if tool.start_time else None,
+        "end_time": tool.end_time.isoformat() if tool.end_time else None,
+        "duration_seconds": tool.duration_seconds,
+        "status": tool.status,
+        "error_message": tool.error_message,
+        "safety_checks_applied": tool.safety_checks_applied,
+        "approval_required": tool.approval_required,
+    }
+
+
+def _collab_to_dict(event: Any) -> Dict[str, Any]:
+    """Convert a CollaborationEvent ORM object to a plain dict."""
+    return {
+        "id": event.id,
+        "stage_execution_id": event.stage_execution_id,
+        "event_type": event.event_type,
+        "timestamp": event.timestamp.isoformat() if event.timestamp else None,
+        "round_number": event.round_number,
+        "agents_involved": event.agents_involved,
+        "event_data": event.event_data,
+        "resolution_strategy": event.resolution_strategy,
+        "outcome": event.outcome,
+        "confidence_score": event.confidence_score,
+        "extra_metadata": event.extra_metadata,
+    }
+
+
+def read_get_workflow(workflow_id: str) -> Optional[Dict[str, Any]]:
+    """Get workflow execution with full hierarchy."""
+    with get_session() as session:
+        wf = session.exec(
+            select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
+        ).first()
+        if not wf:
+            return None
+
+        stages = session.exec(
+            select(StageExecution)
+            .where(StageExecution.workflow_execution_id == workflow_id)
+            .order_by(StageExecution.start_time)  # type: ignore[arg-type]
+        ).all()
+
+        stage_dicts = []
+        for stage in stages:
+            agents = session.exec(
+                select(AgentExecution)
+                .where(AgentExecution.stage_execution_id == stage.id)
+                .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
+            ).all()
+
+            agent_dicts = []
+            for agent in agents:
+                llm_calls = session.exec(
+                    select(LLMCall)
+                    .where(LLMCall.agent_execution_id == agent.id)
+                    .order_by(LLMCall.start_time)  # type: ignore[arg-type]
+                ).all()
+                tool_calls = session.exec(
+                    select(ToolExecution)
+                    .where(ToolExecution.agent_execution_id == agent.id)
+                    .order_by(ToolExecution.start_time)  # type: ignore[arg-type]
+                ).all()
+                agent_dicts.append(
+                    _agent_to_dict(
+                        agent,
+                        [_llm_to_dict(llm) for llm in llm_calls],
+                        [_tool_to_dict(t) for t in tool_calls],
+                    )
+                )
+
+            collab_events = session.exec(
+                select(CollaborationEvent)
+                .where(CollaborationEvent.stage_execution_id == stage.id)
+                .order_by(CollaborationEvent.timestamp)  # type: ignore[arg-type]
+            ).all()
+
+            stage_dicts.append(
+                _stage_to_dict(
+                    stage,
+                    agent_dicts,
+                    [_collab_to_dict(e) for e in collab_events],
+                )
+            )
+
+        return _workflow_to_dict(wf, stage_dicts)
+
+
+def read_list_workflows(
+    limit: int = 50, offset: int = 0, status: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """List workflow executions (summary only, no children)."""
+    with get_session() as session:
+        stmt = select(WorkflowExecution).order_by(
+            WorkflowExecution.start_time.desc()  # type: ignore
+        )
+        if status:
+            stmt = stmt.where(WorkflowExecution.status == status)
+        stmt = stmt.offset(offset).limit(limit)
+        workflows = session.exec(stmt).all()
+        return [_workflow_to_dict(wf) for wf in workflows]
+
+
+def read_get_stage(stage_id: str) -> Optional[Dict[str, Any]]:
+    """Get stage with agents and collaboration events."""
+    with get_session() as session:
+        stage = session.exec(
+            select(StageExecution).where(StageExecution.id == stage_id)
+        ).first()
+        if not stage:
+            return None
+
+        agents = session.exec(
+            select(AgentExecution)
+            .where(AgentExecution.stage_execution_id == stage_id)
+            .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
+        ).all()
+
+        agent_dicts = []
+        for agent in agents:
+            llm_calls = session.exec(
+                select(LLMCall)
+                .where(LLMCall.agent_execution_id == agent.id)
+                .order_by(LLMCall.start_time)  # type: ignore[arg-type]
+            ).all()
+            tool_calls = session.exec(
+                select(ToolExecution)
+                .where(ToolExecution.agent_execution_id == agent.id)
+                .order_by(ToolExecution.start_time)  # type: ignore[arg-type]
+            ).all()
+            agent_dicts.append(
+                _agent_to_dict(
+                    agent,
+                    [_llm_to_dict(llm) for llm in llm_calls],
+                    [_tool_to_dict(t) for t in tool_calls],
+                )
+            )
+
+        collab_events = session.exec(
+            select(CollaborationEvent)
+            .where(CollaborationEvent.stage_execution_id == stage_id)
+            .order_by(CollaborationEvent.timestamp)  # type: ignore[arg-type]
+        ).all()
+
+        return _stage_to_dict(
+            stage,
+            agent_dicts,
+            [_collab_to_dict(e) for e in collab_events],
+        )
+
+
+def read_get_agent(agent_id: str) -> Optional[Dict[str, Any]]:
+    """Get agent with LLM calls and tool calls."""
+    with get_session() as session:
+        agent = session.exec(
+            select(AgentExecution).where(AgentExecution.id == agent_id)
+        ).first()
+        if not agent:
+            return None
+
+        llm_calls = session.exec(
+            select(LLMCall)
+            .where(LLMCall.agent_execution_id == agent_id)
+            .order_by(LLMCall.start_time)  # type: ignore[arg-type]
+        ).all()
+        tool_calls = session.exec(
+            select(ToolExecution)
+            .where(ToolExecution.agent_execution_id == agent_id)
+            .order_by(ToolExecution.start_time)  # type: ignore[arg-type]
+        ).all()
+
+        return _agent_to_dict(
+            agent,
+            [_llm_to_dict(llm) for llm in llm_calls],
+            [_tool_to_dict(t) for t in tool_calls],
+        )
+
+
+def read_get_llm_call(llm_call_id: str) -> Optional[Dict[str, Any]]:
+    """Get single LLM call with full prompt/response."""
+    with get_session() as session:
+        llm = session.exec(
+            select(LLMCall).where(LLMCall.id == llm_call_id)
+        ).first()
+        if not llm:
+            return None
+        return _llm_to_dict(llm)
+
+
+def read_get_tool_call(tool_call_id: str) -> Optional[Dict[str, Any]]:
+    """Get single tool execution with full params/output."""
+    with get_session() as session:
+        tool = session.exec(
+            select(ToolExecution).where(ToolExecution.id == tool_call_id)
+        ).first()
+        if not tool:
+            return None
+        return _tool_to_dict(tool)
+
+
 def get_backend_stats() -> Dict[str, Any]:
     """Get backend statistics and health information."""
     with get_session() as session:

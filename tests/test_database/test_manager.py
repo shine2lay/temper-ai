@@ -7,6 +7,7 @@ import threading
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
@@ -118,7 +119,8 @@ class TestDatabaseManager:
 
         with manager.session() as session:
             # Successful operation
-            session.execute("SELECT 1")
+            result = session.execute(text("SELECT 1")).scalar()
+            assert result == 1
         # Session should be committed and closed
 
     def test_session_rollback_on_error(self):
@@ -257,7 +259,8 @@ class TestSQLiteForeignKeys:
 
         with manager.session() as session:
             # Should not raise
-            session.execute("SELECT 1")
+            result = session.execute(text("SELECT 1")).scalar()
+            assert result == 1
 
 
 class TestSessionIsolation:

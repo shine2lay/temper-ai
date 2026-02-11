@@ -50,7 +50,7 @@ _TRANSIENT_ERROR_TYPES: frozenset[str] = frozenset({
 _RESERVED_UNWRAP_KEYS: frozenset[str] = frozenset({
     "stage_outputs", "current_stage", "workflow_id", "tracker",
     "tool_registry", "config_loader", "visualizer", "show_details",
-    "detail_console", "workflow_inputs", "tool_executor",
+    "detail_console", "workflow_inputs", "tool_executor", "stream_callback",
 })
 
 
@@ -252,7 +252,7 @@ def run_agent(
         # Allowlist of known non-serializable/infrastructure keys
         _non_serializable_keys: frozenset[str] = frozenset({
             'tracker', 'tool_registry', 'config_loader', 'visualizer',
-            'show_details', 'detail_console', 'tool_executor',
+            'show_details', 'detail_console', 'tool_executor', 'stream_callback',
         })
 
         tracking_input_data = {

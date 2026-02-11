@@ -25,51 +25,20 @@ from src.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.backend import DEFAULT_LIST_LIMIT, ObservabilityBackend, ReadableBackendMixin
+from src.observability.backend import ObservabilityBackend
 from src.observability.backends._sql_backend_helpers import (
-    aggregate_stage_metrics as _aggregate_stage_metrics,
-)
-from src.observability.backends._sql_backend_helpers import (
-    aggregate_workflow_metrics as _aggregate_workflow_metrics,
-)
-from src.observability.backends._sql_backend_helpers import (
+    SQLReadAndAggregateMixin,
     cleanup_old_records as _cleanup_old_records,
-)
-from src.observability.backends._sql_backend_helpers import (
     flush_buffer as _flush_buffer,
-)
-from src.observability.backends._sql_backend_helpers import (
     get_backend_stats as _get_backend_stats,
-)
-from src.observability.backends._sql_backend_helpers import (
-    read_get_agent as _read_get_agent,
-)
-from src.observability.backends._sql_backend_helpers import (
-    read_get_llm_call as _read_get_llm_call,
-)
-from src.observability.backends._sql_backend_helpers import (
-    read_get_stage as _read_get_stage,
-)
-from src.observability.backends._sql_backend_helpers import (
-    read_get_tool_call as _read_get_tool_call,
-)
-from src.observability.backends._sql_backend_helpers import (
-    read_get_workflow as _read_get_workflow,
-)
-from src.observability.backends._sql_backend_helpers import (
-    read_list_workflows as _read_list_workflows,
-)
-from src.observability.backends._sql_backend_helpers import (
     track_collaboration_event as _track_collaboration_event,
-)
-from src.observability.backends._sql_backend_helpers import (
     track_safety_violation as _track_safety_violation,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class SQLObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
+class SQLObservabilityBackend(ObservabilityBackend, SQLReadAndAggregateMixin):
     """SQL-based observability backend with per-operation sessions and buffering."""
 
     def __init__(self, buffer: Any = None) -> None:
@@ -376,57 +345,13 @@ class SQLObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
                 agent.num_tool_calls = (agent.num_tool_calls or 0) + 1
             session.commit()
 
-    # ========== Read Operations ==========
-
-    def get_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
-        """Get workflow execution with full hierarchy."""
-        return _read_get_workflow(workflow_id)
-
-    def list_workflows(self, limit: int = DEFAULT_LIST_LIMIT, offset: int = 0, status: Optional[str] = None) -> List[Dict[str, Any]]:
-        """List workflow executions (summary only, no children)."""
-        return _read_list_workflows(limit, offset, status)
-
-    def get_stage(self, stage_id: str) -> Optional[Dict[str, Any]]:
-        """Get stage with agents and collaboration events."""
-        return _read_get_stage(stage_id)
-
-    def get_agent(self, agent_id: str) -> Optional[Dict[str, Any]]:
-        """Get agent with LLM calls and tool calls."""
-        return _read_get_agent(agent_id)
-
-    def get_llm_call(self, llm_call_id: str) -> Optional[Dict[str, Any]]:
-        """Get single LLM call with full prompt/response."""
-        return _read_get_llm_call(llm_call_id)
-
-    def get_tool_call(self, tool_call_id: str) -> Optional[Dict[str, Any]]:
-        """Get single tool execution with full params/output."""
-        return _read_get_tool_call(tool_call_id)
-
-    # ========== Delegated Methods ==========
+    # ========== Context Management ==========
 
     @contextmanager
     def get_session_context(self) -> Any:
         """Yield a database session context."""
         with get_session() as session:
             yield session
-
-    def get_agent_execution(self, agent_id: str) -> Optional[AgentExecution]:
-        """Fetch a single agent execution record by ID."""
-        with get_session() as session:
-            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-            agent = session.exec(statement).first()
-            if agent:
-                session.expunge(agent)
-            return agent
-
-    def get_stats(self) -> Dict[str, Any]:
-        """Return backend statistics."""
-        return _get_backend_stats()
-
-    @staticmethod
-    def create_indexes() -> None:
-        """Create database indexes for common query patterns."""
-        logger.info("SQL backend indexes are defined in models.py")
 
     # ========== Abstract Method Implementations ==========
 
@@ -461,16 +386,6 @@ class SQLObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
         """Clean up old records."""
         return _cleanup_old_records(retention_days, dry_run)
 
-    def aggregate_workflow_metrics(self, workflow_id: str) -> Dict[str, Any]:
-        """Aggregate workflow metrics."""
-        return _aggregate_workflow_metrics(workflow_id)
-
-    def aggregate_stage_metrics(self, stage_id: str) -> Dict[str, int]:
-        """Aggregate stage metrics."""
-        return _aggregate_stage_metrics(stage_id)
-
-
-# Note: Methods track_safety_violation, track_collaboration_event, cleanup_old_records,
-# aggregate_workflow_metrics, and aggregate_stage_metrics are now defined in the class body
-# to satisfy ABC requirements. Previously they were attached dynamically which caused
-# instantiation errors in tests.
+    def get_stats(self) -> Dict[str, Any]:
+        """Return backend statistics."""
+        return _get_backend_stats()

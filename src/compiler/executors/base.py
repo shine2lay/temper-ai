@@ -61,6 +61,7 @@ class WorkflowStateDict(TypedDict, total=False):
     # UI/display
     show_details: bool
     detail_console: Any  # Rich Console or None
+    stream_callback: Optional[Any]  # StreamCallback or None
 
     # Quality gate retry tracking (parallel executor)
     stage_retry_counts: Dict[str, int]

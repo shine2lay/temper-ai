@@ -73,7 +73,7 @@ def create_agent_node(
             _reserved = frozenset({
                 "stage_outputs", "current_stage", "workflow_id", "tracker",
                 "tool_registry", "config_loader", "visualizer", "show_details",
-                "detail_console", "workflow_inputs", "tool_executor",
+                "detail_console", "workflow_inputs", "tool_executor", "stream_callback",
             })
             input_data = s.get("stage_input", {})
             wi = {k: v for k, v in input_data.get("workflow_inputs", {}).items()

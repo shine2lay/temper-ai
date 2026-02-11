@@ -9,7 +9,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from types import TracebackType
-from typing import Any, Dict, Literal, Optional, Tuple, Type
+from typing import Any, Callable, Dict, Literal, Optional, Tuple, Type
 
 import httpx
 
@@ -133,8 +133,16 @@ class LLMResponse:
 class LLMStreamChunk:
     """Chunk from streaming response."""
     content: str
+    chunk_type: str = "content"  # "thinking" | "content"
     finish_reason: Optional[str] = None
     done: bool = False
+    model: Optional[str] = None
+    prompt_tokens: Optional[int] = None      # final chunk only
+    completion_tokens: Optional[int] = None  # final chunk only
+
+
+# Callback type for streaming: called with each chunk as it arrives
+StreamCallback = Callable[[LLMStreamChunk], None]
 
 
 class BaseLLM(ABC):
@@ -304,6 +312,34 @@ class BaseLLM(ABC):
     def _get_endpoint(self) -> str:
         """Get provider-specific API endpoint path."""
         pass
+
+    def stream(
+        self,
+        prompt: str,
+        context: Optional[ExecutionContext] = None,
+        on_chunk: Optional[StreamCallback] = None,
+        **kwargs: Any
+    ) -> LLMResponse:
+        """Generate completion with streaming. Default: fallback to complete().
+
+        Subclasses override this to provide real streaming. The default
+        implementation simply calls complete() and ignores on_chunk.
+        """
+        return self.complete(prompt, context, **kwargs)
+
+    async def astream(
+        self,
+        prompt: str,
+        context: Optional[ExecutionContext] = None,
+        on_chunk: Optional[StreamCallback] = None,
+        **kwargs: Any
+    ) -> LLMResponse:
+        """Async streaming completion. Default: fallback to acomplete().
+
+        Subclasses override this to provide real streaming. The default
+        implementation simply calls acomplete() and ignores on_chunk.
+        """
+        return await self.acomplete(prompt, context, **kwargs)
 
     def complete(
         self,

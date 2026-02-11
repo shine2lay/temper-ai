@@ -52,6 +52,9 @@ from src.agents._standard_agent_helpers import (
     process_llm_response as _process_llm_response,
 )
 from src.agents._standard_agent_helpers import (
+    make_stream_callback as _make_stream_callback,
+)
+from src.agents._standard_agent_helpers import (
     setup_execution as _setup_execution,
 )
 from src.agents._standard_agent_helpers import (
@@ -431,7 +434,11 @@ class StandardAgent(BaseAgent):
                 if native_tools:
                     llm_kwargs["tools"] = native_tools
 
-                llm_response = await self.llm.acomplete(prompt, **llm_kwargs)
+                combined_cb = _make_stream_callback(self)
+                if combined_cb:
+                    llm_response = await self.llm.astream(prompt, on_chunk=combined_cb, **llm_kwargs)
+                else:
+                    llm_response = await self.llm.acomplete(prompt, **llm_kwargs)
                 logger.info("[%s] LLM responded (%s tokens)", self.name, llm_response.total_tokens or "?")
                 break
             except LLMError as e:
@@ -503,7 +510,11 @@ class StandardAgent(BaseAgent):
                 native_tools = _get_native_tool_definitions(self)
                 if native_tools:
                     llm_kwargs["tools"] = native_tools
-                llm_response = self.llm.complete(prompt, **llm_kwargs)
+                combined_cb = _make_stream_callback(self)
+                if combined_cb:
+                    llm_response = self.llm.stream(prompt, on_chunk=combined_cb, **llm_kwargs)
+                else:
+                    llm_response = self.llm.complete(prompt, **llm_kwargs)
                 logger.info("[%s] LLM responded (%s tokens)", self.name, llm_response.total_tokens or "?")
                 break
             except LLMError as e:
@@ -618,7 +629,7 @@ class StandardAgent(BaseAgent):
             "llm_model": self.config.agent.inference.model,
             "tools": tools_list,
             "max_tool_calls": self.config.agent.safety.max_tool_calls_per_execution,
-            "supports_streaming": False,
+            "supports_streaming": True,
             "supports_multimodal": False
         }
 

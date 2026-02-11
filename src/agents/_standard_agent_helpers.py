@@ -631,7 +631,43 @@ def setup_execution(
     agent.tool_executor = _tool_executor  # type: ignore[attr-defined]
     agent.tracker = input_data.get('tracker', None)  # type: ignore[attr-defined]
     agent._observer = AgentObserver(agent.tracker, agent._execution_context)  # type: ignore[attr-defined]
+    agent._stream_callback = input_data.get('stream_callback', None)  # type: ignore[attr-defined]
     logger.info("[%s] Starting %sexecution", agent.name, "async " if async_mode else "")
+
+
+def make_stream_callback(agent: "StandardAgent") -> Optional[Callable]:
+    """Create a combined stream callback for CLI display and observability.
+
+    Returns None if neither user callback nor observer is available,
+    which triggers non-streaming fallback in the caller.
+    """
+    user_cb = getattr(agent, '_stream_callback', None)
+    observer = getattr(agent, '_observer', None)
+    has_observer = observer is not None and observer.active
+
+    if user_cb is None and not has_observer:
+        return None
+
+    def combined_callback(chunk: Any) -> None:
+        if user_cb is not None:
+            try:
+                user_cb(chunk)
+            except Exception:  # noqa: BLE001 -- streaming display must not disrupt execution
+                pass
+        if has_observer:
+            try:
+                observer.emit_stream_chunk(
+                    content=chunk.content,
+                    chunk_type=chunk.chunk_type,
+                    done=chunk.done,
+                    model=chunk.model,
+                    prompt_tokens=chunk.prompt_tokens,
+                    completion_tokens=chunk.completion_tokens,
+                )
+            except Exception:  # noqa: BLE001 -- streaming event must not disrupt execution
+                pass
+
+    return combined_callback
 
 
 def estimate_cost_for_response(agent: "StandardAgent", llm_response: Any) -> float:

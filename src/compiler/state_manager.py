@@ -30,6 +30,7 @@ RESERVED_STATE_KEYS = frozenset({
     "visualizer",
     "show_details",
     "detail_console",
+    "stream_callback",
 })
 
 

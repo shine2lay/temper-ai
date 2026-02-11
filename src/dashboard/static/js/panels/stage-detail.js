@@ -4,6 +4,33 @@
  * collaboration events, and clickable agent list.
  */
 
+const DOMPURIFY_CONFIG = {
+    ALLOWED_TAGS: [
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'p', 'br', 'hr',
+        'ul', 'ol', 'li',
+        'strong', 'em', 'code', 'pre',
+        'blockquote', 'a', 'table', 'thead',
+        'tbody', 'tr', 'th', 'td',
+        'del', 'ins', 'sub', 'sup', 'img'
+    ],
+    ALLOWED_ATTR: ['href', 'title', 'alt', 'src'],
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ['style', 'form', 'input', 'button', 'textarea', 'select', 'iframe', 'object', 'embed'],
+    FORBID_ATTR: ['style', 'onerror', 'onload', 'onclick']
+};
+
+function sanitizeAndParse(text) {
+    const html = DOMPurify.sanitize(marked.parse(String(text)), DOMPURIFY_CONFIG);
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = html;
+    for (const a of wrapper.querySelectorAll('a')) {
+        a.setAttribute('target', '_blank');
+        a.setAttribute('rel', 'noopener noreferrer');
+    }
+    return wrapper.innerHTML;
+}
+
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.appendChild(document.createTextNode(str));
@@ -142,8 +169,10 @@ export class StageDetailPanel {
 
         // Output data (collapsible, expanded)
         if (stage.output_data) {
+            const isText = typeof stage.output_data === 'string';
             this.container.appendChild(
-                this._buildCollapsible('Output Data', () => this._buildJsonViewer(stage.output_data), false)
+                this._buildCollapsible('Output Data', () =>
+                    isText ? this._buildMarkdownDisplay(stage.output_data) : this._buildJsonViewer(stage.output_data), false)
             );
         }
 
@@ -339,6 +368,23 @@ export class StageDetailPanel {
         // formatJSON produces safe output from JSON.stringify — innerHTML is safe here
         viewer.innerHTML = formatJSON(data);
         return viewer;
+    }
+
+    _buildMarkdownDisplay(text) {
+        const display = document.createElement('div');
+        display.className = 'prompt-display';
+        if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+            const md = document.createElement('div');
+            md.className = 'markdown-content';
+            md.innerHTML = sanitizeAndParse(text);
+            display.appendChild(md);
+        } else {
+            const pre = document.createElement('div');
+            pre.className = 'prompt-text';
+            pre.textContent = String(text);
+            display.appendChild(pre);
+        }
+        return display;
     }
 
     _buildCollabList(events) {

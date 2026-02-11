@@ -271,6 +271,16 @@ def run(
             trigger_type="cli",
             environment="local",
         ) as workflow_id:
+            # Set up streaming display for real-time LLM token visibility
+            stream_callback = None
+            if show_details:
+                try:
+                    from src.cli.stream_display import StreamDisplay
+                    _stream_display = StreamDisplay(console)
+                    stream_callback = _stream_display.on_chunk
+                except ImportError:
+                    pass  # stream_display not available, skip
+
             state = {
                 "workflow_inputs": inputs,
                 "tracker": tracker,
@@ -279,6 +289,7 @@ def run(
                 "workflow_id": workflow_id,
                 "show_details": show_details,
                 "detail_console": console if show_details else None,
+                "stream_callback": stream_callback,
             }
             result = compiled.invoke(state)
     except WorkflowStageError as e:

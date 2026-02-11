@@ -507,6 +507,48 @@ def aggregate_workflow_metrics_on_success(
         )
 
 
+def emit_llm_stream_chunk(
+    event_bus: Any,
+    agent_id: str,
+    content: str,
+    chunk_type: str = "content",
+    done: bool = False,
+    model: Optional[str] = None,
+    prompt_tokens: Optional[int] = None,
+    completion_tokens: Optional[int] = None,
+    workflow_id: Optional[str] = None,
+    stage_id: Optional[str] = None,
+) -> None:
+    """Emit an LLM stream chunk event for real-time consumers.
+
+    Best-effort: catches all exceptions silently since streaming events
+    must never disrupt execution.
+    """
+    if event_bus is None:
+        return
+    try:
+        from src.observability.event_bus import ObservabilityEvent
+
+        event_bus.emit(ObservabilityEvent(
+            event_type="llm_stream_chunk",
+            timestamp=utcnow(),
+            data={
+                "agent_id": agent_id,
+                "content": content,
+                "chunk_type": chunk_type,
+                "done": done,
+                "model": model,
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+            },
+            workflow_id=workflow_id,
+            stage_id=stage_id,
+            agent_id=agent_id,
+        ))
+    except Exception:  # noqa: BLE001 -- best-effort streaming event
+        pass
+
+
 class TrackerCollaborationMixin:
     """Mixin providing collaboration, safety, and merit tracking methods.
 

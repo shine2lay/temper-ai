@@ -62,7 +62,11 @@ def _make_agent(safety: SafetyConfig = None) -> StandardAgent:
     agent.tool_executor = mock_executor
 
     # Provide a mock observer (normally set in execute(), needed for direct calls)
-    agent._observer = MagicMock()
+    mock_observer = MagicMock()
+    mock_observer.active = False  # Prevent streaming path from activating
+    agent._observer = mock_observer
+    # Streaming not used in tests — set to None to avoid triggering stream()
+    agent._stream_callback = None
     return agent
 
 

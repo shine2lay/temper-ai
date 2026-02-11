@@ -118,8 +118,8 @@ class TestOllamaLLM:
 
         assert request["model"] == "llama3.2:3b"
         assert request["prompt"] == "Test prompt"
-        assert request["temperature"] == 0.7
-        assert request["max_tokens"] == 1024
+        assert request["options"]["temperature"] == 0.7
+        assert request["options"]["num_predict"] == 1024
         assert request["stream"] is False
 
     def test_parse_response(self):
@@ -712,7 +712,7 @@ class TestRequestOverrides:
 
         request = llm._build_request("Test", temperature=0.3)
 
-        assert request["temperature"] == 0.3  # Overridden
+        assert request["options"]["temperature"] == 0.3  # Overridden
         assert llm.temperature == 0.7  # Original unchanged
 
     def test_max_tokens_override(self):
@@ -1077,7 +1077,7 @@ class TestTokenLimitEnforcement:
         )
 
         request = llm._build_request("Test prompt")
-        assert request["max_tokens"] == 1024
+        assert request["options"]["num_predict"] == 1024
 
     def test_openai_max_tokens_in_request(self):
         """Test that OpenAI includes max_tokens in request."""
@@ -1134,11 +1134,11 @@ class TestTokenLimitEnforcement:
 
         # Default max_tokens
         request1 = llm._build_request("Test prompt")
-        assert request1["max_tokens"] == 1024
+        assert request1["options"]["num_predict"] == 1024
 
         # Override in request
         request2 = llm._build_request("Test prompt", max_tokens=512)
-        assert request2["max_tokens"] == 512
+        assert request2["options"]["num_predict"] == 512
 
     def test_token_counting_empty_string(self):
         """Test token counting for empty string."""

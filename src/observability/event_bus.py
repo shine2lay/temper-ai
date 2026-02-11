@@ -20,7 +20,7 @@ class ObservabilityEvent:
     event_type: str  # workflow_start, stage_start, agent_start, agent_end,
     # llm_call, tool_call, stage_end, workflow_end,
     # agent_output, stage_output, collaboration_event,
-    # safety_violation
+    # safety_violation, llm_stream_chunk
     timestamp: datetime
     data: Dict[str, Any]
     workflow_id: Optional[str] = None

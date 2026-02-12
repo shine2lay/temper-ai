@@ -5,7 +5,7 @@ Covers:
 - OllamaLLM._build_request num_predict fix
 - BaseLLM.stream() default fallback to complete()
 - Agent streaming integration
-- StreamDisplay thread safety
+- StreamDisplay thread safety (generic StreamEvent + backward compat)
 - Dashboard DataStore stream batch handling
 """
 import json
@@ -19,6 +19,16 @@ import pytest
 
 from src.agents.llm.base import BaseLLM, LLMResponse, LLMStreamChunk, StreamCallback
 from src.agents.llm.ollama import OllamaLLM
+from src.cli.stream_events import (
+    LLM_DONE,
+    LLM_TOKEN,
+    PROGRESS,
+    STATUS,
+    TOOL_RESULT,
+    TOOL_START,
+    StreamEvent,
+    from_llm_chunk,
+)
 
 
 # -----------------------------------------------------------------------
@@ -365,7 +375,7 @@ class TestStreamDisplay:
     """Test CLI StreamDisplay thread safety and rendering."""
 
     def test_stream_display_buffer_accumulation(self):
-        """on_chunk should accumulate content in thread-safe buffers."""
+        """on_chunk should accumulate content in per-agent buffers."""
         from src.cli.stream_display import StreamDisplay
 
         console = MagicMock()
@@ -382,8 +392,9 @@ class TestStreamDisplay:
             display.on_chunk(chunk1)
             display.on_chunk(chunk2)
 
-            assert display._content_buffer == "Hello world"
-            assert display._thinking_buffer == ""
+            # Buffers are per-source; on_chunk routes by model name
+            assert display._sources["test"].content_buffer == "Hello world"
+            assert display._sources["test"].thinking_buffer == ""
 
     def test_stream_display_thinking_separation(self):
         """Thinking tokens should go to thinking buffer."""
@@ -401,8 +412,8 @@ class TestStreamDisplay:
             display.on_chunk(think_chunk)
             display.on_chunk(content_chunk)
 
-            assert display._thinking_buffer == "reasoning..."
-            assert display._content_buffer == "answer"
+            assert display._sources["test"].thinking_buffer == "reasoning..."
+            assert display._sources["test"].content_buffer == "answer"
 
     def test_stream_display_done_stops(self):
         """Done chunk should stop the Live display."""
@@ -456,8 +467,57 @@ class TestStreamDisplay:
                 t.join()
 
             assert len(errors) == 0
-            # All 40 chunks should be in the buffer
-            assert len(display._content_buffer) > 0
+            # All chunks from all threads routed to "test" source stream
+            assert len(display._sources["test"].content_buffer) > 0
+
+    def test_stream_display_multi_agent(self):
+        """make_callback should route chunks to separate per-agent panels."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            MockLive.return_value = MagicMock()
+
+            cb_a = display.make_callback("agent_a")
+            cb_b = display.make_callback("agent_b")
+
+            cb_a(LLMStreamChunk(content="Hello from A", chunk_type="content", done=False, model="m1"))
+            cb_b(LLMStreamChunk(content="Hello from B", chunk_type="content", done=False, model="m2"))
+
+            assert "agent_a" in display._sources
+            assert "agent_b" in display._sources
+            assert display._sources["agent_a"].content_buffer == "Hello from A"
+            assert display._sources["agent_b"].content_buffer == "Hello from B"
+
+    def test_stream_display_multi_agent_done(self):
+        """Live stops only when ALL agents are done."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            mock_live = MagicMock()
+            MockLive.return_value = mock_live
+
+            cb_a = display.make_callback("agent_a")
+            cb_b = display.make_callback("agent_b")
+
+            cb_a(LLMStreamChunk(content="A", chunk_type="content", done=False, model="m"))
+            cb_b(LLMStreamChunk(content="B", chunk_type="content", done=False, model="m"))
+
+            # Agent A finishes — Live should NOT stop yet
+            cb_a(LLMStreamChunk(content="", chunk_type="content", done=True, model="m"))
+            assert display._started is True
+            assert display._sources["agent_a"].done is True
+            assert display._sources["agent_b"].done is False
+
+            # Agent B finishes — now Live should stop
+            cb_b(LLMStreamChunk(content="", chunk_type="content", done=True, model="m"))
+            assert display._started is False
+            mock_live.stop.assert_called_once()
 
 
 # -----------------------------------------------------------------------
@@ -601,3 +661,280 @@ class TestLLMStreamChunk:
         assert chunk.done is True
         assert chunk.prompt_tokens == 100
         assert chunk.completion_tokens == 50
+
+
+# -----------------------------------------------------------------------
+# StreamEvent dataclass + adapter
+# -----------------------------------------------------------------------
+
+class TestStreamEvent:
+    """Test StreamEvent dataclass and from_llm_chunk adapter."""
+
+    def test_default_fields(self):
+        """StreamEvent defaults: content='', done=False, metadata={}."""
+        event = StreamEvent(source="agent1", event_type=LLM_TOKEN)
+        assert event.source == "agent1"
+        assert event.event_type == LLM_TOKEN
+        assert event.content == ""
+        assert event.done is False
+        assert event.metadata == {}
+
+    def test_metadata_isolation(self):
+        """Each StreamEvent should get its own metadata dict."""
+        e1 = StreamEvent(source="a", event_type=STATUS, content="x")
+        e2 = StreamEvent(source="b", event_type=STATUS, content="y")
+        e1.metadata["key"] = "val"
+        assert "key" not in e2.metadata
+
+    def test_from_llm_chunk_content(self):
+        """Adapter converts content LLMStreamChunk to LLM_TOKEN event."""
+        chunk = LLMStreamChunk(content="hello", chunk_type="content", done=False, model="qwen3")
+        event = from_llm_chunk("researcher", chunk)
+        assert event.source == "researcher"
+        assert event.event_type == LLM_TOKEN
+        assert event.content == "hello"
+        assert event.done is False
+        assert event.metadata["model"] == "qwen3"
+        assert event.metadata["chunk_type"] == "content"
+
+    def test_from_llm_chunk_thinking(self):
+        """Adapter preserves thinking chunk_type."""
+        chunk = LLMStreamChunk(content="reasoning...", chunk_type="thinking", done=False, model="m")
+        event = from_llm_chunk("agent", chunk)
+        assert event.event_type == LLM_TOKEN
+        assert event.metadata["chunk_type"] == "thinking"
+
+    def test_from_llm_chunk_done(self):
+        """Adapter converts done chunk to LLM_DONE event."""
+        chunk = LLMStreamChunk(
+            content="", done=True, model="qwen3",
+            prompt_tokens=100, completion_tokens=50, finish_reason="stop",
+        )
+        event = from_llm_chunk("agent", chunk)
+        assert event.event_type == LLM_DONE
+        assert event.done is True
+        assert event.metadata["prompt_tokens"] == 100
+        assert event.metadata["completion_tokens"] == 50
+        assert event.metadata["finish_reason"] == "stop"
+
+
+# -----------------------------------------------------------------------
+# StreamDisplay — StreamEvent handling
+# -----------------------------------------------------------------------
+
+class TestStreamDisplayEvents:
+    """Test StreamDisplay with generic StreamEvent objects."""
+
+    def test_stream_event_tool_start(self):
+        """TOOL_START event should set tool_line on the source stream."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            MockLive.return_value = MagicMock()
+
+            cb = display.make_callback("agent1")
+
+            # First send a content token so the stream is created
+            cb(StreamEvent(
+                source="agent1", event_type=LLM_TOKEN, content="Hi",
+                metadata={"chunk_type": "content", "model": "test"},
+            ))
+            # Now send tool_start
+            cb(StreamEvent(
+                source="agent1", event_type=TOOL_START,
+                metadata={"tool_name": "web_search"},
+            ))
+
+            assert "\u26a1 web_search running..." == display._sources["agent1"].tool_line
+
+    def test_stream_event_tool_result_success(self):
+        """TOOL_RESULT with success should update tool_line with checkmark."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            MockLive.return_value = MagicMock()
+
+            cb = display.make_callback("agent1")
+            cb(StreamEvent(
+                source="agent1", event_type=LLM_TOKEN, content="x",
+                metadata={"chunk_type": "content", "model": "m"},
+            ))
+            cb(StreamEvent(
+                source="agent1", event_type=TOOL_RESULT,
+                metadata={"tool_name": "web_search", "success": True, "duration_s": 1.23},
+            ))
+
+            assert "\u2713 web_search (1.2s)" == display._sources["agent1"].tool_line
+
+    def test_stream_event_tool_result_failure(self):
+        """TOOL_RESULT with failure should show X mark and error."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            MockLive.return_value = MagicMock()
+
+            cb = display.make_callback("agent1")
+            cb(StreamEvent(
+                source="agent1", event_type=LLM_TOKEN, content="x",
+                metadata={"chunk_type": "content", "model": "m"},
+            ))
+            cb(StreamEvent(
+                source="agent1", event_type=TOOL_RESULT,
+                metadata={"tool_name": "calc", "success": False, "error": "timeout"},
+            ))
+
+            assert "\u2717 calc: timeout" == display._sources["agent1"].tool_line
+
+    def test_stream_event_status_overwrites(self):
+        """STATUS events should overwrite (not append) the status_line."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            MockLive.return_value = MagicMock()
+
+            cb = display.make_callback("agent1")
+            cb(StreamEvent(
+                source="agent1", event_type=LLM_TOKEN, content="x",
+                metadata={"chunk_type": "content", "model": "m"},
+            ))
+            cb(StreamEvent(source="agent1", event_type=STATUS, content="Processing..."))
+            cb(StreamEvent(source="agent1", event_type=STATUS, content="Finalizing..."))
+
+            assert display._sources["agent1"].status_line == "Finalizing..."
+
+    def test_stream_event_progress_appends(self):
+        """PROGRESS events should append to content_buffer."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            MockLive.return_value = MagicMock()
+
+            cb = display.make_callback("agent1")
+            cb(StreamEvent(
+                source="agent1", event_type=PROGRESS, content="Step 1 done. ",
+                metadata={"model": "m"},
+            ))
+            cb(StreamEvent(
+                source="agent1", event_type=PROGRESS, content="Step 2 done.",
+            ))
+
+            assert display._sources["agent1"].content_buffer == "Step 1 done. Step 2 done."
+
+    def test_stream_event_mixed(self):
+        """LLM tokens + tool events should coexist in same source stream."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            MockLive.return_value = MagicMock()
+
+            cb = display.make_callback("agent1")
+
+            # Thinking
+            cb(StreamEvent(
+                source="agent1", event_type=LLM_TOKEN, content="Let me think...",
+                metadata={"chunk_type": "thinking", "model": "qwen3"},
+            ))
+            # Content
+            cb(StreamEvent(
+                source="agent1", event_type=LLM_TOKEN, content="Answer: ",
+                metadata={"chunk_type": "content", "model": "qwen3"},
+            ))
+            # Tool start
+            cb(StreamEvent(
+                source="agent1", event_type=TOOL_START,
+                metadata={"tool_name": "calculator"},
+            ))
+            # Tool result
+            cb(StreamEvent(
+                source="agent1", event_type=TOOL_RESULT,
+                metadata={"tool_name": "calculator", "success": True, "duration_s": 0.5},
+            ))
+            # Status
+            cb(StreamEvent(source="agent1", event_type=STATUS, content="Done"))
+
+            stream = display._sources["agent1"]
+            assert stream.thinking_buffer == "Let me think..."
+            assert stream.content_buffer == "Answer: "
+            assert stream.tool_line == "\u2713 calculator (0.5s)"
+            assert stream.status_line == "Done"
+
+    def test_backward_compat_llm_chunk_via_make_callback(self):
+        """make_callback should auto-adapt LLMStreamChunk to StreamEvent."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            MockLive.return_value = MagicMock()
+
+            cb = display.make_callback("agent1")
+
+            # Send legacy LLMStreamChunk
+            chunk = LLMStreamChunk(content="Hello", chunk_type="content", done=False, model="test")
+            cb(chunk)
+
+            assert "agent1" in display._sources
+            assert display._sources["agent1"].content_buffer == "Hello"
+
+    def test_backward_compat_llm_chunk_done_via_make_callback(self):
+        """make_callback should handle done LLMStreamChunk correctly."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            mock_live = MagicMock()
+            MockLive.return_value = mock_live
+
+            cb = display.make_callback("agent1")
+
+            cb(LLMStreamChunk(content="Hi", chunk_type="content", done=False, model="m"))
+            cb(LLMStreamChunk(content="", chunk_type="content", done=True, model="m"))
+
+            assert display._sources["agent1"].done is True
+            assert display._started is False
+
+    def test_stream_event_done_stops_display(self):
+        """done=True StreamEvent should stop display when all sources are done."""
+        from src.cli.stream_display import StreamDisplay
+
+        console = MagicMock()
+        display = StreamDisplay(console)
+
+        with patch('src.cli.stream_display.Live') as MockLive:
+            mock_live = MagicMock()
+            MockLive.return_value = mock_live
+
+            cb = display.make_callback("agent1")
+            cb(StreamEvent(
+                source="agent1", event_type=LLM_TOKEN, content="x",
+                metadata={"chunk_type": "content", "model": "m"},
+            ))
+            cb(StreamEvent(
+                source="agent1", event_type=LLM_DONE, done=True,
+                metadata={"model": "m"},
+            ))
+
+            assert display._sources["agent1"].done is True
+            assert display._started is False
+            mock_live.stop.assert_called_once()

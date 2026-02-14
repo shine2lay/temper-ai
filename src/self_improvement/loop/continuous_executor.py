@@ -116,11 +116,6 @@ class ContinuousExecutor:
                 iteration += 1
                 stats.total_iterations = iteration
 
-                # Check stopping conditions
-                if self._should_stop(stats, max_iterations, cost_budget,
-                                    convergence_window, shutdown_requested["flag"]):
-                    break
-
                 logger.info(f"\n{'='*60}")
                 logger.info(f"Continuous mode - Iteration {iteration}")
                 logger.info(f"{'='*60}")
@@ -136,9 +131,9 @@ class ContinuousExecutor:
                     else stats.iterations_without_deployment + 1
                 )
 
-                # Check for shutdown before sleep
-                if shutdown_requested["flag"]:
-                    stats.stop_reason = "manual_interrupt"
+                # Check stopping conditions after iteration completes
+                if self._should_stop(stats, max_iterations, cost_budget,
+                                    convergence_window, shutdown_requested["flag"]):
                     break
 
                 # Log progress
@@ -186,7 +181,7 @@ class ContinuousExecutor:
         shutdown_requested: bool,
     ) -> bool:
         """Check if loop should stop."""
-        if max_iterations and stats.total_iterations > max_iterations:
+        if max_iterations and stats.total_iterations >= max_iterations:
             logger.info(f"Reached max iterations ({max_iterations}), stopping")
             stats.stop_reason = "max_iterations_reached"
             return True

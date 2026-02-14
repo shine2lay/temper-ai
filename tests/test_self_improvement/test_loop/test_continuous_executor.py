@@ -28,7 +28,7 @@ from src.self_improvement.loop.models import IterationResult, Phase
 def mock_config():
     """Create loop configuration for continuous mode."""
     config = LoopConfig(
-        continuous_check_interval_minutes=1,
+        continuous_check_interval_minutes=0,  # Zero interval avoids busy-loop in tests (time.sleep is mocked but time.time is real)
         continuous_max_iterations=10,
         continuous_convergence_window=3,
         continuous_cost_budget=100.0,
@@ -293,10 +293,13 @@ class TestContinuousExecutor:
 
     @patch("time.sleep")
     @patch("signal.signal")
+    @patch("time.time")
     def test_wait_for_next_iteration_completes(
-        self, mock_signal, mock_sleep, mock_config
+        self, mock_time, mock_signal, mock_sleep, mock_config
     ):
         """Test _wait_for_next_iteration completes normally."""
+        # Mock time.time to advance past sleep_seconds (1 * 60 = 60s)
+        mock_time.side_effect = [0.0, 30.0, 30.0, 60.0]
         executor = ContinuousExecutor(config=mock_config, run_iteration_fn=Mock())
         shutdown_requested = {"flag": False}
 
@@ -605,29 +608,25 @@ class TestContinuousExecutor:
 
     @patch("time.sleep")
     @patch("signal.signal")
+    @patch("time.time")
     def test_wait_for_next_iteration_partial_sleep(
-        self, mock_signal, mock_sleep, mock_config
+        self, mock_time, mock_signal, mock_sleep, mock_config
     ):
-        """Test _wait_for_next_iteration with shutdown mid-sleep."""
+        """Test _wait_for_next_iteration with mocked time progression."""
         executor = ContinuousExecutor(config=mock_config, run_iteration_fn=Mock())
-
-        # Shutdown after 1 second
-        def sleep_side_effect(duration):
-            pass  # Don't actually sleep in tests
-
-        mock_sleep.side_effect = sleep_side_effect
         shutdown_requested = {"flag": False}
 
-        # Simulate shutdown during sleep
-        with patch("time.time") as mock_time:
-            mock_time.side_effect = [0, 0.5, 1.0]  # 3 calls
-            result = executor._wait_for_next_iteration(
-                interval_minutes=5,
-                shutdown_requested=shutdown_requested
-            )
+        # Mock time.time: sleep_start=0, check=100, inner=100, check=300 (>=300 exits)
+        mock_time.side_effect = [0.0, 100.0, 100.0, 300.0]
 
-        # Should complete normally
+        result = executor._wait_for_next_iteration(
+            interval_minutes=5,
+            shutdown_requested=shutdown_requested
+        )
+
+        # Should complete normally after time advances past sleep_seconds
         assert result is True
+        assert mock_sleep.call_count > 0
 
     @patch("time.sleep")
     @patch("signal.signal")
@@ -656,20 +655,20 @@ class TestContinuousExecutor:
         executor = ContinuousExecutor(config=mock_config, run_iteration_fn=Mock())
         stats = ContinuousExecutionStats()
 
-        # Test exact equality for max_iterations
+        # Test exact equality for max_iterations (>= check)
+        stats.total_iterations = 9
+        should_stop = executor._should_stop(
+            stats, max_iterations=10, cost_budget=None,
+            convergence_window=3, shutdown_requested=False
+        )
+        assert should_stop is False  # below max
+
         stats.total_iterations = 10
         should_stop = executor._should_stop(
             stats, max_iterations=10, cost_budget=None,
             convergence_window=3, shutdown_requested=False
         )
-        assert should_stop is False  # > check, not >=
-
-        stats.total_iterations = 11
-        should_stop = executor._should_stop(
-            stats, max_iterations=10, cost_budget=None,
-            convergence_window=3, shutdown_requested=False
-        )
-        assert should_stop is True
+        assert should_stop is True  # at max (>= check)
 
         # Test exact equality for cost_budget
         stats.total_cost = 100.0
@@ -699,8 +698,9 @@ class TestContinuousExecutor:
 
     @patch("time.sleep")
     @patch("signal.signal")
+    @patch("src.self_improvement.loop.continuous_executor.logger")
     def test_log_iteration_complete_edge_cases(
-        self, mock_signal, mock_sleep, mock_config
+        self, mock_logger, mock_signal, mock_sleep, mock_config
     ):
         """Test logging with edge case stats."""
         executor = ContinuousExecutor(config=mock_config, run_iteration_fn=Mock())
@@ -713,8 +713,14 @@ class TestContinuousExecutor:
             iterations_without_deployment=0
         )
 
-        # Should not raise
         executor._log_iteration_complete(stats, iteration=0)
+        assert mock_logger.info.called
+        log_output = mock_logger.info.call_args[0][0]
+        assert "Iteration 0 complete" in log_output
+        assert "Success: 0" in log_output
+        assert "Failed: 0" in log_output
+
+        mock_logger.reset_mock()
 
         # Stats with large numbers
         stats = ContinuousExecutionStats(
@@ -724,13 +730,18 @@ class TestContinuousExecutor:
             iterations_without_deployment=999999
         )
 
-        # Should not raise
         executor._log_iteration_complete(stats, iteration=999999)
+        assert mock_logger.info.called
+        log_output = mock_logger.info.call_args[0][0]
+        assert "Iteration 999999 complete" in log_output
+        assert "Success: 999999" in log_output
+        assert "Failed: 999999" in log_output
 
     @patch("time.sleep")
     @patch("signal.signal")
+    @patch("src.self_improvement.loop.continuous_executor.logger")
     def test_log_final_summary_with_none_stopped_at(
-        self, mock_signal, mock_sleep, mock_config
+        self, mock_logger, mock_signal, mock_sleep, mock_config
     ):
         """Test final summary logging when stopped_at is None."""
         executor = ContinuousExecutor(config=mock_config, run_iteration_fn=Mock())
@@ -743,8 +754,17 @@ class TestContinuousExecutor:
         )
         stats.stopped_at = None  # Edge case
 
-        # Should not raise
         executor._log_final_summary(stats)
+        assert mock_logger.info.called
+        # Verify multiple info calls for summary details
+        info_calls = [call for call in mock_logger.info.call_args_list]
+        assert len(info_calls) > 0
+        # Check that summary contains key information
+        all_calls_str = " ".join([str(call) for call in info_calls])
+        assert "Continuous improvement loop stopped" in all_calls_str or any(
+            "Total iterations" in str(call) for call in info_calls
+        )
+        assert "5" in all_calls_str  # Should contain total iterations count
 
     @patch("time.sleep")
     @patch("signal.signal")

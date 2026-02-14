@@ -15,7 +15,7 @@ import pytest
 from unittest.mock import Mock, AsyncMock, MagicMock, patch
 from datetime import datetime, timezone
 
-from src.self_improvement.loop.executor import LoopExecutor
+from src.self_improvement.loop.executor import LoopExecutor, ExecutorConfig
 from src.self_improvement.loop.config import LoopConfig
 from src.self_improvement.loop.models import (
     Phase,
@@ -197,15 +197,17 @@ def loop_executor(
          patch('src.self_improvement.loop.executor.RollbackMonitor'):
 
         executor = LoopExecutor(
-            coord_db=mock_coord_db,
-            obs_session=mock_obs_session,
-            config=mock_config,
-            state_manager=mock_state_manager,
-            error_recovery=mock_error_recovery,
-            metrics_collector=mock_metrics_collector,
-            tracker=None,
-            policy_engine=None,
-            approval_workflow=None,
+            ExecutorConfig(
+                coord_db=mock_coord_db,
+                obs_session=mock_obs_session,
+                config=mock_config,
+                state_manager=mock_state_manager,
+                error_recovery=mock_error_recovery,
+                metrics_collector=mock_metrics_collector,
+                tracker=None,
+                policy_engine=None,
+                approval_workflow=None,
+            )
         )
 
         return executor
@@ -233,15 +235,17 @@ class TestLoopExecutorInitialization:
              patch('src.self_improvement.loop.executor.RollbackMonitor'):
 
             executor = LoopExecutor(
-                coord_db=mock_coord_db,
-                obs_session=mock_obs_session,
-                config=mock_config,
-                state_manager=mock_state_manager,
-                error_recovery=mock_error_recovery,
-                metrics_collector=mock_metrics_collector,
-                tracker=None,
-                policy_engine=None,
-                approval_workflow=None,
+                ExecutorConfig(
+                    coord_db=mock_coord_db,
+                    obs_session=mock_obs_session,
+                    config=mock_config,
+                    state_manager=mock_state_manager,
+                    error_recovery=mock_error_recovery,
+                    metrics_collector=mock_metrics_collector,
+                    tracker=None,
+                    policy_engine=None,
+                    approval_workflow=None,
+                )
             )
 
             assert executor.coord_db == mock_coord_db
@@ -272,15 +276,17 @@ class TestLoopExecutorInitialization:
              patch('src.self_improvement.loop.executor.RollbackMonitor'):
 
             executor = LoopExecutor(
-                coord_db=mock_coord_db,
-                obs_session=mock_obs_session,
-                config=mock_config,
-                state_manager=mock_state_manager,
-                error_recovery=mock_error_recovery,
-                metrics_collector=mock_metrics_collector,
-                tracker=mock_tracker,
-                policy_engine=None,
-                approval_workflow=None,
+                ExecutorConfig(
+                    coord_db=mock_coord_db,
+                    obs_session=mock_obs_session,
+                    config=mock_config,
+                    state_manager=mock_state_manager,
+                    error_recovery=mock_error_recovery,
+                    metrics_collector=mock_metrics_collector,
+                    tracker=mock_tracker,
+                    policy_engine=None,
+                    approval_workflow=None,
+                )
             )
 
             assert executor.tracker == mock_tracker

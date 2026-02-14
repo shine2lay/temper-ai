@@ -3,12 +3,14 @@
 Tests buffer performance, query reduction, and flush strategies.
 """
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 
 import pytest
 
 from src.observability.buffer import (
+    LLMCallBufferParams,
     ObservabilityBuffer,
+    ToolCallBufferParams,
 )
 
 

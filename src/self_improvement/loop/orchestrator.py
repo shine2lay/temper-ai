@@ -74,13 +74,16 @@ class M5SelfImprovementLoop:
         self.metrics_collector = MetricsCollector()
 
         # Initialize executor
+        from src.self_improvement.loop.executor import ExecutorConfig
         self.executor = LoopExecutor(
-            coord_db=coord_db,
-            obs_session=obs_session,
-            config=self.config,
-            state_manager=self.state_manager,
-            error_recovery=self.error_recovery,
-            metrics_collector=self.metrics_collector,
+            ExecutorConfig(
+                coord_db=coord_db,
+                obs_session=obs_session,
+                config=self.config,
+                state_manager=self.state_manager,
+                error_recovery=self.error_recovery,
+                metrics_collector=self.metrics_collector,
+            )
         )
 
         # Initialize continuous executor

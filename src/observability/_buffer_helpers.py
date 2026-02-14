@@ -9,10 +9,24 @@ Contains:
 """
 import logging
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class FlushBatchParams:
+    """Parameters for preparing flush batch."""
+    llm_calls: list
+    tool_calls: list
+    agent_metrics: dict
+    retry_queue: list
+    pending_ids: Dict[str, float]
+    retryable_item_cls: type
+    agent_metric_update_cls: type
+    merge_fn: Callable
 
 
 def purge_stale_pending_ids(
@@ -37,33 +51,24 @@ def purge_stale_pending_ids(
     return len(stale)
 
 
-def prepare_flush_batch(
-    llm_calls: list,
-    tool_calls: list,
-    agent_metrics: dict,
-    retry_queue: list,
-    pending_ids: Dict[str, float],
-    retryable_item_cls: type,
-    _agent_metric_update_cls: type,
-    merge_fn: Callable,
-) -> list:
+def prepare_flush_batch(params: FlushBatchParams) -> list:
     """Prepare batch for flushing, combining new items and retry queue.
 
     Implements deduplication to prevent double-insertion.
 
     Args:
-        llm_calls: Current buffered LLM calls
-        tool_calls: Current buffered tool calls
-        agent_metrics: Current buffered agent metrics
-        retry_queue: Items pending retry
-        pending_ids: Pending ID -> timestamp map
-        retryable_item_cls: RetryableItem class
-        agent_metric_update_cls: AgentMetricUpdate class (unused but kept for API consistency)
-        merge_fn: Function to merge agent metrics
+        params: FlushBatchParams with all batch preparation parameters
 
     Returns:
         List of RetryableItem objects ready for flush
     """
+    llm_calls = params.llm_calls
+    tool_calls = params.tool_calls
+    agent_metrics = params.agent_metrics
+    retry_queue = params.retry_queue
+    pending_ids = params.pending_ids
+    retryable_item_cls = params.retryable_item_cls
+    merge_fn = params.merge_fn
     retryable_items = []
 
     # Add new LLM calls

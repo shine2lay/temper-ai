@@ -4,6 +4,7 @@ These are internal implementation details - use LoopExecutor's public API.
 """
 import logging
 import uuid
+from dataclasses import dataclass
 from typing import Any, List, Optional
 
 from src.constants.probabilities import PROB_VERY_HIGH
@@ -25,6 +26,42 @@ from .models import (
 logger = logging.getLogger(__name__)
 
 OUTCOME_ID_UUID_LENGTH = 12
+
+
+@dataclass
+class StrategyPhaseParams:
+    """Parameters for execute_strategy_phase.
+
+    Bundles the multiple parameters needed for strategy execution,
+    reducing function parameter count from 12 to 1.
+    """
+    agent_name: str
+    analysis_result: AnalysisResult
+    config_deployer: Any
+    pattern_miner: Any
+    enable_model_variants: bool
+    max_variants_per_experiment: int
+    min_support: int
+    min_confidence: float
+    min_win_rate: float
+    min_improvement: float
+    days_back: int
+    top_patterns_limit: int
+
+
+@dataclass
+class DeployPhaseParams:
+    """Parameters for execute_deploy_phase.
+
+    Bundles the multiple parameters needed for deployment,
+    reducing function parameter count from 7 to 1.
+    """
+    agent_name: str
+    experiment_result: ExperimentPhaseResult
+    config_deployer: Any
+    enable_auto_deploy: bool
+    enable_auto_rollback: bool
+    tracker: Optional[Any] = None
 
 
 def track_winner_experiment_outcome(
@@ -394,57 +431,35 @@ def _mine_and_log_patterns(
 
 
 def execute_strategy_phase(
-    agent_name: str,
-    analysis_result: AnalysisResult,
-    config_deployer: Any,
-    pattern_miner: Any,
-    enable_model_variants: bool,
-    max_variants_per_experiment: int,
-    min_support: int,
-    min_confidence: float,
-    min_win_rate: float,
-    min_improvement: float,
-    days_back: int,
-    top_patterns_limit: int,
+    params: StrategyPhaseParams,
 ) -> StrategyResult:
     """Execute Phase 3: Strategy Generation.
 
     Args:
-        agent_name: Name of agent to generate strategies for.
-        analysis_result: Result from the analysis phase.
-        config_deployer: ConfigDeployer instance.
-        pattern_miner: PatternMiner instance.
-        enable_model_variants: Whether to generate model variant configs.
-        max_variants_per_experiment: Max variants to test.
-        min_support: Minimum support for pattern mining.
-        min_confidence: Minimum confidence for pattern mining.
-        min_win_rate: Minimum win rate for pattern mining.
-        min_improvement: Minimum improvement threshold for pattern mining.
-        days_back: Number of days to look back for patterns.
-        top_patterns_limit: Number of top patterns to log.
+        params: StrategyPhaseParams object with all parameters bundled
 
     Returns:
         StrategyResult with control and variant configs.
     """
-    logger.info(f"Phase 3 (STRATEGY): Generating improvement strategies for {agent_name}")
+    logger.info(f"Phase 3 (STRATEGY): Generating improvement strategies for {params.agent_name}")
 
-    control_config = config_deployer.get_agent_config(agent_name)
+    control_config = params.config_deployer.get_agent_config(params.agent_name)
 
     patterns = _mine_and_log_patterns(
-        pattern_miner, min_support, min_confidence,
-        min_win_rate, min_improvement, days_back, top_patterns_limit,
+        params.pattern_miner, params.min_support, params.min_confidence,
+        params.min_win_rate, params.min_improvement, params.days_back, params.top_patterns_limit,
     )
 
     variant_configs: List[Any] = []
 
-    if enable_model_variants:
+    if params.enable_model_variants:
         models_to_test = ["gemma2:2b", "phi3:mini", "mistral:7b"]
-        for model in models_to_test[:max_variants_per_experiment]:
+        for model in models_to_test[:params.max_variants_per_experiment]:
             variant = control_config.copy()
             variant.inference["model"] = model
             variant_configs.append(variant)
 
-    logger.info(f"Generated {len(variant_configs)} variant configs for {agent_name}")
+    logger.info(f"Generated {len(variant_configs)} variant configs for {params.agent_name}")
 
     return StrategyResult(
         control_config=control_config,
@@ -459,22 +474,12 @@ def execute_strategy_phase(
 
 
 def execute_deploy_phase(
-    agent_name: str,
-    experiment_result: ExperimentPhaseResult,
-    config_deployer: Any,
-    enable_auto_deploy: bool,
-    enable_auto_rollback: bool,
-    tracker: Optional[Any],
+    params: DeployPhaseParams,
 ) -> DeploymentResult:
     """Execute Phase 5: Deployment.
 
     Args:
-        agent_name: Name of agent to deploy for.
-        experiment_result: Result from the experiment phase.
-        config_deployer: ConfigDeployer instance.
-        enable_auto_deploy: Whether auto-deploy is enabled.
-        enable_auto_rollback: Whether auto-rollback is enabled.
-        tracker: Optional ExecutionTracker for observability.
+        params: DeployPhaseParams object with all parameters bundled
 
     Returns:
         DeploymentResult with deployment details.
@@ -483,47 +488,47 @@ def execute_deploy_phase(
         ValueError: If no winner config or auto-deploy disabled.
         RuntimeError: If deployment record not found after deploy.
     """
-    logger.info(f"Phase 5 (DEPLOY): Deploying winner config for {agent_name}")
+    logger.info(f"Phase 5 (DEPLOY): Deploying winner config for {params.agent_name}")
 
-    if not experiment_result.winner_config:
+    if not params.experiment_result.winner_config:
         raise ValueError("No winner config to deploy")
 
-    previous_config = config_deployer.get_agent_config(agent_name)
+    previous_config = params.config_deployer.get_agent_config(params.agent_name)
 
-    if not enable_auto_deploy:
-        logger.info(f"Auto-deploy disabled, skipping deployment for {agent_name}")
+    if not params.enable_auto_deploy:
+        logger.info(f"Auto-deploy disabled, skipping deployment for {params.agent_name}")
         raise ValueError("Auto-deploy disabled")
 
-    config_deployer.deploy(
-        agent_name=agent_name,
-        new_config=experiment_result.winner_config,
-        experiment_id=experiment_result.experiment_id,
+    params.config_deployer.deploy(
+        agent_name=params.agent_name,
+        new_config=params.experiment_result.winner_config,
+        experiment_id=params.experiment_result.experiment_id,
     )
 
-    deployment = config_deployer.get_last_deployment(agent_name)
+    deployment = params.config_deployer.get_last_deployment(params.agent_name)
 
     if deployment is None:
         raise RuntimeError(
-            f"Deployment record not found after successful deploy for {agent_name}"
+            f"Deployment record not found after successful deploy for {params.agent_name}"
         )
 
     logger.info(
-        f"Deployed config {deployment.id} for {agent_name}. "
-        f"Rollback monitoring: {enable_auto_rollback}"
+        f"Deployed config {deployment.id} for {params.agent_name}. "
+        f"Rollback monitoring: {params.enable_auto_rollback}"
     )
 
     result = DeploymentResult(
         deployment_id=deployment.id,
-        deployed_config=experiment_result.winner_config,
+        deployed_config=params.experiment_result.winner_config,
         previous_config=previous_config,
         deployment_timestamp=deployment.deployed_at,
-        rollback_monitoring_enabled=enable_auto_rollback,
+        rollback_monitoring_enabled=params.enable_auto_rollback,
     )
 
-    if tracker:
+    if params.tracker:
         track_deployment_outcome(
-            tracker, agent_name, deployment.id, experiment_result,
-            previous_config, enable_auto_rollback, deployment.deployed_at,
+            params.tracker, params.agent_name, deployment.id, params.experiment_result,
+            previous_config, params.enable_auto_rollback, deployment.deployed_at,
         )
 
     return result

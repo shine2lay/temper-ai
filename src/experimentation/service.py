@@ -138,17 +138,21 @@ class ExperimentService(Service):
         Raises:
             ValueError: If experiment configuration is invalid
         """
+        from src.experimentation.experiment_crud import ExperimentParams
+
         return self._crud.create_experiment(
-            name=name,
-            description=description,
-            variants=variants,
-            assignment_strategy=assignment_strategy,
-            primary_metric=primary_metric,
-            secondary_metrics=secondary_metrics,
-            guardrail_metrics=guardrail_metrics,
-            confidence_level=confidence_level,
-            min_sample_size_per_variant=min_sample_size_per_variant,
-            **kwargs
+            ExperimentParams(
+                name=name,
+                description=description,
+                variants=variants,
+                assignment_strategy=assignment_strategy,
+                primary_metric=primary_metric,
+                secondary_metrics=secondary_metrics,
+                guardrail_metrics=guardrail_metrics,
+                confidence_level=confidence_level,
+                min_sample_size_per_variant=min_sample_size_per_variant,
+                extra_kwargs=kwargs,
+            )
         )
 
     def get_experiment(self, experiment_id: str) -> Optional[Experiment]:

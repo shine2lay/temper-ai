@@ -542,7 +542,9 @@ def track_decision_outcome(
     """
     data = _fill_execution_ids(data, context)
 
-    kwargs = dict(
+    # Convert DecisionTrackingData to DecisionTrackingParams
+    from src.observability.decision_tracker import DecisionTrackingParams
+    params = DecisionTrackingParams(
         decision_type=data.decision_type,
         decision_data=data.decision_data,
         outcome=data.outcome,
@@ -562,11 +564,11 @@ def track_decision_outcome(
     result: str
     if session_stack:
         result = str(decision_tracker.track(
-            session=session_stack[-1], **kwargs
+            session=session_stack[-1], params=params
         ))
     else:
         with backend.get_session_context() as session:
-            result = str(decision_tracker.track(session=session, **kwargs))
+            result = str(decision_tracker.track(session=session, params=params))
 
     return result
 
@@ -681,26 +683,38 @@ def build_extra_metadata(
     return extra_metadata if extra_metadata else None
 
 
+@dataclass
+class AgentStartParams:
+    """Parameters for tracking agent start."""
+    agent_id: str
+    stage_id: str
+    agent_name: str
+    sanitized_config: Any
+    start_time: datetime
+    input_data: Any
+
+
 def track_agent_start_and_emit(
     backend: Any,
     emit_event_fn: Any,
-    agent_id: str,
-    stage_id: str,
-    agent_name: str,
-    sanitized_config: Any,
-    start_time: "datetime",
-    input_data: Any,
+    params: AgentStartParams,
 ) -> None:
-    """Record agent start in backend and emit event."""
+    """Record agent start in backend and emit event.
+
+    Args:
+        backend: Observability backend
+        emit_event_fn: Event emission function
+        params: AgentStartParams with all agent start parameters
+    """
     backend.track_agent_start(
-        agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
-        agent_config=sanitized_config, start_time=start_time, input_data=input_data
+        agent_id=params.agent_id, stage_id=params.stage_id, agent_name=params.agent_name,
+        agent_config=params.sanitized_config, start_time=params.start_time, input_data=params.input_data
     )
     emit_event_fn("agent_start", {
-        ObservabilityFields.AGENT_ID: agent_id,
-        ObservabilityFields.STAGE_ID: stage_id,
-        ObservabilityFields.AGENT_NAME: agent_name,
-        ObservabilityFields.START_TIME: start_time.isoformat(),
+        ObservabilityFields.AGENT_ID: params.agent_id,
+        ObservabilityFields.STAGE_ID: params.stage_id,
+        ObservabilityFields.AGENT_NAME: params.agent_name,
+        ObservabilityFields.START_TIME: params.start_time.isoformat(),
     })
 
 
@@ -941,15 +955,19 @@ class TrackerCollaborationMixin:
         Returns:
             Event ID string
         """
-        result = self._collaboration_tracker.track_collaboration_event(
-            event_type=data.event_type, stage_id=data.stage_id,
-            agents_involved=data.agents_involved, event_data=data.event_data,
-            round_number=data.round_number, resolution_strategy=data.resolution_strategy,
-            outcome=data.outcome, confidence_score=data.confidence_score,
-            extra_metadata=data.extra_metadata, stage_name=data.stage_name,
-            agents=data.agents, decision=data.decision, confidence=data.confidence,
-            metadata=data.metadata,
+        from src.observability.collaboration_tracker import CollaborationEventParams
+        params = CollaborationEventParams(
+            event_type=data.event_type,
+            stage_id=data.stage_id,
+            agents_involved=data.agents_involved,
+            event_data=data.event_data,
+            round_number=data.round_number,
+            resolution_strategy=data.resolution_strategy,
+            outcome=data.outcome,
+            confidence_score=data.confidence_score,
+            extra_metadata=data.extra_metadata
         )
+        result = self._collaboration_tracker.track_collaboration_event(params=params)
         self._emit_event(_EVENT_COLLABORATION, {
             "event_type": data.event_type,
             ObservabilityFields.STAGE_ID: data.stage_id,

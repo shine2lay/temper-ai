@@ -599,39 +599,25 @@ def _hash_cache_key(request: Dict[str, Any], security_context: Dict[str, str]) -
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _generate_cache_key_hash(
-    model: str, prompt: str, temperature: float, max_tokens: int,
-    user_id: Optional[str], tenant_id: Optional[str], session_id: Optional[str],
-    system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]],
-    extra_params: Dict[str, Any]
-) -> str:
+def _generate_cache_key_hash(params: CacheKeyParams) -> str:
     """Generate cache key hash from parameters.
 
-    Extracted from LLMCache.generate_key() to reduce parameter count.
-
     Args:
-        model: Model name
-        prompt: Prompt text
-        temperature: Temperature value
-        max_tokens: Max tokens
-        user_id: User ID for isolation
-        tenant_id: Tenant ID for isolation
-        session_id: Session ID
-        system_prompt: System prompt
-        tools: Tool definitions
-        extra_params: Additional parameters
+        params: CacheKeyParams with all cache key parameters
 
     Returns:
         SHA-256 hash cache key
     """
     request = {
-        'model': model, 'prompt': prompt,
-        'temperature': temperature, 'max_tokens': max_tokens,
-        'system_prompt': system_prompt or '',
-        'tools': LLMCache._normalize_tools(tools) if tools else [],
-        **extra_params
+        'model': params.model, 'prompt': params.prompt,
+        'temperature': params.temperature, 'max_tokens': params.max_tokens,
+        'system_prompt': params.system_prompt or '',
+        'tools': LLMCache._normalize_tools(params.tools) if params.tools else [],
+        **params.extra_params
     }
-    security_context = _build_security_context(user_id, tenant_id, session_id)
+    security_context = _build_security_context(
+        params.user_id, params.tenant_id, params.session_id
+    )
     return _hash_cache_key(request, security_context)
 
 
@@ -755,9 +741,18 @@ class LLMCache:
 
         # Build request dict and hash
         cache_key = _generate_cache_key_hash(
-            model, prompt, temperature, max_tokens,
-            user_id, tenant_id, session_id,
-            system_prompt, tools, extra_params
+            CacheKeyParams(
+                model=model,
+                prompt=prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                user_id=user_id,
+                tenant_id=tenant_id,
+                session_id=session_id,
+                system_prompt=system_prompt,
+                tools=tools,
+                extra_params=extra_params,
+            )
         )
 
         logger.debug(

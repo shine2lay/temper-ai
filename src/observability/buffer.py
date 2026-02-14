@@ -336,10 +336,18 @@ class ObservabilityBuffer:
         if not self.llm_calls and not self.tool_calls and not self.agent_metrics and not self.retry_queue:
             return None
 
+        from src.observability._buffer_helpers import FlushBatchParams
         items_to_flush = prepare_flush_batch(
-            self.llm_calls, self.tool_calls, self.agent_metrics,
-            self.retry_queue, self._pending_ids,
-            RetryableItem, AgentMetricUpdate, merge_agent_metrics,
+            FlushBatchParams(
+                llm_calls=self.llm_calls,
+                tool_calls=self.tool_calls,
+                agent_metrics=self.agent_metrics,
+                retry_queue=self.retry_queue,
+                pending_ids=self._pending_ids,
+                retryable_item_cls=RetryableItem,
+                agent_metric_update_cls=AgentMetricUpdate,
+                merge_fn=merge_agent_metrics,
+            )
         )
         if not items_to_flush:
             return None

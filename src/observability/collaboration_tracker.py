@@ -55,44 +55,16 @@ class CollaborationEventTracker:
 
     def track_collaboration_event(
         self,
-        event_type: str,
-        stage_id: Optional[str] = None,
-        agents_involved: Optional[List[str]] = None,
-        event_data: Optional[Dict[str, Any]] = None,
-        round_number: Optional[int] = None,
-        resolution_strategy: Optional[str] = None,
-        outcome: Optional[str] = None,
-        confidence_score: Optional[float] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
-        # Legacy parameters for backward compatibility with executors
-        stage_name: Optional[str] = None,
-        agents: Optional[List[str]] = None,
-        decision: Optional[str] = None,
-        confidence: Optional[float] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        params: CollaborationEventParams,
     ) -> str:
         """Track collaboration event for multi-agent interactions.
 
-        Supports both schema-aligned parameters and legacy executor calls.
+        Args:
+            params: CollaborationEventParams with all event parameters
 
         Returns:
             ID of created collaboration event record, or empty string on failure.
         """
-        # Create params and map legacy parameters
-        params = CollaborationEventParams(
-            event_type=event_type,
-            stage_id=stage_id,
-            agents_involved=agents_involved,
-            event_data=event_data,
-            round_number=round_number,
-            resolution_strategy=resolution_strategy,
-            outcome=outcome,
-            confidence_score=confidence_score,
-            extra_metadata=extra_metadata
-        )
-
-        # Map legacy parameters to new schema
-        self._map_legacy_params(params, stage_name, agents, decision, confidence, metadata)
 
         # Validate and process
         if not self._validate_collab_params(params):
@@ -100,33 +72,6 @@ class CollaborationEventTracker:
 
         # Delegate to backend
         return self._track_event_to_backend(params)
-
-    def _map_legacy_params(
-        self,
-        params: CollaborationEventParams,
-        stage_name: Optional[str],
-        agents: Optional[List[str]],
-        decision: Optional[str],
-        confidence: Optional[float],
-        metadata: Optional[Dict[str, Any]]
-    ) -> None:
-        """Map legacy parameters to params dataclass."""
-        context = self._get_context()
-
-        if stage_name and not params.stage_id:
-            params.stage_id = context.stage_id or stage_name
-
-        if agents and not params.agents_involved:
-            params.agents_involved = agents
-
-        if decision is not None and not params.outcome:
-            params.outcome = decision
-
-        if confidence is not None and params.confidence_score is None:
-            params.confidence_score = confidence
-
-        if metadata and not params.event_data:
-            params.event_data = metadata
 
     def _validate_collab_params(self, params: CollaborationEventParams) -> bool:
         """Validate collaboration event parameters."""

@@ -15,6 +15,7 @@ Commands:
 """
 import json
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -52,6 +53,39 @@ DEFAULT_MAX_WORKERS = 4
 
 # Exit codes
 EXIT_CODE_KEYBOARD_INTERRUPT = 130  # POSIX standard exit code for SIGINT (Ctrl+C)
+
+
+# ─── Data Classes ─────────────────────────────────────────────────────
+
+
+@dataclass
+class WorkflowExecutionParams:
+    """Parameters for workflow execution (reduces 12 params to 7)."""
+    compiled: Any
+    workflow_config: Any
+    inputs: Any
+    tracker: Any
+    config_loader: Any
+    tool_registry: Any
+    workflow_id: str
+    show_details: bool
+    engine: Any
+    verbose: bool
+    workspace: Optional[str] = None
+    run_id: Optional[str] = None
+
+
+@dataclass
+class WorkflowStateParams:
+    """Parameters for building workflow state."""
+    inputs: Any
+    tracker: Any
+    config_loader: Any
+    tool_registry: Any
+    workflow_id: str
+    show_details: bool
+    workspace: Optional[str] = None
+    run_id: Optional[str] = None
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────
@@ -281,33 +315,17 @@ def _initialize_infrastructure(
     return config_loader, tool_registry, tracker, event_bus, dashboard_server
 
 
-def _build_workflow_state(
-    inputs: Any,
-    tracker: Any,
-    config_loader: Any,
-    tool_registry: Any,
-    workflow_id: str,
-    show_details: bool,
-    workspace: Optional[str] = None,
-    run_id: Optional[str] = None,
-) -> dict[str, Any]:
+def _build_workflow_state(params: WorkflowStateParams) -> dict[str, Any]:
     """Build workflow state dict with optional stream display.
 
     Args:
-        inputs: Input values dict
-        tracker: ExecutionTracker instance
-        config_loader: ConfigLoader instance
-        tool_registry: ToolRegistry instance
-        workflow_id: Unique workflow execution ID
-        show_details: Enable detailed output
-        workspace: Optional workspace root path
-        run_id: Optional run identifier
+        params: WorkflowStateParams with all state parameters
 
     Returns:
         State dict for workflow execution
     """
     stream_display = None
-    if show_details:
+    if params.show_details:
         try:
             from src.cli.stream_display import StreamDisplay
             stream_display = StreamDisplay(console)
@@ -315,51 +333,27 @@ def _build_workflow_state(
             pass  # stream_display not available, skip
 
     state: dict[str, Any] = {
-        "workflow_inputs": inputs,
-        "tracker": tracker,
-        "config_loader": config_loader,
-        "tool_registry": tool_registry,
-        "workflow_id": workflow_id,
-        "show_details": show_details,
-        "detail_console": console if show_details else None,
+        "workflow_inputs": params.inputs,
+        "tracker": params.tracker,
+        "config_loader": params.config_loader,
+        "tool_registry": params.tool_registry,
+        "workflow_id": params.workflow_id,
+        "show_details": params.show_details,
+        "detail_console": console if params.show_details else None,
         "stream_callback": stream_display,
     }
-    if workspace is not None:
-        state["workspace_root"] = workspace
-    if run_id is not None:
-        state["run_id"] = run_id
+    if params.workspace is not None:
+        state["workspace_root"] = params.workspace
+    if params.run_id is not None:
+        state["run_id"] = params.run_id
     return state
 
 
-def _execute_workflow(
-    compiled: Any,
-    workflow_config: Any,
-    inputs: Any,
-    tracker: Any,
-    config_loader: Any,
-    tool_registry: Any,
-    workflow_id: str,
-    show_details: bool,
-    engine: Any,
-    verbose: bool,
-    workspace: Optional[str] = None,
-    run_id: Optional[str] = None,
-) -> Any:
+def _execute_workflow(params: WorkflowExecutionParams) -> Any:
     """Execute the compiled workflow with tracking and error handling.
 
     Args:
-        compiled: Compiled workflow graph
-        workflow_config: Workflow configuration dict
-        inputs: Input values dict
-        tracker: ExecutionTracker instance
-        config_loader: ConfigLoader instance
-        tool_registry: ToolRegistry instance
-        workflow_id: Unique workflow execution ID
-        show_details: Enable detailed output
-        engine: Workflow engine instance
-        verbose: Enable verbose output
-        workspace: Optional workspace root path
-        run_id: Optional run identifier
+        params: WorkflowExecutionParams bundle containing all needed parameters
 
     Returns:
         Workflow execution result dict
@@ -369,28 +363,35 @@ def _execute_workflow(
     """
     try:
         state = _build_workflow_state(
-            inputs, tracker, config_loader, tool_registry,
-            workflow_id, show_details, workspace, run_id
+            WorkflowStateParams(
+                inputs=params.inputs,
+                tracker=params.tracker,
+                config_loader=params.config_loader,
+                tool_registry=params.tool_registry,
+                workflow_id=params.workflow_id,
+                show_details=params.show_details,
+                workspace=params.workspace,
+                run_id=params.run_id,
+            )
         )
-        return compiled.invoke(state)
+        return params.compiled.invoke(state)
     except WorkflowStageError as e:
         console.print(f"[red]Stage failure:[/red] {e.stage_name} — {e}")
-        if verbose:
+        if params.verbose:
             logger.exception("Stage failure halted workflow")
-        _cleanup_tool_executor(engine)
+        _cleanup_tool_executor(params.engine)
         raise SystemExit(1)
     except (RuntimeError, ValueError) as e:
         console.print(f"[red]Workflow execution error:[/red] {e}")
-        if verbose:
+        if params.verbose:
             logger.exception("Workflow execution failed")
-        _cleanup_tool_executor(engine)
+        _cleanup_tool_executor(params.engine)
         raise SystemExit(1)
     except SystemExit:
         raise
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted[/yellow]")
-        if 'engine' in locals():
-            _cleanup_tool_executor(engine)
+        _cleanup_tool_executor(params.engine)
         raise SystemExit(EXIT_CODE_KEYBOARD_INTERRUPT)
 
 
@@ -628,13 +629,13 @@ def run(
         trigger_type="cli",
         environment="local",
     ) as workflow_id:
-        result = _execute_workflow(
-            compiled, workflow_config, inputs, tracker,
-            config_loader, tool_registry, workflow_id,
-            show_details, engine, verbose,
-            workspace=workspace,
-            run_id=run_id,
+        exec_params = WorkflowExecutionParams(
+            compiled=compiled, workflow_config=workflow_config, inputs=inputs,
+            tracker=tracker, config_loader=config_loader, tool_registry=tool_registry,
+            workflow_id=workflow_id, show_details=show_details, engine=engine,
+            verbose=verbose, workspace=workspace, run_id=run_id,
         )
+        result = _execute_workflow(exec_params)
 
     _handle_post_execution(result, show_details, output, workflow_id, workflow_name, verbose)
 

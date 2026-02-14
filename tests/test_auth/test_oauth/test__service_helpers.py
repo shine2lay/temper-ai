@@ -25,6 +25,7 @@ from src.auth.oauth._service_helpers import (
     fetch_user_info,
     revoke_tokens,
     revoke_at_provider,
+    TokenExchangeParams,
     HTTP_OK,
     HTTP_UNAUTHORIZED,
 )
@@ -326,15 +327,17 @@ async def test_exchange_code_success(oauth_config, mock_state_store, token_store
     mock_http_client.post.return_value = mock_response
 
     result = await exchange_code(
-        provider="google",
-        code="auth_code_123",
-        state="state_abc",
-        config=oauth_config,
-        state_store=mock_state_store,
-        token_store=token_store,
-        http_client=mock_http_client,
-        rate_limiter=rate_limiter,
-        ip_address="192.168.1.1",
+        TokenExchangeParams(
+            provider="google",
+            code="auth_code_123",
+            state="state_abc",
+            config=oauth_config,
+            state_store=mock_state_store,
+            token_store=token_store,
+            http_client=mock_http_client,
+            rate_limiter=rate_limiter,
+            ip_address="192.168.1.1",
+        )
     )
 
     assert result["access_token"] == "access_token_123"
@@ -361,14 +364,16 @@ async def test_exchange_code_token_stored(oauth_config, mock_state_store, token_
     mock_http_client.post.return_value = mock_response
 
     await exchange_code(
-        provider="google",
-        code="auth_code_123",
-        state="state_abc",
-        config=oauth_config,
-        state_store=mock_state_store,
-        token_store=token_store,
-        http_client=mock_http_client,
-        rate_limiter=rate_limiter,
+        TokenExchangeParams(
+            provider="google",
+            code="auth_code_123",
+            state="state_abc",
+            config=oauth_config,
+            state_store=mock_state_store,
+            token_store=token_store,
+            http_client=mock_http_client,
+            rate_limiter=rate_limiter,
+        )
     )
 
     # Verify token was stored
@@ -392,14 +397,16 @@ async def test_exchange_code_http_error(oauth_config, mock_state_store, token_st
 
     with pytest.raises(OAuthProviderError, match="Token exchange failed"):
         await exchange_code(
-            provider="google",
-            code="invalid_code",
-            state="state_abc",
-            config=oauth_config,
-            state_store=mock_state_store,
-            token_store=token_store,
-            http_client=mock_http_client,
-            rate_limiter=rate_limiter,
+            TokenExchangeParams(
+                provider="google",
+                code="invalid_code",
+                state="state_abc",
+                config=oauth_config,
+                state_store=mock_state_store,
+                token_store=token_store,
+                http_client=mock_http_client,
+                rate_limiter=rate_limiter,
+            )
         )
 
 
@@ -422,14 +429,16 @@ async def test_exchange_code_missing_access_token(oauth_config, mock_state_store
 
     with pytest.raises(OAuthProviderError, match="Token response missing access_token"):
         await exchange_code(
-            provider="google",
-            code="code",
-            state="state",
-            config=oauth_config,
-            state_store=mock_state_store,
-            token_store=token_store,
-            http_client=mock_http_client,
-            rate_limiter=rate_limiter,
+            TokenExchangeParams(
+                provider="google",
+                code="code",
+                state="state",
+                config=oauth_config,
+                state_store=mock_state_store,
+                token_store=token_store,
+                http_client=mock_http_client,
+                rate_limiter=rate_limiter,
+            )
         )
 
 

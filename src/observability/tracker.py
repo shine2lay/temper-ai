@@ -9,8 +9,12 @@ import logging
 import threading
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, Generator, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional
+
+if TYPE_CHECKING:
+    from src.observability.metric_aggregator import AgentOutputParams
 
 from src.core.context import ExecutionContext
 from src.database.datetime_utils import utcnow
@@ -56,6 +60,24 @@ _EVENT_STAGE_START = "stage_start"
 _EVENT_AGENT_START = "agent_start"
 _EVENT_AGENT_OUTPUT = "agent_output"
 _EVENT_STAGE_OUTPUT = "stage_output"
+
+
+@dataclass
+class WorkflowTrackingParams:
+    """Parameters for tracking workflow execution."""
+    workflow_name: str
+    workflow_config: Dict[str, Any]
+    trigger_type: Optional[str] = None
+    trigger_data: Optional[Dict[str, Any]] = None
+    optimization_target: Optional[str] = None
+    product_type: Optional[str] = None
+    environment: Optional[str] = "development"
+    tags: Optional[List[str]] = None
+    experiment_id: Optional[str] = None
+    variant_id: Optional[str] = None
+    assignment_strategy: Optional[str] = None
+    assignment_context: Optional[Dict[str, Any]] = None
+    custom_metrics: Optional[Dict[str, Any]] = None
 
 
 class ExecutionTracker(TrackerCollaborationMixin):
@@ -164,23 +186,23 @@ class ExecutionTracker(TrackerCollaborationMixin):
         self._event_bus.emit(event)
 
     @contextmanager
-    def track_workflow(
-        self, workflow_name: str, workflow_config: Dict[str, Any],
-        trigger_type: Optional[str] = None, trigger_data: Optional[Dict[str, Any]] = None,
-        optimization_target: Optional[str] = None, product_type: Optional[str] = None,
-        environment: Optional[str] = "development", tags: Optional[List[str]] = None,
-        experiment_id: Optional[str] = None, variant_id: Optional[str] = None,
-        assignment_strategy: Optional[str] = None, assignment_context: Optional[Dict[str, Any]] = None,
-        custom_metrics: Optional[Dict[str, Any]] = None
-    ) -> Generator[str, None, None]:
-        """Track workflow execution."""
+    def track_workflow(self, params: WorkflowTrackingParams) -> Generator[str, None, None]:
+        """Track workflow execution.
+
+        Args:
+            params: WorkflowTrackingParams with all workflow tracking parameters
+
+        Yields:
+            workflow_id: The generated workflow execution ID
+        """
         workflow_id = f"wf-{uuid.uuid4()}"
         self.context.workflow_id = workflow_id
 
         start_time = utcnow()
-        sanitized_config = sanitize_config_for_display(workflow_config)
+        sanitized_config = sanitize_config_for_display(params.workflow_config)
         extra_metadata = _build_extra_metadata(
-            experiment_id, variant_id, assignment_strategy, assignment_context, custom_metrics
+            params.experiment_id, params.variant_id, params.assignment_strategy,
+            params.assignment_context, params.custom_metrics
         )
 
         with self.backend.get_session_context() as session:
@@ -188,21 +210,21 @@ class ExecutionTracker(TrackerCollaborationMixin):
 
             from src.observability.backend import WorkflowStartData
             self.backend.track_workflow_start(
-                workflow_id=workflow_id, workflow_name=workflow_name,
+                workflow_id=workflow_id, workflow_name=params.workflow_name,
                 workflow_config=sanitized_config, start_time=start_time,
                 data=WorkflowStartData(
-                    trigger_type=trigger_type, trigger_data=trigger_data,
-                    optimization_target=optimization_target, product_type=product_type,
-                    environment=environment, tags=tags,
+                    trigger_type=params.trigger_type, trigger_data=params.trigger_data,
+                    optimization_target=params.optimization_target, product_type=params.product_type,
+                    environment=params.environment, tags=params.tags,
                     extra_metadata=extra_metadata
                 )
             )
             self._emit_event(_EVENT_WORKFLOW_START, {
                 ObservabilityFields.WORKFLOW_ID: workflow_id,
-                "workflow_name": workflow_name,
+                "workflow_name": params.workflow_name,
                 ObservabilityFields.START_TIME: start_time.isoformat(),
-                "environment": environment,
-                "tags": tags,
+                "environment": params.environment,
+                "tags": params.tags,
             })
 
             try:
@@ -286,9 +308,13 @@ class ExecutionTracker(TrackerCollaborationMixin):
         sanitized_config = sanitize_config_for_display(agent_config)
 
         if self._session_stack:
+            from src.observability._tracker_helpers import AgentStartParams
             _track_agent_start_and_emit(
-                self.backend, self._emit_event, agent_id, stage_id,
-                agent_name, sanitized_config, start_time, input_data
+                self.backend, self._emit_event,
+                AgentStartParams(
+                    agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
+                    sanitized_config=sanitized_config, start_time=start_time, input_data=input_data
+                )
             )
             try:
                 yield agent_id
@@ -303,9 +329,13 @@ class ExecutionTracker(TrackerCollaborationMixin):
         else:
             with self.backend.get_session_context() as session:
                 self._session_stack.append(session)
+                from src.observability._tracker_helpers import AgentStartParams
                 _track_agent_start_and_emit(
-                    self.backend, self._emit_event, agent_id, stage_id,
-                    agent_name, sanitized_config, start_time, input_data
+                    self.backend, self._emit_event,
+                    AgentStartParams(
+                        agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
+                        sanitized_config=sanitized_config, start_time=start_time, input_data=input_data
+                    )
                 )
                 try:
                     yield agent_id
@@ -319,29 +349,15 @@ class ExecutionTracker(TrackerCollaborationMixin):
                     self._session_stack.pop()
                     self.context.agent_id = None
 
-    def track_llm_call(
-        self, agent_id: str, provider: str, model: str, prompt: str, response: str,
-        prompt_tokens: int, completion_tokens: int, latency_ms: int,
-        estimated_cost_usd: float, temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None, status: str = "success",
-        error_message: Optional[str] = None
-    ) -> str:
-        """Track LLM call with automatic sanitization."""
-        data = LLMCallTrackingData(
-            agent_id=agent_id,
-            provider=provider,
-            model=model,
-            prompt=prompt,
-            response=response,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            latency_ms=latency_ms,
-            estimated_cost_usd=estimated_cost_usd,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            status=status,
-            error_message=error_message,
-        )
+    def track_llm_call(self, data: LLMCallTrackingData) -> str:
+        """Track LLM call with automatic sanitization.
+
+        Args:
+            data: LLMCallTrackingData with all LLM call tracking parameters
+
+        Returns:
+            LLM call ID
+        """
         return _track_llm_call(
             sanitizer=self.sanitizer,
             backend=self.backend,
@@ -350,24 +366,15 @@ class ExecutionTracker(TrackerCollaborationMixin):
             event_bus=self._event_bus,
         )
 
-    def track_tool_call(
-        self, agent_id: str, tool_name: str, input_params: Dict[str, Any],
-        output_data: Dict[str, Any], duration_seconds: float,
-        status: str = "success", error_message: Optional[str] = None,
-        safety_checks: Optional[List[str]] = None, approval_required: bool = False
-    ) -> str:
-        """Track tool execution."""
-        data = ToolCallTrackingData(
-            agent_id=agent_id,
-            tool_name=tool_name,
-            input_params=input_params,
-            output_data=output_data,
-            duration_seconds=duration_seconds,
-            status=status,
-            error_message=error_message,
-            safety_checks=safety_checks,
-            approval_required=approval_required,
-        )
+    def track_tool_call(self, data: ToolCallTrackingData) -> str:
+        """Track tool execution.
+
+        Args:
+            data: ToolCallTrackingData with all tool call tracking parameters
+
+        Returns:
+            Tool execution ID
+        """
         return _track_tool_call(
             sanitize_dict_fn=self._sanitize_dict,
             backend=self.backend,
@@ -382,30 +389,21 @@ class ExecutionTracker(TrackerCollaborationMixin):
     def _get_stack_trace(self) -> str:
         return get_stack_trace(self.sanitizer)
 
-    def set_agent_output(
-        self, agent_id: str, output_data: Dict[str, Any],
-        reasoning: Optional[str] = None, confidence_score: Optional[float] = None,
-        total_tokens: Optional[int] = None, prompt_tokens: Optional[int] = None,
-        completion_tokens: Optional[int] = None, estimated_cost_usd: Optional[float] = None,
-        num_llm_calls: Optional[int] = None, num_tool_calls: Optional[int] = None
-    ) -> None:
-        """Set agent output data."""
+    def set_agent_output(self, params: "AgentOutputParams") -> None:
+        """Set agent output data.
+
+        Args:
+            params: AgentOutputParams with all agent output parameters
+        """
         from src.observability.metric_aggregator import AgentOutputParams
-        params = AgentOutputParams(
-            agent_id=agent_id, output_data=output_data, reasoning=reasoning,
-            confidence_score=confidence_score, total_tokens=total_tokens,
-            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-            estimated_cost_usd=estimated_cost_usd, num_llm_calls=num_llm_calls,
-            num_tool_calls=num_tool_calls,
-        )
         self._metric_aggregator.set_agent_output(params)
         self._emit_event(_EVENT_AGENT_OUTPUT, {
-            ObservabilityFields.AGENT_ID: agent_id,
-            "confidence_score": confidence_score,
-            ObservabilityFields.TOTAL_TOKENS: total_tokens,
-            "estimated_cost_usd": estimated_cost_usd,
-            "num_llm_calls": num_llm_calls,
-            "num_tool_calls": num_tool_calls,
+            ObservabilityFields.AGENT_ID: params.agent_id,
+            "confidence_score": params.confidence_score,
+            ObservabilityFields.TOTAL_TOKENS: params.total_tokens,
+            "estimated_cost_usd": params.estimated_cost_usd,
+            "num_llm_calls": params.num_llm_calls,
+            "num_tool_calls": params.num_tool_calls,
         })
 
     def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
@@ -415,35 +413,15 @@ class ExecutionTracker(TrackerCollaborationMixin):
             ObservabilityFields.STAGE_ID: stage_id,
         })
 
-    def track_decision_outcome(
-        self, decision_type: str, decision_data: Dict[str, Any], outcome: str,
-        impact_metrics: Optional[Dict[str, Any]] = None,
-        lessons_learned: Optional[str] = None, should_repeat: Optional[bool] = None,
-        tags: Optional[List[str]] = None, agent_execution_id: Optional[str] = None,
-        stage_execution_id: Optional[str] = None,
-        workflow_execution_id: Optional[str] = None,
-        validation_method: Optional[str] = None,
-        validation_timestamp: Optional[datetime] = None,
-        validation_duration_seconds: Optional[float] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Track decision outcome."""
-        data = DecisionTrackingData(
-            decision_type=decision_type,
-            decision_data=decision_data,
-            outcome=outcome,
-            impact_metrics=impact_metrics,
-            lessons_learned=lessons_learned,
-            should_repeat=should_repeat,
-            tags=tags,
-            agent_execution_id=agent_execution_id,
-            stage_execution_id=stage_execution_id,
-            workflow_execution_id=workflow_execution_id,
-            validation_method=validation_method,
-            validation_timestamp=validation_timestamp,
-            validation_duration_seconds=validation_duration_seconds,
-            extra_metadata=extra_metadata,
-        )
+    def track_decision_outcome(self, data: DecisionTrackingData) -> str:
+        """Track decision outcome.
+
+        Args:
+            data: DecisionTrackingData with all decision tracking parameters
+
+        Returns:
+            Decision ID
+        """
         return _track_decision_outcome(
             decision_tracker=self._decision_tracker,
             backend=self.backend,

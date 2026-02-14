@@ -27,10 +27,14 @@ from src.self_improvement.loop._executor_helpers import (
     create_winner_result as _create_winner_result,
 )
 from src.self_improvement.loop._executor_helpers import (
+    DeployPhaseParams,
     execute_deploy_phase as _execute_deploy_phase,
 )
 from src.self_improvement.loop._executor_helpers import (
     execute_strategy_phase as _execute_strategy_phase,
+)
+from src.self_improvement.loop._executor_helpers import (
+    StrategyPhaseParams,
 )
 from src.self_improvement.pattern_mining import PatternMiner
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
@@ -84,30 +88,19 @@ class LoopExecutor:
     See _executor_helpers.py for extracted tracking/recording logic.
     """
 
-    def __init__(
-        self,
-        coord_db: Any,
-        obs_session: Session,
-        config: LoopConfig,
-        state_manager: LoopStateManager,
-        error_recovery: ErrorRecoveryStrategy,
-        metrics_collector: MetricsCollector,
-        tracker: Optional[Any] = None,
-        policy_engine: Optional[Any] = None,
-        approval_workflow: Optional[Any] = None,
-    ) -> None:
+    def __init__(self, config: ExecutorConfig) -> None:
         """Initialize loop executor with configuration."""
-        self.coord_db = coord_db
-        self.obs_session = obs_session
-        self.config = config
-        self.state_manager = state_manager
-        self.error_recovery = error_recovery
-        self.metrics_collector = metrics_collector
-        self.tracker = tracker
+        self.coord_db = config.coord_db
+        self.obs_session = config.obs_session
+        self.config = config.config
+        self.state_manager = config.state_manager
+        self.error_recovery = config.error_recovery
+        self.metrics_collector = config.metrics_collector
+        self.tracker = config.tracker
 
         # Initialize core components
         self._init_analyzers_and_orchestrators()
-        self._init_deployer_and_monitor(policy_engine, approval_workflow)
+        self._init_deployer_and_monitor(config.policy_engine, config.approval_workflow)
         self._init_learning_components()
 
     def _init_analyzers_and_orchestrators(self) -> None:
@@ -399,7 +392,7 @@ class LoopExecutor:
         analysis_result: AnalysisResult
     ) -> StrategyResult:
         """Execute Phase 3: Strategy Generation (delegates to helper)."""
-        return _execute_strategy_phase(
+        params = StrategyPhaseParams(
             agent_name=agent_name,
             analysis_result=analysis_result,
             config_deployer=self.config_deployer,
@@ -413,6 +406,7 @@ class LoopExecutor:
             days_back=DAYS_90,
             top_patterns_limit=TOP_PATTERNS_LIMIT,
         )
+        return _execute_strategy_phase(params)
 
     def _execute_phase_4_experiment(
         self,
@@ -457,7 +451,7 @@ class LoopExecutor:
         experiment_result: ExperimentPhaseResult
     ) -> DeploymentResult:
         """Execute Phase 5: Deployment (delegates to helper)."""
-        return _execute_deploy_phase(
+        params = DeployPhaseParams(
             agent_name=agent_name,
             experiment_result=experiment_result,
             config_deployer=self.config_deployer,
@@ -465,3 +459,4 @@ class LoopExecutor:
             enable_auto_rollback=self.config.enable_auto_rollback,
             tracker=self.tracker,
         )
+        return _execute_deploy_phase(params)

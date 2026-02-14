@@ -130,6 +130,23 @@ class WinnerResult:
     analysis: ExperimentAnalysis
 
 
+@dataclass
+class RecordResultParams:
+    """Parameters for recording experiment results.
+
+    Bundles the multiple parameters needed for result recording,
+    reducing function parameter count from 8 to 1.
+    """
+    experiment_id: str
+    variant_id: str
+    execution_id: str
+    quality_score: Optional[float] = None
+    speed_seconds: Optional[float] = None
+    cost_usd: Optional[float] = None
+    success: Optional[bool] = None
+    extra_metrics: Optional[Dict[str, float]] = None
+
+
 # ========== Conversion helpers ==========
 
 def _db_to_experiment(db_exp: M5Experiment) -> SelfImprovementExperiment:
@@ -378,31 +395,63 @@ class ExperimentOrchestrator:
 
     def record_result(
         self,
-        experiment_id: str,
-        variant_id: str,
-        execution_id: str,
+        experiment_id: Optional[str] = None,
+        variant_id: Optional[str] = None,
+        execution_id: Optional[str] = None,
         quality_score: Optional[float] = None,
         speed_seconds: Optional[float] = None,
         cost_usd: Optional[float] = None,
         success: Optional[bool] = None,
-        extra_metrics: Optional[Dict[str, float]] = None
+        extra_metrics: Optional[Dict[str, float]] = None,
+        *,
+        params: Optional[RecordResultParams] = None,
     ) -> None:
-        """Record experiment execution result."""
+        """Record experiment execution result.
+
+        Args:
+            experiment_id: (deprecated) Experiment ID
+            variant_id: (deprecated) Variant ID
+            execution_id: (deprecated) Execution ID
+            quality_score: (deprecated) Quality score
+            speed_seconds: (deprecated) Speed in seconds
+            cost_usd: (deprecated) Cost in USD
+            success: (deprecated) Success flag
+            extra_metrics: (deprecated) Extra metrics
+            params: (recommended) RecordResultParams object with all parameters bundled
+
+        Raises:
+            ValueError: If neither params nor positional args provided
+        """
+        # Support both new and legacy calling styles
+        if params is None:
+            if experiment_id is None or variant_id is None or execution_id is None:
+                raise ValueError("Either params or (experiment_id, variant_id, execution_id) must be provided")
+            params = RecordResultParams(
+                experiment_id=experiment_id,
+                variant_id=variant_id,
+                execution_id=execution_id,
+                quality_score=quality_score,
+                speed_seconds=speed_seconds,
+                cost_usd=cost_usd,
+                success=success,
+                extra_metrics=extra_metrics
+            )
+
         # Validate inputs
-        self._validate_experiment_id(experiment_id)
-        self._validate_variant_id(variant_id)
-        self._validate_variant_for_experiment(experiment_id, variant_id)
+        self._validate_experiment_id(params.experiment_id)
+        self._validate_variant_id(params.variant_id)
+        self._validate_variant_for_experiment(params.experiment_id, params.variant_id)
 
         # Create result data bundle
         result_data = ExperimentResultData(
-            experiment_id=experiment_id,
-            variant_id=variant_id,
-            execution_id=execution_id,
-            quality_score=quality_score,
-            speed_seconds=speed_seconds,
-            cost_usd=cost_usd,
-            success=success,
-            extra_metrics=extra_metrics
+            experiment_id=params.experiment_id,
+            variant_id=params.variant_id,
+            execution_id=params.execution_id,
+            quality_score=params.quality_score,
+            speed_seconds=params.speed_seconds,
+            cost_usd=params.cost_usd,
+            success=params.success,
+            extra_metrics=params.extra_metrics
         )
 
         # Record to database
@@ -412,9 +461,9 @@ class ExperimentOrchestrator:
         )
 
         logger.debug(
-            f"Recorded result for {execution_id} ({variant_id}) "
-            f"in experiment {experiment_id}: quality={quality_score}, "
-            f"speed={speed_seconds}s, cost=${cost_usd}"
+            f"Recorded result for {params.execution_id} ({params.variant_id}) "
+            f"in experiment {params.experiment_id}: quality={params.quality_score}, "
+            f"speed={params.speed_seconds}s, cost=${params.cost_usd}"
         )
 
     # ========== Experiment Status ==========

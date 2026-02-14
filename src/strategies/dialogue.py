@@ -59,6 +59,7 @@ class DialogueOrchestrator(MultiRoundStrategy):
 
     def __init__(
         self,
+        config: Optional[MultiRoundConfig] = None,
         max_rounds: int = DEFAULT_MAX_ROUNDS,
         convergence_threshold: float = DEFAULT_CONVERGENCE_THRESHOLD,
         cost_budget_usd: Optional[float] = None,
@@ -75,16 +76,17 @@ class DialogueOrchestrator(MultiRoundStrategy):
             DeprecationWarning,
             stacklevel=2,
         )
-        # Bundle params into config object
-        config = MultiRoundConfig(
-            max_rounds=max_rounds,
-            min_rounds=min_rounds,
-            convergence_threshold=convergence_threshold,
-            use_semantic_convergence=use_semantic_convergence,
-            context_strategy=context_strategy,
-            context_window_size=context_window_size,
-            cost_budget_usd=cost_budget_usd,
-            use_merit_weighting=use_merit_weighting,
-            merit_domain=merit_domain,
-        )
+        # Support both new and legacy calling styles
+        if config is None:
+            config = MultiRoundConfig(
+                max_rounds=max_rounds,
+                min_rounds=min_rounds,
+                convergence_threshold=convergence_threshold,
+                use_semantic_convergence=use_semantic_convergence,
+                context_strategy=context_strategy,
+                context_window_size=context_window_size,
+                cost_budget_usd=cost_budget_usd,
+                use_merit_weighting=use_merit_weighting,
+                merit_domain=merit_domain,
+            )
         super().__init__(mode="dialogue", config=config, **kwargs)

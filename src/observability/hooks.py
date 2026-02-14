@@ -10,7 +10,8 @@ from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable, Dict, Optional, cast
 
-from src.observability.tracker import ExecutionTracker
+from src.observability._tracker_helpers import LLMCallTrackingData, ToolCallTrackingData
+from src.observability.tracker import ExecutionTracker, WorkflowTrackingParams
 
 # Global tracker instance (OB-06: double-check locking for thread safety)
 _global_tracker: Optional[ExecutionTracker] = None
@@ -97,7 +98,7 @@ def track_workflow(
                 config = args[0] if isinstance(args[0], dict) else {}
 
             tracker = get_tracker()
-            with tracker.track_workflow(name, config) as workflow_id:
+            with tracker.track_workflow(WorkflowTrackingParams(workflow_name=name, workflow_config=config)) as workflow_id:
                 # Inject workflow_id into kwargs if function accepts it as a parameter
                 if 'workflow_id' in inspect.signature(func).parameters:
                     kwargs['workflow_id'] = workflow_id
@@ -249,7 +250,9 @@ class ExecutionHook:
         Returns:
             workflow_id: UUID of workflow execution
         """
-        ctx = self.tracker.track_workflow(workflow_name, workflow_config, **kwargs)
+        ctx = self.tracker.track_workflow(WorkflowTrackingParams(
+            workflow_name=workflow_name, workflow_config=workflow_config, **kwargs
+        ))
         workflow_id = ctx.__enter__()
         self._active_contexts[workflow_id] = ctx
         return workflow_id
@@ -358,17 +361,17 @@ class ExecutionHook:
         Returns:
             llm_call_id: UUID of LLM call
         """
-        return self.tracker.track_llm_call(
-            params.agent_id,
-            params.provider,
-            params.model,
-            params.prompt,
-            params.response,
-            params.prompt_tokens,
-            params.completion_tokens,
-            params.latency_ms,
-            params.cost
-        )
+        return self.tracker.track_llm_call(LLMCallTrackingData(
+            agent_id=params.agent_id,
+            provider=params.provider,
+            model=params.model,
+            prompt=params.prompt,
+            response=params.response,
+            prompt_tokens=params.prompt_tokens,
+            completion_tokens=params.completion_tokens,
+            latency_ms=params.latency_ms,
+            estimated_cost_usd=params.cost,
+        ))
 
     def log_tool_call(
         self,
@@ -393,11 +396,11 @@ class ExecutionHook:
         Returns:
             tool_execution_id: UUID of tool execution
         """
-        return self.tracker.track_tool_call(
-            agent_id,
-            tool_name,
-            input_params,
-            output_data,
-            duration,
-            status
-        )
+        return self.tracker.track_tool_call(ToolCallTrackingData(
+            agent_id=agent_id,
+            tool_name=tool_name,
+            input_params=input_params,
+            output_data=output_data,
+            duration_seconds=duration,
+            status=status,
+        ))

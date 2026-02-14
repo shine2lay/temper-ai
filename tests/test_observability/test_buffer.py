@@ -41,9 +41,10 @@ class TestObservabilityBuffer:
 
     def test_buffer_llm_call(self):
         """Test buffering LLM calls."""
+        from src.observability.buffer import LLMCallBufferParams
         buffer = ObservabilityBuffer(flush_size=10, auto_flush=False)
 
-        buffer.buffer_llm_call(
+        buffer.buffer_llm_call(LLMCallBufferParams(
             llm_call_id="llm-1",
             agent_id="agent-1",
             provider="ollama",
@@ -55,7 +56,7 @@ class TestObservabilityBuffer:
             latency_ms=100,
             estimated_cost_usd=0.001,
             start_time=datetime.now(timezone.utc)
-        )
+        ))
 
         assert len(buffer.llm_calls) == 1
         assert buffer.llm_calls[0].llm_call_id == "llm-1"
@@ -63,9 +64,10 @@ class TestObservabilityBuffer:
 
     def test_buffer_tool_call(self):
         """Test buffering tool calls."""
+        from src.observability.buffer import ToolCallBufferParams
         buffer = ObservabilityBuffer(flush_size=10, auto_flush=False)
 
-        buffer.buffer_tool_call(
+        buffer.buffer_tool_call(ToolCallBufferParams(
             tool_execution_id="tool-1",
             agent_id="agent-1",
             tool_name="calculator",
@@ -73,7 +75,7 @@ class TestObservabilityBuffer:
             output_data={"result": 3},
             start_time=datetime.now(timezone.utc),
             duration_seconds=0.01
-        )
+        ))
 
         assert len(buffer.tool_calls) == 1
         assert buffer.tool_calls[0].tool_execution_id == "tool-1"
@@ -81,11 +83,12 @@ class TestObservabilityBuffer:
 
     def test_buffer_agent_metrics_accumulation(self):
         """Test agent metrics accumulate correctly."""
+        from src.observability.buffer import LLMCallBufferParams
         buffer = ObservabilityBuffer(flush_size=10, auto_flush=False)
 
         # Buffer multiple LLM calls for same agent
         for i in range(3):
-            buffer.buffer_llm_call(
+            buffer.buffer_llm_call(LLMCallBufferParams(
                 llm_call_id=f"llm-{i}",
                 agent_id="agent-1",
                 provider="ollama",
@@ -97,7 +100,7 @@ class TestObservabilityBuffer:
                 latency_ms=100,
                 estimated_cost_usd=0.001,
                 start_time=datetime.now(timezone.utc)
-            )
+            ))
 
         # Check metrics accumulated
         metrics = buffer.agent_metrics["agent-1"]
@@ -109,6 +112,7 @@ class TestObservabilityBuffer:
 
     def test_buffer_size_flush(self):
         """Test buffer flushes when size limit reached."""
+        from src.observability.buffer import LLMCallBufferParams
         flush_called = []
 
         def mock_flush(llm_calls, tool_calls, agent_metrics):
@@ -119,7 +123,7 @@ class TestObservabilityBuffer:
 
         # Add 5 LLM calls (should trigger flush)
         for i in range(5):
-            buffer.buffer_llm_call(
+            buffer.buffer_llm_call(LLMCallBufferParams(
                 llm_call_id=f"llm-{i}",
                 agent_id="agent-1",
                 provider="ollama",
@@ -131,7 +135,7 @@ class TestObservabilityBuffer:
                 latency_ms=100,
                 estimated_cost_usd=0.001,
                 start_time=datetime.now(timezone.utc)
-            )
+            ))
 
         # Should have flushed
         assert len(flush_called) == 1
@@ -139,6 +143,7 @@ class TestObservabilityBuffer:
 
     def test_buffer_manual_flush(self):
         """Test manual flush."""
+        from src.observability.buffer import LLMCallBufferParams
         flush_called = []
 
         def mock_flush(llm_calls, tool_calls, agent_metrics):
@@ -149,7 +154,7 @@ class TestObservabilityBuffer:
 
         # Add 3 LLM calls
         for i in range(3):
-            buffer.buffer_llm_call(
+            buffer.buffer_llm_call(LLMCallBufferParams(
                 llm_call_id=f"llm-{i}",
                 agent_id="agent-1",
                 provider="ollama",
@@ -161,7 +166,7 @@ class TestObservabilityBuffer:
                 latency_ms=100,
                 estimated_cost_usd=0.001,
                 start_time=datetime.now(timezone.utc)
-            )
+            ))
 
         # No auto flush yet
         assert len(flush_called) == 0
@@ -175,9 +180,10 @@ class TestObservabilityBuffer:
 
     def test_buffer_stats(self):
         """Test buffer statistics."""
+        from src.observability.buffer import LLMCallBufferParams
         buffer = ObservabilityBuffer(flush_size=10, auto_flush=False)
 
-        buffer.buffer_llm_call(
+        buffer.buffer_llm_call(LLMCallBufferParams(
             llm_call_id="llm-1",
             agent_id="agent-1",
             provider="ollama",
@@ -189,7 +195,7 @@ class TestObservabilityBuffer:
             latency_ms=100,
             estimated_cost_usd=0.001,
             start_time=datetime.now(timezone.utc)
-        )
+        ))
 
         stats = buffer.get_stats()
         assert stats["llm_calls_buffered"] == 1
@@ -320,6 +326,7 @@ class TestBufferContextManager:
 
     def test_buffer_context_manager(self, db):
         """Test buffer auto-flushes on context exit."""
+        from src.observability.buffer import LLMCallBufferParams
         flush_called = []
 
         def mock_flush(llm_calls, tool_calls, agent_metrics):
@@ -328,7 +335,7 @@ class TestBufferContextManager:
         with ObservabilityBuffer(flush_size=100, auto_flush=False) as buffer:
             buffer.set_flush_callback(mock_flush)
 
-            buffer.buffer_llm_call(
+            buffer.buffer_llm_call(LLMCallBufferParams(
                 llm_call_id="llm-1",
                 agent_id="agent-1",
                 provider="ollama",
@@ -340,7 +347,7 @@ class TestBufferContextManager:
                 latency_ms=100,
                 estimated_cost_usd=0.001,
                 start_time=datetime.now(timezone.utc)
-            )
+            ))
 
         # Should have flushed on exit
         assert len(flush_called) == 1

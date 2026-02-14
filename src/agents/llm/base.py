@@ -233,6 +233,12 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             cache_ttl = kwargs.get('cache_ttl', DEFAULT_CACHE_TTL)
             rate_limiter = kwargs.get('rate_limiter')
 
+        self._init_infrastructure(enable_cache, cache_ttl, rate_limiter)
+
+    def _init_infrastructure(
+        self, enable_cache: Any, cache_ttl: Any, rate_limiter: Any
+    ) -> None:
+        """Initialize clients, cache, circuit breaker, and rate limiter."""
         # Lazy initialization - clients created on first use
         self._client: Optional[httpx.Client] = None
         self._async_client: Optional[httpx.AsyncClient] = None

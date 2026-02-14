@@ -10,6 +10,8 @@ from typing import Any, Callable, Dict, Optional
 from src.agents.agent_factory import AgentFactory
 from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.compiler.executors._parallel_helpers import (
+    AgentNodeParams,
+    QualityGateFailureParams,
     build_collect_outputs_node,
     build_init_parallel_node,
     create_agent_node,
@@ -126,12 +128,13 @@ class ParallelStageExecutor(StageExecutor):
         nodes: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
         for agent_ref in agents:
             name = self._extract_agent_name(agent_ref)
-            nodes[name] = create_agent_node(
+            node_params = AgentNodeParams(
                 agent_name=name, agent_ref=agent_ref, stage_name=stage_name,
                 state=state, config_loader=config_loader,
                 agent_cache=self._agent_cache, agent_factory_cls=AgentFactory,
                 tracker=tracker, stage_id=stage_id,
             )
+            nodes[name] = create_agent_node(node_params)
         return nodes
 
     def _run_parallel_and_synthesize(
@@ -260,11 +263,12 @@ class ParallelStageExecutor(StageExecutor):
                     synthesis_result=synth, stage_config=stage_config,
                     stage_name=stage_name, state=state,
                 )
-                action = handle_quality_gate_failure(
+                failure_params = QualityGateFailureParams(
                     passed=passed, violations=violations, synthesis_result=synth,
                     stage_config=stage_config, stage_name=stage_name, state=state,
                     wall_clock_start=wc_start, wall_clock_timeout=wc_timeout,
                 )
+                action = handle_quality_gate_failure(failure_params)
                 if action == "continue":
                     continue
                 update_state_with_results(
@@ -347,7 +351,7 @@ class ParallelStageExecutor(StageExecutor):
         Returns:
             Callable node function that executes the agent
         """
-        return create_agent_node(
+        return create_agent_node(AgentNodeParams(
             agent_name=agent_name,
             agent_ref=agent_ref,
             stage_name=stage_name,
@@ -357,7 +361,7 @@ class ParallelStageExecutor(StageExecutor):
             agent_factory_cls=AgentFactory,
             tracker=tracker,
             stage_id=stage_id,
-        )
+        ))
 
     def _validate_quality_gates(
         self,

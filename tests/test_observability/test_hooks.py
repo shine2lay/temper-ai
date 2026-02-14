@@ -338,17 +338,18 @@ class TestExecutionHook:
         stage_id = hook.start_stage("test_stage", {}, workflow_id)
         agent_id = hook.start_agent("test_agent", {}, stage_id)
 
-        llm_call_id = hook.log_llm_call(
-            agent_id,
-            "ollama",
-            "llama3.2:3b",
-            "Hello",
-            "Hi there!",
-            10,
-            5,
-            250,
-            0.001
-        )
+        from src.observability.hooks import LLMCallParams
+        llm_call_id = hook.log_llm_call(LLMCallParams(
+            agent_id=agent_id,
+            provider="ollama",
+            model="llama3.2:3b",
+            prompt="Hello",
+            response="Hi there!",
+            prompt_tokens=10,
+            completion_tokens=5,
+            latency_ms=250,
+            cost=0.001
+        ))
 
         assert llm_call_id is not None
 
@@ -408,10 +409,12 @@ class TestExecutionHook:
         agent_id = hook.start_agent("agent1", {}, stage_id)
 
         # Log LLM and tool calls
-        hook.log_llm_call(
-            agent_id, "ollama", "llama3.2:3b",
-            "prompt", "response", 100, 50, 300, 0.005
-        )
+        from src.observability.hooks import LLMCallParams
+        hook.log_llm_call(LLMCallParams(
+            agent_id=agent_id, provider="ollama", model="llama3.2:3b",
+            prompt="prompt", response="response", prompt_tokens=100,
+            completion_tokens=50, latency_ms=300, cost=0.005
+        ))
         hook.log_tool_call(
             agent_id, "tool1", {}, {}, 0.1
         )

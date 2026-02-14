@@ -68,59 +68,17 @@ class DecisionTracker:
     def track(
         self,
         session: Any,
-        decision_type: str,
-        decision_data: Dict[str, Any],
-        outcome: str,
-        impact_metrics: Optional[Dict[str, Any]] = None,
-        lessons_learned: Optional[str] = None,
-        should_repeat: Optional[bool] = None,
-        tags: Optional[List[str]] = None,
-        agent_execution_id: Optional[str] = None,
-        stage_execution_id: Optional[str] = None,
-        workflow_execution_id: Optional[str] = None,
-        validation_method: Optional[str] = None,
-        validation_timestamp: Optional[datetime] = None,
-        validation_duration_seconds: Optional[float] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None
+        params: DecisionTrackingParams
     ) -> str:
         """Track a decision outcome and optionally update merit scores.
 
         Args:
             session: Database session for persistence
-            decision_type: Type of decision
-            decision_data: Decision details
-            outcome: Decision outcome ("success", "failure", "neutral", "mixed")
-            impact_metrics: Measured impact of decision
-            lessons_learned: What was learned
-            should_repeat: Whether to repeat in similar contexts
-            tags: Categorization tags
-            agent_execution_id: Related agent execution ID
-            stage_execution_id: Related stage execution ID
-            workflow_execution_id: Related workflow execution ID
-            validation_method: How outcome was validated
-            validation_timestamp: When outcome was validated
-            validation_duration_seconds: How long validation took
-            extra_metadata: Additional metadata
+            params: DecisionTrackingParams with all decision tracking parameters
 
         Returns:
             Decision ID or empty string on failure
         """
-        params = DecisionTrackingParams(
-            decision_type=decision_type,
-            decision_data=decision_data,
-            outcome=outcome,
-            impact_metrics=impact_metrics,
-            lessons_learned=lessons_learned,
-            should_repeat=should_repeat,
-            tags=tags,
-            agent_execution_id=agent_execution_id,
-            stage_execution_id=stage_execution_id,
-            workflow_execution_id=workflow_execution_id,
-            validation_method=validation_method,
-            validation_timestamp=validation_timestamp,
-            validation_duration_seconds=validation_duration_seconds,
-            extra_metadata=extra_metadata
-        )
 
         decision_id = f"decision-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 

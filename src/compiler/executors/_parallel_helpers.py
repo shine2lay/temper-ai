@@ -9,6 +9,7 @@ Contains:
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, cast
 
 from src.compiler.constants import ERROR_MSG_QUALITY_GATE_FAILED
@@ -25,6 +26,59 @@ from src.utils.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AgentNodeParams:
+    """Parameters for creating agent execution node (reduces 9 params to 7)."""
+    agent_name: str
+    agent_ref: Any
+    stage_name: str
+    state: Dict[str, Any]
+    config_loader: Any
+    agent_cache: Dict[str, Any]
+    agent_factory_cls: Any = None
+    tracker: Optional[Any] = None
+    stage_id: Optional[str] = None
+
+
+@dataclass
+class AgentRunParams:
+    """Parameters for running agent with/without tracking (reduces 8 params to 7)."""
+    agent: Any
+    input_data: Dict[str, Any]
+    context: Any
+    agent_name: str
+    agent_config_dict_for_tracking: Dict[str, Any]
+    tracker: Optional[Any]
+    stage_id: Optional[str]
+    effective_stage_id: str
+
+
+@dataclass
+class QualityGateRetryParams:
+    """Parameters for quality gate retry handling (reduces 8 params to 7)."""
+    quality_gates_config: Dict[str, Any]
+    stage_name: str
+    state: Dict[str, Any]
+    tracker: Any
+    synthesis_result: Any
+    violations: list
+    wall_clock_start: float
+    wall_clock_timeout: float
+
+
+@dataclass
+class QualityGateFailureParams:
+    """Parameters for quality gate failure handling (reduces 8 params to 7)."""
+    passed: bool
+    violations: list
+    synthesis_result: Any
+    stage_config: Any
+    stage_name: str
+    state: Dict[str, Any]
+    wall_clock_start: float
+    wall_clock_timeout: float
 
 
 def _prepare_agent_input(s: Dict[str, Any]) -> Dict[str, Any]:
@@ -205,49 +259,22 @@ def _create_agent_context(
     )
 
 
-def _run_agent(
-    agent: Any,
-    input_data: Dict[str, Any],
-    context: Any,
-    agent_name: str,
-    agent_config_dict_for_tracking: Dict[str, Any],
-    tracker: Optional[Any],
-    stage_id: Optional[str],
-    effective_stage_id: str,
-) -> Any:
+def _run_agent(params: AgentRunParams) -> Any:
     """Execute agent with or without tracking."""
-    if tracker and stage_id:
+    if params.tracker and params.stage_id:
         return _execute_agent_with_tracking(
-            agent, input_data, context, agent_name,
-            agent_config_dict_for_tracking, tracker, effective_stage_id
+            params.agent, params.input_data, params.context, params.agent_name,
+            params.agent_config_dict_for_tracking, params.tracker, params.effective_stage_id
         )
-    input_data.pop(StateKeys.TRACKER, None)
-    return agent.execute(input_data, context)
+    params.input_data.pop(StateKeys.TRACKER, None)
+    return params.agent.execute(params.input_data, params.context)
 
 
-def create_agent_node(
-    agent_name: str,
-    agent_ref: Any,
-    stage_name: str,
-    state: Dict[str, Any],
-    config_loader: Any,
-    agent_cache: Dict[str, Any],
-    agent_factory_cls: Any = None,
-    tracker: Optional[Any] = None,
-    stage_id: Optional[str] = None,
-) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
+def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     """Create execution node for a single agent in parallel execution.
 
     Args:
-        agent_name: Agent name
-        agent_ref: Agent reference from stage config
-        stage_name: Stage name
-        state: Workflow state (for context)
-        config_loader: ConfigLoader for loading agent configs
-        agent_cache: Per-workflow agent cache dict
-        agent_factory_cls: AgentFactory class (optional)
-        tracker: ExecutionTracker instance (optional)
-        stage_id: Stage execution ID (optional)
+        params: AgentNodeParams bundle containing all needed parameters
 
     Returns:
         Callable node function that executes the agent
@@ -257,38 +284,40 @@ def create_agent_node(
         start_time = time.time()
 
         try:
-            agent_factory = _resolve_agent_factory(agent_factory_cls)
+            agent_factory = _resolve_agent_factory(params.agent_factory_cls)
             agent, agent_config, agent_config_dict = _load_or_cache_agent(
-                agent_name, config_loader, agent_cache, agent_factory
+                params.agent_name, params.config_loader, params.agent_cache, agent_factory
             )
             input_data = _prepare_agent_input(s)
             agent_config_dict_for_tracking = _config_to_tracking_dict(agent_config, agent_config_dict)
-            effective_stage_id = stage_id if stage_id else f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
-            context = _create_agent_context(state, stage_name, agent_name, effective_stage_id)
+            effective_stage_id = params.stage_id if params.stage_id else f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
+            context = _create_agent_context(params.state, params.stage_name, params.agent_name, effective_stage_id)
 
-            response = _run_agent(
-                agent, input_data, context, agent_name,
-                agent_config_dict_for_tracking, tracker, stage_id, effective_stage_id
+            run_params = AgentRunParams(
+                agent=agent, input_data=input_data, context=context,
+                agent_name=params.agent_name, agent_config_dict_for_tracking=agent_config_dict_for_tracking,
+                tracker=params.tracker, stage_id=params.stage_id, effective_stage_id=effective_stage_id
             )
+            response = _run_agent(run_params)
 
             duration = time.time() - start_time
-            return _build_agent_success_result(agent_name, response, duration)
+            return _build_agent_success_result(params.agent_name, response, duration)
 
         except (ConfigNotFoundError, ConfigValidationError, ValueError, TypeError, KeyError) as e:
-            logger.info(f"Agent {agent_name} configuration/validation error: {e}")
+            logger.info(f"Agent {params.agent_name} configuration/validation error: {e}")
             duration = time.time() - start_time
-            return _build_agent_error_result(agent_name, e, duration)
+            return _build_agent_error_result(params.agent_name, e, duration)
 
         except (KeyboardInterrupt, SystemExit):
             raise
 
         except (RuntimeError, ToolExecutionError, LLMError, ValueError, TypeError) as e:
             logger.error(
-                f"Unexpected error in agent {agent_name}: {type(e).__name__}: {e}",
+                f"Unexpected error in agent {params.agent_name}: {type(e).__name__}: {e}",
                 exc_info=True
             )
             duration = time.time() - start_time
-            return _build_agent_error_result(agent_name, e, duration)
+            return _build_agent_error_result(params.agent_name, e, duration)
 
     return agent_node
 
@@ -570,16 +599,7 @@ def _reset_retry_counter_on_pass(
         )
 
 
-def _handle_quality_gate_retry(
-    quality_gates_config: Dict[str, Any],
-    stage_name: str,
-    state: Dict[str, Any],
-    tracker: Any,
-    synthesis_result: Any,
-    violations: list,
-    wall_clock_start: float,
-    wall_clock_timeout: float,
-) -> str:
+def _handle_quality_gate_retry(params: QualityGateRetryParams) -> str:
     """Handle retry_stage policy for quality gate failure.
 
     Returns:
@@ -588,63 +608,47 @@ def _handle_quality_gate_retry(
     Raises:
         RuntimeError: If max retries exhausted or wall-clock timeout exceeded.
     """
-    max_retries = quality_gates_config.get("max_retries", 2)
+    max_retries = params.quality_gates_config.get("max_retries", 2)
 
-    if StateKeys.STAGE_RETRY_COUNTS not in state:
-        state[StateKeys.STAGE_RETRY_COUNTS] = {}
+    if StateKeys.STAGE_RETRY_COUNTS not in params.state:
+        params.state[StateKeys.STAGE_RETRY_COUNTS] = {}
 
-    retry_count = state[StateKeys.STAGE_RETRY_COUNTS].get(stage_name, 0)
+    retry_count = params.state[StateKeys.STAGE_RETRY_COUNTS].get(params.stage_name, 0)
 
     if retry_count >= max_retries:
         raise RuntimeError(
-            f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}' after {retry_count} retries "
-            f"(max: {max_retries}). Final violations: {'; '.join(violations)}"
+            f"{ERROR_MSG_QUALITY_GATE_FAILED}{params.stage_name}' after {retry_count} retries "
+            f"(max: {max_retries}). Final violations: {'; '.join(params.violations)}"
         )
 
-    state[StateKeys.STAGE_RETRY_COUNTS][stage_name] = retry_count + 1
+    params.state[StateKeys.STAGE_RETRY_COUNTS][params.stage_name] = retry_count + 1
 
     _track_quality_gate_event(
-        tracker, "quality_gate_retry", stage_name,
-        synthesis_result, violations, quality_gates_config, retry_count
+        params.tracker, "quality_gate_retry", params.stage_name,
+        params.synthesis_result, params.violations, params.quality_gates_config, retry_count
     )
 
     _check_retry_timeout(
-        stage_name, wall_clock_start, wall_clock_timeout,
-        retry_count, violations
+        params.stage_name, params.wall_clock_start, params.wall_clock_timeout,
+        retry_count, params.violations
     )
 
-    elapsed = time.monotonic() - wall_clock_start
+    elapsed = time.monotonic() - params.wall_clock_start
     logger.warning(
-        f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}', retrying "
+        f"{ERROR_MSG_QUALITY_GATE_FAILED}{params.stage_name}', retrying "
         f"(attempt {retry_count + 2}/{max_retries + 1}, "
-        f"elapsed {elapsed:.1f}s/{wall_clock_timeout:.0f}s). "
-        f"Violations: {'; '.join(violations)}"
+        f"elapsed {elapsed:.1f}s/{params.wall_clock_timeout:.0f}s). "
+        f"Violations: {'; '.join(params.violations)}"
     )
 
     return "continue"
 
 
-def handle_quality_gate_failure(
-    passed: bool,
-    violations: list,
-    synthesis_result: Any,
-    stage_config: Any,
-    stage_name: str,
-    state: Dict[str, Any],
-    wall_clock_start: float,
-    wall_clock_timeout: float,
-) -> Optional[str]:
+def handle_quality_gate_failure(params: QualityGateFailureParams) -> Optional[str]:
     """Handle quality gate failures: escalate, warn, or prepare for retry.
 
     Args:
-        passed: Whether quality gates passed
-        violations: List of violation messages
-        synthesis_result: The synthesis result
-        stage_config: Stage configuration
-        stage_name: Stage name
-        state: Current workflow state
-        wall_clock_start: Start time for wall-clock timeout
-        wall_clock_timeout: Wall-clock timeout seconds
+        params: QualityGateFailureParams bundle containing all needed parameters
 
     Returns:
         "continue" if retry needed, None if passed or handled without retry
@@ -652,36 +656,39 @@ def handle_quality_gate_failure(
     Raises:
         RuntimeError: If escalation or retries exhausted
     """
-    _reset_retry_counter_on_pass(passed, state, stage_name)
+    _reset_retry_counter_on_pass(params.passed, params.state, params.stage_name)
 
-    if passed:
+    if params.passed:
         return None
 
-    stage_dict = stage_config if isinstance(stage_config, dict) else {}
+    stage_dict = params.stage_config if isinstance(params.stage_config, dict) else {}
     quality_gates_config = stage_dict.get("quality_gates", {})
     on_failure = quality_gates_config.get("on_failure", "retry_stage")
 
-    retry_count = state.get(StateKeys.STAGE_RETRY_COUNTS, {}).get(stage_name, 0)
+    retry_count = params.state.get(StateKeys.STAGE_RETRY_COUNTS, {}).get(params.stage_name, 0)
 
-    tracker = state.get(StateKeys.TRACKER)
+    tracker = params.state.get(StateKeys.TRACKER)
     _track_quality_gate_event(
-        tracker, "quality_gate_failure", stage_name,
-        synthesis_result, violations, quality_gates_config, retry_count
+        tracker, "quality_gate_failure", params.stage_name,
+        params.synthesis_result, params.violations, quality_gates_config, retry_count
     )
 
     if on_failure == "escalate":
-        _handle_quality_gate_escalate(stage_name, violations)
+        _handle_quality_gate_escalate(params.stage_name, params.violations)
         return None
 
     if on_failure == "proceed_with_warning":
-        _handle_quality_gate_warn(stage_name, violations, synthesis_result)
+        _handle_quality_gate_warn(params.stage_name, params.violations, params.synthesis_result)
         return None
 
     if on_failure == "retry_stage":
-        return _handle_quality_gate_retry(
-            quality_gates_config, stage_name, state, tracker,
-            synthesis_result, violations, wall_clock_start, wall_clock_timeout
+        retry_params = QualityGateRetryParams(
+            quality_gates_config=quality_gates_config, stage_name=params.stage_name,
+            state=params.state, tracker=tracker, synthesis_result=params.synthesis_result,
+            violations=params.violations, wall_clock_start=params.wall_clock_start,
+            wall_clock_timeout=params.wall_clock_timeout
         )
+        return _handle_quality_gate_retry(retry_params)
 
     return None
 

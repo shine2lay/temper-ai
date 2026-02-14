@@ -28,6 +28,10 @@ from src.agents._standard_agent_helpers import (
     build_final_response as _build_final_response,
 )
 from src.agents._standard_agent_helpers import (
+    ResponseBuildData,
+)
+from dataclasses import dataclass
+from src.agents._standard_agent_helpers import (
     estimate_cost_for_response as _estimate_cost_for_response,
 )
 from src.agents._standard_agent_helpers import (
@@ -195,28 +199,120 @@ def validate_input_data(
         )
 
 
+@dataclass
+class ExecutionTimeoutCheckParams:
+    """Parameters for checking execution timeout.
+
+    Bundles the multiple parameters needed for timeout checking,
+    reducing function parameter count from 8 to 2 (agent + params).
+    """
+    start_time: float
+    max_execution_time: float
+    llm_response: Optional[Any]
+    tool_calls_made: List[Dict[str, Any]]
+    total_tokens: int
+    total_cost: float
+    iteration: int
+
+
 def _check_execution_timeout(
-    start_time: float,
-    max_execution_time: float,
-    llm_response: Optional[Any],
+    agent: "StandardAgent",
+    params: ExecutionTimeoutCheckParams,
+) -> Optional[AgentResponse]:
+    """Check if execution time limit exceeded. Returns error response or None.
+
+    Args:
+        agent: StandardAgent instance
+        params: ExecutionTimeoutCheckParams with all parameters bundled
+
+    Returns:
+        AgentResponse if timeout exceeded, None otherwise
+    """
+    elapsed = time.time() - params.start_time
+    if elapsed >= params.max_execution_time:
+        data = ResponseBuildData(
+            output=params.llm_response.content if params.llm_response else "",
+            reasoning=extract_reasoning(params.llm_response.content) if params.llm_response else None,
+            tool_calls=params.tool_calls_made,
+            tokens=params.total_tokens,
+            cost=params.total_cost,
+            start_time=params.start_time,
+            error=f"Execution time limit exceeded ({params.max_execution_time}s)",
+            metadata={"elapsed_seconds": elapsed, "iteration": params.iteration}
+        )
+        return _build_final_response(agent, data=data)  # type: ignore[no-any-return]
+    return None
+
+
+def _handle_agent_error(
+    agent: "StandardAgent",
+    error: Exception,
     tool_calls_made: List[Dict[str, Any]],
     total_tokens: int,
     total_cost: float,
-    iteration: int,
-    agent: "StandardAgent"
-) -> Optional[AgentResponse]:
-    """Check if execution time limit exceeded. Returns error response or None."""
-    elapsed = time.time() - start_time
-    if elapsed >= max_execution_time:
-        return _build_final_response(  # type: ignore[no-any-return]
-            agent, output=llm_response.content if llm_response else "",
-            reasoning=extract_reasoning(llm_response.content) if llm_response else None,
-            tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
-            start_time=start_time,
-            error=f"Execution time limit exceeded ({max_execution_time}s)",
-            metadata={"elapsed_seconds": elapsed, "iteration": iteration}
-        )
-    return None
+    start_time: float,
+    async_mode: bool = False,
+) -> Any:
+    """Build error response for agent execution failures."""
+    safe_msg = sanitize_error_message(str(error))
+    label = "Agent async execution error" if async_mode else "Agent execution error"
+    logger.warning("%s: %s", label, safe_msg, exc_info=True)
+    return _build_final_response(
+        agent, output="", reasoning=None, tool_calls=tool_calls_made,
+        tokens=total_tokens, cost=total_cost, start_time=start_time,
+        error=f"Agent execution error: {safe_msg}"
+    )
+
+
+def _handle_llm_result(
+    agent: "StandardAgent",
+    llm_response: Optional[Any],
+    last_error: Optional[Exception],
+    inf_config: Any,
+    prompt: str,
+    tool_calls_made: List[Dict[str, Any]],
+    total_tokens: int,
+    total_cost: float,
+    start_time: float,
+    max_agent_retries: int,
+    max_iterations: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Handle LLM call result: error check, token tracking, response processing."""
+    if llm_response is None:
+        error_msg = f"LLM call failed after {max_agent_retries + 1} attempts"
+        if last_error:
+            error_msg += f": {sanitize_error_message(str(last_error))}"
+        return {
+            "complete": True,
+            "response": _build_final_response(
+                agent, output="", reasoning=None, tool_calls=tool_calls_made,
+                tokens=total_tokens, cost=total_cost, start_time=start_time,
+                error=error_msg
+            )
+        }
+
+    logger.info("[%s] LLM responded (%s tokens)", agent.name, llm_response.total_tokens or "?")
+
+    if llm_response.total_tokens:
+        total_tokens += llm_response.total_tokens
+    cost = _estimate_cost_for_response(agent, llm_response)
+    total_cost += cost
+
+    _track_llm_call(agent, inf_config, prompt, llm_response, cost)
+
+    from src.agents._standard_agent_helpers import LLMProcessingContext
+    ctx = LLMProcessingContext(
+        agent=agent,
+        llm_response=llm_response,
+        tool_calls_made=tool_calls_made,
+        total_tokens=total_tokens,
+        total_cost=total_cost,
+        start_time=start_time,
+        prompt=prompt,
+        max_iterations=max_iterations,
+        get_tool_executor_fn=_get_tool_executor
+    )
+    return _process_llm_response(ctx)
 
 
 def _call_llm_with_retry_sync(
@@ -423,17 +519,17 @@ class StandardAgent(BaseAgent):
             max_execution_time = self.config.agent.safety.max_execution_time_seconds
 
             for iteration in range(max_iterations):
-                timeout_response = _check_execution_timeout(
-                    start_time, max_execution_time, llm_response,
-                    tool_calls_made, total_tokens, total_cost, iteration, self
-                )
+                timeout_response = _check_execution_timeout(self, ExecutionTimeoutCheckParams(
+                    start_time=start_time, max_execution_time=max_execution_time,
+                    llm_response=llm_response, tool_calls_made=tool_calls_made,
+                    total_tokens=total_tokens, total_cost=total_cost, iteration=iteration,
+                ))
                 if timeout_response:
                     return timeout_response
 
                 iteration_result = self._execute_iteration(
                     prompt, total_tokens, total_cost, tool_calls_made, start_time, max_iterations
                 )
-
                 if iteration_result["complete"]:
                     return iteration_result["response"]  # type: ignore[no-any-return]
 
@@ -447,15 +543,8 @@ class StandardAgent(BaseAgent):
                 self, llm_response, tool_calls_made, total_tokens, total_cost,
                 start_time, max_iterations
             )
-
         except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:
-            safe_msg = sanitize_error_message(str(e))
-            logger.warning("Agent execution error: %s", safe_msg, exc_info=True)
-            return _build_final_response(  # type: ignore[no-any-return]
-                self, output="", reasoning=None, tool_calls=tool_calls_made,
-                tokens=total_tokens, cost=total_cost, start_time=start_time,
-                error=f"Agent execution error: {safe_msg}"
-            )
+            return _handle_agent_error(self, e, tool_calls_made, total_tokens, total_cost, start_time)  # type: ignore[return-value]
 
     async def aexecute(
         self,
@@ -479,17 +568,17 @@ class StandardAgent(BaseAgent):
             max_execution_time = self.config.agent.safety.max_execution_time_seconds
 
             for iteration in range(max_iterations):
-                timeout_response = _check_execution_timeout(
-                    start_time, max_execution_time, llm_response,
-                    tool_calls_made, total_tokens, total_cost, iteration, self
-                )
+                timeout_response = _check_execution_timeout(self, ExecutionTimeoutCheckParams(
+                    start_time=start_time, max_execution_time=max_execution_time,
+                    llm_response=llm_response, tool_calls_made=tool_calls_made,
+                    total_tokens=total_tokens, total_cost=total_cost, iteration=iteration,
+                ))
                 if timeout_response:
                     return timeout_response
 
                 iteration_result = await self._aexecute_iteration(
                     prompt, total_tokens, total_cost, tool_calls_made, start_time, max_iterations
                 )
-
                 if iteration_result["complete"]:
                     return iteration_result["response"]  # type: ignore[no-any-return]
 
@@ -503,15 +592,8 @@ class StandardAgent(BaseAgent):
                 self, llm_response, tool_calls_made, total_tokens, total_cost,
                 start_time, max_iterations
             )
-
         except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:
-            safe_msg = sanitize_error_message(str(e))
-            logger.warning("Agent async execution error: %s", safe_msg, exc_info=True)
-            return _build_final_response(  # type: ignore[no-any-return]
-                self, output="", reasoning=None, tool_calls=tool_calls_made,
-                tokens=total_tokens, cost=total_cost, start_time=start_time,
-                error=f"Agent execution error: {safe_msg}"
-            )
+            return _handle_agent_error(self, e, tool_calls_made, total_tokens, total_cost, start_time, async_mode=True)  # type: ignore[return-value]
 
     async def _aexecute_iteration(
         self,
@@ -539,43 +621,11 @@ class StandardAgent(BaseAgent):
             self, prompt, inf_config, max_agent_retries, retry_delay
         )
 
-        if llm_response is None:
-            error_msg = f"LLM call failed after {max_agent_retries + 1} attempts"
-            if last_error:
-                error_msg += f": {sanitize_error_message(str(last_error))}"
-            return {
-                "complete": True,
-                "response": _build_final_response(
-                    self, output="", reasoning=None, tool_calls=tool_calls_made,
-                    tokens=total_tokens, cost=total_cost, start_time=start_time,
-                    error=error_msg
-                )
-            }
-
-        logger.info("[%s] LLM responded (%s tokens)", self.name, llm_response.total_tokens or "?")
-
-        # Track tokens and cost
-        if llm_response.total_tokens:
-            total_tokens += llm_response.total_tokens
-        cost = _estimate_cost_for_response(self, llm_response)
-        total_cost += cost
-
-        _track_llm_call(self, inf_config, prompt, llm_response, cost)
-
-        # Process response: parse tool calls, execute if any
-        from src.agents._standard_agent_helpers import LLMProcessingContext
-        ctx = LLMProcessingContext(
-            agent=self,
-            llm_response=llm_response,
-            tool_calls_made=tool_calls_made,
-            total_tokens=total_tokens,
-            total_cost=total_cost,
-            start_time=start_time,
-            prompt=prompt,
-            max_iterations=max_iterations,
-            get_tool_executor_fn=_get_tool_executor
+        return _handle_llm_result(
+            self, llm_response, last_error, inf_config, prompt,
+            tool_calls_made, total_tokens, total_cost, start_time,
+            max_agent_retries, max_iterations,
         )
-        return _process_llm_response(ctx)
 
     def _execute_iteration(
         self,
@@ -603,43 +653,11 @@ class StandardAgent(BaseAgent):
             self, prompt, inf_config, max_agent_retries, retry_delay
         )
 
-        if llm_response is None:
-            error_msg = f"LLM call failed after {max_agent_retries + 1} attempts"
-            if last_error:
-                error_msg += f": {sanitize_error_message(str(last_error))}"
-            return {
-                "complete": True,
-                "response": _build_final_response(
-                    self, output="", reasoning=None, tool_calls=tool_calls_made,
-                    tokens=total_tokens, cost=total_cost, start_time=start_time,
-                    error=error_msg
-                )
-            }
-
-        logger.info("[%s] LLM responded (%s tokens)", self.name, llm_response.total_tokens or "?")
-
-        # Track tokens and cost
-        if llm_response.total_tokens:
-            total_tokens += llm_response.total_tokens
-        cost = _estimate_cost_for_response(self, llm_response)
-        total_cost += cost
-
-        _track_llm_call(self, inf_config, prompt, llm_response, cost)
-
-        # Process response: parse tool calls, execute if any
-        from src.agents._standard_agent_helpers import LLMProcessingContext
-        ctx = LLMProcessingContext(
-            agent=self,
-            llm_response=llm_response,
-            tool_calls_made=tool_calls_made,
-            total_tokens=total_tokens,
-            total_cost=total_cost,
-            start_time=start_time,
-            prompt=prompt,
-            max_iterations=max_iterations,
-            get_tool_executor_fn=_get_tool_executor
+        return _handle_llm_result(
+            self, llm_response, last_error, inf_config, prompt,
+            tool_calls_made, total_tokens, total_cost, start_time,
+            max_agent_retries, max_iterations,
         )
-        return _process_llm_response(ctx)
 
     def _render_base_template(
         self,

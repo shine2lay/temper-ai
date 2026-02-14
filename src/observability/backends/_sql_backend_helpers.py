@@ -70,7 +70,7 @@ _DEFAULT_VERSION = "1.0"
 
 
 @dataclass
-class SafetyViolationData:
+class SqlSafetyViolationParams:
     """Bundle parameters for safety violation tracking."""
     workflow_id: Optional[str]
     stage_id: Optional[str]
@@ -84,7 +84,7 @@ class SafetyViolationData:
 
 
 @dataclass
-class CollaborationEventParams:
+class SqlCollaborationEventParams:
     """Bundle parameters for collaboration event tracking."""
     stage_id: str
     event_type: str
@@ -108,7 +108,7 @@ def _ensure_timestamp_utc(timestamp: Optional[datetime]) -> datetime:
     return result
 
 
-def _build_violation_metadata(data: SafetyViolationData, timestamp_utc: datetime) -> Dict[str, Any]:
+def _build_violation_metadata(data: SqlSafetyViolationParams, timestamp_utc: datetime) -> Dict[str, Any]:
     """Build violation metadata dictionary."""
     return {
         "severity": data.violation_severity,
@@ -136,11 +136,11 @@ def _update_execution_metadata(
     return metadata
 
 
-def track_safety_violation(data: SafetyViolationData) -> None:
+def track_safety_violation(data: SqlSafetyViolationParams) -> None:
     """Track safety violation in SQL database.
 
     Args:
-        data: SafetyViolationData with all violation parameters
+        data: SqlSafetyViolationParams with all violation parameters
     """
     timestamp_utc = _ensure_timestamp_utc(data.timestamp)
     violation_metadata = _build_violation_metadata(data, timestamp_utc)
@@ -175,7 +175,7 @@ def track_safety_violation(data: SafetyViolationData) -> None:
 
 def _create_collaboration_event_record(
     event_id: str,
-    data: CollaborationEventParams,
+    data: SqlCollaborationEventParams,
     timestamp: datetime
 ) -> CollaborationEvent:
     """Create a CollaborationEvent ORM object."""
@@ -197,7 +197,7 @@ def _create_collaboration_event_record(
 def _handle_collaboration_integrity_error(
     e: IntegrityError,
     event_id: str,
-    data: CollaborationEventParams
+    data: SqlCollaborationEventParams
 ) -> None:
     """Handle IntegrityError from collaboration event tracking."""
     # Robust foreign key violation detection (supports multiple databases)
@@ -221,11 +221,11 @@ def _handle_collaboration_integrity_error(
         )
 
 
-def track_collaboration_event(data: CollaborationEventParams) -> str:
+def track_collaboration_event(data: SqlCollaborationEventParams) -> str:
     """Track collaboration event to SQL database.
 
     Args:
-        data: CollaborationEventParams with all event parameters
+        data: SqlCollaborationEventParams with all event parameters
 
     Returns:
         str: ID of created collaboration event record
@@ -834,7 +834,7 @@ class SQLDelegatedMethodsMixin:
         data: Optional[BackendSafetyViolationData] = None
     ) -> None:
         """Track safety violation."""
-        violation_data = SafetyViolationData(
+        violation_data = SqlSafetyViolationParams(
             workflow_id=data.workflow_id if data else None,
             stage_id=data.stage_id if data else None,
             agent_id=data.agent_id if data else None,
@@ -852,7 +852,7 @@ class SQLDelegatedMethodsMixin:
         data: Optional[BackendCollaborationEventData] = None
     ) -> str:
         """Track collaboration event."""
-        collab_data = CollaborationEventParams(
+        collab_data = SqlCollaborationEventParams(
             stage_id=stage_id,
             event_type=event_type,
             agents_involved=agents_involved,

@@ -286,9 +286,32 @@ async def _perform_token_exchange(
         ) from e
 
 
-async def exchange_code(
-    params: TokenExchangeParams,
-) -> Dict[str, Any]:
+def _check_exchange_rate_limit(params: TokenExchangeParams) -> None:
+    """Check rate limiting for token exchange."""
+    if params.ip_address:
+        try:
+            params.rate_limiter.check_token_exchange(params.ip_address)
+        except RateLimitExceeded:
+            logger.warning(f"Rate limit exceeded for token exchange: ip={params.ip_address}")
+            raise
+
+
+def _resolve_provider_and_token_endpoint(params: TokenExchangeParams) -> tuple:
+    """Resolve provider config and token endpoint, raising on errors."""
+    from src.auth.oauth.service import OAuthError
+
+    provider_config = params.config.get_provider_config(params.provider)
+    if not provider_config:
+        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{params.provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=params.provider)
+
+    endpoints = get_provider_endpoints(provider_config)
+    token_endpoint = endpoints[ENDPOINT_TOKEN]
+    if not token_endpoint:
+        raise OAuthError(f"Token endpoint not configured for provider '{params.provider}'", provider=params.provider)
+    return provider_config, token_endpoint
+
+
+async def exchange_code(params: TokenExchangeParams) -> Dict[str, Any]:
     """Exchange authorization code for access/refresh tokens.
 
     Args:
@@ -302,29 +325,14 @@ async def exchange_code(
         OAuthProviderError: If token exchange fails
         RateLimitExceeded: If rate limit exceeded
     """
-    from src.auth.oauth.service import OAuthError
-
-    # Rate limiting
-    if params.ip_address:
-        try:
-            params.rate_limiter.check_token_exchange(params.ip_address)
-        except RateLimitExceeded:
-            logger.warning(f"Rate limit exceeded for token exchange: ip={params.ip_address}")
-            raise
+    _check_exchange_rate_limit(params)
 
     # Validate state and get provider config
     state_data = await validate_state(params.state, params.provider, params.state_store)
     user_id = state_data['user_id']
     code_verifier = state_data[FIELD_CODE_VERIFIER]
 
-    provider_config = params.config.get_provider_config(params.provider)
-    if not provider_config:
-        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{params.provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=params.provider)
-
-    endpoints = get_provider_endpoints(provider_config)
-    token_endpoint = endpoints[ENDPOINT_TOKEN]
-    if not token_endpoint:
-        raise OAuthError(f"Token endpoint not configured for provider '{params.provider}'", provider=params.provider)
+    provider_config, token_endpoint = _resolve_provider_and_token_endpoint(params)
 
     # Prepare and execute token exchange
     token_data = {
@@ -335,7 +343,6 @@ async def exchange_code(
         'grant_type': 'authorization_code',
         FIELD_CODE_VERIFIER: code_verifier,
     }
-
     tokens = await _perform_token_exchange(params.http_client, token_endpoint, token_data, params.provider)
 
     # Store tokens
@@ -345,7 +352,6 @@ async def exchange_code(
     logger.info(
         f"Successfully exchanged OAuth code for tokens: provider={params.provider}{LOG_USER_SEPARATOR}{user_id}"
     )
-
     tokens['_flow_user_id'] = user_id
     return tokens
 

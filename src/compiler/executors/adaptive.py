@@ -2,6 +2,7 @@
 
 Starts with parallel execution, switches to sequential if disagreement is high.
 """
+from dataclasses import dataclass
 from typing import Any, Dict, Optional, cast
 
 from src.compiler.constants import (
@@ -19,32 +20,49 @@ from src.compiler.executors.sequential import SequentialStageExecutor
 from src.constants.probabilities import PROB_MEDIUM
 
 
-def _execute_parallel_with_switch_check(
-    parallel_executor: Any,
-    stage_name: str,
-    stage_config: Any,
-    state: Dict[str, Any],
-    config_loader: Any,
-    tool_registry: Optional[Any],
-    disagreement_threshold: float,
+@dataclass
+class ParallelSwitchCheckParams:
+    """Parameters for parallel execution with switch checking (reduces 8 params to 7)."""
+    parallel_executor: Any
+    stage_name: str
+    stage_config: Any
+    state: Dict[str, Any]
+    config_loader: Any
+    tool_registry: Optional[Any]
+    disagreement_threshold: float
     tracker: Optional[Any]
-) -> tuple[Dict[str, Any], bool, float, Dict[str, Any]]:
+
+
+@dataclass
+class ParallelErrorHandlerParams:
+    """Parameters for parallel error handling (reduces 8 params to 7)."""
+    e: Exception
+    stage_name: str
+    stage_config: Any
+    state: Dict[str, Any]
+    config_loader: Any
+    tool_registry: Optional[Any]
+    disagreement_threshold: float
+    tracker: Optional[Any]
+
+
+def _execute_parallel_with_switch_check(params: ParallelSwitchCheckParams) -> tuple[Dict[str, Any], bool, float, Dict[str, Any]]:
     """Execute parallel and check if mode switch needed.
 
     Returns:
         Tuple of (parallel_state, should_switch, disagreement_rate, mode_metadata)
     """
     # Execute parallel
-    parallel_state = parallel_executor.execute_stage(
-        stage_name=stage_name,
-        stage_config=stage_config,
-        state=state,
-        config_loader=config_loader,
-        tool_registry=tool_registry
+    parallel_state = params.parallel_executor.execute_stage(
+        stage_name=params.stage_name,
+        stage_config=params.stage_config,
+        state=params.state,
+        config_loader=params.config_loader,
+        tool_registry=params.tool_registry
     )
 
     # Get synthesis result
-    stage_output = parallel_state["stage_outputs"][stage_name]
+    stage_output = parallel_state["stage_outputs"][params.stage_name]
     synthesis_info = stage_output.get("synthesis", {})
 
     # Calculate disagreement
@@ -61,23 +79,23 @@ def _execute_parallel_with_switch_check(
         ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
         ADAPTIVE_META_SWITCHED_TO: None,
         ADAPTIVE_META_DISAGREEMENT_RATE: disagreement_rate,
-        "disagreement_threshold": disagreement_threshold
+        "disagreement_threshold": params.disagreement_threshold
     }
 
     # Check if switch needed
-    should_switch = disagreement_rate > disagreement_threshold
+    should_switch = disagreement_rate > params.disagreement_threshold
 
-    if should_switch and tracker and hasattr(tracker, 'track_collaboration_event'):
-        tracker.track_collaboration_event(
+    if should_switch and params.tracker and hasattr(params.tracker, 'track_collaboration_event'):
+        params.tracker.track_collaboration_event(
             event_type="adaptive_mode_switch",
-            stage_name=stage_name,
+            stage_name=params.stage_name,
             agents=list(stage_output.get("agent_outputs", {}).keys()),
             decision=None,
             confidence=None,
             metadata={
                 "reason": "disagreement_threshold_exceeded",
                 ADAPTIVE_META_DISAGREEMENT_RATE: disagreement_rate,
-                "threshold": disagreement_threshold,
+                "threshold": params.disagreement_threshold,
                 "switching_from": EXECUTION_MODE_PARALLEL,
                 "switching_to": EXECUTION_MODE_SEQUENTIAL
             }
@@ -164,44 +182,34 @@ class AdaptiveStageExecutor(StageExecutor):
             sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = mode_metadata
         return sequential_state
 
-    def _handle_parallel_error(
-        self,
-        e: Exception,
-        stage_name: str,
-        stage_config: Any,
-        state: Dict[str, Any],
-        config_loader: ConfigLoaderProtocol,
-        tool_registry: Optional[DomainToolRegistryProtocol],
-        disagreement_threshold: float,
-        tracker: Optional[Any],
-    ) -> Dict[str, Any]:
+    def _handle_parallel_error(self, params: ParallelErrorHandlerParams) -> Dict[str, Any]:
         """Handle parallel execution failure by falling back to sequential."""
         error_mode_metadata = {
             ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
             ADAPTIVE_META_SWITCHED_TO: EXECUTION_MODE_SEQUENTIAL,
             ADAPTIVE_META_DISAGREEMENT_RATE: None,
-            "disagreement_threshold": disagreement_threshold,
-            "error": str(e)
+            "disagreement_threshold": params.disagreement_threshold,
+            "error": str(params.e)
         }
 
-        if tracker and hasattr(tracker, 'track_collaboration_event'):
-            tracker.track_collaboration_event(
+        if params.tracker and hasattr(params.tracker, 'track_collaboration_event'):
+            params.tracker.track_collaboration_event(
                 event_type="adaptive_mode_switch",
-                stage_name=stage_name,
+                stage_name=params.stage_name,
                 agents=[],
                 decision=None,
                 confidence=None,
                 metadata={
                     "reason": "parallel_execution_failed",
-                    "error": str(e),
+                    "error": str(params.e),
                     "switching_from": EXECUTION_MODE_PARALLEL,
                     "switching_to": EXECUTION_MODE_SEQUENTIAL
                 }
             )
 
         return self._fallback_to_sequential(
-            stage_name, stage_config, state, config_loader,
-            tool_registry, error_mode_metadata
+            params.stage_name, params.stage_config, params.state, params.config_loader,
+            params.tool_registry, error_mode_metadata
         )
 
     def execute_stage(
@@ -242,11 +250,14 @@ class AdaptiveStageExecutor(StageExecutor):
         disagreement_threshold = adaptive_config.get("disagreement_threshold", PROB_MEDIUM)
 
         try:
+            switch_params = ParallelSwitchCheckParams(
+                parallel_executor=self.parallel_executor, stage_name=stage_name,
+                stage_config=stage_config, state=state, config_loader=config_loader,
+                tool_registry=tool_registry, disagreement_threshold=disagreement_threshold,
+                tracker=tracker
+            )
             parallel_state, should_switch, disagreement_rate, mode_metadata = (
-                _execute_parallel_with_switch_check(
-                    self.parallel_executor, stage_name, stage_config, state,
-                    config_loader, tool_registry, disagreement_threshold, tracker
-                )
+                _execute_parallel_with_switch_check(switch_params)
             )
 
             if should_switch:
@@ -264,10 +275,12 @@ class AdaptiveStageExecutor(StageExecutor):
             return parallel_state
 
         except (KeyError, TypeError, AttributeError, ValueError, RuntimeError) as e:
-            return self._handle_parallel_error(
-                e, stage_name, stage_config, state, config_loader,
-                tool_registry, disagreement_threshold, tracker
+            error_params = ParallelErrorHandlerParams(
+                e=e, stage_name=stage_name, stage_config=stage_config,
+                state=state, config_loader=config_loader, tool_registry=tool_registry,
+                disagreement_threshold=disagreement_threshold, tracker=tracker
             )
+            return self._handle_parallel_error(error_params)
 
     def supports_stage_type(self, stage_type: str) -> bool:
         """Check if executor supports this stage type.

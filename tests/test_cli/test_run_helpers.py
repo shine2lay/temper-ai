@@ -428,10 +428,12 @@ class TestExecuteWorkflow:
 
     def test_execute_workflow_success(self, mock_console):
         """Test successful workflow execution."""
+        from src.cli.main import WorkflowExecutionParams
+
         mock_compiled = Mock()
         mock_compiled.invoke.return_value = {"status": "completed", "result": "success"}
 
-        result = _execute_workflow(
+        params = WorkflowExecutionParams(
             compiled=mock_compiled,
             workflow_config={"workflow": {"name": "test"}},
             inputs={"topic": "test"},
@@ -443,12 +445,15 @@ class TestExecuteWorkflow:
             engine=Mock(),
             verbose=False
         )
+        result = _execute_workflow(params)
 
         assert result["status"] == "completed"
         mock_compiled.invoke.assert_called_once()
 
     def test_execute_workflow_with_stream_display(self, mock_console):
         """Test workflow execution with stream display enabled."""
+        from src.cli.main import WorkflowExecutionParams
+
         mock_compiled = Mock()
         mock_compiled.invoke.return_value = {"status": "completed"}
 
@@ -456,7 +461,7 @@ class TestExecuteWorkflow:
             mock_stream_display = Mock()
             mock_stream_display_class.return_value = mock_stream_display
 
-            result = _execute_workflow(
+            params = WorkflowExecutionParams(
                 compiled=mock_compiled,
                 workflow_config={},
                 inputs={},
@@ -468,6 +473,7 @@ class TestExecuteWorkflow:
                 engine=Mock(),
                 verbose=False
             )
+            result = _execute_workflow(params)
 
             mock_stream_display_class.assert_called_once()
             # Verify stream_callback was passed in state
@@ -477,13 +483,15 @@ class TestExecuteWorkflow:
 
     def test_execute_workflow_stage_error(self, mock_console):
         """Test workflow execution with stage error."""
+        from src.cli.main import WorkflowExecutionParams
+
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = WorkflowStageError("stage1", "Test error")
         mock_engine = Mock()
 
         with patch("src.cli.main._cleanup_tool_executor") as mock_cleanup:
             with pytest.raises(SystemExit) as exc_info:
-                _execute_workflow(
+                params = WorkflowExecutionParams(
                     compiled=mock_compiled,
                     workflow_config={},
                     inputs={},
@@ -495,19 +503,22 @@ class TestExecuteWorkflow:
                     engine=mock_engine,
                     verbose=False
                 )
+                _execute_workflow(params)
 
             assert exc_info.value.code == 1
             mock_cleanup.assert_called_once_with(mock_engine)
 
     def test_execute_workflow_runtime_error(self, mock_console):
         """Test workflow execution with runtime error."""
+        from src.cli.main import WorkflowExecutionParams
+
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = RuntimeError("Execution failed")
         mock_engine = Mock()
 
         with patch("src.cli.main._cleanup_tool_executor") as mock_cleanup:
             with pytest.raises(SystemExit) as exc_info:
-                _execute_workflow(
+                params = WorkflowExecutionParams(
                     compiled=mock_compiled,
                     workflow_config={},
                     inputs={},
@@ -519,18 +530,21 @@ class TestExecuteWorkflow:
                     engine=mock_engine,
                     verbose=False
                 )
+                _execute_workflow(params)
 
             assert exc_info.value.code == 1
             mock_cleanup.assert_called_once_with(mock_engine)
 
     def test_execute_workflow_value_error(self, mock_console):
         """Test workflow execution with value error."""
+        from src.cli.main import WorkflowExecutionParams
+
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = ValueError("Invalid value")
 
         with patch("src.cli.main._cleanup_tool_executor"):
             with pytest.raises(SystemExit) as exc_info:
-                _execute_workflow(
+                params = WorkflowExecutionParams(
                     compiled=mock_compiled,
                     workflow_config={},
                     inputs={},
@@ -542,11 +556,14 @@ class TestExecuteWorkflow:
                     engine=Mock(),
                     verbose=False
                 )
+                _execute_workflow(params)
 
             assert exc_info.value.code == 1
 
     def test_execute_workflow_keyboard_interrupt(self, mock_console):
         """Test workflow execution handles keyboard interrupt."""
+        from src.cli.main import WorkflowExecutionParams
+
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = KeyboardInterrupt()
         mock_engine = Mock()
@@ -554,7 +571,7 @@ class TestExecuteWorkflow:
         with patch("src.cli.main._cleanup_tool_executor") as mock_cleanup, \
              patch("src.cli.main.EXIT_CODE_KEYBOARD_INTERRUPT", 130):
             with pytest.raises(SystemExit) as exc_info:
-                _execute_workflow(
+                params = WorkflowExecutionParams(
                     compiled=mock_compiled,
                     workflow_config={},
                     inputs={},
@@ -566,17 +583,20 @@ class TestExecuteWorkflow:
                     engine=mock_engine,
                     verbose=False
                 )
+                _execute_workflow(params)
 
             assert exc_info.value.code == 130
             mock_cleanup.assert_called_once_with(mock_engine)
 
     def test_execute_workflow_system_exit_passthrough(self):
         """Test that SystemExit is passed through."""
+        from src.cli.main import WorkflowExecutionParams
+
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = SystemExit(42)
 
         with pytest.raises(SystemExit) as exc_info:
-            _execute_workflow(
+            params = WorkflowExecutionParams(
                 compiled=mock_compiled,
                 workflow_config={},
                 inputs={},
@@ -588,6 +608,7 @@ class TestExecuteWorkflow:
                 engine=Mock(),
                 verbose=False
             )
+            _execute_workflow(params)
 
         assert exc_info.value.code == 42
 
@@ -889,10 +910,12 @@ class TestIntegration:
                 )
 
             # Execute workflow
+            from src.cli.main import WorkflowExecutionParams
+
             mock_compiled = Mock()
             mock_compiled.invoke.return_value = {"status": "completed"}
 
-            result = _execute_workflow(
+            params = WorkflowExecutionParams(
                 compiled=mock_compiled,
                 workflow_config={},
                 inputs={},
@@ -904,17 +927,20 @@ class TestIntegration:
                 engine=Mock(),
                 verbose=False
             )
+            result = _execute_workflow(params)
 
             assert result["status"] == "completed"
 
     def test_execute_and_post_execution_with_output(self, tmp_path, mock_console):
         """Test workflow execution followed by post-execution handling with output."""
+        from src.cli.main import WorkflowExecutionParams
+
         # Execute
         mock_compiled = Mock()
         result = {"status": "completed", "duration": 5.5}
         mock_compiled.invoke.return_value = result
 
-        exec_result = _execute_workflow(
+        params = WorkflowExecutionParams(
             compiled=mock_compiled,
             workflow_config={},
             inputs={},
@@ -926,6 +952,7 @@ class TestIntegration:
             engine=Mock(),
             verbose=False
         )
+        exec_result = _execute_workflow(params)
 
         # Post-execution
         output_path = tmp_path / "result.json"

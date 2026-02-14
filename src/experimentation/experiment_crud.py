@@ -50,6 +50,34 @@ class ExperimentParams:
     extra_kwargs: Dict[str, Any] = field(default_factory=dict)
 
 
+def _build_experiment_model(
+    experiment_id: str,
+    validated_name: str,
+    params: ExperimentParams,
+    traffic_allocation: Dict[str, float],
+    kwargs: Dict[str, Any],
+) -> Experiment:
+    """Build an Experiment model from validated params."""
+    return Experiment(
+        id=experiment_id,
+        name=validated_name,
+        description=params.description,
+        status=ExperimentStatus.DRAFT,
+        assignment_strategy=AssignmentStrategyType(params.assignment_strategy),
+        traffic_allocation=traffic_allocation,
+        primary_metric=params.primary_metric,
+        secondary_metrics=params.secondary_metrics or [],
+        guardrail_metrics=params.guardrail_metrics,
+        confidence_level=params.confidence_level,
+        min_sample_size_per_variant=params.min_sample_size_per_variant,
+        tags=kwargs.get("tags", []),
+        created_by=kwargs.get("created_by"),
+        extra_metadata=kwargs.get("extra_metadata"),
+        created_at=utcnow(),
+        updated_at=utcnow(),
+    )
+
+
 class ExperimentCRUD:
     """
     Handles experiment CRUD operations with thread-safe caching.
@@ -212,33 +240,12 @@ class ExperimentCRUD:
                 "This may be due to a duplicate name or other constraint violation."
             )
 
-    def create_experiment(
-        self,
-        name: str,
-        description: str,
-        variants: List[Dict[str, Any]],
-        assignment_strategy: str = "random",
-        primary_metric: str = "duration_seconds",
-        secondary_metrics: Optional[List[str]] = None,
-        guardrail_metrics: Optional[List[Dict[str, Any]]] = None,
-        confidence_level: float = DEFAULT_CREDIBLE_LEVEL,
-        min_sample_size_per_variant: int = THRESHOLD_LARGE_COUNT,
-        **kwargs: Any
-    ) -> str:
+    def create_experiment(self, params: ExperimentParams) -> str:
         """
         Create new experiment with variants.
 
         Args:
-            name: Unique experiment name
-            description: Experiment description/hypothesis
-            variants: List of variant configurations
-            assignment_strategy: Assignment strategy ("random", "hash", etc.)
-            primary_metric: Primary success metric
-            secondary_metrics: Additional metrics to track
-            guardrail_metrics: Safety constraints
-            confidence_level: Statistical confidence level
-            min_sample_size_per_variant: Minimum samples before analysis
-            **kwargs: Additional experiment metadata
+            params: ExperimentParams with all experiment configuration
 
         Returns:
             experiment_id: UUID of created experiment
@@ -246,18 +253,6 @@ class ExperimentCRUD:
         Raises:
             ValueError: If experiment configuration is invalid
         """
-        params = ExperimentParams(
-            name=name,
-            description=description,
-            variants=variants,
-            assignment_strategy=assignment_strategy,
-            primary_metric=primary_metric,
-            secondary_metrics=secondary_metrics,
-            guardrail_metrics=guardrail_metrics,
-            confidence_level=confidence_level,
-            min_sample_size_per_variant=min_sample_size_per_variant,
-            extra_kwargs=kwargs,
-        )
 
         # Validate parameters
         validated_name = self._validate_experiment_params(params)
@@ -268,34 +263,17 @@ class ExperimentCRUD:
         # Calculate traffic allocation
         traffic_allocation = self._calculate_traffic_allocation(validated_variants)
 
-        # Create experiment
+        # Create and persist
         experiment_id = str(uuid.uuid4())
-        experiment = Experiment(
-            id=experiment_id,
-            name=validated_name,
-            description=params.description,
-            status=ExperimentStatus.DRAFT,
-            assignment_strategy=AssignmentStrategyType(params.assignment_strategy),
-            traffic_allocation=traffic_allocation,
-            primary_metric=params.primary_metric,
-            secondary_metrics=params.secondary_metrics or [],
-            guardrail_metrics=params.guardrail_metrics,
-            confidence_level=params.confidence_level,
-            min_sample_size_per_variant=params.min_sample_size_per_variant,
-            tags=kwargs.get("tags", []),
-            created_by=kwargs.get("created_by"),
-            extra_metadata=kwargs.get("extra_metadata"),
-            created_at=utcnow(),
-            updated_at=utcnow(),
+        experiment = _build_experiment_model(
+            experiment_id, validated_name, params, traffic_allocation, params.extra_kwargs
         )
-
-        # Create variants
         variant_models = self._create_variant_models(
             experiment_id, validated_variants, traffic_allocation
         )
-
-        # Save to database
-        self._persist_experiment(experiment, variant_models, validated_name, kwargs)
+        self._persist_experiment(
+            experiment, variant_models, validated_name, params.extra_kwargs
+        )
 
         logger.info(f"Created experiment: {validated_name} (ID: {experiment_id})")
         return experiment_id

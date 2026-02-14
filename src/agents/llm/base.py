@@ -30,22 +30,12 @@ from src.agents.constants import (
 from src.agents.llm._base_helpers import (
     LLMContextManagerMixin,
     bind_callable_attributes as _bind_callable_attributes,
-    build_bearer_auth_headers,
-)
-from src.agents.llm._base_helpers import (
-    cache_response as _cache_response,
-)
-from src.agents.llm._base_helpers import (
-    check_cache as _check_cache,
 )
 from src.agents.llm._base_helpers import (
     close_async as _close_async,
 )
 from src.agents.llm._base_helpers import (
     close_sync as _close_sync,
-)
-from src.agents.llm._base_helpers import (
-    execute_and_parse as _execute_and_parse,
 )
 from src.agents.llm._base_helpers import (
     get_or_create_async_client_safe as _get_async_client_safe,
@@ -64,15 +54,6 @@ from src.agents.llm._base_helpers import (
 )
 from src.agents.llm._base_helpers import (
     reset_shared_http_clients as _reset_shared_http,
-)
-from src.agents.llm._base_helpers import (
-    execute_streaming_async_impl as _execute_streaming_async_impl,
-)
-from src.agents.llm._base_helpers import (
-    execute_streaming_impl as _execute_streaming_impl,
-)
-from src.agents.llm._base_helpers import (
-    make_streaming_call_impl as _make_streaming_call_impl,
 )
 from src.agents.llm._base_helpers import (
     validate_base_url as _validate_base_url,

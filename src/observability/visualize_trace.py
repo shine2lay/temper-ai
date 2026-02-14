@@ -607,7 +607,7 @@ def visualize_trace(
     return fig
 
 
-def _build_arg_parser() -> "argparse.ArgumentParser":
+def _build_arg_parser():
     """Build the CLI argument parser for trace visualization."""
     import argparse
 

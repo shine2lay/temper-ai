@@ -6,12 +6,10 @@ using weakref.finalize() to prevent thread leaks.
 """
 from __future__ import annotations
 
-import time
 import threading
 import weakref
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Dict, Optional, Union
 from src.constants.limits import MIN_WORKERS
 from src.tools._executor_config import ToolExecutorConfig
@@ -19,18 +17,12 @@ from src.tools._executor_helpers import (
     acquire_concurrent_slot,
     check_rate_limit,
     create_snapshot,
-    execute_tool_internal,
     execute_with_timeout,
     handle_approval_rejection,
-    handle_auto_rollback,
     handle_exception_rollback,
-    handle_timeout_rollback,
     release_concurrent_slot,
-    should_snapshot,
     validate_and_get_tool,
     validate_policy,
-    validate_workspace_path,
-    wait_for_approval,
 )
 from src.tools._executor_helpers import (
     execute_batch as _execute_batch,

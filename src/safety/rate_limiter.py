@@ -25,6 +25,7 @@ from src.constants.durations import (
     SECONDS_PER_HOUR,
     SECONDS_PER_MINUTE,
 )
+
 # Default rate limit values
 DEFAULT_MAX_CALLS_PER_MINUTE = 100  # scanner: skip-magic
 DEFAULT_MAX_CALLS_PER_HOUR = 5000  # scanner: skip-magic

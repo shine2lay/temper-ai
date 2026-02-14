@@ -25,8 +25,9 @@ def _save_checkpoint_on_interval(
     workflow_id: str
 ) -> None:
     """Save checkpoint and track event."""
-    from src.compiler.domain_state import WorkflowDomainState
     import dataclasses
+
+    from src.compiler.domain_state import WorkflowDomainState
 
     domain_fields = {f.name for f in dataclasses.fields(WorkflowDomainState)}
     domain_dict = {k: v for k, v in final_state.items() if k in domain_fields}
@@ -54,8 +55,9 @@ def _save_checkpoint_on_error(
     stage_count: int
 ) -> None:
     """Save checkpoint on error and log."""
-    from src.compiler.domain_state import WorkflowDomainState
     import dataclasses
+
+    from src.compiler.domain_state import WorkflowDomainState
 
     try:
         domain_fields = {f.name for f in dataclasses.fields(WorkflowDomainState)}

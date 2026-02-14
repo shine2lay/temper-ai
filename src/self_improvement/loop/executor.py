@@ -18,6 +18,10 @@ from src.self_improvement.deployment.rollback_monitor import (
 )
 from src.self_improvement.detection.improvement_detector import ImprovementDetector
 from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
+from src.self_improvement.loop._executor_helpers import (
+    DeployPhaseParams,
+    StrategyPhaseParams,
+)
 
 # Helper functions extracted to reduce class size
 from src.self_improvement.loop._executor_helpers import (
@@ -27,14 +31,10 @@ from src.self_improvement.loop._executor_helpers import (
     create_winner_result as _create_winner_result,
 )
 from src.self_improvement.loop._executor_helpers import (
-    DeployPhaseParams,
     execute_deploy_phase as _execute_deploy_phase,
 )
 from src.self_improvement.loop._executor_helpers import (
     execute_strategy_phase as _execute_strategy_phase,
-)
-from src.self_improvement.loop._executor_helpers import (
-    StrategyPhaseParams,
 )
 from src.self_improvement.pattern_mining import PatternMiner
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer

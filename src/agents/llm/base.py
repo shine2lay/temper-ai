@@ -29,6 +29,8 @@ from src.agents.constants import (
 # Helper functions extracted to reduce class size
 from src.agents.llm._base_helpers import (
     LLMContextManagerMixin,
+)
+from src.agents.llm._base_helpers import (
     bind_callable_attributes as _bind_callable_attributes,
 )
 from src.agents.llm._base_helpers import (

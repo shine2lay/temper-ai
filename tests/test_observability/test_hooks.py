@@ -14,7 +14,7 @@ from src.observability.hooks import (
     track_workflow,
 )
 from src.observability.models import AgentExecution, StageExecution, WorkflowExecution
-from src.observability.tracker import ExecutionTracker
+from src.observability.tracker import ExecutionTracker, WorkflowTrackingParams
 
 
 @pytest.fixture(autouse=True)
@@ -522,7 +522,7 @@ class TestParameterInspection:
         tracker = get_tracker()
 
         # Create a real workflow so FK constraint is satisfied
-        with tracker.track_workflow("parent_wf", {}) as wf_id:
+        with tracker.track_workflow(WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})) as wf_id:
             @track_stage("test")
             def run(config, workflow_id=None, stage_id=None):
                 received["stage_id"] = stage_id
@@ -536,7 +536,7 @@ class TestParameterInspection:
         received = {}
         tracker = get_tracker()
 
-        with tracker.track_workflow("parent_wf", {}) as wf_id:
+        with tracker.track_workflow(WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})) as wf_id:
             @track_stage("test")
             def run(config, workflow_id=None):
                 stage_id = "my_local_stage"  # noqa: F841
@@ -551,7 +551,7 @@ class TestParameterInspection:
         received = {}
         tracker = get_tracker()
 
-        with tracker.track_workflow("parent_wf", {}) as wf_id:
+        with tracker.track_workflow(WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})) as wf_id:
             with tracker.track_stage("parent_st", {}, wf_id) as st_id:
                 @track_agent("test")
                 def run(config, stage_id=None, agent_id=None):
@@ -566,7 +566,7 @@ class TestParameterInspection:
         received = {}
         tracker = get_tracker()
 
-        with tracker.track_workflow("parent_wf", {}) as wf_id:
+        with tracker.track_workflow(WorkflowTrackingParams(workflow_name="parent_wf", workflow_config={})) as wf_id:
             with tracker.track_stage("parent_st", {}, wf_id) as st_id:
                 @track_agent("test")
                 def run(config, stage_id=None):

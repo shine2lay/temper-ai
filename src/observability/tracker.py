@@ -10,7 +10,6 @@ import threading
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
 from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional
 
 if TYPE_CHECKING:
@@ -19,20 +18,36 @@ if TYPE_CHECKING:
 from src.core.context import ExecutionContext
 from src.database.datetime_utils import utcnow
 from src.observability._tracker_helpers import (
-    TrackerCollaborationMixin,
-    build_extra_metadata as _build_extra_metadata,
-    get_stack_trace,
-    handle_agent_error as _handle_agent_error,
-    handle_agent_success as _handle_agent_success,
-    handle_stage_error as _handle_stage_error,
-    handle_stage_success as _handle_stage_success,
-    handle_workflow_error as _handle_workflow_error,
-    handle_workflow_success as _handle_workflow_success,
-    track_agent_start_and_emit as _track_agent_start_and_emit,
-    sanitize_dict,
+    DecisionTrackingData,
     LLMCallTrackingData,
     ToolCallTrackingData,
-    DecisionTrackingData,
+    TrackerCollaborationMixin,
+    get_stack_trace,
+    sanitize_dict,
+)
+from src.observability._tracker_helpers import (
+    build_extra_metadata as _build_extra_metadata,
+)
+from src.observability._tracker_helpers import (
+    handle_agent_error as _handle_agent_error,
+)
+from src.observability._tracker_helpers import (
+    handle_agent_success as _handle_agent_success,
+)
+from src.observability._tracker_helpers import (
+    handle_stage_error as _handle_stage_error,
+)
+from src.observability._tracker_helpers import (
+    handle_stage_success as _handle_stage_success,
+)
+from src.observability._tracker_helpers import (
+    handle_workflow_error as _handle_workflow_error,
+)
+from src.observability._tracker_helpers import (
+    handle_workflow_success as _handle_workflow_success,
+)
+from src.observability._tracker_helpers import (
+    track_agent_start_and_emit as _track_agent_start_and_emit,
 )
 from src.observability._tracker_helpers import (
     track_decision_outcome as _track_decision_outcome,
@@ -395,7 +410,6 @@ class ExecutionTracker(TrackerCollaborationMixin):
         Args:
             params: AgentOutputParams with all agent output parameters
         """
-        from src.observability.metric_aggregator import AgentOutputParams
         self._metric_aggregator.set_agent_output(params)
         self._emit_event(_EVENT_AGENT_OUTPUT, {
             ObservabilityFields.AGENT_ID: params.agent_id,

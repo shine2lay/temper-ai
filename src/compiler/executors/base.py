@@ -25,7 +25,6 @@ from src.compiler.executors._base_helpers import (
     execute_dialogue_round,
     fallback_consensus_synthesis,
     invoke_leader_agent,
-    reinvoke_agents_with_dialogue,
     track_dialogue_round,
 )
 from src.compiler.executors.state_keys import StateKeys
@@ -575,13 +574,13 @@ class StageExecutor(ABC):
             if agents is None or stage_name is None:
                 raise ValueError("Either params or all legacy args must be provided")
             params = DialogueReinvocationParams(
-                agents=agents,  # type: ignore
-                stage_name=stage_name,  # type: ignore
-                state=state or {},  # type: ignore
-                config_loader=config_loader,  # type: ignore
-                dialogue_history=dialogue_history or [],  # type: ignore
-                round_number=round_number or 0,  # type: ignore
-                max_rounds=max_rounds or 3,  # type: ignore
+                agents=agents,
+                stage_name=stage_name,
+                state=state or {},
+                config_loader=config_loader,
+                dialogue_history=dialogue_history or [],
+                round_number=round_number or 0,
+                max_rounds=max_rounds or 3,
                 strategy=strategy,
                 extract_agent_name_fn=self._extract_agent_name,
             )

@@ -8,15 +8,16 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 
+from src.auth.oauth._service_helpers import (
+    TokenExchangeParams,
+)
+
 # Helper functions extracted to reduce class size
 from src.auth.oauth._service_helpers import (
     build_authorization_url as _build_authorization_url,
 )
 from src.auth.oauth._service_helpers import (
     exchange_code as _exchange_code,
-)
-from src.auth.oauth._service_helpers import (
-    TokenExchangeParams,
 )
 from src.auth.oauth._service_helpers import (
     fetch_user_info as _fetch_user_info,

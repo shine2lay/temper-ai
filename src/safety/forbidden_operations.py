@@ -16,10 +16,20 @@ from src.safety._forbidden_ops_helpers import (
     FILE_WRITE_PATTERNS,
     INJECTION_PATTERNS,
     SECURITY_SENSITIVE_PATTERNS,
+)
+from src.safety._forbidden_ops_helpers import (
     compile_all_patterns as _compile_all_patterns,
+)
+from src.safety._forbidden_ops_helpers import (
     extract_command as _extract_command,
+)
+from src.safety._forbidden_ops_helpers import (
     get_remediation_hint as _get_remediation_hint,
+)
+from src.safety._forbidden_ops_helpers import (
     is_whitelisted as _is_whitelisted,
+)
+from src.safety._forbidden_ops_helpers import (
     validate_redirect_context as _validate_redirect_context,
 )
 from src.safety.base import BaseSafetyPolicy

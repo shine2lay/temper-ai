@@ -24,13 +24,17 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 if TYPE_CHECKING:
     from src.schemas import AgentConfig
 
+from dataclasses import dataclass
+
+from src.agents._standard_agent_helpers import (
+    ResponseBuildData,
+)
 from src.agents._standard_agent_helpers import (
     build_final_response as _build_final_response,
 )
 from src.agents._standard_agent_helpers import (
-    ResponseBuildData,
+    build_max_iterations_response as _build_max_iterations_response,
 )
-from dataclasses import dataclass
 from src.agents._standard_agent_helpers import (
     estimate_cost_for_response as _estimate_cost_for_response,
 )
@@ -56,16 +60,13 @@ from src.agents._standard_agent_helpers import (
     make_stream_callback as _make_stream_callback,
 )
 from src.agents._standard_agent_helpers import (
+    prepare_execution_prompt as _prepare_execution_prompt,
+)
+from src.agents._standard_agent_helpers import (
     process_llm_response as _process_llm_response,
 )
 from src.agents._standard_agent_helpers import (
     setup_execution as _setup_execution,
-)
-from src.agents._standard_agent_helpers import (
-    prepare_execution_prompt as _prepare_execution_prompt,
-)
-from src.agents._standard_agent_helpers import (
-    build_max_iterations_response as _build_max_iterations_response,
 )
 from src.agents._standard_agent_helpers import (
     track_failed_llm_call as _track_failed_llm_call,
@@ -252,7 +253,7 @@ def _handle_agent_error(
     total_cost: float,
     start_time: float,
     async_mode: bool = False,
-) -> Any:
+) -> AgentResponse:
     """Build error response for agent execution failures."""
     safe_msg = sanitize_error_message(str(error))
     label = "Agent async execution error" if async_mode else "Agent execution error"
@@ -544,7 +545,7 @@ class StandardAgent(BaseAgent):
                 start_time, max_iterations
             )
         except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:
-            return _handle_agent_error(self, e, tool_calls_made, total_tokens, total_cost, start_time)  # type: ignore[return-value]
+            return _handle_agent_error(self, e, tool_calls_made, total_tokens, total_cost, start_time)
 
     async def aexecute(
         self,
@@ -593,7 +594,7 @@ class StandardAgent(BaseAgent):
                 start_time, max_iterations
             )
         except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:
-            return _handle_agent_error(self, e, tool_calls_made, total_tokens, total_cost, start_time, async_mode=True)  # type: ignore[return-value]
+            return _handle_agent_error(self, e, tool_calls_made, total_tokens, total_cost, start_time, async_mode=True)
 
     async def _aexecute_iteration(
         self,

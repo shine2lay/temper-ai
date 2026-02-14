@@ -3,7 +3,7 @@
 Reduces code duplication in ollama.py and vllm_provider.py where sync/async
 stream consumers are nearly identical.
 """
-from typing import Callable, List, Optional, Any
+from typing import Any, Callable, List, Optional
 
 from src.agents.llm.base import LLMStreamChunk
 

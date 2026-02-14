@@ -74,10 +74,7 @@ class AgentObserver:
             event_bus = getattr(self._tracker, '_event_bus', None)
             if event_bus is None:
                 return
-            from src.observability._tracker_helpers import (
-                emit_llm_stream_chunk,
-                StreamChunkData
-            )
+            from src.observability._tracker_helpers import StreamChunkData, emit_llm_stream_chunk
 
             workflow_id = None
             stage_id = None

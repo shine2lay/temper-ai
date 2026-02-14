@@ -363,7 +363,8 @@ class Bash(BaseTool):
         command, error_result = self._validate_command_input(command)
         if error_result is not None:
             return error_result
-        assert command is not None
+        if command is None:
+            return ToolResult(success=False, error="Command is required")
 
         # Validate command mode (shell or strict)
         parts, error_result = self._validate_command_mode(command)

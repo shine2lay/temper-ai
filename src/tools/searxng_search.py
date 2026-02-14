@@ -319,7 +319,8 @@ class SearXNGSearch(BaseTool):
         error_result = self._validate_query(query)
         if error_result is not None:
             return error_result
-        assert isinstance(query, str)
+        if not isinstance(query, str):
+            return ToolResult(success=False, error="Query must be a string")
 
         # Check rate limit
         error_result = self._check_rate_limit()

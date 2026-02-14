@@ -208,14 +208,16 @@ class FileWriter(BaseTool):
         error_result = self._validate_inputs(file_path, content)
         if error_result is not None:
             return error_result
-        assert isinstance(file_path, str)
+        if not isinstance(file_path, str):
+            return ToolResult(success=False, error="file_path must be a string")
 
         try:
             # Validate path safety
             path, error_result = self._validate_path(file_path, overwrite, create_dirs)
             if error_result is not None:
                 return error_result
-            assert path is not None
+            if path is None:
+                return ToolResult(success=False, error="Path validation failed")
 
             # Prepare directory
             error_result = self._prepare_directory(path, create_dirs)
@@ -226,7 +228,8 @@ class FileWriter(BaseTool):
             existed = path.exists()
 
             # Write file
-            assert content is not None
+            if content is None:
+                return ToolResult(success=False, error="Content is required")
             with open(path, 'w', encoding=FILE_ENCODING_UTF8) as f:
                 f.write(content)
 

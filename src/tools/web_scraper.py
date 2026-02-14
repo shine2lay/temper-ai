@@ -640,11 +640,13 @@ class WebScraper(BaseTool):
         self.rate_limiter.record_request()
 
         # Fetch URL with redirect validation
-        assert isinstance(url, str)
+        if not isinstance(url, str):
+            return ToolResult(success=False, error="URL must be a string")
         response, error_result = self._fetch_with_redirect_validation(url, headers, timeout)
         if error_result is not None:
             return error_result
-        assert response is not None
+        if response is None:
+            return ToolResult(success=False, error="No response received")
 
         # Validate content type
         content_type = response.headers.get("content-type", "").lower()

@@ -174,7 +174,8 @@ class CollaborationEventTracker:
 
     def _track_event_to_backend(self, params: CollaborationEventParams) -> str:
         """Track event to backend with error handling."""
-        assert params.stage_id is not None  # validated by _validate_collab_params
+        if params.stage_id is None:  # validated by _validate_collab_params
+            raise ValueError("stage_id is required for collaboration event tracking")
         try:
             data = CollaborationEventData(
                 event_data=params.event_data,

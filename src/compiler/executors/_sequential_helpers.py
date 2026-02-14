@@ -259,7 +259,8 @@ def _execute_with_tracker(
         if k not in _non_serializable_keys
     })
 
-    assert ctx.tracker is not None
+    if ctx.tracker is None:
+        raise ValueError("Tracker required for agent execution tracking")
     with ctx.tracker.track_agent(
         agent_name=agent_name,
         agent_config=agent_config_for_tracking,

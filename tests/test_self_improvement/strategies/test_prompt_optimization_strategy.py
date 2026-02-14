@@ -1,4 +1,6 @@
 """Tests for prompt optimization strategy."""
+from unittest.mock import Mock
+
 import pytest
 from src.self_improvement.strategies.prompt_optimization_strategy import PromptOptimizationStrategy
 from src.self_improvement.strategies.strategy import SIOptimizationConfig
@@ -483,7 +485,7 @@ class TestPromptOptimizationStrategy:
             assert impact != 0.15  # Not default
 
     def test_generate_variants_with_none_prompt_values(self):
-        """Test variant generation when prompt dict has None values."""
+        """Test variant generation raises TypeError when prompt values are None."""
         strategy = PromptOptimizationStrategy()
 
         current_config = SIOptimizationConfig(
@@ -491,16 +493,9 @@ class TestPromptOptimizationStrategy:
             prompt={"system": None, "inline": None}
         )
 
-        # get() with default should handle None
-        # This might raise if not handled properly
-        try:
-            variants = strategy.generate_variants(current_config, [])
-            # If it doesn't raise, verify behavior
-            # CoT_GUIDE not in None should be True
-            assert len(variants) >= 0
-        except (TypeError, AttributeError):
-            # If it raises, that's a bug to document
-            pytest.fail("Strategy should handle None prompt values gracefully")
+        # None prompt values cause TypeError on 'in' check
+        with pytest.raises(TypeError):
+            strategy.generate_variants(current_config, [])
 
     def test_name_property_immutable(self):
         """Test that strategy name is consistent."""
@@ -541,3 +536,20 @@ class TestPromptOptimizationStrategy:
 
         # Should generate same variants
         assert len(variants1) == len(variants2)
+
+    def test_estimate_impact_with_learning_store(self):
+        """Test impact estimation delegates to parent when learning_store is set."""
+        mock_store = Mock()
+        mock_store.get_average_improvement.return_value = 0.5
+        mock_store.get_sample_count.return_value = 10
+        strategy = PromptOptimizationStrategy(learning_store=mock_store)
+
+        impact = strategy.estimate_impact({"problem_type": "quality_low"})
+
+        # With learning_store, delegates to super().estimate_impact()
+        # which does Bayesian updating with prior_weight=10, data_weight=10
+        # weighted = (0.1 * 10 + 0.5 * 10) / (10 + 10) = 6.0 / 20 = 0.3
+        assert isinstance(impact, float)
+        assert 0.0 < impact <= 1.0
+        mock_store.get_average_improvement.assert_called_once()
+        mock_store.get_sample_count.assert_called_once()

@@ -352,3 +352,182 @@ class TestLoopStateManagerControl:
         # Should have called update
         assert mock_session.merge.call_count >= 1
         assert mock_session.commit.call_count >= 1
+
+    def test_update_phase_data_no_state_raises(self):
+        """Test update_phase_data raises ValueError when no state exists."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+        mock_session.exec.return_value.first.return_value = None
+        mock_factory = Mock(return_value=mock_session)
+
+        manager = LoopStateManager(session_factory=mock_factory)
+
+        with pytest.raises(ValueError, match="No state found"):
+            manager.update_phase_data("nonexistent", {"key": "val"})
+
+    def test_resume_no_state_raises(self):
+        """Test resume raises ValueError when no state exists."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+        mock_session.exec.return_value.first.return_value = None
+        mock_factory = Mock(return_value=mock_session)
+
+        manager = LoopStateManager(session_factory=mock_factory)
+
+        with pytest.raises(ValueError, match="No state found"):
+            manager.resume("nonexistent")
+
+    def test_mark_failed_no_state_raises(self):
+        """Test mark_failed raises ValueError when no state exists."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+        mock_session.exec.return_value.first.return_value = None
+        mock_factory = Mock(return_value=mock_session)
+
+        manager = LoopStateManager(session_factory=mock_factory)
+
+        with pytest.raises(ValueError, match="No state found"):
+            manager.mark_failed("nonexistent", "some error")
+
+    def test_mark_completed_no_state_raises(self):
+        """Test mark_completed raises ValueError when no state exists."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+        mock_session.exec.return_value.first.return_value = None
+        mock_factory = Mock(return_value=mock_session)
+
+        manager = LoopStateManager(session_factory=mock_factory)
+
+        with pytest.raises(ValueError, match="No state found"):
+            manager.mark_completed("nonexistent")
+
+    def test_reset_state_no_record(self):
+        """Test reset_state when no record exists (no-op)."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+        mock_session.exec.return_value.first.return_value = None
+        mock_factory = Mock(return_value=mock_session)
+
+        manager = LoopStateManager(session_factory=mock_factory)
+
+        manager.reset_state("nonexistent")
+
+        mock_session.delete.assert_not_called()
+        mock_session.commit.assert_not_called()
+
+
+class TestTransitionToPhase:
+    """Test transition_to_phase method."""
+
+    def _make_manager_with_state(self, phase="detect", status="running", iteration=1):
+        """Helper to create manager with a mocked existing state."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+        now = datetime.now(timezone.utc)
+        mock_session.exec.return_value.first.return_value = M5LoopStateRecord(
+            agent_name="test_agent",
+            current_phase=phase,
+            status=status,
+            iteration_number=iteration,
+            phase_data={},
+            started_at=now,
+            updated_at=now,
+        )
+        mock_factory = Mock(return_value=mock_session)
+        manager = LoopStateManager(session_factory=mock_factory)
+        return manager, mock_session
+
+    def test_transition_valid(self):
+        """Test valid transition from DETECT to ANALYZE."""
+        manager, mock_session = self._make_manager_with_state(phase="detect")
+
+        state = manager.transition_to_phase("test_agent", Phase.ANALYZE)
+
+        assert state.current_phase == Phase.ANALYZE
+        assert mock_session.merge.call_count >= 1
+        assert mock_session.commit.call_count >= 1
+
+    def test_transition_no_state_raises(self):
+        """Test transition raises StateTransitionError when no state."""
+        mock_session = MagicMock()
+        mock_session.__enter__ = Mock(return_value=mock_session)
+        mock_session.__exit__ = Mock(return_value=False)
+        mock_session.exec.return_value.first.return_value = None
+        mock_factory = Mock(return_value=mock_session)
+
+        manager = LoopStateManager(session_factory=mock_factory)
+
+        with pytest.raises(StateTransitionError, match="No state found"):
+            manager.transition_to_phase("nonexistent", Phase.ANALYZE)
+
+    def test_transition_invalid_raises(self):
+        """Test invalid transition raises StateTransitionError."""
+        manager, _ = self._make_manager_with_state(phase="detect")
+
+        with pytest.raises(StateTransitionError, match="Invalid transition"):
+            manager.transition_to_phase("test_agent", Phase.DEPLOY)
+
+    def test_transition_deploy_to_detect_increments_iteration(self):
+        """Test looping back to DETECT increments iteration number."""
+        manager, mock_session = self._make_manager_with_state(
+            phase="deploy", iteration=3
+        )
+
+        state = manager.transition_to_phase("test_agent", Phase.DETECT)
+
+        assert state.current_phase == Phase.DETECT
+        assert state.iteration_number == 4
+
+    def test_transition_non_detect_does_not_increment(self):
+        """Test non-DETECT transition does not change iteration number."""
+        manager, _ = self._make_manager_with_state(phase="analyze", iteration=2)
+
+        state = manager.transition_to_phase("test_agent", Phase.STRATEGY)
+
+        assert state.iteration_number == 2
+
+
+class TestRecordToStateEdgeCases:
+    """Test _record_to_state edge cases."""
+
+    def test_record_with_json_string_phase_data(self):
+        """Test converting record when phase_data is a JSON string."""
+        now = datetime.now(timezone.utc)
+        record = M5LoopStateRecord(
+            agent_name="test_agent",
+            current_phase="detect",
+            status="running",
+            iteration_number=1,
+            phase_data='{"key": "value"}',
+            last_error=None,
+            started_at=now,
+            updated_at=now,
+        )
+
+        state = _record_to_state(record)
+
+        assert state.phase_data == {"key": "value"}
+
+    def test_record_with_empty_dict_phase_data(self):
+        """Test converting record when phase_data is empty dict."""
+        now = datetime.now(timezone.utc)
+        record = M5LoopStateRecord(
+            agent_name="test_agent",
+            current_phase="strategy",
+            status="running",
+            iteration_number=1,
+            phase_data={},
+            last_error=None,
+            started_at=now,
+            updated_at=now,
+        )
+
+        state = _record_to_state(record)
+
+        assert state.phase_data == {}

@@ -786,3 +786,50 @@ class TestContinuousExecutor:
         # Should have gracefully stopped
         assert "stopped_at" in result
         assert result["stopped_at"] is not None
+
+    @patch("time.sleep")
+    def test_signal_handler_body_sets_flag(self, mock_sleep, mock_config, mock_iteration_result):
+        """Test that the signal handler function body sets the shutdown flag."""
+        mock_config.continuous_max_iterations = 1
+        run_fn = Mock(return_value=mock_iteration_result)
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn)
+
+        # Capture the handler registered for SIGINT
+        registered_handlers = {}
+        original_signal = signal.signal
+
+        def capture_signal(sig, handler):
+            registered_handlers[sig] = handler
+            return original_signal(sig, handler)
+
+        with patch("signal.signal", side_effect=capture_signal):
+            shutdown_requested = {"flag": False}
+            executor._setup_signal_handlers(shutdown_requested)
+
+        # Invoke the captured handler directly (simulates receiving SIGINT)
+        handler = registered_handlers.get(signal.SIGINT)
+        assert handler is not None
+        handler(signal.SIGINT, None)
+        assert shutdown_requested["flag"] is True
+
+        # Restore default handlers
+        executor._restore_signal_handlers()
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_execute_exception_in_run_main_loop(
+        self, mock_signal, mock_sleep, mock_config
+    ):
+        """Test execute catches Exception raised by _run_main_loop itself."""
+        run_fn = Mock()
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn)
+
+        # Force _run_main_loop to raise an unexpected exception
+        with patch.object(
+            executor, "_run_main_loop",
+            side_effect=RuntimeError("loop exploded")
+        ):
+            result = executor.execute(agent_names=["agent1"])
+
+        assert result["stop_reason"] == "error: loop exploded"
+        assert result["stopped_at"] is not None

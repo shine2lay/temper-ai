@@ -709,6 +709,20 @@ class TestMetricsCollector:
 
         assert result["last_iteration_at"] is None
 
+    def test_record_phase_complete_no_start_time_defaults_duration_zero(self):
+        """Test phase complete with no start time sets duration to 0.0."""
+        collector = MetricsCollector()
+
+        # Start a different phase so metrics exist for the agent
+        collector.record_phase_start("test_agent", Phase.DETECT)
+
+        # Complete ANALYZE phase (never started) without explicit duration
+        collector.record_phase_complete("test_agent", Phase.ANALYZE)
+
+        metrics = collector._metrics["test_agent"]
+        assert metrics.phase_successes[Phase.ANALYZE] == 1
+        assert metrics.phase_durations[Phase.ANALYZE] == [0.0]
+
     def test_record_phase_start_updates_timestamp(self):
         """Test that phase start records current timestamp."""
         collector = MetricsCollector()

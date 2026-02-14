@@ -187,6 +187,18 @@ class TestM5SelfImprovementLoopContinuous:
 
         loop.continuous_executor.execute.assert_called_once_with([], None)
 
+    def test_run_continuous_none_agents_defaults_to_empty(self, mock_coord_db, mock_session_factory):
+        """Test continuous execution with None agent_names defaults to empty list."""
+        obs_session = Mock()
+        with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
+
+        loop.continuous_executor.execute = Mock(return_value={})
+
+        loop.run_continuous(agent_names=None)
+
+        loop.continuous_executor.execute.assert_called_once_with([], None)
+
 
 class TestM5SelfImprovementLoopScheduled:
     """Test scheduled execution mode."""

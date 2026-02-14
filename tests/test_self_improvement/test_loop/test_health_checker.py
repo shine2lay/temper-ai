@@ -441,3 +441,30 @@ class TestHealthChecker:
 
         # Unhealthy should override degraded
         assert health["status"] == "unhealthy"
+
+    def test_check_observability_db_unhealthy(self, mock_state_manager, mock_config):
+        """Test _check_observability_db handles exceptions correctly."""
+        checker = HealthChecker(
+            state_manager=mock_state_manager,
+            config=mock_config
+        )
+
+        # Use a dict subclass that raises on the first set of "observability_db"
+        # to force the except branch, then allows the except handler to set it
+        class FailOnceDict(dict):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._fail_count = 0
+
+            def __setitem__(self, key, value):
+                if key == "observability_db" and self._fail_count == 0:
+                    self._fail_count += 1
+                    raise RuntimeError("Observability DB connection lost")
+                super().__setitem__(key, value)
+
+        components = FailOnceDict()
+        status = {"components": components}
+        result = checker._check_observability_db(status)
+
+        assert result is False
+        assert "Observability DB connection lost" in status["components"]["observability_db"]

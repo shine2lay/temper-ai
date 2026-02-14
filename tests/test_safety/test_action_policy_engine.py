@@ -16,6 +16,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
+from src.safety._action_policy_helpers import canonical_json
 from src.safety.action_policy_engine import (
     ActionPolicyEngine,
     EnforcementResult,
@@ -756,8 +757,8 @@ class TestCacheKeySecurityFixes:
         obj1 = {"b": {"d": 1, "c": 2}, "a": 3}
         obj2 = {"a": 3, "b": {"c": 2, "d": 1}}
 
-        json1 = engine._canonical_json(obj1)
-        json2 = engine._canonical_json(obj2)
+        json1 = canonical_json(obj1)
+        json2 = canonical_json(obj2)
 
         # Should produce identical JSON
         assert json1 == json2
@@ -771,8 +772,8 @@ class TestCacheKeySecurityFixes:
         obj1 = {"items": [3, 1, 2]}
         obj2 = {"items": [3, 1, 2]}
 
-        json1 = engine._canonical_json(obj1)
-        json2 = engine._canonical_json(obj2)
+        json1 = canonical_json(obj1)
+        json2 = canonical_json(obj2)
 
         # Same list order produces same JSON
         assert json1 == json2
@@ -780,7 +781,7 @@ class TestCacheKeySecurityFixes:
 
         # Different list order produces different JSON (lists are ordered)
         obj3 = {"items": [1, 2, 3]}
-        json3 = engine._canonical_json(obj3)
+        json3 = canonical_json(obj3)
         assert json3 != json1
 
     def test_canonical_json_sorts_sets(self):
@@ -791,8 +792,8 @@ class TestCacheKeySecurityFixes:
         obj1 = {"tags": {3, 1, 2}}
         obj2 = {"tags": {2, 3, 1}}
 
-        json1 = engine._canonical_json(obj1)
-        json2 = engine._canonical_json(obj2)
+        json1 = canonical_json(obj1)
+        json2 = canonical_json(obj2)
 
         # Same set produces same JSON regardless of internal order
         assert json1 == json2
@@ -818,8 +819,8 @@ class TestCacheKeySecurityFixes:
             }
         }
 
-        json1 = engine._canonical_json(obj1)
-        json2 = engine._canonical_json(obj2)
+        json1 = canonical_json(obj1)
+        json2 = canonical_json(obj2)
 
         assert json1 == json2
 
@@ -837,7 +838,7 @@ class TestCacheKeySecurityFixes:
             "nested": {"key": "value"}
         }
 
-        json_str = engine._canonical_json(obj)
+        json_str = canonical_json(obj)
 
         # Should be valid JSON
         parsed = json.loads(json_str)
@@ -1010,8 +1011,8 @@ class TestCacheKeySecurityFixes:
         empty_dict = {}
         empty_list = []
 
-        json_dict = engine._canonical_json(empty_dict)
-        json_list = engine._canonical_json(empty_list)
+        json_dict = canonical_json(empty_dict)
+        json_list = canonical_json(empty_list)
 
         assert json_dict == '{}'
         assert json_list == '[]'
@@ -1036,7 +1037,7 @@ class TestCacheKeySecurityFixes:
         }
 
         # Generate key multiple times
-        keys = [engine._canonical_json(action) for _ in range(10)]
+        keys = [canonical_json(action) for _ in range(10)]
 
         # All keys should be identical
         assert len(set(keys)) == 1

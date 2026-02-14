@@ -16,8 +16,14 @@ from src.core.context import ExecutionContext
 from src.database.datetime_utils import utcnow
 from src.observability._tracker_helpers import (
     TrackerCollaborationMixin,
-    aggregate_workflow_metrics_on_success,
+    build_extra_metadata as _build_extra_metadata,
     get_stack_trace,
+    handle_agent_error as _handle_agent_error,
+    handle_agent_success as _handle_agent_success,
+    handle_stage_error as _handle_stage_error,
+    handle_stage_success as _handle_stage_success,
+    handle_workflow_error as _handle_workflow_error,
+    handle_workflow_success as _handle_workflow_success,
     sanitize_dict,
     LLMCallTrackingData,
     ToolCallTrackingData,
@@ -43,17 +49,10 @@ from src.utils.config_helpers import sanitize_config_for_display
 
 logger = logging.getLogger(__name__)
 
-# Execution status values
-_STATUS_COMPLETED = ObservabilityFields.STATUS_COMPLETED
-_STATUS_FAILED = ObservabilityFields.STATUS_FAILED
-
 # Event type identifiers for the observability event bus
 _EVENT_WORKFLOW_START = "workflow_start"
-_EVENT_WORKFLOW_END = "workflow_end"
 _EVENT_STAGE_START = "stage_start"
-_EVENT_STAGE_END = "stage_end"
 _EVENT_AGENT_START = "agent_start"
-_EVENT_AGENT_END = "agent_end"
 _EVENT_AGENT_OUTPUT = "agent_output"
 _EVENT_STAGE_OUTPUT = "stage_output"
 
@@ -163,114 +162,6 @@ class ExecutionTracker(TrackerCollaborationMixin):
         )
         self._event_bus.emit(event)
 
-    def _build_extra_metadata(
-        self, experiment_id: Optional[str], variant_id: Optional[str],
-        assignment_strategy: Optional[str], assignment_context: Optional[Dict[str, Any]],
-        custom_metrics: Optional[Dict[str, Any]]
-    ) -> Optional[Dict[str, Any]]:
-        """Build extra metadata dict from optional experiment tracking params."""
-        extra_metadata: Dict[str, Any] = {}
-        if experiment_id:
-            extra_metadata["experiment_id"] = experiment_id
-        if variant_id:
-            extra_metadata["variant_id"] = variant_id
-        if assignment_strategy:
-            extra_metadata["assignment_strategy"] = assignment_strategy
-        if assignment_context:
-            extra_metadata["assignment_context"] = assignment_context
-        if custom_metrics:
-            extra_metadata["custom_metrics"] = custom_metrics
-        return extra_metadata if extra_metadata else None
-
-    def _handle_workflow_success(self, workflow_id: str) -> None:
-        """Handle successful workflow completion."""
-        end_time = utcnow()
-        self.backend.track_workflow_end(
-            workflow_id=workflow_id, end_time=end_time, status=_STATUS_COMPLETED,
-            error_message=None, error_stack_trace=None
-        )
-        self._emit_event(_EVENT_WORKFLOW_END, {
-            ObservabilityFields.WORKFLOW_ID: workflow_id,
-            ObservabilityFields.STATUS: _STATUS_COMPLETED,
-            ObservabilityFields.END_TIME: end_time.isoformat(),
-        })
-        aggregate_workflow_metrics_on_success(
-            backend=self.backend,
-            alert_manager=self.alert_manager,
-            workflow_id=workflow_id,
-        )
-
-    def _handle_workflow_error(self, workflow_id: str, error: Exception) -> None:
-        """Handle workflow execution error."""
-        end_time = utcnow()
-        self.backend.track_workflow_end(
-            workflow_id=workflow_id, end_time=end_time, status=_STATUS_FAILED,
-            error_message=str(error), error_stack_trace=self._get_stack_trace()
-        )
-        self._emit_event(_EVENT_WORKFLOW_END, {
-            ObservabilityFields.WORKFLOW_ID: workflow_id,
-            ObservabilityFields.STATUS: _STATUS_FAILED,
-            ObservabilityFields.END_TIME: end_time.isoformat(),
-            ObservabilityFields.ERROR_MESSAGE: str(error),
-        })
-
-    def _handle_stage_success(self, stage_id: str) -> None:
-        """Handle successful stage completion."""
-        end_time = utcnow()
-        try:
-            if hasattr(self.backend, 'aggregate_stage_metrics'):
-                metrics = self.backend.aggregate_stage_metrics(stage_id)
-                self.backend.track_stage_end(
-                    stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED,
-                    error_message=None,
-                    num_agents_executed=metrics.get('num_agents_executed', 0),
-                    num_agents_succeeded=metrics.get('num_agents_succeeded', 0),
-                    num_agents_failed=metrics.get('num_agents_failed', 0)
-                )
-            else:
-                self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED)
-        except Exception as e:
-            logger.warning(f"Failed to aggregate stage metrics for {stage_id}: {e}", exc_info=True)
-            self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED)
-        self._emit_event(_EVENT_STAGE_END, {
-            ObservabilityFields.STAGE_ID: stage_id,
-            ObservabilityFields.STATUS: _STATUS_COMPLETED,
-            ObservabilityFields.END_TIME: end_time.isoformat(),
-        })
-
-    def _handle_stage_error(self, stage_id: str, error: Exception) -> None:
-        """Handle stage execution error."""
-        end_time = utcnow()
-        self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(error))
-        self._emit_event(_EVENT_STAGE_END, {
-            ObservabilityFields.STAGE_ID: stage_id,
-            ObservabilityFields.STATUS: _STATUS_FAILED,
-            ObservabilityFields.END_TIME: end_time.isoformat(),
-            ObservabilityFields.ERROR_MESSAGE: str(error),
-        })
-
-    def _handle_agent_success(self, agent_id: str) -> None:
-        """Handle successful agent completion."""
-        end_time = utcnow()
-        self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_COMPLETED)
-        self._emit_event(_EVENT_AGENT_END, {
-            ObservabilityFields.AGENT_ID: agent_id,
-            ObservabilityFields.STATUS: _STATUS_COMPLETED,
-            ObservabilityFields.END_TIME: end_time.isoformat(),
-        })
-        self._collect_agent_metrics(agent_id)
-
-    def _handle_agent_error(self, agent_id: str, error: Exception) -> None:
-        """Handle agent execution error."""
-        end_time = utcnow()
-        self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(error))
-        self._emit_event(_EVENT_AGENT_END, {
-            ObservabilityFields.AGENT_ID: agent_id,
-            ObservabilityFields.STATUS: _STATUS_FAILED,
-            ObservabilityFields.END_TIME: end_time.isoformat(),
-            ObservabilityFields.ERROR_MESSAGE: str(error),
-        })
-
     @contextmanager
     def track_workflow(
         self, workflow_name: str, workflow_config: Dict[str, Any],
@@ -287,7 +178,7 @@ class ExecutionTracker(TrackerCollaborationMixin):
 
         start_time = utcnow()
         sanitized_config = sanitize_config_for_display(workflow_config)
-        extra_metadata = self._build_extra_metadata(
+        extra_metadata = _build_extra_metadata(
             experiment_id, variant_id, assignment_strategy, assignment_context, custom_metrics
         )
 
@@ -315,9 +206,13 @@ class ExecutionTracker(TrackerCollaborationMixin):
 
             try:
                 yield workflow_id
-                self._handle_workflow_success(workflow_id)
+                _handle_workflow_success(
+                    self.backend, self.alert_manager, self._emit_event, workflow_id,
+                )
             except Exception as e:
-                self._handle_workflow_error(workflow_id, e)
+                _handle_workflow_error(
+                    self.backend, self._emit_event, self._get_stack_trace, workflow_id, e,
+                )
                 raise
             finally:
                 self._session_stack.pop()
@@ -348,9 +243,9 @@ class ExecutionTracker(TrackerCollaborationMixin):
             })
             try:
                 yield stage_id
-                self._handle_stage_success(stage_id)
+                _handle_stage_success(self.backend, self._emit_event, stage_id)
             except Exception as e:
-                self._handle_stage_error(stage_id, e)
+                _handle_stage_error(self.backend, self._emit_event, stage_id, e)
                 raise
             finally:
                 self.context.stage_id = None
@@ -369,9 +264,9 @@ class ExecutionTracker(TrackerCollaborationMixin):
                 })
                 try:
                     yield stage_id
-                    self._handle_stage_success(stage_id)
+                    _handle_stage_success(self.backend, self._emit_event, stage_id)
                 except Exception as e:
-                    self._handle_stage_error(stage_id, e)
+                    _handle_stage_error(self.backend, self._emit_event, stage_id, e)
                     raise
                 finally:
                     self._session_stack.pop()
@@ -402,9 +297,11 @@ class ExecutionTracker(TrackerCollaborationMixin):
             })
             try:
                 yield agent_id
-                self._handle_agent_success(agent_id)
+                _handle_agent_success(
+                    self.backend, self._emit_event, self._collect_agent_metrics, agent_id,
+                )
             except Exception as e:
-                self._handle_agent_error(agent_id, e)
+                _handle_agent_error(self.backend, self._emit_event, agent_id, e)
                 raise
             finally:
                 self.context.agent_id = None
@@ -423,9 +320,11 @@ class ExecutionTracker(TrackerCollaborationMixin):
                 })
                 try:
                     yield agent_id
-                    self._handle_agent_success(agent_id)
+                    _handle_agent_success(
+                        self.backend, self._emit_event, self._collect_agent_metrics, agent_id,
+                    )
                 except Exception as e:
-                    self._handle_agent_error(agent_id, e)
+                    _handle_agent_error(self.backend, self._emit_event, agent_id, e)
                     raise
                 finally:
                     self._session_stack.pop()

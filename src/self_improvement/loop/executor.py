@@ -21,19 +21,16 @@ from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
 
 # Helper functions extracted to reduce class size
 from src.self_improvement.loop._executor_helpers import (
-    record_no_winner_strategy_outcome as _record_no_winner_outcome,
+    create_no_winner_result as _create_no_winner_result,
 )
 from src.self_improvement.loop._executor_helpers import (
-    record_winner_strategy_outcome as _record_winner_outcome,
+    create_winner_result as _create_winner_result,
 )
 from src.self_improvement.loop._executor_helpers import (
-    track_deployment_outcome as _track_deployment_outcome,
+    execute_deploy_phase as _execute_deploy_phase,
 )
 from src.self_improvement.loop._executor_helpers import (
-    track_inconclusive_experiment_outcome as _track_inconclusive_outcome,
-)
-from src.self_improvement.loop._executor_helpers import (
-    track_winner_experiment_outcome as _track_winner_outcome,
+    execute_strategy_phase as _execute_strategy_phase,
 )
 from src.self_improvement.pattern_mining import PatternMiner
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
@@ -401,126 +398,21 @@ class LoopExecutor:
         agent_name: str,
         analysis_result: AnalysisResult
     ) -> StrategyResult:
-        """Execute Phase 3: Strategy Generation."""
-        logger.info(f"Phase 3 (STRATEGY): Generating improvement strategies for {agent_name}")
-
-        control_config = self.config_deployer.get_agent_config(agent_name)
-
-        try:
-            patterns = self.pattern_miner.mine_patterns(
-                min_support=THRESHOLD_SMALL_COUNT,  # Require at least 5 observations
-                min_confidence=PROB_HIGH,  # 70% confidence threshold
-                min_win_rate=PROB_MEDIUM,  # Strategy wins at least 50% of time
-                min_improvement=MIN_IMPROVEMENT_THRESHOLD,
-                days_back=DAYS_90  # Last 90 days
-            )
-            logger.info(f"Mined {len(patterns)} patterns from experiment history")
-
-            # Log top patterns for debugging
-            for pattern in patterns[:TOP_PATTERNS_LIMIT]:
-                logger.info(
-                    f"  Pattern: {pattern.evidence['strategy_name']} for "
-                    f"{pattern.evidence['problem_type']} "
-                    f"(confidence={pattern.confidence:.2f})"
-                )
-        except Exception as e:
-            logger.warning(f"Failed to mine patterns: {e}")
-            patterns = []
-
-        variant_configs = []
-
-        if self.config.enable_model_variants:
-            # Test different models
-            models_to_test = ["gemma2:2b", "phi3:mini", "mistral:7b"]
-            for model in models_to_test[:self.config.max_variants_per_experiment]:
-                variant = control_config.copy()
-                variant.inference["model"] = model
-                variant_configs.append(variant)
-
-        logger.info(
-            f"Generated {len(variant_configs)} variant configs for {agent_name}"
+        """Execute Phase 3: Strategy Generation (delegates to helper)."""
+        return _execute_strategy_phase(
+            agent_name=agent_name,
+            analysis_result=analysis_result,
+            config_deployer=self.config_deployer,
+            pattern_miner=self.pattern_miner,
+            enable_model_variants=self.config.enable_model_variants,
+            max_variants_per_experiment=self.config.max_variants_per_experiment,
+            min_support=THRESHOLD_SMALL_COUNT,
+            min_confidence=PROB_HIGH,
+            min_win_rate=PROB_MEDIUM,
+            min_improvement=MIN_IMPROVEMENT_THRESHOLD,
+            days_back=DAYS_90,
+            top_patterns_limit=TOP_PATTERNS_LIMIT,
         )
-
-        return StrategyResult(
-            control_config=control_config,
-            variant_configs=variant_configs,
-            strategy_name="model_variants",
-            strategy_metadata={
-                "models_tested": [v.inference["model"] for v in variant_configs],
-                "patterns_considered": len(patterns),
-                "problem_type": "quality_low"  # Default for now
-            },
-        )
-
-    def _create_winner_result(
-        self,
-        experiment_id: str,
-        winner: Any,
-        agent_name: str,
-        strategy_result: StrategyResult
-    ) -> ExperimentPhaseResult:
-        """Create experiment result for winning variant."""
-        logger.info(
-            f"Experiment {experiment_id} has winner: {winner.variant_id} "
-            f"(improvement: {winner.quality_improvement:.1f}%, "
-            f"confidence: {winner.confidence:.2f})"
-        )
-
-        result = ExperimentPhaseResult(
-            experiment_id=experiment_id,
-            winner_variant_id=winner.variant_id,
-            winner_config=winner.winning_config,
-            statistical_significance=winner.is_statistically_significant,
-            metrics_comparison={
-                "quality_improvement": winner.quality_improvement,
-                "speed_improvement": winner.speed_improvement,
-                "cost_improvement": winner.cost_improvement,
-                "composite_score": winner.composite_score,
-            },
-        )
-
-        # Track and record outcomes
-        if self.tracker:
-            _track_winner_outcome(
-                self.tracker, agent_name, experiment_id, strategy_result, winner,
-            )
-
-        _record_winner_outcome(
-            self.strategy_learning_store, strategy_result, agent_name,
-            experiment_id, winner, self.config.target_samples_per_variant,
-        )
-
-        return result
-
-    def _create_no_winner_result(
-        self,
-        experiment_id: str,
-        agent_name: str,
-        strategy_result: StrategyResult
-    ) -> ExperimentPhaseResult:
-        """Create experiment result when no winner found."""
-        logger.info(f"No winner (control best or inconclusive) for {agent_name}")
-
-        result = ExperimentPhaseResult(
-            experiment_id=experiment_id,
-            winner_variant_id=None,
-            winner_config=None,
-            statistical_significance=None,
-            metrics_comparison=None,
-        )
-
-        # Track and record outcomes
-        if self.tracker:
-            _track_inconclusive_outcome(
-                self.tracker, agent_name, experiment_id, strategy_result.strategy_name,
-            )
-
-        _record_no_winner_outcome(
-            self.strategy_learning_store, strategy_result, agent_name,
-            experiment_id, self.config.target_samples_per_variant,
-        )
-
-        return result
 
     def _execute_phase_4_experiment(
         self,
@@ -547,12 +439,16 @@ class LoopExecutor:
         )
 
         if winner and winner.variant_id != "control":
-            return self._create_winner_result(
-                experiment.id, winner, agent_name, strategy_result
+            return _create_winner_result(
+                experiment.id, winner, agent_name, strategy_result,
+                self.tracker, self.strategy_learning_store,
+                self.config.target_samples_per_variant,
             )
         else:
-            return self._create_no_winner_result(
-                experiment.id, agent_name, strategy_result
+            return _create_no_winner_result(
+                experiment.id, agent_name, strategy_result,
+                self.tracker, self.strategy_learning_store,
+                self.config.target_samples_per_variant,
             )
 
     def _execute_phase_5_deploy(
@@ -560,48 +456,12 @@ class LoopExecutor:
         agent_name: str,
         experiment_result: ExperimentPhaseResult
     ) -> DeploymentResult:
-        """Execute Phase 5: Deployment."""
-        logger.info(f"Phase 5 (DEPLOY): Deploying winner config for {agent_name}")
-
-        if not experiment_result.winner_config:
-            raise ValueError("No winner config to deploy")
-
-        previous_config = self.config_deployer.get_agent_config(agent_name)
-
-        if self.config.enable_auto_deploy:
-            self.config_deployer.deploy(
-                agent_name=agent_name,
-                new_config=experiment_result.winner_config,
-                experiment_id=experiment_result.experiment_id,
-            )
-
-            deployment = self.config_deployer.get_last_deployment(agent_name)
-
-            # Deployment should always succeed if deploy() doesn't raise
-            if deployment is None:
-                raise RuntimeError(f"Deployment record not found after successful deploy for {agent_name}")
-
-            logger.info(
-                f"Deployed config {deployment.id} for {agent_name}. "
-                f"Rollback monitoring: {self.config.enable_auto_rollback}"
-            )
-
-            result = DeploymentResult(
-                deployment_id=deployment.id,
-                deployed_config=experiment_result.winner_config,
-                previous_config=previous_config,
-                deployment_timestamp=deployment.deployed_at,
-                rollback_monitoring_enabled=self.config.enable_auto_rollback,
-            )
-
-            # Track deployment decision outcome for observability
-            if self.tracker:
-                _track_deployment_outcome(
-                    self.tracker, agent_name, deployment.id, experiment_result,
-                    previous_config, self.config.enable_auto_rollback, deployment.deployed_at,
-                )
-
-            return result
-        else:
-            logger.info(f"Auto-deploy disabled, skipping deployment for {agent_name}")
-            raise ValueError("Auto-deploy disabled")
+        """Execute Phase 5: Deployment (delegates to helper)."""
+        return _execute_deploy_phase(
+            agent_name=agent_name,
+            experiment_result=experiment_result,
+            config_deployer=self.config_deployer,
+            enable_auto_deploy=self.config.enable_auto_deploy,
+            enable_auto_rollback=self.config.enable_auto_rollback,
+            tracker=self.tracker,
+        )

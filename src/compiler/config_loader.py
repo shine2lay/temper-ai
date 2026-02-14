@@ -376,11 +376,6 @@ class ConfigLoader:
         """Load a configuration file (YAML or JSON). Delegates to helper."""
         return load_config_file(directory, name)
 
-    def _parse_config_file(self, file_path: Path) -> Dict[str, Any]:
-        """Parse a YAML or JSON configuration file. Delegates to helper."""
-        from src.compiler._config_loader_helpers import parse_config_file
-        return parse_config_file(file_path)
-
     def _validate_config_structure(
         self, config: Any, file_path: Path,
         current_depth: int = 0, visited: Optional[set] = None,

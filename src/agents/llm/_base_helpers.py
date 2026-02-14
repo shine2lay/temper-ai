@@ -424,6 +424,98 @@ def get_async_lock(cls: Any) -> asyncio.Lock:
 # Context manager mixin
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Streaming helpers (extracted from BaseLLM to reduce method count)
+# ---------------------------------------------------------------------------
+
+def make_streaming_call_impl(
+    instance: BaseLLM,
+    prompt: str,
+    context: Optional[ExecutionContext],
+    **kwargs: Any,
+) -> Tuple[Optional[str], Optional[LLMResponse]]:
+    """Prepare streaming call with rate limiting and cache check.
+
+    Returns:
+        Tuple of (cache_key, cached_response_or_none)
+    """
+    from src.agents.constants import ERROR_MSG_RATE_LIMIT_EXCEEDED
+    from src.utils.exceptions import LLMRateLimitError as _LLMRateLimitError
+
+    # Rate limiter check
+    if instance._rate_limiter is not None:
+        entity_id = (context.agent_id if context and hasattr(context, 'agent_id') else instance.model)
+        allowed, reason = instance._rate_limiter.check_and_record_rate_limit(entity_id)
+        if not allowed:
+            raise _LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
+
+    # Cache check
+    cache_key, cached = instance._check_cache(prompt, context, **kwargs)
+    return cache_key, cached
+
+
+def execute_streaming_impl(
+    instance: BaseLLM,
+    start_time: float,
+    response: Any,
+    on_chunk: Any,
+    cache_key: Optional[str],
+) -> LLMResponse:
+    """Execute streaming request and handle response (synchronous).
+
+    Returns:
+        LLMResponse with latency and cached result
+    """
+    try:
+        if response.status_code != HTTP_OK:
+            response.read()
+            handle_error_response(response)
+
+        result = instance._consume_stream(response, on_chunk)
+    finally:
+        response.close()
+
+    latency_ms = int((time.time() - start_time) * 1000)
+    result.latency_ms = latency_ms
+
+    # Cache the result
+    instance._cache_response(cache_key, result)
+    return result
+
+
+async def execute_streaming_async_impl(
+    instance: BaseLLM,
+    start_time: float,
+    response: Any,
+    on_chunk: Any,
+    cache_key: Optional[str],
+) -> LLMResponse:
+    """Execute streaming request and handle response (asynchronous).
+
+    Returns:
+        LLMResponse with latency and cached result
+    """
+    try:
+        if response.status_code != HTTP_OK:
+            await response.aread()
+            handle_error_response(response)
+
+        result = await instance._aconsume_stream(response, on_chunk)
+    finally:
+        await response.aclose()
+
+    latency_ms = int((time.time() - start_time) * 1000)
+    result.latency_ms = latency_ms
+
+    # Cache the result
+    instance._cache_response(cache_key, result)
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Context manager mixin
+# ---------------------------------------------------------------------------
+
 class LLMContextManagerMixin:
     """Mixin providing sync and async context manager support for LLM classes."""
 

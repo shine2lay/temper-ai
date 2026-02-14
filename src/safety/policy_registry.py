@@ -267,18 +267,6 @@ class PolicyRegistry:
         """
         return policy_name in self._policy_mappings
 
-    def get_registered_policy_names(self) -> List[str]:
-        """Get names of all registered policies.
-
-        Returns:
-            List of policy names
-
-        Example:
-            >>> names = registry.get_registered_policy_names()
-            >>> print(f"Registered: {', '.join(names)}")
-        """
-        return list(self._policy_mappings.keys())
-
     def get_action_types(self) -> List[str]:
         """Get all action types with registered policies.
 

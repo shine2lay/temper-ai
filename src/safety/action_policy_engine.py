@@ -35,7 +35,6 @@ from src.safety._action_policy_helpers import (
     cache_result as _cache_result_helper,
 )
 from src.safety._action_policy_helpers import (
-    canonical_json,
     context_to_dict,
     get_cache_key,
     get_cached_result,
@@ -371,24 +370,9 @@ class ActionPolicyEngine:
         start_time: float,
         context: PolicyExecutionContext
     ) -> EnforcementResult:
-        """Build final enforcement result.
-
-        Args:
-            all_violations: All violations collected
-            policies_executed: Names of policies executed
-            cache_hits: Number of cache hits
-            start_time: Validation start time
-            context: Execution context
-
-        Returns:
-            EnforcementResult with complete metadata
-        """
+        """Build final enforcement result from collected violations."""
         # Determine if action is allowed (block if any HIGH or CRITICAL)
-        blocking_violations = [
-            v for v in all_violations
-            if v.severity >= ViolationSeverity.HIGH
-        ]
-        allowed = len(blocking_violations) == 0
+        allowed = not any(v.severity >= ViolationSeverity.HIGH for v in all_violations)
 
         execution_time = (time.time() - start_time) * MILLISECONDS_PER_SECOND
         self._validations_performed += 1
@@ -533,10 +517,6 @@ class ActionPolicyEngine:
     def _cache_result(self, cache_key: str, result: ValidationResult) -> None:
         """Cache validation result with timestamp."""
         _cache_result_helper(self._cache, cache_key, result, self.max_cache_size)
-
-    def _canonical_json(self, obj: Any) -> str:
-        """Create canonical JSON representation for deterministic hashing."""
-        return canonical_json(obj)
 
     def _invalidate_cache_if_policies_changed(self) -> None:
         """SA-06: Clear cache when registered policies change."""

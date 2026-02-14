@@ -15,7 +15,6 @@ from typing import Any, Dict, List, Optional, Set
 
 from src.constants.limits import MAX_SHORT_STRING_LENGTH
 from src.safety._file_access_helpers import (
-    decode_url_fully,
     extract_paths,
     has_forbidden_extension,
     has_parent_traversal,
@@ -442,10 +441,6 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
     def _extract_paths(self, action: Dict[str, Any]) -> List[str]:
         """Extract file paths from action. Delegates to helper."""
         return extract_paths(action)
-
-    def _decode_url_fully(self, path: str, max_iterations: int = 10) -> str:
-        """Recursively decode URL encoding until fully decoded. Delegates to helper."""
-        return decode_url_fully(path, max_iterations)
 
     def _normalize_path(self, path: str) -> str:
         """Normalize path for comparison. Delegates to helper."""

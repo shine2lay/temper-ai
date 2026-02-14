@@ -328,8 +328,8 @@ class TestUtilityMethods:
 
         assert registry.is_registered("test_policy")
 
-    def test_get_registered_policy_names(self):
-        """Test getting all registered policy names."""
+    def test_list_policies_returns_all_names(self):
+        """Test getting all registered policy names via list_policies."""
         registry = PolicyRegistry()
 
         policy1 = MockPolicy("policy1")
@@ -340,7 +340,7 @@ class TestUtilityMethods:
         registry.register_policy(policy2, action_types=["action2"])
         registry.register_policy(policy3)  # Global
 
-        names = registry.get_registered_policy_names()
+        names = registry.list_policies()
 
         assert len(names) == 3
         assert "policy1" in names

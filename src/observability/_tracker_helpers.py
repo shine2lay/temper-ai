@@ -659,6 +659,174 @@ def aggregate_workflow_metrics_on_success(
         )
 
 
+def build_extra_metadata(
+    experiment_id: Optional[str],
+    variant_id: Optional[str],
+    assignment_strategy: Optional[str],
+    assignment_context: Optional[Dict[str, Any]],
+    custom_metrics: Optional[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Build extra metadata dict from optional experiment tracking params."""
+    extra_metadata: Dict[str, Any] = {}
+    if experiment_id:
+        extra_metadata["experiment_id"] = experiment_id
+    if variant_id:
+        extra_metadata["variant_id"] = variant_id
+    if assignment_strategy:
+        extra_metadata["assignment_strategy"] = assignment_strategy
+    if assignment_context:
+        extra_metadata["assignment_context"] = assignment_context
+    if custom_metrics:
+        extra_metadata["custom_metrics"] = custom_metrics
+    return extra_metadata if extra_metadata else None
+
+
+def handle_workflow_success(
+    backend: Any,
+    alert_manager: Any,
+    emit_event_fn: Any,
+    workflow_id: str,
+) -> None:
+    """Handle successful workflow completion."""
+    end_time = utcnow()
+    backend.track_workflow_end(
+        workflow_id=workflow_id, end_time=end_time,
+        status=ObservabilityFields.STATUS_COMPLETED,
+        error_message=None, error_stack_trace=None,
+    )
+    emit_event_fn("workflow_end", {
+        ObservabilityFields.WORKFLOW_ID: workflow_id,
+        ObservabilityFields.STATUS: ObservabilityFields.STATUS_COMPLETED,
+        ObservabilityFields.END_TIME: end_time.isoformat(),
+    })
+    aggregate_workflow_metrics_on_success(
+        backend=backend, alert_manager=alert_manager, workflow_id=workflow_id,
+    )
+
+
+def handle_workflow_error(
+    backend: Any,
+    emit_event_fn: Any,
+    get_stack_trace_fn: Any,
+    workflow_id: str,
+    error: Exception,
+) -> None:
+    """Handle workflow execution error."""
+    end_time = utcnow()
+    backend.track_workflow_end(
+        workflow_id=workflow_id, end_time=end_time,
+        status=ObservabilityFields.STATUS_FAILED,
+        error_message=str(error), error_stack_trace=get_stack_trace_fn(),
+    )
+    emit_event_fn("workflow_end", {
+        ObservabilityFields.WORKFLOW_ID: workflow_id,
+        ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
+        ObservabilityFields.END_TIME: end_time.isoformat(),
+        ObservabilityFields.ERROR_MESSAGE: str(error),
+    })
+
+
+def handle_stage_success(
+    backend: Any,
+    emit_event_fn: Any,
+    stage_id: str,
+) -> None:
+    """Handle successful stage completion."""
+    end_time = utcnow()
+    try:
+        if hasattr(backend, 'aggregate_stage_metrics'):
+            metrics = backend.aggregate_stage_metrics(stage_id)
+            backend.track_stage_end(
+                stage_id=stage_id, end_time=end_time,
+                status=ObservabilityFields.STATUS_COMPLETED,
+                error_message=None,
+                num_agents_executed=metrics.get('num_agents_executed', 0),
+                num_agents_succeeded=metrics.get('num_agents_succeeded', 0),
+                num_agents_failed=metrics.get('num_agents_failed', 0),
+            )
+        else:
+            backend.track_stage_end(
+                stage_id=stage_id, end_time=end_time,
+                status=ObservabilityFields.STATUS_COMPLETED,
+            )
+    except Exception as e:
+        logger.warning(
+            f"Failed to aggregate stage metrics for {stage_id}: {e}",
+            exc_info=True,
+        )
+        backend.track_stage_end(
+            stage_id=stage_id, end_time=end_time,
+            status=ObservabilityFields.STATUS_COMPLETED,
+        )
+    emit_event_fn("stage_end", {
+        ObservabilityFields.STAGE_ID: stage_id,
+        ObservabilityFields.STATUS: ObservabilityFields.STATUS_COMPLETED,
+        ObservabilityFields.END_TIME: end_time.isoformat(),
+    })
+
+
+def handle_stage_error(
+    backend: Any,
+    emit_event_fn: Any,
+    stage_id: str,
+    error: Exception,
+) -> None:
+    """Handle stage execution error."""
+    end_time = utcnow()
+    backend.track_stage_end(
+        stage_id=stage_id, end_time=end_time,
+        status=ObservabilityFields.STATUS_FAILED,
+        error_message=str(error),
+    )
+    emit_event_fn("stage_end", {
+        ObservabilityFields.STAGE_ID: stage_id,
+        ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
+        ObservabilityFields.END_TIME: end_time.isoformat(),
+        ObservabilityFields.ERROR_MESSAGE: str(error),
+    })
+
+
+def handle_agent_success(
+    backend: Any,
+    emit_event_fn: Any,
+    collect_metrics_fn: Any,
+    agent_id: str,
+) -> None:
+    """Handle successful agent completion."""
+    end_time = utcnow()
+    backend.track_agent_end(
+        agent_id=agent_id, end_time=end_time,
+        status=ObservabilityFields.STATUS_COMPLETED,
+    )
+    emit_event_fn("agent_end", {
+        ObservabilityFields.AGENT_ID: agent_id,
+        ObservabilityFields.STATUS: ObservabilityFields.STATUS_COMPLETED,
+        ObservabilityFields.END_TIME: end_time.isoformat(),
+    })
+    collect_metrics_fn(agent_id)
+
+
+def handle_agent_error(
+    backend: Any,
+    emit_event_fn: Any,
+    agent_id: str,
+    error: Exception,
+) -> None:
+    """Handle agent execution error."""
+    end_time = utcnow()
+    backend.track_agent_end(
+        agent_id=agent_id, end_time=end_time,
+        status=ObservabilityFields.STATUS_FAILED,
+        error_message=str(error),
+    )
+    emit_event_fn("agent_end", {
+        ObservabilityFields.AGENT_ID: agent_id,
+        ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
+        ObservabilityFields.END_TIME: end_time.isoformat(),
+        ObservabilityFields.ERROR_MESSAGE: str(error),
+    })
+
+
 def emit_llm_stream_chunk(
     event_bus: Any,
     data: StreamChunkData,

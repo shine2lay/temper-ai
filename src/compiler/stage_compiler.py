@@ -171,8 +171,15 @@ class StageCompiler:
         ref_lookup = self._build_ref_lookup(stage_refs)
         depths = compute_depths(dag)
 
+        # Collect stages with loops_back_to — barriers from these
+        # predecessors are skipped because the loop gate controls routing.
+        loop_stages: set = set()
+        for name, ref in ref_lookup.items():
+            if _ref_attr(ref, "loops_back_to"):
+                loop_stages.add(name)
+
         # Insert barrier nodes for asymmetric fan-in
-        barrier_edges = _insert_fan_in_barriers(graph, dag, depths)
+        barrier_edges = _insert_fan_in_barriers(graph, dag, depths, loop_stages)
 
         # START -> init
         graph.add_edge(START, "init")
@@ -292,10 +299,28 @@ class StageCompiler:
 
         graph.add_edge(stage, gate_name)
 
-        # Exit targets: ALL successors in DAG (fan-out), or END.
+        # Exit targets: successors in DAG (fan-out), or END.
+        # Filter out successors reachable via another exit target to
+        # prevent double-fire.  E.g. if successors = [review, validate]
+        # and validate depends_on [stage, review], validate is reachable
+        # through review and should not be a direct exit target.
+        raw_targets: List[Optional[str]] = list(successors) if successors else [None]
+        if len(raw_targets) > 1:
+            target_set = set(t for t in raw_targets if t)
+            filtered: List[Optional[str]] = []
+            for target in raw_targets:
+                if target is None:
+                    filtered.append(target)
+                    continue
+                other_preds = set(dag.predecessors.get(target, []))
+                other_preds.discard(stage)  # exclude current loop stage
+                if other_preds & target_set:
+                    continue  # reachable through another exit target
+                filtered.append(target)
+            raw_targets = filtered if filtered else raw_targets
+
         # Remap targets that have barrier chains to use the barrier
         # entry point so fan-in depth equalization is preserved.
-        raw_targets = successors if successors else [None]
         exit_targets: List[Optional[str]] = []
         for target in raw_targets:
             if target and barrier_edges and (stage, target) in barrier_edges:
@@ -570,6 +595,7 @@ def _insert_fan_in_barriers(
     graph: Any,
     dag: Any,
     depths: Dict[str, int],
+    loop_stages: Optional[set] = None,
 ) -> Dict:
     """Insert pass-through barrier nodes for asymmetric fan-in.
 
@@ -580,10 +606,15 @@ def _insert_fan_in_barriers(
     This function inserts barrier chains on shallow edges to equalize depths,
     ensuring all predecessors complete in the same superstep.
 
+    Predecessors that are loop stages are skipped — their loop gate controls
+    whether successors fire, so a direct barrier edge would bypass the gate
+    and cause double-execution of the fan-in target.
+
     Args:
         graph: StateGraph being built
         dag: StageDAG with predecessors
         depths: Stage depth map from compute_depths()
+        loop_stages: Set of stage names with loops_back_to (skip barriers)
 
     Returns:
         Dict mapping (pred, target) to True for edges replaced by barriers
@@ -598,6 +629,12 @@ def _insert_fan_in_barriers(
         max_pred_depth = max(depths[p] for p in preds)
 
         for pred in preds:
+            # Skip barriers from loop stages — the loop gate handles
+            # routing to successors; a direct barrier edge would fire
+            # on every iteration, bypassing the gate.
+            if loop_stages and pred in loop_stages:
+                continue
+
             depth_diff = max_pred_depth - depths[pred]
             if depth_diff == 0:
                 continue

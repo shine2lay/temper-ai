@@ -3,6 +3,7 @@
 Verifies that StageCompiler correctly builds LangGraph graphs with
 fan-out/fan-in edges when stages declare depends_on.
 """
+from typing import Dict
 from unittest.mock import Mock, patch
 
 import pytest
@@ -541,3 +542,117 @@ class TestDAGVCSPattern:
         assert (barrier, "validate_dec") in edge_pairs
         # review_dec→validate_dec should be direct
         assert ("review_dec", "validate_dec") in edge_pairs
+
+    def test_vcs_fan_in_no_double_fire(self):
+        """Fan-in node runs once per loop iteration, not per predecessor.
+
+        DAG: code → static(loop) → [review, validate(loop)]
+        validate depends_on [static, review]; both static and validate
+        loop_back_to code.
+
+        With loop_condition={{ false }} (no loops), each stage runs exactly once.
+        The loop gate for static should exit to review only (not validate),
+        because validate is reachable via review → validate.
+        """
+        compiler, node_builder = _make_compiler()
+        exec_counts: Dict[str, int] = {}
+
+        def _counting_factory(name, _cfg):
+            def node(state):
+                if not hasattr(state, "stage_outputs"):
+                    state.stage_outputs = {}
+                exec_counts[name] = exec_counts.get(name, 0) + 1
+                state.stage_outputs[name] = f"output_{name}"
+                state.current_stage = name
+                return state
+            return node
+
+        with patch.object(
+            node_builder, "create_stage_node", side_effect=_counting_factory
+        ):
+            stages = ["code", "static", "review", "validate"]
+            config = {
+                "workflow": {
+                    "stages": [
+                        {"name": "code"},
+                        {
+                            "name": "static",
+                            "depends_on": ["code"],
+                            "loops_back_to": "code",
+                            "max_loops": 2,
+                            "loop_condition": "{{ false }}",
+                        },
+                        {"name": "review", "depends_on": ["static"]},
+                        {
+                            "name": "validate",
+                            "depends_on": ["static", "review"],
+                            "loops_back_to": "code",
+                            "max_loops": 2,
+                            "loop_condition": "{{ false }}",
+                        },
+                    ]
+                }
+            }
+            graph = compiler.compile_stages(stages, config)
+            result = graph.invoke({"workflow_id": "test-no-double", "version": "1.0"})
+
+        # Every stage should execute exactly once
+        for name in stages:
+            assert name in result[StateKeys.STAGE_OUTPUTS], f"{name} missing"
+            assert exec_counts.get(name, 0) == 1, (
+                f"{name} executed {exec_counts.get(name, 0)} times, expected 1"
+            )
+
+    def test_vcs_loop_gate_filters_reachable_targets(self):
+        """Loop gate for static exits to review only, not validate.
+
+        validate is reachable through review, so it should not appear
+        as a direct exit target from static's loop gate.
+        """
+        compiler, node_builder = _make_compiler()
+
+        with patch.object(
+            node_builder, "create_stage_node", return_value=Mock()
+        ):
+            stages = ["code", "static", "review", "validate"]
+            config = {
+                "workflow": {
+                    "stages": [
+                        {"name": "code"},
+                        {
+                            "name": "static",
+                            "depends_on": ["code"],
+                            "loops_back_to": "code",
+                            "max_loops": 2,
+                            "loop_condition": "{{ false }}",
+                        },
+                        {"name": "review", "depends_on": ["static"]},
+                        {
+                            "name": "validate",
+                            "depends_on": ["static", "review"],
+                            "loops_back_to": "code",
+                            "max_loops": 2,
+                            "loop_condition": "{{ false }}",
+                        },
+                    ]
+                }
+            }
+            graph = compiler.compile_stages(stages, config)
+
+        structure = graph.get_graph()
+        edge_pairs = [(e.source, e.target) for e in structure.edges]
+
+        gate = "_loop_gate_static"
+        gate_exits = [t for s, t in edge_pairs if s == gate]
+        assert "code" in gate_exits, "Gate should loop back to code"
+        assert "review" in gate_exits, "Gate should exit to review"
+        # validate should NOT be a direct exit — it's reachable via review
+        assert "validate" not in gate_exits, (
+            "Gate should not exit directly to validate (reachable via review)"
+        )
+        # No barrier from static to validate (loop stage pred skipped)
+        barrier = "_barrier_static_to_validate_0"
+        node_ids = {n.id for n in structure.nodes.values()}
+        assert barrier not in node_ids, (
+            "No barrier should exist from loop stage static to validate"
+        )

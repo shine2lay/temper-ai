@@ -166,6 +166,16 @@ class BaseLLM(LLMContextManagerMixin, ABC):
     See _base_helpers.py for extracted internal logic.
     """
 
+    # Instance attributes set by _init_infrastructure()
+    _client: Optional[httpx.Client]
+    _async_client: Optional[httpx.AsyncClient]
+    _closed: bool
+    _sync_cleanup_lock: threading.Lock
+    _async_cleanup_lock: Optional[asyncio.Lock]
+    _cache: Optional["LLMCache"]
+    _circuit_breaker: CircuitBreaker
+    _rate_limiter: Optional[Any]
+
     # Callable attributes bound dynamically by _bind_callable_attributes()
     _build_bearer_auth_headers: Callable[[], Dict[str, str]]
     _check_cache: Callable[..., Tuple[Optional[str], Optional["LLMResponse"]]]
@@ -235,44 +245,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             cache_ttl = kwargs.get('cache_ttl', DEFAULT_CACHE_TTL)
             rate_limiter = kwargs.get('rate_limiter')
 
-        self._init_infrastructure(enable_cache, cache_ttl, rate_limiter)
-
-    def _init_infrastructure(
-        self, enable_cache: Any, cache_ttl: Any, rate_limiter: Any
-    ) -> None:
-        """Initialize clients, cache, circuit breaker, and rate limiter."""
-        # Lazy initialization - clients created on first use
-        self._client: Optional[httpx.Client] = None
-        self._async_client: Optional[httpx.AsyncClient] = None
-
-        # Cleanup coordination (prevents race conditions)
-        self._closed = False
-        self._sync_cleanup_lock = threading.Lock()
-        self._async_cleanup_lock: Optional[asyncio.Lock] = None  # Lazy init (needs event loop)
-
-        # Optional caching
-        self._cache: Optional[LLMCache] = None
-        if enable_cache:
-            if CACHE_AVAILABLE and LLMCache is not None:
-                self._cache = LLMCache(backend="memory", ttl=cache_ttl)
-            else:
-                import warnings
-                warnings.warn(
-                    "LLM caching requested but cache module not available. "
-                    "Install with: pip install src/cache",
-                    RuntimeWarning
-                )
-
-        # Circuit breaker for resilience (shared across instances for same provider+model+endpoint)
-        self._circuit_breaker = _get_shared_cb(
-            self, BaseLLM._circuit_breakers, BaseLLM._circuit_breaker_lock,
-            BaseLLM._MAX_CIRCUIT_BREAKERS,
-        )
-
-        self._rate_limiter = rate_limiter
-
-        # Callable attributes (not methods) to reduce class method count
-        _bind_callable_attributes(self)
+        _init_infrastructure(self, enable_cache, cache_ttl, rate_limiter)
 
     @classmethod
     def reset_shared_circuit_breakers(cls) -> None:
@@ -507,4 +480,36 @@ class BaseLLM(LLMContextManagerMixin, ABC):
 
         result: LLMResponse = await self._circuit_breaker.async_call(_make_async_api_call)
         return result
+
+
+def _init_infrastructure(
+    llm: BaseLLM, enable_cache: Any, cache_ttl: Any, rate_limiter: Any
+) -> None:
+    """Initialize clients, cache, circuit breaker, and rate limiter."""
+    llm._client = None
+    llm._async_client = None
+
+    llm._closed = False
+    llm._sync_cleanup_lock = threading.Lock()
+    llm._async_cleanup_lock = None
+
+    llm._cache = None
+    if enable_cache:
+        if CACHE_AVAILABLE and LLMCache is not None:
+            llm._cache = LLMCache(backend="memory", ttl=cache_ttl)
+        else:
+            import warnings
+            warnings.warn(
+                "LLM caching requested but cache module not available. "
+                "Install with: pip install src/cache",
+                RuntimeWarning,
+            )
+
+    llm._circuit_breaker = _get_shared_cb(
+        llm, BaseLLM._circuit_breakers, BaseLLM._circuit_breaker_lock,
+        BaseLLM._MAX_CIRCUIT_BREAKERS,
+    )
+
+    llm._rate_limiter = rate_limiter
+    _bind_callable_attributes(llm)
 

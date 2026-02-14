@@ -351,7 +351,7 @@ class WorkflowExecutionService:
             }
             if workspace is not None:
                 state["workspace_root"] = workspace
-            result = compiled.invoke(state)
+            result: Dict[str, Any] = compiled.invoke(state)
 
         # Cleanup
         if hasattr(engine, "tool_executor") and engine.tool_executor:

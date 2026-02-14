@@ -17,6 +17,7 @@ Usage:
     fig = visualize_trace(trace_data)
     fig.show()
 """
+import argparse
 import json
 import sys
 from datetime import datetime
@@ -492,7 +493,8 @@ def _load_trace_data(args: Any) -> Optional[Dict[str, Any]]:
         # Load from JSON file
         print(f"Loading trace from: {args.file}")
         with open(args.file) as f:
-            return json.load(f)
+            data: Dict[str, Any] = json.load(f)
+            return data
     else:
         # Load from database
         try:
@@ -607,9 +609,8 @@ def visualize_trace(
     return fig
 
 
-def _build_arg_parser():
+def _build_arg_parser() -> argparse.ArgumentParser:
     """Build the CLI argument parser for trace visualization."""
-    import argparse
 
     parser = argparse.ArgumentParser(
         description="Visualize execution trace as hierarchical Gantt chart"

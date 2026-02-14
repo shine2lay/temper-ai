@@ -795,7 +795,8 @@ def _extract_agent_name(agent_entry: Any) -> str:
     if isinstance(agent_entry, str):
         return agent_entry
     if isinstance(agent_entry, dict):
-        return agent_entry.get("name", "")
+        name: str = agent_entry.get("name", "")
+        return name
     return ""
 
 

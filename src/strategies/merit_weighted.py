@@ -88,6 +88,30 @@ class MeritWeightedResolver(ConflictResolver):
         self.escalation_threshold = self.config.get("escalation_threshold", DEFAULT_ESCALATION_THRESHOLD)
         self.recency_decay_days = self.config.get("recency_decay_days", DEFAULT_RECENCY_DECAY_DAYS)
 
+    def _validate_resolution_inputs(
+        self,
+        conflict: Conflict,
+        context: ResolutionContext
+    ) -> None:
+        """Validate conflict and context inputs."""
+        if not conflict.agents:
+            raise ValueError("Conflict must have agents")
+        if not context.agent_merits:
+            raise ValueError("Context must have agent merits")
+
+    def _determine_resolution_method(self, confidence: float) -> tuple:
+        """Determine resolution method and review flag from confidence.
+
+        Returns:
+            Tuple of (method_name, needs_review)
+        """
+        if confidence >= self.auto_resolve_threshold:
+            return "merit_weighted_auto", False
+        elif confidence < self.escalation_threshold:
+            return "merit_weighted_escalation", True
+        else:
+            return "merit_weighted_flagged", True
+
     def resolve_with_context(
         self,
         conflict: Conflict,
@@ -106,11 +130,7 @@ class MeritWeightedResolver(ConflictResolver):
             ValueError: If conflict is invalid or context missing
         """
         # Validate inputs
-        if not conflict.agents:
-            raise ValueError("Conflict must have agents")
-
-        if not context.agent_merits:
-            raise ValueError("Context must have agent merits")
+        self._validate_resolution_inputs(conflict, context)
 
         # Calculate weighted votes
         decision_scores = calculate_merit_weighted_votes(
@@ -125,20 +145,12 @@ class MeritWeightedResolver(ConflictResolver):
         # Get winning decision
         decision, raw_score = get_highest_weighted_decision(decision_scores)
 
-        # Normalize confidence (0-1 scale)
-        total_possible_weight = len(conflict.agents)  # If all agents perfect merit + confidence
+        # Normalize confidence
+        total_possible_weight = len(conflict.agents)
         confidence = min(raw_score / total_possible_weight, 1.0)
 
-        # Determine resolution method based on confidence
-        if confidence >= self.auto_resolve_threshold:
-            method = "merit_weighted_auto"
-            needs_review = False
-        elif confidence < self.escalation_threshold:
-            method = "merit_weighted_escalation"
-            needs_review = True
-        else:
-            method = "merit_weighted_flagged"
-            needs_review = True  # Middle ground: resolve but flag
+        # Determine resolution method
+        method, needs_review = self._determine_resolution_method(confidence)
 
         # Identify winning agents
         winning_agents = [

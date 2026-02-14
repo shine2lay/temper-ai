@@ -4,12 +4,27 @@ Extracted from ExecutionTracker to separate collaboration/safety
 concerns from core execution tracking.
 """
 import logging
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional
 
 from src.database.datetime_utils import utcnow
 from src.observability.backend import ObservabilityBackend
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class CollaborationEventParams:
+    """Parameters for tracking collaboration events."""
+    event_type: str
+    stage_id: Optional[str] = None
+    agents_involved: Optional[List[str]] = None
+    event_data: Optional[Dict[str, Any]] = None
+    round_number: Optional[int] = None
+    resolution_strategy: Optional[str] = None
+    outcome: Optional[str] = None
+    confidence_score: Optional[float] = None
+    extra_metadata: Optional[Dict[str, Any]] = None
 
 
 class CollaborationEventTracker:
@@ -59,81 +74,120 @@ class CollaborationEventTracker:
         Returns:
             ID of created collaboration event record, or empty string on failure.
         """
-        context = self._get_context()
+        # Create params and map legacy parameters
+        params = CollaborationEventParams(
+            event_type=event_type,
+            stage_id=stage_id,
+            agents_involved=agents_involved,
+            event_data=event_data,
+            round_number=round_number,
+            resolution_strategy=resolution_strategy,
+            outcome=outcome,
+            confidence_score=confidence_score,
+            extra_metadata=extra_metadata
+        )
 
         # Map legacy parameters to new schema
-        if stage_name and not stage_id:
-            stage_id = context.stage_id or stage_name
+        self._map_legacy_params(params, stage_name, agents, decision, confidence, metadata)
 
-        if agents and not agents_involved:
-            agents_involved = agents
+        # Validate and process
+        if not self._validate_collab_params(params):
+            return ""
 
-        if decision is not None and not outcome:
-            outcome = decision
+        # Delegate to backend
+        return self._track_event_to_backend(params)
 
-        if confidence is not None and confidence_score is None:
-            confidence_score = confidence
+    def _map_legacy_params(
+        self,
+        params: CollaborationEventParams,
+        stage_name: Optional[str],
+        agents: Optional[List[str]],
+        decision: Optional[str],
+        confidence: Optional[float],
+        metadata: Optional[Dict[str, Any]]
+    ) -> None:
+        """Map legacy parameters to params dataclass."""
+        context = self._get_context()
 
-        if metadata and not event_data:
-            event_data = metadata
+        if stage_name and not params.stage_id:
+            params.stage_id = context.stage_id or stage_name
+
+        if agents and not params.agents_involved:
+            params.agents_involved = agents
+
+        if decision is not None and not params.outcome:
+            params.outcome = decision
+
+        if confidence is not None and params.confidence_score is None:
+            params.confidence_score = confidence
+
+        if metadata and not params.event_data:
+            params.event_data = metadata
+
+    def _validate_collab_params(self, params: CollaborationEventParams) -> bool:
+        """Validate collaboration event parameters."""
+        context = self._get_context()
 
         # Validation: Get stage_id from context if not provided
-        if not stage_id:
-            stage_id = context.stage_id
-            if not stage_id:
+        if not params.stage_id:
+            params.stage_id = context.stage_id
+            if not params.stage_id:
                 logger.warning(
                     "track_collaboration_event called without stage_id context",
                     extra={
-                        "event_type": event_type,
+                        "event_type": params.event_type,
                         "has_workflow_context": bool(context.workflow_id),
                         "has_stage_context": bool(context.stage_id),
                         "has_agent_context": bool(context.agent_id),
                     },
                 )
-                return ""
+                return False
 
         # Validation: event_type is required
-        if not event_type:
+        if not params.event_type:
             logger.error(
                 "track_collaboration_event called without event_type",
                 extra={
-                    "stage_id": stage_id,
+                    "stage_id": params.stage_id,
                     "has_workflow_context": bool(context.workflow_id),
                 },
             )
-            return ""
+            return False
 
         # Normalize agents_involved
-        if agents_involved is None:
-            agents_involved = []
+        if params.agents_involved is None:
+            params.agents_involved = []
 
         # Validate confidence_score range
-        if confidence_score is not None and not (0.0 <= confidence_score <= 1.0):
+        if params.confidence_score is not None and not (0.0 <= params.confidence_score <= 1.0):
             logger.warning(
-                f"Invalid confidence_score {confidence_score}, clamping to [0.0, 1.0]",
-                extra={"event_type": event_type, "stage_id": stage_id},
+                f"Invalid confidence_score {params.confidence_score}, clamping to [0.0, 1.0]",
+                extra={"event_type": params.event_type, "stage_id": params.stage_id},
             )
-            confidence_score = max(0.0, min(1.0, confidence_score))
+            params.confidence_score = max(0.0, min(1.0, params.confidence_score))
 
-        # Delegate to backend with error handling
+        return True
+
+    def _track_event_to_backend(self, params: CollaborationEventParams) -> str:
+        """Track event to backend with error handling."""
         try:
             return self.backend.track_collaboration_event(
-                stage_id=stage_id,
-                event_type=event_type,
-                agents_involved=agents_involved,
-                event_data=event_data,
-                round_number=round_number,
-                resolution_strategy=resolution_strategy,
-                outcome=outcome,
-                confidence_score=confidence_score,
-                extra_metadata=extra_metadata,
+                stage_id=params.stage_id,
+                event_type=params.event_type,
+                agents_involved=params.agents_involved,
+                event_data=params.event_data,
+                round_number=params.round_number,
+                resolution_strategy=params.resolution_strategy,
+                outcome=params.outcome,
+                confidence_score=params.confidence_score,
+                extra_metadata=params.extra_metadata,
                 timestamp=utcnow(),
             )
         except Exception as e:
             logger.error(
                 f"Failed to track collaboration event: {e}",
                 exc_info=True,
-                extra={"event_type": event_type, "stage_id": stage_id},
+                extra={"event_type": params.event_type, "stage_id": params.stage_id},
             )
             return ""
 

@@ -123,41 +123,13 @@ class PerformanceAnalyzer:
         # Delegate to BaselineStorage's validator
         return self.storage.validator.validate_and_resolve(agent_name)
 
-    def analyze_agent_performance(
+    def _validate_analysis_inputs(
         self,
         agent_name: str,
-        window_hours: int = HOURS_PER_WEEK,  # 7 days default
-        window_start: Optional[datetime] = None,
-        window_end: Optional[datetime] = None,
-        min_executions: int = THRESHOLD_MEDIUM_COUNT,
-        include_failed: bool = False
-    ) -> AgentPerformanceProfile:
-        """
-        Analyze agent performance over time window.
-
-        Args:
-            agent_name: Name of agent to analyze
-            window_hours: Hours to look back (default 168 = 7 days)
-            window_start: Override start time (optional)
-            window_end: Override end time (optional, default: now)
-            min_executions: Minimum executions required (default 10)
-            include_failed: Include failed executions in analysis (default False)
-
-        Returns:
-            AgentPerformanceProfile with aggregated metrics
-
-        Raises:
-            PerformanceDataError: If fewer than min_executions found
-            DatabaseQueryError: If database query fails
-            ValueError: If invalid parameters
-
-        Example:
-            >>> profile = analyzer.analyze_agent_performance("my_agent")
-            >>> print(f"Executions: {profile.total_executions}")
-            >>> print(f"Success rate: {profile.get_metric('success_rate', 'mean'):.2%}")
-            >>> print(f"Avg duration: {profile.get_metric('duration_seconds', 'mean'):.2f}s")
-        """
-        # Validate inputs
+        min_executions: int,
+        window_hours: int
+    ) -> None:
+        """Validate inputs for performance analysis."""
         if not agent_name or not agent_name.strip():
             raise ValueError("agent_name cannot be empty")
         if min_executions < 1:
@@ -165,17 +137,72 @@ class PerformanceAnalyzer:
         if window_hours < 1:
             raise ValueError(f"window_hours must be >= 1, got {window_hours}")
 
-        # Calculate time window
+    def _calculate_time_window(
+        self,
+        window_hours: int,
+        window_start: Optional[datetime],
+        window_end: Optional[datetime]
+    ) -> tuple[datetime, datetime]:
+        """Calculate and validate time window."""
         if window_end is None:
             window_end = datetime.now(timezone.utc)
         if window_start is None:
             window_start = window_end - timedelta(hours=window_hours)
 
-        # Validate time window
         if window_start >= window_end:
             raise ValueError(
                 f"window_start ({window_start}) must be before window_end ({window_end})"
             )
+
+        return window_start, window_end
+
+    def _build_performance_profile(
+        self,
+        agent_name: str,
+        window_start: datetime,
+        window_end: datetime,
+        include_failed: bool,
+        min_executions: int
+    ) -> AgentPerformanceProfile:
+        """Build performance profile from metrics data."""
+        metrics_data = self.metrics.aggregate_metrics(
+            agent_name, window_start, window_end, include_failed
+        )
+
+        total_executions = metrics_data.pop("total_executions", 0)
+
+        if total_executions < min_executions:
+            raise PerformanceDataError(
+                f"Insufficient data for {agent_name}: "
+                f"{total_executions} executions found "
+                f"(minimum {min_executions} required)"
+            )
+
+        return AgentPerformanceProfile(
+            agent_name=agent_name,
+            window_start=window_start,
+            window_end=window_end,
+            total_executions=total_executions,
+            metrics=metrics_data
+        )
+
+    def analyze_agent_performance(
+        self,
+        agent_name: str,
+        window_hours: int = HOURS_PER_WEEK,
+        window_start: Optional[datetime] = None,
+        window_end: Optional[datetime] = None,
+        min_executions: int = THRESHOLD_MEDIUM_COUNT,
+        include_failed: bool = False
+    ) -> AgentPerformanceProfile:
+        """Analyze agent performance over time window."""
+        # Validate inputs
+        self._validate_analysis_inputs(agent_name, min_executions, window_hours)
+
+        # Calculate time window
+        window_start, window_end = self._calculate_time_window(
+            window_hours, window_start, window_end
+        )
 
         logger.info(
             f"Analyzing performance: agent={agent_name}, "
@@ -183,27 +210,8 @@ class PerformanceAnalyzer:
         )
 
         try:
-            # Delegate to MetricsAggregator for SQL queries
-            metrics_data = self.metrics.aggregate_metrics(
-                agent_name, window_start, window_end, include_failed
-            )
-
-            total_executions = metrics_data.pop("total_executions", 0)
-
-            if total_executions < min_executions:
-                raise PerformanceDataError(
-                    f"Insufficient data for {agent_name}: "
-                    f"{total_executions} executions found "
-                    f"(minimum {min_executions} required)"
-                )
-
-            # Create profile
-            profile = AgentPerformanceProfile(
-                agent_name=agent_name,
-                window_start=window_start,
-                window_end=window_end,
-                total_executions=total_executions,
-                metrics=metrics_data
+            profile = self._build_performance_profile(
+                agent_name, window_start, window_end, include_failed, min_executions
             )
 
             logger.info(

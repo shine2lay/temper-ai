@@ -190,6 +190,108 @@ def validate_input_data(
         )
 
 
+def _check_execution_timeout(
+    start_time: float,
+    max_execution_time: float,
+    llm_response: Optional[Any],
+    tool_calls_made: List[Dict[str, Any]],
+    total_tokens: int,
+    total_cost: float,
+    iteration: int,
+    agent: "StandardAgent"
+) -> Optional[AgentResponse]:
+    """Check if execution time limit exceeded. Returns error response or None."""
+    elapsed = time.time() - start_time
+    if elapsed >= max_execution_time:
+        return _build_final_response(  # type: ignore[no-any-return]
+            agent, output=llm_response.content if llm_response else "",
+            reasoning=extract_reasoning(llm_response.content) if llm_response else None,
+            tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
+            start_time=start_time,
+            error=f"Execution time limit exceeded ({max_execution_time}s)",
+            metadata={"elapsed_seconds": elapsed, "iteration": iteration}
+        )
+    return None
+
+
+def _call_llm_with_retry_sync(
+    agent: "StandardAgent",
+    prompt: str,
+    inf_config: Any,
+    max_agent_retries: int,
+    retry_delay: float,
+) -> tuple[Optional[Any], Optional[Exception]]:
+    """Call LLM with agent-level retries (sync). Returns (LLMResponse, error) tuple."""
+    last_error: Optional[Exception] = None
+
+    for attempt in range(max_agent_retries + 1):
+        try:
+            llm_kwargs: Dict[str, Any] = {}
+            native_tools = _get_native_tool_definitions(agent)
+            if native_tools:
+                llm_kwargs["tools"] = native_tools
+            combined_cb = _make_stream_callback(agent)
+            if combined_cb:
+                return agent.llm.stream(prompt, on_chunk=combined_cb, **llm_kwargs), None
+            else:
+                return agent.llm.complete(prompt, **llm_kwargs), None
+        except LLMError as e:
+            last_error = e
+            safe_err = sanitize_error_message(str(e))
+            _track_failed_llm_call(agent, inf_config, prompt, e, attempt + 1, max_agent_retries + 1)
+            if attempt < max_agent_retries:
+                backoff_delay = retry_delay * (DEFAULT_BACKOFF_MULTIPLIER ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                logger.warning(
+                    "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
+                    attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
+                )
+                shutdown_event = threading.Event()
+                if shutdown_event.wait(timeout=backoff_delay):
+                    raise KeyboardInterrupt("Agent execution interrupted")
+            else:
+                logger.error("LLM call failed after %d attempts: %s", max_agent_retries + 1, safe_err, exc_info=True)
+
+    return None, last_error
+
+
+async def _call_llm_with_retry_async(
+    agent: "StandardAgent",
+    prompt: str,
+    inf_config: Any,
+    max_agent_retries: int,
+    retry_delay: float,
+) -> tuple[Optional[Any], Optional[Exception]]:
+    """Call LLM with agent-level retries (async). Returns (LLMResponse, error) tuple."""
+    last_error: Optional[Exception] = None
+
+    for attempt in range(max_agent_retries + 1):
+        try:
+            llm_kwargs: Dict[str, Any] = {}
+            native_tools = _get_native_tool_definitions(agent)
+            if native_tools:
+                llm_kwargs["tools"] = native_tools
+            combined_cb = _make_stream_callback(agent)
+            if combined_cb:
+                return await agent.llm.astream(prompt, on_chunk=combined_cb, **llm_kwargs), None
+            else:
+                return await agent.llm.acomplete(prompt, **llm_kwargs), None
+        except LLMError as e:
+            last_error = e
+            safe_err = sanitize_error_message(str(e))
+            _track_failed_llm_call(agent, inf_config, prompt, e, attempt + 1, max_agent_retries + 1)
+            if attempt < max_agent_retries:
+                backoff_delay = retry_delay * (DEFAULT_BACKOFF_MULTIPLIER ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
+                logger.warning(
+                    "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
+                    attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
+                )
+                await asyncio.sleep(backoff_delay)
+            else:
+                logger.error("LLM call failed after %d attempts: %s", max_agent_retries + 1, safe_err, exc_info=True)
+
+    return None, last_error
+
+
 class StandardAgent(BaseAgent):
     """Standard agent with LLM and tool execution loop.
 
@@ -313,16 +415,12 @@ class StandardAgent(BaseAgent):
             max_execution_time = self.config.agent.safety.max_execution_time_seconds
 
             for iteration in range(max_iterations):
-                elapsed = time.time() - start_time
-                if elapsed >= max_execution_time:
-                    return _build_final_response(  # type: ignore[no-any-return]
-                        self, output=llm_response.content if llm_response else "",
-                        reasoning=extract_reasoning(llm_response.content) if llm_response else None,
-                        tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
-                        start_time=start_time,
-                        error=f"Execution time limit exceeded ({max_execution_time}s)",
-                        metadata={"elapsed_seconds": elapsed, "iteration": iteration}
-                    )
+                timeout_response = _check_execution_timeout(
+                    start_time, max_execution_time, llm_response,
+                    tool_calls_made, total_tokens, total_cost, iteration, self
+                )
+                if timeout_response:
+                    return timeout_response
 
                 iteration_result = self._execute_iteration(
                     prompt, total_tokens, total_cost, tool_calls_made, start_time, max_iterations
@@ -380,16 +478,12 @@ class StandardAgent(BaseAgent):
             max_execution_time = self.config.agent.safety.max_execution_time_seconds
 
             for iteration in range(max_iterations):
-                elapsed = time.time() - start_time
-                if elapsed >= max_execution_time:
-                    return _build_final_response(  # type: ignore[no-any-return]
-                        self, output=llm_response.content if llm_response else "",
-                        reasoning=extract_reasoning(llm_response.content) if llm_response else None,
-                        tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
-                        start_time=start_time,
-                        error=f"Execution time limit exceeded ({max_execution_time}s)",
-                        metadata={"elapsed_seconds": elapsed, "iteration": iteration}
-                    )
+                timeout_response = _check_execution_timeout(
+                    start_time, max_execution_time, llm_response,
+                    tool_calls_made, total_tokens, total_cost, iteration, self
+                )
+                if timeout_response:
+                    return timeout_response
 
                 iteration_result = await self._aexecute_iteration(
                     prompt, total_tokens, total_cost, tool_calls_made, start_time, max_iterations
@@ -442,47 +536,25 @@ class StandardAgent(BaseAgent):
         if safety_result is not None:
             return safety_result
 
-        # Call LLM with agent-level retries (async backoff with jitter)
-        llm_response = None
-        last_error = None
-
-        for attempt in range(max_agent_retries + 1):
-            try:
-                llm_kwargs: Dict[str, Any] = {}
-                native_tools = _get_native_tool_definitions(self)
-                if native_tools:
-                    llm_kwargs["tools"] = native_tools
-
-                combined_cb = _make_stream_callback(self)
-                if combined_cb:
-                    llm_response = await self.llm.astream(prompt, on_chunk=combined_cb, **llm_kwargs)
-                else:
-                    llm_response = await self.llm.acomplete(prompt, **llm_kwargs)
-                logger.info("[%s] LLM responded (%s tokens)", self.name, llm_response.total_tokens or "?")
-                break
-            except LLMError as e:
-                last_error = e
-                safe_err = sanitize_error_message(str(e))
-                _track_failed_llm_call(self, inf_config, prompt, e, attempt + 1, max_agent_retries + 1)
-                if attempt < max_agent_retries:
-                    backoff_delay = retry_delay * (DEFAULT_BACKOFF_MULTIPLIER ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
-                    logger.warning(
-                        "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
-                        attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
-                    )
-                    await asyncio.sleep(backoff_delay)
-                else:
-                    logger.error("LLM call failed after %d attempts: %s", max_agent_retries + 1, safe_err, exc_info=True)
+        # Call LLM with agent-level retries
+        llm_response, last_error = await _call_llm_with_retry_async(
+            self, prompt, inf_config, max_agent_retries, retry_delay
+        )
 
         if llm_response is None:
+            error_msg = f"LLM call failed after {max_agent_retries + 1} attempts"
+            if last_error:
+                error_msg += f": {sanitize_error_message(str(last_error))}"
             return {
                 "complete": True,
                 "response": _build_final_response(
                     self, output="", reasoning=None, tool_calls=tool_calls_made,
                     tokens=total_tokens, cost=total_cost, start_time=start_time,
-                    error=f"LLM call failed after {max_agent_retries + 1} attempts: {sanitize_error_message(str(last_error))}"
+                    error=error_msg
                 )
             }
+
+        logger.info("[%s] LLM responded (%s tokens)", self.name, llm_response.total_tokens or "?")
 
         # Track tokens and cost
         if llm_response.total_tokens:
@@ -520,47 +592,24 @@ class StandardAgent(BaseAgent):
             return safety_result
 
         # Call LLM with agent-level retries
-        llm_response = None
-        last_error = None
-
-        for attempt in range(max_agent_retries + 1):
-            try:
-                llm_kwargs: Dict[str, Any] = {}
-                native_tools = _get_native_tool_definitions(self)
-                if native_tools:
-                    llm_kwargs["tools"] = native_tools
-                combined_cb = _make_stream_callback(self)
-                if combined_cb:
-                    llm_response = self.llm.stream(prompt, on_chunk=combined_cb, **llm_kwargs)
-                else:
-                    llm_response = self.llm.complete(prompt, **llm_kwargs)
-                logger.info("[%s] LLM responded (%s tokens)", self.name, llm_response.total_tokens or "?")
-                break
-            except LLMError as e:
-                last_error = e
-                safe_err = sanitize_error_message(str(e))
-                _track_failed_llm_call(self, inf_config, prompt, e, attempt + 1, max_agent_retries + 1)
-                if attempt < max_agent_retries:
-                    backoff_delay = retry_delay * (DEFAULT_BACKOFF_MULTIPLIER ** attempt) * (RETRY_JITTER_MIN + random.random())  # noqa: S311 -- jitter/backoff, not crypto
-                    logger.warning(
-                        "LLM call failed (attempt %d/%d): %s. Retrying in %.1fs...",
-                        attempt + 1, max_agent_retries + 1, safe_err, backoff_delay
-                    )
-                    shutdown_event = threading.Event()
-                    if shutdown_event.wait(timeout=backoff_delay):
-                        raise KeyboardInterrupt("Agent execution interrupted")
-                else:
-                    logger.error("LLM call failed after %d attempts: %s", max_agent_retries + 1, safe_err, exc_info=True)
+        llm_response, last_error = _call_llm_with_retry_sync(
+            self, prompt, inf_config, max_agent_retries, retry_delay
+        )
 
         if llm_response is None:
+            error_msg = f"LLM call failed after {max_agent_retries + 1} attempts"
+            if last_error:
+                error_msg += f": {sanitize_error_message(str(last_error))}"
             return {
                 "complete": True,
                 "response": _build_final_response(
                     self, output="", reasoning=None, tool_calls=tool_calls_made,
                     tokens=total_tokens, cost=total_cost, start_time=start_time,
-                    error=f"LLM call failed after {max_agent_retries + 1} attempts: {sanitize_error_message(str(last_error))}"
+                    error=error_msg
                 )
             }
+
+        logger.info("[%s] LLM responded (%s tokens)", self.name, llm_response.total_tokens or "?")
 
         # Track tokens and cost
         if llm_response.total_tokens:
@@ -576,6 +625,72 @@ class StandardAgent(BaseAgent):
             start_time, prompt, max_iterations, _get_tool_executor
         )
 
+    def _render_base_template(
+        self,
+        input_data: Dict[str, Any],
+    ) -> str:
+        """Render the base template with variables."""
+        prompt_config = self.config.agent.prompt
+        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
+        all_variables = {**filtered_input, **prompt_config.variables}
+
+        if prompt_config.template:
+            try:
+                return self.prompt_engine.render_file(
+                    prompt_config.template, all_variables
+                )
+            except (PromptRenderError, ValueError, KeyError, FileNotFoundError) as e:
+                raise PromptRenderError(
+                    f"Failed to render template file {prompt_config.template}: {e}"
+                )
+        elif prompt_config.inline:
+            return self.prompt_engine.render(prompt_config.inline, all_variables)
+        else:
+            raise ValueError("No prompt template or inline prompt configured")
+
+    def _inject_input_context(self, template: str, input_data: Dict[str, Any]) -> str:
+        """Auto-inject string input context into template."""
+        _mode_context_keys = frozenset({
+            "interaction_mode", "mode_instruction", "debate_framing",
+        })
+        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
+
+        input_parts = []
+        for key, value in filtered_input.items():
+            if value and isinstance(value, str) and key not in _mode_context_keys:
+                label = key.replace('_', ' ').title()
+                input_parts.append(f"## {label}\n{value}")
+
+        if input_parts:
+            return template + "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
+        return template
+
+    def _inject_dialogue_context(self, template: str, input_data: Dict[str, Any]) -> str:
+        """Auto-inject dialogue history and stage agent outputs."""
+        if not getattr(self.config.agent, 'dialogue_aware', True):
+            return template
+
+        from src.agents.dialogue_formatter import (
+            format_dialogue_history,
+            format_stage_agent_outputs,
+        )
+        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
+        max_chars = getattr(self.config.agent, 'max_dialogue_context_chars', DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS)
+
+        dialogue_history = filtered_input.get("dialogue_history")
+        if dialogue_history and isinstance(dialogue_history, list):
+            formatted = format_dialogue_history(dialogue_history, max_chars)
+            if formatted:
+                template += "\n\n---\n\n" + formatted
+
+        stage_agents = filtered_input.get("current_stage_agents")
+        if stage_agents and isinstance(stage_agents, dict):
+            formatted = format_stage_agent_outputs(stage_agents, max_chars // 2)
+            if formatted:
+                template += "\n\n---\n\n" + formatted
+
+        return template
+
     def _render_prompt(
         self,
         input_data: Dict[str, Any],
@@ -584,59 +699,9 @@ class StandardAgent(BaseAgent):
         """Render prompt template with input data and tools."""
         validate_input_data(input_data, context)
 
-        prompt_config = self.config.agent.prompt
-
-        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
-        all_variables = {**filtered_input, **prompt_config.variables}
-
-        if prompt_config.template:
-            try:
-                template = self.prompt_engine.render_file(
-                    prompt_config.template, all_variables
-                )
-            except (PromptRenderError, ValueError, KeyError, FileNotFoundError) as e:
-                raise PromptRenderError(
-                    f"Failed to render template file {prompt_config.template}: {e}"
-                )
-        elif prompt_config.inline:
-            template = self.prompt_engine.render(prompt_config.inline, all_variables)
-        else:
-            raise ValueError("No prompt template or inline prompt configured")
-
-        # Keys injected by strategy.get_round_context() — exclude from string
-        # auto-inject to prevent double-injection (they're handled below).
-        _mode_context_keys = frozenset({
-            "interaction_mode", "mode_instruction", "debate_framing",
-        })
-
-        # Auto-inject input context (strings only, skip mode context keys)
-        input_parts = []
-        for key, value in filtered_input.items():
-            if value and isinstance(value, str) and key not in _mode_context_keys:
-                label = key.replace('_', ' ').title()
-                input_parts.append(f"## {label}\n{value}")
-        if input_parts:
-            template += "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
-
-        # Auto-inject dialogue context for dialogue-aware agents
-        if getattr(self.config.agent, 'dialogue_aware', True):
-            from src.agents.dialogue_formatter import (
-                format_dialogue_history,
-                format_stage_agent_outputs,
-            )
-            max_chars = getattr(self.config.agent, 'max_dialogue_context_chars', DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS)
-
-            dialogue_history = filtered_input.get("dialogue_history")
-            if dialogue_history and isinstance(dialogue_history, list):
-                formatted = format_dialogue_history(dialogue_history, max_chars)
-                if formatted:
-                    template += "\n\n---\n\n" + formatted
-
-            stage_agents = filtered_input.get("current_stage_agents")
-            if stage_agents and isinstance(stage_agents, dict):
-                formatted = format_stage_agent_outputs(stage_agents, max_chars // 2)
-                if formatted:
-                    template += "\n\n---\n\n" + formatted
+        template = self._render_base_template(input_data)
+        template = self._inject_input_context(template, input_data)
+        template = self._inject_dialogue_context(template, input_data)
 
         if not _get_native_tool_definitions(self):
             tools_section = _get_cached_tool_schemas(self)

@@ -4,8 +4,9 @@ Extracted from ResourceLimitPolicy to keep the class below 500 lines.
 These are internal implementation details and should not be used directly.
 """
 import os
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Set
 
 import psutil
 
@@ -21,6 +22,23 @@ BYTES_PER_KB_FLOAT = float(BYTES_PER_KB)
 DISK_SPACE_SAFETY_MARGIN = 1.0 + FRACTION_QUARTER - 0.05  # 1.2  # noqa: Calculation constant
 DISK_SPACE_SAFETY_MARGIN_PERCENT = PERCENT_20
 CPU_SAMPLE_INTERVAL_SECONDS = SLEEP_VERY_SHORT
+
+
+@dataclass
+class FileSizeCheckParams:
+    """Parameters for file size checking.
+
+    Bundles the multiple parameters needed for file size validation,
+    reducing function parameter count from 8 to 1.
+    """
+    operation: str
+    file_path: str
+    context: Dict[str, Any]
+    max_file_size_read: int
+    max_file_size_write: int
+    file_read_operations: Set[str]
+    file_write_operations: Set[str]
+    policy_name: str
 
 
 def format_bytes(size_bytes: int) -> str:
@@ -148,52 +166,70 @@ def validate_bool(name: str, value: Any) -> bool:
 
 
 def check_file_size(
-    operation: str,
-    file_path: str,
-    context: Dict[str, Any],
-    max_file_size_read: int,
-    max_file_size_write: int,
-    file_read_operations: set,
-    file_write_operations: set,
-    policy_name: str,
+    params: Optional[FileSizeCheckParams] = None,
+    # Legacy positional parameters for backward compatibility
+    operation: Optional[str] = None,
+    file_path: Optional[str] = None,
+    context: Optional[Dict[str, Any]] = None,
+    max_file_size_read: Optional[int] = None,
+    max_file_size_write: Optional[int] = None,
+    file_read_operations: Optional[Set[str]] = None,
+    file_write_operations: Optional[Set[str]] = None,
+    policy_name: Optional[str] = None,
 ) -> Optional[SafetyViolation]:
     """Check if file size is within limits.
 
     Args:
-        operation: Operation type
-        file_path: Path to file
-        context: Execution context
-        max_file_size_read: Maximum file size for read operations
-        max_file_size_write: Maximum file size for write operations
-        file_read_operations: Set of read operation names
-        file_write_operations: Set of write operation names
-        policy_name: Name of the policy
+        params: FileSizeCheckParams object (recommended)
+        operation: (deprecated) Operation type
+        file_path: (deprecated) Path to file
+        context: (deprecated) Execution context
+        max_file_size_read: (deprecated) Max read size
+        max_file_size_write: (deprecated) Max write size
+        file_read_operations: (deprecated) Read operations
+        file_write_operations: (deprecated) Write operations
+        policy_name: (deprecated) Policy name
 
     Returns:
         SafetyViolation if file too large, None otherwise
     """
-    try:
-        file_size = os.path.getsize(file_path)
+    # Support both new and legacy calling styles
+    if params is None:
+        if any(arg is None for arg in [operation, file_path, context, policy_name]):
+            raise ValueError("Either params or all legacy args must be provided")
+        params = FileSizeCheckParams(
+            operation=operation,  # type: ignore
+            file_path=file_path,  # type: ignore
+            context=context,  # type: ignore
+            max_file_size_read=max_file_size_read or 0,
+            max_file_size_write=max_file_size_write or 0,
+            file_read_operations=file_read_operations or set(),
+            file_write_operations=file_write_operations or set(),
+            policy_name=policy_name  # type: ignore
+        )
 
-        if operation in file_read_operations:
-            max_size = max_file_size_read
+    try:
+        file_size = os.path.getsize(params.file_path)
+
+        if params.operation in params.file_read_operations:
+            max_size = params.max_file_size_read
             operation_name = "read"
-        elif operation in file_write_operations:
-            max_size = max_file_size_write
+        elif params.operation in params.file_write_operations:
+            max_size = params.max_file_size_write
             operation_name = "write"
         else:
             return None
 
         if file_size > max_size:
             return SafetyViolation(
-                policy_name=policy_name,
+                policy_name=params.policy_name,
                 severity=ViolationSeverity.HIGH,
                 message=f"File size exceeds {operation_name} limit: {format_bytes(file_size)} > {format_bytes(max_size)}",
-                action=operation,
-                context=context,
+                action=params.operation,
+                context=params.context,
                 remediation_hint=f"Use smaller files or increase max_file_size_{operation_name} limit",
                 metadata={
-                    "file_path": file_path,
+                    "file_path": params.file_path,
                     "file_size": file_size,
                     "max_size": max_size,
                     "operation": operation_name,

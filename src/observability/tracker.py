@@ -19,6 +19,9 @@ from src.observability._tracker_helpers import (
     aggregate_workflow_metrics_on_success,
     get_stack_trace,
     sanitize_dict,
+    LLMCallTrackingData,
+    ToolCallTrackingData,
+    DecisionTrackingData,
 )
 from src.observability._tracker_helpers import (
     track_decision_outcome as _track_decision_outcome,
@@ -160,6 +163,114 @@ class ExecutionTracker(TrackerCollaborationMixin):
         )
         self._event_bus.emit(event)
 
+    def _build_extra_metadata(
+        self, experiment_id: Optional[str], variant_id: Optional[str],
+        assignment_strategy: Optional[str], assignment_context: Optional[Dict[str, Any]],
+        custom_metrics: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Build extra metadata dict from optional experiment tracking params."""
+        extra_metadata: Dict[str, Any] = {}
+        if experiment_id:
+            extra_metadata["experiment_id"] = experiment_id
+        if variant_id:
+            extra_metadata["variant_id"] = variant_id
+        if assignment_strategy:
+            extra_metadata["assignment_strategy"] = assignment_strategy
+        if assignment_context:
+            extra_metadata["assignment_context"] = assignment_context
+        if custom_metrics:
+            extra_metadata["custom_metrics"] = custom_metrics
+        return extra_metadata if extra_metadata else None
+
+    def _handle_workflow_success(self, workflow_id: str) -> None:
+        """Handle successful workflow completion."""
+        end_time = utcnow()
+        self.backend.track_workflow_end(
+            workflow_id=workflow_id, end_time=end_time, status=_STATUS_COMPLETED,
+            error_message=None, error_stack_trace=None
+        )
+        self._emit_event(_EVENT_WORKFLOW_END, {
+            ObservabilityFields.WORKFLOW_ID: workflow_id,
+            ObservabilityFields.STATUS: _STATUS_COMPLETED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+        })
+        aggregate_workflow_metrics_on_success(
+            backend=self.backend,
+            alert_manager=self.alert_manager,
+            workflow_id=workflow_id,
+        )
+
+    def _handle_workflow_error(self, workflow_id: str, error: Exception) -> None:
+        """Handle workflow execution error."""
+        end_time = utcnow()
+        self.backend.track_workflow_end(
+            workflow_id=workflow_id, end_time=end_time, status=_STATUS_FAILED,
+            error_message=str(error), error_stack_trace=self._get_stack_trace()
+        )
+        self._emit_event(_EVENT_WORKFLOW_END, {
+            ObservabilityFields.WORKFLOW_ID: workflow_id,
+            ObservabilityFields.STATUS: _STATUS_FAILED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+            ObservabilityFields.ERROR_MESSAGE: str(error),
+        })
+
+    def _handle_stage_success(self, stage_id: str) -> None:
+        """Handle successful stage completion."""
+        end_time = utcnow()
+        try:
+            if hasattr(self.backend, 'aggregate_stage_metrics'):
+                metrics = self.backend.aggregate_stage_metrics(stage_id)
+                self.backend.track_stage_end(
+                    stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED,
+                    error_message=None,
+                    num_agents_executed=metrics.get('num_agents_executed', 0),
+                    num_agents_succeeded=metrics.get('num_agents_succeeded', 0),
+                    num_agents_failed=metrics.get('num_agents_failed', 0)
+                )
+            else:
+                self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED)
+        except Exception as e:
+            logger.warning(f"Failed to aggregate stage metrics for {stage_id}: {e}", exc_info=True)
+            self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED)
+        self._emit_event(_EVENT_STAGE_END, {
+            ObservabilityFields.STAGE_ID: stage_id,
+            ObservabilityFields.STATUS: _STATUS_COMPLETED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+        })
+
+    def _handle_stage_error(self, stage_id: str, error: Exception) -> None:
+        """Handle stage execution error."""
+        end_time = utcnow()
+        self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(error))
+        self._emit_event(_EVENT_STAGE_END, {
+            ObservabilityFields.STAGE_ID: stage_id,
+            ObservabilityFields.STATUS: _STATUS_FAILED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+            ObservabilityFields.ERROR_MESSAGE: str(error),
+        })
+
+    def _handle_agent_success(self, agent_id: str) -> None:
+        """Handle successful agent completion."""
+        end_time = utcnow()
+        self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_COMPLETED)
+        self._emit_event(_EVENT_AGENT_END, {
+            ObservabilityFields.AGENT_ID: agent_id,
+            ObservabilityFields.STATUS: _STATUS_COMPLETED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+        })
+        self._collect_agent_metrics(agent_id)
+
+    def _handle_agent_error(self, agent_id: str, error: Exception) -> None:
+        """Handle agent execution error."""
+        end_time = utcnow()
+        self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(error))
+        self._emit_event(_EVENT_AGENT_END, {
+            ObservabilityFields.AGENT_ID: agent_id,
+            ObservabilityFields.STATUS: _STATUS_FAILED,
+            ObservabilityFields.END_TIME: end_time.isoformat(),
+            ObservabilityFields.ERROR_MESSAGE: str(error),
+        })
+
     @contextmanager
     def track_workflow(
         self, workflow_name: str, workflow_config: Dict[str, Any],
@@ -176,29 +287,23 @@ class ExecutionTracker(TrackerCollaborationMixin):
 
         start_time = utcnow()
         sanitized_config = sanitize_config_for_display(workflow_config)
-
-        extra_metadata: Dict[str, Any] = {}
-        if experiment_id:
-            extra_metadata["experiment_id"] = experiment_id
-        if variant_id:
-            extra_metadata["variant_id"] = variant_id
-        if assignment_strategy:
-            extra_metadata["assignment_strategy"] = assignment_strategy
-        if assignment_context:
-            extra_metadata["assignment_context"] = assignment_context
-        if custom_metrics:
-            extra_metadata["custom_metrics"] = custom_metrics
+        extra_metadata = self._build_extra_metadata(
+            experiment_id, variant_id, assignment_strategy, assignment_context, custom_metrics
+        )
 
         with self.backend.get_session_context() as session:
             self._session_stack.append(session)
 
+            from src.observability.backend import WorkflowStartData
             self.backend.track_workflow_start(
                 workflow_id=workflow_id, workflow_name=workflow_name,
                 workflow_config=sanitized_config, start_time=start_time,
-                trigger_type=trigger_type, trigger_data=trigger_data,
-                optimization_target=optimization_target, product_type=product_type,
-                environment=environment, tags=tags,
-                extra_metadata=extra_metadata if extra_metadata else None
+                data=WorkflowStartData(
+                    trigger_type=trigger_type, trigger_data=trigger_data,
+                    optimization_target=optimization_target, product_type=product_type,
+                    environment=environment, tags=tags,
+                    extra_metadata=extra_metadata
+                )
             )
             self._emit_event(_EVENT_WORKFLOW_START, {
                 ObservabilityFields.WORKFLOW_ID: workflow_id,
@@ -210,38 +315,10 @@ class ExecutionTracker(TrackerCollaborationMixin):
 
             try:
                 yield workflow_id
-
-                end_time = utcnow()
-                self.backend.track_workflow_end(
-                    workflow_id=workflow_id, end_time=end_time, status=_STATUS_COMPLETED,
-                    error_message=None, error_stack_trace=None
-                )
-                self._emit_event(_EVENT_WORKFLOW_END, {
-                    ObservabilityFields.WORKFLOW_ID: workflow_id,
-                    ObservabilityFields.STATUS: _STATUS_COMPLETED,
-                    ObservabilityFields.END_TIME: end_time.isoformat(),
-                })
-
-                aggregate_workflow_metrics_on_success(
-                    backend=self.backend,
-                    alert_manager=self.alert_manager,
-                    workflow_id=workflow_id,
-                )
-
+                self._handle_workflow_success(workflow_id)
             except Exception as e:
-                end_time = utcnow()
-                self.backend.track_workflow_end(
-                    workflow_id=workflow_id, end_time=end_time, status=_STATUS_FAILED,
-                    error_message=str(e), error_stack_trace=self._get_stack_trace()
-                )
-                self._emit_event(_EVENT_WORKFLOW_END, {
-                    ObservabilityFields.WORKFLOW_ID: workflow_id,
-                    ObservabilityFields.STATUS: _STATUS_FAILED,
-                    ObservabilityFields.END_TIME: end_time.isoformat(),
-                    ObservabilityFields.ERROR_MESSAGE: str(e),
-                })
+                self._handle_workflow_error(workflow_id, e)
                 raise
-
             finally:
                 self._session_stack.pop()
                 self.context.workflow_id = None
@@ -271,36 +348,9 @@ class ExecutionTracker(TrackerCollaborationMixin):
             })
             try:
                 yield stage_id
-                end_time = utcnow()
-                try:
-                    if hasattr(self.backend, 'aggregate_stage_metrics'):
-                        metrics = self.backend.aggregate_stage_metrics(stage_id)
-                        self.backend.track_stage_end(
-                            stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED,
-                            error_message=None,
-                            num_agents_executed=metrics.get('num_agents_executed', 0),
-                            num_agents_succeeded=metrics.get('num_agents_succeeded', 0),
-                            num_agents_failed=metrics.get('num_agents_failed', 0)
-                        )
-                    else:
-                        self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED)
-                except Exception as e:
-                    logger.warning(f"Failed to aggregate stage metrics for {stage_id}: {e}", exc_info=True)
-                    self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED)
-                self._emit_event(_EVENT_STAGE_END, {
-                    ObservabilityFields.STAGE_ID: stage_id,
-                    ObservabilityFields.STATUS: _STATUS_COMPLETED,
-                    ObservabilityFields.END_TIME: end_time.isoformat(),
-                })
+                self._handle_stage_success(stage_id)
             except Exception as e:
-                end_time = utcnow()
-                self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(e))
-                self._emit_event(_EVENT_STAGE_END, {
-                    ObservabilityFields.STAGE_ID: stage_id,
-                    ObservabilityFields.STATUS: _STATUS_FAILED,
-                    ObservabilityFields.END_TIME: end_time.isoformat(),
-                    ObservabilityFields.ERROR_MESSAGE: str(e),
-                })
+                self._handle_stage_error(stage_id, e)
                 raise
             finally:
                 self.context.stage_id = None
@@ -319,22 +369,9 @@ class ExecutionTracker(TrackerCollaborationMixin):
                 })
                 try:
                     yield stage_id
-                    end_time = utcnow()
-                    self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED)
-                    self._emit_event(_EVENT_STAGE_END, {
-                        ObservabilityFields.STAGE_ID: stage_id,
-                        ObservabilityFields.STATUS: _STATUS_COMPLETED,
-                        ObservabilityFields.END_TIME: end_time.isoformat(),
-                    })
+                    self._handle_stage_success(stage_id)
                 except Exception as e:
-                    end_time = utcnow()
-                    self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(e))
-                    self._emit_event(_EVENT_STAGE_END, {
-                        ObservabilityFields.STAGE_ID: stage_id,
-                        ObservabilityFields.STATUS: _STATUS_FAILED,
-                        ObservabilityFields.END_TIME: end_time.isoformat(),
-                        ObservabilityFields.ERROR_MESSAGE: str(e),
-                    })
+                    self._handle_stage_error(stage_id, e)
                     raise
                 finally:
                     self._session_stack.pop()
@@ -365,23 +402,9 @@ class ExecutionTracker(TrackerCollaborationMixin):
             })
             try:
                 yield agent_id
-                end_time = utcnow()
-                self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_COMPLETED)
-                self._emit_event(_EVENT_AGENT_END, {
-                    ObservabilityFields.AGENT_ID: agent_id,
-                    ObservabilityFields.STATUS: _STATUS_COMPLETED,
-                    ObservabilityFields.END_TIME: end_time.isoformat(),
-                })
-                self._collect_agent_metrics(agent_id)
+                self._handle_agent_success(agent_id)
             except Exception as e:
-                end_time = utcnow()
-                self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(e))
-                self._emit_event(_EVENT_AGENT_END, {
-                    ObservabilityFields.AGENT_ID: agent_id,
-                    ObservabilityFields.STATUS: _STATUS_FAILED,
-                    ObservabilityFields.END_TIME: end_time.isoformat(),
-                    ObservabilityFields.ERROR_MESSAGE: str(e),
-                })
+                self._handle_agent_error(agent_id, e)
                 raise
             finally:
                 self.context.agent_id = None
@@ -400,23 +423,9 @@ class ExecutionTracker(TrackerCollaborationMixin):
                 })
                 try:
                     yield agent_id
-                    end_time = utcnow()
-                    self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_COMPLETED)
-                    self._emit_event(_EVENT_AGENT_END, {
-                        ObservabilityFields.AGENT_ID: agent_id,
-                        ObservabilityFields.STATUS: _STATUS_COMPLETED,
-                        ObservabilityFields.END_TIME: end_time.isoformat(),
-                    })
-                    self._collect_agent_metrics(agent_id)
+                    self._handle_agent_success(agent_id)
                 except Exception as e:
-                    end_time = utcnow()
-                    self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(e))
-                    self._emit_event(_EVENT_AGENT_END, {
-                        ObservabilityFields.AGENT_ID: agent_id,
-                        ObservabilityFields.STATUS: _STATUS_FAILED,
-                        ObservabilityFields.END_TIME: end_time.isoformat(),
-                        ObservabilityFields.ERROR_MESSAGE: str(e),
-                    })
+                    self._handle_agent_error(agent_id, e)
                     raise
                 finally:
                     self._session_stack.pop()
@@ -430,13 +439,26 @@ class ExecutionTracker(TrackerCollaborationMixin):
         error_message: Optional[str] = None
     ) -> str:
         """Track LLM call with automatic sanitization."""
-        return _track_llm_call(
-            sanitizer=self.sanitizer, backend=self.backend, alert_manager=self.alert_manager,
-            agent_id=agent_id, provider=provider, model=model, prompt=prompt, response=response,
-            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-            latency_ms=latency_ms, estimated_cost_usd=estimated_cost_usd,
-            temperature=temperature, max_tokens=max_tokens, status=status,
+        data = LLMCallTrackingData(
+            agent_id=agent_id,
+            provider=provider,
+            model=model,
+            prompt=prompt,
+            response=response,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            latency_ms=latency_ms,
+            estimated_cost_usd=estimated_cost_usd,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            status=status,
             error_message=error_message,
+        )
+        return _track_llm_call(
+            sanitizer=self.sanitizer,
+            backend=self.backend,
+            alert_manager=self.alert_manager,
+            data=data,
             event_bus=self._event_bus,
         )
 
@@ -447,12 +469,22 @@ class ExecutionTracker(TrackerCollaborationMixin):
         safety_checks: Optional[List[str]] = None, approval_required: bool = False
     ) -> str:
         """Track tool execution."""
+        data = ToolCallTrackingData(
+            agent_id=agent_id,
+            tool_name=tool_name,
+            input_params=input_params,
+            output_data=output_data,
+            duration_seconds=duration_seconds,
+            status=status,
+            error_message=error_message,
+            safety_checks=safety_checks,
+            approval_required=approval_required,
+        )
         return _track_tool_call(
-            sanitize_dict_fn=self._sanitize_dict, backend=self.backend,
-            alert_manager=self.alert_manager, agent_id=agent_id, tool_name=tool_name,
-            input_params=input_params, output_data=output_data,
-            duration_seconds=duration_seconds, status=status, error_message=error_message,
-            safety_checks=safety_checks, approval_required=approval_required,
+            sanitize_dict_fn=self._sanitize_dict,
+            backend=self.backend,
+            alert_manager=self.alert_manager,
+            data=data,
             event_bus=self._event_bus,
         )
 
@@ -506,12 +538,14 @@ class ExecutionTracker(TrackerCollaborationMixin):
         extra_metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """Track decision outcome."""
-        return _track_decision_outcome(
-            decision_tracker=self._decision_tracker, backend=self.backend,
-            context=self.context, session_stack=self._session_stack,
-            decision_type=decision_type, decision_data=decision_data, outcome=outcome,
-            impact_metrics=impact_metrics, lessons_learned=lessons_learned,
-            should_repeat=should_repeat, tags=tags,
+        data = DecisionTrackingData(
+            decision_type=decision_type,
+            decision_data=decision_data,
+            outcome=outcome,
+            impact_metrics=impact_metrics,
+            lessons_learned=lessons_learned,
+            should_repeat=should_repeat,
+            tags=tags,
             agent_execution_id=agent_execution_id,
             stage_execution_id=stage_execution_id,
             workflow_execution_id=workflow_execution_id,
@@ -519,5 +553,12 @@ class ExecutionTracker(TrackerCollaborationMixin):
             validation_timestamp=validation_timestamp,
             validation_duration_seconds=validation_duration_seconds,
             extra_metadata=extra_metadata,
+        )
+        return _track_decision_outcome(
+            decision_tracker=self._decision_tracker,
+            backend=self.backend,
+            context=self.context,
+            session_stack=self._session_stack,
+            data=data,
         )
 

@@ -9,6 +9,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from sqlmodel import func, select
 
+from dataclasses import dataclass
+
 from src.self_improvement.data_models import (
     ExecutionResult,
     SelfImprovementExperiment,
@@ -24,6 +26,31 @@ from src.self_improvement.storage.experiment_models import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ExperimentResultData:
+    """Bundle of experiment result parameters for recording."""
+    experiment_id: str
+    variant_id: str
+    execution_id: str
+    quality_score: Optional[float]
+    speed_seconds: Optional[float]
+    cost_usd: Optional[float]
+    success: Optional[bool]
+    extra_metrics: Optional[Dict[str, float]]
+
+
+@dataclass
+class ExperimentCreationData:
+    """Bundle of experiment creation parameters."""
+    agent_name: str
+    experiment_id: str
+    control_config: SIOptimizationConfig
+    variant_configs: List[SIOptimizationConfig]
+    target: int
+    proposal_id: Optional[str]
+    extra_metadata: Optional[Dict[str, Any]]
 
 # ID truncation lengths
 EXPERIMENT_ID_UUID_LENGTH = 8
@@ -135,41 +162,27 @@ def get_experiment_progress(
 
 
 def record_result_to_db(
-    experiment_id: str,
-    variant_id: str,
-    execution_id: str,
-    quality_score: Optional[float],
-    speed_seconds: Optional[float],
-    cost_usd: Optional[float],
-    success: Optional[bool],
-    extra_metrics: Optional[Dict[str, float]],
+    data: ExperimentResultData,
     session_factory: Callable[[], Any],
 ) -> None:
     """Create and store an execution result ORM record.
 
     Args:
-        experiment_id: Experiment identifier
-        variant_id: Variant that was used
-        execution_id: Unique execution identifier
-        quality_score: Quality metric
-        speed_seconds: Duration in seconds
-        cost_usd: Cost in USD
-        success: Whether execution succeeded
-        extra_metrics: Additional metrics
+        data: ExperimentResultData bundle with all result parameters
         session_factory: Session factory callable
     """
     result_id = f"result-{uuid.uuid4().hex[:RESULT_ID_UUID_LENGTH]}"
     db_result = M5ExecutionResult(
         id=result_id,
-        experiment_id=experiment_id,
-        variant_id=variant_id,
-        execution_id=execution_id,
-        quality_score=quality_score,
-        speed_seconds=speed_seconds,
-        cost_usd=cost_usd,
-        success=success,
+        experiment_id=data.experiment_id,
+        variant_id=data.variant_id,
+        execution_id=data.execution_id,
+        quality_score=data.quality_score,
+        speed_seconds=data.speed_seconds,
+        cost_usd=data.cost_usd,
+        success=data.success,
         recorded_at=utcnow(),
-        extra_metrics=extra_metrics or {},
+        extra_metrics=data.extra_metrics or {},
     )
     with session_factory() as session:
         session.add(db_result)
@@ -177,25 +190,13 @@ def record_result_to_db(
 
 
 def create_experiment_in_db(
-    agent_name: str,
-    experiment_id: str,
-    control_config: SIOptimizationConfig,
-    variant_configs: List[SIOptimizationConfig],
-    target: int,
-    proposal_id: Optional[str],
-    extra_metadata: Optional[Dict[str, Any]],
+    data: ExperimentCreationData,
     session_factory: Callable[[], Any],
 ) -> SelfImprovementExperiment:
     """Create experiment ORM record and return domain model.
 
     Args:
-        agent_name: Name of agent being optimized
-        experiment_id: Generated experiment ID
-        control_config: Baseline configuration
-        variant_configs: Variant configurations
-        target: Target executions per variant
-        proposal_id: Optional proposal ID
-        extra_metadata: Additional metadata
+        data: ExperimentCreationData bundle with all creation parameters
         session_factory: Session factory callable
 
     Returns:
@@ -204,27 +205,27 @@ def create_experiment_in_db(
     now = utcnow()
 
     db_exp = M5Experiment(
-        id=experiment_id,
-        agent_name=agent_name,
+        id=data.experiment_id,
+        agent_name=data.agent_name,
         status="running",
-        control_config=control_config.to_dict(),
-        variant_configs=[v.to_dict() for v in variant_configs],
-        target_samples_per_variant=target,
-        proposal_id=proposal_id,
+        control_config=data.control_config.to_dict(),
+        variant_configs=[v.to_dict() for v in data.variant_configs],
+        target_samples_per_variant=data.target,
+        proposal_id=data.proposal_id,
         created_at=now,
-        extra_metadata=extra_metadata or {},
+        extra_metadata=data.extra_metadata or {},
     )
     with session_factory() as session:
         session.add(db_exp)
         session.commit()
 
     return SelfImprovementExperiment(
-        id=experiment_id,
-        agent_name=agent_name,
+        id=data.experiment_id,
+        agent_name=data.agent_name,
         status="running",
-        control_config=control_config,
-        variant_configs=variant_configs,
-        proposal_id=proposal_id,
+        control_config=data.control_config,
+        variant_configs=data.variant_configs,
+        proposal_id=data.proposal_id,
         created_at=now,
-        extra_metadata=extra_metadata or {},
+        extra_metadata=data.extra_metadata or {},
     )

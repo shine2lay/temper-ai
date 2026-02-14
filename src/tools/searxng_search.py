@@ -207,39 +207,27 @@ class SearXNGSearch(BaseTool):
             "required": ["query"],
         }
 
-    def execute(self, **kwargs: Any) -> ToolResult:
-        """Execute a SearXNG search.
-
-        Args:
-            query: Search query string.
-            max_results: Maximum results to return (default 5).
-            categories: Optional list of SearXNG categories.
-            language: Language code (default "en").
-
-        Returns:
-            ToolResult with SearchResponse data or error.
-        """
-        query = kwargs.get("query")
-        max_results = kwargs.get("max_results", DEFAULT_SEARCH_MAX_RESULTS)
-        categories = kwargs.get("categories")
-        language = kwargs.get("language", "en")
-
-        # Validate query
+    def _validate_query(self, query: Any) -> Optional[ToolResult]:
+        """Validate query input. Returns error or None."""
         if not query or not isinstance(query, str):
             return ToolResult(
                 success=False,
                 error="query must be a non-empty string",
             )
+        return None
 
-        # Check rate limit
+    def _check_rate_limit(self) -> Optional[ToolResult]:
+        """Check rate limit. Returns error or None."""
         if not self.rate_limiter.can_proceed():
             wait_time = self.rate_limiter.wait_time()
             return ToolResult(
                 success=False,
                 error=f"Rate limit exceeded. Please wait {wait_time:.1f} seconds.",
             )
+        return None
 
-        # Build query parameters
+    def _build_search_params(self, query: str, language: str, categories: Optional[List[str]]) -> Dict[str, str]:
+        """Build query parameters for SearXNG API."""
         params: Dict[str, str] = {
             "q": query,
             "format": "json",
@@ -247,11 +235,10 @@ class SearXNGSearch(BaseTool):
         }
         if categories:
             params["categories"] = ",".join(categories)
+        return params
 
-        # Record request for rate limiting
-        self.rate_limiter.record_request()
-
-        # Execute search
+    def _execute_search_request(self, params: Dict[str, str]) -> tuple[Optional[Any], Optional[ToolResult], float]:
+        """Execute search request. Returns (response, error, elapsed_ms)."""
         start_time = time.monotonic()
         try:
             client = self._get_client()
@@ -261,29 +248,30 @@ class SearXNGSearch(BaseTool):
                 timeout=DEFAULT_SEARCH_TIMEOUT,
             )
             response.raise_for_status()
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            return response, None, elapsed_ms
         except httpx.TimeoutException:
-            return ToolResult(
+            return None, ToolResult(
                 success=False,
                 error=f"Search request timed out after {DEFAULT_SEARCH_TIMEOUT} seconds",
-            )
+            ), 0
         except httpx.HTTPStatusError as e:
-            return ToolResult(
+            return None, ToolResult(
                 success=False,
                 error=f"SearXNG API error {e.response.status_code}: {e.response.reason_phrase}",
-            )
+            ), 0
         except httpx.RequestError as e:
-            return ToolResult(
+            return None, ToolResult(
                 success=False,
                 error=f"Request error: {str(e)}",
-            )
+            ), 0
 
-        elapsed_ms = (time.monotonic() - start_time) * 1000
-
-        # Parse response
+    def _parse_results(self, response: Any, query: str, max_results: int, elapsed_ms: float) -> tuple[Optional[SearchResponse], Optional[ToolResult]]:
+        """Parse response and build SearchResponse. Returns (response, error)."""
         try:
             data = response.json()
         except (ValueError, TypeError) as e:
-            return ToolResult(
+            return None, ToolResult(
                 success=False,
                 error=f"Failed to parse SearXNG response: {e}",
             )
@@ -308,6 +296,51 @@ class SearXNGSearch(BaseTool):
             search_time_ms=round(elapsed_ms, 2),
         )
 
+        return search_response, None
+
+    def execute(self, **kwargs: Any) -> ToolResult:
+        """Execute a SearXNG search.
+
+        Args:
+            query: Search query string.
+            max_results: Maximum results to return (default 5).
+            categories: Optional list of SearXNG categories.
+            language: Language code (default "en").
+
+        Returns:
+            ToolResult with SearchResponse data or error.
+        """
+        query = kwargs.get("query")
+        max_results = kwargs.get("max_results", DEFAULT_SEARCH_MAX_RESULTS)
+        categories = kwargs.get("categories")
+        language = kwargs.get("language", "en")
+
+        # Validate query
+        error_result = self._validate_query(query)
+        if error_result is not None:
+            return error_result
+
+        # Check rate limit
+        error_result = self._check_rate_limit()
+        if error_result is not None:
+            return error_result
+
+        # Build query parameters
+        params = self._build_search_params(query, language, categories)
+
+        # Record request for rate limiting
+        self.rate_limiter.record_request()
+
+        # Execute search request
+        response, error_result, elapsed_ms = self._execute_search_request(params)
+        if error_result is not None:
+            return error_result
+
+        # Parse response
+        search_response, error_result = self._parse_results(response, query, max_results, elapsed_ms)
+        if error_result is not None:
+            return error_result
+
         return ToolResult(
             success=True,
             result=search_response.model_dump(),
@@ -315,6 +348,6 @@ class SearXNGSearch(BaseTool):
                 "base_url": self.base_url,
                 "categories": categories,
                 "language": language,
-                "result_count": len(items),
+                "result_count": len(search_response.results),
             },
         )

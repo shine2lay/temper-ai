@@ -74,7 +74,10 @@ class AgentObserver:
             event_bus = getattr(self._tracker, '_event_bus', None)
             if event_bus is None:
                 return
-            from src.observability._tracker_helpers import emit_llm_stream_chunk
+            from src.observability._tracker_helpers import (
+                emit_llm_stream_chunk,
+                StreamChunkData
+            )
 
             workflow_id = None
             stage_id = None
@@ -82,8 +85,7 @@ class AgentObserver:
                 workflow_id = getattr(self._context, 'workflow_id', None)
                 stage_id = getattr(self._context, 'stage_id', None)
 
-            emit_llm_stream_chunk(
-                event_bus=event_bus,
+            data = StreamChunkData(
                 agent_id=self._agent_id,
                 content=content,
                 chunk_type=chunk_type,
@@ -94,5 +96,6 @@ class AgentObserver:
                 workflow_id=workflow_id,
                 stage_id=stage_id,
             )
+            emit_llm_stream_chunk(event_bus=event_bus, data=data)
         except Exception:  # noqa: BLE001 -- best-effort streaming event
             pass

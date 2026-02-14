@@ -149,7 +149,34 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         # SECURITY (code-high-12): Validate all configuration inputs
         # Prevents type confusion, negative values, and extreme values
 
-        # Validate enabled_patterns (list of strings)
+        # Validate and store patterns
+        self.enabled_patterns = self._init_enabled_patterns()
+
+        # Validate and store entropy thresholds
+        self._init_entropy_thresholds()
+
+        # Validate and store excluded paths
+        self.excluded_paths = self._init_excluded_paths()
+
+        # Validate allow_test_secrets (boolean)
+        self.allow_test_secrets = self._validate_boolean(
+            self.config.get(ALLOW_TEST_SECRETS_KEY,True),
+            "allow_test_secrets",
+            default=True
+        )
+
+        # Initialize session key and helper modules
+        self._init_helpers()
+
+    def _init_enabled_patterns(self) -> List[str]:
+        """Initialize and validate enabled patterns.
+
+        Returns:
+            List of validated enabled patterns
+
+        Raises:
+            ValueError: If validation fails
+        """
         enabled_patterns_raw = self.config.get("enabled_patterns", list(self.SECRET_PATTERNS.keys()))
         if not isinstance(enabled_patterns_raw, list):
             # Convert single string to list for convenience
@@ -162,7 +189,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
         # Validate each pattern name exists
         valid_patterns = set(self.SECRET_PATTERNS.keys())
-        self.enabled_patterns = []
+        enabled_patterns = []
         for pattern in enabled_patterns_raw:
             if not isinstance(pattern, str):
                 raise ValueError(f"enabled_patterns items must be strings, got {type(pattern).__name__}")
@@ -170,12 +197,15 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
                 raise ValueError(
                     f"Unknown pattern '{pattern}'. Valid patterns: {', '.join(sorted(valid_patterns))}"
                 )
-            self.enabled_patterns.append(pattern)
+            enabled_patterns.append(pattern)
 
-        if not self.enabled_patterns:
+        if not enabled_patterns:
             raise ValueError("enabled_patterns cannot be empty. At least one pattern must be enabled.")
 
-        # Validate entropy thresholds (float, 0.0 to 8.0)
+        return enabled_patterns
+
+    def _init_entropy_thresholds(self) -> None:
+        """Initialize and validate entropy thresholds."""
         # Shannon entropy for bytes is max 8.0 bits per character
         self.entropy_threshold = self._validate_float_range(
             self.config.get(ENTROPY_THRESHOLD_KEY,DEFAULT_ENTROPY_THRESHOLD),
@@ -192,31 +222,36 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
             max_value=MAX_SHANNON_ENTROPY
         )
 
-        # Validate excluded_paths (list of strings)
+    def _init_excluded_paths(self) -> List[str]:
+        """Initialize and validate excluded paths.
+
+        Returns:
+            List of validated excluded paths
+
+        Raises:
+            ValueError: If validation fails
+        """
         excluded_paths_raw = self.config.get("excluded_paths", [])
         if not isinstance(excluded_paths_raw, list):
             raise ValueError(
                 f"excluded_paths must be a list of strings, got {type(excluded_paths_raw).__name__}"
             )
 
-        self.excluded_paths = []
+        excluded_paths = []
         for path in excluded_paths_raw:
             if not isinstance(path, str):
                 raise ValueError(f"excluded_paths items must be strings, got {type(path).__name__}")
             if len(path) > MAX_EXCLUDED_PATH_LENGTH:
                 raise ValueError(f"excluded_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(path)}")
-            self.excluded_paths.append(path)
+            excluded_paths.append(path)
 
-        if len(self.excluded_paths) > MAX_EXCLUDED_PATHS:
-            raise ValueError(f"excluded_paths must have <= {MAX_EXCLUDED_PATHS} items, got {len(self.excluded_paths)}")
+        if len(excluded_paths) > MAX_EXCLUDED_PATHS:
+            raise ValueError(f"excluded_paths must have <= {MAX_EXCLUDED_PATHS} items, got {len(excluded_paths)}")
 
-        # Validate allow_test_secrets (boolean)
-        self.allow_test_secrets = self._validate_boolean(
-            self.config.get(ALLOW_TEST_SECRETS_KEY,True),
-            "allow_test_secrets",
-            default=True
-        )
+        return excluded_paths
 
+    def _init_helpers(self) -> None:
+        """Initialize session key and helper modules."""
         # SECURITY: Session-scoped secret key for HMAC-based violation IDs
         # Provides deduplication (same secret = same ID) without rainbow table risk
         import os
@@ -395,84 +430,17 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         Returns:
             ValidationResult with violations for detected secrets
         """
-        violations: List[SafetyViolation] = []
-
-        # Extract content to scan
-        content = ""
-        file_path = action.get("file_path", "")
-
-        # Check if path is excluded
-        if any(excluded in file_path for excluded in self.excluded_paths):
-            return ValidationResult(valid=True, policy_name=self.name)
-
-        # Collect content from various sources
-        if "content" in action:
-            content = str(action["content"])
-        elif "config" in action:
-            content = str(action["config"])
-        elif "data" in action:
-            content = str(action["data"])
-
+        # Extract and validate content
+        content, file_path = self._extract_content(action)
         if not content:
             return ValidationResult(valid=True, policy_name=self.name)
 
-        # Scan for pattern matches using PatternMatcher
-        for pattern_match in self.pattern_matcher.find_matches(content):
-            # Skip if likely a test secret (check the VALUE, not the full match)
-            # SECURITY FIX (code-high-14): Check secret_value instead of matched_text
-            # to avoid filtering real secrets that happen to contain keywords like "secret" or "password"
-            if self._is_test_secret(pattern_match.secret_value):
-                continue
+        # Check if path is excluded
+        if self._is_path_excluded(file_path):
+            return ValidationResult(valid=True, policy_name=self.name)
 
-            # Calculate entropy
-            entropy = self._calculate_entropy(pattern_match.secret_value)
-
-            # SECURITY FIX (code-high-14): Filter generic patterns by entropy
-            # Generic patterns have high false positive rates without entropy filtering
-            # Skip low-entropy matches that are likely variable names, templates, or documentation
-            if pattern_match.pattern_name in ["generic_api_key", "generic_secret"]:
-                if entropy < self.entropy_threshold_generic:
-                    # Low entropy suggests non-random text (e.g., "your-api-key-here", "password_reset")
-                    continue
-
-            # Determine severity based on pattern and entropy
-            if pattern_match.pattern_name in ["private_key", "aws_secret_key"]:
-                severity = ViolationSeverity.CRITICAL
-            elif pattern_match.pattern_name in ["aws_access_key", "github_token", "generic_api_key", "stripe_key"]:
-                # API keys and tokens should always block
-                severity = ViolationSeverity.HIGH
-            elif entropy > self.entropy_threshold:
-                severity = ViolationSeverity.HIGH
-            else:
-                severity = ViolationSeverity.MEDIUM
-
-            # Create safe redacted preview (never expose actual secret)
-            redacted_preview = create_redacted_preview(pattern_match.matched_text, pattern_match.pattern_name)
-
-            # SECURITY: Generate violation ID using HMAC for secure deduplication
-            # HMAC ensures: same secret = same ID (deduplication) without rainbow table risk
-            # Session key rotates per process, so IDs are not correlatable across sessions
-            violation_id = hash_secret(pattern_match.matched_text, self._session_key)
-
-            # SECURITY: Sanitize context to prevent re-exposing detected secrets
-            # in observability logs and violation records
-            sanitized_context = self._sanitize_context(context)
-
-            violations.append(SafetyViolation(
-                policy_name=self.name,
-                severity=severity,
-                message=f"Potential secret detected ({pattern_match.pattern_name}): {redacted_preview}",
-                action=f"file_path={file_path}, pattern={pattern_match.pattern_name}",
-                context=sanitized_context,
-                remediation_hint="Use environment variables or secret management service",
-                metadata={
-                    "pattern_type": pattern_match.pattern_name,
-                    "entropy": round(entropy, 2),
-                    "match_position": pattern_match.match_position,
-                    "match_length": pattern_match.match_length,
-                    "violation_id": violation_id  # For deduplication within session
-                }
-            ))
+        # Scan for secrets
+        violations = self._scan_for_secrets(content, file_path, context)
 
         # Determine validity (invalid if any HIGH or CRITICAL violations)
         valid = not any(
@@ -485,3 +453,152 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
             violations=violations,
             policy_name=self.name
         )
+
+    def _extract_content(self, action: Dict[str, Any]) -> tuple[str, str]:
+        """Extract content to scan from action.
+
+        Args:
+            action: Action containing content
+
+        Returns:
+            Tuple of (content, file_path)
+        """
+        file_path = action.get("file_path", "")
+        content = ""
+
+        # Collect content from various sources
+        if "content" in action:
+            content = str(action["content"])
+        elif "config" in action:
+            content = str(action["config"])
+        elif "data" in action:
+            content = str(action["data"])
+
+        return content, file_path
+
+    def _is_path_excluded(self, file_path: str) -> bool:
+        """Check if file path is excluded from scanning.
+
+        Args:
+            file_path: Path to check
+
+        Returns:
+            True if path is excluded, False otherwise
+        """
+        return any(excluded in file_path for excluded in self.excluded_paths)
+
+    def _scan_for_secrets(
+        self,
+        content: str,
+        file_path: str,
+        context: Dict[str, Any]
+    ) -> List[SafetyViolation]:
+        """Scan content for secret patterns.
+
+        Args:
+            content: Content to scan
+            file_path: File path for context
+            context: Execution context
+
+        Returns:
+            List of violations detected
+        """
+        violations: List[SafetyViolation] = []
+
+        for pattern_match in self.pattern_matcher.find_matches(content):
+            # Skip test secrets
+            if self._is_test_secret(pattern_match.secret_value):
+                continue
+
+            # Check entropy for generic patterns
+            entropy = self._calculate_entropy(pattern_match.secret_value)
+            if not self._should_flag_match(pattern_match.pattern_name, entropy):
+                continue
+
+            # Create violation
+            violation = self._create_secret_violation(
+                pattern_match, entropy, file_path, context
+            )
+            violations.append(violation)
+
+        return violations
+
+    def _should_flag_match(self, pattern_name: str, entropy: float) -> bool:
+        """Check if pattern match should be flagged based on entropy.
+
+        Args:
+            pattern_name: Name of the pattern
+            entropy: Entropy of the match
+
+        Returns:
+            True if match should be flagged, False otherwise
+        """
+        # SECURITY FIX (code-high-14): Filter generic patterns by entropy
+        if pattern_name in ["generic_api_key", "generic_secret"]:
+            return entropy >= self.entropy_threshold_generic
+        return True
+
+    def _create_secret_violation(
+        self,
+        pattern_match: Any,
+        entropy: float,
+        file_path: str,
+        context: Dict[str, Any]
+    ) -> SafetyViolation:
+        """Create a SafetyViolation for a detected secret.
+
+        Args:
+            pattern_match: Pattern match object
+            entropy: Calculated entropy
+            file_path: File path for context
+            context: Execution context
+
+        Returns:
+            SafetyViolation for the detected secret
+        """
+        # Determine severity
+        severity = self._determine_severity(pattern_match.pattern_name, entropy)
+
+        # Create safe redacted preview (never expose actual secret)
+        redacted_preview = create_redacted_preview(pattern_match.matched_text, pattern_match.pattern_name)
+
+        # SECURITY: Generate violation ID using HMAC for secure deduplication
+        violation_id = hash_secret(pattern_match.matched_text, self._session_key)
+
+        # SECURITY: Sanitize context to prevent re-exposing detected secrets
+        sanitized_context = self._sanitize_context(context)
+
+        return SafetyViolation(
+            policy_name=self.name,
+            severity=severity,
+            message=f"Potential secret detected ({pattern_match.pattern_name}): {redacted_preview}",
+            action=f"file_path={file_path}, pattern={pattern_match.pattern_name}",
+            context=sanitized_context,
+            remediation_hint="Use environment variables or secret management service",
+            metadata={
+                "pattern_type": pattern_match.pattern_name,
+                "entropy": round(entropy, 2),
+                "match_position": pattern_match.match_position,
+                "match_length": pattern_match.match_length,
+                "violation_id": violation_id
+            }
+        )
+
+    def _determine_severity(self, pattern_name: str, entropy: float) -> ViolationSeverity:
+        """Determine violation severity based on pattern and entropy.
+
+        Args:
+            pattern_name: Name of the pattern
+            entropy: Calculated entropy
+
+        Returns:
+            ViolationSeverity level
+        """
+        if pattern_name in ["private_key", "aws_secret_key"]:
+            return ViolationSeverity.CRITICAL
+        elif pattern_name in ["aws_access_key", "github_token", "generic_api_key", "stripe_key"]:
+            return ViolationSeverity.HIGH
+        elif entropy > self.entropy_threshold:
+            return ViolationSeverity.HIGH
+        else:
+            return ViolationSeverity.MEDIUM

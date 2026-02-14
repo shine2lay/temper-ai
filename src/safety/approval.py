@@ -54,6 +54,23 @@ class ApprovalStatus(Enum):
 
 
 @dataclass
+class ApprovalRequestParams:
+    """Parameters for creating an approval request.
+
+    Bundles the multiple parameters needed to create an approval request,
+    reducing function parameter count from 8 to 1.
+    """
+    action: Dict[str, Any]
+    reason: str
+    context: Optional[Dict[str, Any]] = None
+    violations: Optional[List[SafetyViolation]] = None
+    required_approvers: int = 1
+    timeout_minutes: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+    requester: Optional[str] = None
+
+
+@dataclass
 class ApprovalRequest:
     """Represents a request for approval of a high-risk action.
 
@@ -205,8 +222,10 @@ class ApprovalWorkflow:
 
     def request_approval(
         self,
-        action: Dict[str, Any],
-        reason: str,
+        params: Optional[ApprovalRequestParams] = None,
+        # Legacy positional parameters for backward compatibility
+        action: Optional[Dict[str, Any]] = None,
+        reason: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
         violations: Optional[List[SafetyViolation]] = None,
         required_approvers: int = 1,
@@ -217,39 +236,62 @@ class ApprovalWorkflow:
         """Create a new approval request.
 
         Args:
-            action: Action requiring approval
-            reason: Why approval is required
-            context: Execution context
-            violations: Safety violations that triggered this request
-            required_approvers: Number of approvals needed (default: 1)
-            timeout_minutes: Custom timeout (uses default if None)
-            metadata: Additional request metadata
-            requester: Identity of the agent/user requesting approval.
-                Used for self-approval prevention when authorized_approvers is set.
+            params: ApprovalRequestParams object (recommended)
+            action: (deprecated) Action requiring approval
+            reason: (deprecated) Why approval is required
+            context: (deprecated) Execution context
+            violations: (deprecated) Safety violations
+            required_approvers: (deprecated) Number of approvals needed
+            timeout_minutes: (deprecated) Custom timeout
+            metadata: (deprecated) Additional request metadata
+            requester: (deprecated) Request identity
 
         Returns:
             ApprovalRequest object
 
         Example:
-            >>> request = workflow.request_approval(
+            >>> # Recommended usage
+            >>> params = ApprovalRequestParams(
             ...     action={"tool": "deploy", "env": "prod"},
             ...     reason="Production deployment",
             ...     required_approvers=2,
             ...     timeout_minutes=30
             ... )
+            >>> request = workflow.request_approval(params=params)
+            >>>
+            >>> # Legacy usage (still supported)
+            >>> request = workflow.request_approval(
+            ...     action={"tool": "deploy"},
+            ...     reason="Production deployment"
+            ... )
         """
-        timeout = timeout_minutes if timeout_minutes is not None else self.default_timeout_minutes
+        # Support both new and legacy calling styles
+        if params is None:
+            if action is None or reason is None:
+                raise ValueError("Either params or (action, reason) must be provided")
+            params = ApprovalRequestParams(
+                action=action,
+                reason=reason,
+                context=context,
+                violations=violations,
+                required_approvers=required_approvers,
+                timeout_minutes=timeout_minutes,
+                metadata=metadata,
+                requester=requester
+            )
+
+        timeout = params.timeout_minutes if params.timeout_minutes is not None else self.default_timeout_minutes
         expires_at = datetime.now(UTC) + timedelta(minutes=timeout)
 
         request = ApprovalRequest(
-            action=action,
-            reason=reason,
-            requester=requester,
-            context=context or {},
-            violations=violations or [],
+            action=params.action,
+            reason=params.reason,
+            requester=params.requester,
+            context=params.context or {},
+            violations=params.violations or [],
             expires_at=expires_at,
-            required_approvers=required_approvers,
-            metadata=metadata or {}
+            required_approvers=params.required_approvers,
+            metadata=params.metadata or {}
         )
 
         with self._lock:
@@ -540,8 +582,9 @@ class NoOpApprover(ApprovalWorkflow):
 
     def request_approval(
         self,
-        action: Dict[str, Any],
-        reason: str,
+        params: Optional[ApprovalRequestParams] = None,
+        action: Optional[Dict[str, Any]] = None,
+        reason: Optional[str] = None,
         context: Optional[Dict[str, Any]] = None,
         violations: Optional[List[SafetyViolation]] = None,
         required_approvers: int = 1,
@@ -551,6 +594,7 @@ class NoOpApprover(ApprovalWorkflow):
     ) -> ApprovalRequest:
         """Create and immediately approve an approval request."""
         request = super().request_approval(
+            params=params,
             action=action,
             reason=reason,
             context=context,

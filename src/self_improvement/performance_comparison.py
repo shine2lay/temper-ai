@@ -122,39 +122,12 @@ class IncomparableProfilesError(PerformanceComparisonError):
     pass
 
 
-def compare_profiles(
+def _validate_comparison_inputs(
     baseline: AgentPerformanceProfile,
     current: AgentPerformanceProfile,
-    min_improvement_threshold: float = PROMPT_IMPROVEMENT_THRESHOLD,
-    metric_weights: Optional[Dict[str, float]] = None
-) -> PerformanceComparison:
-    """
-    Compare current vs baseline performance profiles.
-
-    Args:
-        baseline: Historical baseline profile
-        current: Current performance profile
-        min_improvement_threshold: Minimum relative change to consider significant (default: 5%)
-        metric_weights: Optional weights for computing improvement score
-                       (default: equal weights for all metrics)
-
-    Returns:
-        PerformanceComparison with detailed metric-by-metric analysis
-
-    Raises:
-        IncomparableProfilesError: If profiles are from different agents or have no common metrics
-        ValueError: If invalid parameters
-
-    Example:
-        >>> baseline = analyzer.get_baseline("my_agent", window_days=30)
-        >>> current = analyzer.analyze_agent_performance("my_agent", window_hours=168)
-        >>> comparison = compare_profiles(baseline, current)
-        >>> if comparison.overall_improvement:
-        ...     print(f"Performance improved! Score: {comparison.improvement_score:+.2%}")
-        ...     for change in comparison.get_improvements():
-        ...         print(f"  {change.metric_name}: {change.relative_change:+.1%}")
-    """
-    # Validate inputs
+    min_improvement_threshold: float
+) -> None:
+    """Validate inputs for profile comparison."""
     if baseline.agent_name != current.agent_name:
         raise IncomparableProfilesError(
             f"Cannot compare profiles from different agents: "
@@ -165,6 +138,55 @@ def compare_profiles(
         raise ValueError(
             f"min_improvement_threshold must be 0.0-1.0, got {min_improvement_threshold}"
         )
+
+
+def _compare_metric_values(
+    baseline: AgentPerformanceProfile,
+    current: AgentPerformanceProfile,
+    common_metrics: List[tuple],
+    min_improvement_threshold: float
+) -> List[MetricChange]:
+    """Compare metric values between profiles."""
+    metric_changes = []
+    for metric_name, stat_name in common_metrics:
+        baseline_value = baseline.get_metric(metric_name, stat_name)
+        current_value = current.get_metric(metric_name, stat_name)
+
+        if baseline_value is None or current_value is None:
+            logger.debug(f"Skipping {metric_name}.{stat_name}: missing value")
+            continue
+
+        # Calculate changes
+        absolute_change = current_value - baseline_value
+        relative_change = absolute_change / baseline_value if baseline_value != 0 else 0.0
+
+        # Determine if improvement
+        is_improvement = _is_improvement(metric_name, absolute_change, min_improvement_threshold)
+
+        change = MetricChange(
+            metric_name=metric_name,
+            stat_name=stat_name,
+            baseline_value=baseline_value,
+            current_value=current_value,
+            absolute_change=absolute_change,
+            relative_change=relative_change,
+            is_improvement=is_improvement
+        )
+        metric_changes.append(change)
+        logger.debug(f"Metric change: {change}")
+
+    return metric_changes
+
+
+def compare_profiles(
+    baseline: AgentPerformanceProfile,
+    current: AgentPerformanceProfile,
+    min_improvement_threshold: float = PROMPT_IMPROVEMENT_THRESHOLD,
+    metric_weights: Optional[Dict[str, float]] = None
+) -> PerformanceComparison:
+    """Compare current vs baseline performance profiles."""
+    # Validate inputs
+    _validate_comparison_inputs(baseline, current, min_improvement_threshold)
 
     logger.info(
         f"Comparing profiles: agent={baseline.agent_name}, "
@@ -180,37 +202,12 @@ def compare_profiles(
             f"No common metrics between baseline and current profiles for {baseline.agent_name}"
         )
 
-    # Compare each metric
-    metric_changes = []
-    for metric_name, stat_name in common_metrics:
-        baseline_value = baseline.get_metric(metric_name, stat_name)
-        current_value = current.get_metric(metric_name, stat_name)
+    # Compare metrics
+    metric_changes = _compare_metric_values(
+        baseline, current, common_metrics, min_improvement_threshold
+    )
 
-        if baseline_value is None or current_value is None:
-            logger.debug(f"Skipping {metric_name}.{stat_name}: missing value")
-            continue
-
-        # Calculate changes
-        absolute_change = current_value - baseline_value
-        relative_change = absolute_change / baseline_value if baseline_value != 0 else 0.0
-
-        # Determine if improvement (higher is better for most metrics, lower for cost/duration)
-        is_improvement = _is_improvement(metric_name, absolute_change, min_improvement_threshold)
-
-        change = MetricChange(
-            metric_name=metric_name,
-            stat_name=stat_name,
-            baseline_value=baseline_value,
-            current_value=current_value,
-            absolute_change=absolute_change,
-            relative_change=relative_change,
-            is_improvement=is_improvement
-        )
-        metric_changes.append(change)
-
-        logger.debug(f"Metric change: {change}")
-
-    # Calculate overall improvement score
+    # Calculate overall improvement
     improvement_score = _calculate_improvement_score(metric_changes, metric_weights)
     overall_improvement = improvement_score > 0
 

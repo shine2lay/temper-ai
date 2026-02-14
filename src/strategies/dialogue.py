@@ -14,6 +14,7 @@ from typing import Any, Optional
 from src.strategies.multi_round import (
     CommunicationHistory,
     CommunicationRound,
+    MultiRoundConfig,
     MultiRoundStrategy,
 )
 
@@ -74,8 +75,8 @@ class DialogueOrchestrator(MultiRoundStrategy):
             DeprecationWarning,
             stacklevel=2,
         )
-        super().__init__(
-            mode="dialogue",
+        # Bundle params into config object
+        config = MultiRoundConfig(
             max_rounds=max_rounds,
             min_rounds=min_rounds,
             convergence_threshold=convergence_threshold,
@@ -85,5 +86,5 @@ class DialogueOrchestrator(MultiRoundStrategy):
             cost_budget_usd=cost_budget_usd,
             use_merit_weighting=use_merit_weighting,
             merit_domain=merit_domain,
-            **kwargs,
         )
+        super().__init__(mode="dialogue", config=config, **kwargs)

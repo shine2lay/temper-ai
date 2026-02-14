@@ -223,6 +223,92 @@ class SafetyServiceMixin:
             policy_name="service_aggregate"
         )
 
+    def _log_violation(self, violation: Any) -> None:
+        """Log a single violation with appropriate level.
+
+        Args:
+            violation: SafetyViolation instance
+        """
+        from src.safety import ViolationSeverity
+
+        # Select log level based on severity
+        log_level = {
+            ViolationSeverity.INFO: logger.info,
+            ViolationSeverity.LOW: logger.warning,
+            ViolationSeverity.MEDIUM: logger.warning,
+            ViolationSeverity.HIGH: logger.error,
+            ViolationSeverity.CRITICAL: logger.critical,
+        }.get(violation.severity, logger.warning)
+
+        # SECURITY: Sanitize context and metadata before logging
+        sanitized_context = _sanitize_violation_context(violation.context)
+        sanitized_metadata = _sanitize_violation_context(violation.metadata) if violation.metadata else None
+
+        log_level(
+            f"Safety violation: {violation.message}",
+            extra={
+                'severity': violation.severity.name,
+                'policy': violation.policy_name,
+                'context': sanitized_context,
+                'metadata': sanitized_metadata
+            }
+        )
+
+    def _track_violation(
+        self,
+        violation: Any,
+        tracker: Optional[Any],
+        sanitized_context: Optional[Dict[str, Any]]
+    ) -> None:
+        """Track violation in observability system.
+
+        Args:
+            violation: SafetyViolation instance
+            tracker: Optional ExecutionTracker
+            sanitized_context: Sanitized context for tracking
+        """
+        if not tracker or not hasattr(tracker, 'track_safety_violation'):
+            return
+
+        try:
+            tracker.track_safety_violation(
+                violation_severity=violation.severity.name,
+                violation_message=violation.message,
+                policy_name=violation.policy_name,
+                service_name=getattr(self, 'name', 'unknown'),
+                context=sanitized_context
+            )
+        except Exception as e:
+            # Don't fail violation handling if tracking fails
+            logger.warning(
+                f"Failed to track safety violation in observability: {e}",
+                exc_info=True
+            )
+
+    def _raise_for_blocking_violations(self, violations: List[Any]) -> None:
+        """Raise exception for HIGH+ severity violations.
+
+        Args:
+            violations: List of violations
+
+        Raises:
+            RuntimeError: If HIGH+ violations exist
+        """
+        from src.safety import ViolationSeverity
+
+        blocking = [v for v in violations if v.severity >= ViolationSeverity.HIGH]
+        if not blocking:
+            return
+
+        critical = [v for v in blocking if v.severity == ViolationSeverity.CRITICAL]
+        if critical:
+            raise RuntimeError(
+                f"CRITICAL safety violation(s): {', '.join(v.message for v in critical)}"
+            )
+        raise RuntimeError(
+            f"HIGH safety violation(s): {', '.join(v.message for v in blocking)}"
+        )
+
     def handle_violations(
         self,
         violations: List[Any],
@@ -242,64 +328,17 @@ class SafetyServiceMixin:
         Raises:
             RuntimeError: If raise_exception=True and HIGH+ violations exist
         """
-        from src.safety import ViolationSeverity
-
         if not violations:
             return
 
         # Log and track all violations
         for violation in violations:
-            # Log with appropriate level based on severity
-            log_level = {
-                ViolationSeverity.INFO: logger.info,
-                ViolationSeverity.LOW: logger.warning,
-                ViolationSeverity.MEDIUM: logger.warning,
-                ViolationSeverity.HIGH: logger.error,
-                ViolationSeverity.CRITICAL: logger.critical,
-            }.get(violation.severity, logger.warning)
+            self._log_violation(violation)
 
-            # SECURITY: Sanitize context and metadata before logging to prevent
-            # exposure of detected secrets, PII, or credentials in application logs
+            # Track in observability
             sanitized_context = _sanitize_violation_context(violation.context)
-            sanitized_metadata = _sanitize_violation_context(violation.metadata) if violation.metadata else None
-
-            log_level(
-                f"Safety violation: {violation.message}",
-                extra={
-                    'severity': violation.severity.name,
-                    'policy': violation.policy_name,
-                    'context': sanitized_context,
-                    'metadata': sanitized_metadata
-                }
-            )
-
-            # Track violation in observability system
-            if tracker and hasattr(tracker, 'track_safety_violation'):
-                try:
-                    tracker.track_safety_violation(
-                        violation_severity=violation.severity.name,
-                        violation_message=violation.message,
-                        policy_name=violation.policy_name,
-                        service_name=getattr(self, 'name', 'unknown'),
-                        context=sanitized_context
-                    )
-                except Exception as e:
-                    # Don't fail violation handling if tracking fails
-                    logger.warning(
-                        f"Failed to track safety violation in observability: {e}",
-                        exc_info=True
-                    )
+            self._track_violation(violation, tracker, sanitized_context)
 
         # Raise on blocking violations
         if raise_exception:
-            blocking = [v for v in violations if v.severity >= ViolationSeverity.HIGH]
-            if blocking:
-                critical = [v for v in blocking if v.severity == ViolationSeverity.CRITICAL]
-                if critical:
-                    raise RuntimeError(
-                        f"CRITICAL safety violation(s): {', '.join(v.message for v in critical)}"
-                    )
-                else:
-                    raise RuntimeError(
-                        f"HIGH safety violation(s): {', '.join(v.message for v in blocking)}"
-                    )
+            self._raise_for_blocking_violations(violations)

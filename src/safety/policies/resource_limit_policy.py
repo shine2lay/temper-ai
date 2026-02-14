@@ -48,6 +48,7 @@ from src.constants.sizes import (
 from src.safety.base import BaseSafetyPolicy
 from src.safety.interfaces import SafetyViolation, ValidationResult
 from src.safety.policies._resource_limit_helpers import (
+    FileSizeCheckParams,
     check_disk_space,
     check_file_size,
     check_memory_usage,
@@ -157,32 +158,21 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         """
         super().__init__(config or {})
 
-        # Validate and set file size limits
-        self.max_file_size_read = validate_size(
-            "max_file_size_read",
-            self.config.get("max_file_size_read", self.DEFAULT_MAX_FILE_SIZE_READ),
-            min_value=MIN_FILE_SIZE,
-            max_value=MAX_FILE_SIZE_READ,
-            default=self.DEFAULT_MAX_FILE_SIZE_READ
-        )
+        # Size limits (validated using helper)
+        size_configs = [
+            ("max_file_size_read", MIN_FILE_SIZE, MAX_FILE_SIZE_READ, self.DEFAULT_MAX_FILE_SIZE_READ),
+            ("max_file_size_write", MIN_FILE_SIZE, MAX_FILE_SIZE_WRITE, self.DEFAULT_MAX_FILE_SIZE_WRITE),
+            ("max_memory_per_operation", MIN_MEMORY_SIZE, MAX_MEMORY_SIZE, self.DEFAULT_MAX_MEMORY_PER_OPERATION),
+            ("min_free_disk_space", MIN_MEMORY_SIZE, MAX_FREE_DISK_SPACE, self.DEFAULT_MIN_FREE_DISK_SPACE),
+        ]
 
-        self.max_file_size_write = validate_size(
-            "max_file_size_write",
-            self.config.get("max_file_size_write", self.DEFAULT_MAX_FILE_SIZE_WRITE),
-            min_value=MIN_FILE_SIZE,
-            max_value=MAX_FILE_SIZE_WRITE,
-            default=self.DEFAULT_MAX_FILE_SIZE_WRITE
-        )
+        for name, min_val, max_val, default in size_configs:
+            setattr(
+                self, name,
+                validate_size(name, self.config.get(name, default), min_val, max_val, default)
+            )
 
-        self.max_memory_per_operation = validate_size(
-            "max_memory_per_operation",
-            self.config.get("max_memory_per_operation", self.DEFAULT_MAX_MEMORY_PER_OPERATION),
-            min_value=MIN_MEMORY_SIZE,
-            max_value=MAX_MEMORY_SIZE,
-            default=self.DEFAULT_MAX_MEMORY_PER_OPERATION
-        )
-
-        # Validate CPU time
+        # Time limits
         self.max_cpu_time = validate_time(
             "max_cpu_time",
             self.config.get("max_cpu_time", self.DEFAULT_MAX_CPU_TIME),
@@ -191,28 +181,13 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             default=self.DEFAULT_MAX_CPU_TIME
         )
 
-        # Validate disk space
-        self.min_free_disk_space = validate_size(
-            "min_free_disk_space",
-            self.config.get("min_free_disk_space", self.DEFAULT_MIN_FREE_DISK_SPACE),
-            min_value=MIN_MEMORY_SIZE,
-            max_value=MAX_FREE_DISK_SPACE,
-            default=self.DEFAULT_MIN_FREE_DISK_SPACE
-        )
-
-        # Validate tracking flags
-        self.track_memory = validate_bool(
-            "track_memory",
-            self.config.get("track_memory", True)
-        )
-        self.track_cpu = validate_bool(
-            "track_cpu",
-            self.config.get("track_cpu", True)
-        )
-        self.track_disk = validate_bool(
-            "track_disk",
-            self.config.get("track_disk", True)
-        )
+        # Tracking flags (validated using helper)
+        tracking_flags = ["track_memory", "track_cpu", "track_disk"]
+        for flag_name in tracking_flags:
+            setattr(
+                self, flag_name,
+                validate_bool(flag_name, self.config.get(flag_name, True))
+            )
 
         # Operation tracking for memory/CPU monitoring
         self._operation_start_times: Dict[str, float] = {}
@@ -261,11 +236,17 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
 
         # Check file size limits
         if file_path and os.path.exists(file_path):
-            file_violation = check_file_size(
-                operation, file_path, context,
-                self.max_file_size_read, self.max_file_size_write,
-                self.FILE_READ_OPERATIONS, self.FILE_WRITE_OPERATIONS, self.name,
+            params = FileSizeCheckParams(
+                operation=operation,
+                file_path=file_path,
+                context=context,
+                max_file_size_read=self.max_file_size_read,
+                max_file_size_write=self.max_file_size_write,
+                file_read_operations=self.FILE_READ_OPERATIONS,
+                file_write_operations=self.FILE_WRITE_OPERATIONS,
+                policy_name=self.name
             )
+            file_violation = check_file_size(params=params)
             if file_violation:
                 violations.append(file_violation)
 

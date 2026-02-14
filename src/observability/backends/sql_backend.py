@@ -25,7 +25,14 @@ from src.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.backend import ObservabilityBackend, ReadableBackendMixin
+from src.observability.backend import (
+    AgentOutputData,
+    LLMCallData,
+    ObservabilityBackend,
+    ReadableBackendMixin,
+    ToolCallData,
+    WorkflowStartData,
+)
 from src.observability.backends._sql_backend_helpers import (
     _DEFAULT_VERSION,
     _STATUS_COMPLETED,
@@ -73,21 +80,18 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
 
     def track_workflow_start(
         self, workflow_id: str, workflow_name: str, workflow_config: Dict[str, Any],
-        start_time: datetime, trigger_type: Optional[str] = None,
-        trigger_data: Optional[Dict[str, Any]] = None,
-        optimization_target: Optional[str] = None, product_type: Optional[str] = None,
-        environment: Optional[str] = None, tags: Optional[List[str]] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None
+        start_time: datetime, data: Optional[WorkflowStartData] = None
     ) -> None:
         """Record workflow execution start."""
+        d = data or WorkflowStartData()
         workflow_exec = WorkflowExecution(
             id=workflow_id, workflow_name=workflow_name,
             workflow_version=workflow_config.get("workflow", {}).get("version", _DEFAULT_VERSION),
             workflow_config_snapshot=workflow_config,
-            trigger_type=trigger_type, trigger_data=trigger_data,
+            trigger_type=d.trigger_type, trigger_data=d.trigger_data,
             status=_STATUS_RUNNING, start_time=ensure_utc(start_time),
-            optimization_target=optimization_target, product_type=product_type,
-            environment=environment, tags=tags, extra_metadata=extra_metadata,
+            optimization_target=d.optimization_target, product_type=d.product_type,
+            environment=d.environment, tags=d.tags, extra_metadata=d.extra_metadata,
             total_llm_calls=0, total_tool_calls=0, total_tokens=0, total_cost_usd=0.0
         )
         with get_session() as session:
@@ -238,10 +242,7 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
 
     def set_agent_output(
         self, agent_id: str, output_data: Dict[str, Any],
-        reasoning: Optional[str] = None, confidence_score: Optional[float] = None,
-        total_tokens: Optional[int] = None, prompt_tokens: Optional[int] = None,
-        completion_tokens: Optional[int] = None, estimated_cost_usd: Optional[float] = None,
-        num_llm_calls: Optional[int] = None, num_tool_calls: Optional[int] = None
+        metrics: Optional[AgentOutputData] = None
     ) -> None:
         """Set agent output data and metrics."""
         with get_session() as session:
@@ -249,51 +250,49 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
             agent = session.exec(statement).first()
             if agent:
                 agent.output_data = output_data
-                agent.reasoning = reasoning
-                agent.confidence_score = confidence_score
-                if total_tokens is not None:
-                    agent.total_tokens = total_tokens
-                if prompt_tokens is not None:
-                    agent.prompt_tokens = prompt_tokens
-                if completion_tokens is not None:
-                    agent.completion_tokens = completion_tokens
-                if estimated_cost_usd is not None:
-                    agent.estimated_cost_usd = estimated_cost_usd
-                if num_llm_calls is not None:
-                    agent.num_llm_calls = num_llm_calls
-                if num_tool_calls is not None:
-                    agent.num_tool_calls = num_tool_calls
+                if metrics:
+                    agent.reasoning = metrics.reasoning
+                    agent.confidence_score = metrics.confidence_score
+                    if metrics.total_tokens is not None:
+                        agent.total_tokens = metrics.total_tokens
+                    if metrics.prompt_tokens is not None:
+                        agent.prompt_tokens = metrics.prompt_tokens
+                    if metrics.completion_tokens is not None:
+                        agent.completion_tokens = metrics.completion_tokens
+                    if metrics.estimated_cost_usd is not None:
+                        agent.estimated_cost_usd = metrics.estimated_cost_usd
+                    if metrics.num_llm_calls is not None:
+                        agent.num_llm_calls = metrics.num_llm_calls
+                    if metrics.num_tool_calls is not None:
+                        agent.num_tool_calls = metrics.num_tool_calls
                 session.commit()
 
     # ========== LLM Call Tracking ==========
 
     def track_llm_call(
         self, llm_call_id: str, agent_id: str, provider: str, model: str,
-        prompt: str, response: str, prompt_tokens: int, completion_tokens: int,
-        latency_ms: int, estimated_cost_usd: float, start_time: datetime,
-        temperature: Optional[float] = None, max_tokens: Optional[int] = None,
-        status: str = "success", error_message: Optional[str] = None
+        start_time: datetime, data: LLMCallData
     ) -> None:
         """Record LLM call."""
         if self._buffer:
             self._buffer.buffer_llm_call(
                 llm_call_id=llm_call_id, agent_id=agent_id, provider=provider,
-                model=model, prompt=prompt, response=response,
-                prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-                latency_ms=latency_ms, estimated_cost_usd=estimated_cost_usd,
-                start_time=start_time, temperature=temperature, max_tokens=max_tokens,
-                status=status, error_message=error_message
+                model=model, prompt=data.prompt, response=data.response,
+                prompt_tokens=data.prompt_tokens, completion_tokens=data.completion_tokens,
+                latency_ms=data.latency_ms, estimated_cost_usd=data.estimated_cost_usd,
+                start_time=start_time, temperature=data.temperature, max_tokens=data.max_tokens,
+                status=data.status, error_message=data.error_message
             )
             return
 
         llm_call = LLMCall(
             id=llm_call_id, agent_execution_id=agent_id,
-            provider=provider, model=model, prompt=prompt, response=response,
-            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
-            total_tokens=prompt_tokens + completion_tokens,
-            latency_ms=latency_ms, estimated_cost_usd=estimated_cost_usd,
-            temperature=temperature, max_tokens=max_tokens,
-            status=status, error_message=error_message,
+            provider=provider, model=model, prompt=data.prompt, response=data.response,
+            prompt_tokens=data.prompt_tokens, completion_tokens=data.completion_tokens,
+            total_tokens=data.prompt_tokens + data.completion_tokens,
+            latency_ms=data.latency_ms, estimated_cost_usd=data.estimated_cost_usd,
+            temperature=data.temperature, max_tokens=data.max_tokens,
+            status=data.status, error_message=data.error_message,
             start_time=ensure_utc(start_time), retry_count=0
         )
         with get_session() as session:
@@ -303,41 +302,38 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
             if agent:
                 agent.num_llm_calls = (agent.num_llm_calls or 0) + 1
                 agent.total_tokens = (agent.total_tokens or 0) + (llm_call.total_tokens or 0)
-                agent.prompt_tokens = (agent.prompt_tokens or 0) + prompt_tokens
-                agent.completion_tokens = (agent.completion_tokens or 0) + completion_tokens
-                agent.estimated_cost_usd = (agent.estimated_cost_usd or 0.0) + estimated_cost_usd
+                agent.prompt_tokens = (agent.prompt_tokens or 0) + data.prompt_tokens
+                agent.completion_tokens = (agent.completion_tokens or 0) + data.completion_tokens
+                agent.estimated_cost_usd = (agent.estimated_cost_usd or 0.0) + data.estimated_cost_usd
             session.commit()
 
     # ========== Tool Call Tracking ==========
 
     def track_tool_call(
         self, tool_execution_id: str, agent_id: str, tool_name: str,
-        input_params: Dict[str, Any], output_data: Dict[str, Any],
-        start_time: datetime, duration_seconds: float,
-        status: str = "success", error_message: Optional[str] = None,
-        safety_checks: Optional[List[str]] = None, approval_required: bool = False
+        start_time: datetime, data: ToolCallData
     ) -> None:
         """Record tool execution."""
         if self._buffer:
             self._buffer.buffer_tool_call(
                 tool_execution_id=tool_execution_id, agent_id=agent_id,
-                tool_name=tool_name, input_params=input_params, output_data=output_data,
-                start_time=start_time, duration_seconds=duration_seconds,
-                status=status, error_message=error_message,
-                safety_checks=safety_checks, approval_required=approval_required
+                tool_name=tool_name, input_params=data.input_params, output_data=data.output_data,
+                start_time=start_time, duration_seconds=data.duration_seconds,
+                status=data.status, error_message=data.error_message,
+                safety_checks=data.safety_checks, approval_required=data.approval_required
             )
             return
 
         start_time_utc = ensure_utc(start_time)
         if start_time_utc is None:
             raise ValueError("Tool call start_time cannot be None")
-        end_time = start_time_utc + timedelta(seconds=duration_seconds)
+        end_time = start_time_utc + timedelta(seconds=data.duration_seconds)
         tool_exec = ToolExecution(
             id=tool_execution_id, agent_execution_id=agent_id,
-            tool_name=tool_name, input_params=input_params, output_data=output_data,
+            tool_name=tool_name, input_params=data.input_params, output_data=data.output_data,
             start_time=start_time_utc, end_time=end_time,
-            duration_seconds=duration_seconds, status=status, error_message=error_message,
-            safety_checks_applied=safety_checks, approval_required=approval_required,
+            duration_seconds=data.duration_seconds, status=data.status, error_message=data.error_message,
+            safety_checks_applied=data.safety_checks, approval_required=data.approval_required,
             retry_count=0
         )
         with get_session() as session:

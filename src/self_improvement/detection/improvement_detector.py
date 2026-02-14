@@ -156,70 +156,9 @@ class ImprovementDetector:
         )
 
         try:
-            # Step 1: Get baseline
-            baseline = self._get_baseline(agent_name)
-            if baseline is None:
-                logger.warning(
-                    f"No baseline for {agent_name}, cannot detect improvements"
-                )
-                raise NoBaselineError(
-                    f"No baseline found for agent '{agent_name}'. "
-                    "Create a baseline first using PerformanceAnalyzer.store_baseline()"
-                )
-
-            logger.info(
-                f"Retrieved baseline for {agent_name}: "
-                f"{baseline.total_executions} executions from "
-                f"{baseline.window_start} to {baseline.window_end}"
-            )
-
-            # Step 2: Get current performance
-            try:
-                current = self.analyzer.analyze_agent_performance(
-                    agent_name,
-                    window_hours=window_hours,
-                    min_executions=min_executions,
-                )
-            except AnalyzerInsufficientDataError as e:
-                raise ImprovementDataError(
-                    f"Cannot detect improvements for {agent_name}: {e}"
-                ) from e
-
-            logger.info(
-                f"Analyzed current performance for {agent_name}: "
-                f"{current.total_executions} executions"
-            )
-
-            # Step 3: Compare profiles
-            comparison = compare_profiles(baseline, current)
-
-            logger.info(
-                f"Performance comparison: {comparison.agent_name} "
-                f"{'IMPROVED' if comparison.overall_improvement else 'REGRESSED'} "
-                f"(score: {comparison.improvement_score:+.2f})"
-            )
-
-            # Step 4: Detect problems
-            try:
-                problems = self.problem_detector.detect_problems(
-                    comparison,
-                    min_executions=min_executions,
-                )
-            except DetectorInsufficientDataError as e:
-                raise ImprovementDataError(
-                    f"Problem detection failed for {agent_name}: {e}"
-                ) from e
-
-            if not problems:
-                logger.info(f"No problems detected for {agent_name}")
-                return []
-
-            logger.info(
-                f"Detected {len(problems)} problems for {agent_name}: "
-                f"{[p.problem_type.value for p in problems]}"
-            )
-
-            # Step 5: Generate proposals
+            # Execute detection workflow
+            baseline, current = self._analyze_performance(agent_name, window_hours, min_executions)
+            problems = self._detect_problems(agent_name, baseline, current, min_executions)
             proposals = self._generate_proposals(agent_name, baseline, current, problems)
 
             if not proposals:
@@ -235,11 +174,81 @@ class ImprovementDetector:
             return proposals
 
         except (NoBaselineError, ImprovementDataError):
-            # Re-raise these as-is
             raise
         except Exception as e:
             logger.error(f"Improvement detection failed for {agent_name}: {e}", exc_info=True)
             raise ComponentError(f"Detection failed: {e}") from e
+
+    def _analyze_performance(
+        self, agent_name: str, window_hours: int, min_executions: int
+    ) -> tuple:
+        """Analyze baseline and current performance."""
+        # Get baseline
+        baseline = self._get_baseline(agent_name)
+        if baseline is None:
+            logger.warning(f"No baseline for {agent_name}, cannot detect improvements")
+            raise NoBaselineError(
+                f"No baseline found for agent '{agent_name}'. "
+                "Create a baseline first using PerformanceAnalyzer.store_baseline()"
+            )
+
+        logger.info(
+            f"Retrieved baseline for {agent_name}: "
+            f"{baseline.total_executions} executions from "
+            f"{baseline.window_start} to {baseline.window_end}"
+        )
+
+        # Get current performance
+        try:
+            current = self.analyzer.analyze_agent_performance(
+                agent_name,
+                window_hours=window_hours,
+                min_executions=min_executions,
+            )
+        except AnalyzerInsufficientDataError as e:
+            raise ImprovementDataError(
+                f"Cannot detect improvements for {agent_name}: {e}"
+            ) from e
+
+        logger.info(
+            f"Analyzed current performance for {agent_name}: "
+            f"{current.total_executions} executions"
+        )
+
+        return baseline, current
+
+    def _detect_problems(
+        self, agent_name: str, baseline: Any, current: Any, min_executions: int
+    ) -> List[PerformanceProblem]:
+        """Compare profiles and detect problems."""
+        comparison = compare_profiles(baseline, current)
+
+        logger.info(
+            f"Performance comparison: {comparison.agent_name} "
+            f"{'IMPROVED' if comparison.overall_improvement else 'REGRESSED'} "
+            f"(score: {comparison.improvement_score:+.2f})"
+        )
+
+        try:
+            problems = self.problem_detector.detect_problems(
+                comparison,
+                min_executions=min_executions,
+            )
+        except DetectorInsufficientDataError as e:
+            raise ImprovementDataError(
+                f"Problem detection failed for {agent_name}: {e}"
+            ) from e
+
+        if not problems:
+            logger.info(f"No problems detected for {agent_name}")
+            return []
+
+        logger.info(
+            f"Detected {len(problems)} problems for {agent_name}: "
+            f"{[p.problem_type.value for p in problems]}"
+        )
+
+        return problems
 
     def _get_baseline(self, agent_name: str) -> Optional[Any]:
         """
@@ -325,80 +334,89 @@ class ImprovementDetector:
         Returns:
             List of ImprovementProposal for this problem
         """
-        proposals = []
+        # Find applicable strategies
+        applicable_strategies = self._find_applicable_strategies(problem)
+        if not applicable_strategies:
+            return []
 
-        # Get all registered strategies
+        # Create proposals for each strategy
+        proposals = []
+        for strategy in applicable_strategies:
+            try:
+                proposal = self._create_proposal_for_strategy(
+                    agent_name, baseline, current, problem, strategy
+                )
+                proposals.append(proposal)
+                logger.debug(f"Created proposal: {proposal.get_summary()}")
+            except Exception as e:
+                logger.error(
+                    f"Failed to create proposal for strategy {strategy.name}: {e}",
+                    exc_info=True,
+                )
+                continue
+
+        return proposals
+
+    def _find_applicable_strategies(self, problem: PerformanceProblem) -> List[Any]:
+        """Find strategies applicable to the problem type."""
         all_strategies = self.strategy_registry.get_all_strategies()
 
         if not all_strategies:
             logger.warning("No strategies registered in StrategyRegistry")
             return []
 
-        # Find applicable strategies
-        applicable_strategies = [
-            strategy
-            for strategy in all_strategies
-            if strategy.is_applicable(problem.problem_type.value)
+        applicable = [
+            s for s in all_strategies
+            if s.is_applicable(problem.problem_type.value)
         ]
 
-        if not applicable_strategies:
+        if not applicable:
             logger.debug(
                 f"No applicable strategies for problem type: {problem.problem_type.value}"
             )
             return []
 
         logger.debug(
-            f"Found {len(applicable_strategies)} strategies for "
+            f"Found {len(applicable)} strategies for "
             f"{problem.problem_type.value}: "
-            f"{[s.name for s in applicable_strategies]}"
+            f"{[s.name for s in applicable]}"
         )
 
-        # Create proposal for each applicable strategy
-        for strategy in applicable_strategies:
-            try:
-                # Estimate impact (default implementation returns 0.1)
-                estimated_impact = strategy.estimate_impact(problem.to_dict())
+        return applicable
 
-                # Map severity to priority (0=highest, 3=lowest)
-                severity_to_priority = {
-                    ProblemSeverity.CRITICAL: PRIORITY_CRITICAL,
-                    ProblemSeverity.HIGH: PRIORITY_HIGH,
-                    ProblemSeverity.MEDIUM: PRIORITY_MEDIUM,
-                    ProblemSeverity.LOW: PRIORITY_LOW,
-                }
-                priority = severity_to_priority.get(problem.severity, 2)
+    def _create_proposal_for_strategy(
+        self,
+        agent_name: str,
+        baseline: Any,
+        current: Any,
+        problem: PerformanceProblem,
+        strategy: Any
+    ) -> ImprovementProposal:
+        """Create a single proposal for problem-strategy pair."""
+        estimated_impact = strategy.estimate_impact(problem.to_dict())
 
-                # Create proposal
-                proposal = ImprovementProposal(
-                    proposal_id=ImprovementProposal.generate_id(),
-                    agent_name=agent_name,
-                    problem=problem,
-                    strategy_name=strategy.name,
-                    estimated_impact=estimated_impact,
-                    baseline_profile=baseline,
-                    current_profile=current,
-                    priority=priority,
-                    extra_metadata={
-                        "problem_summary": problem.get_summary(),
-                        "strategy_description": getattr(strategy, "description", ""),
-                    },
-                )
+        severity_to_priority = {
+            ProblemSeverity.CRITICAL: PRIORITY_CRITICAL,
+            ProblemSeverity.HIGH: PRIORITY_HIGH,
+            ProblemSeverity.MEDIUM: PRIORITY_MEDIUM,
+            ProblemSeverity.LOW: PRIORITY_LOW,
+        }
+        priority = severity_to_priority.get(problem.severity, 2)
 
-                proposals.append(proposal)
-
-                logger.debug(
-                    f"Created proposal: {proposal.get_summary()}"
-                )
-
-            except Exception as e:
-                logger.error(
-                    f"Failed to create proposal for strategy {strategy.name}: {e}",
-                    exc_info=True,
-                )
-                # Continue with other strategies
-                continue
-
-        return proposals
+        return ImprovementProposal(
+            proposal_id=ImprovementProposal.generate_id(),
+            agent_name=agent_name,
+            problem=problem,
+            strategy_name=strategy.name,
+            estimated_impact=estimated_impact,
+            baseline_profile=baseline,
+            current_profile=current,
+            priority=priority,
+            extra_metadata={
+                "problem_summary": problem.get_summary(),
+                "strategy_description": getattr(strategy, "description", ""),
+            },
+        )
 
     def health_check(self) -> Dict[str, Any]:
         """

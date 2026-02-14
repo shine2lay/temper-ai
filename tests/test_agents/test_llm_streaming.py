@@ -581,16 +581,16 @@ class TestEmitLLMStreamChunk:
 
     def test_emit_with_event_bus(self):
         """Should emit ObservabilityEvent to the event bus."""
-        from src.observability._tracker_helpers import emit_llm_stream_chunk
+        from src.observability._tracker_helpers import emit_llm_stream_chunk, StreamChunkData
 
         event_bus = MagicMock()
-        emit_llm_stream_chunk(
-            event_bus=event_bus,
+        data = StreamChunkData(
             agent_id="agent-1",
             content="hello",
             chunk_type="content",
             done=False,
         )
+        emit_llm_stream_chunk(event_bus=event_bus, data=data)
         event_bus.emit.assert_called_once()
         event = event_bus.emit.call_args[0][0]
         assert event.event_type == "llm_stream_chunk"
@@ -599,29 +599,23 @@ class TestEmitLLMStreamChunk:
 
     def test_emit_none_event_bus(self):
         """Should be a no-op when event_bus is None."""
-        from src.observability._tracker_helpers import emit_llm_stream_chunk
+        from src.observability._tracker_helpers import emit_llm_stream_chunk, StreamChunkData
 
+        data = StreamChunkData(agent_id="agent-1", content="hello")
         # Should not raise and return None
-        result = emit_llm_stream_chunk(
-            event_bus=None,
-            agent_id="agent-1",
-            content="hello",
-        )
+        result = emit_llm_stream_chunk(event_bus=None, data=data)
         assert result is None
 
     def test_emit_exception_silenced(self):
         """Should silently catch exceptions."""
-        from src.observability._tracker_helpers import emit_llm_stream_chunk
+        from src.observability._tracker_helpers import emit_llm_stream_chunk, StreamChunkData
 
         event_bus = MagicMock()
         event_bus.emit.side_effect = RuntimeError("boom")
 
+        data = StreamChunkData(agent_id="agent-1", content="hello")
         # Should not raise — returns None on error
-        result = emit_llm_stream_chunk(
-            event_bus=event_bus,
-            agent_id="agent-1",
-            content="hello",
-        )
+        result = emit_llm_stream_chunk(event_bus=event_bus, data=data)
         assert result is None
 
 

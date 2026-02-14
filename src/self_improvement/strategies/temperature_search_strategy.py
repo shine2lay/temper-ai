@@ -5,7 +5,7 @@ Systematically varies temperature and other sampling parameters to optimize
 the quality/consistency/creativity tradeoff for agent outputs.
 """
 import copy
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from src.self_improvement.constants import LOG_TEMPERATURE_PREFIX
 from src.self_improvement.strategies.strategy import (
@@ -108,106 +108,143 @@ class TemperatureSearchStrategy(ImprovementStrategy):
         """Strategy identifier."""
         return "temperature_search"
 
+    def _create_lower_temp_variant(
+        self,
+        current_config: SIOptimizationConfig,
+        current_temp: float
+    ) -> Optional[SIOptimizationConfig]:
+        """Create lower temperature variant."""
+        if current_temp <= MIN_TEMP_FOR_REDUCTION:
+            return None
+
+        target_temp = (
+            self.DETERMINISTIC_TEMP if current_temp > TEMP_BOUNDARY_BALANCED
+            else current_temp * LOW_TEMP_MULTIPLIER
+        )
+        variant = copy.deepcopy(current_config)
+        variant.inference[PARAM_TEMPERATURE] = round(target_temp, 2)
+        variant.extra_metadata[META_STRATEGY] = self.name
+        variant.extra_metadata[META_VARIANT_TYPE] = "lower_temperature"
+        variant.extra_metadata[META_CHANGE] = (
+            f"{LOG_TEMPERATURE_PREFIX}{current_temp} -> {target_temp:.2f} (more deterministic)"
+        )
+        return variant
+
+    def _create_higher_temp_variant(
+        self,
+        current_config: SIOptimizationConfig,
+        current_temp: float,
+        problem_type: str
+    ) -> Optional[SIOptimizationConfig]:
+        """Create higher temperature variant if appropriate."""
+        skip_problems = (PROBLEM_QUALITY_LOW, PROBLEM_INCORRECT_OUTPUT, PROBLEM_HALLUCINATION)
+        if problem_type in skip_problems or current_temp >= MAX_TEMP_FOR_INCREASE:
+            return None
+
+        target_temp = (
+            self.CREATIVE_TEMP if current_temp < CREATIVE_TEMP_THRESHOLD
+            else min(MAX_CREATIVE_TEMP, current_temp * HIGH_TEMP_MULTIPLIER)
+        )
+        variant = copy.deepcopy(current_config)
+        variant.inference[PARAM_TEMPERATURE] = round(target_temp, 2)
+        variant.extra_metadata[META_STRATEGY] = self.name
+        variant.extra_metadata[META_VARIANT_TYPE] = "higher_temperature"
+        variant.extra_metadata[META_CHANGE] = (
+            f"{LOG_TEMPERATURE_PREFIX}{current_temp} -> {target_temp:.2f} (more creative)"
+        )
+        return variant
+
+    def _create_top_p_variant(
+        self,
+        current_config: SIOptimizationConfig,
+        current_top_p: float,
+        problem_type: str
+    ) -> Optional[SIOptimizationConfig]:
+        """Create top_p adjustment variant."""
+        quality_problems = (PROBLEM_QUALITY_LOW, PROBLEM_ERROR_RATE_HIGH, PROBLEM_INCORRECT_OUTPUT)
+
+        if problem_type in quality_problems:
+            if current_top_p <= TOP_P_INCREASE_THRESHOLD:
+                return None
+            target_top_p = self.FOCUSED_TOP_P
+            variant_type = "focused_top_p"
+            change_desc = "more focused"
+        else:
+            if abs(current_top_p - self.BALANCED_TOP_P) <= TOP_P_TOLERANCE:
+                return None
+            target_top_p = self.BALANCED_TOP_P
+            variant_type = "balanced_top_p"
+            change_desc = "balanced"
+
+        variant = copy.deepcopy(current_config)
+        variant.inference[PARAM_TOP_P] = target_top_p
+        variant.extra_metadata[META_STRATEGY] = self.name
+        variant.extra_metadata[META_VARIANT_TYPE] = variant_type
+        variant.extra_metadata[META_CHANGE] = (
+            f"top_p: {current_top_p} -> {target_top_p} ({change_desc})"
+        )
+        return variant
+
+    def _create_combined_variant(
+        self,
+        current_config: SIOptimizationConfig,
+        current_temp: float,
+        current_top_p: float,
+        problem_type: str
+    ) -> Optional[SIOptimizationConfig]:
+        """Create combined temperature + top_p variant."""
+        quality_problems = (PROBLEM_QUALITY_LOW, PROBLEM_ERROR_RATE_HIGH, PROBLEM_INCORRECT_OUTPUT)
+
+        if problem_type in quality_problems:
+            optimal_temp = self.DETERMINISTIC_TEMP
+            optimal_top_p = self.FOCUSED_TOP_P
+        else:
+            optimal_temp = self.BALANCED_TEMP
+            optimal_top_p = self.BALANCED_TOP_P
+
+        # Check if different from current
+        temp_changed = abs(current_temp - optimal_temp) > TEMP_COMPARISON_TOLERANCE
+        top_p_changed = abs(current_top_p - optimal_top_p) > TOP_P_TOLERANCE
+
+        if not (temp_changed or top_p_changed):
+            return None
+
+        variant = copy.deepcopy(current_config)
+        variant.inference[PARAM_TEMPERATURE] = optimal_temp
+        variant.inference[PARAM_TOP_P] = optimal_top_p
+        variant.extra_metadata[META_STRATEGY] = self.name
+        variant.extra_metadata[META_VARIANT_TYPE] = "combined_optimal"
+        variant.extra_metadata[META_CHANGE] = (
+            f"temperature: {current_temp} -> {optimal_temp}, "
+            f"top_p: {current_top_p} -> {optimal_top_p}"
+        )
+        return variant
+
     def generate_variants(
         self, current_config: SIOptimizationConfig, patterns: List[LearnedPattern]
     ) -> List[SIOptimizationConfig]:
-        """Generate improved configuration variants.
-
-        Generates 3-4 variants:
-        1. Lower temperature (more deterministic)
-        2. Higher temperature (more creative) - if problem suggests it
-        3. Adjusted top_p for better quality/diversity balance
-        4. Combined: optimal temperature + top_p (if both need adjustment)
-
-        Args:
-            current_config: Current agent configuration
-            patterns: Learned patterns (used to prioritize variants)
-
-        Returns:
-            List of 3-4 configuration variants
-        """
+        """Generate improved configuration variants."""
         variants = []
         current_temp = current_config.inference.get(PARAM_TEMPERATURE, DEFAULT_TEMPERATURE)
         current_top_p = current_config.inference.get(PARAM_TOP_P, DEFAULT_TOP_P)
-        # Infer problem type from patterns (if available)
         problem_type = self._infer_problem_type(patterns)
 
-        # Variant 1: Lower temperature (more deterministic)
-        # Always generate this unless temperature is already very low
-        if current_temp > MIN_TEMP_FOR_REDUCTION:
-            target_temp = self.DETERMINISTIC_TEMP if current_temp > TEMP_BOUNDARY_BALANCED else current_temp * LOW_TEMP_MULTIPLIER
-            variant_low_temp = copy.deepcopy(current_config)
-            variant_low_temp.inference[PARAM_TEMPERATURE] = round(target_temp, 2)
-            variant_low_temp.extra_metadata[META_STRATEGY] = self.name
-            variant_low_temp.extra_metadata[META_VARIANT_TYPE] = "lower_temperature"
-            variant_low_temp.extra_metadata[META_CHANGE] = (
-                f"{LOG_TEMPERATURE_PREFIX}{current_temp} -> {target_temp:.2f} (more deterministic)"
-            )
-            variants.append(variant_low_temp)
+        # Generate all variant types
+        if variant := self._create_lower_temp_variant(current_config, current_temp):
+            variants.append(variant)
 
-        # Variant 2: Higher temperature (more creative)
-        # Only if problem suggests need for creativity or diversity
-        # Skip higher temperature for quality/correctness problems
-        if problem_type not in (PROBLEM_QUALITY_LOW, PROBLEM_INCORRECT_OUTPUT, PROBLEM_HALLUCINATION) and current_temp < MAX_TEMP_FOR_INCREASE:
-            target_temp = self.CREATIVE_TEMP if current_temp < CREATIVE_TEMP_THRESHOLD else min(MAX_CREATIVE_TEMP, current_temp * HIGH_TEMP_MULTIPLIER)
-            variant_high_temp = copy.deepcopy(current_config)
-            variant_high_temp.inference[PARAM_TEMPERATURE] = round(target_temp, 2)
-            variant_high_temp.extra_metadata[META_STRATEGY] = self.name
-            variant_high_temp.extra_metadata[META_VARIANT_TYPE] = "higher_temperature"
-            variant_high_temp.extra_metadata[META_CHANGE] = (
-                f"{LOG_TEMPERATURE_PREFIX}{current_temp} -> {target_temp:.2f} (more creative)"
-            )
-            variants.append(variant_high_temp)
+        if variant := self._create_higher_temp_variant(current_config, current_temp, problem_type):
+            variants.append(variant)
 
-        # Variant 3: Adjusted top_p for better quality/diversity balance
-        # For quality issues, use more focused sampling
-        if problem_type in (PROBLEM_QUALITY_LOW, PROBLEM_ERROR_RATE_HIGH, PROBLEM_INCORRECT_OUTPUT):
-            if current_top_p > TOP_P_INCREASE_THRESHOLD:
-                target_top_p = self.FOCUSED_TOP_P
-                variant_top_p = copy.deepcopy(current_config)
-                variant_top_p.inference[PARAM_TOP_P] = target_top_p
-                variant_top_p.extra_metadata[META_STRATEGY] = self.name
-                variant_top_p.extra_metadata[META_VARIANT_TYPE] = "focused_top_p"
-                variant_top_p.extra_metadata[META_CHANGE] = (
-                    f"top_p: {current_top_p} -> {target_top_p} (more focused)"
-                )
-                variants.append(variant_top_p)
-        else:
-            # For other problems, try balanced or diverse sampling
-            if abs(current_top_p - self.BALANCED_TOP_P) > TOP_P_TOLERANCE:
-                target_top_p = self.BALANCED_TOP_P
-                variant_top_p = copy.deepcopy(current_config)
-                variant_top_p.inference[PARAM_TOP_P] = target_top_p
-                variant_top_p.extra_metadata[META_STRATEGY] = self.name
-                variant_top_p.extra_metadata[META_VARIANT_TYPE] = "balanced_top_p"
-                variant_top_p.extra_metadata[META_CHANGE] = (
-                    f"top_p: {current_top_p} -> {target_top_p} (balanced)"
-                )
-                variants.append(variant_top_p)
+        if variant := self._create_top_p_variant(current_config, current_top_p, problem_type):
+            variants.append(variant)
 
-        # Variant 4: Combined optimal temperature + top_p
-        # Only add if we have 2+ variants already
+        # Only add combined if we have 2+ variants
         if len(variants) >= 2:
-            # Choose optimal temperature based on problem type
-            if problem_type in (PROBLEM_QUALITY_LOW, PROBLEM_ERROR_RATE_HIGH, PROBLEM_INCORRECT_OUTPUT):
-                optimal_temp = self.DETERMINISTIC_TEMP
-                optimal_top_p = self.FOCUSED_TOP_P
-            else:
-                optimal_temp = self.BALANCED_TEMP
-                optimal_top_p = self.BALANCED_TOP_P
-
-            # Only add if different from current
-            if abs(current_temp - optimal_temp) > TEMP_COMPARISON_TOLERANCE or abs(current_top_p - optimal_top_p) > TOP_P_TOLERANCE:
-                variant_combined = copy.deepcopy(current_config)
-                variant_combined.inference[PARAM_TEMPERATURE] = optimal_temp
-                variant_combined.inference[PARAM_TOP_P] = optimal_top_p
-                variant_combined.extra_metadata[META_STRATEGY] = self.name
-                variant_combined.extra_metadata[META_VARIANT_TYPE] = "combined_optimal"
-                variant_combined.extra_metadata[META_CHANGE] = (
-                    f"temperature: {current_temp} -> {optimal_temp}, "
-                    f"top_p: {current_top_p} -> {optimal_top_p}"
-                )
-                variants.append(variant_combined)
+            if variant := self._create_combined_variant(
+                current_config, current_temp, current_top_p, problem_type
+            ):
+                variants.append(variant)
 
         return variants[:MAX_VARIANTS]
 

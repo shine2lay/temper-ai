@@ -60,6 +60,28 @@ class ConfigLoader:
     # Default maximum number of cached configs before LRU eviction
     DEFAULT_MAX_CACHE_SIZE = MEDIUM_ITEM_LIMIT * CACHE_SIZE_MULTIPLIER  # 120 configs (10 * 12)
 
+    @staticmethod
+    def _find_config_root() -> Path:
+        """Find config root directory by checking env var and searching upwards."""
+        env_root = os.environ.get("MAF_CONFIG_ROOT")
+        if env_root:
+            return Path(env_root)
+
+        # Default to configs/ in current directory
+        config_root = Path.cwd() / "configs"
+        if config_root.exists():
+            return config_root
+
+        # Try to find project root
+        current = Path.cwd()
+        while current != current.parent:
+            potential_root = current / "configs"
+            if potential_root.exists():
+                return potential_root
+            current = current.parent
+
+        return Path.cwd() / "configs"
+
     def __init__(
         self,
         config_root: Optional[Union[str, Path]] = None,
@@ -80,25 +102,9 @@ class ConfigLoader:
         self._config_deployer_initialized = False  # Lazy init flag
         self._config_deployer_available = False  # Whether ConfigDeployer is available
 
-        if config_root is None:
-            # Check MAF_CONFIG_ROOT environment variable first
-            env_root = os.environ.get("MAF_CONFIG_ROOT")
-            if env_root:
-                config_root = Path(env_root)
-            else:
-                # Default to configs/ in current directory or project root
-                config_root = Path.cwd() / "configs"
-                if not config_root.exists():
-                    # Try to find project root
-                    current = Path.cwd()
-                    while current != current.parent:
-                        potential_root = current / "configs"
-                        if potential_root.exists():
-                            config_root = potential_root
-                            break
-                        current = current.parent
+        # Resolve config root
+        self.config_root = Path(config_root) if config_root else self._find_config_root()
 
-        self.config_root = Path(config_root)
         if not self.config_root.exists():
             raise ConfigNotFoundError(
                 message=f"Config root directory not found: {self.config_root}",
@@ -245,6 +251,55 @@ class ConfigLoader:
         """Load trigger configuration."""
         return self._load_config("trigger", trigger_name, self.triggers_dir, validate)
 
+    @staticmethod
+    def _validate_template_path_security(template_path: str, prompts_dir: Path) -> None:
+        """Validate template path for security issues.
+
+        Raises:
+            ConfigValidationError: If path is malicious
+        """
+        _logger = logging.getLogger(__name__)
+
+        # Check for null bytes
+        if '\x00' in template_path:
+            _logger.warning(
+                "Security violation: Null byte detected in template path",
+                extra={"template_path": repr(template_path), "attack_type": "null_byte_injection"}
+            )
+            raise ConfigValidationError(
+                'Invalid template path: null byte detected. '
+                'This may indicate a path traversal attack attempt.'
+            )
+
+        # Check for control characters
+        if any(ord(c) < ASCII_CONTROL_CHAR_MAX and c not in '\n\r\t' for c in template_path):
+            _logger.warning(
+                "Security violation: Control characters detected in template path",
+                extra={"template_path": repr(template_path), "attack_type": "control_character_injection"}
+            )
+            raise ConfigValidationError(
+                'Invalid template path: control characters detected. '
+                'Only printable characters are allowed in paths.'
+            )
+
+        # Validate path is within prompts directory
+        full_path = (prompts_dir / template_path).resolve()
+        try:
+            full_path.relative_to(prompts_dir.resolve())
+        except ValueError:
+            _logger.warning(
+                "Security violation: Path traversal attempt detected",
+                extra={
+                    "template_path": repr(template_path),
+                    "resolved_path": str(full_path),
+                    "prompts_dir": str(prompts_dir),
+                    "attack_type": "path_traversal"
+                }
+            )
+            raise ConfigValidationError(
+                f"Template path must be within prompts directory: {template_path}"
+            )
+
     def load_prompt_template(self, template_path: str, variables: Optional[Dict[str, str]] = None) -> str:
         """
         Load prompt template and substitute variables.
@@ -261,54 +316,11 @@ class ConfigLoader:
             ConfigValidationError: If path attempts directory traversal, contains null bytes,
                                    contains control characters, or file too large
         """
-        _logger = logging.getLogger(__name__)
+        # Security validation
+        self._validate_template_path_security(template_path, self.prompts_dir)
 
-        # SECURITY FIX: Check for null bytes FIRST (before any path operations)
-        if '\x00' in template_path:
-            _logger.warning(
-                "Security violation: Null byte detected in template path",
-                extra={
-                    "template_path": repr(template_path),
-                    "attack_type": "null_byte_injection"
-                }
-            )
-            raise ConfigValidationError(
-                'Invalid template path: null byte detected. '
-                'This may indicate a path traversal attack attempt.'
-            )
-
-        # SECURITY FIX: Check for control characters
-        if any(ord(c) < ASCII_CONTROL_CHAR_MAX and c not in '\n\r\t' for c in template_path):
-            _logger.warning(
-                "Security violation: Control characters detected in template path",
-                extra={
-                    "template_path": repr(template_path),
-                    "attack_type": "control_character_injection"
-                }
-            )
-            raise ConfigValidationError(
-                'Invalid template path: control characters detected. '
-                'Only printable characters are allowed in paths.'
-            )
-
-        # Resolve full path and validate it's within prompts directory
+        # Resolve and check file
         full_path = (self.prompts_dir / template_path).resolve()
-
-        try:
-            full_path.relative_to(self.prompts_dir.resolve())
-        except ValueError:
-            _logger.warning(
-                "Security violation: Path traversal attempt detected",
-                extra={
-                    "template_path": repr(template_path),
-                    "resolved_path": str(full_path),
-                    "prompts_dir": str(self.prompts_dir),
-                    "attack_type": "path_traversal"
-                }
-            )
-            raise ConfigValidationError(
-                f"Template path must be within prompts directory: {template_path}"
-            )
 
         if not full_path.exists():
             raise ConfigNotFoundError(
@@ -323,6 +335,7 @@ class ConfigLoader:
                 f"Template file too large: {file_size} bytes (max: {MAX_CONFIG_SIZE})"
             )
 
+        # Load and substitute
         with open(full_path, 'r', encoding='utf-8') as f:
             template = f.read()
 

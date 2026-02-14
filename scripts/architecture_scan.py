@@ -1702,20 +1702,85 @@ def _run_test_coverage(src_dir: Path) -> dict:
 # Function Complexity Analysis (AST-based)
 # ---------------------------------------------------------------------------
 
-def _max_nesting_depth(node) -> int:
+def _code_line_count(node: ast.FunctionDef | ast.AsyncFunctionDef, source_lines: list[str]) -> int:
+    """Count lines of executable code in a function, excluding docstrings, comments, and blanks.
+
+    Args:
+        node: AST function node (must have lineno and end_lineno).
+        source_lines: Full file source split into lines (0-indexed).
+
+    Returns:
+        Number of code-only lines in the function body.
+    """
+    start = node.lineno  # 1-based inclusive
+    end = node.end_lineno or node.lineno  # 1-based inclusive
+
+    # Collect line ranges occupied by docstrings (the function's own + any nested)
+    docstring_lines: set[int] = set()
+
+    # Function-level docstring
+    if (
+        node.body
+        and isinstance(node.body[0], ast.Expr)
+        and isinstance(node.body[0].value, ast.Constant)
+    ):
+        ds = node.body[0]
+        for ln in range(ds.lineno, (ds.end_lineno or ds.lineno) + 1):
+            docstring_lines.add(ln)
+
+    count = 0
+    for lineno in range(start, end + 1):
+        if lineno in docstring_lines:
+            continue
+        line = source_lines[lineno - 1] if lineno <= len(source_lines) else ""
+        stripped = line.strip()
+        # Skip blank lines and full-line comments
+        if not stripped or stripped.startswith("#"):
+            continue
+        count += 1
+
+    return count
+
+
+def _max_nesting_depth(node, *, _is_elif: bool = False) -> int:
     """Recursively calculate the maximum nesting depth of control flow structures.
 
-    Counts the current node if it's a control flow structure, plus the deepest
-    nesting found in its children.
+    ``elif`` branches (an ``ast.If`` as the sole item in the parent
+    ``ast.If.orelse``) are treated as siblings at the same depth — they
+    don't add +1 nesting.  Only genuinely nested control flow increments
+    the depth counter.
     """
     control_flow_types = (
         ast.If, ast.For, ast.While, ast.With, ast.Try,
         ast.AsyncFor, ast.AsyncWith,
     )
-    is_cf = isinstance(node, control_flow_types)
+    # elif If nodes don't count as additional nesting
+    is_cf = isinstance(node, control_flow_types) and not _is_elif
+
     max_child = 0
-    for child in ast.iter_child_nodes(node):
-        max_child = max(max_child, _max_nesting_depth(child))
+
+    if isinstance(node, ast.If):
+        # body children are genuinely nested
+        for child in node.body:
+            max_child = max(max_child, _max_nesting_depth(child))
+        # orelse: single If at same col_offset → elif (same depth)
+        # "else: if" has the inner If indented (greater col_offset)
+        if (
+            len(node.orelse) == 1
+            and isinstance(node.orelse[0], ast.If)
+            and node.orelse[0].col_offset == node.col_offset
+        ):
+            max_child = max(
+                max_child,
+                _max_nesting_depth(node.orelse[0], _is_elif=True),
+            )
+        else:
+            for child in node.orelse:
+                max_child = max(max_child, _max_nesting_depth(child))
+    else:
+        for child in ast.iter_child_nodes(node):
+            max_child = max(max_child, _max_nesting_depth(child))
+
     return (1 if is_cf else 0) + max_child
 
 
@@ -1745,14 +1810,16 @@ def scan_function_complexity(src_dir: Path, files: list[dict], *, file_cache: di
                 parse_errors.append(f"{rel_path}: {e}")
                 continue
 
+        source_lines = source.splitlines()
+
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
 
             total_functions += 1
 
-            # Length
-            length = (node.end_lineno or node.lineno) - node.lineno + 1
+            # Length — code lines only (excludes docstrings, comments, blanks)
+            length = _code_line_count(node, source_lines)
 
             # Param count: args + kwonlyargs + vararg + kwarg, excluding self/cls
             args = node.args

@@ -18,7 +18,7 @@ import logging
 import os
 import uuid
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 from src.auth.constants import HEADER_SET_COOKIE, LOG_IP_SEPARATOR, ROUTE_DASHBOARD
@@ -282,6 +282,70 @@ class OAuthRouteHandlers:
             logger.error(f"OAuth configuration error: {e}")
             raise
 
+    async def _exchange_code_and_get_user_info(
+        self, provider: str, code: str, state: str, client_ip: str
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Exchange code for tokens and get user info.
+
+        Args:
+            provider: OAuth provider name
+            code: Authorization code
+            state: State parameter
+            client_ip: Client IP
+
+        Returns:
+            Tuple of (flow_user_id, user_info)
+        """
+        # Exchange code for tokens
+        token_result = await self.oauth_service.exchange_code_for_tokens(
+            provider=provider,
+            code=code,
+            state=state,
+            ip_address=client_ip,
+        )
+
+        # Extract flow user ID
+        flow_user_id = token_result.get('_flow_user_id', str(uuid.uuid4()))
+
+        # Get user info
+        user_info = await self.oauth_service.get_user_info(
+            user_id=flow_user_id,
+            provider=provider,
+        )
+
+        return flow_user_id, user_info
+
+    async def _create_or_get_user(
+        self, provider: str, user_info: Dict[str, Any]
+    ) -> User:
+        """Create or retrieve user from user info.
+
+        Args:
+            provider: OAuth provider name
+            user_info: User info from provider
+
+        Returns:
+            User object
+        """
+        # Check for existing user
+        existing_user = await self.user_store.get_user_by_oauth(
+            provider=provider,
+            oauth_subject=user_info["sub"],
+        )
+
+        # Determine user ID
+        user_id = existing_user.user_id if existing_user else str(uuid.uuid4())
+
+        # Create or update user
+        return await self.user_store.create_or_update_user(
+            user_id=user_id,
+            email=user_info["email"],
+            name=user_info.get("name", user_info["email"]),
+            provider=provider,
+            oauth_subject=user_info["sub"],
+            picture=user_info.get("picture"),
+        )
+
     async def handle_oauth_callback(
         self,
         provider: str,
@@ -310,7 +374,6 @@ class OAuthRouteHandlers:
             state: State parameter (CSRF protection)
             client_ip: Client IP address
             user_agent: Client user agent string
-            oauth_redirect_cookie: Redirect URL from cookie
             error: Error code from provider (if any)
             error_description: Error description from provider
 
@@ -327,92 +390,40 @@ class OAuthRouteHandlers:
             logger.warning(
                 f"OAuth error from provider: {error}, description={error_description}{LOG_IP_SEPARATOR}{client_ip}"
             )
-            # Redirect to login with error message
             return "/login?error=oauth_denied", self._get_security_headers()
 
         try:
-            # Exchange code for tokens (validates state internally)
-            # SECURITY: State is validated and deleted (single-use)
-            token_result = await self.oauth_service.exchange_code_for_tokens(
-                provider=provider,
-                code=code,
-                state=state,
-                ip_address=client_ip,
+            # Exchange code and get user info
+            flow_user_id, user_info = await self._exchange_code_and_get_user_info(
+                provider, code, state, client_ip
             )
 
-            # H-14: Extract the per-flow user_id that tokens were stored under
-            # (replaces hardcoded "anonymous" to prevent cross-flow collisions)
-            flow_user_id = token_result.get('_flow_user_id', str(uuid.uuid4()))
+            # Create or get user
+            user = await self._create_or_get_user(provider, user_info)
 
-            # Get user info from provider
-            # SECURITY: Tokens used internally, never exposed
-            user_info = await self.oauth_service.get_user_info(
-                user_id=flow_user_id,
-                provider=provider,
-            )
-
-            # Check for existing user by OAuth subject first (prevents duplicate accounts)
-            existing_user = await self.user_store.get_user_by_oauth(
-                provider=provider,
-                oauth_subject=user_info["sub"],
-            )
-
-            # Reuse existing user_id or create new one
-            if existing_user:
-                user_id = existing_user.user_id
-            else:
-                user_id = str(uuid.uuid4())
-
-            # Create or update user in database
-            user = await self.user_store.create_or_update_user(
-                user_id=user_id,
-                email=user_info["email"],
-                name=user_info.get("name", user_info["email"]),
-                provider=provider,
-                oauth_subject=user_info["sub"],  # Google's user ID
-                picture=user_info.get("picture"),
-            )
-
-            # CRITICAL: Create new session (session fixation prevention)
-            # Old session is NOT reused - new session ID generated
+            # Create session
             session = await self.session_store.create_session(
                 user=user,
                 ip_address=client_ip,
                 user_agent=user_agent,
-                session_max_age=SECONDS_PER_HOUR,  # 1 hour
+                session_max_age=SECONDS_PER_HOUR,
             )
 
-            # Get redirect URL from state data (bound to OAuth flow)
-            # Note: Currently defaults to /dashboard. In production, OAuth service
-            # should store redirect_after in state_data for dynamic redirects.
+            # Prepare redirect with session cookie
             redirect_url = "/dashboard"
-
             if not self._validate_redirect_url(redirect_url):
                 redirect_url = "/dashboard"
 
-            # Build response headers with security headers
             headers = self._get_security_headers()
-
-            # SECURITY CRITICAL: Set secure session cookie
-            # HttpOnly: Prevent JavaScript access
-            # Secure: HTTPS only
-            # SameSite=Lax: CSRF protection
             session_cookie = self._create_secure_cookie(
                 name="session_id",
                 value=session.session_id,
-                max_age=SECONDS_PER_HOUR,  # 1 hour
+                max_age=SECONDS_PER_HOUR,
             )
-
-            # Add session cookie to headers
-            # Note: Multiple Set-Cookie headers require special handling
-            # This will be handled by the web framework (FastAPI/Flask/etc)
             headers["Set-Cookie"] = session_cookie
 
-            logger.info(
-                f"OAuth login successful: user={user.user_id}{LOG_IP_SEPARATOR}{client_ip}"
-            )
+            logger.info(f"OAuth login successful: user={user.user_id}{LOG_IP_SEPARATOR}{client_ip}")
 
-            # SECURITY: Return redirect only, NO tokens in response
             return redirect_url, headers
 
         except OAuthStateError as e:
@@ -428,13 +439,10 @@ class OAuthRouteHandlers:
 
         except RateLimitExceeded:
             logger.warning(f"Rate limit exceeded on callback: IP={client_ip}")
-            # Don't redirect, return error status (handled by framework)
             raise
 
         except (KeyError, ValueError, AttributeError, TypeError) as e:
-            logger.error(
-                f"Data validation error in OAuth callback: {e}", exc_info=True
-            )
+            logger.error(f"Data validation error in OAuth callback: {e}", exc_info=True)
             return "/login?error=oauth_error", self._get_security_headers()
 
     async def handle_logout(

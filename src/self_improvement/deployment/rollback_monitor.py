@@ -108,6 +108,7 @@ class RollbackMonitor:
                 "baseline_metrics": dict,
             }
         """
+        # Initialize result
         result: Dict[str, Any] = {
             "regression_detected": False,
             "rolled_back": False,
@@ -116,62 +117,83 @@ class RollbackMonitor:
             "baseline_metrics": {},
         }
 
+        # Collect performance metrics
+        metrics_result = self._collect_performance_metrics(agent_name, window_hours)
+        if not metrics_result:
+            return result
+
+        baseline, current = metrics_result
+        result["current_metrics"] = current.metrics
+        result["baseline_metrics"] = baseline.metrics
+
+        # Check for regression and rollback if needed
+        self._check_and_rollback(agent_name, baseline, current, result)
+
+        return result
+
+    def _collect_performance_metrics(
+        self, agent_name: str, window_hours: int
+    ) -> Optional[tuple]:
+        """Collect baseline and current performance metrics."""
         # Get last deployment
         last_deployment = self.config_deployer.get_last_deployment(agent_name)
         if not last_deployment:
             logger.info(f"No deployment history for {agent_name}, skipping check")
-            return result
+            return None
 
         # Skip if already rolled back
         if last_deployment.is_rolled_back():
             logger.info(f"Deployment already rolled back for {agent_name}")
-            return result
+            return None
 
-        # Get baseline (performance before deployment)
+        # Get baseline and current performance
         baseline = self._get_baseline_performance(agent_name, last_deployment)
         if not baseline:
             logger.warning(f"No baseline performance for {agent_name}")
-            return result
+            return None
 
-        # Get current performance (after deployment)
         current = self._get_current_performance(agent_name, window_hours)
         if not current:
             logger.info(f"Insufficient current data for {agent_name}")
-            return result
+            return None
 
         # Check if enough executions
         if current.total_executions < self.thresholds.min_executions:
             logger.info(
                 f"Not enough executions ({current.total_executions} < {self.thresholds.min_executions}) for {agent_name}"
             )
-            return result
+            return None
 
-        result["current_metrics"] = current.metrics
-        result["baseline_metrics"] = baseline.metrics
+        return baseline, current
 
-        # Check for regressions
+    def _check_and_rollback(
+        self,
+        agent_name: str,
+        baseline: AgentPerformanceProfile,
+        current: AgentPerformanceProfile,
+        result: Dict[str, Any]
+    ) -> None:
+        """Check for regression and trigger rollback if needed."""
         regression_reason = self._detect_regression(baseline, current)
-        if regression_reason:
-            result["regression_detected"] = True
-            result["reason"] = regression_reason
+        if not regression_reason:
+            return
 
-            logger.warning(
-                f"Regression detected for {agent_name}: {regression_reason}"
+        result["regression_detected"] = True
+        result["reason"] = regression_reason
+
+        logger.warning(f"Regression detected for {agent_name}: {regression_reason}")
+
+        # Trigger rollback
+        try:
+            self.config_deployer.rollback(
+                agent_name=agent_name,
+                rollback_reason=f"Automatic rollback: {regression_reason}",
             )
-
-            # Trigger rollback
-            try:
-                self.config_deployer.rollback(
-                    agent_name=agent_name,
-                    rollback_reason=f"Automatic rollback: {regression_reason}",
-                )
-                result["rolled_back"] = True
-                logger.info(f"Successfully rolled back {agent_name}")
-            except Exception as e:
-                logger.error(f"Failed to rollback {agent_name}: {e}")
-                result["rollback_error"] = str(e)
-
-        return result
+            result["rolled_back"] = True
+            logger.info(f"Successfully rolled back {agent_name}")
+        except Exception as e:
+            logger.error(f"Failed to rollback {agent_name}: {e}")
+            result["rollback_error"] = str(e)
 
     def _get_baseline_performance(
         self,

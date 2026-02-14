@@ -7,7 +7,16 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.observability.backend import ObservabilityBackend, ReadableBackendMixin
+from src.observability.backend import (
+    AgentOutputData,
+    CollaborationEventData,
+    LLMCallData,
+    ObservabilityBackend,
+    ReadableBackendMixin,
+    SafetyViolationData,
+    ToolCallData,
+    WorkflowStartData,
+)
 
 
 class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
@@ -21,13 +30,7 @@ class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
         workflow_name: str,
         workflow_config: Dict[str, Any],
         start_time: datetime,
-        trigger_type: Optional[str] = None,
-        trigger_data: Optional[Dict[str, Any]] = None,
-        optimization_target: Optional[str] = None,
-        product_type: Optional[str] = None,
-        environment: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None
+        data: Optional[WorkflowStartData] = None
     ) -> None:
         """Track workflow start (no-op)."""
         pass
@@ -117,14 +120,7 @@ class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
         self,
         agent_id: str,
         output_data: Dict[str, Any],
-        reasoning: Optional[str] = None,
-        confidence_score: Optional[float] = None,
-        total_tokens: Optional[int] = None,
-        prompt_tokens: Optional[int] = None,
-        completion_tokens: Optional[int] = None,
-        estimated_cost_usd: Optional[float] = None,
-        num_llm_calls: Optional[int] = None,
-        num_tool_calls: Optional[int] = None
+        metrics: Optional[AgentOutputData] = None
     ) -> None:
         """Set agent output (no-op)."""
         pass
@@ -137,17 +133,8 @@ class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
         agent_id: str,
         provider: str,
         model: str,
-        prompt: str,
-        response: str,
-        prompt_tokens: int,
-        completion_tokens: int,
-        latency_ms: int,
-        estimated_cost_usd: float,
         start_time: datetime,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        status: str = "success",
-        error_message: Optional[str] = None
+        data: LLMCallData
     ) -> None:
         """Track LLM call (no-op)."""
         pass
@@ -159,14 +146,8 @@ class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
         tool_execution_id: str,
         agent_id: str,
         tool_name: str,
-        input_params: Dict[str, Any],
-        output_data: Dict[str, Any],
         start_time: datetime,
-        duration_seconds: float,
-        status: str = "success",
-        error_message: Optional[str] = None,
-        safety_checks: Optional[List[str]] = None,
-        approval_required: bool = False
+        data: ToolCallData
     ) -> None:
         """Track tool call (no-op)."""
         pass
@@ -175,15 +156,10 @@ class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
 
     def track_safety_violation(
         self,
-        workflow_id: Optional[str],
-        stage_id: Optional[str],
-        agent_id: Optional[str],
         violation_severity: str,
         violation_message: str,
         policy_name: str,
-        service_name: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
-        timestamp: Optional[datetime] = None
+        data: Optional[SafetyViolationData] = None
     ) -> None:
         """Track safety violation (no-op)."""
         pass
@@ -193,13 +169,7 @@ class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
         stage_id: str,
         event_type: str,
         agents_involved: List[str],
-        event_data: Optional[Dict[str, Any]] = None,
-        round_number: Optional[int] = None,
-        resolution_strategy: Optional[str] = None,
-        outcome: Optional[str] = None,
-        confidence_score: Optional[float] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
-        timestamp: Optional[datetime] = None
+        data: Optional[CollaborationEventData] = None
     ) -> str:
         """Track collaboration event (no-op)."""
         return ""

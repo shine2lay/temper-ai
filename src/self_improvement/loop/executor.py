@@ -56,6 +56,22 @@ from .state_manager import LoopStateManager
 
 logger = logging.getLogger(__name__)
 
+from dataclasses import dataclass
+
+
+@dataclass
+class ExecutorConfig:
+    """Configuration for LoopExecutor initialization."""
+    coord_db: Any
+    obs_session: Session
+    config: LoopConfig
+    state_manager: LoopStateManager
+    error_recovery: ErrorRecoveryStrategy
+    metrics_collector: MetricsCollector
+    tracker: Optional[Any] = None
+    policy_engine: Optional[Any] = None
+    approval_workflow: Optional[Any] = None
+
 # Phase completion thresholds
 PHASES_BEFORE_EXPERIMENT = 3  # Number of phases completed before experiment phase
 PHASES_BEFORE_DEPLOY = 4  # Number of phases completed before deploy phase
@@ -83,6 +99,7 @@ class LoopExecutor:
         policy_engine: Optional[Any] = None,
         approval_workflow: Optional[Any] = None,
     ) -> None:
+        """Initialize loop executor with configuration."""
         self.coord_db = coord_db
         self.obs_session = obs_session
         self.config = config
@@ -91,34 +108,135 @@ class LoopExecutor:
         self.metrics_collector = metrics_collector
         self.tracker = tracker
 
-        self.performance_analyzer = PerformanceAnalyzer(obs_session)
-        self.improvement_detector = ImprovementDetector(obs_session)
+        # Initialize core components
+        self._init_analyzers_and_orchestrators()
+        self._init_deployer_and_monitor(policy_engine, approval_workflow)
+        self._init_learning_components()
+
+    def _init_analyzers_and_orchestrators(self) -> None:
+        """Initialize analyzers and orchestrators."""
+        self.performance_analyzer = PerformanceAnalyzer(self.obs_session)
+        self.improvement_detector = ImprovementDetector(self.obs_session)
         self.experiment_orchestrator = ExperimentOrchestrator(
-            session=obs_session,
-            target_executions_per_variant=config.target_samples_per_variant
+            session=self.obs_session,
+            target_executions_per_variant=self.config.target_samples_per_variant
         )
 
+    def _init_deployer_and_monitor(
+        self,
+        policy_engine: Optional[Any],
+        approval_workflow: Optional[Any]
+    ) -> None:
+        """Initialize deployer and rollback monitor."""
+        enable_safety = (
+            self.config.enable_safety_checks
+            if hasattr(self.config, 'enable_safety_checks')
+            else True
+        )
         self.config_deployer = ConfigDeployer(
-            db=coord_db,
+            db=self.coord_db,
             policy_engine=policy_engine,
             approval_workflow=approval_workflow,
-            enable_safety_checks=config.enable_safety_checks if hasattr(config, 'enable_safety_checks') else True
+            enable_safety_checks=enable_safety
         )
 
-        self.strategy_learning_store = StrategyLearningStore(coord_db)
-        self.pattern_miner = PatternMiner(self.strategy_learning_store)
-
         rollback_thresholds = RegressionThresholds(
-            quality_drop_pct=config.rollback_quality_drop_pct,
-            cost_increase_pct=config.rollback_cost_increase_pct,
-            speed_increase_pct=config.rollback_speed_increase_pct,
-            min_executions=config.rollback_min_executions,
+            quality_drop_pct=self.config.rollback_quality_drop_pct,
+            cost_increase_pct=self.config.rollback_cost_increase_pct,
+            speed_increase_pct=self.config.rollback_speed_increase_pct,
+            min_executions=self.config.rollback_min_executions,
         )
         self.rollback_monitor = RollbackMonitor(
             self.performance_analyzer,
             self.config_deployer,
             rollback_thresholds,
         )
+
+    def _init_learning_components(self) -> None:
+        """Initialize learning and pattern mining components."""
+        self.strategy_learning_store = StrategyLearningStore(self.coord_db)
+        self.pattern_miner = PatternMiner(self.strategy_learning_store)
+
+    def _run_detection_phase(
+        self,
+        agent_name: str,
+        result: IterationResult,
+        start_phase: Phase
+    ) -> bool:
+        """Run detection phase. Returns True if should continue."""
+        if start_phase == Phase.DETECT:
+            result.detection_result = self._execute_with_retry(
+                agent_name, Phase.DETECT, self._execute_phase_1_detect
+            )
+            if not result.detection_result.has_problem:
+                logger.info(f"No problems detected for {agent_name}, skipping iteration")
+                result.success = True
+                result.phases_completed.append(Phase.DETECT)
+                return False
+            result.phases_completed.append(Phase.DETECT)
+        return True
+
+    def _run_analysis_phase(
+        self,
+        agent_name: str,
+        result: IterationResult,
+        start_phase: Phase
+    ) -> None:
+        """Run analysis phase."""
+        if len(result.phases_completed) > 0 or start_phase == Phase.ANALYZE:
+            result.analysis_result = self._execute_with_retry(
+                agent_name, Phase.ANALYZE, self._execute_phase_2_analyze
+            )
+            result.phases_completed.append(Phase.ANALYZE)
+
+    def _run_strategy_phase(
+        self,
+        agent_name: str,
+        result: IterationResult,
+        start_phase: Phase
+    ) -> None:
+        """Run strategy generation phase."""
+        if len(result.phases_completed) >= 2 or start_phase == Phase.STRATEGY:
+            if result.analysis_result is None:
+                raise ValueError("Cannot execute strategy phase without analysis result")
+            analysis_result = result.analysis_result
+            result.strategy_result = self._execute_with_retry(
+                agent_name,
+                Phase.STRATEGY,
+                lambda name: self._execute_phase_3_strategy(name, analysis_result)
+            )
+            result.phases_completed.append(Phase.STRATEGY)
+
+    def _run_experiment_and_deploy_phases(
+        self,
+        agent_name: str,
+        result: IterationResult,
+        start_phase: Phase
+    ) -> None:
+        """Run experiment and deployment phases."""
+        # Phase 4: Experiment
+        if len(result.phases_completed) >= PHASES_BEFORE_EXPERIMENT or start_phase == Phase.EXPERIMENT:
+            if result.strategy_result is None:
+                raise ValueError("Cannot execute experiment phase without strategy result")
+            strategy_result = result.strategy_result
+            result.experiment_result = self._execute_with_retry(
+                agent_name,
+                Phase.EXPERIMENT,
+                lambda name: self._execute_phase_4_experiment(name, strategy_result)
+            )
+            result.phases_completed.append(Phase.EXPERIMENT)
+
+        # Phase 5: Deploy
+        if len(result.phases_completed) >= PHASES_BEFORE_DEPLOY or start_phase == Phase.DEPLOY:
+            if result.experiment_result and result.experiment_result.winner_config:
+                result.deployment_result = self._execute_with_retry(
+                    agent_name,
+                    Phase.DEPLOY,
+                    lambda name: self._execute_phase_5_deploy(name, result.experiment_result)
+                )
+                result.phases_completed.append(Phase.DEPLOY)
+            else:
+                logger.info(f"No winner from experiment, skipping deployment for {agent_name}")
 
     def execute_iteration(
         self,
@@ -143,62 +261,13 @@ class LoopExecutor:
         logger.info(f"Starting iteration {state.iteration_number} for {agent_name}")
 
         try:
-            # Phase 1: Detection
-            if start_phase == Phase.DETECT:
-                result.detection_result = self._execute_with_retry(
-                    agent_name, Phase.DETECT, self._execute_phase_1_detect
-                )
-                if not result.detection_result.has_problem:
-                    logger.info(f"No problems detected for {agent_name}, skipping iteration")
-                    result.success = True
-                    result.phases_completed.append(Phase.DETECT)
-                    return result
-                result.phases_completed.append(Phase.DETECT)
+            # Run all phases
+            if not self._run_detection_phase(agent_name, result, start_phase):
+                return result
 
-            # Phase 2: Analysis
-            if len(result.phases_completed) > 0 or start_phase == Phase.ANALYZE:
-                result.analysis_result = self._execute_with_retry(
-                    agent_name, Phase.ANALYZE, self._execute_phase_2_analyze
-                )
-                result.phases_completed.append(Phase.ANALYZE)
-
-            # Phase 3: Strategy
-            if len(result.phases_completed) >= 2 or start_phase == Phase.STRATEGY:
-                # Ensure analysis_result is available
-                if result.analysis_result is None:
-                    raise ValueError("Cannot execute strategy phase without analysis result")
-                analysis_result = result.analysis_result
-                result.strategy_result = self._execute_with_retry(
-                    agent_name,
-                    Phase.STRATEGY,
-                    lambda name: self._execute_phase_3_strategy(name, analysis_result)
-                )
-                result.phases_completed.append(Phase.STRATEGY)
-
-            # Phase 4: Experiment
-            if len(result.phases_completed) >= PHASES_BEFORE_EXPERIMENT or start_phase == Phase.EXPERIMENT:
-                # Ensure strategy_result is available
-                if result.strategy_result is None:
-                    raise ValueError("Cannot execute experiment phase without strategy result")
-                strategy_result = result.strategy_result
-                result.experiment_result = self._execute_with_retry(
-                    agent_name,
-                    Phase.EXPERIMENT,
-                    lambda name: self._execute_phase_4_experiment(name, strategy_result)
-                )
-                result.phases_completed.append(Phase.EXPERIMENT)
-
-            # Phase 5: Deploy
-            if len(result.phases_completed) >= PHASES_BEFORE_DEPLOY or start_phase == Phase.DEPLOY:
-                if result.experiment_result and result.experiment_result.winner_config:
-                    result.deployment_result = self._execute_with_retry(
-                        agent_name,
-                        Phase.DEPLOY,
-                        lambda name: self._execute_phase_5_deploy(name, result.experiment_result)
-                    )
-                    result.phases_completed.append(Phase.DEPLOY)
-                else:
-                    logger.info(f"No winner from experiment, skipping deployment for {agent_name}")
+            self._run_analysis_phase(agent_name, result, start_phase)
+            self._run_strategy_phase(agent_name, result, start_phase)
+            self._run_experiment_and_deploy_phases(agent_name, result, start_phase)
 
             result.success = True
             logger.info(
@@ -212,13 +281,9 @@ class LoopExecutor:
             result.success = False
 
         finally:
-            # Calculate duration
             result.duration_seconds = (datetime.now(timezone.utc) - start_time).total_seconds()
-
-            # Record metrics
             self.metrics_collector.record_iteration_complete(agent_name, result)
 
-            # Mark iteration complete
             if result.success:
                 self.state_manager.mark_completed(agent_name)
             else:
@@ -387,6 +452,76 @@ class LoopExecutor:
             },
         )
 
+    def _create_winner_result(
+        self,
+        experiment_id: str,
+        winner: Any,
+        agent_name: str,
+        strategy_result: StrategyResult
+    ) -> ExperimentPhaseResult:
+        """Create experiment result for winning variant."""
+        logger.info(
+            f"Experiment {experiment_id} has winner: {winner.variant_id} "
+            f"(improvement: {winner.quality_improvement:.1f}%, "
+            f"confidence: {winner.confidence:.2f})"
+        )
+
+        result = ExperimentPhaseResult(
+            experiment_id=experiment_id,
+            winner_variant_id=winner.variant_id,
+            winner_config=winner.winning_config,
+            statistical_significance=winner.is_statistically_significant,
+            metrics_comparison={
+                "quality_improvement": winner.quality_improvement,
+                "speed_improvement": winner.speed_improvement,
+                "cost_improvement": winner.cost_improvement,
+                "composite_score": winner.composite_score,
+            },
+        )
+
+        # Track and record outcomes
+        if self.tracker:
+            _track_winner_outcome(
+                self.tracker, agent_name, experiment_id, strategy_result, winner,
+            )
+
+        _record_winner_outcome(
+            self.strategy_learning_store, strategy_result, agent_name,
+            experiment_id, winner, self.config.target_samples_per_variant,
+        )
+
+        return result
+
+    def _create_no_winner_result(
+        self,
+        experiment_id: str,
+        agent_name: str,
+        strategy_result: StrategyResult
+    ) -> ExperimentPhaseResult:
+        """Create experiment result when no winner found."""
+        logger.info(f"No winner (control best or inconclusive) for {agent_name}")
+
+        result = ExperimentPhaseResult(
+            experiment_id=experiment_id,
+            winner_variant_id=None,
+            winner_config=None,
+            statistical_significance=None,
+            metrics_comparison=None,
+        )
+
+        # Track and record outcomes
+        if self.tracker:
+            _track_inconclusive_outcome(
+                self.tracker, agent_name, experiment_id, strategy_result.strategy_name,
+            )
+
+        _record_no_winner_outcome(
+            self.strategy_learning_store, strategy_result, agent_name,
+            experiment_id, self.config.target_samples_per_variant,
+        )
+
+        return result
+
     def _execute_phase_4_experiment(
         self,
         agent_name: str,
@@ -412,62 +547,13 @@ class LoopExecutor:
         )
 
         if winner and winner.variant_id != "control":
-            logger.info(
-                f"Experiment {experiment.id} has winner: {winner.variant_id} "
-                f"(improvement: {winner.quality_improvement:.1f}%, "
-                f"confidence: {winner.confidence:.2f})"
+            return self._create_winner_result(
+                experiment.id, winner, agent_name, strategy_result
             )
-
-            result = ExperimentPhaseResult(
-                experiment_id=experiment.id,
-                winner_variant_id=winner.variant_id,
-                winner_config=winner.winning_config,
-                statistical_significance=winner.is_statistically_significant,
-                metrics_comparison={
-                    "quality_improvement": winner.quality_improvement,
-                    "speed_improvement": winner.speed_improvement,
-                    "cost_improvement": winner.cost_improvement,
-                    "composite_score": winner.composite_score,
-                },
-            )
-
-            # Track experiment decision outcome for observability
-            if self.tracker:
-                _track_winner_outcome(
-                    self.tracker, agent_name, experiment.id, strategy_result, winner,
-                )
-
-            # Record strategy outcome for learning
-            _record_winner_outcome(
-                self.strategy_learning_store, strategy_result, agent_name,
-                experiment.id, winner, self.config.target_samples_per_variant,
-            )
-
-            return result
         else:
-            logger.info(f"No winner (control best or inconclusive) for {agent_name}")
-
-            result = ExperimentPhaseResult(
-                experiment_id=experiment.id,
-                winner_variant_id=None,
-                winner_config=None,
-                statistical_significance=None,
-                metrics_comparison=None,
+            return self._create_no_winner_result(
+                experiment.id, agent_name, strategy_result
             )
-
-            # Track inconclusive experiment outcome
-            if self.tracker:
-                _track_inconclusive_outcome(
-                    self.tracker, agent_name, experiment.id, strategy_result.strategy_name,
-                )
-
-            # Record strategy outcome (no improvement) for learning
-            _record_no_winner_outcome(
-                self.strategy_learning_store, strategy_result, agent_name,
-                experiment.id, self.config.target_samples_per_variant,
-            )
-
-            return result
 
     def _execute_phase_5_deploy(
         self,

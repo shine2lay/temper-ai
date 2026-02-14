@@ -12,7 +12,7 @@ import logging
 import shlex
 import subprocess  # noqa: F401 — kept for test mock patching compatibility
 from pathlib import Path
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 from src.tools._bash_helpers import (
     get_safe_env,
@@ -285,6 +285,62 @@ class Bash(BaseTool):
             "required": ["command"],
         }
 
+    def _sync_config_from_agent(self) -> None:
+        """Sync workspace_root and allowed_commands from config (may be updated by agent)."""
+        # Sync workspace_root
+        cfg_root = self.config.get("workspace_root")
+        if cfg_root:
+            resolved = Path(cfg_root).resolve()
+            if resolved != self.workspace_root:
+                logger.warning(
+                    "Bash workspace_root changed: %s -> %s",
+                    self.workspace_root, resolved,
+                )
+                self.workspace_root = resolved
+
+        # Sync allowed_commands
+        cfg_cmds = self.config.get("allowed_commands")
+        if cfg_cmds is not None:
+            new_cmds = set(cfg_cmds)
+            if new_cmds != self.allowed_commands:
+                logger.warning(
+                    "Bash allowed_commands changed: %s -> %s",
+                    sorted(self.allowed_commands), sorted(new_cmds),
+                )
+                self.allowed_commands = new_cmds
+
+    def _validate_command_input(self, command: Any) -> tuple[Optional[str], Optional[ToolResult]]:
+        """Validate command input. Returns (command, None) or (None, error_result)."""
+        if not command or not isinstance(command, str):
+            return None, ToolResult(
+                success=False,
+                error="command must be a non-empty string",
+            )
+
+        command_stripped = command.strip()
+        if not command_stripped:
+            return None, ToolResult(
+                success=False,
+                error="command must be a non-empty string",
+            )
+
+        return command_stripped, None
+
+    def _validate_command_mode(self, command: str) -> tuple[Optional[List[str]], Optional[ToolResult]]:
+        """Validate command for shell or strict mode. Returns (parts, None) or (None, error_result)."""
+        if self.shell_mode:
+            error_result = validate_shell_mode_command(
+                command, self.allowed_commands, self.workspace_root,
+            )
+            if error_result is not None:
+                return None, error_result
+            return None, None  # None parts signals shell=True
+
+        parts, error_result = validate_strict_mode_command(
+            command, self.allowed_commands, DANGEROUS_CHARS,
+        )
+        return parts, error_result
+
     def execute(self, **kwargs: Any) -> ToolResult:
         """Execute a shell command in the sandboxed workspace.
 
@@ -300,71 +356,32 @@ class Bash(BaseTool):
         working_directory = kwargs.get("working_directory")
         timeout = kwargs.get("timeout", self.default_timeout)
 
-        # Sync workspace_root from config (may be updated after init by agent)
-        cfg_root = self.config.get("workspace_root")
-        if cfg_root:
-            resolved = Path(cfg_root).resolve()
-            if resolved != self.workspace_root:
-                logger.warning(
-                    "Bash workspace_root changed: %s -> %s",
-                    self.workspace_root, resolved,
-                )
-                self.workspace_root = resolved
+        # Sync config from agent
+        self._sync_config_from_agent()
 
-        # Sync allowed_commands from config (may be updated after init by agent)
-        cfg_cmds = self.config.get("allowed_commands")
-        if cfg_cmds is not None:
-            new_cmds = set(cfg_cmds)
-            if new_cmds != self.allowed_commands:
-                logger.warning(
-                    "Bash allowed_commands changed: %s -> %s",
-                    sorted(self.allowed_commands), sorted(new_cmds),
-                )
-                self.allowed_commands = new_cmds
+        # Validate command input
+        command, error_result = self._validate_command_input(command)
+        if error_result is not None:
+            return error_result
 
-        # --- Validate command ---
-        if not command or not isinstance(command, str):
-            return ToolResult(
-                success=False,
-                error="command must be a non-empty string",
-            )
+        # Validate command mode (shell or strict)
+        parts, error_result = self._validate_command_mode(command)
+        if error_result is not None:
+            return error_result
 
-        command = command.strip()
-        if not command:
-            return ToolResult(
-                success=False,
-                error="command must be a non-empty string",
-            )
-
-        # --- Shell mode vs strict mode ---
-        if self.shell_mode:
-            error_result = validate_shell_mode_command(
-                command, self.allowed_commands, self.workspace_root,
-            )
-            if error_result is not None:
-                return error_result
-            parts = None  # Signal to use shell=True with the raw command string
-        else:
-            parts, error_result = validate_strict_mode_command(
-                command, self.allowed_commands, DANGEROUS_CHARS,
-            )
-            if error_result is not None:
-                return error_result
-
-        # --- Validate timeout ---
+        # Validate timeout
         if not isinstance(timeout, (int, float)):
             timeout = self.default_timeout
         timeout = min(max(1, int(timeout)), MAX_TIMEOUT_SECONDS)
 
-        # --- Validate working directory (sandbox) ---
+        # Validate working directory (sandbox)
         resolved_cwd, error_result = validate_sandbox(
             self.workspace_root, working_directory, parts,
         )
         if error_result is not None:
             return error_result
 
-        # --- Execute command ---
-        # resolved_cwd is guaranteed to be non-None after validate_sandbox
+        # Execute command
         if resolved_cwd is None:
             raise ValueError("resolved_cwd should not be None after validate_sandbox")
         return run_command(

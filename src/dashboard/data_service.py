@@ -188,6 +188,66 @@ class DashboardDataService:
         return {"dep_map": dep_map, "loops_back_to": loops_back_to}
 
     @staticmethod
+    def _add_dependency_edges(
+        edges: List[Dict[str, Any]],
+        stage_id: str,
+        deps: List[str],
+        name_to_latest: Dict[str, Dict[str, Any]],
+    ) -> None:
+        """Add edges from dependencies to current stage.
+
+        Args:
+            edges: List of edges to append to.
+            stage_id: Current stage ID.
+            deps: List of dependency stage names.
+            name_to_latest: Map of stage names to their latest execution.
+        """
+        for dep_name in deps:
+            dep_stage = name_to_latest.get(dep_name)
+            if not dep_stage:
+                continue
+            dep_output = dep_stage.get(ObservabilityFields.OUTPUT_DATA) or {}
+            data_keys = list(dep_output.keys())
+            edges.append({
+                "from": dep_stage["id"],
+                "to": stage_id,
+                "type": "data_flow",
+                "data_keys": data_keys,
+                "label": ", ".join(data_keys) if data_keys else "",
+            })
+
+    @staticmethod
+    def _add_loop_back_edges(
+        edges: List[Dict[str, Any]],
+        stage_id: str,
+        name: str,
+        loops_back_to: Dict[str, str],
+        name_to_latest: Dict[str, Dict[str, Any]],
+    ) -> None:
+        """Add loop-back edges if this stage is a loop target.
+
+        Args:
+            edges: List of edges to append to.
+            stage_id: Current stage ID.
+            name: Current stage name.
+            loops_back_to: Map of source stage names to loop targets.
+            name_to_latest: Map of stage names to their latest execution.
+        """
+        for src_name, target in loops_back_to.items():
+            if target != name:
+                continue
+            src_stage = name_to_latest.get(src_name)
+            if not src_stage or src_stage["id"] == stage_id:
+                continue
+            edges.append({
+                "from": src_stage["id"],
+                "to": stage_id,
+                "type": "data_flow",
+                "data_keys": [],
+                "label": "loop",
+            })
+
+    @staticmethod
     def _add_dag_flow_edges(
         edges: List[Dict[str, Any]],
         stages: List[Dict[str, Any]],
@@ -206,33 +266,16 @@ class DashboardDataService:
             name = stage.get("stage_name", "")
             deps = dep_map.get(name, [])
 
-            for dep_name in deps:
-                dep_stage = name_to_latest.get(dep_name)
-                if dep_stage:
-                    dep_output = dep_stage.get(ObservabilityFields.OUTPUT_DATA) or {}
-                    data_keys = list(dep_output.keys())
-                    edges.append({
-                        "from": dep_stage["id"],
-                        "to": stage_id,
-                        "type": "data_flow",
-                        "data_keys": data_keys,
-                        "label": ", ".join(data_keys) if data_keys else "",
-                    })
+            # Add edges from dependencies
+            DashboardDataService._add_dependency_edges(
+                edges, stage_id, deps, name_to_latest
+            )
 
-            # Loop-back edge: if this name already appeared, find the
-            # stage with loops_back_to pointing to this name
+            # Add loop-back edge if this name already appeared
             if name in seen_names:
-                for src_name, target in loops_back_to.items():
-                    if target == name:
-                        src_stage = name_to_latest.get(src_name)
-                        if src_stage and src_stage["id"] != stage_id:
-                            edges.append({
-                                "from": src_stage["id"],
-                                "to": stage_id,
-                                "type": "data_flow",
-                                "data_keys": [],
-                                "label": "loop",
-                            })
+                DashboardDataService._add_loop_back_edges(
+                    edges, stage_id, name, loops_back_to, name_to_latest
+                )
 
             seen_names.add(name)
             name_to_latest[name] = stage

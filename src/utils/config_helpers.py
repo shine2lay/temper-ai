@@ -172,6 +172,69 @@ def validate_config_structure(
             )
 
 
+def _redact_secret_reference(value: str) -> str:
+    """Redact secret reference based on type."""
+    if value.startswith("${env:"):
+        return "${env:***REDACTED***}"
+    elif value.startswith("${vault:"):
+        return "${vault:***REDACTED***}"
+    elif value.startswith("${aws:"):
+        return "${aws:***REDACTED***}"
+    else:
+        return "***REDACTED***"
+
+
+def _sanitize_dict(obj: Dict[str, Any], secret_patterns: List[str]) -> Dict[str, Any]:
+    """Sanitize dictionary recursively."""
+    result = {}
+    for key, value in obj.items():
+        # Check if key matches secret pattern
+        if not any(pattern in key.lower() for pattern in secret_patterns):
+            # Key is safe, recurse normally
+            result[key] = _sanitize_value(value, secret_patterns)
+            continue
+
+        # Key looks like a secret - check value type
+        if isinstance(value, (dict, list)):
+            # Recurse even if key looks like a secret
+            result[key] = _sanitize_value(value, secret_patterns)
+        elif isinstance(value, str) and SecretReference is not None and SecretReference.is_reference(value):
+            # Redact secret reference
+            result[key] = _redact_secret_reference(value)
+        else:
+            # Redact primitive values
+            result[key] = "***REDACTED***"
+    return result
+
+
+def _sanitize_string(obj: str) -> str:
+    """Sanitize string value."""
+    # Check if value contains secret patterns
+    if detect_secret_patterns is not None:
+        try:
+            is_secret, confidence = detect_secret_patterns(obj)
+            if is_secret and confidence == "high":
+                return "***REDACTED***"
+        except ValueError:
+            pass  # Skip detection for oversized inputs
+    # Check if value is a secret reference
+    if SecretReference is not None and SecretReference.is_reference(obj):
+        return "***SECRET_REF***"
+    return obj
+
+
+def _sanitize_value(obj: Any, secret_patterns: List[str]) -> Any:
+    """Recursively sanitize any value."""
+    if isinstance(obj, dict):
+        return _sanitize_dict(obj, secret_patterns)
+    elif isinstance(obj, list):
+        return [_sanitize_value(item, secret_patterns) for item in obj]
+    elif isinstance(obj, str):
+        return _sanitize_string(obj)
+    else:
+        return obj
+
+
 def sanitize_config_for_display(
     config: Dict[str, Any],
     secret_keys: Optional[List[str]] = None
@@ -208,52 +271,7 @@ def sanitize_config_for_display(
 
     secret_patterns = [p.lower() for p in SECRET_KEY_NAMES + secret_keys]
 
-    def _sanitize(obj: Any) -> Any:
-        """Recursively sanitize object."""
-        if isinstance(obj, dict):
-            result = {}
-            for key, value in obj.items():
-                # Check if key matches secret pattern
-                if any(pattern in key.lower() for pattern in secret_patterns):
-                    # Redact primitive values, but still recurse into dicts/lists
-                    if isinstance(value, dict) or isinstance(value, list):
-                        # Recurse into nested structures even if key name looks like a secret
-                        result[key] = _sanitize(value)
-                    elif isinstance(value, str) and SecretReference is not None and SecretReference.is_reference(value):
-                        # Show it's a reference but redact the value
-                        if value.startswith("${env:"):
-                            result[key] = "${env:***REDACTED***}"
-                        elif value.startswith("${vault:"):
-                            result[key] = "${vault:***REDACTED***}"
-                        elif value.startswith("${aws:"):
-                            result[key] = "${aws:***REDACTED***}"
-                        else:
-                            result[key] = "***REDACTED***"
-                    else:
-                        # Redact primitive values (str, int, bool, None, etc.)
-                        result[key] = "***REDACTED***"
-                else:
-                    result[key] = _sanitize(value)
-            return result
-        elif isinstance(obj, list):
-            return [_sanitize(item) for item in obj]
-        elif isinstance(obj, str):
-            # Check if value contains secret patterns
-            if detect_secret_patterns is not None:
-                try:
-                    is_secret, confidence = detect_secret_patterns(obj)
-                    if is_secret and confidence == "high":
-                        return "***REDACTED***"
-                except ValueError:
-                    pass  # Skip detection for oversized inputs
-            # Check if value is a secret reference
-            if SecretReference is not None and SecretReference.is_reference(obj):
-                return "***SECRET_REF***"
-            return obj
-        else:
-            return obj
-
-    return cast(Dict[str, Any], _sanitize(config))
+    return cast(Dict[str, Any], _sanitize_value(config, secret_patterns))
 
 
 def resolve_config_path(

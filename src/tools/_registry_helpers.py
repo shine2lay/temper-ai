@@ -87,6 +87,125 @@ def get_error_suggestion(error_msg: str) -> Optional[str]:
 # Auto-discovery
 # ---------------------------------------------------------------------------
 
+def _load_cached_tools(
+    registry: ToolRegistry,
+    use_cache: bool,
+    global_lock: Any,
+    get_cache_fn: Any,
+) -> Optional[int]:
+    """Load cached tools if available. Returns tool count or None if no cache."""
+    if not use_cache:
+        return None
+
+    with global_lock:
+        cached = get_cache_fn()
+
+    if cached is None:
+        return None
+
+    logger.info(f"Using cached discovered tools ({len(cached)} tools)")
+    for tool_name, tool_instance in cached.items():
+        registry.register(tool_instance, allow_override=True)
+    return len(cached)
+
+
+def _try_register_tool(
+    tool_class: Type[BaseTool],
+    registry: ToolRegistry,
+    discovered_tools: Dict[str, BaseTool],
+) -> Tuple[bool, Optional[Tuple[str, str]]]:
+    """Try to register a tool. Returns (success, skip_info)."""
+    try:
+        tool_instance = tool_class()
+        try:
+            registry.register(tool_instance, allow_override=False)
+            metadata = tool_instance.get_metadata()
+            version = metadata.version or "1.0.0"
+            discovered_tools[f"{tool_instance.name}:{version}"] = tool_instance
+            logger.info(f"[OK] Registered tool: {tool_instance.name} v{version} ({tool_class.__name__})")
+            return True, None
+        except ToolRegistryError as e:
+            logger.warning(f"Skipping {tool_class.__name__}: {e}")
+            return False, (tool_class.__name__, str(e))
+
+    except TypeError as e:
+        error_msg = f"Tool {tool_class.__name__} requires init arguments"
+        logger.warning(
+            f"{error_msg}:\n"
+            f"  Error: {e}\n"
+            f"  Suggestion: Provide default values or register manually"
+        )
+        suggestion = get_error_suggestion("requires init arguments")
+        if suggestion:
+            logger.debug(f"How to fix:\n{suggestion}")
+        return False, (tool_class.__name__, f"Constructor requires arguments: {e}")
+
+    except (ValueError, AttributeError, RuntimeError) as e:
+        logger.error(
+            f"Failed to instantiate tool {tool_class.__name__}: {e}",
+            exc_info=True
+        )
+        return False, (tool_class.__name__, f"Instantiation error: {e}")
+
+
+def _discover_tool_class(
+    tool_class: Type[Any],
+    registry: ToolRegistry,
+    discovered_tools: Dict[str, BaseTool],
+) -> Tuple[int, int, List[Tuple[str, str]]]:
+    """Discover and register a single tool class. Returns (registered, discovered, skipped)."""
+    # Validate tool interface
+    is_valid, validation_errors = validate_tool_interface(tool_class)
+
+    if not is_valid:
+        error_msg = f"Tool {tool_class.__name__} failed validation"
+        logger.warning(
+            f"{error_msg}:\n" +
+            "\n".join(f"  - {err}" for err in validation_errors)
+        )
+        suggestion = get_error_suggestion("\n".join(validation_errors))
+        if suggestion:
+            logger.info(f"Suggestion for {tool_class.__name__}:\n{suggestion}")
+        return 0, 1, [(tool_class.__name__, "; ".join(validation_errors))]
+
+    # Try to register
+    success, skip_info = _try_register_tool(tool_class, registry, discovered_tools)
+    if success:
+        return 1, 1, []
+    return 0, 1, [skip_info] if skip_info else []
+
+
+def _discover_module_tools(
+    module: Any,
+    registry: ToolRegistry,
+    discovered_tools: Dict[str, BaseTool],
+) -> Tuple[int, int, List[Tuple[str, str]]]:
+    """Discover tools in a module. Returns (registered, discovered, skipped)."""
+    registered_count = 0
+    discovered_count = 0
+    skipped_tools: List[Tuple[str, str]] = []
+
+    for name, obj in inspect.getmembers(module, inspect.isclass):
+        # Skip if not a tool class or not defined in this module
+        if obj is BaseTool or obj.__module__ != module.__name__:
+            continue
+
+        # Check if it's a BaseTool subclass
+        try:
+            if not issubclass(obj, BaseTool):
+                continue
+        except TypeError:
+            continue
+
+        # Discover and register
+        reg, disc, skip = _discover_tool_class(obj, registry, discovered_tools)
+        registered_count += reg
+        discovered_count += disc
+        skipped_tools.extend(skip)
+
+    return registered_count, discovered_count, skipped_tools
+
+
 def auto_discover(
     registry: ToolRegistry,
     tools_package: str,
@@ -96,15 +215,10 @@ def auto_discover(
     set_cache_fn: Any,
 ) -> int:
     """Auto-discover and register tools from a package with detailed logging."""
-    # TO-07: Read cache under lock
-    if use_cache:
-        with global_lock:
-            cached = get_cache_fn()
-        if cached is not None:
-            logger.info(f"Using cached discovered tools ({len(cached)} tools)")
-            for tool_name, tool_instance in cached.items():
-                registry.register(tool_instance, allow_override=True)
-            return len(cached)
+    # Try to load from cache first
+    cached_count = _load_cached_tools(registry, use_cache, global_lock, get_cache_fn)
+    if cached_count is not None:
+        return cached_count
 
     # Perform discovery
     logger.info(f"Starting tool discovery in package: {tools_package}")
@@ -119,74 +233,19 @@ def auto_discover(
             raise ValueError(f"Package {tools_package} has no __file__ attribute")
         package_path = Path(package.__file__).parent
 
+        # Iterate through modules
         for _, module_name, is_pkg in pkgutil.iter_modules([str(package_path)]):
+            # Skip packages and private modules
             if is_pkg or module_name.startswith("_"):
                 continue
 
+            # Try to import and discover tools in module
             try:
                 module = importlib.import_module(f"{tools_package}.{module_name}")
-
-                for name, obj in inspect.getmembers(module, inspect.isclass):
-                    if (
-                        obj is not BaseTool
-                        and obj.__module__ == module.__name__
-                    ):
-                        try:
-                            if not issubclass(obj, BaseTool):
-                                continue
-                        except TypeError:
-                            continue
-
-                        discovered_count += 1
-
-                        is_valid, validation_errors = validate_tool_interface(obj)
-
-                        if not is_valid:
-                            error_msg = f"Tool {obj.__name__} failed validation"
-                            logger.warning(
-                                f"{error_msg}:\n" +
-                                "\n".join(f"  - {err}" for err in validation_errors)
-                            )
-                            skipped_tools.append((obj.__name__, "; ".join(validation_errors)))
-
-                            suggestion = get_error_suggestion("\n".join(validation_errors))
-                            if suggestion:
-                                logger.info(f"Suggestion for {obj.__name__}:\n{suggestion}")
-                            continue
-
-                        try:
-                            tool_instance = obj()
-                            try:
-                                registry.register(tool_instance, allow_override=False)
-                                metadata = tool_instance.get_metadata()
-                                version = metadata.version or "1.0.0"
-                                discovered_tools[f"{tool_instance.name}:{version}"] = tool_instance
-                                registered_count += 1
-                                logger.info(f"[OK] Registered tool: {tool_instance.name} v{version} ({obj.__name__})")
-                            except ToolRegistryError as e:
-                                logger.warning(f"Skipping {obj.__name__}: {e}")
-                                skipped_tools.append((obj.__name__, str(e)))
-
-                        except TypeError as e:
-                            error_msg = f"Tool {obj.__name__} requires init arguments"
-                            logger.warning(
-                                f"{error_msg}:\n"
-                                f"  Error: {e}\n"
-                                f"  Suggestion: Provide default values or register manually"
-                            )
-                            skipped_tools.append((obj.__name__, f"Constructor requires arguments: {e}"))
-
-                            suggestion = get_error_suggestion("requires init arguments")
-                            if suggestion:
-                                logger.debug(f"How to fix:\n{suggestion}")
-
-                        except (ValueError, AttributeError, RuntimeError) as e:
-                            logger.error(
-                                f"Failed to instantiate tool {obj.__name__}: {e}",
-                                exc_info=True
-                            )
-                            skipped_tools.append((obj.__name__, f"Instantiation error: {e}"))
-
+                reg, disc, skip = _discover_module_tools(module, registry, discovered_tools)
+                registered_count += reg
+                discovered_count += disc
+                skipped_tools.extend(skip)
             except ImportError as e:
                 logger.warning(
                     f"Failed to import module {tools_package}.{module_name}: {e}"
@@ -207,7 +266,7 @@ def auto_discover(
         for tool_name, reason in skipped_tools:
             logger.debug(f"  {tool_name}: {reason}")
 
-    # TO-07: Cache discovered tools under lock
+    # Cache discovered tools
     if use_cache and discovered_tools:
         with global_lock:
             set_cache_fn(discovered_tools)
@@ -219,6 +278,59 @@ def auto_discover(
 # Config loading
 # ---------------------------------------------------------------------------
 
+def _parse_implementation_path(implementation: Any, config_name: str) -> str:
+    """Parse implementation spec to class path. Raises ToolRegistryError on error."""
+    if isinstance(implementation, str):
+        return implementation
+
+    if isinstance(implementation, dict):
+        module_path = implementation.get("module")
+        class_name = implementation.get("class")
+
+        if not module_path or not class_name:
+            raise ToolRegistryError(
+                f"Tool implementation must specify 'module' and 'class': {config_name}"
+            )
+
+        return f"{module_path}.{class_name}"
+
+    raise ToolRegistryError(
+        f"Invalid implementation format in tool config: {config_name}"
+    )
+
+
+def _load_tool_class(class_path: str) -> Type[BaseTool]:
+    """Load and validate tool class. Raises ToolRegistryError on error."""
+    parts = class_path.rsplit(".", 1)
+    if len(parts) != 2:
+        raise ToolRegistryError(
+            f"Invalid class path format: {class_path}"
+        )
+
+    module_name, class_name = parts
+
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as e:
+        raise ToolRegistryError(
+            f"Failed to import tool class '{class_path}': {e}"
+        )
+
+    try:
+        tool_class = getattr(module, class_name)
+    except AttributeError:
+        raise ToolRegistryError(
+            f"Tool class not found in module '{module_name}': {class_name}"
+        )
+
+    if not issubclass(tool_class, BaseTool):
+        raise ToolRegistryError(
+            f"Tool class must inherit from BaseTool: {class_path}"
+        )
+
+    return tool_class
+
+
 def load_from_config(
     registry: ToolRegistry,
     config_name: str,
@@ -229,6 +341,7 @@ def load_from_config(
         from src.compiler.config_loader import ConfigLoader
         config_loader = ConfigLoader()
 
+    # Load configuration
     try:
         tool_config = config_loader.load_tool(config_name, validate=False)
     except Exception as e:
@@ -236,6 +349,7 @@ def load_from_config(
             f"Failed to load tool configuration '{config_name}': {e}"
         )
 
+    # Parse tool data
     tool_data = tool_config.get("tool", {})
     tool_name = tool_data.get("name")
     implementation = tool_data.get("implementation", {})
@@ -245,57 +359,18 @@ def load_from_config(
             f"Tool configuration missing 'name' field: {config_name}"
         )
 
-    if isinstance(implementation, str):
-        class_path = implementation
-    elif isinstance(implementation, dict):
-        module_path = implementation.get("module")
-        class_name = implementation.get("class")
+    # Parse implementation path
+    class_path = _parse_implementation_path(implementation, config_name)
 
-        if not module_path or not class_name:
-            raise ToolRegistryError(
-                f"Tool implementation must specify 'module' and 'class': {config_name}"
-            )
-
-        class_path = f"{module_path}.{class_name}"
-    else:
-        raise ToolRegistryError(
-            f"Invalid implementation format in tool config: {config_name}"
-        )
-
+    # Load and instantiate tool
     try:
-        parts = class_path.rsplit(".", 1)
-        if len(parts) != 2:
-            raise ToolRegistryError(
-                f"Invalid class path format: {class_path}"
-            )
-
-        module_name, class_name = parts
-
-        module = importlib.import_module(module_name)
-
-        tool_class = getattr(module, class_name)
-
-        if not issubclass(tool_class, BaseTool):
-            raise ToolRegistryError(
-                f"Tool class must inherit from BaseTool: {class_path}"
-            )
-
+        tool_class = _load_tool_class(class_path)
         tool_instance = cast(Type[BaseTool], tool_class)()
-
         registry.register(tool_instance)
 
         logger.info(f"Loaded tool from config: {tool_name} ({config_name})")
-
         return tool_instance
 
-    except ImportError as e:
-        raise ToolRegistryError(
-            f"Failed to import tool class '{class_path}': {e}"
-        )
-    except AttributeError:
-        raise ToolRegistryError(
-            f"Tool class not found in module '{module_name}': {class_name}"
-        )
     except (TypeError, ValueError, RuntimeError) as e:
         raise ToolRegistryError(
             f"Failed to instantiate tool '{tool_name}': {e}"

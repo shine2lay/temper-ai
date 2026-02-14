@@ -23,6 +23,8 @@ from sqlmodel import select
 from src.constants.limits import DEFAULT_BATCH_SIZE
 from src.self_improvement._experiment_helpers import (
     EXPERIMENT_ID_UUID_LENGTH,
+    ExperimentCreationData,
+    ExperimentResultData,
     aggregate_variant_results,
     create_experiment_in_db,
     hash_to_variant,
@@ -260,14 +262,19 @@ class ExperimentOrchestrator:
         experiment_id = f"exp-{agent_name}-{uuid.uuid4().hex[:EXPERIMENT_ID_UUID_LENGTH]}"
         target = target_executions_per_variant or self.target_executions_per_variant
 
-        experiment = create_experiment_in_db(
+        # Create experiment data bundle
+        creation_data = ExperimentCreationData(
             agent_name=agent_name,
             experiment_id=experiment_id,
             control_config=control_config,
             variant_configs=variant_configs,
             target=target,
             proposal_id=proposal_id,
-            extra_metadata=extra_metadata,
+            extra_metadata=extra_metadata
+        )
+
+        experiment = create_experiment_in_db(
+            data=creation_data,
             session_factory=self._session_factory,
         )
 
@@ -355,6 +362,20 @@ class ExperimentOrchestrator:
 
     # ========== Result Recording ==========
 
+    def _validate_variant_for_experiment(
+        self,
+        experiment_id: str,
+        variant_id: str
+    ) -> None:
+        """Validate that variant exists in experiment."""
+        experiment = self.get_experiment(experiment_id)
+        valid_variants = ["control"] + [f"variant_{i}" for i in range(len(experiment.variant_configs))]
+        if variant_id not in valid_variants:
+            raise InvalidVariantError(
+                f"Invalid variant_id '{variant_id}' for experiment {experiment_id}. "
+                f"Valid variants: {valid_variants}"
+            )
+
     def record_result(
         self,
         experiment_id: str,
@@ -367,18 +388,13 @@ class ExperimentOrchestrator:
         extra_metrics: Optional[Dict[str, float]] = None
     ) -> None:
         """Record experiment execution result."""
+        # Validate inputs
         self._validate_experiment_id(experiment_id)
         self._validate_variant_id(variant_id)
+        self._validate_variant_for_experiment(experiment_id, variant_id)
 
-        experiment = self.get_experiment(experiment_id)
-        valid_variants = ["control"] + [f"variant_{i}" for i in range(len(experiment.variant_configs))]
-        if variant_id not in valid_variants:
-            raise InvalidVariantError(
-                f"Invalid variant_id '{variant_id}' for experiment {experiment_id}. "
-                f"Valid variants: {valid_variants}"
-            )
-
-        record_result_to_db(
+        # Create result data bundle
+        result_data = ExperimentResultData(
             experiment_id=experiment_id,
             variant_id=variant_id,
             execution_id=execution_id,
@@ -386,7 +402,12 @@ class ExperimentOrchestrator:
             speed_seconds=speed_seconds,
             cost_usd=cost_usd,
             success=success,
-            extra_metrics=extra_metrics,
+            extra_metrics=extra_metrics
+        )
+
+        # Record to database
+        record_result_to_db(
+            data=result_data,
             session_factory=self._session_factory,
         )
 

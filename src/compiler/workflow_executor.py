@@ -16,6 +16,77 @@ from src.compiler.state_manager import StateManager
 logger = logging.getLogger(__name__)
 
 
+def _save_checkpoint_on_interval(
+    checkpoint_manager: Any,
+    final_state: Any,
+    tracker: Optional[Any],
+    stage_count: int,
+    stage_name: str,
+    workflow_id: str
+) -> None:
+    """Save checkpoint and track event."""
+    from src.compiler.domain_state import WorkflowDomainState
+    import dataclasses
+
+    domain_fields = {f.name for f in dataclasses.fields(WorkflowDomainState)}
+    domain_dict = {k: v for k, v in final_state.items() if k in domain_fields}
+    domain_state = WorkflowDomainState.from_dict(domain_dict)
+
+    checkpoint_manager.save_checkpoint(domain_state)
+
+    if tracker:
+        tracker.log_event(
+            "checkpoint_saved",
+            {
+                "workflow_id": workflow_id,
+                "stage": stage_name,
+                "stage_count": stage_count
+            }
+        )
+
+
+def _save_checkpoint_on_error(
+    checkpoint_manager: Any,
+    final_state: Any,
+    tracker: Optional[Any],
+    workflow_id: str,
+    error: Exception,
+    stage_count: int
+) -> None:
+    """Save checkpoint on error and log."""
+    from src.compiler.domain_state import WorkflowDomainState
+    import dataclasses
+
+    try:
+        domain_fields = {f.name for f in dataclasses.fields(WorkflowDomainState)}
+        domain_dict = {k: v for k, v in final_state.items() if k in domain_fields}
+        domain_state = WorkflowDomainState.from_dict(domain_dict)
+
+        checkpoint_manager.save_checkpoint(domain_state)
+
+        if tracker:
+            tracker.log_event(
+                "checkpoint_saved_on_error",
+                {
+                    "workflow_id": workflow_id,
+                    "error": str(error),
+                    "stage_count": stage_count
+                }
+            )
+    except Exception as checkpoint_error:
+        logger.error(
+            "Failed to save checkpoint for workflow %s: %s",
+            workflow_id,
+            checkpoint_error,
+            exc_info=True
+        )
+        if tracker:
+            tracker.log_event(
+                "checkpoint_save_failed",
+                {"error": str(checkpoint_error)}
+            )
+
+
 class WorkflowExecutor:
     """Executes compiled workflows with observability.
 
@@ -218,20 +289,11 @@ class WorkflowExecutor:
 
                     # Checkpoint after checkpoint_interval stages
                     if stage_count % checkpoint_interval == 0:
-                        domain_state = self._extract_domain_state(final_state)
-                        self.checkpoint_manager.save_checkpoint(
-                            domain_state
+                        _save_checkpoint_on_interval(
+                            self.checkpoint_manager, final_state, self.tracker,
+                            stage_count, stage_name,
+                            final_state.get("workflow_id", "unknown")
                         )
-
-                        if self.tracker:
-                            self.tracker.log_event(
-                                "checkpoint_saved",
-                                {
-                                    "workflow_id": domain_state.workflow_id,
-                                    "stage": stage_name,
-                                    "stage_count": stage_count
-                                }
-                            )
 
             # Ensure we have a final state
             if final_state is None:
@@ -248,34 +310,10 @@ class WorkflowExecutor:
         except Exception as e:
             # On error, save checkpoint at failure point if we have state
             if final_state is not None:
-                try:
-                    domain_state = self._extract_domain_state(final_state)
-                    self.checkpoint_manager.save_checkpoint(
-                        domain_state
-                    )
-                    if self.tracker:
-                        self.tracker.log_event(
-                            "checkpoint_saved_on_error",
-                            {
-                                "workflow_id": domain_state.workflow_id,
-                                "error": str(e),
-                                "stage_count": stage_count
-                            }
-                        )
-                except Exception as checkpoint_error:
-                    # Log at ERROR level so checkpoint failures are visible
-                    # even when no tracker is configured
-                    logger.error(
-                        "Failed to save checkpoint for workflow %s: %s",
-                        getattr(domain_state, 'workflow_id', 'unknown'),
-                        checkpoint_error,
-                        exc_info=True
-                    )
-                    if self.tracker:
-                        self.tracker.log_event(
-                            "checkpoint_save_failed",
-                            {"error": str(checkpoint_error)}
-                        )
+                _save_checkpoint_on_error(
+                    self.checkpoint_manager, final_state, self.tracker,
+                    final_state.get("workflow_id", "unknown"), e, stage_count
+                )
 
             # Re-raise original error
             raise

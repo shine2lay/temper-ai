@@ -203,6 +203,71 @@ def resolve_hostname_with_timeout(hostname: str, timeout: float = DNS_RESOLUTION
     return result
 
 
+def _check_hostname_blocklist(hostname: str) -> Optional[str]:
+    """Check if hostname is in blocklist. Returns error or None."""
+    if hostname.lower() in [h.lower() for h in BLOCKED_HOSTS]:
+        return f"Access to {hostname}{SSRF_ERROR_SUFFIX}"
+    return None
+
+
+def _check_ip_against_networks(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> Optional[str]:
+    """Check if IP is in blocked networks. Returns error or None."""
+    for network in BLOCKED_NETWORKS:
+        if ip in network:
+            return f"Access to private network {network}{SSRF_ERROR_SUFFIX}"
+    return None
+
+
+def _validate_resolved_ips(addr_info: List[Tuple]) -> Optional[str]:
+    """Validate all resolved IPs against blocked networks. Returns error or None."""
+    for family, _, _, _, sockaddr in addr_info:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            error = _check_ip_against_networks(ip)
+            if error is not None:
+                return error
+        except ValueError as e:
+            return f"Invalid IP address: {e}"
+    return None
+
+
+def _resolve_and_validate_hostname(hostname: str, use_cache: bool) -> Tuple[bool, Optional[str]]:
+    """Resolve hostname and validate IPs. Returns (is_valid, error)."""
+    # Check DNS cache first
+    addr_info = None
+    if use_cache:
+        addr_info = _dns_cache.get(hostname)
+
+    # If cached, it's already validated as safe
+    if addr_info is not None:
+        return True, None
+
+    # Perform DNS resolution with timeout
+    try:
+        addr_info = resolve_hostname_with_timeout(
+            hostname,
+            timeout=DNS_RESOLUTION_TIMEOUT_SECONDS
+        )
+    except TimeoutError as e:
+        return False, f"DNS resolution timeout (possible attack): {str(e)}"
+    except socket.gaierror as e:
+        return False, f"Cannot resolve hostname: {e}"
+    except (OSError, ValueError) as e:
+        return False, f"DNS resolution error: {str(e)}"
+
+    # Validate all resolved IPs
+    error = _validate_resolved_ips(addr_info)
+    if error is not None:
+        return False, error
+
+    # Cache validated resolution
+    if use_cache:
+        _dns_cache.set(hostname, addr_info)
+
+    return True, None
+
+
 def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optional[str]]:
     """
     Validate URL doesn't target internal resources (SSRF protection).
@@ -233,69 +298,24 @@ def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optiona
     if not hostname:
         return False, "Invalid URL: missing hostname"
 
-    # Block known dangerous hostnames (defense-in-depth: catch before DNS)
-    if hostname.lower() in [h.lower() for h in BLOCKED_HOSTS]:
-        return False, f"Access to {hostname}{SSRF_ERROR_SUFFIX}"
+    # Block known dangerous hostnames
+    error = _check_hostname_blocklist(hostname)
+    if error is not None:
+        return False, error
 
     # Check if hostname is already an IP address
     try:
         ip = ipaddress.ip_address(hostname)
-
-        # Check against blocked networks
-        for network in BLOCKED_NETWORKS:
-            if ip in network:
-                return False, f"Access to private network {network}{SSRF_ERROR_SUFFIX}"
-
+        error = _check_ip_against_networks(ip)
+        if error is not None:
+            return False, error
         return True, None
-
     except ValueError:
         # Not an IP address, continue with DNS resolution
         pass
 
-    # Check DNS cache first (prevents DNS rebinding attacks)
-    addr_info = None
-    if use_cache:
-        addr_info = _dns_cache.get(hostname)
-
-    # If not cached, perform DNS resolution with timeout
-    if addr_info is None:
-        try:
-            addr_info = resolve_hostname_with_timeout(
-                hostname,
-                timeout=DNS_RESOLUTION_TIMEOUT_SECONDS
-            )
-        except TimeoutError as e:
-            # DNS timeout likely indicates timing attack or slow DNS
-            return False, f"DNS resolution timeout (possible attack): {str(e)}"
-        except socket.gaierror as e:
-            return False, f"Cannot resolve hostname: {e}"
-        except (OSError, ValueError) as e:
-            return False, f"DNS resolution error: {str(e)}"
-
-        # Validate all resolved IPs before caching
-        for family, _, _, _, sockaddr in addr_info:
-            ip_str = sockaddr[0]
-            try:
-                ip = ipaddress.ip_address(ip_str)
-
-                # Check against blocked networks
-                for network in BLOCKED_NETWORKS:
-                    if ip in network:
-                        # Don't cache invalid resolutions
-                        return False, f"Access to private network {network}{SSRF_ERROR_SUFFIX}"
-
-            except ValueError as e:
-                return False, f"Invalid IP address: {e}"
-
-        # Cache validated resolution (only safe resolutions are cached)
-        if use_cache:
-            _dns_cache.set(hostname, addr_info)
-
-        return True, None
-
-    else:
-        # Using cached resolution - already validated as safe
-        return True, None
+    # Resolve hostname and validate
+    return _resolve_and_validate_hostname(hostname, use_cache)
 
 
 class ScraperRateLimiter:
@@ -479,6 +499,110 @@ class WebScraper(BaseTool):
             "required": ["url"]
         }
 
+    def _validate_url_input(self, url: Any) -> Optional[ToolResult]:
+        """Validate URL input. Returns error or None."""
+        if not url or not isinstance(url, str):
+            return ToolResult(
+                success=False,
+                error="url must be a non-empty string"
+            )
+
+        if not url.startswith(("http://", "https://")):
+            return ToolResult(
+                success=False,
+                error="URL must start with http:// or https://"
+            )
+
+        # SSRF protection
+        is_safe, safety_error = validate_url_safety(url)
+        if not is_safe:
+            return ToolResult(
+                success=False,
+                error=safety_error
+            )
+
+        return None
+
+    def _check_rate_limit(self) -> Optional[ToolResult]:
+        """Check rate limit. Returns error or None."""
+        if not self.rate_limiter.can_proceed():
+            wait_time = self.rate_limiter.wait_time()
+            return ToolResult(
+                success=False,
+                error=f"Rate limit exceeded. Please wait {wait_time:.1f} seconds."
+            )
+        return None
+
+    def _fetch_with_redirect_validation(self, url: str, headers: Dict[str, str], timeout: int) -> tuple[Optional[Any], Optional[ToolResult]]:
+        """Fetch URL with SSRF-safe redirect handling. Returns (response, error)."""
+        try:
+            client = self._get_client()
+            current_url = url
+
+            for _redirect_hop in range(MAX_REDIRECTS + 1):
+                response = client.get(current_url, headers=headers, timeout=timeout)
+
+                if response.is_redirect:
+                    redirect_url = str(response.next_request.url) if response.next_request else None
+                    if redirect_url is None:
+                        break
+                    # Validate redirect target
+                    is_safe, safety_error = validate_url_safety(redirect_url)
+                    if not is_safe:
+                        return None, ToolResult(
+                            success=False,
+                            error=f"Redirect to unsafe URL blocked (SSRF protection): {safety_error}"
+                        )
+                    current_url = redirect_url
+                    continue
+                break
+            else:
+                return None, ToolResult(
+                    success=False,
+                    error=f"Too many redirects (max {MAX_REDIRECTS})"
+                )
+
+            response.raise_for_status()
+            return response, None
+
+        except httpx.TimeoutException:
+            return None, ToolResult(
+                success=False,
+                error=f"Request timed out after {timeout} seconds"
+            )
+        except httpx.HTTPStatusError as e:
+            return None, ToolResult(
+                success=False,
+                error=f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
+            )
+        except httpx.RequestError as e:
+            return None, ToolResult(
+                success=False,
+                error=f"Request error: {str(e)}"
+            )
+
+    def _validate_content_type(self, content_type: str) -> Optional[ToolResult]:
+        """Validate content type is acceptable. Returns error or None."""
+        acceptable_types = [
+            "text/html",
+            "text/plain",
+            "text/xml",
+            "application/xhtml+xml",
+            "application/xml",
+        ]
+
+        is_acceptable = any(
+            acceptable_type in content_type
+            for acceptable_type in acceptable_types
+        )
+
+        if not is_acceptable and content_type:
+            return ToolResult(
+                success=False,
+                error=f"Unsupported content type: {content_type.split(';')[0]}. Only text-based content is supported."
+            )
+        return None
+
     def execute(self, **kwargs: Any) -> ToolResult:
         """
         Execute web scraper with given parameters.
@@ -498,33 +622,14 @@ class WebScraper(BaseTool):
         user_agent = kwargs.get("user_agent")
 
         # Validate URL
-        if not url or not isinstance(url, str):
-            return ToolResult(
-                success=False,
-                error="url must be a non-empty string"
-            )
-
-        if not url.startswith(("http://", "https://")):
-            return ToolResult(
-                success=False,
-                error="URL must start with http:// or https://"
-            )
-
-        # SSRF protection: Validate URL doesn't target internal resources
-        is_safe, safety_error = validate_url_safety(url)
-        if not is_safe:
-            return ToolResult(
-                success=False,
-                error=safety_error
-            )
+        error_result = self._validate_url_input(url)
+        if error_result is not None:
+            return error_result
 
         # Check rate limit
-        if not self.rate_limiter.can_proceed():
-            wait_time = self.rate_limiter.wait_time()
-            return ToolResult(
-                success=False,
-                error=f"Rate limit exceeded. Please wait {wait_time:.1f} seconds."
-            )
+        error_result = self._check_rate_limit()
+        if error_result is not None:
+            return error_result
 
         # Prepare headers
         headers = {
@@ -534,77 +639,16 @@ class WebScraper(BaseTool):
         # Record request for rate limiting
         self.rate_limiter.record_request()
 
-        # Fetch URL with SSRF-safe redirect handling
-        try:
-            # SECURITY: follow_redirects=False so we can validate each redirect
-            # target against SSRF checks before following it
-            client = self._get_client()
-            current_url = url
-            for _redirect_hop in range(MAX_REDIRECTS + 1):
-                response = client.get(current_url, headers=headers, timeout=timeout)
+        # Fetch URL with redirect validation
+        response, error_result = self._fetch_with_redirect_validation(url, headers, timeout)
+        if error_result is not None:
+            return error_result
 
-                if response.is_redirect:
-                    redirect_url = str(response.next_request.url) if response.next_request else None
-                    if redirect_url is None:
-                        break
-                    # Validate redirect target against SSRF checks
-                    is_safe, safety_error = validate_url_safety(redirect_url)
-                    if not is_safe:
-                        return ToolResult(
-                            success=False,
-                            error=f"Redirect to unsafe URL blocked (SSRF protection): {safety_error}"
-                        )
-                    current_url = redirect_url
-                    continue
-                break
-            else:
-                return ToolResult(
-                    success=False,
-                    error=f"Too many redirects (max {MAX_REDIRECTS})"
-                )
-
-            # Check status code
-            response.raise_for_status()
-
-        except httpx.TimeoutException:
-            return ToolResult(
-                success=False,
-                error=f"Request timed out after {timeout} seconds"
-            )
-
-        except httpx.HTTPStatusError as e:
-            return ToolResult(
-                success=False,
-                error=f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-            )
-
-        except httpx.RequestError as e:
-            return ToolResult(
-                success=False,
-                error=f"Request error: {str(e)}"
-            )
-
-        # Validate Content-Type (prevent crashes on binary files)
+        # Validate content type
         content_type = response.headers.get("content-type", "").lower()
-        acceptable_types = [
-            "text/html",
-            "text/plain",
-            "text/xml",
-            "application/xhtml+xml",
-            "application/xml",
-        ]
-
-        # Check if content type is acceptable (may have charset, e.g., "text/html; charset=utf-8")
-        is_acceptable = any(
-            acceptable_type in content_type
-            for acceptable_type in acceptable_types
-        )
-
-        if not is_acceptable and content_type:
-            return ToolResult(
-                success=False,
-                error=f"Unsupported content type: {content_type.split(';')[0]}. Only text-based content is supported."
-            )
+        error_result = self._validate_content_type(content_type)
+        if error_result is not None:
+            return error_result
 
         # Check content size
         content_length = len(response.content)
@@ -614,14 +658,13 @@ class WebScraper(BaseTool):
                 error=f"Content size ({content_length} bytes) exceeds maximum ({self.MAX_CONTENT_SIZE} bytes)"
             )
 
-        # Get content and extract text if requested
+        # Process content
         try:
             content = response.text
 
             # Extract text if requested
             if extract_text:
-                extracted_text = self._extract_text(content)
-                result = extracted_text
+                result = self._extract_text(content)
             else:
                 result = content
 

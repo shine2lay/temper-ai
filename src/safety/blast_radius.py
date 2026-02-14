@@ -160,42 +160,33 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
         """
         return BLAST_RADIUS_PRIORITY
 
-    def _validate_impl(
+    def _check_file_count(
         self,
         action: Dict[str, Any],
         context: Dict[str, Any]
-    ) -> ValidationResult:
-        """Validate action against blast radius limits.
-
-        Args:
-            action: Action to validate, may contain:
-                - operation: Type of operation
-                - files: List of files to modify
-                - lines_changed: Lines changed per file
-                - total_lines: Total lines changed
-                - entities: List of affected entities
-                - content: Content being modified (for pattern detection)
-            context: Execution context
-
-        Returns:
-            ValidationResult with violations if limits exceeded
-        """
-        violations: List[SafetyViolation] = []
-
-        # Check file count limit
+    ) -> Optional[SafetyViolation]:
+        """Check if file count exceeds limit."""
         files = action.get("files", [])
         if isinstance(files, list) and len(files) > self.max_files:
-            violations.append(SafetyViolation(
+            return SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.HIGH,
                 message=f"Too many files affected: {len(files)}{BLAST_RADIUS_SEPARATOR}{self.max_files}",
                 action=str(action),
                 context=context,
                 remediation_hint=f"Reduce file count to {self.max_files} or less"
-            ))
+            )
+        return None
 
-        # Check lines per file limit
+    def _check_lines_per_file(
+        self,
+        action: Dict[str, Any],
+        context: Dict[str, Any]
+    ) -> List[SafetyViolation]:
+        """Check if any file exceeds line change limit."""
+        violations: List[SafetyViolation] = []
         lines_changed = action.get("lines_changed", {})
+
         if isinstance(lines_changed, dict):
             for file_path, line_count in lines_changed.items():
                 if line_count > self.max_lines_per_file:
@@ -207,33 +198,53 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
                         context=context,
                         remediation_hint="Split changes across multiple operations"
                     ))
+        return violations
 
-        # Check total lines limit
+    def _check_total_lines(
+        self,
+        action: Dict[str, Any],
+        context: Dict[str, Any]
+    ) -> Optional[SafetyViolation]:
+        """Check if total lines changed exceeds limit."""
         total_lines = action.get("total_lines", 0)
         if total_lines > self.max_total_lines:
-            violations.append(SafetyViolation(
+            return SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.HIGH,
                 message=f"Too many total lines changed: {total_lines}{BLAST_RADIUS_SEPARATOR}{self.max_total_lines}",
                 action=str(action),
                 context=context,
                 remediation_hint="Break operation into smaller batches"
-            ))
+            )
+        return None
 
-        # Check entities affected limit
+    def _check_entities_affected(
+        self,
+        action: Dict[str, Any],
+        context: Dict[str, Any]
+    ) -> Optional[SafetyViolation]:
+        """Check if entities affected exceeds limit."""
         entities = action.get("entities", [])
         if isinstance(entities, list) and len(entities) > self.max_entities:
-            violations.append(SafetyViolation(
+            return SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.CRITICAL,
                 message=f"Too many entities affected: {len(entities)}{BLAST_RADIUS_SEPARATOR}{self.max_entities}",
                 action=str(action),
                 context=context,
                 remediation_hint=f"Limit operation scope to {self.max_entities} entities"
-            ))
+            )
+        return None
 
-        # Check for forbidden patterns in content
+    def _check_forbidden_patterns(
+        self,
+        action: Dict[str, Any],
+        context: Dict[str, Any]
+    ) -> List[SafetyViolation]:
+        """Check for forbidden patterns in content."""
+        violations: List[SafetyViolation] = []
         content = action.get("content", "")
+
         if isinstance(content, str):
             for compiled_pattern in self.forbidden_patterns:
                 match = compiled_pattern.search(content)
@@ -246,6 +257,40 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
                         context=context,
                         remediation_hint=f"Remove or refactor code containing '{compiled_pattern.pattern}'"
                     ))
+        return violations
+
+    def _validate_impl(
+        self,
+        action: Dict[str, Any],
+        context: Dict[str, Any]
+    ) -> ValidationResult:
+        """Validate action against blast radius limits.
+
+        Args:
+            action: Action to validate
+            context: Execution context
+
+        Returns:
+            ValidationResult with violations if limits exceeded
+        """
+        violations: List[SafetyViolation] = []
+
+        # Check all limits
+        file_count_violation = self._check_file_count(action, context)
+        if file_count_violation:
+            violations.append(file_count_violation)
+
+        violations.extend(self._check_lines_per_file(action, context))
+
+        total_lines_violation = self._check_total_lines(action, context)
+        if total_lines_violation:
+            violations.append(total_lines_violation)
+
+        entities_violation = self._check_entities_affected(action, context)
+        if entities_violation:
+            violations.append(entities_violation)
+
+        violations.extend(self._check_forbidden_patterns(action, context))
 
         # Determine validity (invalid if any HIGH or CRITICAL violations)
         valid = not any(

@@ -12,6 +12,7 @@ Contains:
 import logging
 import traceback
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
@@ -40,6 +41,93 @@ _EVENT_TOOL_CALL = "tool_call"
 _EVENT_LLM_STREAM_CHUNK = "llm_stream_chunk"
 _EVENT_SAFETY_VIOLATION = "safety_violation"
 _EVENT_COLLABORATION = "collaboration_event"
+
+
+# ========== Parameter Bundling Dataclasses ==========
+
+
+@dataclass
+class LLMCallTrackingData:
+    """Bundle parameters for LLM call tracking."""
+    agent_id: str
+    provider: str
+    model: str
+    prompt: str
+    response: str
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: int
+    estimated_cost_usd: float
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    status: str = "success"
+    error_message: Optional[str] = None
+
+
+@dataclass
+class ToolCallTrackingData:
+    """Bundle parameters for tool call tracking."""
+    agent_id: str
+    tool_name: str
+    input_params: Dict[str, Any]
+    output_data: Dict[str, Any]
+    duration_seconds: float
+    status: str = "success"
+    error_message: Optional[str] = None
+    safety_checks: Optional[List[str]] = None
+    approval_required: bool = False
+
+
+@dataclass
+class DecisionTrackingData:
+    """Bundle parameters for decision outcome tracking."""
+    decision_type: str
+    decision_data: Dict[str, Any]
+    outcome: str
+    impact_metrics: Optional[Dict[str, Any]] = None
+    lessons_learned: Optional[str] = None
+    should_repeat: Optional[bool] = None
+    tags: Optional[List[str]] = None
+    agent_execution_id: Optional[str] = None
+    stage_execution_id: Optional[str] = None
+    workflow_execution_id: Optional[str] = None
+    validation_method: Optional[str] = None
+    validation_timestamp: Optional[datetime] = None
+    validation_duration_seconds: Optional[float] = None
+    extra_metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class StreamChunkData:
+    """Bundle parameters for stream chunk events."""
+    agent_id: str
+    content: str
+    chunk_type: str = "content"
+    done: bool = False
+    model: Optional[str] = None
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    workflow_id: Optional[str] = None
+    stage_id: Optional[str] = None
+
+
+@dataclass
+class CollaborationEventData:
+    """Bundle parameters for collaboration event tracking."""
+    event_type: str
+    stage_id: Optional[str] = None
+    agents_involved: Optional[List[str]] = None
+    event_data: Optional[Dict[str, Any]] = None
+    round_number: Optional[int] = None
+    resolution_strategy: Optional[str] = None
+    outcome: Optional[str] = None
+    confidence_score: Optional[float] = None
+    extra_metadata: Optional[Dict[str, Any]] = None
+    stage_name: Optional[str] = None
+    agents: Optional[List[str]] = None
+    decision: Optional[str] = None
+    confidence: Optional[float] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 def sanitize_dict(
@@ -126,75 +214,41 @@ def get_stack_trace(sanitizer: Any) -> str:
     return str(result.sanitized_text)
 
 
-def track_llm_call(
-    sanitizer: Any,
-    backend: Any,
-    alert_manager: Any,
-    agent_id: str,
-    provider: str,
-    model: str,
-    prompt: str,
-    response: str,
-    prompt_tokens: int,
-    completion_tokens: int,
-    latency_ms: int,
-    estimated_cost_usd: float,
-    temperature: Optional[float] = None,
-    max_tokens: Optional[int] = None,
-    status: str = "success",
-    error_message: Optional[str] = None,
-    event_bus: Any = None,
-) -> str:
-    """Track LLM call with automatic sanitization.
+def _validate_llm_metrics(data: LLMCallTrackingData) -> None:
+    """Validate LLM metric parameters are non-negative."""
+    if data.prompt_tokens < 0:
+        raise ValueError(f"prompt_tokens must be non-negative, got {data.prompt_tokens}")
+    if data.completion_tokens < 0:
+        raise ValueError(f"completion_tokens must be non-negative, got {data.completion_tokens}")
+    if data.latency_ms < 0:
+        raise ValueError(f"latency_ms must be non-negative, got {data.latency_ms}")
+    if data.estimated_cost_usd < 0:
+        raise ValueError(f"estimated_cost_usd must be non-negative, got {data.estimated_cost_usd}")
 
-    Args:
-        sanitizer: DataSanitizer instance
-        backend: ObservabilityBackend instance
-        alert_manager: AlertManager instance (or None)
-        agent_id: Parent agent execution ID
-        provider: LLM provider
-        model: Model name
-        prompt: Input prompt (will be sanitized)
-        response: LLM response (will be sanitized)
-        prompt_tokens: Number of prompt tokens
-        completion_tokens: Number of completion tokens
-        latency_ms: Latency in milliseconds
-        estimated_cost_usd: Estimated cost
-        temperature: Temperature setting
-        max_tokens: Max tokens setting
-        status: Call status
-        error_message: Error if failed
+
+def _sanitize_llm_content(sanitizer: Any, data: LLMCallTrackingData) -> tuple[Any, Any, Optional[str]]:
+    """Sanitize prompt, response, and error message.
 
     Returns:
-        llm_call_id: UUID of the LLM call
-
-    Raises:
-        ValueError: If numeric parameters are negative
+        tuple: (prompt_result, response_result, safe_error_message)
     """
-    # VALIDATION: Validate numeric parameters are non-negative
-    if prompt_tokens < 0:
-        raise ValueError(f"prompt_tokens must be non-negative, got {prompt_tokens}")
-    if completion_tokens < 0:
-        raise ValueError(f"completion_tokens must be non-negative, got {completion_tokens}")
-    if latency_ms < 0:
-        raise ValueError(f"latency_ms must be non-negative, got {latency_ms}")
-    if estimated_cost_usd < 0:
-        raise ValueError(f"estimated_cost_usd must be non-negative, got {estimated_cost_usd}")
+    prompt_result = sanitizer.sanitize_text(data.prompt, context=_CTX_PROMPT)
+    response_result = sanitizer.sanitize_text(data.response, context=_CTX_RESPONSE)
 
-    llm_call_id = str(uuid.uuid4())
-    start_time = utcnow()
-
-    # SECURITY: Sanitize prompt and response before storage
-    prompt_result = sanitizer.sanitize_text(prompt, context=_CTX_PROMPT)
-    response_result = sanitizer.sanitize_text(response, context=_CTX_RESPONSE)
-
-    # SECURITY: Sanitize error message as well (may contain prompt fragments)
     safe_error_message = None
-    if error_message:
-        error_result = sanitizer.sanitize_text(error_message, context=_CTX_ERROR)
+    if data.error_message:
+        error_result = sanitizer.sanitize_text(data.error_message, context=_CTX_ERROR)
         safe_error_message = error_result.sanitized_text
 
-    # Log sanitization activity if redactions were made
+    return prompt_result, response_result, safe_error_message
+
+
+def _log_sanitization_activity(
+    llm_call_id: str,
+    prompt_result: Any,
+    response_result: Any
+) -> None:
+    """Log sanitization activity if redactions were made."""
     if prompt_result.was_sanitized or response_result.was_sanitized:
         logger.info(
             "Sanitized LLM call data before storage",
@@ -209,93 +263,202 @@ def track_llm_call(
             }
         )
 
-    # Track LLM call with sanitized content
-    backend.track_llm_call(
-        llm_call_id=llm_call_id,
-        agent_id=agent_id,
-        provider=provider,
-        model=model,
-        prompt=prompt_result.sanitized_text,
-        response=response_result.sanitized_text,
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        latency_ms=latency_ms,
-        estimated_cost_usd=estimated_cost_usd,
-        start_time=start_time,
-        temperature=temperature,
-        max_tokens=max_tokens,
-        status=status,
-        error_message=safe_error_message,
+
+def _emit_llm_call_event(
+    event_bus: Any,
+    llm_call_id: str,
+    start_time: datetime,
+    data: LLMCallTrackingData,
+    prompt_result: Any,
+    response_result: Any,
+    safe_error_message: Optional[str]
+) -> None:
+    """Emit LLM call event for real-time consumers."""
+    if event_bus is None:
+        return
+
+    from src.observability.event_bus import ObservabilityEvent
+
+    event_bus.emit(ObservabilityEvent(
+        event_type=_EVENT_LLM_CALL,
+        timestamp=start_time,
+        data={
+            "llm_call_id": llm_call_id,
+            ObservabilityFields.AGENT_ID: data.agent_id,
+            "provider": data.provider,
+            "model": data.model,
+            "prompt": prompt_result.sanitized_text,
+            "response": response_result.sanitized_text,
+            "prompt_tokens": data.prompt_tokens,
+            "completion_tokens": data.completion_tokens,
+            "latency_ms": data.latency_ms,
+            "estimated_cost_usd": data.estimated_cost_usd,
+            "temperature": data.temperature,
+            "max_tokens": data.max_tokens,
+            ObservabilityFields.STATUS: data.status,
+            ObservabilityFields.ERROR_MESSAGE: safe_error_message,
+        },
+        agent_id=data.agent_id,
+    ))
+
+
+def _check_llm_alerts(
+    alert_manager: Any,
+    llm_call_id: str,
+    data: LLMCallTrackingData
+) -> None:
+    """Check latency and cost alerts for LLM call."""
+    if not alert_manager:
+        return
+
+    if data.latency_ms > 0:
+        alert_manager.check_metric(
+            metric_type=_METRIC_LATENCY_P99,
+            value=data.latency_ms,
+            context={
+                ObservabilityFields.AGENT_ID: data.agent_id,
+                "provider": data.provider,
+                "model": data.model,
+                "llm_call_id": llm_call_id
+            }
+        )
+
+    if data.estimated_cost_usd > 0:
+        alert_manager.check_metric(
+            metric_type=_METRIC_COST_USD,
+            value=data.estimated_cost_usd,
+            context={
+                ObservabilityFields.AGENT_ID: data.agent_id,
+                "provider": data.provider,
+                "model": data.model,
+                "llm_call_id": llm_call_id
+            }
+        )
+
+
+def track_llm_call(
+    sanitizer: Any,
+    backend: Any,
+    alert_manager: Any,
+    data: LLMCallTrackingData,
+    event_bus: Any = None,
+) -> str:
+    """Track LLM call with automatic sanitization.
+
+    Args:
+        sanitizer: DataSanitizer instance
+        backend: ObservabilityBackend instance
+        alert_manager: AlertManager instance (or None)
+        data: LLMCallTrackingData with all tracking parameters
+        event_bus: Event bus for real-time events (optional)
+
+    Returns:
+        llm_call_id: UUID of the LLM call
+
+    Raises:
+        ValueError: If numeric parameters are negative
+    """
+    _validate_llm_metrics(data)
+
+    llm_call_id = str(uuid.uuid4())
+    start_time = utcnow()
+
+    prompt_result, response_result, safe_error_message = _sanitize_llm_content(
+        sanitizer, data
     )
 
-    # Emit event for real-time consumers
-    if event_bus is not None:
-        from src.observability.event_bus import ObservabilityEvent
+    _log_sanitization_activity(llm_call_id, prompt_result, response_result)
 
-        event_bus.emit(ObservabilityEvent(
-            event_type=_EVENT_LLM_CALL,
-            timestamp=start_time,
-            data={
-                "llm_call_id": llm_call_id,
-                ObservabilityFields.AGENT_ID: agent_id,
-                "provider": provider,
-                "model": model,
-                "prompt": prompt_result.sanitized_text,
-                "response": response_result.sanitized_text,
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
-                "latency_ms": latency_ms,
-                "estimated_cost_usd": estimated_cost_usd,
-                "temperature": temperature,
-                "max_tokens": max_tokens,
-                ObservabilityFields.STATUS: status,
-                ObservabilityFields.ERROR_MESSAGE: safe_error_message,
-            },
-            agent_id=agent_id,
-        ))
+    # Track LLM call with sanitized content
+    from src.observability.backend import LLMCallData as BackendLLMCallData
+    backend.track_llm_call(
+        llm_call_id=llm_call_id,
+        agent_id=data.agent_id,
+        provider=data.provider,
+        model=data.model,
+        start_time=start_time,
+        data=BackendLLMCallData(
+            prompt=prompt_result.sanitized_text,
+            response=response_result.sanitized_text,
+            prompt_tokens=data.prompt_tokens,
+            completion_tokens=data.completion_tokens,
+            latency_ms=data.latency_ms,
+            estimated_cost_usd=data.estimated_cost_usd,
+            temperature=data.temperature,
+            max_tokens=data.max_tokens,
+            status=data.status,  # type: ignore[arg-type]
+            error_message=safe_error_message,
+        ),
+    )
 
-    # Check latency and cost alerts
-    if alert_manager:
-        if latency_ms > 0:
-            alert_manager.check_metric(
-                metric_type=_METRIC_LATENCY_P99,
-                value=latency_ms,
-                context={
-                    ObservabilityFields.AGENT_ID: agent_id,
-                    "provider": provider,
-                    "model": model,
-                    "llm_call_id": llm_call_id
-                }
-            )
+    _emit_llm_call_event(
+        event_bus, llm_call_id, start_time, data,
+        prompt_result, response_result, safe_error_message
+    )
 
-        if estimated_cost_usd > 0:
-            alert_manager.check_metric(
-                metric_type=_METRIC_COST_USD,
-                value=estimated_cost_usd,
-                context={
-                    ObservabilityFields.AGENT_ID: agent_id,
-                    "provider": provider,
-                    "model": model,
-                    "llm_call_id": llm_call_id
-                }
-            )
+    _check_llm_alerts(alert_manager, llm_call_id, data)
 
     return llm_call_id
+
+
+def _emit_tool_call_event(
+    event_bus: Any,
+    tool_execution_id: str,
+    start_time: datetime,
+    data: ToolCallTrackingData,
+    sanitized_input: Dict[str, Any],
+    sanitized_output: Dict[str, Any]
+) -> None:
+    """Emit tool call event for real-time consumers."""
+    if event_bus is None:
+        return
+
+    from src.observability.event_bus import ObservabilityEvent
+
+    event_bus.emit(ObservabilityEvent(
+        event_type=_EVENT_TOOL_CALL,
+        timestamp=start_time,
+        data={
+            "tool_execution_id": tool_execution_id,
+            ObservabilityFields.AGENT_ID: data.agent_id,
+            "tool_name": data.tool_name,
+            "input_params": sanitized_input,
+            ObservabilityFields.OUTPUT_DATA: sanitized_output,
+            ObservabilityFields.DURATION_SECONDS: data.duration_seconds,
+            ObservabilityFields.STATUS: data.status,
+            ObservabilityFields.ERROR_MESSAGE: data.error_message,
+            "safety_checks": data.safety_checks,
+            "approval_required": data.approval_required,
+        },
+        agent_id=data.agent_id,
+    ))
+
+
+def _check_tool_duration_alert(
+    alert_manager: Any,
+    tool_execution_id: str,
+    data: ToolCallTrackingData
+) -> None:
+    """Check tool execution duration alerts."""
+    if alert_manager and data.duration_seconds > 0:
+        duration_ms = data.duration_seconds * MILLISECONDS_PER_SECOND
+        alert_manager.check_metric(
+            metric_type=_METRIC_DURATION,
+            value=duration_ms,
+            context={
+                ObservabilityFields.AGENT_ID: data.agent_id,
+                "tool_name": data.tool_name,
+                "tool_execution_id": tool_execution_id,
+                ObservabilityFields.STATUS: data.status
+            }
+        )
 
 
 def track_tool_call(
     sanitize_dict_fn: Any,
     backend: Any,
     alert_manager: Any,
-    agent_id: str,
-    tool_name: str,
-    input_params: Dict[str, Any],
-    output_data: Dict[str, Any],
-    duration_seconds: float,
-    status: str = "success",
-    error_message: Optional[str] = None,
-    safety_checks: Optional[List[str]] = None,
-    approval_required: bool = False,
+    data: ToolCallTrackingData,
     event_bus: Any = None,
 ) -> str:
     """Track tool execution.
@@ -304,15 +467,8 @@ def track_tool_call(
         sanitize_dict_fn: Callable to sanitize dicts
         backend: ObservabilityBackend instance
         alert_manager: AlertManager instance (or None)
-        agent_id: Parent agent execution ID
-        tool_name: Name of the tool
-        input_params: Tool input parameters
-        output_data: Tool output data
-        duration_seconds: Execution duration
-        status: Execution status
-        error_message: Error if failed
-        safety_checks: Safety checks applied
-        approval_required: Whether approval was required
+        data: ToolCallTrackingData with all tracking parameters
+        event_bus: Event bus for real-time events (optional)
 
     Returns:
         tool_execution_id: UUID of the tool execution
@@ -321,60 +477,48 @@ def track_tool_call(
     start_time = utcnow()
 
     # SECURITY: Sanitize tool parameters before storage
-    sanitized_input = sanitize_dict_fn(input_params)
-    sanitized_output = sanitize_dict_fn(output_data)
+    sanitized_input = sanitize_dict_fn(data.input_params)
+    sanitized_output = sanitize_dict_fn(data.output_data)
 
+    from src.observability.backend import ToolCallData as BackendToolCallData
     backend.track_tool_call(
         tool_execution_id=tool_execution_id,
-        agent_id=agent_id,
-        tool_name=tool_name,
-        input_params=sanitized_input,
-        output_data=sanitized_output,
+        agent_id=data.agent_id,
+        tool_name=data.tool_name,
         start_time=start_time,
-        duration_seconds=duration_seconds,
-        status=status,
-        error_message=error_message,
-        safety_checks=safety_checks,
-        approval_required=approval_required,
+        data=BackendToolCallData(
+            input_params=sanitized_input,
+            output_data=sanitized_output,
+            duration_seconds=data.duration_seconds,
+            status=data.status,  # type: ignore[arg-type]
+            error_message=data.error_message,
+            safety_checks=data.safety_checks,
+            approval_required=data.approval_required,
+        ),
     )
 
-    # Emit event for real-time consumers
-    if event_bus is not None:
-        from src.observability.event_bus import ObservabilityEvent
+    _emit_tool_call_event(
+        event_bus, tool_execution_id, start_time, data,
+        sanitized_input, sanitized_output
+    )
 
-        event_bus.emit(ObservabilityEvent(
-            event_type=_EVENT_TOOL_CALL,
-            timestamp=start_time,
-            data={
-                "tool_execution_id": tool_execution_id,
-                ObservabilityFields.AGENT_ID: agent_id,
-                "tool_name": tool_name,
-                "input_params": sanitized_input,
-                ObservabilityFields.OUTPUT_DATA: sanitized_output,
-                ObservabilityFields.DURATION_SECONDS: duration_seconds,
-                ObservabilityFields.STATUS: status,
-                ObservabilityFields.ERROR_MESSAGE: error_message,
-                "safety_checks": safety_checks,
-                "approval_required": approval_required,
-            },
-            agent_id=agent_id,
-        ))
-
-    # Check tool execution duration alerts
-    if alert_manager and duration_seconds > 0:
-        duration_ms = duration_seconds * MILLISECONDS_PER_SECOND
-        alert_manager.check_metric(
-            metric_type=_METRIC_DURATION,
-            value=duration_ms,
-            context={
-                ObservabilityFields.AGENT_ID: agent_id,
-                "tool_name": tool_name,
-                "tool_execution_id": tool_execution_id,
-                ObservabilityFields.STATUS: status
-            }
-        )
+    _check_tool_duration_alert(alert_manager, tool_execution_id, data)
 
     return tool_execution_id
+
+
+def _fill_execution_ids(
+    data: DecisionTrackingData,
+    context: Any
+) -> DecisionTrackingData:
+    """Fill in execution IDs from context if not provided."""
+    if not data.workflow_execution_id:
+        data.workflow_execution_id = context.workflow_id
+    if not data.stage_execution_id:
+        data.stage_execution_id = context.stage_id
+    if not data.agent_execution_id:
+        data.agent_execution_id = context.agent_id
+    return data
 
 
 def track_decision_outcome(
@@ -382,49 +526,37 @@ def track_decision_outcome(
     backend: Any,
     context: Any,
     session_stack: List[Any],
-    decision_type: str,
-    decision_data: Dict[str, Any],
-    outcome: str,
-    impact_metrics: Optional[Dict[str, Any]] = None,
-    lessons_learned: Optional[str] = None,
-    should_repeat: Optional[bool] = None,
-    tags: Optional[List[str]] = None,
-    agent_execution_id: Optional[str] = None,
-    stage_execution_id: Optional[str] = None,
-    workflow_execution_id: Optional[str] = None,
-    validation_method: Optional[str] = None,
-    validation_timestamp: Optional[datetime] = None,
-    validation_duration_seconds: Optional[float] = None,
-    extra_metadata: Optional[Dict[str, Any]] = None,
+    data: DecisionTrackingData,
 ) -> str:
     """Track decision outcome for self-improvement learning loop.
+
+    Args:
+        decision_tracker: DecisionTracker instance
+        backend: ObservabilityBackend instance
+        context: Execution context with workflow/stage/agent IDs
+        session_stack: Session stack for database transactions
+        data: DecisionTrackingData with all tracking parameters
 
     Returns:
         Decision ID or empty string on failure
     """
-    # Fill in execution IDs from context if not provided
-    if not workflow_execution_id:
-        workflow_execution_id = context.workflow_id
-    if not stage_execution_id:
-        stage_execution_id = context.stage_id
-    if not agent_execution_id:
-        agent_execution_id = context.agent_id
+    data = _fill_execution_ids(data, context)
 
     kwargs = dict(
-        decision_type=decision_type,
-        decision_data=decision_data,
-        outcome=outcome,
-        impact_metrics=impact_metrics,
-        lessons_learned=lessons_learned,
-        should_repeat=should_repeat,
-        tags=tags,
-        agent_execution_id=agent_execution_id,
-        stage_execution_id=stage_execution_id,
-        workflow_execution_id=workflow_execution_id,
-        validation_method=validation_method,
-        validation_timestamp=validation_timestamp,
-        validation_duration_seconds=validation_duration_seconds,
-        extra_metadata=extra_metadata,
+        decision_type=data.decision_type,
+        decision_data=data.decision_data,
+        outcome=data.outcome,
+        impact_metrics=data.impact_metrics,
+        lessons_learned=data.lessons_learned,
+        should_repeat=data.should_repeat,
+        tags=data.tags,
+        agent_execution_id=data.agent_execution_id,
+        stage_execution_id=data.stage_execution_id,
+        workflow_execution_id=data.workflow_execution_id,
+        validation_method=data.validation_method,
+        validation_timestamp=data.validation_timestamp,
+        validation_duration_seconds=data.validation_duration_seconds,
+        extra_metadata=data.extra_metadata,
     )
 
     result: str
@@ -529,20 +661,16 @@ def aggregate_workflow_metrics_on_success(
 
 def emit_llm_stream_chunk(
     event_bus: Any,
-    agent_id: str,
-    content: str,
-    chunk_type: str = "content",
-    done: bool = False,
-    model: Optional[str] = None,
-    prompt_tokens: Optional[int] = None,
-    completion_tokens: Optional[int] = None,
-    workflow_id: Optional[str] = None,
-    stage_id: Optional[str] = None,
+    data: StreamChunkData,
 ) -> None:
     """Emit an LLM stream chunk event for real-time consumers.
 
     Best-effort: catches all exceptions silently since streaming events
     must never disrupt execution.
+
+    Args:
+        event_bus: Event bus for real-time events
+        data: StreamChunkData with all event parameters
     """
     if event_bus is None:
         return
@@ -553,17 +681,17 @@ def emit_llm_stream_chunk(
             event_type=_EVENT_LLM_STREAM_CHUNK,
             timestamp=utcnow(),
             data={
-                ObservabilityFields.AGENT_ID: agent_id,
-                "content": content,
-                "chunk_type": chunk_type,
-                "done": done,
-                "model": model,
-                "prompt_tokens": prompt_tokens,
-                "completion_tokens": completion_tokens,
+                ObservabilityFields.AGENT_ID: data.agent_id,
+                "content": data.content,
+                "chunk_type": data.chunk_type,
+                "done": data.done,
+                "model": data.model,
+                "prompt_tokens": data.prompt_tokens,
+                "completion_tokens": data.completion_tokens,
             },
-            workflow_id=workflow_id,
-            stage_id=stage_id,
-            agent_id=agent_id,
+            workflow_id=data.workflow_id,
+            stage_id=data.stage_id,
+            agent_id=data.agent_id,
         ))
     except Exception:  # noqa: BLE001 -- best-effort streaming event
         pass
@@ -612,37 +740,31 @@ class TrackerCollaborationMixin:
 
     def track_collaboration_event(
         self,
-        event_type: str,
-        stage_id: Optional[str] = None,
-        agents_involved: Optional[List[str]] = None,
-        event_data: Optional[Dict[str, Any]] = None,
-        round_number: Optional[int] = None,
-        resolution_strategy: Optional[str] = None,
-        outcome: Optional[str] = None,
-        confidence_score: Optional[float] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
-        stage_name: Optional[str] = None,
-        agents: Optional[List[str]] = None,
-        decision: Optional[str] = None,
-        confidence: Optional[float] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        data: CollaborationEventData,
     ) -> str:
-        """Track collaboration event."""
+        """Track collaboration event.
+
+        Args:
+            data: CollaborationEventData with all event parameters
+
+        Returns:
+            Event ID string
+        """
         result = self._collaboration_tracker.track_collaboration_event(
-            event_type=event_type, stage_id=stage_id,
-            agents_involved=agents_involved, event_data=event_data,
-            round_number=round_number, resolution_strategy=resolution_strategy,
-            outcome=outcome, confidence_score=confidence_score,
-            extra_metadata=extra_metadata, stage_name=stage_name,
-            agents=agents, decision=decision, confidence=confidence,
-            metadata=metadata,
+            event_type=data.event_type, stage_id=data.stage_id,
+            agents_involved=data.agents_involved, event_data=data.event_data,
+            round_number=data.round_number, resolution_strategy=data.resolution_strategy,
+            outcome=data.outcome, confidence_score=data.confidence_score,
+            extra_metadata=data.extra_metadata, stage_name=data.stage_name,
+            agents=data.agents, decision=data.decision, confidence=data.confidence,
+            metadata=data.metadata,
         )
         self._emit_event(_EVENT_COLLABORATION, {
-            "event_type": event_type,
-            ObservabilityFields.STAGE_ID: stage_id,
-            "agents_involved": agents_involved,
-            "outcome": outcome,
-            "confidence_score": confidence_score,
+            "event_type": data.event_type,
+            ObservabilityFields.STAGE_ID: data.stage_id,
+            "agents_involved": data.agents_involved,
+            "outcome": data.outcome,
+            "confidence_score": data.confidence_score,
         })
         return str(result)
 

@@ -1,5 +1,6 @@
 """SystemMetric record creation from aggregated query results."""
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -7,6 +8,20 @@ from src.observability.aggregation.period import AggregationPeriod
 
 # UUID hex string length for metric IDs
 UUID_HEX_LENGTH = 12
+
+
+@dataclass
+class MetricParams:
+    """Parameters for creating a metric record."""
+    metric_name: str
+    metric_value: float
+    metric_unit: str
+    period: AggregationPeriod
+    timestamp: datetime
+    workflow_name: Optional[str] = None
+    stage_name: Optional[str] = None
+    agent_name: Optional[str] = None
+    tags: Optional[Dict[str, Any]] = None
 
 
 class MetricRecordCreator:
@@ -58,55 +73,35 @@ class MetricRecordCreator:
         # Success rate metric
         if total > 0:
             success_rate = successful / total
-            metric_id = self._create_metric(
-                metric_name="workflow_success_rate",
-                metric_value=success_rate,
-                metric_unit="ratio",
-                workflow_name=workflow_name,
-                period=period,
-                timestamp=timestamp,
-                tags={"total": total, "successful": successful}
+            created.append(
+                self._create_success_rate_metric(
+                    workflow_name, success_rate, total, successful, period, timestamp
+                )
             )
-            created.append(metric_id)
 
         # Average duration metric
         if avg_duration > 0:
-            metric_id = self._create_metric(
-                metric_name="workflow_avg_duration",
-                metric_value=avg_duration,
-                metric_unit="seconds",
-                workflow_name=workflow_name,
-                period=period,
-                timestamp=timestamp,
-                tags={"total": total}
+            created.append(
+                self._create_avg_duration_metric(
+                    workflow_name, avg_duration, total, period, timestamp
+                )
             )
-            created.append(metric_id)
 
         # Total cost metric
         if total_cost > 0:
-            metric_id = self._create_metric(
-                metric_name="workflow_total_cost",
-                metric_value=total_cost,
-                metric_unit="usd",
-                workflow_name=workflow_name,
-                period=period,
-                timestamp=timestamp,
-                tags={"total": total}
+            created.append(
+                self._create_total_cost_metric(
+                    workflow_name, total_cost, total, period, timestamp
+                )
             )
-            created.append(metric_id)
 
         # P95 duration metric
         if p95_duration > 0:
-            metric_id = self._create_metric(
-                metric_name="workflow_p95_duration",
-                metric_value=p95_duration,
-                metric_unit="seconds",
-                workflow_name=workflow_name,
-                period=period,
-                timestamp=timestamp,
-                tags={"total": total}
+            created.append(
+                self._create_p95_duration_metric(
+                    workflow_name, p95_duration, total, period, timestamp
+                )
             )
-            created.append(metric_id)
 
         return created
 
@@ -144,7 +139,7 @@ class MetricRecordCreator:
         # Success rate metric
         if total > 0:
             success_rate = successful / total
-            metric_id = self._create_metric(
+            params = MetricParams(
                 metric_name="agent_success_rate",
                 metric_value=success_rate,
                 metric_unit="ratio",
@@ -153,46 +148,14 @@ class MetricRecordCreator:
                 timestamp=timestamp,
                 tags={"total": total, "successful": successful}
             )
-            created.append(metric_id)
+            created.append(self._create_metric_from_params(params))
 
-        # Average duration metric
-        if avg_duration > 0:
-            metric_id = self._create_metric(
-                metric_name="agent_avg_duration",
-                metric_value=avg_duration,
-                metric_unit="seconds",
-                agent_name=agent_name,
-                period=period,
-                timestamp=timestamp,
-                tags={"total": total}
+        # Average duration, cost, tokens metrics
+        created.extend(
+            self._create_agent_performance_metrics(
+                agent_name, avg_duration, total_cost, avg_tokens, total, period, timestamp
             )
-            created.append(metric_id)
-
-        # Total cost metric
-        if total_cost > 0:
-            metric_id = self._create_metric(
-                metric_name="agent_total_cost",
-                metric_value=total_cost,
-                metric_unit="usd",
-                agent_name=agent_name,
-                period=period,
-                timestamp=timestamp,
-                tags={"total": total}
-            )
-            created.append(metric_id)
-
-        # Average tokens metric
-        if avg_tokens > 0:
-            metric_id = self._create_metric(
-                metric_name="agent_avg_tokens",
-                metric_value=avg_tokens,
-                metric_unit="tokens",
-                agent_name=agent_name,
-                period=period,
-                timestamp=timestamp,
-                tags={"total": total}
-            )
-            created.append(metric_id)
+        )
 
         return created
 
@@ -229,67 +192,27 @@ class MetricRecordCreator:
         total_cost = float(result.total_cost or 0)
 
         created = []
+        tags = {"provider": provider, "model": model, "total": total}
 
         # Success rate metric
         if total > 0:
             success_rate = successful / total
-            metric_id = self._create_metric(
+            params = MetricParams(
                 metric_name="llm_success_rate",
                 metric_value=success_rate,
                 metric_unit="ratio",
                 period=period,
                 timestamp=timestamp,
-                tags={"provider": provider, "model": model, "total": total}
+                tags=tags
             )
-            created.append(metric_id)
+            created.append(self._create_metric_from_params(params))
 
-        # Average latency metric
-        if avg_latency > 0:
-            metric_id = self._create_metric(
-                metric_name="llm_avg_latency",
-                metric_value=avg_latency,
-                metric_unit="ms",
-                period=period,
-                timestamp=timestamp,
-                tags={"provider": provider, "model": model, "total": total}
+        # Latency and cost metrics
+        created.extend(
+            self._create_llm_performance_metrics(
+                avg_latency, p95_latency, p99_latency, total_cost, tags, period, timestamp
             )
-            created.append(metric_id)
-
-        # P95 latency metric
-        if p95_latency > 0:
-            metric_id = self._create_metric(
-                metric_name="llm_p95_latency",
-                metric_value=p95_latency,
-                metric_unit="ms",
-                period=period,
-                timestamp=timestamp,
-                tags={"provider": provider, "model": model, "total": total}
-            )
-            created.append(metric_id)
-
-        # P99 latency metric
-        if p99_latency > 0:
-            metric_id = self._create_metric(
-                metric_name="llm_p99_latency",
-                metric_value=p99_latency,
-                metric_unit="ms",
-                period=period,
-                timestamp=timestamp,
-                tags={"provider": provider, "model": model, "total": total}
-            )
-            created.append(metric_id)
-
-        # Total cost metric
-        if total_cost > 0:
-            metric_id = self._create_metric(
-                metric_name="llm_total_cost",
-                metric_value=total_cost,
-                metric_unit="usd",
-                period=period,
-                timestamp=timestamp,
-                tags={"provider": provider, "model": model, "total": total}
-            )
-            created.append(metric_id)
+        )
 
         return created
 
@@ -305,7 +228,7 @@ class MetricRecordCreator:
         agent_name: Optional[str] = None,
         tags: Optional[Dict[str, Any]] = None
     ) -> str:
-        """Create and add SystemMetric record to session.
+        """Create and add SystemMetric record to session (legacy interface).
 
         NOTE: Does NOT commit - caller must commit transaction.
 
@@ -323,22 +246,237 @@ class MetricRecordCreator:
         Returns:
             Created metric ID (format: "metric-{12-char-hex}")
         """
+        params = MetricParams(
+            metric_name=metric_name,
+            metric_value=metric_value,
+            metric_unit=metric_unit,
+            period=period,
+            timestamp=timestamp,
+            workflow_name=workflow_name,
+            stage_name=stage_name,
+            agent_name=agent_name,
+            tags=tags
+        )
+        return self._create_metric_from_params(params)
+
+    def _create_metric_from_params(self, params: MetricParams) -> str:
+        """Create and add SystemMetric record to session from params dataclass.
+
+        NOTE: Does NOT commit - caller must commit transaction.
+
+        Args:
+            params: MetricParams dataclass with all metric properties
+
+        Returns:
+            Created metric ID (format: "metric-{12-char-hex}")
+        """
         from src.database.models import SystemMetric
 
         metric_id = f"metric-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 
         metric = SystemMetric(
             id=metric_id,
-            metric_name=metric_name,
-            metric_value=metric_value,
-            metric_unit=metric_unit,
-            workflow_name=workflow_name,
-            stage_name=stage_name,
-            agent_name=agent_name,
-            timestamp=timestamp,
-            aggregation_period=period.value,
-            tags=tags or {}
+            metric_name=params.metric_name,
+            metric_value=params.metric_value,
+            metric_unit=params.metric_unit,
+            workflow_name=params.workflow_name,
+            stage_name=params.stage_name,
+            agent_name=params.agent_name,
+            timestamp=params.timestamp,
+            aggregation_period=params.period.value,
+            tags=params.tags or {}
         )
 
         self.session.add(metric)
         return metric_id
+
+    def _create_success_rate_metric(
+        self,
+        workflow_name: str,
+        success_rate: float,
+        total: int,
+        successful: int,
+        period: AggregationPeriod,
+        timestamp: datetime
+    ) -> str:
+        """Create workflow success rate metric."""
+        params = MetricParams(
+            metric_name="workflow_success_rate",
+            metric_value=success_rate,
+            metric_unit="ratio",
+            workflow_name=workflow_name,
+            period=period,
+            timestamp=timestamp,
+            tags={"total": total, "successful": successful}
+        )
+        return self._create_metric_from_params(params)
+
+    def _create_avg_duration_metric(
+        self,
+        workflow_name: str,
+        avg_duration: float,
+        total: int,
+        period: AggregationPeriod,
+        timestamp: datetime
+    ) -> str:
+        """Create workflow average duration metric."""
+        params = MetricParams(
+            metric_name="workflow_avg_duration",
+            metric_value=avg_duration,
+            metric_unit="seconds",
+            workflow_name=workflow_name,
+            period=period,
+            timestamp=timestamp,
+            tags={"total": total}
+        )
+        return self._create_metric_from_params(params)
+
+    def _create_total_cost_metric(
+        self,
+        workflow_name: str,
+        total_cost: float,
+        total: int,
+        period: AggregationPeriod,
+        timestamp: datetime
+    ) -> str:
+        """Create workflow total cost metric."""
+        params = MetricParams(
+            metric_name="workflow_total_cost",
+            metric_value=total_cost,
+            metric_unit="usd",
+            workflow_name=workflow_name,
+            period=period,
+            timestamp=timestamp,
+            tags={"total": total}
+        )
+        return self._create_metric_from_params(params)
+
+    def _create_p95_duration_metric(
+        self,
+        workflow_name: str,
+        p95_duration: float,
+        total: int,
+        period: AggregationPeriod,
+        timestamp: datetime
+    ) -> str:
+        """Create workflow P95 duration metric."""
+        params = MetricParams(
+            metric_name="workflow_p95_duration",
+            metric_value=p95_duration,
+            metric_unit="seconds",
+            workflow_name=workflow_name,
+            period=period,
+            timestamp=timestamp,
+            tags={"total": total}
+        )
+        return self._create_metric_from_params(params)
+
+    def _create_agent_performance_metrics(
+        self,
+        agent_name: str,
+        avg_duration: float,
+        total_cost: float,
+        avg_tokens: float,
+        total: int,
+        period: AggregationPeriod,
+        timestamp: datetime
+    ) -> List[str]:
+        """Create agent performance metrics (duration, cost, tokens)."""
+        created = []
+
+        if avg_duration > 0:
+            params = MetricParams(
+                metric_name="agent_avg_duration",
+                metric_value=avg_duration,
+                metric_unit="seconds",
+                agent_name=agent_name,
+                period=period,
+                timestamp=timestamp,
+                tags={"total": total}
+            )
+            created.append(self._create_metric_from_params(params))
+
+        if total_cost > 0:
+            params = MetricParams(
+                metric_name="agent_total_cost",
+                metric_value=total_cost,
+                metric_unit="usd",
+                agent_name=agent_name,
+                period=period,
+                timestamp=timestamp,
+                tags={"total": total}
+            )
+            created.append(self._create_metric_from_params(params))
+
+        if avg_tokens > 0:
+            params = MetricParams(
+                metric_name="agent_avg_tokens",
+                metric_value=avg_tokens,
+                metric_unit="tokens",
+                agent_name=agent_name,
+                period=period,
+                timestamp=timestamp,
+                tags={"total": total}
+            )
+            created.append(self._create_metric_from_params(params))
+
+        return created
+
+    def _create_llm_performance_metrics(
+        self,
+        avg_latency: float,
+        p95_latency: float,
+        p99_latency: float,
+        total_cost: float,
+        tags: Dict[str, Any],
+        period: AggregationPeriod,
+        timestamp: datetime
+    ) -> List[str]:
+        """Create LLM performance metrics (latencies and cost)."""
+        created = []
+
+        if avg_latency > 0:
+            params = MetricParams(
+                metric_name="llm_avg_latency",
+                metric_value=avg_latency,
+                metric_unit="ms",
+                period=period,
+                timestamp=timestamp,
+                tags=tags
+            )
+            created.append(self._create_metric_from_params(params))
+
+        if p95_latency > 0:
+            params = MetricParams(
+                metric_name="llm_p95_latency",
+                metric_value=p95_latency,
+                metric_unit="ms",
+                period=period,
+                timestamp=timestamp,
+                tags=tags
+            )
+            created.append(self._create_metric_from_params(params))
+
+        if p99_latency > 0:
+            params = MetricParams(
+                metric_name="llm_p99_latency",
+                metric_value=p99_latency,
+                metric_unit="ms",
+                period=period,
+                timestamp=timestamp,
+                tags=tags
+            )
+            created.append(self._create_metric_from_params(params))
+
+        if total_cost > 0:
+            params = MetricParams(
+                metric_name="llm_total_cost",
+                metric_value=total_cost,
+                metric_unit="usd",
+                period=period,
+                timestamp=timestamp,
+                tags=tags
+            )
+            created.append(self._create_metric_from_params(params))
+
+        return created

@@ -6,7 +6,7 @@ using configurable threshold-based rules.
 """
 
 import logging
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from src.self_improvement.constants import (
     FIELD_ABSOLUTE,
@@ -176,77 +176,89 @@ class ProblemDetector:
         Returns:
             List of quality problems (may be empty)
         """
-        problems = []
-
-        # Quality metrics: higher is better, check for degradation
         quality_metrics = [
-            "success_rate",
-            "extraction_quality",
-            "quality_score",
-            "accuracy",
-            "precision",
-            "recall",
-            "f1_score",
+            "success_rate", "extraction_quality", "quality_score",
+            "accuracy", "precision", "recall", "f1_score",
         ]
 
+        problems = []
         for change in comparison.metric_changes:
-            # Check if this is a quality metric
-            is_quality_metric = (
-                change.metric_name in quality_metrics or
-                any(q in change.metric_name.lower()
-                    for q in ["quality", "accuracy", "precision", "recall"])
-            )
-
-            if not is_quality_metric:
-                continue
-
-            # Check for degradation (negative change)
-            if change.absolute_change >= 0:
-                continue  # No degradation
-
-            # Calculate relative degradation
-            degradation_pct = abs(change.relative_change)
-
-            # Check thresholds (must meet BOTH relative AND absolute)
-            relative_exceeds = degradation_pct >= self.config.quality_relative_threshold
-            absolute_exceeds = abs(change.absolute_change) >= self.config.quality_absolute_threshold
-
-            if not (relative_exceeds and absolute_exceeds):
-                logger.debug(
-                    f"Quality change below threshold: {change.metric_name} "
-                    f"rel={degradation_pct:.1%} (need {self.config.quality_relative_threshold:.1%}{LOG_SEPARATOR_ABS}"
-                    f"{abs(change.absolute_change):.3f} "
-                    f"(need {self.config.quality_absolute_threshold:.3f})"
-                )
-                continue
-
-            # Determine severity
-            severity = self._calculate_severity(degradation_pct)
-
-            # Create problem
-            problem = PerformanceProblem(
-                problem_type=ProblemType.QUALITY_LOW,
-                severity=severity,
-                agent_name=comparison.agent_name,
-                metric_name=change.metric_name,
-                baseline_value=change.baseline_value,
-                current_value=change.current_value,
-                degradation_pct=-degradation_pct,  # Negative for degradation
-                threshold_used=self.config.quality_relative_threshold,
-                evidence={
-                    FIELD_METRIC_CHANGE: {
-                        FIELD_ABSOLUTE: change.absolute_change,
-                        FIELD_RELATIVE: change.relative_change,
-                    },
-                    FIELD_BASELINE_EXECUTIONS: comparison.baseline_executions,
-                    FIELD_CURRENT_EXECUTIONS: comparison.current_executions,
-                }
-            )
-            problems.append(problem)
-
-            logger.warning(f"Quality problem detected: {problem.get_summary()}")
+            problem = self._check_quality_metric(change, comparison, quality_metrics)
+            if problem:
+                problems.append(problem)
+                logger.warning(f"Quality problem detected: {problem.get_summary()}")
 
         return problems
+
+    def _check_quality_metric(
+        self, change: Any, comparison: PerformanceComparison, quality_metrics: List[str]
+    ) -> Optional[PerformanceProblem]:
+        """Check a single metric for quality degradation."""
+        # Check if this is a quality metric
+        is_quality_metric = (
+            change.metric_name in quality_metrics or
+            any(q in change.metric_name.lower()
+                for q in ["quality", "accuracy", "precision", "recall"])
+        )
+
+        if not is_quality_metric or change.absolute_change >= 0:
+            return None
+
+        # Calculate degradation
+        degradation_pct = abs(change.relative_change)
+
+        # Check thresholds
+        if not self._exceeds_thresholds(
+            degradation_pct,
+            abs(change.absolute_change),
+            self.config.quality_relative_threshold,
+            self.config.quality_absolute_threshold,
+            change.metric_name
+        ):
+            return None
+
+        # Create problem
+        severity = self._calculate_severity(degradation_pct)
+        return PerformanceProblem(
+            problem_type=ProblemType.QUALITY_LOW,
+            severity=severity,
+            agent_name=comparison.agent_name,
+            metric_name=change.metric_name,
+            baseline_value=change.baseline_value,
+            current_value=change.current_value,
+            degradation_pct=-degradation_pct,
+            threshold_used=self.config.quality_relative_threshold,
+            evidence={
+                FIELD_METRIC_CHANGE: {
+                    FIELD_ABSOLUTE: change.absolute_change,
+                    FIELD_RELATIVE: change.relative_change,
+                },
+                FIELD_BASELINE_EXECUTIONS: comparison.baseline_executions,
+                FIELD_CURRENT_EXECUTIONS: comparison.current_executions,
+            }
+        )
+
+    def _exceeds_thresholds(
+        self,
+        relative_pct: float,
+        absolute_val: float,
+        relative_threshold: float,
+        absolute_threshold: float,
+        metric_name: str
+    ) -> bool:
+        """Check if metric change exceeds both relative and absolute thresholds."""
+        relative_exceeds = relative_pct >= relative_threshold
+        absolute_exceeds = absolute_val >= absolute_threshold
+
+        if not (relative_exceeds and absolute_exceeds):
+            logger.debug(
+                f"Change below threshold: {metric_name} "
+                f"rel={relative_pct:.1%} (need {relative_threshold:.1%}{LOG_SEPARATOR_ABS}"
+                f"{absolute_val:.3f} (need {absolute_threshold:.3f})"
+            )
+            return False
+
+        return True
 
     def _detect_cost_problems(
         self,
@@ -264,68 +276,63 @@ class ProblemDetector:
         Returns:
             List of cost problems (may be empty)
         """
-        problems = []
-
-        # Cost metrics: lower is better, check for increase
         cost_metrics = ["cost_usd", "total_cost_usd", "estimated_cost_usd"]
 
+        problems = []
         for change in comparison.metric_changes:
-            # Check if this is a cost metric
-            is_cost_metric = (
-                change.metric_name in cost_metrics or
-                "cost" in change.metric_name.lower()
-            )
-
-            if not is_cost_metric:
-                continue
-
-            # Check for increase (positive change)
-            if change.absolute_change <= 0:
-                continue  # No increase
-
-            # Calculate relative increase
-            increase_pct = abs(change.relative_change)
-
-            # Check thresholds
-            relative_exceeds = increase_pct >= self.config.cost_relative_threshold
-            absolute_exceeds = abs(change.absolute_change) >= self.config.cost_absolute_threshold
-
-            if not (relative_exceeds and absolute_exceeds):
-                logger.debug(
-                    f"Cost change below threshold: {change.metric_name} "
-                    f"rel={increase_pct:.1%} (need {self.config.cost_relative_threshold:.1%}{LOG_SEPARATOR_ABS}"
-                    f"{abs(change.absolute_change):.3f} "
-                    f"(need {self.config.cost_absolute_threshold:.3f})"
-                )
-                continue
-
-            # Determine severity
-            severity = self._calculate_severity(increase_pct)
-
-            # Create problem
-            problem = PerformanceProblem(
-                problem_type=ProblemType.COST_HIGH,
-                severity=severity,
-                agent_name=comparison.agent_name,
-                metric_name=change.metric_name,
-                baseline_value=change.baseline_value,
-                current_value=change.current_value,
-                degradation_pct=increase_pct,  # Positive for cost increase
-                threshold_used=self.config.cost_relative_threshold,
-                evidence={
-                    FIELD_METRIC_CHANGE: {
-                        FIELD_ABSOLUTE: change.absolute_change,
-                        FIELD_RELATIVE: change.relative_change,
-                    },
-                    FIELD_BASELINE_EXECUTIONS: comparison.baseline_executions,
-                    FIELD_CURRENT_EXECUTIONS: comparison.current_executions,
-                }
-            )
-            problems.append(problem)
-
-            logger.warning(f"Cost problem detected: {problem.get_summary()}")
+            problem = self._check_cost_metric(change, comparison, cost_metrics)
+            if problem:
+                problems.append(problem)
+                logger.warning(f"Cost problem detected: {problem.get_summary()}")
 
         return problems
+
+    def _check_cost_metric(
+        self, change: Any, comparison: PerformanceComparison, cost_metrics: List[str]
+    ) -> Optional[PerformanceProblem]:
+        """Check a single metric for cost increase."""
+        # Check if this is a cost metric
+        is_cost_metric = (
+            change.metric_name in cost_metrics or
+            "cost" in change.metric_name.lower()
+        )
+
+        if not is_cost_metric or change.absolute_change <= 0:
+            return None
+
+        # Calculate increase
+        increase_pct = abs(change.relative_change)
+
+        # Check thresholds
+        if not self._exceeds_thresholds(
+            increase_pct,
+            abs(change.absolute_change),
+            self.config.cost_relative_threshold,
+            self.config.cost_absolute_threshold,
+            change.metric_name
+        ):
+            return None
+
+        # Create problem
+        severity = self._calculate_severity(increase_pct)
+        return PerformanceProblem(
+            problem_type=ProblemType.COST_HIGH,
+            severity=severity,
+            agent_name=comparison.agent_name,
+            metric_name=change.metric_name,
+            baseline_value=change.baseline_value,
+            current_value=change.current_value,
+            degradation_pct=increase_pct,
+            threshold_used=self.config.cost_relative_threshold,
+            evidence={
+                FIELD_METRIC_CHANGE: {
+                    FIELD_ABSOLUTE: change.absolute_change,
+                    FIELD_RELATIVE: change.relative_change,
+                },
+                FIELD_BASELINE_EXECUTIONS: comparison.baseline_executions,
+                FIELD_CURRENT_EXECUTIONS: comparison.current_executions,
+            }
+        )
 
     def _detect_speed_problems(
         self,
@@ -343,78 +350,70 @@ class ProblemDetector:
         Returns:
             List of speed problems (may be empty)
         """
-        problems = []
-
-        # Speed metrics: lower is better, check for increase
         speed_metrics = [
-            "duration_seconds",
-            "latency_seconds",
-            "response_time_seconds",
-            "execution_time_seconds",
+            "duration_seconds", "latency_seconds",
+            "response_time_seconds", "execution_time_seconds",
         ]
 
+        problems = []
         for change in comparison.metric_changes:
-            # Check if this is a speed metric
-            is_speed_metric = (
-                change.metric_name in speed_metrics or
-                any(s in change.metric_name.lower()
-                    for s in ["duration", "latency", "time"])
-            )
-
-            if not is_speed_metric:
-                continue
-
-            # Exclude total_tokens (not a speed metric)
-            if "token" in change.metric_name.lower():
-                continue
-
-            # Check for increase (positive change)
-            if change.absolute_change <= 0:
-                continue  # No increase
-
-            # Calculate relative increase
-            increase_pct = abs(change.relative_change)
-
-            # Check thresholds
-            relative_exceeds = increase_pct >= self.config.speed_relative_threshold
-            absolute_exceeds = abs(change.absolute_change) >= self.config.speed_absolute_threshold
-
-            if not (relative_exceeds and absolute_exceeds):
-                logger.debug(
-                    f"Speed change below threshold: {change.metric_name} "
-                    f"rel={increase_pct:.1%} (need {self.config.speed_relative_threshold:.1%}{LOG_SEPARATOR_ABS}"
-                    f"{abs(change.absolute_change):.3f} "
-                    f"(need {self.config.speed_absolute_threshold:.3f})"
-                )
-                continue
-
-            # Determine severity
-            severity = self._calculate_severity(increase_pct)
-
-            # Create problem
-            problem = PerformanceProblem(
-                problem_type=ProblemType.SPEED_LOW,
-                severity=severity,
-                agent_name=comparison.agent_name,
-                metric_name=change.metric_name,
-                baseline_value=change.baseline_value,
-                current_value=change.current_value,
-                degradation_pct=increase_pct,  # Positive for speed increase
-                threshold_used=self.config.speed_relative_threshold,
-                evidence={
-                    FIELD_METRIC_CHANGE: {
-                        FIELD_ABSOLUTE: change.absolute_change,
-                        FIELD_RELATIVE: change.relative_change,
-                    },
-                    FIELD_BASELINE_EXECUTIONS: comparison.baseline_executions,
-                    FIELD_CURRENT_EXECUTIONS: comparison.current_executions,
-                }
-            )
-            problems.append(problem)
-
-            logger.warning(f"Speed problem detected: {problem.get_summary()}")
+            problem = self._check_speed_metric(change, comparison, speed_metrics)
+            if problem:
+                problems.append(problem)
+                logger.warning(f"Speed problem detected: {problem.get_summary()}")
 
         return problems
+
+    def _check_speed_metric(
+        self, change: Any, comparison: PerformanceComparison, speed_metrics: List[str]
+    ) -> Optional[PerformanceProblem]:
+        """Check a single metric for speed degradation."""
+        # Check if this is a speed metric
+        is_speed_metric = (
+            change.metric_name in speed_metrics or
+            any(s in change.metric_name.lower()
+                for s in ["duration", "latency", "time"])
+        )
+
+        # Exclude tokens and non-increases
+        if (not is_speed_metric or
+            "token" in change.metric_name.lower() or
+            change.absolute_change <= 0):
+            return None
+
+        # Calculate increase
+        increase_pct = abs(change.relative_change)
+
+        # Check thresholds
+        if not self._exceeds_thresholds(
+            increase_pct,
+            abs(change.absolute_change),
+            self.config.speed_relative_threshold,
+            self.config.speed_absolute_threshold,
+            change.metric_name
+        ):
+            return None
+
+        # Create problem
+        severity = self._calculate_severity(increase_pct)
+        return PerformanceProblem(
+            problem_type=ProblemType.SPEED_LOW,
+            severity=severity,
+            agent_name=comparison.agent_name,
+            metric_name=change.metric_name,
+            baseline_value=change.baseline_value,
+            current_value=change.current_value,
+            degradation_pct=increase_pct,
+            threshold_used=self.config.speed_relative_threshold,
+            evidence={
+                FIELD_METRIC_CHANGE: {
+                    FIELD_ABSOLUTE: change.absolute_change,
+                    FIELD_RELATIVE: change.relative_change,
+                },
+                FIELD_BASELINE_EXECUTIONS: comparison.baseline_executions,
+                FIELD_CURRENT_EXECUTIONS: comparison.current_executions,
+            }
+        )
 
     def _calculate_severity(self, degradation_pct: float) -> ProblemSeverity:
         """

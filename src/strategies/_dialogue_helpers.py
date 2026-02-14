@@ -81,6 +81,73 @@ def get_merit_weights(
     return weights
 
 
+def _count_weighted_votes(
+    agent_outputs: List[AgentOutput],
+    merit_weights: Dict[str, float]
+) -> Dict[Any, float]:
+    """Count votes weighted by merit and confidence."""
+    from collections import defaultdict
+    weighted_votes: Dict[Any, float] = defaultdict(float)
+
+    for output in agent_outputs:
+        decision = output.decision
+        agent_name = output.agent_name
+        confidence = output.confidence
+        merit_weight = merit_weights.get(agent_name, 1.0)
+
+        vote_weight = merit_weight * confidence
+        weighted_votes[decision] += vote_weight
+
+    return dict(weighted_votes)
+
+
+def _calculate_merit_confidence(
+    agent_outputs: List[AgentOutput],
+    winning_decision: Any,
+    decision_support: float,
+    merit_weights: Dict[str, float]
+) -> float:
+    """Calculate final confidence from merit-weighted supporters."""
+    supporting_agents = [
+        out for out in agent_outputs if out.decision == winning_decision
+    ]
+    if not supporting_agents:
+        return PROB_MEDIUM
+
+    weighted_conf_sum = sum(
+        out.confidence * merit_weights.get(out.agent_name, 1.0)
+        for out in supporting_agents
+    )
+    weight_sum = sum(
+        merit_weights.get(out.agent_name, 1.0)
+        for out in supporting_agents
+    )
+    avg_confidence = weighted_conf_sum / weight_sum if weight_sum > 0 else 0
+    return decision_support * avg_confidence
+
+
+def _detect_merit_conflicts(
+    agent_outputs: List[AgentOutput],
+    winning_decision: Any,
+    decision_support: float,
+    weighted_votes: Dict[Any, float]
+) -> List[Conflict]:
+    """Detect conflicts in merit-weighted voting."""
+    conflicts = []
+    if len(weighted_votes) > 1:
+        all_agents = [out.agent_name for out in agent_outputs]
+        all_decisions = list(weighted_votes.keys())
+        disagreement_score = 1.0 - decision_support
+
+        conflicts.append(Conflict(
+            agents=all_agents,
+            decisions=all_decisions,
+            disagreement_score=disagreement_score,
+            context={"weighted_votes": dict(weighted_votes)},
+        ))
+    return conflicts
+
+
 def merit_weighted_synthesis(
     agent_outputs: List[AgentOutput],
     merit_domain: Optional[str],
@@ -97,22 +164,8 @@ def merit_weighted_synthesis(
     Returns:
         SynthesisResult with merit-weighted decision
     """
-    from collections import defaultdict
-
     merit_weights = get_merit_weights(agent_outputs, merit_domain)
-
-    weighted_votes: Dict[Any, float] = defaultdict(float)
-    agent_votes = {}
-
-    for output in agent_outputs:
-        decision = output.decision
-        agent_name = output.agent_name
-        confidence = output.confidence
-        merit_weight = merit_weights.get(agent_name, 1.0)
-
-        vote_weight = merit_weight * confidence
-        weighted_votes[decision] += vote_weight
-        agent_votes[agent_name] = decision
+    weighted_votes = _count_weighted_votes(agent_outputs, merit_weights)
 
     if not weighted_votes:
         raise ValueError("No votes recorded")
@@ -121,49 +174,26 @@ def merit_weighted_synthesis(
     total_weight = sum(weighted_votes.values())
     decision_support = weighted_votes[winning_decision] / total_weight if total_weight > 0 else 0
 
+    final_confidence = _calculate_merit_confidence(
+        agent_outputs, winning_decision, decision_support, merit_weights
+    )
+
+    reasoning = build_merit_weighted_reasoning(
+        winning_decision, decision_support, agent_outputs, merit_weights, weighted_votes
+    )
+
+    conflicts = _detect_merit_conflicts(
+        agent_outputs, winning_decision, decision_support, weighted_votes
+    )
+
     supporting_agents = [
         out for out in agent_outputs if out.decision == winning_decision
     ]
-    if supporting_agents:
-        weighted_conf_sum = sum(
-            out.confidence * merit_weights.get(out.agent_name, 1.0)
-            for out in supporting_agents
-        )
-        weight_sum = sum(
-            merit_weights.get(out.agent_name, 1.0)
-            for out in supporting_agents
-        )
-        avg_confidence = weighted_conf_sum / weight_sum if weight_sum > 0 else 0
-        final_confidence = decision_support * avg_confidence
-    else:
-        final_confidence = PROB_MEDIUM
-
-    reasoning = build_merit_weighted_reasoning(
-        winning_decision,
-        decision_support,
-        agent_outputs,
-        merit_weights,
-        weighted_votes,
-    )
-
-    conflicts = []
-    if len(weighted_votes) > 1:
-        all_agents = [out.agent_name for out in agent_outputs]
-        all_decisions = list(weighted_votes.keys())
-        disagreement_score = 1.0 - decision_support
-
-        conflicts.append(Conflict(
-            agents=all_agents,
-            decisions=all_decisions,
-            disagreement_score=disagreement_score,
-            context={"weighted_votes": dict(weighted_votes)},
-        ))
-
     metadata = {
         "total_agents": len(agent_outputs),
         "decision_support": decision_support,
         "merit_weights": merit_weights,
-        "weighted_votes": dict(weighted_votes),
+        "weighted_votes": weighted_votes,
         "supporters": [out.agent_name for out in supporting_agents],
         "dissenters": [out.agent_name for out in agent_outputs if out.decision != winning_decision],
     }

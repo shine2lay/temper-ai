@@ -105,25 +105,8 @@ class FileWriter(BaseTool):
             "required": ["file_path", "content"]
         }
 
-    def execute(self, **kwargs: Any) -> ToolResult:
-        """
-        Execute file writer with given parameters.
-
-        Args:
-            file_path: Path to file to write
-            content: Content to write
-            overwrite: Whether to overwrite existing file (default: False)
-            create_dirs: Whether to create parent directories (default: True)
-
-        Returns:
-            ToolResult with success status and path written
-        """
-        file_path = kwargs.get("file_path")
-        content = kwargs.get("content")
-        overwrite = kwargs.get("overwrite", False)
-        create_dirs = kwargs.get("create_dirs", True)
-
-        # Sync allowed_root from config (may be updated after init by agent)
+    def _sync_config(self) -> None:
+        """Sync allowed_root from config (may be updated by agent)."""
         current_root = (self.config or {}).get("allowed_root")
         if current_root != self._configured_root:
             logger.warning(
@@ -136,7 +119,8 @@ class FileWriter(BaseTool):
                 allowed_root=Path(current_root) if current_root else None
             )
 
-        # Validate inputs
+    def _validate_inputs(self, file_path: Any, content: Any) -> Optional[ToolResult]:
+        """Validate file_path and content inputs. Returns error or None."""
         if not file_path or not isinstance(file_path, str):
             return ToolResult(
                 success=False,
@@ -156,44 +140,87 @@ class FileWriter(BaseTool):
                 error=f"Content exceeds maximum size of {self.MAX_FILE_SIZE} bytes"
             )
 
+        return None
+
+    def _validate_path(self, file_path: str, overwrite: bool, create_dirs: bool) -> tuple[Optional[Path], Optional[ToolResult]]:
+        """Validate path safety. Returns (path, None) or (None, error)."""
         try:
-            # Validate path safety using centralized validator
-            try:
-                path = self.path_validator.validate_write(
-                    Path(file_path),
-                    allow_overwrite=overwrite,
-                    allow_create_parents=create_dirs
-                )
-            except PathSafetyError as e:
-                return ToolResult(
-                    success=False,
-                    error=f"Path safety validation failed: {str(e)}"
-                )
+            path = self.path_validator.validate_write(
+                Path(file_path),
+                allow_overwrite=overwrite,
+                allow_create_parents=create_dirs
+            )
+        except PathSafetyError as e:
+            return None, ToolResult(
+                success=False,
+                error=f"Path safety validation failed: {str(e)}"
+            )
 
-            # Check if path is a directory
-            if path.exists() and path.is_dir():
-                return ToolResult(
-                    success=False,
-                    error=f"Cannot write to directory: {path}"
-                )
+        # Check if path is a directory
+        if path.exists() and path.is_dir():
+            return None, ToolResult(
+                success=False,
+                error=f"Cannot write to directory: {path}"
+            )
 
-            # Check for forbidden extensions
-            if path.suffix.lower() in FORBIDDEN_EXTENSIONS:
-                return ToolResult(
-                    success=False,
-                    error=f"Cannot write file with forbidden extension: {path.suffix}"
-                )
+        # Check for forbidden extensions
+        if path.suffix.lower() in FORBIDDEN_EXTENSIONS:
+            return None, ToolResult(
+                success=False,
+                error=f"Cannot write file with forbidden extension: {path.suffix}"
+            )
 
-            # Create parent directories if needed
-            if create_dirs:
-                path.parent.mkdir(parents=True, exist_ok=True)
-            elif not path.parent.exists():
-                return ToolResult(
-                    success=False,
-                    error=f"Parent directory does not exist: {path.parent}. Set create_dirs=true to create it."
-                )
+        return path, None
 
-            # TO-06: Check existence before write, not after
+    def _prepare_directory(self, path: Path, create_dirs: bool) -> Optional[ToolResult]:
+        """Create parent directories if needed. Returns error or None."""
+        if create_dirs:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        elif not path.parent.exists():
+            return ToolResult(
+                success=False,
+                error=f"Parent directory does not exist: {path.parent}. Set create_dirs=true to create it."
+            )
+        return None
+
+    def execute(self, **kwargs: Any) -> ToolResult:
+        """
+        Execute file writer with given parameters.
+
+        Args:
+            file_path: Path to file to write
+            content: Content to write
+            overwrite: Whether to overwrite existing file (default: False)
+            create_dirs: Whether to create parent directories (default: True)
+
+        Returns:
+            ToolResult with success status and path written
+        """
+        file_path = kwargs.get("file_path")
+        content = kwargs.get("content")
+        overwrite = kwargs.get("overwrite", False)
+        create_dirs = kwargs.get("create_dirs", True)
+
+        # Sync config
+        self._sync_config()
+
+        # Validate inputs
+        error_result = self._validate_inputs(file_path, content)
+        if error_result is not None:
+            return error_result
+
+        try:
+            # Validate path safety
+            path, error_result = self._validate_path(file_path, overwrite, create_dirs)
+            if error_result is not None:
+                return error_result
+
+            # Prepare directory
+            error_result = self._prepare_directory(path, create_dirs)
+            if error_result is not None:
+                return error_result
+
+            # Check existence before write
             existed = path.exists()
 
             # Write file

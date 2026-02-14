@@ -141,86 +141,87 @@ class ExtractionQualityCollector(MetricCollector):
             )
             return False
 
-    def collect(self, execution: ExecutionProtocol) -> Optional[float]:
-        """Compute extraction quality metric.
+    def _extract_and_parse_data(
+        self,
+        execution: ExecutionProtocol
+    ) -> tuple[Optional[dict], Optional[dict]]:
+        """Extract and parse ground truth and output data."""
+        ground_truth = execution.input_data['ground_truth']
+        extracted = execution.output
 
-        Compares extracted output against ground truth and computes
-        field-level accuracy score.
-
-        Args:
-            execution: Execution object with input_data['ground_truth']
-                       and output fields
-
-        Returns:
-            float: Quality score in [0.0, 1.0] representing proportion of
-                   correctly extracted fields, or None if metric cannot be
-                   computed
-
-        Note:
-            For nested dictionaries (specifications, features, etc.):
-            - In non-strict mode: Compares as single field (JSON equality)
-            - In strict mode: Recursively compares all nested fields
-        """
-        try:
-            # Extract ground truth and output
-            ground_truth = execution.input_data['ground_truth']
-            extracted = execution.output
-
-            # Parse output if it's a JSON string
-            if isinstance(extracted, str):
-                try:
-                    extracted = json.loads(extracted)
-                except json.JSONDecodeError as e:
-                    logger.warning(
-                        f"Failed to parse output as JSON for execution "
-                        f"{execution.id}: {e}"
-                    )
-                    return None
-
-            # Validate types
-            if not isinstance(ground_truth, dict):
+        # Parse output if it's a JSON string
+        if isinstance(extracted, str):
+            try:
+                extracted = json.loads(extracted)
+            except json.JSONDecodeError as e:
                 logger.warning(
-                    f"Ground truth is not a dict for execution {execution.id}"
+                    f"Failed to parse output as JSON for execution "
+                    f"{execution.id}: {e}"
                 )
-                return None
+                return None, None
 
-            if not isinstance(extracted, dict):
-                logger.warning(
-                    f"Extracted output is not a dict for execution {execution.id}"
-                )
-                return None
-
-            # Compute field-level accuracy
-            if self.strict_mode:
-                # Recursive comparison for nested fields
-                correct, total = self._compare_nested(ground_truth, extracted)
-            else:
-                # Top-level field comparison only
-                correct, total = self._compare_top_level(ground_truth, extracted)
-
-            # Compute accuracy
-            if total == 0:
-                logger.warning(
-                    f"Ground truth has zero fields for execution {execution.id}"
-                )
-                return None
-
-            accuracy = correct / total
-
-            # Validate range
-            if not (MIN_EXTRACTION_SCORE <= accuracy <= MAX_EXTRACTION_SCORE):
-                logger.error(
-                    f"Computed invalid accuracy {accuracy} for execution "
-                    f"{execution.id}"
-                )
-                return None
-
-            logger.debug(
-                f"Extraction quality for {execution.id}: "
-                f"{correct}/{total} = {accuracy:.3f}"
+        # Validate types
+        if not isinstance(ground_truth, dict):
+            logger.warning(
+                f"Ground truth is not a dict for execution {execution.id}"
             )
+            return None, None
 
-            return accuracy
+        if not isinstance(extracted, dict):
+            logger.warning(
+                f"Extracted output is not a dict for execution {execution.id}"
+            )
+            return None, None
+
+        return ground_truth, extracted
+
+    def _compute_accuracy_score(
+        self,
+        ground_truth: dict,
+        extracted: dict,
+        execution_id: str
+    ) -> Optional[float]:
+        """Compute field-level accuracy score."""
+        # Compute field-level accuracy
+        if self.strict_mode:
+            correct, total = self._compare_nested(ground_truth, extracted)
+        else:
+            correct, total = self._compare_top_level(ground_truth, extracted)
+
+        # Validate total fields
+        if total == 0:
+            logger.warning(
+                f"Ground truth has zero fields for execution {execution_id}"
+            )
+            return None
+
+        accuracy = correct / total
+
+        # Validate range
+        if not (MIN_EXTRACTION_SCORE <= accuracy <= MAX_EXTRACTION_SCORE):
+            logger.error(
+                f"Computed invalid accuracy {accuracy} for execution "
+                f"{execution_id}"
+            )
+            return None
+
+        logger.debug(
+            f"Extraction quality for {execution_id}: "
+            f"{correct}/{total} = {accuracy:.3f}"
+        )
+
+        return accuracy
+
+    def collect(self, execution: ExecutionProtocol) -> Optional[float]:
+        """Compute extraction quality metric."""
+        try:
+            # Extract and parse data
+            ground_truth, extracted = self._extract_and_parse_data(execution)
+            if ground_truth is None or extracted is None:
+                return None
+
+            # Compute and return accuracy score
+            return self._compute_accuracy_score(ground_truth, extracted, execution.id)
 
         except Exception as e:
             logger.error(

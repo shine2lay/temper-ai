@@ -63,6 +63,91 @@ def get_or_create_keyring_key(
     return key
 
 
+def _try_keyring_acquisition(
+    keyring_service: str, keyring_key_name: str, require_keyring: bool
+) -> Optional[str]:
+    """Try to acquire key from OS keyring.
+
+    Args:
+        keyring_service: Keyring service name
+        keyring_key_name: Keyring key identifier
+        require_keyring: Fail if keyring unavailable
+
+    Returns:
+        Key string or None if keyring unavailable and not required
+
+    Raises:
+        SecurityError: If keyring required but unavailable
+    """
+    try:
+        key = get_or_create_keyring_key(keyring_service, keyring_key_name)
+        logger.info(f"Using OS keyring for key storage: {keyring_service}/{keyring_key_name}")
+        return key
+    except KeyringError as e:
+        if require_keyring:
+            raise SecurityError(
+                f"Keyring required but not available: {e}\n"
+                "Install keyring backend: pip install keyring"
+            ) from e
+        logger.warning(
+            f"OS keyring backend not configured ({e}), falling back to environment variable. "
+            "For production security, configure keyring backend."
+        )
+    except ImportError as e:
+        if require_keyring:
+            raise SecurityError(
+                f"Keyring library required but not installed: {e}\n"
+                "Install with: pip install keyring"
+            ) from e
+        logger.warning(
+            "Keyring library not installed, falling back to environment variable. "
+            "For production security, install keyring: pip install keyring"
+        )
+    except (RuntimeError, OSError, AttributeError) as e:
+        logger.error(f"Keyring error: {e}", exc_info=True)
+        if require_keyring:
+            raise SecurityError(
+                f"Keyring error (keyring required): {e}\n"
+                "Check keyring configuration and logs"
+            ) from e
+        logger.warning(
+            "Falling back to environment variable due to keyring error. "
+            "See logs for details."
+        )
+    return None
+
+
+def _try_env_acquisition() -> Optional[str]:
+    """Try to acquire key from environment variable.
+
+    Returns:
+        Key string or None if not found
+    """
+    key = os.getenv("OAUTH_TOKEN_ENCRYPTION_KEY")
+    if key:
+        logger.warning(
+            "SECURITY: Using environment variable for encryption key. "
+            "For production, use OS keyring (install 'keyring' package)."
+        )
+        env_name = (
+            os.getenv("ENVIRONMENT")
+            or os.getenv("ENV")
+            or os.getenv("APP_ENV")
+            or ""
+        ).lower()
+        if env_name in ("production", "prod"):
+            logger.warning(
+                "PRODUCTION SECURITY WARNING: Encryption key loaded from "
+                "environment variable OAUTH_TOKEN_ENCRYPTION_KEY in a "
+                "production environment (%s). Environment variables are "
+                "visible in /proc/<pid>/environ, process listings, and "
+                "may leak into logs or crash dumps. Migrate to OS keyring "
+                "for compliance (PCI DSS, SOC 2).",
+                env_name,
+            )
+    return key
+
+
 def acquire_encryption_key(
     encryption_key: Optional[str],
     use_keyring: bool,
@@ -95,78 +180,22 @@ def acquire_encryption_key(
     key = None
     using_keyring = False
 
+    # Try explicit key
     if encryption_key:
         key = encryption_key
-        logger.warning(
-            "Using explicit encryption key. For production, use OS keyring."
-        )
+        logger.warning("Using explicit encryption key. For production, use OS keyring.")
+
+    # Try keyring
     elif use_keyring:
-        try:
-            key = get_or_create_keyring_key(keyring_service, keyring_key_name)
-            using_keyring = True
-            logger.info(
-                f"Using OS keyring for key storage: "
-                f"{keyring_service}/{keyring_key_name}"
-            )
-        except KeyringError as e:
-            if require_keyring:
-                raise SecurityError(
-                    f"Keyring required but not available: {e}\n"
-                    "Install keyring backend: pip install keyring"
-                ) from e
-            else:
-                logger.warning(
-                    f"OS keyring backend not configured ({e}), falling back to environment variable. "
-                    "For production security, configure keyring backend."
-                )
-        except ImportError as e:
-            if require_keyring:
-                raise SecurityError(
-                    f"Keyring library required but not installed: {e}\n"
-                    "Install with: pip install keyring"
-                ) from e
-            else:
-                logger.warning(
-                    "Keyring library not installed, falling back to environment variable. "
-                    "For production security, install keyring: pip install keyring"
-                )
-        except (RuntimeError, OSError, AttributeError) as e:
-            logger.error(f"Keyring error: {e}", exc_info=True)
-            if require_keyring:
-                raise SecurityError(
-                    f"Keyring error (keyring required): {e}\n"
-                    "Check keyring configuration and logs"
-                ) from e
-            else:
-                logger.warning(
-                    "Falling back to environment variable due to keyring error. "
-                    "See logs for details."
-                )
-
-    if key is None:
-        key = os.getenv("OAUTH_TOKEN_ENCRYPTION_KEY")
+        key = _try_keyring_acquisition(keyring_service, keyring_key_name, require_keyring)
         if key:
-            logger.warning(
-                "SECURITY: Using environment variable for encryption key. "
-                "For production, use OS keyring (install 'keyring' package)."
-            )
-            env_name = (
-                os.getenv("ENVIRONMENT")
-                or os.getenv("ENV")
-                or os.getenv("APP_ENV")
-                or ""
-            ).lower()
-            if env_name in ("production", "prod"):
-                logger.warning(
-                    "PRODUCTION SECURITY WARNING: Encryption key loaded from "
-                    "environment variable OAUTH_TOKEN_ENCRYPTION_KEY in a "
-                    "production environment (%s). Environment variables are "
-                    "visible in /proc/<pid>/environ, process listings, and "
-                    "may leak into logs or crash dumps. Migrate to OS keyring "
-                    "for compliance (PCI DSS, SOC 2).",
-                    env_name,
-                )
+            using_keyring = True
 
+    # Try environment variable
+    if key is None:
+        key = _try_env_acquisition()
+
+    # Fail if no key found
     if not key:
         raise ValueError(
             "No encryption key available. Options:\n"
@@ -179,6 +208,72 @@ def acquire_encryption_key(
         )
 
     return key, using_keyring
+
+
+def _decrypt_and_parse_token(encrypted: bytes, old_cipher: Fernet) -> Optional[dict]:
+    """Decrypt and parse token data.
+
+    Args:
+        encrypted: Encrypted token bytes
+        old_cipher: Fernet cipher with old key
+
+    Returns:
+        Parsed token dict or None if decryption fails
+    """
+    try:
+        decrypted = old_cipher.decrypt(encrypted)
+        return json.loads(decrypted.decode())
+    except (InvalidToken, json.JSONDecodeError):
+        return None
+
+
+def _re_encrypt_single_token(
+    token_data: dict, new_cipher: Fernet
+) -> Optional[bytes]:
+    """Re-encrypt a single token with new cipher.
+
+    Args:
+        token_data: Decrypted token data
+        new_cipher: Fernet cipher with new key
+
+    Returns:
+        Re-encrypted token bytes or None if processing fails
+    """
+    try:
+        # Handle tokens with expiration
+        if token_data.get(FIELD_EXPIRES_AT):
+            expires_at = datetime.fromisoformat(token_data[FIELD_EXPIRES_AT])
+            expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
+            if expires_in <= 0:
+                return None  # Skip expired tokens
+
+            clean_token = {
+                k: v for k, v in token_data.items()
+                if k not in [FIELD_STORED_AT, FIELD_EXPIRES_AT]
+            }
+            token_with_metadata = {
+                **clean_token,
+                FIELD_STORED_AT: datetime.now(timezone.utc).isoformat(),
+                FIELD_EXPIRES_AT: (
+                    datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                ).isoformat(),
+            }
+        else:
+            # Handle tokens without expiration
+            clean_token = {
+                k: v for k, v in token_data.items()
+                if k not in [FIELD_STORED_AT]
+            }
+            token_with_metadata = {
+                **clean_token,
+                FIELD_STORED_AT: datetime.now(timezone.utc).isoformat(),
+            }
+
+        token_json = json.dumps(token_with_metadata)
+        return new_cipher.encrypt(token_json.encode())
+
+    except (ValueError, TypeError):
+        return None
 
 
 def re_encrypt_tokens(
@@ -203,46 +298,14 @@ def re_encrypt_tokens(
         if not encrypted:
             continue
 
-        try:
-            decrypted = old_cipher.decrypt(encrypted)
-            token_data = json.loads(decrypted.decode())
-        except (InvalidToken, json.JSONDecodeError):
+        # Decrypt and parse
+        token_data = _decrypt_and_parse_token(encrypted, old_cipher)
+        if not token_data:
             continue
 
-        if token_data.get(FIELD_EXPIRES_AT):
-            try:
-                expires_at = datetime.fromisoformat(token_data[FIELD_EXPIRES_AT])
-                expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
-                if expires_in > 0:
-                    clean_token = {
-                        k: v
-                        for k, v in token_data.items()
-                        if k not in [FIELD_STORED_AT, FIELD_EXPIRES_AT]
-                    }
-                    token_with_metadata = {
-                        **clean_token,
-                        FIELD_STORED_AT: datetime.now(timezone.utc).isoformat(),
-                        FIELD_EXPIRES_AT: (
-                            datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                        ).isoformat(),
-                    }
-                    token_json = json.dumps(token_with_metadata)
-                    re_encrypted[user_id] = new_cipher.encrypt(token_json.encode())
-            except (ValueError, TypeError):
-                continue
-        else:
-            try:
-                clean_token = {
-                    k: v for k, v in token_data.items()
-                    if k not in [FIELD_STORED_AT]
-                }
-                token_with_metadata = {
-                    **clean_token,
-                    FIELD_STORED_AT: datetime.now(timezone.utc).isoformat(),
-                }
-                token_json = json.dumps(token_with_metadata)
-                re_encrypted[user_id] = new_cipher.encrypt(token_json.encode())
-            except (ValueError, TypeError):
-                continue
+        # Re-encrypt with new cipher
+        new_encrypted = _re_encrypt_single_token(token_data, new_cipher)
+        if new_encrypted:
+            re_encrypted[user_id] = new_encrypted
 
     return re_encrypted

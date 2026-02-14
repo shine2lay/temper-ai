@@ -216,40 +216,78 @@ class ActionPolicyEngine:
         # Get applicable policies for this action type
         policies = self.registry.get_policies_for_action(context.action_type)
 
+        # Handle no policies case
         if not policies:
-            if self.fail_open:
-                # Explicit opt-in: allow when no policies registered (dev/test only)
-                return EnforcementResult(
-                    allowed=True,
-                    violations=[],
-                    policies_executed=[],
-                    execution_time_ms=0.0,
-                    metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: FAIL_OPEN_KEY},
-                    cache_hit=False
-                )
-            # SECURITY: Fail-closed — deny action when no policies can validate it
-            logger.warning(
-                "No policies registered for action type '%s' — denying action (fail-closed). "
-                "Register policies or set fail_open=True for development.",
-                context.action_type,
-            )
+            no_policies_result = self._handle_no_policies(context.action_type)
+            if no_policies_result:
+                return no_policies_result
+
+        # Execute all policies and collect violations
+        all_violations, policies_executed, cache_hits = await self._execute_policies_async(
+            policies, action, context
+        )
+
+        # Build and return final result
+        return self._build_enforcement_result(
+            all_violations, policies_executed, cache_hits, start_time, context
+        )
+
+    def _handle_no_policies(self, action_type: str) -> Optional[EnforcementResult]:
+        """Handle case when no policies are registered for action type.
+
+        Args:
+            action_type: Type of action being validated
+
+        Returns:
+            EnforcementResult if no policies found, None to continue validation
+        """
+        if self.fail_open:
+            # Explicit opt-in: allow when no policies registered (dev/test only)
             return EnforcementResult(
-                allowed=False,
+                allowed=True,
                 violations=[],
                 policies_executed=[],
                 execution_time_ms=0.0,
-                metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: 'fail_closed'},
+                metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: FAIL_OPEN_KEY},
                 cache_hit=False
             )
+        # SECURITY: Fail-closed — deny action when no policies can validate it
+        logger.warning(
+            "No policies registered for action type '%s' — denying action (fail-closed). "
+            "Register policies or set fail_open=True for development.",
+            action_type,
+        )
+        return EnforcementResult(
+            allowed=False,
+            violations=[],
+            policies_executed=[],
+            execution_time_ms=0.0,
+            metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: 'fail_closed'},
+            cache_hit=False
+        )
 
-        # Execute policies in priority order
+    async def _execute_policies_async(
+        self,
+        policies: List[SafetyPolicy],
+        action: Dict[str, Any],
+        context: PolicyExecutionContext
+    ) -> Tuple[List[SafetyViolation], List[str], int]:
+        """Execute all policies and collect violations.
+
+        Args:
+            policies: List of policies to execute
+            action: Action to validate
+            context: Execution context
+
+        Returns:
+            Tuple of (all_violations, policies_executed, cache_hits)
+        """
         all_violations: List[SafetyViolation] = []
         policies_executed: List[str] = []
         cache_hits = 0
 
         for policy in policies:
             try:
-                # Check cache first (if enabled)
                 cache_key = self._get_cache_key(policy, action, context)
                 cached_result = self._get_cached_result(cache_key) if self.enable_caching else None
 
@@ -258,13 +296,11 @@ class ActionPolicyEngine:
                     cache_hits += 1
                     self._cache_hits += 1
                 else:
-                    # Execute policy validation
                     result = await policy.validate_async(
                         action=action,
                         context=self._context_to_dict(context)
                     )
 
-                    # Cache result (if enabled)
                     if self.enable_caching:
                         self._cache_result(cache_key, result)
                         self._cache_misses += 1
@@ -273,42 +309,86 @@ class ActionPolicyEngine:
                 all_violations.extend(result.violations)
 
                 # Short-circuit on CRITICAL violations (if configured)
-                if self.short_circuit_critical:
-                    if any(v.severity == ViolationSeverity.CRITICAL for v in result.violations):
-                        logger.warning(
-                            f"Short-circuiting on CRITICAL violation from {policy.name}"
-                        )
-                        break
+                if self._should_short_circuit(result.violations):
+                    logger.warning(
+                        f"Short-circuiting on CRITICAL violation from {policy.name}"
+                    )
+                    break
 
             except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
-                # Policy execution error - log and treat as violation for safety
-                logger.error(f"Policy {policy.name} execution failed: {e}", exc_info=True)
-
-                # SECURITY (SA-03): Use generic message to prevent info leakage
-                # Full exception details are logged above at ERROR level with exc_info
-                violation = SafetyViolation(
-                    policy_name=policy.name,
-                    severity=ViolationSeverity.CRITICAL,
-                    message=f"Policy execution error in {policy.name}",
-                    action=str(action),
-                    context=self._context_to_dict(context),
-                    remediation_hint="Check policy implementation for errors",
-                    metadata={'exception_type': type(e).__name__}
-                )
+                violation = self._create_execution_error_violation(policy, action, context, e)
                 all_violations.append(violation)
                 policies_executed.append(policy.name)
 
-        # Determine if action is allowed
-        # Block if any HIGH or CRITICAL severity violations
+        # Log violations to observability (if enabled)
+        if self.log_violations and all_violations:
+            await self._log_violations(all_violations, context)
+
+        return all_violations, policies_executed, cache_hits
+
+    def _should_short_circuit(self, violations: List[SafetyViolation]) -> bool:
+        """Check if we should short-circuit on CRITICAL violations."""
+        return self.short_circuit_critical and any(
+            v.severity == ViolationSeverity.CRITICAL for v in violations
+        )
+
+    def _create_execution_error_violation(
+        self,
+        policy: SafetyPolicy,
+        action: Dict[str, Any],
+        context: PolicyExecutionContext,
+        error: Exception
+    ) -> SafetyViolation:
+        """Create a violation for policy execution errors.
+
+        Args:
+            policy: Policy that failed
+            action: Action being validated
+            context: Execution context
+            error: Exception that occurred
+
+        Returns:
+            SafetyViolation representing the error
+        """
+        logger.error(f"Policy {policy.name} execution failed: {error}", exc_info=True)
+
+        # SECURITY (SA-03): Use generic message to prevent info leakage
+        return SafetyViolation(
+            policy_name=policy.name,
+            severity=ViolationSeverity.CRITICAL,
+            message=f"Policy execution error in {policy.name}",
+            action=str(action),
+            context=self._context_to_dict(context),
+            remediation_hint="Check policy implementation for errors",
+            metadata={'exception_type': type(error).__name__}
+        )
+
+    def _build_enforcement_result(
+        self,
+        all_violations: List[SafetyViolation],
+        policies_executed: List[str],
+        cache_hits: int,
+        start_time: float,
+        context: PolicyExecutionContext
+    ) -> EnforcementResult:
+        """Build final enforcement result.
+
+        Args:
+            all_violations: All violations collected
+            policies_executed: Names of policies executed
+            cache_hits: Number of cache hits
+            start_time: Validation start time
+            context: Execution context
+
+        Returns:
+            EnforcementResult with complete metadata
+        """
+        # Determine if action is allowed (block if any HIGH or CRITICAL)
         blocking_violations = [
             v for v in all_violations
             if v.severity >= ViolationSeverity.HIGH
         ]
         allowed = len(blocking_violations) == 0
-
-        # Log violations to observability (if enabled)
-        if self.log_violations and all_violations:
-            await self._log_violations(all_violations, context)
 
         execution_time = (time.time() - start_time) * MILLISECONDS_PER_SECOND
         self._validations_performed += 1
@@ -347,25 +427,38 @@ class ActionPolicyEngine:
 
         policies = self.registry.get_policies_for_action(context.action_type)
 
+        # Handle no policies case
         if not policies:
-            if self.fail_open:
-                return EnforcementResult(
-                    allowed=True, violations=[], policies_executed=[],
-                    execution_time_ms=0.0,
-                    metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: FAIL_OPEN_KEY},
-                    cache_hit=False,
-                )
-            logger.warning(
-                "No policies registered for action type '%s' — denying action (fail-closed).",
-                context.action_type,
-            )
-            return EnforcementResult(
-                allowed=False, violations=[], policies_executed=[],
-                execution_time_ms=0.0,
-                metadata={'reason': 'no_policies_registered', 'mode': 'fail_closed'},
-                cache_hit=False,
-            )
+            no_policies_result = self._handle_no_policies(context.action_type)
+            if no_policies_result:
+                return no_policies_result
 
+        # Execute all policies and collect violations
+        all_violations, policies_executed, cache_hits = self._execute_policies_sync(
+            policies, action, context
+        )
+
+        # Build and return final result
+        return self._build_enforcement_result(
+            all_violations, policies_executed, cache_hits, start_time, context
+        )
+
+    def _execute_policies_sync(
+        self,
+        policies: List[SafetyPolicy],
+        action: Dict[str, Any],
+        context: PolicyExecutionContext
+    ) -> Tuple[List[SafetyViolation], List[str], int]:
+        """Execute all policies synchronously and collect violations.
+
+        Args:
+            policies: List of policies to execute
+            action: Action to validate
+            context: Execution context
+
+        Returns:
+            Tuple of (all_violations, policies_executed, cache_hits)
+        """
         all_violations: List[SafetyViolation] = []
         policies_executed: List[str] = []
         cache_hits = 0
@@ -391,56 +484,23 @@ class ActionPolicyEngine:
                 policies_executed.append(policy.name)
                 all_violations.extend(result.violations)
 
-                if self.short_circuit_critical:
-                    if any(v.severity == ViolationSeverity.CRITICAL for v in result.violations):
-                        logger.warning(
-                            f"Short-circuiting on CRITICAL violation from {policy.name}"
-                        )
-                        break
+                # Short-circuit on CRITICAL violations (if configured)
+                if self._should_short_circuit(result.violations):
+                    logger.warning(
+                        f"Short-circuiting on CRITICAL violation from {policy.name}"
+                    )
+                    break
 
             except (AttributeError, TypeError, ValueError, KeyError, RuntimeError, CircuitBreakerError) as e:
-                logger.error(f"Policy {policy.name} execution failed: {e}", exc_info=True)
-                violation = SafetyViolation(
-                    policy_name=policy.name,
-                    severity=ViolationSeverity.CRITICAL,
-                    message=f"Policy execution error in {policy.name}",
-                    action=str(action),
-                    context=self._context_to_dict(context),
-                    remediation_hint="Check policy implementation for errors",
-                    metadata={'exception_type': type(e).__name__}
-                )
+                violation = self._create_execution_error_violation(policy, action, context, e)
                 all_violations.append(violation)
                 policies_executed.append(policy.name)
 
-        blocking_violations = [
-            v for v in all_violations
-            if v.severity >= ViolationSeverity.HIGH
-        ]
-        allowed = len(blocking_violations) == 0
-
+        # Log violations to observability (if enabled)
         if self.log_violations and all_violations:
             self._log_violations_sync(all_violations, context)
 
-        execution_time = (time.time() - start_time) * MILLISECONDS_PER_SECOND
-        self._validations_performed += 1
-
-        return EnforcementResult(
-            allowed=allowed,
-            violations=all_violations,
-            policies_executed=policies_executed,
-            execution_time_ms=execution_time,
-            metadata={
-                'total_violations': len(all_violations),
-                'critical_violations': len([v for v in all_violations if v.severity == ViolationSeverity.CRITICAL]),
-                'high_violations': len([v for v in all_violations if v.severity == ViolationSeverity.HIGH]),
-                'medium_violations': len([v for v in all_violations if v.severity == ViolationSeverity.MEDIUM]),
-                CACHE_HITS_KEY: cache_hits,
-                'short_circuited': self.short_circuit_critical and any(
-                    v.severity == ViolationSeverity.CRITICAL for v in all_violations
-                )
-            },
-            cache_hit=cache_hits > 0
-        )
+        return all_violations, policies_executed, cache_hits
 
     def _log_violations_sync(
         self,

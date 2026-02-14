@@ -10,6 +10,7 @@ Contains:
 """
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -61,156 +62,189 @@ _BACKEND_TYPE_SQL = "sql"
 _DEFAULT_VERSION = "1.0"
 
 
-def track_safety_violation(
-    workflow_id: Optional[str],
-    stage_id: Optional[str],
-    agent_id: Optional[str],
-    violation_severity: str,
-    violation_message: str,
-    policy_name: str,
-    service_name: Optional[str] = None,
-    context: Optional[Dict[str, Any]] = None,
-    timestamp: Optional[datetime] = None,
-) -> None:
-    """Track safety violation in SQL database."""
-    timestamp_utc: datetime
-    if timestamp is None:
-        timestamp_utc = datetime.now(timezone.utc)
-    else:
-        result = ensure_utc(timestamp)
-        if result is None:
-            raise ValueError("Timestamp conversion failed")
-        timestamp_utc = result
+# ========== Parameter Bundling Dataclasses ==========
 
-    # Build metadata
-    violation_metadata = {
-        "severity": violation_severity,
-        "policy": policy_name,
-        "service": service_name,
-        "message": violation_message,
-        "context": context or {},
-        "workflow_id": workflow_id,
-        "stage_id": stage_id,
-        "agent_id": agent_id,
+
+@dataclass
+class SafetyViolationData:
+    """Bundle parameters for safety violation tracking."""
+    workflow_id: Optional[str]
+    stage_id: Optional[str]
+    agent_id: Optional[str]
+    violation_severity: str
+    violation_message: str
+    policy_name: str
+    service_name: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+    timestamp: Optional[datetime] = None
+
+
+@dataclass
+class CollaborationEventParams:
+    """Bundle parameters for collaboration event tracking."""
+    stage_id: str
+    event_type: str
+    agents_involved: List[str]
+    event_data: Optional[Dict[str, Any]] = None
+    round_number: Optional[int] = None
+    resolution_strategy: Optional[str] = None
+    outcome: Optional[str] = None
+    confidence_score: Optional[float] = None
+    extra_metadata: Optional[Dict[str, Any]] = None
+    timestamp: Optional[datetime] = None
+
+
+def _ensure_timestamp_utc(timestamp: Optional[datetime]) -> datetime:
+    """Ensure timestamp is in UTC timezone."""
+    if timestamp is None:
+        return datetime.now(timezone.utc)
+    result = ensure_utc(timestamp)
+    if result is None:
+        raise ValueError("Timestamp conversion failed")
+    return result
+
+
+def _build_violation_metadata(data: SafetyViolationData, timestamp_utc: datetime) -> Dict[str, Any]:
+    """Build violation metadata dictionary."""
+    return {
+        "severity": data.violation_severity,
+        "policy": data.policy_name,
+        "service": data.service_name,
+        "message": data.violation_message,
+        "context": data.context or {},
+        "workflow_id": data.workflow_id,
+        "stage_id": data.stage_id,
+        "agent_id": data.agent_id,
         "timestamp": timestamp_utc.isoformat()
     }
 
+
+def _update_execution_metadata(
+    metadata: Dict[str, Any],
+    violation_metadata: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Update execution metadata with violation info."""
+    if _KEY_SAFETY_VIOLATIONS not in metadata:
+        metadata[_KEY_SAFETY_VIOLATIONS] = []
+    metadata[_KEY_SAFETY_VIOLATIONS].append(violation_metadata)
+    metadata[_KEY_HAS_SAFETY_VIOLATIONS] = True
+    metadata[_KEY_SAFETY_VIOLATION_COUNT] = len(metadata[_KEY_SAFETY_VIOLATIONS])
+    return metadata
+
+
+def track_safety_violation(data: SafetyViolationData) -> None:
+    """Track safety violation in SQL database.
+
+    Args:
+        data: SafetyViolationData with all violation parameters
+    """
+    timestamp_utc = _ensure_timestamp_utc(data.timestamp)
+    violation_metadata = _build_violation_metadata(data, timestamp_utc)
+
     with get_session() as session:
         # Update agent execution with violation (if agent context exists)
-        if agent_id:
-            statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+        if data.agent_id:
+            statement = select(AgentExecution).where(AgentExecution.id == data.agent_id)
             agent = session.exec(statement).first()
             if agent:
                 metadata = agent.extra_metadata or {}
-                if _KEY_SAFETY_VIOLATIONS not in metadata:
-                    metadata[_KEY_SAFETY_VIOLATIONS] = []
-                metadata[_KEY_SAFETY_VIOLATIONS].append(violation_metadata)
-                metadata[_KEY_HAS_SAFETY_VIOLATIONS] = True
-                metadata[_KEY_SAFETY_VIOLATION_COUNT] = len(metadata[_KEY_SAFETY_VIOLATIONS])
-                agent.extra_metadata = metadata
+                agent.extra_metadata = _update_execution_metadata(metadata, violation_metadata)
 
         # Update stage execution with violation (if stage context exists)
-        if stage_id:
-            stage_stmt = select(StageExecution).where(StageExecution.id == stage_id)
+        if data.stage_id:
+            stage_stmt = select(StageExecution).where(StageExecution.id == data.stage_id)
             stage = session.exec(stage_stmt).first()
             if stage:
                 stage_metadata = stage.extra_metadata or {}
-                if _KEY_SAFETY_VIOLATIONS not in stage_metadata:
-                    stage_metadata[_KEY_SAFETY_VIOLATIONS] = []
-                stage_metadata[_KEY_SAFETY_VIOLATIONS].append(violation_metadata)
-                stage_metadata[_KEY_HAS_SAFETY_VIOLATIONS] = True
-                stage_metadata[_KEY_SAFETY_VIOLATION_COUNT] = len(stage_metadata[_KEY_SAFETY_VIOLATIONS])
-                stage.extra_metadata = stage_metadata
+                stage.extra_metadata = _update_execution_metadata(stage_metadata, violation_metadata)
 
         # Update workflow execution with violation (if workflow context exists)
-        if workflow_id:
-            wf_stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
+        if data.workflow_id:
+            wf_stmt = select(WorkflowExecution).where(WorkflowExecution.id == data.workflow_id)
             workflow = session.exec(wf_stmt).first()
             if workflow:
                 wf_metadata = workflow.extra_metadata or {}
-                if _KEY_SAFETY_VIOLATIONS not in wf_metadata:
-                    wf_metadata[_KEY_SAFETY_VIOLATIONS] = []
-                wf_metadata[_KEY_SAFETY_VIOLATIONS].append(violation_metadata)
-                wf_metadata[_KEY_HAS_SAFETY_VIOLATIONS] = True
-                wf_metadata[_KEY_SAFETY_VIOLATION_COUNT] = len(wf_metadata[_KEY_SAFETY_VIOLATIONS])
-                workflow.extra_metadata = wf_metadata
+                workflow.extra_metadata = _update_execution_metadata(wf_metadata, violation_metadata)
 
         session.commit()
 
 
-def track_collaboration_event(
-    stage_id: str,
-    event_type: str,
-    agents_involved: List[str],
-    event_data: Optional[Dict[str, Any]] = None,
-    round_number: Optional[int] = None,
-    resolution_strategy: Optional[str] = None,
-    outcome: Optional[str] = None,
-    confidence_score: Optional[float] = None,
-    extra_metadata: Optional[Dict[str, Any]] = None,
-    timestamp: Optional[datetime] = None,
-) -> str:
+def _create_collaboration_event_record(
+    event_id: str,
+    data: CollaborationEventParams,
+    timestamp: datetime
+) -> CollaborationEvent:
+    """Create a CollaborationEvent ORM object."""
+    return CollaborationEvent(
+        id=event_id,
+        stage_execution_id=data.stage_id,
+        event_type=data.event_type,
+        timestamp=timestamp,
+        round_number=data.round_number,
+        agents_involved=data.agents_involved,
+        event_data=data.event_data,
+        resolution_strategy=data.resolution_strategy,
+        outcome=data.outcome,
+        confidence_score=data.confidence_score,
+        extra_metadata=data.extra_metadata,
+    )
+
+
+def _handle_collaboration_integrity_error(
+    e: IntegrityError,
+    event_id: str,
+    data: CollaborationEventParams
+) -> None:
+    """Handle IntegrityError from collaboration event tracking."""
+    # Robust foreign key violation detection (supports multiple databases)
+    error_msg = str(e).lower()
+    orig_error = str(e.orig).lower() if hasattr(e, 'orig') else ""
+    is_fk_violation = (
+        any(pat in error_msg for pat in _FK_ERROR_PATTERNS) or
+        any(pat in orig_error for pat in _FK_ERROR_PATTERNS)
+    )
+
+    if is_fk_violation:
+        logger.warning(
+            f"Foreign key violation: stage {data.stage_id} not found for collaboration event {event_id}",
+            extra={"event_id": event_id, "stage_id": data.stage_id, "event_type": data.event_type}
+        )
+    else:
+        logger.error(
+            f"Database integrity error tracking collaboration event {event_id}: {e}",
+            exc_info=True,
+            extra={"event_id": event_id, "event_type": data.event_type}
+        )
+
+
+def track_collaboration_event(data: CollaborationEventParams) -> str:
     """Track collaboration event to SQL database.
+
+    Args:
+        data: CollaborationEventParams with all event parameters
 
     Returns:
         str: ID of created collaboration event record
     """
-    # Generate unique event ID
     event_id = f"{_COLLAB_ID_PREFIX}{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 
     # Use current timestamp if not provided
-    if timestamp is None:
-        timestamp = datetime.now(timezone.utc)
-    else:
-        timestamp = ensure_utc(timestamp)
+    timestamp = _ensure_timestamp_utc(data.timestamp)
 
-    # Create collaboration event record
-    event = CollaborationEvent(
-        id=event_id,
-        stage_execution_id=stage_id,
-        event_type=event_type,
-        timestamp=timestamp,
-        round_number=round_number,
-        agents_involved=agents_involved,
-        event_data=event_data,
-        resolution_strategy=resolution_strategy,
-        outcome=outcome,
-        confidence_score=confidence_score,
-        extra_metadata=extra_metadata,
-    )
+    event = _create_collaboration_event_record(event_id, data, timestamp)
 
     with get_session() as session:
         try:
             session.add(event)
             session.commit()
             logger.debug(
-                f"Tracked collaboration event {event_id}: type={event_type}, stage={stage_id}"
+                f"Tracked collaboration event {event_id}: type={data.event_type}, stage={data.stage_id}"
             )
             return event_id
 
         except IntegrityError as e:
             session.rollback()
-
-            # Robust foreign key violation detection (supports multiple databases)
-            error_msg = str(e).lower()
-            orig_error = str(e.orig).lower() if hasattr(e, 'orig') else ""
-            is_fk_violation = (
-                any(pat in error_msg for pat in _FK_ERROR_PATTERNS) or
-                any(pat in orig_error for pat in _FK_ERROR_PATTERNS)
-            )
-
-            if is_fk_violation:
-                logger.warning(
-                    f"Foreign key violation: stage {stage_id} not found for collaboration event {event_id}",
-                    extra={"event_id": event_id, "stage_id": stage_id, "event_type": event_type}
-                )
-            else:
-                logger.error(
-                    f"Database integrity error tracking collaboration event {event_id}: {e}",
-                    exc_info=True,
-                    extra={"event_id": event_id, "event_type": event_type}
-                )
-
+            _handle_collaboration_integrity_error(e, event_id, data)
             return event_id
 
         except SQLAlchemyError as e:
@@ -218,7 +252,7 @@ def track_collaboration_event(
             logger.error(
                 f"Database error tracking collaboration event: {e}",
                 exc_info=True,
-                extra={"event_id": event_id, "event_type": event_type, "stage_id": stage_id}
+                extra={"event_id": event_id, "event_type": data.event_type, "stage_id": data.stage_id}
             )
             return event_id
 
@@ -457,6 +491,48 @@ def _collab_to_dict(event: Any) -> Dict[str, Any]:
     }  # Collab fields are event-specific, not standard ObservabilityFields
 
 
+def _build_agent_dict_with_children(session: Any, agent: Any) -> Dict[str, Any]:
+    """Build agent dict with its LLM and tool calls."""
+    llm_calls = session.exec(
+        select(LLMCall)
+        .where(LLMCall.agent_execution_id == agent.id)
+        .order_by(LLMCall.start_time)  # type: ignore[arg-type]
+    ).all()
+    tool_calls = session.exec(
+        select(ToolExecution)
+        .where(ToolExecution.agent_execution_id == agent.id)
+        .order_by(ToolExecution.start_time)  # type: ignore[arg-type]
+    ).all()
+    return _agent_to_dict(
+        agent,
+        [_llm_to_dict(llm) for llm in llm_calls],
+        [_tool_to_dict(t) for t in tool_calls],
+    )
+
+
+def _build_stage_dict_with_children(session: Any, stage: Any) -> Dict[str, Any]:
+    """Build stage dict with its agents and collaboration events."""
+    agents = session.exec(
+        select(AgentExecution)
+        .where(AgentExecution.stage_execution_id == stage.id)
+        .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
+    ).all()
+
+    agent_dicts = [_build_agent_dict_with_children(session, agent) for agent in agents]
+
+    collab_events = session.exec(
+        select(CollaborationEvent)
+        .where(CollaborationEvent.stage_execution_id == stage.id)
+        .order_by(CollaborationEvent.timestamp)  # type: ignore[arg-type]
+    ).all()
+
+    return _stage_to_dict(
+        stage,
+        agent_dicts,
+        [_collab_to_dict(e) for e in collab_events],
+    )
+
+
 def read_get_workflow(workflow_id: str) -> Optional[Dict[str, Any]]:
     """Get workflow execution with full hierarchy."""
     with get_session() as session:
@@ -472,47 +548,7 @@ def read_get_workflow(workflow_id: str) -> Optional[Dict[str, Any]]:
             .order_by(StageExecution.start_time)  # type: ignore[arg-type]
         ).all()
 
-        stage_dicts = []
-        for stage in stages:
-            agents = session.exec(
-                select(AgentExecution)
-                .where(AgentExecution.stage_execution_id == stage.id)
-                .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
-            ).all()
-
-            agent_dicts = []
-            for agent in agents:
-                llm_calls = session.exec(
-                    select(LLMCall)
-                    .where(LLMCall.agent_execution_id == agent.id)
-                    .order_by(LLMCall.start_time)  # type: ignore[arg-type]
-                ).all()
-                tool_calls = session.exec(
-                    select(ToolExecution)
-                    .where(ToolExecution.agent_execution_id == agent.id)
-                    .order_by(ToolExecution.start_time)  # type: ignore[arg-type]
-                ).all()
-                agent_dicts.append(
-                    _agent_to_dict(
-                        agent,
-                        [_llm_to_dict(llm) for llm in llm_calls],
-                        [_tool_to_dict(t) for t in tool_calls],
-                    )
-                )
-
-            collab_events = session.exec(
-                select(CollaborationEvent)
-                .where(CollaborationEvent.stage_execution_id == stage.id)
-                .order_by(CollaborationEvent.timestamp)  # type: ignore[arg-type]
-            ).all()
-
-            stage_dicts.append(
-                _stage_to_dict(
-                    stage,
-                    agent_dicts,
-                    [_collab_to_dict(e) for e in collab_events],
-                )
-            )
+        stage_dicts = [_build_stage_dict_with_children(session, stage) for stage in stages]
 
         return _workflow_to_dict(wf, stage_dicts)
 
@@ -657,6 +693,71 @@ def get_backend_stats() -> Dict[str, Any]:
         }
 
 
+def _create_llm_call_models(llm_calls: List[Any]) -> List[LLMCall]:
+    """Create LLMCall ORM objects from buffered calls."""
+    return [
+        LLMCall(
+            id=call.llm_call_id,
+            agent_execution_id=call.agent_id,
+            provider=call.provider,
+            model=call.model,
+            prompt=call.prompt,
+            response=call.response,
+            prompt_tokens=call.prompt_tokens,
+            completion_tokens=call.completion_tokens,
+            total_tokens=call.prompt_tokens + call.completion_tokens,
+            latency_ms=call.latency_ms,
+            estimated_cost_usd=call.estimated_cost_usd,
+            temperature=call.temperature,
+            max_tokens=call.max_tokens,
+            status=call.status,
+            error_message=call.error_message,
+            start_time=ensure_utc(call.start_time),
+            retry_count=0
+        )
+        for call in llm_calls
+    ]
+
+
+def _create_tool_execution_models(tool_calls: List[Any]) -> List[ToolExecution]:
+    """Create ToolExecution ORM objects from buffered calls."""
+    tool_models = []
+    for call in tool_calls:
+        start_time_utc = ensure_utc(call.start_time)
+        if start_time_utc is None:
+            raise ValueError("Tool call start_time cannot be None")
+        tool_models.append(ToolExecution(
+            id=call.tool_execution_id,
+            agent_execution_id=call.agent_id,
+            tool_name=call.tool_name,
+            input_params=call.input_params,
+            output_data=call.output_data,
+            start_time=start_time_utc,
+            end_time=start_time_utc + timedelta(seconds=call.duration_seconds),
+            duration_seconds=call.duration_seconds,
+            status=call.status,
+            error_message=call.error_message,
+            safety_checks_applied=call.safety_checks,
+            approval_required=call.approval_required,
+            retry_count=0
+        ))
+    return tool_models
+
+
+def _batch_update_agent_metrics(session: Any, agent_metrics: Dict[str, Any]) -> None:
+    """Update agent metrics in batch."""
+    for agent_id, metrics in agent_metrics.items():
+        statement = select(AgentExecution).where(AgentExecution.id == agent_id)
+        agent = session.exec(statement).first()
+        if agent:
+            agent.num_llm_calls = (agent.num_llm_calls or 0) + metrics.num_llm_calls
+            agent.num_tool_calls = (agent.num_tool_calls or 0) + metrics.num_tool_calls
+            agent.total_tokens = (agent.total_tokens or 0) + metrics.total_tokens
+            agent.prompt_tokens = (agent.prompt_tokens or 0) + metrics.prompt_tokens
+            agent.completion_tokens = (agent.completion_tokens or 0) + metrics.completion_tokens
+            agent.estimated_cost_usd = (agent.estimated_cost_usd or 0) + metrics.estimated_cost_usd
+
+
 def flush_buffer(
     llm_calls: List[Any],
     tool_calls: List[Any],
@@ -669,53 +770,13 @@ def flush_buffer(
     with get_session() as session:
         # Batch insert LLM calls
         if llm_calls:
-            llm_models = [
-                LLMCall(
-                    id=call.llm_call_id,
-                    agent_execution_id=call.agent_id,
-                    provider=call.provider,
-                    model=call.model,
-                    prompt=call.prompt,
-                    response=call.response,
-                    prompt_tokens=call.prompt_tokens,
-                    completion_tokens=call.completion_tokens,
-                    total_tokens=call.prompt_tokens + call.completion_tokens,
-                    latency_ms=call.latency_ms,
-                    estimated_cost_usd=call.estimated_cost_usd,
-                    temperature=call.temperature,
-                    max_tokens=call.max_tokens,
-                    status=call.status,
-                    error_message=call.error_message,
-                    start_time=ensure_utc(call.start_time),
-                    retry_count=0
-                )
-                for call in llm_calls
-            ]
+            llm_models = _create_llm_call_models(llm_calls)
             session.add_all(llm_models)
             logger.debug(f"Batch inserted {len(llm_models)} LLM calls")
 
         # Batch insert tool calls
         if tool_calls:
-            tool_models = []
-            for call in tool_calls:
-                start_time_utc = ensure_utc(call.start_time)
-                if start_time_utc is None:
-                    raise ValueError("Tool call start_time cannot be None")
-                tool_models.append(ToolExecution(
-                    id=call.tool_execution_id,
-                    agent_execution_id=call.agent_id,
-                    tool_name=call.tool_name,
-                    input_params=call.input_params,
-                    output_data=call.output_data,
-                    start_time=start_time_utc,
-                    end_time=start_time_utc + timedelta(seconds=call.duration_seconds),
-                    duration_seconds=call.duration_seconds,
-                    status=call.status,
-                    error_message=call.error_message,
-                    safety_checks_applied=call.safety_checks,
-                    approval_required=call.approval_required,
-                    retry_count=0
-                ))
+            tool_models = _create_tool_execution_models(tool_calls)
             session.add_all(tool_models)
             logger.debug(f"Batch inserted {len(tool_models)} tool calls")
 
@@ -724,16 +785,7 @@ def flush_buffer(
 
         # Batch update agent metrics
         if agent_metrics:
-            for agent_id, metrics in agent_metrics.items():
-                statement = select(AgentExecution).where(AgentExecution.id == agent_id)
-                agent = session.exec(statement).first()
-                if agent:
-                    agent.num_llm_calls = (agent.num_llm_calls or 0) + metrics.num_llm_calls
-                    agent.num_tool_calls = (agent.num_tool_calls or 0) + metrics.num_tool_calls
-                    agent.total_tokens = (agent.total_tokens or 0) + metrics.total_tokens
-                    agent.prompt_tokens = (agent.prompt_tokens or 0) + metrics.prompt_tokens
-                    agent.completion_tokens = (agent.completion_tokens or 0) + metrics.completion_tokens
-                    agent.estimated_cost_usd = (agent.estimated_cost_usd or 0) + metrics.estimated_cost_usd
+            _batch_update_agent_metrics(session, agent_metrics)
             session.commit()
             logger.debug(f"Batch updated {len(agent_metrics)} agent metrics")
 
@@ -774,31 +826,42 @@ class SQLDelegatedMethodsMixin:
         return read_get_tool_call(tool_call_id)
 
     def track_safety_violation(
-        self, workflow_id: Optional[str], stage_id: Optional[str], agent_id: Optional[str],
-        violation_severity: str, violation_message: str, policy_name: str,
-        service_name: Optional[str] = None, context: Optional[Dict[str, Any]] = None,
-        timestamp: Optional[datetime] = None
+        self, violation_severity: str, violation_message: str, policy_name: str,
+        data: Optional["SafetyViolationData"] = None
     ) -> None:
         """Track safety violation."""
-        track_safety_violation(
-            workflow_id, stage_id, agent_id, violation_severity,
-            violation_message, policy_name, service_name, context, timestamp
+        from src.observability.backend import SafetyViolationData  # noqa: F811
+        violation_data = SafetyViolationData(
+            workflow_id=data.workflow_id if data else None,
+            stage_id=data.stage_id if data else None,
+            agent_id=data.agent_id if data else None,
+            violation_severity=violation_severity,
+            violation_message=violation_message,
+            policy_name=policy_name,
+            service_name=data.service_name if data else None,
+            context=data.context if data else None,
+            timestamp=data.timestamp if data else None
         )
+        track_safety_violation(violation_data)
 
     def track_collaboration_event(
         self, stage_id: str, event_type: str, agents_involved: List[str],
-        event_data: Optional[Dict[str, Any]] = None, round_number: Optional[int] = None,
-        resolution_strategy: Optional[str] = None, outcome: Optional[str] = None,
-        confidence_score: Optional[float] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
-        timestamp: Optional[datetime] = None
+        data: Optional[Any] = None
     ) -> str:
         """Track collaboration event."""
-        return track_collaboration_event(
-            stage_id, event_type, agents_involved, event_data,
-            round_number, resolution_strategy, outcome, confidence_score,
-            extra_metadata, timestamp
+        collab_data = CollaborationEventParams(
+            stage_id=stage_id,
+            event_type=event_type,
+            agents_involved=agents_involved,
+            event_data=data.event_data if data else None,
+            round_number=data.round_number if data else None,
+            resolution_strategy=data.resolution_strategy if data else None,
+            outcome=data.outcome if data else None,
+            confidence_score=data.confidence_score if data else None,
+            extra_metadata=data.extra_metadata if data else None,
+            timestamp=data.timestamp if data else None
         )
+        return track_collaboration_event(collab_data)
 
     def cleanup_old_records(self, retention_days: int, dry_run: bool = False) -> Dict[str, int]:
         """Clean up old records."""

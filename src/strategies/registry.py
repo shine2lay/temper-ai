@@ -108,6 +108,40 @@ class StrategyRegistry:
                     self._initialize_defaults()
                     StrategyRegistry._initialized = True
 
+    def _register_strategy(self, names: List[str], module_path: str, class_name: str) -> None:
+        """Register a strategy with one or more names.
+
+        Args:
+            names: Strategy names (e.g., ["debate", "debate_and_synthesize"])
+            module_path: Python module path (e.g., "src.strategies.debate")
+            class_name: Class name to import (e.g., "DebateAndSynthesize")
+        """
+        try:
+            module = __import__(module_path, fromlist=[class_name])
+            strategy_class = getattr(module, class_name)
+            for name in names:
+                self._strategies[name] = strategy_class
+                self._default_strategies.add(name)
+        except ImportError as exc:
+            logger.warning("Could not import %s from %s: %s", class_name, module_path, exc)
+        except AttributeError as exc:
+            logger.warning("Could not find %s in %s: %s", class_name, module_path, exc)
+
+    def _register_resolvers(self, resolvers: Dict[str, tuple]) -> None:
+        """Register multiple resolvers from module definitions.
+
+        Args:
+            resolvers: Dict mapping name -> (module_path, class_name)
+        """
+        for name, (module_path, class_name) in resolvers.items():
+            try:
+                module = __import__(module_path, fromlist=[class_name])
+                resolver_class = getattr(module, class_name)
+                self._resolvers[name] = resolver_class
+                self._default_resolvers.add(name)
+            except (ImportError, AttributeError) as exc:
+                logger.warning("Could not import %s from %s: %s", class_name, module_path, exc)
+
     def _initialize_defaults(self) -> None:
         """Register default strategies and resolvers.
 
@@ -117,66 +151,26 @@ class StrategyRegistry:
         self._default_strategies.clear()
         self._default_resolvers.clear()
 
-        # Import here to avoid circular dependencies
-        try:
-            from src.strategies.consensus import ConsensusStrategy
-            self._strategies[STRATEGY_NAME_CONSENSUS] = ConsensusStrategy
-            self._default_strategies.add(STRATEGY_NAME_CONSENSUS)
-        except ImportError as exc:
-            logger.warning("Could not import ConsensusStrategy: %s", exc)
+        # Register strategies (data-driven)
+        strategies = [
+            ([STRATEGY_NAME_CONSENSUS], "src.strategies.consensus", "ConsensusStrategy"),
+            (["debate", "debate_and_synthesize", "llm_debate_and_synthesize"],
+             "src.strategies.debate", "DebateAndSynthesize"),
+            (["dialogue"], "src.strategies.dialogue", "DialogueOrchestrator"),
+            (["multi_round"], "src.strategies.multi_round", "MultiRoundStrategy"),
+            (["leader"], "src.strategies.leader", "LeaderCollaborationStrategy"),
+        ]
+        for names, module_path, class_name in strategies:
+            self._register_strategy(names, module_path, class_name)
 
-        try:
-            from src.strategies.debate import DebateAndSynthesize
-            self._strategies["debate"] = DebateAndSynthesize
-            self._strategies["debate_and_synthesize"] = DebateAndSynthesize
-            self._strategies["llm_debate_and_synthesize"] = DebateAndSynthesize
-            self._default_strategies.add("debate")
-            self._default_strategies.add("debate_and_synthesize")
-            self._default_strategies.add("llm_debate_and_synthesize")
-        except ImportError as exc:
-            logger.warning("Could not import DebateAndSynthesize: %s", exc)
-
-        try:
-            from src.strategies.dialogue import DialogueOrchestrator
-            self._strategies["dialogue"] = DialogueOrchestrator
-            self._default_strategies.add("dialogue")
-        except ImportError as exc:
-            logger.warning("Could not import DialogueOrchestrator: %s", exc)
-
-        try:
-            from src.strategies.multi_round import MultiRoundStrategy
-            self._strategies["multi_round"] = MultiRoundStrategy
-            self._default_strategies.add("multi_round")
-        except ImportError as exc:
-            logger.warning("Could not import MultiRoundStrategy: %s", exc)
-
-        try:
-            from src.strategies.leader import LeaderCollaborationStrategy
-            self._strategies["leader"] = LeaderCollaborationStrategy
-            self._default_strategies.add("leader")
-        except ImportError as exc:
-            logger.warning("Could not import LeaderCollaborationStrategy: %s", exc)
-
-        # Register default resolvers
-        try:
-            from src.strategies.conflict_resolution import (
-                HighestConfidenceResolver,
-                RandomTiebreakerResolver,
-            )
-            from src.strategies.merit_weighted import HumanEscalationResolver, MeritWeightedResolver
-            self._resolvers[STRATEGY_NAME_MERIT_WEIGHTED] = MeritWeightedResolver
-            self._resolvers["highest_confidence"] = HighestConfidenceResolver
-            self._resolvers["random_tiebreaker"] = RandomTiebreakerResolver
-            self._resolvers["human_escalation"] = HumanEscalationResolver
-
-            self._default_resolvers.update([
-                STRATEGY_NAME_MERIT_WEIGHTED,
-                "highest_confidence",
-                "random_tiebreaker",
-                "human_escalation"
-            ])
-        except ImportError as exc:
-            logger.warning("Could not import default resolvers: %s", exc)
+        # Register resolvers (data-driven)
+        resolvers = {
+            STRATEGY_NAME_MERIT_WEIGHTED: ("src.strategies.merit_weighted", "MeritWeightedResolver"),
+            "highest_confidence": ("src.strategies.conflict_resolution", "HighestConfidenceResolver"),
+            "random_tiebreaker": ("src.strategies.conflict_resolution", "RandomTiebreakerResolver"),
+            "human_escalation": ("src.strategies.merit_weighted", "HumanEscalationResolver"),
+        }
+        self._register_resolvers(resolvers)
 
     def register_strategy(
         self,

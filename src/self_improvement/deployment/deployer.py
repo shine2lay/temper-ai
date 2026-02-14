@@ -103,6 +103,26 @@ class ConfigDeployer:
             ValueError: If config validation fails or safety checks block deployment
             PermissionError: If approval is required but not granted
         """
+        # Pre-deployment checks
+        current_config = self._pre_deploy_checks(agent_name, new_config, workflow_id, deployed_by)
+
+        # Execute deployment
+        deployment = self._execute_deployment(
+            agent_name, current_config, new_config, experiment_id, deployed_by
+        )
+
+        logger.info(
+            f"Deployed new config for {agent_name} (deployment_id={deployment.id})"
+        )
+
+    def _pre_deploy_checks(
+        self,
+        agent_name: str,
+        new_config: SIOptimizationConfig,
+        workflow_id: Optional[str],
+        deployed_by: str
+    ) -> SIOptimizationConfig:
+        """Run pre-deployment validation and approval checks."""
         # Validate new config
         if not self._validate_config(new_config):
             raise ValueError("Invalid config: missing required fields")
@@ -144,7 +164,17 @@ class ConfigDeployer:
 
                 logger.info(f"Approval granted for config deployment: {agent_name}")
 
-        # Create deployment record
+        return current_config
+
+    def _execute_deployment(
+        self,
+        agent_name: str,
+        current_config: SIOptimizationConfig,
+        new_config: SIOptimizationConfig,
+        experiment_id: Optional[str],
+        deployed_by: str
+    ) -> ConfigDeployment:
+        """Execute the deployment atomically."""
         deployment = ConfigDeployment(
             id=generate_id(),
             agent_name=agent_name,
@@ -157,15 +187,10 @@ class ConfigDeployer:
 
         # Store deployment and update config atomically
         with self.db.transaction() as conn:
-            # Store deployment record
             self._store_deployment(conn, deployment)
-
-            # Update agent config (atomic operation)
             self._update_agent_config(conn, agent_name, new_config)
 
-        logger.info(
-            f"Deployed new config for {agent_name} (deployment_id={deployment.id})"
-        )
+        return deployment
 
     def rollback(self, agent_name: str, rollback_reason: str = "Manual rollback") -> None:
         """
@@ -359,7 +384,29 @@ class ConfigDeployer:
             True if approved, False if rejected/timeout
         """
         # Create approval request
-        approval_request = self.approval_workflow.request_approval(  # type: ignore[union-attr]
+        approval_request = self._create_approval_request(
+            agent_name, old_config, new_config, enforcement_result,
+            deployed_by, approval_timeout_minutes
+        )
+
+        logger.info(
+            f"Approval requested for config deployment: {agent_name} (request_id={approval_request.id})"
+        )
+
+        # Poll for approval decision
+        return self._poll_for_approval(approval_request.id, agent_name, approval_timeout_minutes)
+
+    def _create_approval_request(
+        self,
+        agent_name: str,
+        old_config: SIOptimizationConfig,
+        new_config: SIOptimizationConfig,
+        enforcement_result: Any,
+        deployed_by: str,
+        approval_timeout_minutes: int
+    ) -> Any:
+        """Create approval request with all required metadata."""
+        return self.approval_workflow.request_approval(  # type: ignore[union-attr]
             action={
                 "type": "config_deployment",
                 "agent_name": agent_name,
@@ -383,29 +430,24 @@ class ConfigDeployer:
             }
         )
 
-        logger.info(
-            f"Approval requested for config deployment: {agent_name} (request_id={approval_request.id})"
-        )
-
-        # Wait for approval decision (poll every second)
+    def _poll_for_approval(
+        self, request_id: str, agent_name: str, timeout_minutes: int
+    ) -> bool:
+        """Poll for approval decision until timeout."""
         start_time = time.time()
-        max_wait_seconds = approval_timeout_minutes * 60
+        max_wait_seconds = timeout_minutes * 60
         poll_interval = 1.0
 
         while time.time() - start_time < max_wait_seconds:
-            if self.approval_workflow.is_approved(approval_request.id):  # type: ignore[union-attr]
+            if self.approval_workflow.is_approved(request_id):  # type: ignore[union-attr]
                 return True
-            if self.approval_workflow.is_rejected(approval_request.id):  # type: ignore[union-attr]
-                logger.warning(
-                    f"Config deployment rejected for {agent_name}: "
-                    f"{approval_request.decision_reason}"
-                )
+            if self.approval_workflow.is_rejected(request_id):  # type: ignore[union-attr]
+                logger.warning(f"Config deployment rejected for {agent_name}")
                 return False
             time.sleep(poll_interval)  # Intentional blocking: polling for approval decision in sync method
 
-        # Timeout - approval not granted in time
         logger.warning(
-            f"Config deployment approval timeout for {agent_name} after {approval_timeout_minutes} minutes"
+            f"Config deployment approval timeout for {agent_name} after {timeout_minutes} minutes"
         )
         return False
 

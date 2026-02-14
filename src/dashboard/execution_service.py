@@ -250,6 +250,48 @@ class WorkflowExecutionService:
 
             logger.exception("Workflow execution failed: %s", execution_id)
 
+    def _setup_workflow_infrastructure(self) -> tuple:
+        """Initialize config loader, tool registry, and tracker.
+
+        Returns:
+            Tuple of (config_loader, tool_registry, tracker).
+        """
+        from src.compiler.config_loader import ConfigLoader
+        from src.observability.tracker import ExecutionTracker
+        from src.tools.registry import ToolRegistry
+
+        config_loader = ConfigLoader(config_root=self.config_root)
+        tool_registry = ToolRegistry(auto_discover=True)
+        tracker = ExecutionTracker(event_bus=self.event_bus) if self.event_bus else ExecutionTracker()
+        return config_loader, tool_registry, tracker
+
+    def _compile_workflow(
+        self,
+        workflow_config: Dict[str, Any],
+        tool_registry: Any,
+        config_loader: Any,
+    ) -> tuple:
+        """Compile workflow into executable graph.
+
+        Args:
+            workflow_config: Workflow configuration dict.
+            tool_registry: ToolRegistry instance.
+            config_loader: ConfigLoader instance.
+
+        Returns:
+            Tuple of (compiled_workflow, engine).
+        """
+        from src.compiler.engine_registry import EngineRegistry
+
+        registry = EngineRegistry()
+        engine = registry.get_engine_from_config(
+            workflow_config,
+            tool_registry=tool_registry,
+            config_loader=config_loader,
+        )
+        compiled = engine.compile(workflow_config)
+        return compiled, engine
+
     def _execute_workflow_sync(
         self,
         workflow_path: str,
@@ -272,28 +314,17 @@ class WorkflowExecutionService:
         Raises:
             RuntimeError: On workflow execution failure
         """
-        from src.compiler.config_loader import ConfigLoader
-        from src.compiler.engine_registry import EngineRegistry
-        from src.observability.tracker import ExecutionTracker
-        from src.tools.registry import ToolRegistry
-
         # Load workflow config
         with open(workflow_path) as f:
             workflow_config = yaml.safe_load(f)
 
         # Initialize infrastructure
-        config_loader = ConfigLoader(config_root=self.config_root)
-        tool_registry = ToolRegistry(auto_discover=True)
-        tracker = ExecutionTracker(event_bus=self.event_bus) if self.event_bus else ExecutionTracker()
+        config_loader, tool_registry, tracker = self._setup_workflow_infrastructure()
 
         # Compile workflow
-        registry = EngineRegistry()
-        engine = registry.get_engine_from_config(
-            workflow_config,
-            tool_registry=tool_registry,
-            config_loader=config_loader,
+        compiled, engine = self._compile_workflow(
+            workflow_config, tool_registry, config_loader
         )
-        compiled = engine.compile(workflow_config)
 
         # Execute with tracking
         wf = workflow_config.get("workflow", {})

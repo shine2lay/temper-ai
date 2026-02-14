@@ -53,6 +53,91 @@ class _NoCacheStaticMiddleware:
         await self.app(scope, receive, send_no_cache)
 
 
+def _configure_cors(app: FastAPI, mode: str) -> None:
+    """Configure CORS middleware based on mode.
+
+    Args:
+        app: FastAPI application instance.
+        mode: "server" or "dashboard".
+    """
+    if mode == "server":
+        cors_origins_env = os.environ.get("MAF_CORS_ORIGINS", "")
+        cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
+        if cors_origins:
+            app.add_middleware(
+                CORSMiddleware,
+                allow_origins=cors_origins,
+                allow_methods=["GET", "POST"],
+                allow_headers=["Content-Type"],
+            )
+    else:
+        # Dashboard mode: permissive for local development
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=["*"],
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
+
+
+def _register_routes(
+    app: FastAPI,
+    execution_service: Any,
+    data_service: Any,
+    config_root: str,
+    mode: str,
+) -> None:
+    """Register API routes and WebSocket endpoints.
+
+    Args:
+        app: FastAPI application instance.
+        execution_service: WorkflowExecutionService instance.
+        data_service: DashboardDataService instance.
+        config_root: Config directory root path.
+        mode: "server" or "dashboard".
+    """
+    from src.dashboard.routes import create_router
+    from src.dashboard.websocket import create_ws_endpoint
+    from src.server.routes import create_server_router
+
+    # Server router is always included first so literal routes like
+    # /api/workflows/available match before parametric /api/workflows/{id}.
+    app.include_router(
+        create_server_router(execution_service, data_service, config_root),
+        prefix="/api",
+    )
+
+    # WebSocket endpoint for event streaming (both modes)
+    ws_handler = create_ws_endpoint(data_service)
+    app.add_api_websocket_route("/ws/{workflow_id}", ws_handler)
+
+    if mode != "server":
+        # Dashboard mode: data query routes + studio + static files
+        app.include_router(create_router(data_service), prefix="/api")
+
+        # Studio config CRUD routes
+        from src.dashboard.studio_routes import create_studio_router
+        from src.dashboard.studio_service import StudioService
+
+        studio_service = StudioService(config_root=config_root)
+        app.include_router(create_studio_router(studio_service), prefix="/api/studio")
+
+        # Static files with no-cache middleware
+        if STATIC_DIR.exists():
+            app.mount(
+                "/dashboard",
+                StaticFiles(directory=str(STATIC_DIR), html=True),
+                name="dashboard",
+            )
+            app.add_middleware(_NoCacheStaticMiddleware)
+
+        # Root redirect
+        @app.get("/")
+        async def root() -> RedirectResponse:
+            """Redirect root to dashboard UI."""
+            return RedirectResponse(url="/dashboard/list.html")
+
+
 def create_app(
     backend: Any = None,
     event_bus: Any = None,
@@ -74,8 +159,6 @@ def create_app(
     """
     from src.dashboard.data_service import DashboardDataService
     from src.dashboard.execution_service import WorkflowExecutionService
-    from src.dashboard.routes import create_router
-    from src.dashboard.websocket import create_ws_endpoint
 
     title = "MAF Server" if mode == "server" else "MAF Dashboard"
 
@@ -112,66 +195,13 @@ def create_app(
     if shutdown_mgr is not None:
         app.state.shutdown_manager = shutdown_mgr
 
-    # CORS configuration
-    if mode == "server":
-        cors_origins_env = os.environ.get("MAF_CORS_ORIGINS", "")
-        cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
-        if cors_origins:
-            app.add_middleware(
-                CORSMiddleware,
-                allow_origins=cors_origins,
-                allow_methods=["GET", "POST"],
-                allow_headers=["Content-Type"],
-            )
-    else:
-        # Dashboard mode: permissive for local development
-        app.add_middleware(
-            CORSMiddleware,
-            allow_origins=["*"],
-            allow_methods=["*"],
-            allow_headers=["*"],
-        )
+    # Configure CORS middleware
+    _configure_cors(app, mode)
 
     # Data service
     data_service = DashboardDataService(backend=backend, event_bus=event_bus)
 
-    # Server router is always included first so literal routes like
-    # /api/workflows/available match before parametric /api/workflows/{id}.
-    from src.server.routes import create_server_router
-
-    app.include_router(
-        create_server_router(execution_service, data_service, config_root),
-        prefix="/api",
-    )
-
-    # WebSocket endpoint for event streaming (both modes)
-    ws_handler = create_ws_endpoint(data_service)
-    app.add_api_websocket_route("/ws/{workflow_id}", ws_handler)
-
-    if mode != "server":
-        # Dashboard mode: data query routes + studio + static files
-        app.include_router(create_router(data_service), prefix="/api")
-
-        # Studio config CRUD routes
-        from src.dashboard.studio_routes import create_studio_router
-        from src.dashboard.studio_service import StudioService
-
-        studio_service = StudioService(config_root=config_root)
-        app.include_router(create_studio_router(studio_service), prefix="/api/studio")
-
-        # Static files with no-cache middleware
-        if STATIC_DIR.exists():
-            app.mount(
-                "/dashboard",
-                StaticFiles(directory=str(STATIC_DIR), html=True),
-                name="dashboard",
-            )
-            app.add_middleware(_NoCacheStaticMiddleware)
-
-        # Root redirect
-        @app.get("/")
-        async def root() -> RedirectResponse:
-            """Redirect root to dashboard UI."""
-            return RedirectResponse(url="/dashboard/list.html")
+    # Register routes and WebSocket endpoints
+    _register_routes(app, execution_service, data_service, config_root, mode)
 
     return app

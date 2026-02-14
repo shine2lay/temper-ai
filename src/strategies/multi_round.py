@@ -136,6 +136,36 @@ _MODE_DEFAULTS: Dict[str, Dict[str, Any]] = {
 
 
 @dataclass
+class MultiRoundConfig:
+    """Configuration for multi-round strategy.
+
+    Bundles initialization parameters to reduce constructor complexity.
+
+    Attributes:
+        max_rounds: Maximum communication rounds
+        min_rounds: Minimum rounds before convergence check
+        convergence_threshold: Agreement threshold (0-1) for early stopping
+        use_semantic_convergence: Use semantic similarity vs exact match
+        context_strategy: History propagation strategy
+        context_window_size: Window size for "recent" strategy
+        cost_budget_usd: Optional cost limit
+        use_merit_weighting: Weight votes by agent merit
+        merit_domain: Domain for merit lookup
+        require_unanimous: Require 100% agreement
+    """
+    max_rounds: Optional[int] = None
+    min_rounds: Optional[int] = None
+    convergence_threshold: Optional[float] = None
+    use_semantic_convergence: bool = True
+    context_strategy: str = "full"
+    context_window_size: int = DEFAULT_CONTEXT_WINDOW_SIZE
+    cost_budget_usd: Optional[float] = None
+    use_merit_weighting: bool = False
+    merit_domain: Optional[str] = None
+    require_unanimous: bool = False
+
+
+@dataclass
 class CommunicationRound:
     """Single round of multi-agent communication.
 
@@ -194,55 +224,45 @@ class MultiRoundStrategy(CollaborationStrategy):
     def __init__(
         self,
         mode: str = "dialogue",
-        max_rounds: Optional[int] = None,
-        min_rounds: Optional[int] = None,
-        convergence_threshold: Optional[float] = None,
-        use_semantic_convergence: bool = True,
-        context_strategy: str = "full",
-        context_window_size: int = DEFAULT_CONTEXT_WINDOW_SIZE,
-        cost_budget_usd: Optional[float] = None,
-        use_merit_weighting: bool = False,
-        merit_domain: Optional[str] = None,
-        require_unanimous: bool = False,
+        config: Optional[MultiRoundConfig] = None,
+        **kwargs: Any
     ):
         """Initialize multi-round strategy.
 
         Args:
             mode: Interaction mode ("dialogue", "debate", or "consensus")
-            max_rounds: Maximum rounds (None = use mode default)
-            min_rounds: Minimum rounds before convergence check (None = use mode default)
-            convergence_threshold: Convergence threshold 0-1 (None = use mode default)
-            use_semantic_convergence: Use semantic similarity for convergence
-            context_strategy: History propagation ("full", "recent", "relevant")
-            context_window_size: For "recent" strategy, how many rounds
-            cost_budget_usd: Max cost in USD, None for unlimited
-            use_merit_weighting: Weight opinions by historical performance
-            merit_domain: Domain for merit score lookup
-            require_unanimous: Require 100% agreement
+            config: Configuration object (overrides kwargs)
+            **kwargs: Individual config params (deprecated, use config object)
 
         Raises:
             ValueError: If parameters are invalid
         """
+        # Support both config object and individual params (backward compat)
+        if config is None:
+            config = MultiRoundConfig(**kwargs)
+
         if mode not in VALID_MODES:
             raise ValueError(
                 f"Invalid mode '{mode}'. Must be one of: {', '.join(sorted(VALID_MODES))}"
             )
-        if context_strategy not in VALID_CONTEXT_STRATEGIES:
+        if config.context_strategy not in VALID_CONTEXT_STRATEGIES:
             raise ValueError(
-                f"Invalid context_strategy '{context_strategy}'. "
+                f"Invalid context_strategy '{config.context_strategy}'. "
                 f"Must be one of: {', '.join(sorted(VALID_CONTEXT_STRATEGIES))}"
             )
 
         self.mode = mode
         defaults = _MODE_DEFAULTS[mode]
 
-        self.max_rounds = max_rounds if max_rounds is not None else defaults["max_rounds"]
-        self.min_rounds = min_rounds if min_rounds is not None else defaults["min_rounds"]
+        # Apply defaults for None values
+        self.max_rounds = config.max_rounds if config.max_rounds is not None else defaults["max_rounds"]
+        self.min_rounds = config.min_rounds if config.min_rounds is not None else defaults["min_rounds"]
         self.convergence_threshold = (
-            convergence_threshold if convergence_threshold is not None
+            config.convergence_threshold if config.convergence_threshold is not None
             else defaults["convergence_threshold"]
         )
 
+        # Validate ranges
         if self.max_rounds < 1:
             raise ValueError(f"max_rounds must be >= 1, got {self.max_rounds}")
         if self.min_rounds < 1:
@@ -251,18 +271,19 @@ class MultiRoundStrategy(CollaborationStrategy):
             raise ValueError(
                 f"convergence_threshold must be in [0, 1], got {self.convergence_threshold}"
             )
-        if cost_budget_usd is not None and cost_budget_usd <= 0:
-            raise ValueError(f"cost_budget_usd must be > 0, got {cost_budget_usd}")
-        if context_window_size < 1:
-            raise ValueError(f"context_window_size must be >= 1, got {context_window_size}")
+        if config.cost_budget_usd is not None and config.cost_budget_usd <= 0:
+            raise ValueError(f"cost_budget_usd must be > 0, got {config.cost_budget_usd}")
+        if config.context_window_size < 1:
+            raise ValueError(f"context_window_size must be >= 1, got {config.context_window_size}")
 
-        self.use_semantic_convergence = use_semantic_convergence
-        self.context_strategy = context_strategy
-        self.context_window_size = context_window_size
-        self.cost_budget_usd = cost_budget_usd
-        self.use_merit_weighting = use_merit_weighting
-        self.merit_domain = merit_domain
-        self.require_unanimous = require_unanimous
+        # Store config values
+        self.use_semantic_convergence = config.use_semantic_convergence
+        self.context_strategy = config.context_strategy
+        self.context_window_size = config.context_window_size
+        self.cost_budget_usd = config.cost_budget_usd
+        self.use_merit_weighting = config.use_merit_weighting
+        self.merit_domain = config.merit_domain
+        self.require_unanimous = config.require_unanimous
         self._embeddings_available: Optional[bool] = None
 
     @property

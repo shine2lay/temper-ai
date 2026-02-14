@@ -142,6 +142,27 @@ class LLMStreamChunk:
     completion_tokens: Optional[int] = None  # final chunk only
 
 
+@dataclass
+class LLMConfig:
+    """Configuration bundle for LLM initialization.
+
+    Groups the 12 parameters into a single config object to reduce
+    parameter count and improve maintainability.
+    """
+    model: str
+    base_url: str
+    api_key: Optional[str] = None
+    temperature: float = DEFAULT_TEMPERATURE
+    max_tokens: int = 2048
+    top_p: float = DEFAULT_TOP_P
+    timeout: int = DEFAULT_REQUEST_TIMEOUT
+    max_retries: int = DEFAULT_MAX_RETRIES
+    retry_delay: float = 2.0
+    enable_cache: bool = False
+    cache_ttl: Optional[int] = DEFAULT_CACHE_TTL
+    rate_limiter: Optional[Any] = None
+
+
 # Callback type for streaming: called with each chunk as it arrives
 StreamCallback = Callable[[LLMStreamChunk], None]
 
@@ -179,6 +200,11 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         cache_ttl: Optional[int] = DEFAULT_CACHE_TTL,
         rate_limiter: Optional[Any] = None,
     ):
+        """Initialize LLM provider.
+
+        Note: This constructor maintains backward compatibility with individual parameters.
+        For new code, consider using LLMConfig dataclass and unpacking with **config.__dict__
+        """
         self.model = model
         self.base_url = _validate_base_url(base_url.rstrip('/'))
         self.api_key = api_key
@@ -290,7 +316,6 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         """Get provider-specific API endpoint path."""
         pass
 
-    @abstractmethod
     def _consume_stream(
         self,
         response: httpx.Response,
@@ -305,9 +330,8 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         Returns:
             LLMResponse with aggregated content and metadata
         """
-        pass
+        raise NotImplementedError("Subclass must implement _consume_stream for streaming support")
 
-    @abstractmethod
     async def _aconsume_stream(
         self,
         response: httpx.Response,
@@ -322,7 +346,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         Returns:
             LLMResponse with aggregated content and metadata
         """
-        pass
+        raise NotImplementedError("Subclass must implement _aconsume_stream for streaming support")
 
     def _make_streaming_call_impl(
         self,

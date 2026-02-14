@@ -19,6 +19,105 @@ from src.compiler.executors.sequential import SequentialStageExecutor
 from src.constants.probabilities import PROB_MEDIUM
 
 
+def _execute_parallel_with_switch_check(
+    parallel_executor: Any,
+    stage_name: str,
+    stage_config: Any,
+    state: Dict[str, Any],
+    config_loader: Any,
+    tool_registry: Optional[Any],
+    disagreement_threshold: float,
+    tracker: Optional[Any]
+) -> tuple[Dict[str, Any], bool, float, Dict[str, Any]]:
+    """Execute parallel and check if mode switch needed.
+
+    Returns:
+        Tuple of (parallel_state, should_switch, disagreement_rate, mode_metadata)
+    """
+    # Execute parallel
+    parallel_state = parallel_executor.execute_stage(
+        stage_name=stage_name,
+        stage_config=stage_config,
+        state=state,
+        config_loader=config_loader,
+        tool_registry=tool_registry
+    )
+
+    # Get synthesis result
+    stage_output = parallel_state["stage_outputs"][stage_name]
+    synthesis_info = stage_output.get("synthesis", {})
+
+    # Calculate disagreement
+    class MinimalSynthesisResult:
+        """Lightweight synthesis result for disagreement calculation."""
+        def __init__(self, votes: Dict[str, int]) -> None:
+            self.votes = votes
+
+    synthesis_result = MinimalSynthesisResult(votes=synthesis_info.get("votes", {}))
+    disagreement_rate = _calculate_disagreement_rate(synthesis_result)
+
+    # Build metadata
+    mode_metadata = {
+        ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
+        ADAPTIVE_META_SWITCHED_TO: None,
+        ADAPTIVE_META_DISAGREEMENT_RATE: disagreement_rate,
+        "disagreement_threshold": disagreement_threshold
+    }
+
+    # Check if switch needed
+    should_switch = disagreement_rate > disagreement_threshold
+
+    if should_switch and tracker and hasattr(tracker, 'track_collaboration_event'):
+        tracker.track_collaboration_event(
+            event_type="adaptive_mode_switch",
+            stage_name=stage_name,
+            agents=list(stage_output.get("agent_outputs", {}).keys()),
+            decision=None,
+            confidence=None,
+            metadata={
+                "reason": "disagreement_threshold_exceeded",
+                ADAPTIVE_META_DISAGREEMENT_RATE: disagreement_rate,
+                "threshold": disagreement_threshold,
+                "switching_from": EXECUTION_MODE_PARALLEL,
+                "switching_to": EXECUTION_MODE_SEQUENTIAL
+            }
+        )
+
+    return parallel_state, should_switch, disagreement_rate, mode_metadata
+
+
+def _calculate_disagreement_rate(synthesis_result: Any) -> float:
+    """Calculate disagreement rate from synthesis result.
+
+    Disagreement rate is the percentage of votes NOT for the winning decision.
+    Higher values indicate more disagreement among agents.
+
+    Args:
+        synthesis_result: SynthesisResult from synthesis
+
+    Returns:
+        Disagreement rate between 0.0 (unanimous) and 1.0 (maximum disagreement)
+
+    Example:
+        votes = {"A": 3, "B": 1, "C": 1}
+        disagreement_rate = 1 - (3/5) = 0.4  # 40% disagreement
+    """
+    votes = synthesis_result.votes or {}
+
+    if not votes:
+        return 0.0  # No disagreement if no votes
+
+    total_votes = cast(int, sum(votes.values()))
+    if total_votes == 0:
+        return 0.0
+
+    # Get max vote count (winning decision)
+    max_votes = cast(int, max(votes.values()))
+
+    # Disagreement rate = 1 - (consensus strength)
+    return 1.0 - (max_votes / total_votes)
+
+
 class AdaptiveStageExecutor(StageExecutor):
     """Execute stage with adaptive mode (M3-10 feature).
 
@@ -73,73 +172,27 @@ class AdaptiveStageExecutor(StageExecutor):
                 disagreement_threshold: 0.5
                 max_parallel_rounds: 2
         """
-        # Get tracker for observability
         tracker = state.get("tracker")
 
         # Get adaptive config
         stage_dict = stage_config if isinstance(stage_config, dict) else {}
         execution_config = stage_dict.get("execution", {})
         adaptive_config = execution_config.get("adaptive_config", {})
-
-        # Get threshold (default: 50% disagreement)
         disagreement_threshold = adaptive_config.get("disagreement_threshold", PROB_MEDIUM)
 
-        # Track mode switch metadata
-        mode_switch_metadata = {
-            ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
-            ADAPTIVE_META_SWITCHED_TO: None,
-            ADAPTIVE_META_DISAGREEMENT_RATE: None,
-            "disagreement_threshold": disagreement_threshold
-        }
-
         try:
-            # Round 1: Try parallel execution
-            parallel_state = self.parallel_executor.execute_stage(
-                stage_name=stage_name,
-                stage_config=stage_config,
-                state=state,
-                config_loader=config_loader,
-                tool_registry=tool_registry
+            # Try parallel execution with disagreement check
+            parallel_state, should_switch, disagreement_rate, mode_metadata = (
+                _execute_parallel_with_switch_check(
+                    self.parallel_executor, stage_name, stage_config, state,
+                    config_loader, tool_registry, disagreement_threshold, tracker
+                )
             )
 
-            # Get synthesis result from parallel execution
-            stage_output = parallel_state["stage_outputs"][stage_name]
-            synthesis_info = stage_output.get("synthesis", {})
-
-            # Calculate disagreement rate from synthesis result
-            # We need to reconstruct a minimal SynthesisResult-like object
-            class MinimalSynthesisResult:
-                """Lightweight synthesis result for disagreement calculation."""
-                def __init__(self, votes: Dict[str, int]) -> None:
-                    self.votes = votes
-
-            synthesis_result = MinimalSynthesisResult(votes=synthesis_info.get("votes", {}))
-            disagreement_rate = self._calculate_disagreement_rate(synthesis_result)
-
-            mode_switch_metadata[ADAPTIVE_META_DISAGREEMENT_RATE] = disagreement_rate
-
             # Check if we need to switch to sequential
-            if disagreement_rate > disagreement_threshold:
-                mode_switch_metadata[ADAPTIVE_META_SWITCHED_TO] = EXECUTION_MODE_SEQUENTIAL
+            if should_switch:
+                mode_metadata[ADAPTIVE_META_SWITCHED_TO] = EXECUTION_MODE_SEQUENTIAL
 
-                # Track mode switch in observability
-                if tracker and hasattr(tracker, 'track_collaboration_event'):
-                    tracker.track_collaboration_event(
-                        event_type="adaptive_mode_switch",
-                        stage_name=stage_name,
-                        agents=list(stage_output.get("agent_outputs", {}).keys()),
-                        decision=None,
-                        confidence=None,
-                        metadata={
-                            "reason": "disagreement_threshold_exceeded",
-                            ADAPTIVE_META_DISAGREEMENT_RATE: disagreement_rate,
-                            "threshold": disagreement_threshold,
-                            "switching_from": EXECUTION_MODE_PARALLEL,
-                            "switching_to": EXECUTION_MODE_SEQUENTIAL
-                        }
-                    )
-
-                # Switch to sequential execution
                 # Reset state to before parallel execution
                 state["stage_outputs"].pop(stage_name, None)
 
@@ -152,27 +205,29 @@ class AdaptiveStageExecutor(StageExecutor):
                     tool_registry=tool_registry
                 )
 
-                # Add mode switch metadata to final output
+                # Add mode switch metadata
                 if isinstance(sequential_state["stage_outputs"].get(stage_name), dict):
-                    sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = mode_switch_metadata
+                    sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = mode_metadata
 
                 return sequential_state
-            else:
-                # Disagreement is acceptable, keep parallel result
-                mode_switch_metadata[ADAPTIVE_META_SWITCHED_TO] = None  # No switch needed
 
-                # Add mode switch metadata to output (no switch occurred)
-                if isinstance(stage_output, dict):
-                    stage_output[COLLAB_EVENT_MODE_SWITCH] = mode_switch_metadata
-                    parallel_state["stage_outputs"][stage_name] = stage_output
+            # No switch needed - keep parallel result
+            stage_output = parallel_state["stage_outputs"][stage_name]
+            if isinstance(stage_output, dict):
+                stage_output[COLLAB_EVENT_MODE_SWITCH] = mode_metadata
+                parallel_state["stage_outputs"][stage_name] = stage_output
 
-                return parallel_state
+            return parallel_state
 
         except (KeyError, TypeError, AttributeError, ValueError, RuntimeError) as e:
             # Parallel execution failed, fall back to sequential
-            mode_switch_metadata[ADAPTIVE_META_SWITCHED_TO] = EXECUTION_MODE_SEQUENTIAL
-            mode_switch_metadata[ADAPTIVE_META_DISAGREEMENT_RATE] = None
-            mode_switch_metadata["error"] = str(e)
+            error_mode_metadata = {
+                ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
+                ADAPTIVE_META_SWITCHED_TO: EXECUTION_MODE_SEQUENTIAL,
+                ADAPTIVE_META_DISAGREEMENT_RATE: None,
+                "disagreement_threshold": disagreement_threshold,
+                "error": str(e)
+            }
 
             # Track mode switch due to error
             if tracker and hasattr(tracker, 'track_collaboration_event'):
@@ -202,7 +257,7 @@ class AdaptiveStageExecutor(StageExecutor):
 
             # Add mode switch metadata
             if isinstance(sequential_state["stage_outputs"].get(stage_name), dict):
-                sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = mode_switch_metadata
+                sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = error_mode_metadata
 
             return sequential_state
 
@@ -220,32 +275,12 @@ class AdaptiveStageExecutor(StageExecutor):
     def _calculate_disagreement_rate(self, synthesis_result: Any) -> float:
         """Calculate disagreement rate from synthesis result.
 
-        Disagreement rate is the percentage of votes NOT for the winning decision.
-        Higher values indicate more disagreement among agents.
+        Delegates to module-level function for compatibility.
 
         Args:
             synthesis_result: SynthesisResult from synthesis
 
         Returns:
             Disagreement rate between 0.0 (unanimous) and 1.0 (maximum disagreement)
-
-        Example:
-            votes = {"A": 3, "B": 1, "C": 1}
-            disagreement_rate = 1 - (3/5) = 0.4  # 40% disagreement
         """
-        votes = synthesis_result.votes or {}
-
-        if not votes:
-            return 0.0  # No disagreement if no votes
-
-        total_votes = cast(int, sum(votes.values()))
-        if total_votes == 0:
-            return 0.0
-
-        # Get max vote count (winning decision)
-        max_votes = cast(int, max(votes.values()))
-
-        # Disagreement rate = 1 - (consensus strength)
-        disagreement_rate = 1.0 - (max_votes / total_votes)
-
-        return disagreement_rate
+        return _calculate_disagreement_rate(synthesis_result)

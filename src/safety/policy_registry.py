@@ -129,6 +129,32 @@ class PolicyRegistry:
         """
         return self.list_policies()
 
+    def _remove_global_policy(self, policy_name: str) -> None:
+        """Remove a global policy by name."""
+        self._global_policies = [
+            p for p in self._global_policies
+            if p.name != policy_name
+        ]
+
+    def _remove_action_specific_policy(
+        self,
+        policy_name: str,
+        action_types: Set[str]
+    ) -> None:
+        """Remove an action-specific policy by name."""
+        for action_type in action_types:
+            if action_type not in self._policies:
+                continue
+
+            self._policies[action_type] = [
+                p for p in self._policies[action_type]
+                if p.name != policy_name
+            ]
+
+            # Remove empty action type entries
+            if not self._policies[action_type]:
+                del self._policies[action_type]
+
     def unregister_policy(self, policy_name: str) -> bool:
         """Remove policy by name.
 
@@ -142,28 +168,17 @@ class PolicyRegistry:
             >>> registry.unregister_policy("file_access_policy")
         """
         with self._lock:
+            # Guard clause: policy not found
             if policy_name not in self._policy_mappings:
                 return False
 
             action_types = self._policy_mappings[policy_name]
 
+            # Remove based on policy type
             if not action_types:
-                # Global policy
-                self._global_policies = [
-                    p for p in self._global_policies
-                    if p.name != policy_name
-                ]
+                self._remove_global_policy(policy_name)
             else:
-                # Action-specific policy
-                for action_type in action_types:
-                    if action_type in self._policies:
-                        self._policies[action_type] = [
-                            p for p in self._policies[action_type]
-                            if p.name != policy_name
-                        ]
-                        # Remove empty action type entries
-                        if not self._policies[action_type]:
-                            del self._policies[action_type]
+                self._remove_action_specific_policy(policy_name, action_types)
 
             del self._policy_mappings[policy_name]
             return True

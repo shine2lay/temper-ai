@@ -58,24 +58,71 @@ class ContinuousExecutor:
         self.config = config
         self.run_iteration_fn = run_iteration_fn
 
+    def _setup_signal_handlers(self, shutdown_requested: Dict[str, bool]) -> None:
+        """Setup signal handlers for graceful shutdown."""
+        def signal_handler(signum: int, _frame: Any) -> None:
+            """Handle interrupt signals for graceful shutdown."""
+            logger.info(f"Received signal {signum}, requesting graceful shutdown...")
+            shutdown_requested["flag"] = True
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+    def _restore_signal_handlers(self) -> None:
+        """Restore default signal handlers."""
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
+    def _run_main_loop(
+        self,
+        agent_names: List[str],
+        stats: ContinuousExecutionStats,
+        interval_minutes: int,
+        max_iterations: Optional[int],
+        cost_budget: Optional[float],
+        convergence_window: int,
+        shutdown_requested: Dict[str, bool]
+    ) -> None:
+        """Run the main continuous improvement loop."""
+        iteration = 0
+        while True:
+            iteration += 1
+            stats.total_iterations = iteration
+
+            logger.info(f"\n{'='*60}")
+            logger.info(f"Continuous mode - Iteration {iteration}")
+            logger.info(f"{'='*60}")
+
+            # Execute iteration for each agent
+            iteration_had_deployment = self._execute_agent_iterations(
+                agent_names, stats, shutdown_requested
+            )
+
+            # Update convergence tracking
+            stats.iterations_without_deployment = (
+                0 if iteration_had_deployment
+                else stats.iterations_without_deployment + 1
+            )
+
+            # Check stopping conditions
+            if self._should_stop(stats, max_iterations, cost_budget,
+                                convergence_window, shutdown_requested["flag"]):
+                break
+
+            # Log progress
+            self._log_iteration_complete(stats, iteration)
+
+            # Sleep with shutdown checks
+            if not self._wait_for_next_iteration(interval_minutes, shutdown_requested):
+                stats.stop_reason = "manual_interrupt"
+                break
+
     def execute(
         self,
         agent_names: List[str],
         check_interval_minutes: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """
-        Execute continuous improvement loop.
-
-        Args:
-            agent_names: Agents to improve
-            check_interval_minutes: Override config interval
-
-        Returns:
-            Statistics dictionary
-
-        Raises:
-            ValueError: If agent_names is empty
-        """
+        """Execute continuous improvement loop."""
         if not agent_names:
             raise ValueError("agent_names is required for continuous mode")
 
@@ -99,51 +146,14 @@ class ContinuousExecutor:
             agents={name: {"iterations": 0, "deployments": 0} for name in agent_names}
         )
 
-        # Setup signal handlers
         shutdown_requested = {"flag": False}
-
-        def signal_handler(signum: int, _frame: Any) -> None:
-            """Handle interrupt signals for graceful shutdown."""
-            logger.info(f"Received signal {signum}, requesting graceful shutdown...")
-            shutdown_requested["flag"] = True
-
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        self._setup_signal_handlers(shutdown_requested)
 
         try:
-            iteration = 0
-            while True:
-                iteration += 1
-                stats.total_iterations = iteration
-
-                logger.info(f"\n{'='*60}")
-                logger.info(f"Continuous mode - Iteration {iteration}")
-                logger.info(f"{'='*60}")
-
-                # Execute iteration for each agent
-                iteration_had_deployment = self._execute_agent_iterations(
-                    agent_names, stats, shutdown_requested
-                )
-
-                # Update convergence tracking
-                stats.iterations_without_deployment = (
-                    0 if iteration_had_deployment
-                    else stats.iterations_without_deployment + 1
-                )
-
-                # Check stopping conditions after iteration completes
-                if self._should_stop(stats, max_iterations, cost_budget,
-                                    convergence_window, shutdown_requested["flag"]):
-                    break
-
-                # Log progress
-                self._log_iteration_complete(stats, iteration)
-
-                # Sleep with shutdown checks
-                if not self._wait_for_next_iteration(interval_minutes, shutdown_requested):
-                    stats.stop_reason = "manual_interrupt"
-                    break
-
+            self._run_main_loop(
+                agent_names, stats, interval_minutes, max_iterations,
+                cost_budget, convergence_window, shutdown_requested
+            )
         except KeyboardInterrupt:
             logger.info("KeyboardInterrupt received, stopping gracefully")
             stats.stop_reason = "keyboard_interrupt"
@@ -151,11 +161,7 @@ class ContinuousExecutor:
             logger.error(f"Unexpected error in continuous loop: {e}", exc_info=True)
             stats.stop_reason = f"error: {str(e)}"
         finally:
-            # Restore signal handlers
-            signal.signal(signal.SIGINT, signal.SIG_DFL)
-            signal.signal(signal.SIGTERM, signal.SIG_DFL)
-
-            # Finalize stats
+            self._restore_signal_handlers()
             stats.stopped_at = datetime.now(timezone.utc)
             self._log_final_summary(stats)
 

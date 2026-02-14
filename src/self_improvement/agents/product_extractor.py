@@ -14,7 +14,7 @@ Example:
 """
 import json
 import logging
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from src.self_improvement.ollama_client import OllamaClient
 
@@ -268,17 +268,31 @@ JSON output:"""
         Raises:
             ValueError: If response cannot be parsed as JSON or is unsafe
         """
-        # Validate response size (prevent ReDoS and memory exhaustion)
+        # Validate response size
         if len(response) > MAX_RESPONSE_SIZE:
             raise ValueError(
                 f"Response too large: {len(response)} bytes (max: {MAX_RESPONSE_SIZE})"
             )
 
-        # Remove markdown code blocks if present
+        # Extract JSON string from response
+        json_str = self._extract_json_from_response(response)
+
+        # Validate JSON safety before parsing
+        self._validate_json_safety(json_str)
+
+        # Parse and validate JSON
+        try:
+            data = json.loads(json_str)
+            return self._extract_product_fields(data)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Failed to parse JSON response: {e}\nResponse: {json_str[:200]}")  # noqa: Preview length
+
+    def _extract_json_from_response(self, response: str) -> str:
+        """Extract JSON string from response, handling markdown code blocks."""
         response = response.strip()
+
+        # Remove markdown code blocks if present
         if response.startswith("```"):
-            # Extract JSON from code block - use simple string operations instead of regex
-            # to prevent ReDoS attacks
             lines = response.split('\n')
             json_lines = []
             in_code_block = False
@@ -291,63 +305,61 @@ JSON output:"""
             if json_lines:
                 response = '\n'.join(json_lines)
 
-        # Try to find JSON object in response - use simple string operations
-        # instead of regex to prevent ReDoS
+        # Extract JSON object from response
         first_brace = response.find('{')
         last_brace = response.rfind('}')
         if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
             response = response[first_brace:last_brace + 1]
 
-        # Validate JSON safety before parsing
-        self._validate_json_safety(response)
+        return response
 
-        # Parse JSON
+    def _extract_product_fields(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Extract and validate product fields from parsed JSON."""
+        product_data = {
+            "name": data.get("name"),
+            "price": data.get("price"),
+            "currency": data.get("currency", "USD"),
+            "features": data.get("features", []),
+            "brand": data.get("brand"),
+            "category": data.get("category"),
+        }
+
+        # Validate and normalize price
+        product_data["price"] = self._validate_price(product_data["price"])
+
+        # Ensure features is a list
+        if not isinstance(product_data["features"], list):
+            product_data["features"] = []
+
+        return product_data
+
+    def _validate_price(self, price: Any) -> Optional[float]:
+        """Validate and normalize price value."""
+        if price is None:
+            return None
+
         try:
-            data = json.loads(response)
+            price_float = float(price)
 
-            # Ensure required fields exist
-            product_data = {
-                "name": data.get("name"),
-                "price": data.get("price"),
-                "currency": data.get("currency", "USD"),
-                "features": data.get("features", []),
-                "brand": data.get("brand"),
-                "category": data.get("category"),
-            }
+            # Check for invalid values
+            if price_float < 0:
+                logger.warning("Negative price detected: %s, setting to None", price_float)
+                return None
+            if not (0 <= price_float <= MAX_PRODUCT_PRICE_USD):
+                logger.warning("Price out of range: %s, setting to None", price_float)
+                return None
+            if price_float != price_float:  # NaN check
+                logger.warning("Invalid price (NaN), setting to None")
+                return None
+            if price_float in (float('inf'), float('-inf')):
+                logger.warning("Invalid price (infinity), setting to None")
+                return None
 
-            # Validate and normalize price
-            if product_data["price"] is not None:
-                try:
-                    price = float(product_data["price"])
+            return price_float
 
-                    # Validate price is reasonable
-                    if price < 0:
-                        logger.warning("Negative price detected: %s, setting to None", price)
-                        product_data["price"] = None
-                    elif not (0 <= price <= MAX_PRODUCT_PRICE_USD):  # Reasonable max for products
-                        logger.warning("Price out of range: %s, setting to None", price)
-                        product_data["price"] = None
-                    elif price != price:  # Check for NaN (NaN != NaN)
-                        logger.warning("Invalid price (NaN), setting to None")
-                        product_data["price"] = None
-                    elif price == float('inf') or price == float('-inf'):
-                        logger.warning("Invalid price (infinity), setting to None")
-                        product_data["price"] = None
-                    else:
-                        product_data["price"] = price
-
-                except (ValueError, TypeError) as e:
-                    logger.debug("Price parsing failed: %s", e)
-                    product_data["price"] = None
-
-            # Ensure features is a list
-            if not isinstance(product_data["features"], list):
-                product_data["features"] = []
-
-            return product_data
-
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Failed to parse JSON response: {e}\nResponse: {response[:200]}")  # noqa: Preview length
+        except (ValueError, TypeError) as e:
+            logger.debug("Price parsing failed: %s", e)
+            return None
 
     def __repr__(self) -> str:
         """String representation for debugging."""

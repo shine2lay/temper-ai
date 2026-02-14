@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
@@ -40,6 +41,19 @@ from src.utils.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ResponseBuildData:
+    """Bundle parameters for building final response (reduces 9 params to 1)."""
+    output: str
+    reasoning: Optional[str]
+    tool_calls: List[Dict[str, Any]]
+    tokens: int
+    cost: float
+    start_time: float
+    error: Optional[str] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 
 # ---------------------------------------------------------------------------
@@ -92,24 +106,12 @@ def execute_tool_calls(
     return tool_results
 
 
-def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute a single tool call."""
-    if not isinstance(tool_call, dict):
-        raise TypeError(f"tool_call must be a dictionary, got {type(tool_call).__name__}")
-
-    if ToolKeys.NAME not in tool_call:
-        raise ValueError("tool_call must contain 'name' field")
-
-    tool_name = tool_call.get(ToolKeys.NAME)
-    tool_params = tool_call.get(ToolKeys.PARAMETERS, tool_call.get("arguments", {}))
-
-    if not isinstance(tool_name, str):
-        raise TypeError(f"tool_call 'name' must be a string, got {type(tool_name).__name__}")
-
-    if not isinstance(tool_params, dict):
-        raise TypeError(f"tool_call 'parameters' must be a dictionary, got {type(tool_params).__name__}")
-
-    # Defense-in-depth: Agent-level SafetyConfig pre-checks before tool execution.
+def _check_safety_mode_blocking(
+    agent: "StandardAgent",
+    tool_name: str,
+    tool_params: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Check if safety mode blocks execution. Returns error dict or None."""
     safety = agent.config.agent.safety
 
     if safety.mode == "require_approval":
@@ -138,6 +140,31 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
             ToolKeys.ERROR: None,
             ToolKeys.SUCCESS: True
         }
+
+    return None
+
+
+def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Dict[str, Any]:
+    """Execute a single tool call."""
+    if not isinstance(tool_call, dict):
+        raise TypeError(f"tool_call must be a dictionary, got {type(tool_call).__name__}")
+
+    if ToolKeys.NAME not in tool_call:
+        raise ValueError("tool_call must contain 'name' field")
+
+    tool_name = tool_call.get(ToolKeys.NAME)
+    tool_params = tool_call.get(ToolKeys.PARAMETERS, tool_call.get("arguments", {}))
+
+    if not isinstance(tool_name, str):
+        raise TypeError(f"tool_call 'name' must be a string, got {type(tool_name).__name__}")
+
+    if not isinstance(tool_params, dict):
+        raise TypeError(f"tool_call 'parameters' must be a dictionary, got {type(tool_params).__name__}")
+
+    # Defense-in-depth: Agent-level SafetyConfig pre-checks before tool execution.
+    safety_block = _check_safety_mode_blocking(agent, tool_name, tool_params)
+    if safety_block is not None:
+        return safety_block
 
     # Route through ToolExecutor (safety-integrated execution)
     if hasattr(agent, 'tool_executor') and agent.tool_executor is not None:
@@ -454,7 +481,11 @@ def build_final_response(
     error: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
 ) -> Any:  # Return type must be Any to avoid circular import issues with AgentResponse
-    """Build final AgentResponse."""
+    """Build final AgentResponse.
+
+    Note: Maintains backward-compatible signature. Consider using
+    ResponseBuildData for new code to bundle parameters.
+    """
     from src.agents.base_agent import AgentResponse
 
     duration = time.time() - start_time
@@ -479,6 +510,43 @@ def build_final_response(
 # Safety validation (shared between sync and async iteration paths)
 # ---------------------------------------------------------------------------
 
+def _build_policy_context(agent: "StandardAgent", inf_config: Any, prompt: str) -> Any:
+    """Build PolicyExecutionContext for safety validation."""
+    from src.safety.action_policy_engine import PolicyExecutionContext
+
+    ctx = getattr(agent, '_execution_context', None)
+    agent_id = ctx.agent_id if ctx and ctx.agent_id else agent.config.agent.name
+    workflow_id = ctx.workflow_id if ctx and ctx.workflow_id else FALLBACK_UNKNOWN_VALUE
+    stage_id = ctx.stage_id if ctx and ctx.stage_id else FALLBACK_UNKNOWN_VALUE
+
+    return PolicyExecutionContext(
+        agent_id=agent_id,
+        workflow_id=workflow_id,
+        stage_id=stage_id,
+        action_type="llm_call",
+        action_data={"model": inf_config.model}
+    )
+
+
+def _validate_action_with_policy(
+    agent: "StandardAgent",
+    inf_config: Any,
+    prompt: str,
+) -> Optional[str]:
+    """Validate LLM call with policy engine. Returns violation message or None."""
+    policy_context = _build_policy_context(agent, inf_config, prompt)
+
+    validation_result = agent.tool_executor.policy_engine.validate_action_sync(
+        action={"type": "llm_call", "model": inf_config.model, "prompt_length": len(prompt)},
+        context=policy_context
+    )
+
+    if not validation_result.allowed:
+        return "; ".join(v.message for v in validation_result.violations)
+
+    return None
+
+
 def validate_safety_for_llm_call(
     agent: "StandardAgent",
     inf_config: Any,
@@ -489,61 +557,48 @@ def validate_safety_for_llm_call(
     start_time: float
 ) -> Optional[Dict[str, Any]]:
     """Run safety validation for an LLM call. Returns error dict or None."""
-    if hasattr(agent, 'tool_executor') and agent.tool_executor is not None:
-        if agent.tool_executor.policy_engine is not None:
-            try:
-                from src.safety.action_policy_engine import PolicyExecutionContext
+    if not (hasattr(agent, 'tool_executor') and agent.tool_executor is not None):
+        return None
 
-                ctx = getattr(agent, '_execution_context', None)
-                agent_id = ctx.agent_id if ctx and ctx.agent_id else agent.config.agent.name
-                workflow_id = ctx.workflow_id if ctx and ctx.workflow_id else FALLBACK_UNKNOWN_VALUE
-                stage_id = ctx.stage_id if ctx and ctx.stage_id else FALLBACK_UNKNOWN_VALUE
+    if agent.tool_executor.policy_engine is None:
+        return None
 
-                validation_result = agent.tool_executor.policy_engine.validate_action_sync(
-                    action={"type": "llm_call", "model": inf_config.model, "prompt_length": len(prompt)},
-                    context=PolicyExecutionContext(
-                        agent_id=agent_id,
-                        workflow_id=workflow_id,
-                        stage_id=stage_id,
-                        action_type="llm_call",
-                        action_data={"model": inf_config.model}
-                    )
+    try:
+        violations_msg = _validate_action_with_policy(agent, inf_config, prompt)
+
+        if violations_msg:
+            logger.warning(f"LLM call blocked by safety policy: {violations_msg}")
+            return {
+                "complete": True,
+                "response": build_final_response(
+                    agent,
+                    output="",
+                    reasoning=None,
+                    tool_calls=tool_calls_made,
+                    tokens=total_tokens,
+                    cost=total_cost,
+                    start_time=start_time,
+                    error=f"LLM call blocked by safety policy: {violations_msg}"
                 )
-
-                if not validation_result.allowed:
-                    violations_msg = "; ".join(v.message for v in validation_result.violations)
-                    logger.warning(f"LLM call blocked by safety policy: {violations_msg}")
-                    return {
-                        "complete": True,
-                        "response": build_final_response(
-                            agent,
-                            output="",
-                            reasoning=None,
-                            tool_calls=tool_calls_made,
-                            tokens=total_tokens,
-                            cost=total_cost,
-                            start_time=start_time,
-                            error=f"LLM call blocked by safety policy: {violations_msg}"
-                        )
-                    }
-            except (ConfigValidationError, ValueError, RuntimeError) as e:
-                logger.error(
-                    "LLM call safety validation failed (fail-closed): %s",
-                    e, exc_info=True
-                )
-                return {
-                    "complete": True,
-                    "response": build_final_response(
-                        agent,
-                        output="",
-                        reasoning=None,
-                        tool_calls=tool_calls_made,
-                        tokens=total_tokens,
-                        cost=total_cost,
-                        start_time=start_time,
-                        error=f"Safety validation error (fail-closed): {sanitize_error_message(str(e))}"
-                    )
-                }
+            }
+    except (ConfigValidationError, ValueError, RuntimeError) as e:
+        logger.error(
+            "LLM call safety validation failed (fail-closed): %s",
+            e, exc_info=True
+        )
+        return {
+            "complete": True,
+            "response": build_final_response(
+                agent,
+                output="",
+                reasoning=None,
+                tool_calls=tool_calls_made,
+                tokens=total_tokens,
+                cost=total_cost,
+                start_time=start_time,
+                error=f"Safety validation error (fail-closed): {sanitize_error_message(str(e))}"
+            )
+        }
     return None
 
 
@@ -600,6 +655,61 @@ def track_failed_llm_call(
     )
 
 
+@dataclass
+class LLMProcessingContext:
+    """Context for processing LLM responses (reduces 9 params to 1)."""
+    agent: "StandardAgent"
+    llm_response: Any
+    tool_calls_made: List[Dict[str, Any]]
+    total_tokens: int
+    total_cost: float
+    start_time: float
+    prompt: str
+    max_iterations: Optional[int]
+    get_tool_executor_fn: Callable[[], concurrent.futures.ThreadPoolExecutor]
+
+
+def _build_no_tools_response(ctx: LLMProcessingContext) -> Dict[str, Any]:
+    """Build response when no tool calls are present."""
+    return {
+        "complete": True,
+        "response": build_final_response(
+            ctx.agent,
+            output=extract_final_answer(ctx.llm_response.content),
+            reasoning=extract_reasoning(ctx.llm_response.content),
+            tool_calls=ctx.tool_calls_made,
+            tokens=ctx.total_tokens,
+            cost=ctx.total_cost,
+            start_time=ctx.start_time,
+            error=None
+        )
+    }
+
+
+def _execute_and_inject_tools(ctx: LLMProcessingContext, tool_calls: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Execute tool calls and build continuation response."""
+    tool_results = execute_tool_calls(ctx.agent, tool_calls, ctx.get_tool_executor_fn)
+    ctx.tool_calls_made.extend(tool_results)
+
+    remaining_budget = None
+    if ctx.max_iterations is not None:
+        remaining_budget = ctx.max_iterations - len(ctx.tool_calls_made)
+
+    next_prompt = inject_tool_results(
+        ctx.agent, ctx.prompt, ctx.llm_response.content, tool_results,
+        remaining_tool_calls=remaining_budget
+    )
+
+    return {
+        "complete": False,
+        "llm_response": ctx.llm_response,
+        "next_prompt": next_prompt,
+        "total_tokens": ctx.total_tokens,
+        "total_cost": ctx.total_cost,
+        "tool_calls_made": ctx.tool_calls_made
+    }
+
+
 def process_llm_response(
     agent: "StandardAgent",
     llm_response: Any,
@@ -612,49 +722,27 @@ def process_llm_response(
     get_tool_executor_fn: Callable[[], concurrent.futures.ThreadPoolExecutor]
 ) -> Dict[str, Any]:
     """Process LLM response: parse tool calls, execute if any, build result dict."""
+    ctx = LLMProcessingContext(
+        agent=agent,
+        llm_response=llm_response,
+        tool_calls_made=tool_calls_made,
+        total_tokens=total_tokens,
+        total_cost=total_cost,
+        start_time=start_time,
+        prompt=prompt,
+        max_iterations=max_iterations,
+        get_tool_executor_fn=get_tool_executor_fn
+    )
+
     # Parse tool calls
     tool_calls = parse_tool_calls(llm_response.content)
 
     if tool_calls:
         tool_names = ", ".join(tc.get(ToolKeys.NAME, "?") for tc in tool_calls)
         logger.info("[%s] Calling %d tool(s): %s", agent.name, len(tool_calls), tool_names)
+        return _execute_and_inject_tools(ctx, tool_calls)
 
-    if not tool_calls:
-        return {
-            "complete": True,
-            "response": build_final_response(
-                agent,
-                output=extract_final_answer(llm_response.content),
-                reasoning=extract_reasoning(llm_response.content),
-                tool_calls=tool_calls_made,
-                tokens=total_tokens,
-                cost=total_cost,
-                start_time=start_time,
-                error=None
-            )
-        }
-
-    # Execute tools
-    tool_results = execute_tool_calls(agent, tool_calls, get_tool_executor_fn)
-    tool_calls_made.extend(tool_results)
-
-    remaining_budget = None
-    if max_iterations is not None:
-        remaining_budget = max_iterations - len(tool_calls_made)
-
-    next_prompt = inject_tool_results(
-        agent, prompt, llm_response.content, tool_results,
-        remaining_tool_calls=remaining_budget
-    )
-
-    return {
-        "complete": False,
-        "llm_response": llm_response,
-        "next_prompt": next_prompt,
-        "total_tokens": total_tokens,
-        "total_cost": total_cost,
-        "tool_calls_made": tool_calls_made
-    }
+    return _build_no_tools_response(ctx)
 
 
 # ---------------------------------------------------------------------------

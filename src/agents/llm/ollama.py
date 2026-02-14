@@ -10,8 +10,12 @@ from src.agents.llm.base import (
     BaseLLM,
     LLMProvider,
     LLMResponse,
-    LLMStreamChunk,
     StreamCallback,
+)
+from src.agents.llm._stream_helpers import (
+    build_stream_result,
+    emit_final_chunk,
+    process_chunk_content,
 )
 from src.constants.sizes import SIZE_4KB
 from src.core.context import ExecutionContext
@@ -221,46 +225,24 @@ class OllamaLLM(BaseLLM):
             chunk_content, chunk_type, done = self._extract_chunk_fields(data)
 
             if chunk_content:
-                if chunk_type == "thinking":
-                    thinking_parts.append(chunk_content)
-                else:
-                    content_parts.append(chunk_content)
-
-                on_chunk(LLMStreamChunk(
-                    content=chunk_content,
-                    chunk_type=chunk_type,
-                    done=False,
-                    model=self.model,
-                ))
+                process_chunk_content(
+                    chunk_content, chunk_type, content_parts, thinking_parts,
+                    on_chunk, self.model
+                )
 
             if done:
                 prompt_tokens = data.get("prompt_eval_count")
                 completion_tokens = data.get("eval_count")
                 finish_reason = "stop" if data.get("done") else None
-
-                on_chunk(LLMStreamChunk(
-                    content="",
-                    chunk_type="content",
-                    done=True,
-                    model=self.model,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    finish_reason=finish_reason,
-                ))
+                emit_final_chunk(
+                    on_chunk, self.model, prompt_tokens,
+                    completion_tokens, finish_reason
+                )
                 break
 
-        full_content = "".join(content_parts)
-        total = (prompt_tokens or 0) + (completion_tokens or 0) or None
-
-        return LLMResponse(
-            content=full_content,
-            model=self.model,
-            provider=LLMProvider.OLLAMA,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total,
-            finish_reason=finish_reason,
-            raw_response=None,
+        return build_stream_result(
+            content_parts, self.model, LLMProvider.OLLAMA,
+            prompt_tokens, completion_tokens, finish_reason
         )
 
     async def _aconsume_stream(
@@ -286,46 +268,24 @@ class OllamaLLM(BaseLLM):
             chunk_content, chunk_type, done = self._extract_chunk_fields(data)
 
             if chunk_content:
-                if chunk_type == "thinking":
-                    thinking_parts.append(chunk_content)
-                else:
-                    content_parts.append(chunk_content)
-
-                on_chunk(LLMStreamChunk(
-                    content=chunk_content,
-                    chunk_type=chunk_type,
-                    done=False,
-                    model=self.model,
-                ))
+                process_chunk_content(
+                    chunk_content, chunk_type, content_parts, thinking_parts,
+                    on_chunk, self.model
+                )
 
             if done:
                 prompt_tokens = data.get("prompt_eval_count")
                 completion_tokens = data.get("eval_count")
                 finish_reason = "stop" if data.get("done") else None
-
-                on_chunk(LLMStreamChunk(
-                    content="",
-                    chunk_type="content",
-                    done=True,
-                    model=self.model,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    finish_reason=finish_reason,
-                ))
+                emit_final_chunk(
+                    on_chunk, self.model, prompt_tokens,
+                    completion_tokens, finish_reason
+                )
                 break
 
-        full_content = "".join(content_parts)
-        total = (prompt_tokens or 0) + (completion_tokens or 0) or None
-
-        return LLMResponse(
-            content=full_content,
-            model=self.model,
-            provider=LLMProvider.OLLAMA,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            total_tokens=total,
-            finish_reason=finish_reason,
-            raw_response=None,
+        return build_stream_result(
+            content_parts, self.model, LLMProvider.OLLAMA,
+            prompt_tokens, completion_tokens, finish_reason
         )
 
     def _extract_chunk_fields(self, data: Dict[str, Any]) -> tuple[str, str, bool]:

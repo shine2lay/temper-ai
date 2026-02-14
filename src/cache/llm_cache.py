@@ -16,7 +16,7 @@ import time
 import warnings
 from abc import ABC, abstractmethod
 from collections import OrderedDict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -65,6 +65,25 @@ class CacheStats:
             **asdict(self),
             'hit_rate': self.hit_rate
         }
+
+
+@dataclass
+class CacheKeyParams:
+    """Parameters for cache key generation.
+
+    Bundles together the many parameters needed for cache key generation
+    to reduce parameter count and improve code maintainability.
+    """
+    model: str
+    prompt: str
+    temperature: float = DEFAULT_TEMPERATURE
+    max_tokens: int = DEFAULT_MAX_TOKENS
+    user_id: Optional[str] = None
+    tenant_id: Optional[str] = None
+    session_id: Optional[str] = None
+    system_prompt: Optional[str] = None
+    tools: Optional[List[Dict[str, Any]]] = None
+    extra_params: Dict[str, Any] = field(default_factory=dict)
 
 
 class CacheBackend(ABC):
@@ -263,6 +282,57 @@ class InMemoryCache(CacheBackend):
             }
 
 
+def _scan_and_delete_keys(
+    client: Any, pattern: str, dry_run: bool, batch_size: int
+) -> int:
+    """Scan and delete Redis keys matching pattern.
+
+    Extracted from RedisCache.clear() to reduce nesting depth.
+
+    Args:
+        client: Redis client instance
+        pattern: Key pattern to match
+        dry_run: If True, count without deleting
+        batch_size: Keys per batch
+
+    Returns:
+        Number of keys deleted (or would delete in dry-run)
+    """
+    cursor = 0
+    deleted_count = 0
+
+    logger.info(f"Clearing Redis keys matching '{pattern}' (dry_run={dry_run})")
+
+    while True:
+        # SCAN is non-blocking and returns cursor + batch of keys
+        cursor, keys = client.scan(
+            cursor=cursor,
+            match=pattern,
+            count=batch_size
+        )
+
+        if keys:
+            if dry_run:
+                # Just count, don't delete
+                deleted_count += len(keys)
+                logger.debug(f"Would delete {len(keys)} keys")
+            else:
+                # Delete batch using pipeline for efficiency
+                pipe = client.pipeline()
+                for key in keys:
+                    pipe.delete(key)
+                pipe.execute()
+
+                deleted_count += len(keys)
+                logger.debug(f"Deleted {len(keys)} keys")
+
+        # cursor=0 means we've scanned entire keyspace
+        if cursor == 0:
+            break
+
+    return deleted_count
+
+
 class RedisCache(CacheBackend):
     """
     Redis cache backend.
@@ -397,43 +467,13 @@ class RedisCache(CacheBackend):
             Use pattern parameter to limit scope when sharing Redis.
         """
         try:
-            cursor = 0
-            deleted_count = 0
-
-            logger.info(f"Clearing Redis keys matching '{pattern}' (dry_run={dry_run})")
-
-            while True:
-                # SCAN is non-blocking and returns cursor + batch of keys
-                cursor, keys = self._client.scan(
-                    cursor=cursor,
-                    match=pattern,
-                    count=batch_size
-                )
-
-                if keys:
-                    if dry_run:
-                        # Just count, don't delete
-                        deleted_count += len(keys)
-                        logger.debug(f"Would delete {len(keys)} keys")
-                    else:
-                        # Delete batch using pipeline for efficiency
-                        pipe = self._client.pipeline()
-                        for key in keys:
-                            pipe.delete(key)
-                        pipe.execute()
-
-                        deleted_count += len(keys)
-                        logger.debug(f"Deleted {len(keys)} keys")
-
-                # cursor=0 means we've scanned entire keyspace
-                if cursor == 0:
-                    break
-
+            deleted_count = _scan_and_delete_keys(
+                self._client, pattern, dry_run, batch_size
+            )
             logger.info(
                 f"Redis clear {'dry-run' if dry_run else 'complete'}: "
                 f"{deleted_count} keys {'would be' if dry_run else ''} deleted"
             )
-
         except redis.RedisError as e:
             # Specific exception for Redis operations
             logger.error(f"Redis clear error: {e}")
@@ -559,6 +599,42 @@ def _hash_cache_key(request: Dict[str, Any], security_context: Dict[str, str]) -
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _generate_cache_key_hash(
+    model: str, prompt: str, temperature: float, max_tokens: int,
+    user_id: Optional[str], tenant_id: Optional[str], session_id: Optional[str],
+    system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]],
+    extra_params: Dict[str, Any]
+) -> str:
+    """Generate cache key hash from parameters.
+
+    Extracted from LLMCache.generate_key() to reduce parameter count.
+
+    Args:
+        model: Model name
+        prompt: Prompt text
+        temperature: Temperature value
+        max_tokens: Max tokens
+        user_id: User ID for isolation
+        tenant_id: Tenant ID for isolation
+        session_id: Session ID
+        system_prompt: System prompt
+        tools: Tool definitions
+        extra_params: Additional parameters
+
+    Returns:
+        SHA-256 hash cache key
+    """
+    request = {
+        'model': model, 'prompt': prompt,
+        'temperature': temperature, 'max_tokens': max_tokens,
+        'system_prompt': system_prompt or '',
+        'tools': LLMCache._normalize_tools(tools) if tools else [],
+        **extra_params
+    }
+    security_context = _build_security_context(user_id, tenant_id, session_id)
+    return _hash_cache_key(request, security_context)
+
+
 class LLMCache:
     """
     LLM response cache with content-based hashing.
@@ -649,6 +725,7 @@ class LLMCache:
         Raises:
             ValueError: If neither user_id nor tenant_id provided
         """
+        # Validation
         _validate_cache_key_isolation(user_id, tenant_id)
         _validate_cache_key_types(
             model, prompt, temperature, max_tokens,
@@ -656,15 +733,12 @@ class LLMCache:
         )
         _validate_cache_kwargs(self._RESERVED_PARAMS, kwargs)
 
-        request = {
-            'model': model, 'prompt': prompt,
-            'temperature': temperature, 'max_tokens': max_tokens,
-            'system_prompt': system_prompt or '',
-            'tools': self._normalize_tools(tools) if tools else [],
-            **kwargs
-        }
-        security_context = _build_security_context(user_id, tenant_id, session_id)
-        cache_key = _hash_cache_key(request, security_context)
+        # Build request dict and hash
+        cache_key = _generate_cache_key_hash(
+            model, prompt, temperature, max_tokens,
+            user_id, tenant_id, session_id,
+            system_prompt, tools, kwargs
+        )
 
         logger.debug(
             "Generated cache key with isolation: %s...",

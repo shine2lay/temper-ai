@@ -112,42 +112,54 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         """
         super().__init__(config or {})
 
-        # Validate path lists (allowed/denied paths)
-        allowed_paths_raw = self.config.get("allowed_paths", [])
-        if not isinstance(allowed_paths_raw, list):
+        # Initialize and validate path configurations
+        self.allowed_paths = self._init_path_list("allowed_paths")
+        self.denied_paths = self._init_path_list("denied_paths")
+
+        # Initialize security settings
+        self._init_security_settings()
+
+        # Initialize forbidden patterns
+        self.forbidden_extensions = self._init_forbidden_extensions()
+        self.forbidden_directories = self._init_forbidden_directories()
+        self.forbidden_files = self._init_forbidden_files()
+
+        # Mode detection
+        self.mode = MODE_ALLOWLIST if self.allowed_paths else MODE_DENYLIST
+
+    def _init_path_list(self, config_key: str) -> List[str]:
+        """Initialize and validate a path list from configuration.
+
+        Args:
+            config_key: Configuration key to read
+
+        Returns:
+            Validated list of paths
+
+        Raises:
+            ValueError: If validation fails
+        """
+        paths_raw = self.config.get(config_key, [])
+        if not isinstance(paths_raw, list):
             raise ValueError(
-                f"allowed_paths must be a list of strings, got {type(allowed_paths_raw).__name__}"
+                f"{config_key} must be a list of strings, got {type(paths_raw).__name__}"
             )
 
-        self.allowed_paths: List[str] = []
-        for path in allowed_paths_raw:
+        paths: List[str] = []
+        for path in paths_raw:
             if not isinstance(path, str):
-                raise ValueError(f"allowed_paths items must be strings, got {type(path).__name__}")
+                raise ValueError(f"{config_key} items must be strings, got {type(path).__name__}")
             if len(path) > MAX_EXCLUDED_PATH_LENGTH:
-                raise ValueError(f"allowed_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH}{ERROR_CHARS_GOT}{len(path)}")
-            self.allowed_paths.append(path)
+                raise ValueError(f"{config_key} items must be <= {MAX_EXCLUDED_PATH_LENGTH}{ERROR_CHARS_GOT}{len(path)}")
+            paths.append(path)
 
-        if len(self.allowed_paths) > MAX_EXCLUDED_PATHS:
-            raise ValueError(f"allowed_paths must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(self.allowed_paths)}")
+        if len(paths) > MAX_EXCLUDED_PATHS:
+            raise ValueError(f"{config_key} must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(paths)}")
 
-        denied_paths_raw = self.config.get("denied_paths", [])
-        if not isinstance(denied_paths_raw, list):
-            raise ValueError(
-                f"denied_paths must be a list of strings, got {type(denied_paths_raw).__name__}"
-            )
+        return paths
 
-        self.denied_paths: List[str] = []
-        for path in denied_paths_raw:
-            if not isinstance(path, str):
-                raise ValueError(f"denied_paths items must be strings, got {type(path).__name__}")
-            if len(path) > MAX_EXCLUDED_PATH_LENGTH:
-                raise ValueError(f"denied_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH}{ERROR_CHARS_GOT}{len(path)}")
-            self.denied_paths.append(path)
-
-        if len(self.denied_paths) > MAX_EXCLUDED_PATHS:
-            raise ValueError(f"denied_paths must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(self.denied_paths)}")
-
-        # Validate security settings (booleans)
+    def _init_security_settings(self) -> None:
+        """Initialize boolean security settings."""
         self.allow_parent_traversal = self._validate_boolean(
             self.config.get("allow_parent_traversal", False),
             "allow_parent_traversal", default=False
@@ -165,7 +177,15 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             "case_sensitive", default=True
         )
 
-        # Validate forbidden extensions
+    def _init_forbidden_extensions(self) -> Set[str]:
+        """Initialize forbidden file extensions.
+
+        Returns:
+            Set of forbidden extensions (with defaults)
+
+        Raises:
+            ValueError: If validation fails
+        """
         forbidden_ext_raw = self.config.get("forbidden_extensions", [])
         if not isinstance(forbidden_ext_raw, list):
             raise ValueError(
@@ -187,9 +207,17 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"forbidden_extensions must have <= {MAX_FILENAME_ITEMS}{ERROR_ITEMS_GOT}{len(forbidden_ext_validated)}"
             )
 
-        self.forbidden_extensions: Set[str] = set(forbidden_ext_validated) | self.DEFAULT_FORBIDDEN_EXTENSIONS
+        return set(forbidden_ext_validated) | self.DEFAULT_FORBIDDEN_EXTENSIONS
 
-        # Validate forbidden directories
+    def _init_forbidden_directories(self) -> Set[str]:
+        """Initialize forbidden directories.
+
+        Returns:
+            Set of forbidden directories (with defaults)
+
+        Raises:
+            ValueError: If validation fails
+        """
         forbidden_dirs_raw = self.config.get("forbidden_directories", [])
         if not isinstance(forbidden_dirs_raw, list):
             raise ValueError(
@@ -213,9 +241,17 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"forbidden_directories must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(forbidden_dirs_validated)}"
             )
 
-        self.forbidden_directories: Set[str] = set(forbidden_dirs_validated) | self.DEFAULT_FORBIDDEN_DIRS
+        return set(forbidden_dirs_validated) | self.DEFAULT_FORBIDDEN_DIRS
 
-        # Validate forbidden files
+    def _init_forbidden_files(self) -> Set[str]:
+        """Initialize forbidden files.
+
+        Returns:
+            Set of forbidden files (with defaults)
+
+        Raises:
+            ValueError: If validation fails
+        """
         forbidden_files_raw = self.config.get("forbidden_files", [])
         if not isinstance(forbidden_files_raw, list):
             raise ValueError(
@@ -235,10 +271,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"forbidden_files must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(forbidden_files_validated)}"
             )
 
-        self.forbidden_files: Set[str] = set(forbidden_files_validated) | self.DEFAULT_FORBIDDEN_FILES
-
-        # Mode detection
-        self.mode = MODE_ALLOWLIST if self.allowed_paths else MODE_DENYLIST
+        return set(forbidden_files_validated) | self.DEFAULT_FORBIDDEN_FILES
 
     @property
     def name(self) -> str:
@@ -278,75 +311,16 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
         for path in paths:
             normalized_path = self._normalize_path(path)
 
-            if not self.allow_parent_traversal and self._has_parent_traversal(path):
-                violations.append(SafetyViolation(
-                    policy_name=self.name, severity=ViolationSeverity.CRITICAL,
-                    message=f"Path traversal detected: {path}",
-                    action=str(action), context=context,
-                    remediation_hint="Remove parent directory references (../)",
-                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_PARENT_TRAVERSAL}
-                ))
+            # Check for security violations
+            violation = self._check_path_security(path, normalized_path, action, context)
+            if violation:
+                violations.append(violation)
                 continue
 
-            if not self.allow_absolute_paths and os.path.isabs(path):
-                violations.append(SafetyViolation(
-                    policy_name=self.name, severity=ViolationSeverity.HIGH,
-                    message=f"Absolute path not allowed: {path}",
-                    action=str(action), context=context,
-                    remediation_hint="Use relative paths only",
-                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_ABSOLUTE_PATH}
-                ))
-                continue
-
-            if self._is_forbidden_file(normalized_path):
-                violations.append(SafetyViolation(
-                    policy_name=self.name, severity=ViolationSeverity.CRITICAL,
-                    message=f"Access to forbidden file: {path}",
-                    action=str(action), context=context,
-                    remediation_hint="This file contains sensitive data and cannot be accessed",
-                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_FORBIDDEN_FILE}
-                ))
-                continue
-
-            if self._is_forbidden_directory(normalized_path):
-                violations.append(SafetyViolation(
-                    policy_name=self.name, severity=ViolationSeverity.CRITICAL,
-                    message=f"Access to forbidden directory: {path}",
-                    action=str(action), context=context,
-                    remediation_hint="This directory is protected and cannot be accessed",
-                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_FORBIDDEN_DIRECTORY}
-                ))
-                continue
-
-            if self._has_forbidden_extension(path):
-                ext = Path(path).suffix
-                violations.append(SafetyViolation(
-                    policy_name=self.name, severity=ViolationSeverity.CRITICAL,
-                    message=f"Access to file with forbidden extension: {ext}",
-                    action=str(action), context=context,
-                    remediation_hint=f"Files with {ext} extension are not allowed",
-                    metadata={"path": path, "extension": ext, "violation": VIOLATION_FORBIDDEN_EXTENSION}
-                ))
-                continue
-
-            if self.mode == MODE_ALLOWLIST:
-                if not self._is_allowed(normalized_path):
-                    violations.append(SafetyViolation(
-                        policy_name=self.name, severity=ViolationSeverity.CRITICAL,
-                        message=f"Path not in allowlist: {path}",
-                        action=str(action), context=context,
-                        remediation_hint="Add path to allowed_paths or use an allowed directory",
-                        metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_NOT_IN_ALLOWLIST}
-                    ))
-            else:
-                if self._is_denied(normalized_path):
-                    violations.append(SafetyViolation(
-                        policy_name=self.name, severity=ViolationSeverity.CRITICAL,
-                        message=f"Path in denylist: {path}",
-                        action=str(action), context=context,
-                        remediation_hint="Use a different path not in denied_paths",
-                        metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_IN_DENYLIST}
-                    ))
+            # Check access control (allowlist/denylist)
+            violation = self._check_path_access(path, normalized_path, action, context)
+            if violation:
+                violations.append(violation)
 
         valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)
 
@@ -355,6 +329,115 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             metadata={"mode": self.mode, "paths_checked": len(paths)},
             policy_name=self.name
         )
+
+    def _check_path_security(
+        self,
+        path: str,
+        normalized_path: str,
+        action: Dict[str, Any],
+        context: Dict[str, Any]
+    ) -> Optional[SafetyViolation]:
+        """Check path for security violations.
+
+        Args:
+            path: Original path
+            normalized_path: Normalized path
+            action: Action being validated
+            context: Execution context
+
+        Returns:
+            SafetyViolation if path fails security check, None otherwise
+        """
+        # Check parent traversal
+        if not self.allow_parent_traversal and self._has_parent_traversal(path):
+            return SafetyViolation(
+                policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                message=f"Path traversal detected: {path}",
+                action=str(action), context=context,
+                remediation_hint="Remove parent directory references (../)",
+                metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_PARENT_TRAVERSAL}
+            )
+
+        # Check absolute paths
+        if not self.allow_absolute_paths and os.path.isabs(path):
+            return SafetyViolation(
+                policy_name=self.name, severity=ViolationSeverity.HIGH,
+                message=f"Absolute path not allowed: {path}",
+                action=str(action), context=context,
+                remediation_hint="Use relative paths only",
+                metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_ABSOLUTE_PATH}
+            )
+
+        # Check forbidden file
+        if self._is_forbidden_file(normalized_path):
+            return SafetyViolation(
+                policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                message=f"Access to forbidden file: {path}",
+                action=str(action), context=context,
+                remediation_hint="This file contains sensitive data and cannot be accessed",
+                metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_FORBIDDEN_FILE}
+            )
+
+        # Check forbidden directory
+        if self._is_forbidden_directory(normalized_path):
+            return SafetyViolation(
+                policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                message=f"Access to forbidden directory: {path}",
+                action=str(action), context=context,
+                remediation_hint="This directory is protected and cannot be accessed",
+                metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_FORBIDDEN_DIRECTORY}
+            )
+
+        # Check forbidden extension
+        if self._has_forbidden_extension(path):
+            ext = Path(path).suffix
+            return SafetyViolation(
+                policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                message=f"Access to file with forbidden extension: {ext}",
+                action=str(action), context=context,
+                remediation_hint=f"Files with {ext} extension are not allowed",
+                metadata={"path": path, "extension": ext, "violation": VIOLATION_FORBIDDEN_EXTENSION}
+            )
+
+        return None
+
+    def _check_path_access(
+        self,
+        path: str,
+        normalized_path: str,
+        action: Dict[str, Any],
+        context: Dict[str, Any]
+    ) -> Optional[SafetyViolation]:
+        """Check path against allowlist/denylist.
+
+        Args:
+            path: Original path
+            normalized_path: Normalized path
+            action: Action being validated
+            context: Execution context
+
+        Returns:
+            SafetyViolation if path fails access check, None otherwise
+        """
+        if self.mode == MODE_ALLOWLIST:
+            if not self._is_allowed(normalized_path):
+                return SafetyViolation(
+                    policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                    message=f"Path not in allowlist: {path}",
+                    action=str(action), context=context,
+                    remediation_hint="Add path to allowed_paths or use an allowed directory",
+                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_NOT_IN_ALLOWLIST}
+                )
+        else:
+            if self._is_denied(normalized_path):
+                return SafetyViolation(
+                    policy_name=self.name, severity=ViolationSeverity.CRITICAL,
+                    message=f"Path in denylist: {path}",
+                    action=str(action), context=context,
+                    remediation_hint="Use a different path not in denied_paths",
+                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_IN_DENYLIST}
+                )
+        return None
 
     def _extract_paths(self, action: Dict[str, Any]) -> List[str]:
         """Extract file paths from action. Delegates to helper."""

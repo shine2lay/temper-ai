@@ -185,50 +185,30 @@ class TavilySearch(BaseTool):
             )
         return api_key
 
-    def execute(self, **kwargs: Any) -> ToolResult:
-        """Execute a Tavily web search.
-
-        Args:
-            query: Search query string (required).
-            max_results: Maximum results to return (default: 5).
-            search_depth: 'basic' or 'advanced' (default: 'basic').
-            include_domains: Optional list of domains to include.
-            exclude_domains: Optional list of domains to exclude.
-
-        Returns:
-            ToolResult with SearchResponse.model_dump() in result field.
-        """
-        query = kwargs.get("query")
-        max_results = kwargs.get("max_results", DEFAULT_SEARCH_MAX_RESULTS)
-        search_depth = kwargs.get("search_depth", "basic")
-        include_domains = kwargs.get("include_domains")
-        exclude_domains = kwargs.get("exclude_domains")
-
-        # Validate query
+    def _validate_query(self, query: Any) -> Optional[ToolResult]:
+        """Validate query input. Returns error or None."""
         if not query or not isinstance(query, str) or not query.strip():
             return ToolResult(
                 success=False,
                 error="query must be a non-empty string",
             )
+        return None
 
-        # Get API key
-        try:
-            api_key = self._get_api_key()
-        except ValueError as e:
-            return ToolResult(
-                success=False,
-                error=str(e),
-            )
-
-        # Check rate limit
+    def _check_rate_limit(self) -> Optional[ToolResult]:
+        """Check rate limit. Returns error or None."""
         if not self.rate_limiter.can_proceed():
             wait_time = self.rate_limiter.wait_time()
             return ToolResult(
                 success=False,
                 error=f"Rate limit exceeded. Please wait {wait_time:.1f} seconds.",
             )
+        return None
 
-        # Build request body
+    def _build_request_body(
+        self, api_key: str, query: str, max_results: int, search_depth: str,
+        include_domains: Optional[List[str]], exclude_domains: Optional[List[str]]
+    ) -> Dict[str, Any]:
+        """Build request body for Tavily API."""
         body: Dict[str, Any] = {
             "api_key": api_key,
             "query": query,
@@ -239,11 +219,10 @@ class TavilySearch(BaseTool):
             body["include_domains"] = include_domains
         if exclude_domains is not None:
             body["exclude_domains"] = exclude_domains
+        return body
 
-        # Record request for rate limiting
-        self.rate_limiter.record_request()
-
-        # Make API call
+    def _execute_api_call(self, body: Dict[str, Any]) -> tuple[Optional[Any], Optional[ToolResult], float]:
+        """Execute Tavily API call. Returns (response, error, elapsed_ms)."""
         start_time = time.monotonic()
         try:
             client = self._get_client()
@@ -253,12 +232,14 @@ class TavilySearch(BaseTool):
                 timeout=DEFAULT_SEARCH_TIMEOUT,
             )
             response.raise_for_status()
+            elapsed_ms = (time.monotonic() - start_time) * 1000
+            return response, None, elapsed_ms
 
         except httpx.TimeoutException:
-            return ToolResult(
+            return None, ToolResult(
                 success=False,
                 error=f"Tavily API request timed out after {DEFAULT_SEARCH_TIMEOUT} seconds",
-            )
+            ), 0
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
             if status == HTTP_STATUS_UNAUTHORIZED:
@@ -267,23 +248,19 @@ class TavilySearch(BaseTool):
                 error_msg = "Tavily API rate limit exceeded. Try again later."
             else:
                 error_msg = f"Tavily API error (HTTP {status}): {e.response.text[:ERROR_RESPONSE_TEXT_MAX_LENGTH]}"
-            return ToolResult(
-                success=False,
-                error=error_msg,
-            )
+            return None, ToolResult(success=False, error=error_msg), 0
         except httpx.RequestError as e:
-            return ToolResult(
+            return None, ToolResult(
                 success=False,
                 error=f"Tavily API request error: {str(e)}",
-            )
+            ), 0
 
-        elapsed_ms = (time.monotonic() - start_time) * 1000
-
-        # Parse response
+    def _parse_response(self, response: Any, query: str, elapsed_ms: float) -> tuple[Optional[SearchResponse], Optional[ToolResult]]:
+        """Parse response and build SearchResponse. Returns (response, error)."""
         try:
             data = response.json()
         except (ValueError, KeyError) as e:
-            return ToolResult(
+            return None, ToolResult(
                 success=False,
                 error=f"Failed to parse Tavily API response: {e}",
             )
@@ -307,13 +284,66 @@ class TavilySearch(BaseTool):
             search_time_ms=elapsed_ms,
         )
 
+        return search_response, None
+
+    def execute(self, **kwargs: Any) -> ToolResult:
+        """Execute a Tavily web search.
+
+        Args:
+            query: Search query string (required).
+            max_results: Maximum results to return (default: 5).
+            search_depth: 'basic' or 'advanced' (default: 'basic').
+            include_domains: Optional list of domains to include.
+            exclude_domains: Optional list of domains to exclude.
+
+        Returns:
+            ToolResult with SearchResponse.model_dump() in result field.
+        """
+        query = kwargs.get("query")
+        max_results = kwargs.get("max_results", DEFAULT_SEARCH_MAX_RESULTS)
+        search_depth = kwargs.get("search_depth", "basic")
+        include_domains = kwargs.get("include_domains")
+        exclude_domains = kwargs.get("exclude_domains")
+
+        # Validate query
+        error_result = self._validate_query(query)
+        if error_result is not None:
+            return error_result
+
+        # Get API key
+        try:
+            api_key = self._get_api_key()
+        except ValueError as e:
+            return ToolResult(success=False, error=str(e))
+
+        # Check rate limit
+        error_result = self._check_rate_limit()
+        if error_result is not None:
+            return error_result
+
+        # Build request body
+        body = self._build_request_body(api_key, query, max_results, search_depth, include_domains, exclude_domains)
+
+        # Record request for rate limiting
+        self.rate_limiter.record_request()
+
+        # Execute API call
+        response, error_result, elapsed_ms = self._execute_api_call(body)
+        if error_result is not None:
+            return error_result
+
+        # Parse response
+        search_response, error_result = self._parse_response(response, query, elapsed_ms)
+        if error_result is not None:
+            return error_result
+
         return ToolResult(
             success=True,
             result=search_response.model_dump(),
             metadata={
                 "query": query,
                 "search_depth": search_depth,
-                "num_results": len(results),
+                "num_results": len(search_response.results),
                 "search_time_ms": round(elapsed_ms, 1),
             },
         )

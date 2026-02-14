@@ -17,6 +17,90 @@ if TYPE_CHECKING:
     from src.core.context import ExecutionContext
 
 
+def _sanitize_aws_keys(message: str) -> str:
+    """Sanitize AWS API keys from message."""
+    return re.sub(
+        r'\b(AKIA|ASIA)[A-Z0-9]{16}\b',
+        '[REDACTED-AWS-KEY]',
+        message
+    )
+
+
+def _sanitize_api_keys(message: str) -> str:
+    """Sanitize API keys from message."""
+    # Pattern keys (sk-*, api-*, key-*, etc.)
+    message = re.sub(
+        r'\b(sk|api|key|secret)[-_][a-zA-Z0-9\-_]{3,}\b',
+        '[REDACTED-API-KEY]',
+        message,
+        flags=re.IGNORECASE
+    )
+    # Assignment format (api_key=*, apiKey=*, etc.)
+    message = re.sub(
+        r'(api[_-]?key|apikey)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
+        r'\1=[REDACTED-API-KEY]',
+        message,
+        flags=re.IGNORECASE
+    )
+    return message
+
+
+def _sanitize_jwt_tokens(message: str) -> str:
+    """Sanitize JWT tokens from message."""
+    # Bearer tokens
+    message = re.sub(
+        r'Bearer\s+[a-zA-Z0-9._-]+',
+        'Bearer [REDACTED-TOKEN]',
+        message
+    )
+    # Bare JWT tokens
+    message = re.sub(
+        r'\beyJ[a-zA-Z0-9._-]{20,}',
+        '[REDACTED-JWT-TOKEN]',
+        message
+    )
+    return message
+
+
+def _sanitize_passwords(message: str) -> str:
+    """Sanitize passwords from message."""
+    return re.sub(
+        r'(password|passwd|pwd|pass)\s*[:=]\s*["\']?[^\s"\']{3,}["\']?',
+        r'\1=[REDACTED-PASSWORD]',
+        message,
+        flags=re.IGNORECASE
+    )
+
+
+def _sanitize_generic_tokens(message: str) -> str:
+    """Sanitize generic tokens and auth headers from message."""
+    return re.sub(
+        r'(token|auth|authorization|x-api-key)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
+        r'\1=[REDACTED-TOKEN]',
+        message,
+        flags=re.IGNORECASE
+    )
+
+
+def _sanitize_connection_strings(message: str) -> str:
+    """Sanitize database connection strings from message."""
+    # Connection string credentials
+    message = re.sub(
+        r'(mysql|postgres|postgresql|mongodb|redis)://[^:]+:[^@]+@',
+        r'\1://[REDACTED-CREDENTIALS]@',
+        message,
+        flags=re.IGNORECASE
+    )
+    # Query param passwords
+    message = re.sub(
+        r'[?&](password|pwd|pass|token|key|secret)=[^&\s]+',
+        r'?\1=[REDACTED]',
+        message,
+        flags=re.IGNORECASE
+    )
+    return message
+
+
 def sanitize_error_message(message: str) -> str:
     """Sanitize sensitive data from error messages.
 
@@ -44,75 +128,13 @@ def sanitize_error_message(message: str) -> str:
     if not message:
         return message
 
-    # AWS API keys (AKIA* for access keys, ASIA* for temporary credentials)
-    message = re.sub(
-        r'\b(AKIA|ASIA)[A-Z0-9]{16}\b',
-        '[REDACTED-AWS-KEY]',
-        message
-    )
-
-    # API keys (sk-*, api-*, key-*, etc.)
-    # Matches patterns like: sk-test-key, api-prod-123, key_admin_xyz
-    message = re.sub(
-        r'\b(sk|api|key|secret)[-_][a-zA-Z0-9\-_]{3,}\b',
-        '[REDACTED-API-KEY]',
-        message,
-        flags=re.IGNORECASE
-    )
-
-    # API key in assignment format (api_key=*, apiKey=*, API_KEY=*, etc.)
-    message = re.sub(
-        r'(api[_-]?key|apikey)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
-        r'\1=[REDACTED-API-KEY]',
-        message,
-        flags=re.IGNORECASE
-    )
-
-    # JWT tokens (Bearer or bare JWT starting with eyJ)
-    message = re.sub(
-        r'Bearer\s+[a-zA-Z0-9._-]+',
-        'Bearer [REDACTED-TOKEN]',
-        message
-    )
-    message = re.sub(
-        r'\beyJ[a-zA-Z0-9._-]{20,}',
-        '[REDACTED-JWT-TOKEN]',
-        message
-    )
-
-    # Passwords (password=*, pwd=*, pass=*, etc.)
-    message = re.sub(
-        r'(password|passwd|pwd|pass)\s*[:=]\s*["\']?[^\s"\']{3,}["\']?',
-        r'\1=[REDACTED-PASSWORD]',
-        message,
-        flags=re.IGNORECASE
-    )
-
-    # Generic tokens and auth headers
-    message = re.sub(
-        r'(token|auth|authorization|x-api-key)\s*[:=]\s*["\']?[a-zA-Z0-9\-_]{10,}["\']?',
-        r'\1=[REDACTED-TOKEN]',
-        message,
-        flags=re.IGNORECASE
-    )
-
-    # Database connection strings
-    # mysql://user:password@host/db
-    message = re.sub(
-        r'(mysql|postgres|postgresql|mongodb|redis)://[^:]+:[^@]+@',
-        r'\1://[REDACTED-CREDENTIALS]@',
-        message,
-        flags=re.IGNORECASE
-    )
-
-    # Connection strings with passwords in query params
-    # ?password=secret or &password=secret
-    message = re.sub(
-        r'[?&](password|pwd|pass|token|key|secret)=[^&\s]+',
-        r'?\1=[REDACTED]',
-        message,
-        flags=re.IGNORECASE
-    )
+    # Apply each sanitization helper
+    message = _sanitize_aws_keys(message)
+    message = _sanitize_api_keys(message)
+    message = _sanitize_jwt_tokens(message)
+    message = _sanitize_passwords(message)
+    message = _sanitize_generic_tokens(message)
+    message = _sanitize_connection_strings(message)
 
     return message
 

@@ -6,6 +6,7 @@ These are internal implementation details and should not be used directly.
 import re
 from typing import Any, Dict, Optional, Set, cast
 
+from src.safety._forbidden_ops_pattern_config import PatternConfig
 from src.safety.constants import (
     ARGS_KEY,
     BASH_KEY,
@@ -26,73 +27,88 @@ CATEGORY_SECURITY = "security"
 CATEGORY_CUSTOM = "custom"
 
 
-def compile_all_patterns(
-    check_file_writes: bool,
-    check_dangerous_commands: bool,
-    check_injection_patterns: bool,
-    check_security_sensitive: bool,
-    file_write_patterns: Dict[str, Dict[str, Any]],
-    dangerous_command_patterns: Dict[str, Dict[str, Any]],
-    injection_patterns: Dict[str, Dict[str, Any]],
-    security_sensitive_patterns: Dict[str, Dict[str, Any]],
-    custom_forbidden_patterns: Dict[str, str],
+def _compile_pattern_category(
+    prefix: str,
+    category: str,
+    pattern_dict: Dict[str, Dict[str, Any]]
 ) -> Dict[str, Dict[str, Any]]:
-    """Compile all regex patterns based on configuration."""
-    patterns: Dict[str, Dict[str, Any]] = {}
+    """Compile a single category of patterns.
 
-    if check_file_writes:
-        patterns.update({
-            f"file_write_{name}": {
-                REGEX_KEY: re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
-                VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
-                VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
-                CATEGORY_KEY: CATEGORY_FILE_WRITE,
-                "requires_context_check": info.get("requires_context_check", False)
-            }
-            for name, info in file_write_patterns.items()
-        })
+    Args:
+        prefix: Pattern name prefix (e.g., "file_write_", "dangerous_")
+        category: Category name for metadata
+        pattern_dict: Dictionary of pattern definitions
 
-    if check_dangerous_commands:
-        patterns.update({
-            f"dangerous_{name}": {
-                REGEX_KEY: re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
-                VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
-                VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
-                CATEGORY_KEY: CATEGORY_DANGEROUS
-            }
-            for name, info in dangerous_command_patterns.items()
-        })
+    Returns:
+        Dictionary of compiled patterns with full metadata
+    """
+    return {
+        f"{prefix}{name}": {
+            REGEX_KEY: re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
+            VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
+            VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
+            CATEGORY_KEY: category,
+            "requires_context_check": info.get("requires_context_check", False)
+        }
+        for name, info in pattern_dict.items()
+    }
 
-    if check_injection_patterns:
-        patterns.update({
-            f"injection_{name}": {
-                REGEX_KEY: re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
-                VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
-                VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
-                CATEGORY_KEY: CATEGORY_INJECTION
-            }
-            for name, info in injection_patterns.items()
-        })
 
-    if check_security_sensitive:
-        patterns.update({
-            f"security_{name}": {
-                REGEX_KEY: re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
-                VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
-                VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
-                CATEGORY_KEY: CATEGORY_SECURITY
-            }
-            for name, info in security_sensitive_patterns.items()
-        })
+def _compile_custom_patterns(
+    custom_patterns: Dict[str, str]
+) -> Dict[str, Dict[str, Any]]:
+    """Compile custom forbidden patterns.
 
-    # Add custom patterns
-    for name, pattern_str in custom_forbidden_patterns.items():
-        patterns[f"custom_{name}"] = {
+    Args:
+        custom_patterns: Dictionary of custom pattern definitions
+
+    Returns:
+        Dictionary of compiled custom patterns
+    """
+    return {
+        f"custom_{name}": {
             "regex": re.compile(pattern_str, re.IGNORECASE),
             VIOLATION_MESSAGE: f"Custom forbidden pattern: {name}",
             VIOLATION_SEVERITY: ViolationSeverity.HIGH,
             "category": CATEGORY_CUSTOM
         }
+        for name, pattern_str in custom_patterns.items()
+    }
+
+
+def compile_all_patterns(config: PatternConfig) -> Dict[str, Dict[str, Any]]:
+    """Compile all regex patterns based on configuration.
+
+    Args:
+        config: Pattern configuration with enable flags and pattern dictionaries
+
+    Returns:
+        Dictionary of all compiled patterns with metadata
+    """
+    patterns: Dict[str, Dict[str, Any]] = {}
+
+    if config.check_file_writes:
+        patterns.update(_compile_pattern_category(
+            "file_write_", CATEGORY_FILE_WRITE, config.file_write_patterns
+        ))
+
+    if config.check_dangerous_commands:
+        patterns.update(_compile_pattern_category(
+            "dangerous_", CATEGORY_DANGEROUS, config.dangerous_command_patterns
+        ))
+
+    if config.check_injection_patterns:
+        patterns.update(_compile_pattern_category(
+            "injection_", CATEGORY_INJECTION, config.injection_patterns
+        ))
+
+    if config.check_security_sensitive:
+        patterns.update(_compile_pattern_category(
+            "security_", CATEGORY_SECURITY, config.security_sensitive_patterns
+        ))
+
+    # Add custom patterns
+    patterns.update(_compile_custom_patterns(config.custom_forbidden_patterns))
 
     return patterns
 

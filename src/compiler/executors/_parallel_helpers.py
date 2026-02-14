@@ -17,7 +17,6 @@ from src.constants.limits import DEFAULT_MIN_ITEMS, SMALL_ITEM_LIMIT
 from src.constants.probabilities import PROB_HIGH
 from src.constants.sizes import UUID_HEX_SHORT_LENGTH
 from src.core.context import ExecutionContext
-from src.utils.config_helpers import sanitize_config_for_display
 from src.utils.exceptions import (
     ConfigNotFoundError,
     ConfigValidationError,
@@ -26,6 +25,123 @@ from src.utils.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _prepare_agent_input(s: Dict[str, Any]) -> Dict[str, Any]:
+    """Prepare agent input data by unwrapping workflow_inputs and filtering reserved keys."""
+    _reserved = frozenset({
+        StateKeys.STAGE_OUTPUTS, StateKeys.CURRENT_STAGE, StateKeys.WORKFLOW_ID, StateKeys.TRACKER,
+        StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER, StateKeys.SHOW_DETAILS,
+        StateKeys.DETAIL_CONSOLE, StateKeys.WORKFLOW_INPUTS, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
+    })
+    input_data = s.get(StateKeys.STAGE_INPUT, {})
+    wi = {k: v for k, v in input_data.get(StateKeys.WORKFLOW_INPUTS, {}).items()
+          if k not in _reserved}
+    return {**input_data, **wi}
+
+
+def _build_agent_success_result(
+    agent_name: str,
+    response: Any,
+    duration: float
+) -> Dict[str, Any]:
+    """Build success result dict from agent response."""
+    return {
+        StateKeys.AGENT_OUTPUTS: {
+            agent_name: {
+                StateKeys.OUTPUT: response.output,
+                StateKeys.REASONING: response.reasoning,
+                StateKeys.CONFIDENCE: response.confidence,
+                StateKeys.TOKENS: response.tokens,
+                StateKeys.COST_USD: response.estimated_cost_usd,
+                StateKeys.TOOL_CALLS: response.tool_calls if response.tool_calls else [],
+            }
+        },
+        StateKeys.AGENT_STATUSES: {agent_name: "success"},
+        StateKeys.AGENT_METRICS: {
+            agent_name: {
+                StateKeys.TOKENS: response.tokens,
+                StateKeys.COST_USD: response.estimated_cost_usd,
+                StateKeys.DURATION_SECONDS: duration,
+                StateKeys.TOOL_CALLS: len(response.tool_calls) if response.tool_calls else 0,
+                StateKeys.RETRIES: 0
+            }
+        },
+        StateKeys.ERRORS: {}
+    }
+
+
+def _build_agent_error_result(
+    agent_name: str,
+    e: Exception,
+    duration: float
+) -> Dict[str, Any]:
+    """Build error result dict from exception."""
+    return {
+        StateKeys.AGENT_OUTPUTS: {},
+        StateKeys.AGENT_STATUSES: {agent_name: "failed"},
+        StateKeys.AGENT_METRICS: {
+            agent_name: {
+                StateKeys.TOKENS: 0,
+                StateKeys.COST_USD: 0.0,
+                StateKeys.DURATION_SECONDS: duration,
+                StateKeys.TOOL_CALLS: 0,
+                StateKeys.RETRIES: 0
+            }
+        },
+        StateKeys.ERRORS: {agent_name: f"{type(e).__name__}: {str(e)}"}
+    }
+
+
+def _execute_agent_with_tracking(
+    agent: Any,
+    input_data: Dict[str, Any],
+    context: Any,
+    agent_name: str,
+    agent_config_dict: Dict[str, Any],
+    tracker: Any,
+    stage_id: str
+) -> Any:
+    """Execute agent with tracker context and set output tracking."""
+    from src.utils.config_helpers import sanitize_config_for_display
+
+    agent_config_for_tracking = sanitize_config_for_display(agent_config_dict)
+
+    # Filter non-serializable keys for tracking
+    _non_serializable_keys: frozenset[str] = frozenset({
+        StateKeys.TRACKER, StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER,
+        StateKeys.SHOW_DETAILS, StateKeys.DETAIL_CONSOLE, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
+    })
+    tracking_input_data = {
+        k: v for k, v in input_data.items()
+        if k not in _non_serializable_keys
+    }
+    tracking_input_data = sanitize_config_for_display(tracking_input_data)
+
+    with tracker.track_agent(
+        agent_name=agent_name,
+        agent_config=agent_config_for_tracking,
+        stage_id=stage_id,
+        input_data=tracking_input_data,
+    ) as agent_id:
+        context.agent_id = agent_id
+        input_data[StateKeys.TRACKER] = tracker
+        response = agent.execute(input_data, context)
+
+        try:
+            tracker.set_agent_output(
+                agent_id=agent_id,
+                output_data={StateKeys.OUTPUT: response.output},
+                reasoning=response.reasoning,
+                total_tokens=response.tokens,
+                estimated_cost_usd=response.estimated_cost_usd,
+                num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
+                num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
+            )
+        except Exception:
+            logger.warning("Failed to set agent output tracking for %s", agent_name, exc_info=True)
+
+    return response
 
 
 def create_agent_node(
@@ -60,6 +176,7 @@ def create_agent_node(
         start_time = time.time()
 
         try:
+            # Load agent factory
             if agent_factory_cls is not None:
                 agent_factory = agent_factory_cls
             else:
@@ -67,7 +184,7 @@ def create_agent_node(
                 agent_factory = _AgentFactory
             from src.compiler.schemas import AgentConfig
 
-            # Load agent config and create agent (with per-workflow caching)
+            # Load/cache agent
             agent_config_dict = config_loader.load_agent(agent_name)
             agent_config = AgentConfig(**agent_config_dict)
             if agent_name in agent_cache:
@@ -76,138 +193,50 @@ def create_agent_node(
                 agent = agent_factory.create(agent_config)
                 agent_cache[agent_name] = agent
 
-            # Prepare input (unwrap workflow_inputs to top level)
-            # Filter out reserved keys to prevent user inputs from overwriting framework state.
-            _reserved = frozenset({
-                StateKeys.STAGE_OUTPUTS, StateKeys.CURRENT_STAGE, StateKeys.WORKFLOW_ID, StateKeys.TRACKER,
-                StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER, StateKeys.SHOW_DETAILS,
-                StateKeys.DETAIL_CONSOLE, StateKeys.WORKFLOW_INPUTS, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
-            })
-            input_data = s.get(StateKeys.STAGE_INPUT, {})
-            wi = {k: v for k, v in input_data.get(StateKeys.WORKFLOW_INPUTS, {}).items()
-                  if k not in _reserved}
-            input_data = {**input_data, **wi}
+            # Prepare input data
+            input_data = _prepare_agent_input(s)
 
-            # Prepare agent config for tracking
+            # Prepare config dict for tracking
             if hasattr(agent_config, 'model_dump'):
                 agent_config_dict_for_tracking = agent_config.model_dump()
             elif hasattr(agent_config, 'dict'):
                 agent_config_dict_for_tracking = agent_config.dict()
             else:
                 agent_config_dict_for_tracking = dict(agent_config_dict)
-            agent_config_dict_for_tracking = sanitize_config_for_display(agent_config_dict_for_tracking)
 
-            # Determine stage_id to use
+            # Determine effective stage_id
             effective_stage_id = stage_id if stage_id else f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
 
-            if tracker and stage_id:
-                # Allowlist of known non-serializable/infrastructure keys
-                _non_serializable_keys: frozenset[str] = frozenset({
-                    StateKeys.TRACKER, StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER,
-                    StateKeys.SHOW_DETAILS, StateKeys.DETAIL_CONSOLE, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
-                })
-                tracking_input_data = {
-                    k: v for k, v in input_data.items()
-                    if k not in _non_serializable_keys
+            # Create execution context
+            context = ExecutionContext(
+                workflow_id=state.get(StateKeys.WORKFLOW_ID, "unknown"),
+                stage_id=effective_stage_id,
+                agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
+                metadata={
+                    "stage_name": stage_name,
+                    "agent_name": agent_name,
+                    "execution_mode": "parallel"
                 }
-                tracking_input_data = sanitize_config_for_display(tracking_input_data)
+            )
 
-                with tracker.track_agent(
-                    agent_name=agent_name,
-                    agent_config=agent_config_dict_for_tracking,
-                    stage_id=effective_stage_id,
-                    input_data=tracking_input_data,
-                ) as agent_id:
-                    context = ExecutionContext(
-                        workflow_id=state.get(StateKeys.WORKFLOW_ID, "unknown"),
-                        stage_id=effective_stage_id,
-                        agent_id=agent_id,
-                        metadata={
-                            "stage_name": stage_name,
-                            "agent_name": agent_name,
-                            "execution_mode": "parallel"
-                        }
-                    )
-                    input_data[StateKeys.TRACKER] = tracker
-                    response = agent.execute(input_data, context)
-
-                    try:
-                        tracker.set_agent_output(
-                            agent_id=agent_id,
-                            output_data={StateKeys.OUTPUT: response.output},
-                            reasoning=response.reasoning,
-                            total_tokens=response.tokens,
-                            estimated_cost_usd=response.estimated_cost_usd,
-                            num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
-                            num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
-                        )
-                    except Exception:
-                        logger.warning("Failed to set agent output tracking for %s", agent_name, exc_info=True)
-            else:
-                # No tracker — use synthetic IDs (no agent_executions row exists,
-                # so do NOT pass a real tracker to the agent or LLM call tracking
-                # will fail with FK violations on llm_calls.agent_execution_id).
-                # input_data inherits tracker from stage_input (copied from state),
-                # so we must strip it to prevent the agent from tracking LLM calls.
-                input_data.pop(StateKeys.TRACKER, None)
-                context = ExecutionContext(
-                    workflow_id=state.get(StateKeys.WORKFLOW_ID, "unknown"),
-                    stage_id=effective_stage_id,
-                    agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
-                    metadata={
-                        "stage_name": stage_name,
-                        "agent_name": agent_name,
-                        "execution_mode": "parallel"
-                    }
+            # Execute with or without tracking
+            if tracker and stage_id:
+                response = _execute_agent_with_tracking(
+                    agent, input_data, context, agent_name,
+                    agent_config_dict_for_tracking, tracker, effective_stage_id
                 )
+            else:
+                # No tracker - strip tracker from input to prevent FK violations
+                input_data.pop(StateKeys.TRACKER, None)
                 response = agent.execute(input_data, context)
 
-            # Calculate duration
             duration = time.time() - start_time
-
-            # Return success updates
-            return {
-                StateKeys.AGENT_OUTPUTS: {
-                    agent_name: {
-                        StateKeys.OUTPUT: response.output,
-                        StateKeys.REASONING: response.reasoning,
-                        StateKeys.CONFIDENCE: response.confidence,
-                        StateKeys.TOKENS: response.tokens,
-                        StateKeys.COST_USD: response.estimated_cost_usd,
-                        StateKeys.TOOL_CALLS: response.tool_calls if response.tool_calls else [],
-                    }
-                },
-                StateKeys.AGENT_STATUSES: {agent_name: "success"},
-                StateKeys.AGENT_METRICS: {
-                    agent_name: {
-                        StateKeys.TOKENS: response.tokens,
-                        StateKeys.COST_USD: response.estimated_cost_usd,
-                        StateKeys.DURATION_SECONDS: duration,
-                        StateKeys.TOOL_CALLS: len(response.tool_calls) if response.tool_calls else 0,
-                        StateKeys.RETRIES: 0
-                    }
-                },
-                StateKeys.ERRORS: {}
-            }
+            return _build_agent_success_result(agent_name, response, duration)
 
         except (ConfigNotFoundError, ConfigValidationError, ValueError, TypeError, KeyError) as e:
             logger.info(f"Agent {agent_name} configuration/validation error: {e}")
             duration = time.time() - start_time
-
-            return {
-                StateKeys.AGENT_OUTPUTS: {},
-                StateKeys.AGENT_STATUSES: {agent_name: "failed"},
-                StateKeys.AGENT_METRICS: {
-                    agent_name: {
-                        StateKeys.TOKENS: 0,
-                        StateKeys.COST_USD: 0.0,
-                        StateKeys.DURATION_SECONDS: duration,
-                        StateKeys.TOOL_CALLS: 0,
-                        StateKeys.RETRIES: 0
-                    }
-                },
-                StateKeys.ERRORS: {agent_name: f"{type(e).__name__}: {str(e)}"}
-            }
+            return _build_agent_error_result(agent_name, e, duration)
 
         except (KeyboardInterrupt, SystemExit):
             raise
@@ -218,21 +247,7 @@ def create_agent_node(
                 exc_info=True
             )
             duration = time.time() - start_time
-
-            return {
-                StateKeys.AGENT_OUTPUTS: {},
-                StateKeys.AGENT_STATUSES: {agent_name: "failed"},
-                StateKeys.AGENT_METRICS: {
-                    agent_name: {
-                        StateKeys.TOKENS: 0,
-                        StateKeys.COST_USD: 0.0,
-                        StateKeys.DURATION_SECONDS: duration,
-                        StateKeys.TOOL_CALLS: 0,
-                        StateKeys.RETRIES: 0
-                    }
-                },
-                StateKeys.ERRORS: {agent_name: f"Unexpected error: {type(e).__name__}: {str(e)}"}
-            }
+            return _build_agent_error_result(agent_name, e, duration)
 
     return agent_node
 
@@ -439,6 +454,77 @@ def print_parallel_progress(
             )
 
 
+def _track_quality_gate_event(
+    tracker: Any,
+    event_type: str,
+    stage_name: str,
+    synthesis_result: Any,
+    violations: list,
+    quality_gates_config: Dict[str, Any],
+    retry_count: int
+) -> None:
+    """Track quality gate event in observability system."""
+    if tracker and hasattr(tracker, 'track_collaboration_event'):
+        metadata = {
+            "violations": violations,
+            "synthesis_method": synthesis_result.method,
+            "retry_count": retry_count,
+            "max_retries": quality_gates_config.get("max_retries", 2)
+        }
+        if event_type == "quality_gate_failure":
+            metadata["on_failure_action"] = quality_gates_config.get("on_failure", "retry_stage")
+        elif event_type == "quality_gate_retry":
+            metadata["retry_attempt"] = retry_count + 1
+
+        tracker.track_collaboration_event(
+            event_type=event_type,
+            stage_name=stage_name,
+            agents=[],
+            decision=None,
+            confidence=getattr(synthesis_result, "confidence", 0.0),
+            metadata=metadata
+        )
+
+
+def _handle_quality_gate_escalate(stage_name: str, violations: list) -> None:
+    """Handle escalate policy for quality gate failure."""
+    raise RuntimeError(
+        f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}': {'; '.join(violations)}"
+    )
+
+
+def _handle_quality_gate_warn(
+    stage_name: str,
+    violations: list,
+    synthesis_result: Any
+) -> None:
+    """Handle proceed_with_warning policy for quality gate failure."""
+    logger.warning(
+        f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}' but proceeding: {'; '.join(violations)}"
+    )
+    if not hasattr(synthesis_result, "metadata") or synthesis_result.metadata is None:
+        synthesis_result.metadata = {}
+    synthesis_result.metadata[StateKeys.QUALITY_GATE_WARNING] = violations
+
+
+def _check_retry_timeout(
+    stage_name: str,
+    wall_clock_start: float,
+    wall_clock_timeout: float,
+    retry_count: int,
+    violations: list
+) -> None:
+    """Check if wall-clock timeout exceeded during retry."""
+    elapsed = time.monotonic() - wall_clock_start
+    if elapsed >= wall_clock_timeout:
+        raise RuntimeError(
+            f"Quality gate retry for stage '{stage_name}' aborted: "
+            f"wall-clock timeout ({wall_clock_timeout:.0f}s) exceeded "
+            f"after {elapsed:.1f}s and {retry_count + 1} retries. "
+            f"Violations: {'; '.join(violations)}"
+        )
+
+
 def handle_quality_gate_failure(
     passed: bool,
     violations: list,
@@ -487,35 +573,20 @@ def handle_quality_gate_failure(
 
     # Track quality gate failure in observability
     tracker = state.get(StateKeys.TRACKER)
-    if tracker and hasattr(tracker, 'track_collaboration_event'):
-        tracker.track_collaboration_event(
-            event_type="quality_gate_failure",
-            stage_name=stage_name,
-            agents=[],
-            decision=None,
-            confidence=getattr(synthesis_result, "confidence", 0.0),
-            metadata={
-                "violations": violations,
-                "on_failure_action": on_failure,
-                "synthesis_method": synthesis_result.method,
-                "retry_count": retry_count,
-                "max_retries": quality_gates_config.get("max_retries", 2)
-            }
-        )
+    _track_quality_gate_event(
+        tracker, "quality_gate_failure", stage_name,
+        synthesis_result, violations, quality_gates_config, retry_count
+    )
 
     if on_failure == "escalate":
-        raise RuntimeError(
-            f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}': {'; '.join(violations)}"
-        )
-    elif on_failure == "proceed_with_warning":
-        logger.warning(
-            f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}' but proceeding: {'; '.join(violations)}"
-        )
-        if not hasattr(synthesis_result, "metadata") or synthesis_result.metadata is None:
-            synthesis_result.metadata = {}
-        synthesis_result.metadata[StateKeys.QUALITY_GATE_WARNING] = violations
+        _handle_quality_gate_escalate(stage_name, violations)
+        return None  # Unreachable, but satisfies type checker
+
+    if on_failure == "proceed_with_warning":
+        _handle_quality_gate_warn(stage_name, violations, synthesis_result)
         return None
-    elif on_failure == "retry_stage":
+
+    if on_failure == "retry_stage":
         max_retries = quality_gates_config.get("max_retries", 2)
 
         if StateKeys.STAGE_RETRY_COUNTS not in state:
@@ -531,30 +602,17 @@ def handle_quality_gate_failure(
 
         state[StateKeys.STAGE_RETRY_COUNTS][stage_name] = retry_count + 1
 
-        if tracker and hasattr(tracker, 'track_collaboration_event'):
-            tracker.track_collaboration_event(
-                event_type="quality_gate_retry",
-                stage_name=stage_name,
-                agents=[],
-                decision=None,
-                confidence=getattr(synthesis_result, "confidence", 0.0),
-                metadata={
-                    "violations": violations,
-                    "retry_attempt": retry_count + 1,
-                    "max_retries": max_retries,
-                    "synthesis_method": synthesis_result.method
-                }
-            )
+        _track_quality_gate_event(
+            tracker, "quality_gate_retry", stage_name,
+            synthesis_result, violations, quality_gates_config, retry_count
+        )
+
+        _check_retry_timeout(
+            stage_name, wall_clock_start, wall_clock_timeout,
+            retry_count, violations
+        )
 
         elapsed = time.monotonic() - wall_clock_start
-        if elapsed >= wall_clock_timeout:
-            raise RuntimeError(
-                f"Quality gate retry for stage '{stage_name}' aborted: "
-                f"wall-clock timeout ({wall_clock_timeout:.0f}s) exceeded "
-                f"after {elapsed:.1f}s and {retry_count + 1} retries. "
-                f"Violations: {'; '.join(violations)}"
-            )
-
         logger.warning(
             f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}', retrying "
             f"(attempt {retry_count + 2}/{max_retries + 1}, "
@@ -565,6 +623,34 @@ def handle_quality_gate_failure(
         return "continue"
 
     return None
+
+
+def _compute_stage_status(agent_statuses: Dict[str, Any]) -> str:
+    """Compute stage status from agent results."""
+    failed_count = sum(1 for s in agent_statuses.values() if s != "success")
+    total_count = len(agent_statuses)
+    if failed_count == total_count and total_count > 0:
+        return "failed"
+    if failed_count > 0:
+        return "degraded"
+    return "completed"
+
+
+def _build_synthesis_metadata(
+    synthesis_result: Any,
+    parallel_result: Dict[str, Any],
+    aggregate_metrics: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Build tracker metadata for synthesis event."""
+    return {
+        StateKeys.METHOD: synthesis_result.method,
+        StateKeys.CONFIDENCE: synthesis_result.confidence,
+        StateKeys.VOTES: synthesis_result.votes,
+        "num_conflicts": len(synthesis_result.conflicts),
+        StateKeys.REASONING: synthesis_result.reasoning,
+        StateKeys.AGENT_STATUSES: parallel_result.get(StateKeys.AGENT_STATUSES, {}),
+        StateKeys.AGGREGATE_METRICS: aggregate_metrics
+    }
 
 
 def update_state_with_results(
@@ -585,16 +671,8 @@ def update_state_with_results(
         parallel_result: Full parallel runner result
         aggregate_metrics: Aggregate metrics dict
     """
-    # Compute stage_status from agent results
     agent_statuses = parallel_result.get(StateKeys.AGENT_STATUSES, {})
-    failed_count = sum(1 for s in agent_statuses.values() if s != "success")
-    total_count = len(agent_statuses)
-    if failed_count == total_count and total_count > 0:
-        _stage_status = "failed"
-    elif failed_count > 0:
-        _stage_status = "degraded"
-    else:
-        _stage_status = "completed"
+    stage_status = _compute_stage_status(agent_statuses)
 
     state[StateKeys.STAGE_OUTPUTS][stage_name] = {
         StateKeys.DECISION: synthesis_result.decision,
@@ -602,7 +680,7 @@ def update_state_with_results(
         StateKeys.AGENT_STATUSES: agent_statuses,
         StateKeys.AGENT_METRICS: parallel_result.get(StateKeys.AGENT_METRICS, {}),
         StateKeys.AGGREGATE_METRICS: aggregate_metrics,
-        StateKeys.STAGE_STATUS: _stage_status,
+        StateKeys.STAGE_STATUS: stage_status,
         StateKeys.SYNTHESIS: {
             StateKeys.METHOD: synthesis_result.method,
             StateKeys.CONFIDENCE: synthesis_result.confidence,
@@ -613,22 +691,15 @@ def update_state_with_results(
     state[StateKeys.CURRENT_STAGE] = stage_name
 
     tracker = state.get(StateKeys.TRACKER)
-    if tracker:
-        tracker_metadata = {
-            StateKeys.METHOD: synthesis_result.method,
-            StateKeys.CONFIDENCE: synthesis_result.confidence,
-            StateKeys.VOTES: synthesis_result.votes,
-            "num_conflicts": len(synthesis_result.conflicts),
-            StateKeys.REASONING: synthesis_result.reasoning,
-            StateKeys.AGENT_STATUSES: parallel_result.get(StateKeys.AGENT_STATUSES, {}),
-            StateKeys.AGGREGATE_METRICS: aggregate_metrics
-        }
-        if hasattr(tracker, 'track_collaboration_event'):
-            tracker.track_collaboration_event(
-                event_type="synthesis",
-                stage_name=stage_name,
-                agents=list(agent_outputs_dict.keys()),
-                decision=synthesis_result.decision,
-                confidence=synthesis_result.confidence,
-                metadata=tracker_metadata
-            )
+    if tracker and hasattr(tracker, 'track_collaboration_event'):
+        tracker_metadata = _build_synthesis_metadata(
+            synthesis_result, parallel_result, aggregate_metrics
+        )
+        tracker.track_collaboration_event(
+            event_type="synthesis",
+            stage_name=stage_name,
+            agents=list(agent_outputs_dict.keys()),
+            decision=synthesis_result.decision,
+            confidence=synthesis_result.confidence,
+            metadata=tracker_metadata
+        )

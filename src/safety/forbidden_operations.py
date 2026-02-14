@@ -248,7 +248,20 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         # SECURITY (code-high-12): Validate all configuration inputs
         # Prevents type confusion and ReDoS attacks via malformed patterns
 
-        # Validate boolean configuration flags
+        # Initialize configuration flags
+        self._init_boolean_flags()
+
+        # Validate and store custom patterns
+        self.custom_forbidden_patterns = self._validate_custom_patterns(custom_patterns_raw)
+
+        # Validate and store whitelist commands
+        self.whitelist_commands = self._validate_whitelist_commands()
+
+        # Compile all patterns
+        self.compiled_patterns = self._compile_all_patterns()
+
+    def _init_boolean_flags(self) -> None:
+        """Initialize boolean configuration flags."""
         self.check_file_writes = self._validate_boolean(
             self.config.get("check_file_writes", True),
             "check_file_writes",
@@ -279,14 +292,24 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             default=True
         )
 
-        # Validate custom forbidden patterns (dict of name -> pattern)
-        # Already extracted before super().__init__() to avoid base class nested dict rejection
+    def _validate_custom_patterns(self, custom_patterns_raw: Any) -> Dict[str, str]:
+        """Validate custom forbidden patterns configuration.
+
+        Args:
+            custom_patterns_raw: Raw custom patterns from config
+
+        Returns:
+            Validated dictionary of custom patterns
+
+        Raises:
+            ValueError: If validation fails
+        """
         if not isinstance(custom_patterns_raw, dict):
             raise ValueError(
                 f"custom_forbidden_patterns must be a dict, got {type(custom_patterns_raw).__name__}"
             )
 
-        self.custom_forbidden_patterns: Dict[str, str] = {}
+        custom_patterns: Dict[str, str] = {}
         for name, pattern in custom_patterns_raw.items():
             if not isinstance(name, str):
                 raise ValueError(
@@ -302,7 +325,6 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 )
 
             # SECURITY: Validate regex pattern doesn't have ReDoS vulnerability
-            # The _validate_regex_pattern method tests with adversarial inputs
             try:
                 self._validate_regex_pattern(
                     pattern,
@@ -310,16 +332,26 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                     max_length=MAX_EXCLUDED_PATH_LENGTH,
                     test_timeout=PROB_VERY_LOW
                 )
-                self.custom_forbidden_patterns[name] = pattern
+                custom_patterns[name] = pattern
             except ValueError as e:
                 raise ValueError(f"Invalid regex in {CUSTOM_FORBIDDEN_PATTERNS_PREFIX}{name}']: {e}")
 
-        if len(self.custom_forbidden_patterns) > MAX_CUSTOM_PATTERNS:
+        if len(custom_patterns) > MAX_CUSTOM_PATTERNS:
             raise ValueError(
-                f"custom_forbidden_patterns must have <= {MAX_CUSTOM_PATTERNS} patterns, got {len(self.custom_forbidden_patterns)}"
+                f"custom_forbidden_patterns must have <= {MAX_CUSTOM_PATTERNS} patterns, got {len(custom_patterns)}"
             )
 
-        # Validate whitelist commands (list of strings)
+        return custom_patterns
+
+    def _validate_whitelist_commands(self) -> Set[str]:
+        """Validate whitelist commands configuration.
+
+        Returns:
+            Set of validated whitelist commands
+
+        Raises:
+            ValueError: If validation fails
+        """
         whitelist_raw = self.config.get("whitelist_commands", [])
         if not isinstance(whitelist_raw, list):
             raise ValueError(
@@ -343,20 +375,23 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 f"whitelist_commands must have <= {MAX_EXCLUDED_PATHS} items, got {len(whitelist_validated)}"
             )
 
-        self.whitelist_commands = set(whitelist_validated)
-
-        # Compile all patterns
-        self.compiled_patterns = self._compile_all_patterns()
+        return set(whitelist_validated)
 
     def _compile_all_patterns(self) -> Dict[str, Dict[str, Any]]:
         """Compile all regex patterns based on configuration."""
-        return _compile_all_patterns(
-            self.check_file_writes, self.check_dangerous_commands,
-            self.check_injection_patterns, self.check_security_sensitive,
-            self.FILE_WRITE_PATTERNS, self.DANGEROUS_COMMAND_PATTERNS,
-            self.INJECTION_PATTERNS, self.SECURITY_SENSITIVE_PATTERNS,
-            self.custom_forbidden_patterns,
+        from src.safety._forbidden_ops_pattern_config import PatternConfig
+        config = PatternConfig(
+            check_file_writes=self.check_file_writes,
+            check_dangerous_commands=self.check_dangerous_commands,
+            check_injection_patterns=self.check_injection_patterns,
+            check_security_sensitive=self.check_security_sensitive,
+            file_write_patterns=self.FILE_WRITE_PATTERNS,
+            dangerous_command_patterns=self.DANGEROUS_COMMAND_PATTERNS,
+            injection_patterns=self.INJECTION_PATTERNS,
+            security_sensitive_patterns=self.SECURITY_SENSITIVE_PATTERNS,
+            custom_forbidden_patterns=self.custom_forbidden_patterns,
         )
+        return _compile_all_patterns(config)
 
     @property
     def name(self) -> str:
@@ -402,7 +437,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         # Extract command
         command = self._extract_command(action)
 
-        # No command to check
+        # Guard: No command to check
         if not command:
             return ValidationResult(
                 valid=True,
@@ -410,7 +445,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 policy_name=self.name
             )
 
-        # Check whitelist
+        # Guard: Check whitelist
         if self._is_whitelisted(command):
             return ValidationResult(
                 valid=True,
@@ -419,34 +454,8 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 metadata={"whitelisted": True}
             )
 
-        # Check all patterns
-        violations = []
-        for pattern_name, pattern_info in self.compiled_patterns.items():
-            match = pattern_info["regex"].search(command)
-            if match:
-                # Check if pattern requires additional context validation
-                if pattern_info.get("requires_context_check"):
-                    # For redirect_output, validate the context
-                    if pattern_name == "file_write_redirect_output":
-                        if not self._validate_redirect_context(command, match):
-                            # Excluded context (comment, test, if, while, pipe)
-                            continue
-
-                violation = SafetyViolation(
-                    policy_name=self.name,
-                    severity=pattern_info[VIOLATION_SEVERITY],
-                    message=pattern_info[VIOLATION_MESSAGE],
-                    action=command,
-                    context=context,
-                    remediation_hint=self._get_remediation_hint(pattern_info[CATEGORY_KEY]),
-                    metadata={
-                        "pattern_name": pattern_name,
-                        "category": pattern_info[CATEGORY_KEY],
-                        "matched_text": match.group(0),
-                        "match_position": match.start()
-                    }
-                )
-                violations.append(violation)
+        # Check all patterns for violations
+        violations = self._check_all_patterns(command, context)
 
         # Return result
         return ValidationResult(
@@ -456,6 +465,73 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             metadata={
                 "patterns_checked": len(self.compiled_patterns),
                 "violations_found": len(violations)
+            }
+        )
+
+    def _check_all_patterns(
+        self,
+        command: str,
+        context: Dict[str, Any]
+    ) -> List[SafetyViolation]:
+        """Check command against all compiled patterns.
+
+        Args:
+            command: Command string to check
+            context: Execution context
+
+        Returns:
+            List of violations found
+        """
+        violations = []
+        for pattern_name, pattern_info in self.compiled_patterns.items():
+            violation = self._check_single_pattern(
+                command, context, pattern_name, pattern_info
+            )
+            if violation:
+                violations.append(violation)
+        return violations
+
+    def _check_single_pattern(
+        self,
+        command: str,
+        context: Dict[str, Any],
+        pattern_name: str,
+        pattern_info: Dict[str, Any]
+    ) -> Optional[SafetyViolation]:
+        """Check command against a single pattern.
+
+        Args:
+            command: Command string to check
+            context: Execution context
+            pattern_name: Name of the pattern
+            pattern_info: Pattern metadata and compiled regex
+
+        Returns:
+            SafetyViolation if pattern matches, None otherwise
+        """
+        match = pattern_info["regex"].search(command)
+        if not match:
+            return None
+
+        # Check if pattern requires additional context validation
+        if pattern_info.get("requires_context_check"):
+            if pattern_name == "file_write_redirect_output":
+                if not self._validate_redirect_context(command, match):
+                    # Excluded context (comment, test, if, while, pipe)
+                    return None
+
+        return SafetyViolation(
+            policy_name=self.name,
+            severity=pattern_info[VIOLATION_SEVERITY],
+            message=pattern_info[VIOLATION_MESSAGE],
+            action=command,
+            context=context,
+            remediation_hint=self._get_remediation_hint(pattern_info[CATEGORY_KEY]),
+            metadata={
+                "pattern_name": pattern_name,
+                "category": pattern_info[CATEGORY_KEY],
+                "matched_text": match.group(0),
+                "match_position": match.start()
             }
         )
 

@@ -201,6 +201,58 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         self.global_manager = TokenBucketManager()
         self._load_global_limits(config or {})
 
+    @property
+    def rate_limits(self) -> Dict[str, Any]:
+        """Per-agent rate limits (keyed by limit type)."""
+        return self.per_agent_manager.limits
+
+    def _validate_rate_limit_config(
+        self,
+        limit_type: str,
+        limit_config: Any
+    ) -> RateLimit:
+        """Validate and convert a single rate limit config.
+
+        Args:
+            limit_type: Type of rate limit
+            limit_config: Configuration (dict or RateLimit)
+
+        Returns:
+            RateLimit instance
+
+        Raises:
+            ValueError: If configuration is invalid
+        """
+        if not isinstance(limit_type, str):
+            raise ValueError(
+                f"Rate limit type must be string, got {type(limit_type).__name__}"
+            )
+
+        if isinstance(limit_config, RateLimit):
+            return limit_config
+
+        if not isinstance(limit_config, dict):
+            raise ValueError(
+                f"Rate limit '{limit_type}' must be dict or RateLimit, "
+                f"got {type(limit_config).__name__}"
+            )
+
+        # Validate required fields
+        required_fields = [MAX_TOKENS_KEY, REFILL_RATE_KEY]
+        for field in required_fields:
+            if field not in limit_config:
+                raise ValueError(
+                    f"Rate limit '{limit_type}' missing required field '{field}'"
+                )
+
+        # Create RateLimit (validation happens in __post_init__)
+        try:
+            return RateLimit(**limit_config)
+        except (ValueError, TypeError) as e:
+            raise ValueError(
+                f"Invalid rate limit configuration for '{limit_type}': {e}"
+            ) from e
+
     def _load_per_agent_limits(self, config: Dict[str, Any]) -> None:
         """Load per-agent rate limits from config.
 
@@ -213,44 +265,21 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         # Start with defaults
         limits = self.DEFAULT_LIMITS.copy()
 
-        # Override with config
-        if RATE_LIMITS_KEY in config:
-            if not isinstance(config[RATE_LIMITS_KEY], dict):
-                raise ValueError(
-                    f"{RATE_LIMITS_KEY} must be a dictionary, got {type(config[RATE_LIMITS_KEY]).__name__}"
-                )
+        # Early return if no custom config
+        if RATE_LIMITS_KEY not in config:
+            for limit_type, rate_limit in limits.items():
+                self.per_agent_manager.set_limit(limit_type, rate_limit)
+            return
 
-            for limit_type, limit_config in config[RATE_LIMITS_KEY].items():
-                # Validate limit_type is a string
-                if not isinstance(limit_type, str):
-                    raise ValueError(
-                        f"Rate limit type must be string, got {type(limit_type).__name__}"
-                    )
+        # Validate config type
+        if not isinstance(config[RATE_LIMITS_KEY], dict):
+            raise ValueError(
+                f"{RATE_LIMITS_KEY} must be a dictionary, got {type(config[RATE_LIMITS_KEY]).__name__}"
+            )
 
-                if isinstance(limit_config, dict):
-                    # Validate all required fields are present
-                    required_fields = [MAX_TOKENS_KEY, REFILL_RATE_KEY]
-                    for field in required_fields:
-                        if field not in limit_config:
-                            raise ValueError(
-                                f"Rate limit '{limit_type}' missing required field '{field}'"
-                            )
-
-                    # RateLimit.__post_init__ will validate positive values
-                    try:
-                        limits[limit_type] = RateLimit(**limit_config)
-                    except (ValueError, TypeError) as e:
-                        raise ValueError(
-                            f"Invalid rate limit configuration for '{limit_type}': {e}"
-                        ) from e
-
-                elif isinstance(limit_config, RateLimit):
-                    limits[limit_type] = limit_config
-                else:
-                    raise ValueError(
-                        f"Rate limit '{limit_type}' must be dict or RateLimit, "
-                        f"got {type(limit_config).__name__}"
-                    )
+        # Process each limit
+        for limit_type, limit_config in config[RATE_LIMITS_KEY].items():
+            limits[limit_type] = self._validate_rate_limit_config(limit_type, limit_config)
 
         # Register limits with manager
         for limit_type, rate_limit in limits.items():
@@ -268,44 +297,21 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         # Start with defaults
         limits = self.DEFAULT_GLOBAL_LIMITS.copy()
 
-        # Override with config
-        if GLOBAL_LIMITS_KEY in config:
-            if not isinstance(config[GLOBAL_LIMITS_KEY], dict):
-                raise ValueError(
-                    f"{GLOBAL_LIMITS_KEY} must be a dictionary, got {type(config[GLOBAL_LIMITS_KEY]).__name__}"
-                )
+        # Early return if no custom config
+        if GLOBAL_LIMITS_KEY not in config:
+            for limit_type, rate_limit in limits.items():
+                self.global_manager.set_limit(limit_type, rate_limit)
+            return
 
-            for limit_type, limit_config in config[GLOBAL_LIMITS_KEY].items():
-                # Validate limit_type is a string
-                if not isinstance(limit_type, str):
-                    raise ValueError(
-                        f"Global rate limit type must be string, got {type(limit_type).__name__}"
-                    )
+        # Validate config type
+        if not isinstance(config[GLOBAL_LIMITS_KEY], dict):
+            raise ValueError(
+                f"{GLOBAL_LIMITS_KEY} must be a dictionary, got {type(config[GLOBAL_LIMITS_KEY]).__name__}"
+            )
 
-                if isinstance(limit_config, dict):
-                    # Validate all required fields are present
-                    required_fields = [MAX_TOKENS_KEY, REFILL_RATE_KEY]
-                    for field in required_fields:
-                        if field not in limit_config:
-                            raise ValueError(
-                                f"Global rate limit '{limit_type}' missing required field '{field}'"
-                            )
-
-                    # RateLimit.__post_init__ will validate positive values
-                    try:
-                        limits[limit_type] = RateLimit(**limit_config)
-                    except (ValueError, TypeError) as e:
-                        raise ValueError(
-                            f"Invalid global rate limit configuration for '{limit_type}': {e}"
-                        ) from e
-
-                elif isinstance(limit_config, RateLimit):
-                    limits[limit_type] = limit_config
-                else:
-                    raise ValueError(
-                        f"Global rate limit '{limit_type}' must be dict or RateLimit, "
-                        f"got {type(limit_config).__name__}"
-                    )
+        # Process each limit (reuse validation helper)
+        for limit_type, limit_config in config[GLOBAL_LIMITS_KEY].items():
+            limits[limit_type] = self._validate_rate_limit_config(limit_type, limit_config)
 
         # Register limits with manager
         for limit_type, rate_limit in limits.items():
@@ -329,6 +335,70 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         """
         return RATE_LIMIT_PRIORITY
 
+    def _get_entity_id_and_scope(self, context: Dict[str, Any]) -> tuple[str, str]:
+        """Get entity ID and scope based on per_agent setting.
+
+        Args:
+            context: Execution context
+
+        Returns:
+            Tuple of (entity_id, scope)
+        """
+        if self.per_agent:
+            return context.get("agent_id", "unknown"), "per-agent"
+        return SCOPE_GLOBAL, SCOPE_GLOBAL
+
+    def _check_all_limits(
+        self,
+        limit_type: str,
+        action_type: str,
+        entity_id: str,
+        scope: str,
+        context: Dict[str, Any]
+    ) -> List[SafetyViolation]:
+        """Check all applicable rate limits for the action.
+
+        Args:
+            limit_type: Type of limit to check
+            action_type: Action type for error messages
+            entity_id: Entity identifier
+            scope: Scope of the limit
+            context: Execution context
+
+        Returns:
+            List of violations
+        """
+        violations: List[SafetyViolation] = []
+
+        # Check per-agent/global limit
+        agent_limited, agent_violation = self._check_limit(
+            self.per_agent_manager,
+            entity_id,
+            limit_type,
+            action_type,
+            context,
+            scope=scope
+        )
+
+        if agent_limited and agent_violation:
+            violations.append(agent_violation)
+
+        # Check global limits for tool calls
+        if limit_type == "tool_call":
+            global_limited, global_violation = self._check_limit(
+                self.global_manager,
+                "global",
+                "total_tool_calls",
+                action_type,
+                context,
+                scope="global"
+            )
+
+            if global_limited and global_violation:
+                violations.append(global_violation)
+
+        return violations
+
     def _validate_impl(
         self,
         action: Dict[str, Any],
@@ -337,16 +407,12 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         """Validate action against rate limits.
 
         Args:
-            action: Action to validate, should contain:
-                - operation: Type of operation (git_commit, deploy, tool_call, etc.)
-                - type: Alternative to operation
-            context: Execution context (for per-agent tracking)
+            action: Action to validate
+            context: Execution context
 
         Returns:
             ValidationResult with violations if rate limit exceeded
         """
-        violations: List[SafetyViolation] = []
-
         # Extract operation type
         action_type = action.get("operation") or action.get("type", "unknown")
 
@@ -362,45 +428,13 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
                 policy_name=self.name
             )
 
-        # Get agent ID (or use shared ID if per_agent is disabled)
-        if self.per_agent:
-            entity_id = context.get("agent_id", "unknown")
-            scope = "per-agent"
-        else:
-            # All agents share the same rate limit buckets
-            entity_id = SCOPE_GLOBAL
-            scope = SCOPE_GLOBAL
+        # Get entity and scope
+        entity_id, scope = self._get_entity_id_and_scope(context)
 
-        # Check rate limits
-        agent_limited, agent_violation = self._check_limit(
-            self.per_agent_manager,
-            entity_id,
-            limit_type,
-            action_type,
-            context,
-            scope=scope
+        # Check all applicable limits
+        violations = self._check_all_limits(
+            limit_type, action_type, entity_id, scope, context
         )
-
-        if agent_limited and agent_violation:
-            violations.append(agent_violation)
-
-        # Check global limits
-        if limit_type == "tool_call":
-            # Tool calls also count against global total
-            global_limited, global_violation = self._check_limit(
-                self.global_manager,
-                "global",
-                "total_tool_calls",
-                action_type,
-                context,
-                scope="global"
-            )
-
-            if global_limited and global_violation:
-                violations.append(global_violation)
-
-        # Determine validity
-        valid = len(violations) == 0
 
         # Calculate retry-after if rate limited
         retry_after = None
@@ -411,12 +445,12 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
             ) * self.cooldown_multiplier
 
         return ValidationResult(
-            valid=valid,
+            valid=len(violations) == 0,
             violations=violations,
             metadata={
                 "action_type": action_type,
                 "limit_type": limit_type,
-                "rate_limited": not valid,
+                "rate_limited": bool(violations),
                 "retry_after": retry_after
             },
             policy_name=self.name

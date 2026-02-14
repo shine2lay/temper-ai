@@ -13,6 +13,107 @@ HEARTBEAT_TIMEOUT_SECONDS = 30.0
 CHUNK_FLUSH_INTERVAL_SECONDS = 0.1  # 100ms batching for stream chunks
 
 
+def _create_event_callback(
+    workflow_id: str,
+    event_queue: asyncio.Queue,
+    chunk_buffer: List[dict],
+) -> Callable:
+    """Create event callback for event bus subscription.
+
+    Args:
+        workflow_id: Workflow ID for logging.
+        event_queue: Queue to put non-chunk events.
+        chunk_buffer: Buffer for batched stream chunks.
+
+    Returns:
+        Event callback function.
+    """
+    def on_event(event: Any) -> None:
+        """Callback from event bus (runs in sync emitting thread)."""
+        logger.info(f"[WebSocket] Received event: {event.event_type} for workflow {workflow_id}")
+        event_dict = {
+            "type": "event",
+            "event_type": event.event_type,
+            "timestamp": event.timestamp.isoformat(),
+            "data": event.data,
+            "workflow_id": event.workflow_id,
+            "stage_id": event.stage_id,
+            "agent_id": event.agent_id,
+        }
+        # Batch streaming chunks instead of queueing individually
+        if event.event_type == "llm_stream_chunk":
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(chunk_buffer.append, event_dict)
+            except RuntimeError:
+                chunk_buffer.append(event_dict)
+            return
+
+        try:
+            event_queue.put_nowait(event_dict)
+        except asyncio.QueueFull:
+            logger.warning("Event queue full, dropping event")
+
+    return on_event
+
+
+async def _flush_chunks_task(
+    websocket: WebSocket,
+    chunk_buffer: List[dict],
+    chunk_lock: asyncio.Lock,
+) -> None:
+    """Periodically flush accumulated stream chunks as a batch.
+
+    Args:
+        websocket: WebSocket connection.
+        chunk_buffer: Buffer of stream chunks.
+        chunk_lock: Lock for buffer access.
+    """
+    while True:
+        await asyncio.sleep(CHUNK_FLUSH_INTERVAL_SECONDS)
+        if not chunk_buffer:
+            continue
+        async with chunk_lock:
+            if not chunk_buffer:
+                continue
+            batch = list(chunk_buffer)
+            chunk_buffer.clear()
+        try:
+            await websocket.send_json({
+                "type": "event",
+                "event_type": "llm_stream_batch",
+                "data": {"chunks": [c["data"] for c in batch]},
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+        except (ConnectionError, OSError, RuntimeError):
+            break  # Connection closed
+
+
+async def _stream_events_loop(
+    websocket: WebSocket,
+    event_queue: asyncio.Queue,
+) -> None:
+    """Stream events with heartbeat.
+
+    Args:
+        websocket: WebSocket connection.
+        event_queue: Queue of events to send.
+    """
+    while True:
+        try:
+            event_dict = await asyncio.wait_for(
+                event_queue.get(), timeout=HEARTBEAT_TIMEOUT_SECONDS
+            )
+            await websocket.send_json(event_dict)
+        except asyncio.TimeoutError:
+            await websocket.send_json(
+                {
+                    "type": "heartbeat",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
+
+
 def create_ws_endpoint(data_service: Any) -> Callable:
     """Create WebSocket endpoint handler.
 
@@ -28,52 +129,8 @@ def create_ws_endpoint(data_service: Any) -> Callable:
         chunk_buffer: List[dict] = []
         chunk_lock = asyncio.Lock()
 
-        def on_event(event: Any) -> None:
-            """Callback from event bus (runs in sync emitting thread)."""
-            logger.info(f"[WebSocket] Received event: {event.event_type} for workflow {workflow_id}")
-            event_dict = {
-                "type": "event",
-                "event_type": event.event_type,
-                "timestamp": event.timestamp.isoformat(),
-                "data": event.data,
-                "workflow_id": event.workflow_id,
-                "stage_id": event.stage_id,
-                "agent_id": event.agent_id,
-            }
-            # Batch streaming chunks instead of queueing individually
-            if event.event_type == "llm_stream_chunk":
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.call_soon_threadsafe(chunk_buffer.append, event_dict)
-                except RuntimeError:
-                    chunk_buffer.append(event_dict)
-                return
-
-            try:
-                event_queue.put_nowait(event_dict)
-            except asyncio.QueueFull:
-                logger.warning("Event queue full, dropping event")
-
-        async def flush_chunks() -> None:
-            """Periodically flush accumulated stream chunks as a batch."""
-            while True:
-                await asyncio.sleep(CHUNK_FLUSH_INTERVAL_SECONDS)
-                if not chunk_buffer:
-                    continue
-                async with chunk_lock:
-                    if not chunk_buffer:
-                        continue
-                    batch = list(chunk_buffer)
-                    chunk_buffer.clear()
-                try:
-                    await websocket.send_json({
-                        "type": "event",
-                        "event_type": "llm_stream_batch",
-                        "data": {"chunks": [c["data"] for c in batch]},
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    })
-                except (ConnectionError, OSError, RuntimeError):
-                    break  # Connection closed
+        # Create event callback
+        on_event = _create_event_callback(workflow_id, event_queue, chunk_buffer)
 
         flush_task = None
         try:
@@ -88,22 +145,11 @@ def create_ws_endpoint(data_service: Any) -> Callable:
             logger.info(f"[WebSocket] Subscription ID: {subscription_id}")
 
             # Start chunk flusher
-            flush_task = asyncio.create_task(flush_chunks())
+            flush_task = asyncio.create_task(_flush_chunks_task(websocket, chunk_buffer, chunk_lock))
 
             # Stream events with heartbeat
-            while True:
-                try:
-                    event_dict = await asyncio.wait_for(
-                        event_queue.get(), timeout=HEARTBEAT_TIMEOUT_SECONDS
-                    )
-                    await websocket.send_json(event_dict)
-                except asyncio.TimeoutError:
-                    await websocket.send_json(
-                        {
-                            "type": "heartbeat",
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        }
-                    )
+            await _stream_events_loop(websocket, event_queue)
+
         except WebSocketDisconnect:
             logger.debug("WebSocket disconnected for workflow %s", workflow_id)
         except (ConnectionError, OSError, RuntimeError):

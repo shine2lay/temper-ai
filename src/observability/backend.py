@@ -4,11 +4,92 @@ Abstract backend interface for observability system.
 Defines the contract that all observability backends must implement,
 enabling pluggable storage backends (SQL, Prometheus, S3, etc.).
 """
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, ContextManager, Dict, List, Literal, Optional
 
 DEFAULT_LIST_LIMIT = 50
+
+
+# ========== Parameter Bundle Dataclasses ==========
+
+
+@dataclass
+class WorkflowStartData:
+    """Bundled optional parameters for track_workflow_start."""
+    trigger_type: Optional[str] = None
+    trigger_data: Optional[Dict[str, Any]] = None
+    optimization_target: Optional[str] = None
+    product_type: Optional[str] = None
+    environment: Optional[str] = None
+    tags: Optional[List[str]] = None
+    extra_metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class AgentOutputData:
+    """Bundled optional metrics for set_agent_output."""
+    reasoning: Optional[str] = None
+    confidence_score: Optional[float] = None
+    total_tokens: Optional[int] = None
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    estimated_cost_usd: Optional[float] = None
+    num_llm_calls: Optional[int] = None
+    num_tool_calls: Optional[int] = None
+
+
+@dataclass
+class LLMCallData:
+    """Bundled LLM call parameters."""
+    prompt: str
+    response: str
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: int
+    estimated_cost_usd: float
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    status: Literal["success", "failed"] = "success"
+    error_message: Optional[str] = None
+
+
+@dataclass
+class ToolCallData:
+    """Bundled tool call parameters."""
+    input_params: Dict[str, Any]
+    output_data: Dict[str, Any]
+    duration_seconds: float
+    status: Literal["success", "failed"] = "success"
+    error_message: Optional[str] = None
+    safety_checks: Optional[List[str]] = None
+    approval_required: bool = False
+
+
+@dataclass
+class SafetyViolationData:
+    """Bundled safety violation parameters."""
+    workflow_id: Optional[str] = None
+    stage_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    service_name: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+    timestamp: Optional[datetime] = None
+
+
+@dataclass
+class CollaborationEventData:
+    """Bundled collaboration event parameters."""
+    event_data: Optional[Dict[str, Any]] = None
+    round_number: Optional[int] = None
+    resolution_strategy: Optional[str] = None
+    outcome: Optional[str] = None
+    confidence_score: Optional[float] = None
+    extra_metadata: Optional[Dict[str, Any]] = None
+    timestamp: Optional[datetime] = None
 
 
 class ReadableBackendMixin:
@@ -72,13 +153,7 @@ class ObservabilityBackend(ABC):
         workflow_name: str,
         workflow_config: Dict[str, Any],
         start_time: datetime,
-        trigger_type: Optional[str] = None,
-        trigger_data: Optional[Dict[str, Any]] = None,
-        optimization_target: Optional[str] = None,
-        product_type: Optional[str] = None,
-        environment: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None
+        data: Optional[WorkflowStartData] = None
     ) -> None:
         """
         Record workflow execution start.
@@ -88,13 +163,7 @@ class ObservabilityBackend(ABC):
             workflow_name: Name of the workflow
             workflow_config: Full workflow configuration (sanitized)
             start_time: Workflow start timestamp
-            trigger_type: How workflow was triggered (manual, cron, event)
-            trigger_data: Trigger metadata
-            optimization_target: Current optimization target (speed, quality, cost)
-            product_type: Type of product being built
-            environment: Execution environment (dev, staging, prod)
-            tags: Additional tags for filtering
-            extra_metadata: Additional metadata (e.g., experiment_id, variant_id)
+            data: Optional workflow start data bundle (trigger info, metadata, etc.)
         """
         pass
 
@@ -254,14 +323,7 @@ class ObservabilityBackend(ABC):
         self,
         agent_id: str,
         output_data: Dict[str, Any],
-        reasoning: Optional[str] = None,
-        confidence_score: Optional[float] = None,
-        total_tokens: Optional[int] = None,
-        prompt_tokens: Optional[int] = None,
-        completion_tokens: Optional[int] = None,
-        estimated_cost_usd: Optional[float] = None,
-        num_llm_calls: Optional[int] = None,
-        num_tool_calls: Optional[int] = None
+        metrics: Optional[AgentOutputData] = None
     ) -> None:
         """
         Set agent output data and metrics.
@@ -269,14 +331,7 @@ class ObservabilityBackend(ABC):
         Args:
             agent_id: Agent execution ID
             output_data: Agent output data
-            reasoning: Agent reasoning text
-            confidence_score: Confidence score (0-1)
-            total_tokens: Total tokens used
-            prompt_tokens: Prompt tokens used
-            completion_tokens: Completion tokens used
-            estimated_cost_usd: Estimated cost in USD
-            num_llm_calls: Number of LLM calls made
-            num_tool_calls: Number of tool calls made
+            metrics: Optional agent output metrics bundle
         """
         pass
 
@@ -289,17 +344,8 @@ class ObservabilityBackend(ABC):
         agent_id: str,
         provider: str,
         model: str,
-        prompt: str,
-        response: str,
-        prompt_tokens: int,
-        completion_tokens: int,
-        latency_ms: int,
-        estimated_cost_usd: float,
         start_time: datetime,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        status: Literal["success", "failed"] = "success",
-        error_message: Optional[str] = None
+        data: LLMCallData
     ) -> None:
         """
         Record LLM call.
@@ -309,17 +355,8 @@ class ObservabilityBackend(ABC):
             agent_id: Parent agent execution ID
             provider: LLM provider (ollama, openai, anthropic)
             model: Model name
-            prompt: Input prompt
-            response: LLM response
-            prompt_tokens: Number of prompt tokens
-            completion_tokens: Number of completion tokens
-            latency_ms: Latency in milliseconds
-            estimated_cost_usd: Estimated cost
             start_time: Call start timestamp
-            temperature: Temperature setting
-            max_tokens: Max tokens setting
-            status: Call status (success, failed)
-            error_message: Error if failed
+            data: LLM call data bundle (prompt, response, tokens, etc.)
         """
         pass
 
@@ -331,14 +368,8 @@ class ObservabilityBackend(ABC):
         tool_execution_id: str,
         agent_id: str,
         tool_name: str,
-        input_params: Dict[str, Any],
-        output_data: Dict[str, Any],
         start_time: datetime,
-        duration_seconds: float,
-        status: Literal["success", "failed"] = "success",
-        error_message: Optional[str] = None,
-        safety_checks: Optional[List[str]] = None,
-        approval_required: bool = False
+        data: ToolCallData
     ) -> None:
         """
         Record tool execution.
@@ -347,14 +378,8 @@ class ObservabilityBackend(ABC):
             tool_execution_id: Unique tool execution ID
             agent_id: Parent agent execution ID
             tool_name: Name of the tool
-            input_params: Tool input parameters
-            output_data: Tool output data
             start_time: Execution start timestamp
-            duration_seconds: Execution duration
-            status: Execution status (success, failed)
-            error_message: Error if failed
-            safety_checks: Safety checks applied
-            approval_required: Whether approval was required
+            data: Tool call data bundle (params, output, duration, etc.)
         """
         pass
 
@@ -363,29 +388,19 @@ class ObservabilityBackend(ABC):
     @abstractmethod
     def track_safety_violation(
         self,
-        workflow_id: Optional[str],
-        stage_id: Optional[str],
-        agent_id: Optional[str],
         violation_severity: Literal["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
         violation_message: str,
         policy_name: str,
-        service_name: Optional[str] = None,
-        context: Optional[Dict[str, Any]] = None,
-        timestamp: Optional[datetime] = None
+        data: Optional[SafetyViolationData] = None
     ) -> None:
         """
         Track safety violation.
 
         Args:
-            workflow_id: Workflow execution ID (if in workflow context)
-            stage_id: Stage execution ID (if in stage context)
-            agent_id: Agent execution ID (if in agent context)
             violation_severity: Severity level (INFO, LOW, MEDIUM, HIGH, CRITICAL)
             violation_message: Detailed violation message
             policy_name: Name of policy that was violated
-            service_name: Service that detected the violation
-            context: Additional context (action, params, etc.)
-            timestamp: Violation timestamp
+            data: Optional safety violation data bundle (IDs, context, timestamp)
         """
         pass
 
@@ -395,13 +410,7 @@ class ObservabilityBackend(ABC):
         stage_id: str,
         event_type: str,
         agents_involved: List[str],
-        event_data: Optional[Dict[str, Any]] = None,
-        round_number: Optional[int] = None,
-        resolution_strategy: Optional[str] = None,
-        outcome: Optional[str] = None,
-        confidence_score: Optional[float] = None,
-        extra_metadata: Optional[Dict[str, Any]] = None,
-        timestamp: Optional[datetime] = None
+        data: Optional[CollaborationEventData] = None
     ) -> str:
         """
         Track collaboration event to backend.
@@ -411,13 +420,7 @@ class ObservabilityBackend(ABC):
             event_type: Type of event (vote, conflict, resolution, consensus,
                 debate_round, synthesis, quality_gate_failure, adaptive_mode_switch)
             agents_involved: List of agent IDs participating
-            event_data: Event-specific data (votes, positions, arguments)
-            round_number: Round number for multi-round collaborations
-            resolution_strategy: Strategy used for conflict resolution
-            outcome: Final outcome of the collaboration event
-            confidence_score: Confidence score of outcome (0.0-1.0)
-            extra_metadata: Additional metadata for custom tracking
-            timestamp: Event timestamp
+            data: Optional collaboration event data bundle (round, strategy, outcome, etc.)
 
         Returns:
             str: ID of created collaboration event record

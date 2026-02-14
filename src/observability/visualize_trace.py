@@ -84,6 +84,210 @@ def create_hierarchical_gantt(
     # Flatten trace with tree structure
     flat_data = _flatten_trace_with_tree(trace, show_tree_lines)
 
+    # Create figure with bars
+    fig = _create_gantt_chart_bars(flat_data)
+
+    # Configure layout
+    if title is None:
+        title = trace.get("name", "Execution Trace")
+    _configure_gantt_layout(fig, title, len(flat_data))
+
+    # Save to file if requested
+    if output_file:
+        fig.write_html(output_file)
+        print(f"✓ Saved interactive chart to: {output_file}")
+
+    return fig
+
+
+def _flatten_trace_with_tree(
+    trace: Dict[str, Any],
+    show_tree_lines: bool = True
+) -> List[Dict[str, Any]]:
+    """
+    Flatten hierarchical trace into list with tree structure visualization.
+
+    Returns list of dicts with:
+        - display_name: Name with tree characters (▼ ├─ └─)
+        - start_ms: Start time in milliseconds from workflow start
+        - duration_ms: Duration in milliseconds
+        - type: Node type
+        - hover_text: HTML hover tooltip
+    """
+    workflow_start = datetime.fromisoformat(trace["start"])
+    flat = []
+
+    def add_node(
+        node: Dict[str, Any],
+        depth: int = 0,
+        is_last_child: Optional[List[bool]] = None,
+        _parent_name: str = ""
+    ) -> None:
+        """Add node to trace visualization graph."""
+        if is_last_child is None:
+            is_last_child = []
+
+        # Calculate timing
+        start_ms, duration_ms = _calculate_node_timing(node, workflow_start)
+
+        # Build display name with tree structure
+        display_name = _build_tree_display_name(node, depth, is_last_child, show_tree_lines)
+
+        # Build hover text
+        hover_text = _build_node_hover_text(node)
+
+        flat.append({
+            "display_name": display_name,
+            "start_ms": start_ms,
+            "duration_ms": duration_ms,
+            "type": node["type"],
+            "hover_text": hover_text,
+            "depth": depth,
+            "metadata": node.get("metadata", {})
+        })
+
+        # Process children
+        children = node.get("children", [])
+        for i, child in enumerate(children):
+            is_last = (i == len(children) - 1)
+            add_node(
+                child,
+                depth + 1,
+                is_last_child + [is_last],
+                node["name"]
+            )
+
+    add_node(trace)
+    return flat
+
+
+def print_console_gantt(trace: Dict[str, Any], _max_width: int = LARGE_ITEM_LIMIT) -> None:
+    """
+    Print a text-based Gantt chart to console.
+
+    Args:
+        trace: Hierarchical trace dict
+        _max_width: Maximum width for timeline bars
+    """
+    try:
+        from rich.console import Console
+
+        console = Console()
+        workflow_duration = trace.get("duration") or 0
+
+        # Print header
+        console.print("\n[bold cyan]Console Gantt Chart[/bold cyan]")
+        console.print("[dim]Timeline visualization (░ = idle, █ = active)[/dim]\n")
+
+        # Create tree visualization
+        workflow_start = datetime.fromisoformat(trace["start"])
+        tree = _build_console_tree(trace, None, workflow_start, workflow_duration)
+
+        # Print the tree
+        console.print(tree)
+
+        # Print summary
+        console.print(f"\n[dim]Total duration: {_format_duration_simple(workflow_duration)}[/dim]")
+
+    except ImportError:
+        # Fallback to simple text output if Rich not available
+        _print_simple_gantt(trace)
+
+
+def _calculate_node_timing(node: Dict[str, Any], workflow_start: datetime) -> tuple[float, float]:
+    """Calculate start_ms and duration_ms for a node."""
+    start = datetime.fromisoformat(node["start"])
+    end_str = node.get("end")
+    end = datetime.fromisoformat(end_str) if end_str else start
+
+    start_ms = (start - workflow_start).total_seconds() * 1000
+    duration_ms = (end - start).total_seconds() * 1000
+    return start_ms, duration_ms
+
+
+def _build_tree_display_name(
+    node: Dict[str, Any],
+    depth: int,
+    is_last_child: List[bool],
+    show_tree_lines: bool
+) -> str:
+    """Build display name with tree structure prefix."""
+    if show_tree_lines:
+        # Build prefix using list for better performance (avoid repeated string concatenation)
+        # String concatenation in loops is O(n²), list joining is O(n)
+        prefix_parts = []
+
+        # Add vertical lines for parent levels
+        for i, is_last in enumerate(is_last_child[:-1]):
+            if is_last:
+                prefix_parts.append("    ")  # 4 spaces for cleared level
+            else:
+                prefix_parts.append("│   ")  # Vertical line + 3 spaces
+
+        # Add branch for current level
+        if depth > 0:
+            if is_last_child[-1]:
+                prefix_parts.append("└─ ")  # Last child
+            else:
+                prefix_parts.append("├─ ")  # Middle child
+
+        # Add collapse indicator for nodes with children
+        if node.get("children"):
+            prefix_parts.append("▼ ")
+
+        prefix = "".join(prefix_parts)
+        return f"{prefix}{node['name']}"
+    else:
+        # Simple indentation
+        indent = "  " * depth
+        return f"{indent}{node['name']}"
+
+
+def _build_node_hover_text(node: Dict[str, Any]) -> str:
+    """Build hover text with type-specific metadata."""
+    metadata = node.get("metadata", {})
+    duration = node.get('duration') or 0
+    hover_parts = [
+        f"<b>{node['name']}</b>",
+        f"Type: {node['type']}",
+        f"Duration: {duration:.3f}s",
+        f"Status: {node.get('status', 'unknown')}"
+    ]
+
+    # Add type-specific metadata
+    if node['type'] == 'agent':
+        cost = metadata.get('estimated_cost_usd') or 0
+        hover_parts.extend([
+            f"Tokens: {metadata.get('total_tokens', 0):,}",
+            f"Cost: ${cost:.4f}",
+            f"LLM Calls: {metadata.get('num_llm_calls', 0)}",
+            f"Tool Calls: {metadata.get('num_tool_calls', 0)}"
+        ])
+    elif node['type'] == 'llm':
+        hover_parts.extend([
+            f"Model: {metadata.get('model', 'unknown')}",
+            f"Tokens: {metadata.get('total_tokens', 0):,}",
+            f"Prompt: {metadata.get('prompt_tokens', 0):,}",
+            f"Completion: {metadata.get('completion_tokens', 0):,}"
+        ])
+    elif node['type'] == 'tool':
+        hover_parts.extend([
+            f"Tool: {metadata.get('tool_name', 'unknown')}",
+            f"Version: {metadata.get('tool_version', 'N/A')}"
+        ])
+    elif node['type'] == 'workflow':
+        total_cost = metadata.get('total_cost_usd') or 0
+        hover_parts.extend([
+            f"Total Tokens: {metadata.get('total_tokens', 0):,}",
+            f"Total Cost: ${total_cost:.4f}",
+            f"Environment: {metadata.get('environment', 'unknown')}"
+        ])
+
+    return "<br>".join(hover_parts)
+
+
+def _create_gantt_chart_bars(flat_data: List[Dict[str, Any]]) -> Any:
+    """Create plotly figure with colored bars for each node type."""
     # Define colors for each type
     color_map = {
         "workflow": "#2E86AB",    # Blue
@@ -113,12 +317,13 @@ def create_hierarchical_gantt(
                 textposition='none'
             ))
 
-    # Calculate appropriate height
-    height = max(MIN_CHART_HEIGHT, len(flat_data) * HEIGHT_PER_ITEM)
+    return fig
 
-    # Update layout
-    if title is None:
-        title = trace.get("name", "Execution Trace")
+
+def _configure_gantt_layout(fig: Any, title: str, num_items: int) -> None:
+    """Configure layout for Gantt chart."""
+    # Calculate appropriate height
+    height = max(MIN_CHART_HEIGHT, num_items * HEIGHT_PER_ITEM)
 
     fig.update_layout(
         title=dict(
@@ -157,284 +362,206 @@ def create_hierarchical_gantt(
         margin=dict(l=CHART_LEFT_MARGIN)
     )
 
-    # Save to file if requested
-    if output_file:
-        fig.write_html(output_file)
-        print(f"✓ Saved interactive chart to: {output_file}")
 
-    return fig
+def _format_duration_simple(seconds: Optional[float]) -> str:
+    """Format duration in human-readable form."""
+    if seconds is None:
+        return "0.000s"
+    if seconds < 1:
+        return f"{seconds*1000:.0f}ms"
+    return f"{seconds:.3f}s"
 
 
-def _flatten_trace_with_tree(
-    trace: Dict[str, Any],
-    show_tree_lines: bool = True
-) -> List[Dict[str, Any]]:
-    """
-    Flatten hierarchical trace into list with tree structure visualization.
+def _create_timeline_bar(
+    start_offset: float,
+    duration: float,
+    total_duration: float,
+    width: int = TIMELINE_BAR_WIDTH
+) -> str:
+    """Create a visual timeline bar."""
+    if total_duration == 0:
+        return "░" * width
 
-    Returns list of dicts with:
-        - display_name: Name with tree characters (▼ ├─ └─)
-        - start_ms: Start time in milliseconds from workflow start
-        - duration_ms: Duration in milliseconds
-        - type: Node type
-        - hover_text: HTML hover tooltip
-    """
-    workflow_start = datetime.fromisoformat(trace["start"])
-    flat = []
+    # Calculate positions
+    start_pos = int((start_offset / total_duration) * width)
+    bar_length = max(1, int((duration / total_duration) * width))
 
-    def add_node(
-        node: Dict[str, Any],
-        depth: int = 0,
-        is_last_child: Optional[List[bool]] = None,
-        _parent_name: str = ""
-    ) -> None:
-        """Add node to trace visualization graph."""
-        if is_last_child is None:
-            is_last_child = []
+    # Build the bar
+    bar = "░" * start_pos
+    bar += "█" * bar_length
+    bar += "░" * (width - start_pos - bar_length)
 
-        # Calculate timing
-        start = datetime.fromisoformat(node["start"])
-        end_str = node.get("end")
-        end = datetime.fromisoformat(end_str) if end_str else start
+    return bar[:width]
 
-        start_ms = (start - workflow_start).total_seconds() * 1000
-        duration_ms = (end - start).total_seconds() * 1000
 
-        # Build tree structure prefix
-        if show_tree_lines:
-            # Build prefix using list for better performance (avoid repeated string concatenation)
-            # String concatenation in loops is O(n²), list joining is O(n)
-            prefix_parts = []
+def _build_console_tree(
+    node: Dict[str, Any],
+    parent_tree: Any,
+    workflow_start: datetime,
+    workflow_duration: float
+) -> Any:
+    """Recursively build Rich tree with timeline bars."""
+    from rich.tree import Tree
 
-            # Add vertical lines for parent levels
-            for i, is_last in enumerate(is_last_child[:-1]):
-                if is_last:
-                    prefix_parts.append("    ")  # 4 spaces for cleared level
-                else:
-                    prefix_parts.append("│   ")  # Vertical line + 3 spaces
+    # Color map for different types
+    color_map = {
+        "workflow": "bold blue",
+        "stage": "bold green",
+        "agent": "bold yellow",
+        "llm": "bold red",
+        "tool": "bold cyan"
+    }
 
-            # Add branch for current level
-            if depth > 0:
-                if is_last_child[-1]:
-                    prefix_parts.append("└─ ")  # Last child
-                else:
-                    prefix_parts.append("├─ ")  # Middle child
+    # Parse timing
+    start = datetime.fromisoformat(node["start"])
+    duration = node.get("duration") or 0
 
-            # Add collapse indicator for nodes with children
-            if node.get("children"):
-                prefix_parts.append("▼ ")
+    # Calculate offset from workflow start
+    start_offset = (start - workflow_start).total_seconds()
 
-            prefix = "".join(prefix_parts)
+    # Create timeline bar
+    timeline = _create_timeline_bar(start_offset, duration, workflow_duration, width=TIMELINE_BAR_WIDTH)
 
-            display_name = f"{prefix}{node['name']}"
-        else:
-            # Simple indentation
-            indent = "  " * depth
-            display_name = f"{indent}{node['name']}"
+    # Get metadata
+    metadata = node.get("metadata", {})
 
-        # Build hover text
-        metadata = node.get("metadata", {})
+    # Build label with color
+    node_type = node["type"]
+    color = color_map.get(node_type, "white")
+
+    # Create label with timing info
+    label_parts = [
+        f"[{color}]{node['name']}[/{color}]",
+        f"[dim]{_format_duration_simple(duration)}[/dim]"
+    ]
+
+    # Add type-specific info
+    if node_type == "agent":
+        tokens = metadata.get('total_tokens', 0)
+        if tokens > 0:
+            label_parts.append(f"[dim]({tokens:,} tokens)[/dim]")
+    elif node_type == "llm":
+        model = metadata.get('model', '')
+        if model:
+            label_parts.append(f"[dim]({model})[/dim]")
+    elif node_type == "tool":
+        tool_name = metadata.get('tool_name', '')
+        if tool_name:
+            label_parts.append(f"[dim]({tool_name})[/dim]")
+
+    label = " ".join(label_parts)
+
+    # Add timeline bar
+    full_label = f"{label}\n[dim]{timeline}[/dim]"
+
+    # Add to tree
+    if parent_tree is None:
+        # Root node
+        tree = Tree(full_label)
+        current = tree
+    else:
+        current = parent_tree.add(full_label)
+
+    # Process children
+    for child in node.get("children", []):
+        _build_console_tree(child, current, workflow_start, workflow_duration)
+
+    return tree if parent_tree is None else current
+
+
+def _print_simple_gantt(trace: Dict[str, Any]) -> None:
+    """Print simple text-based Gantt chart (fallback when Rich unavailable)."""
+    print("\nConsole Gantt Chart:")
+    print(f"  {trace['name']} - {trace.get('duration', 0):.3f}s")
+
+    def print_simple(node: Dict[str, Any], indent: int = 0) -> None:
+        """Print simplified trace output."""
+        prefix = "  " * indent
         duration = node.get('duration') or 0
-        hover_parts = [
-            f"<b>{node['name']}</b>",
-            f"Type: {node['type']}",
-            f"Duration: {duration:.3f}s",
-            f"Status: {node.get('status', 'unknown')}"
-        ]
+        print(f"{prefix}├─ {node['name']} ({duration:.3f}s)")
+        for child in node.get("children", []):
+            print_simple(child, indent + 1)
 
-        # Add type-specific metadata
-        if node['type'] == 'agent':
-            cost = metadata.get('estimated_cost_usd') or 0
-            hover_parts.extend([
-                f"Tokens: {metadata.get('total_tokens', 0):,}",
-                f"Cost: ${cost:.4f}",
-                f"LLM Calls: {metadata.get('num_llm_calls', 0)}",
-                f"Tool Calls: {metadata.get('num_tool_calls', 0)}"
-            ])
-        elif node['type'] == 'llm':
-            hover_parts.extend([
-                f"Model: {metadata.get('model', 'unknown')}",
-                f"Tokens: {metadata.get('total_tokens', 0):,}",
-                f"Prompt: {metadata.get('prompt_tokens', 0):,}",
-                f"Completion: {metadata.get('completion_tokens', 0):,}"
-            ])
-        elif node['type'] == 'tool':
-            hover_parts.extend([
-                f"Tool: {metadata.get('tool_name', 'unknown')}",
-                f"Version: {metadata.get('tool_version', 'N/A')}"
-            ])
-        elif node['type'] == 'workflow':
-            total_cost = metadata.get('total_cost_usd') or 0
-            hover_parts.extend([
-                f"Total Tokens: {metadata.get('total_tokens', 0):,}",
-                f"Total Cost: ${total_cost:.4f}",
-                f"Environment: {metadata.get('environment', 'unknown')}"
-            ])
-
-        flat.append({
-            "display_name": display_name,
-            "start_ms": start_ms,
-            "duration_ms": duration_ms,
-            "type": node["type"],
-            "hover_text": "<br>".join(hover_parts),
-            "depth": depth,
-            "metadata": metadata
-        })
-
-        # Process children
-        children = node.get("children", [])
-        for i, child in enumerate(children):
-            is_last = (i == len(children) - 1)
-            add_node(
-                child,
-                depth + 1,
-                is_last_child + [is_last],
-                node["name"]
-            )
-
-    add_node(trace)
-    return flat
+    for child in trace.get("children", []):
+        print_simple(child, 1)
 
 
-def print_console_gantt(trace: Dict[str, Any], _max_width: int = LARGE_ITEM_LIMIT) -> None:
-    """
-    Print a text-based Gantt chart to console.
+def _load_trace_data(args: Any) -> Optional[Dict[str, Any]]:
+    """Load trace data from file or database based on CLI args."""
+    if args.file:
+        # Load from JSON file
+        print(f"Loading trace from: {args.file}")
+        with open(args.file) as f:
+            return json.load(f)
+    else:
+        # Load from database
+        try:
+            from sqlmodel import select
 
-    Args:
-        trace: Hierarchical trace dict
-        _max_width: Maximum width for timeline bars
-    """
-    try:
-        from rich.console import Console
-        from rich.tree import Tree
+            from examples.export_waterfall import export_waterfall_trace
+            from src.database import get_session
+            from src.database.models import WorkflowExecution
+        except ImportError as e:
+            print(f"ERROR: Cannot import observability modules: {e}")
+            print("Use --file to load from JSON instead")
+            return None
 
-        console = Console()
+        workflow_id = args.workflow_id
 
-        # Color map for different types
-        color_map = {
-            "workflow": "bold blue",
-            "stage": "bold green",
-            "agent": "bold yellow",
-            "llm": "bold red",
-            "tool": "bold cyan"
-        }
+        if args.latest or workflow_id is None:
+            # Get latest workflow
+            with get_session() as session:
+                stmt = select(WorkflowExecution).order_by(
+                    WorkflowExecution.start_time.desc()  # type: ignore[attr-defined]
+                ).limit(1)
+                workflow = session.exec(stmt).first()
 
-        # Get workflow duration for scaling
-        workflow_duration = trace.get("duration") or 0
+                if not workflow:
+                    print("ERROR: No workflow executions found in database")
+                    return None
 
-        def format_duration(seconds: Optional[float]) -> str:
-            """Format duration in human-readable form."""
-            if seconds is None:
-                return "0.000s"
-            if seconds < 1:
-                return f"{seconds*1000:.0f}ms"
-            return f"{seconds:.3f}s"
+                workflow_id = workflow.id
+                print(f"Using latest workflow: {workflow_id}")
 
-        def create_timeline_bar(start_offset: float, duration: float, total_duration: float, width: int = TIMELINE_BAR_WIDTH) -> str:
-            """Create a visual timeline bar."""
-            if total_duration == 0:
-                return "░" * width
+        print(f"Exporting trace for workflow: {workflow_id}")
+        trace = export_waterfall_trace(workflow_id)
 
-            # Calculate positions
-            start_pos = int((start_offset / total_duration) * width)
-            bar_length = max(1, int((duration / total_duration) * width))
+        if "error" in trace:
+            print(f"ERROR: {trace['error']}")
+            return None
 
-            # Build the bar
-            bar = "░" * start_pos
-            bar += "█" * bar_length
-            bar += "░" * (width - start_pos - bar_length)
+        return trace
 
-            return bar[:width]
 
-        def add_to_tree(node: Dict[str, Any], parent_tree: Any, workflow_start: datetime, depth: int = 0) -> Any:
-            """Recursively add nodes to the tree."""
-            from datetime import datetime
+def _print_trace_summary(trace: Dict[str, Any]) -> None:
+    """Print execution trace summary."""
+    print()
+    print("=" * CHART_SEPARATOR_WIDTH)
+    print("EXECUTION TRACE SUMMARY")
+    print("=" * CHART_SEPARATOR_WIDTH)
+    print(f"Workflow: {trace['name']}")
+    duration = trace.get('duration') or 0
+    print(f"Duration: {duration:.2f}s")
+    print(f"Status: {trace['status']}")
+    metadata = trace.get('metadata', {})
+    print(f"Total Tokens: {metadata.get('total_tokens', 0):,}")
+    total_cost = metadata.get('total_cost_usd') or 0
+    print(f"Total Cost: ${total_cost:.4f}")
+    print()
 
-            # Parse timing
-            start = datetime.fromisoformat(node["start"])
-            duration = node.get("duration") or 0
 
-            # Calculate offset from workflow start
-            start_offset = (start - workflow_start).total_seconds()
-
-            # Create timeline bar
-            timeline = create_timeline_bar(start_offset, duration, workflow_duration, width=TIMELINE_BAR_WIDTH)
-
-            # Get metadata
-            metadata = node.get("metadata", {})
-
-            # Build label with color
-            node_type = node["type"]
-            color = color_map.get(node_type, "white")
-
-            # Create label with timing info
-            label_parts = [
-                f"[{color}]{node['name']}[/{color}]",
-                f"[dim]{format_duration(duration)}[/dim]"
-            ]
-
-            # Add type-specific info
-            if node_type == "agent":
-                tokens = metadata.get('total_tokens', 0)
-                if tokens > 0:
-                    label_parts.append(f"[dim]({tokens:,} tokens)[/dim]")
-            elif node_type == "llm":
-                model = metadata.get('model', '')
-                if model:
-                    label_parts.append(f"[dim]({model})[/dim]")
-            elif node_type == "tool":
-                tool_name = metadata.get('tool_name', '')
-                if tool_name:
-                    label_parts.append(f"[dim]({tool_name})[/dim]")
-
-            label = " ".join(label_parts)
-
-            # Add timeline bar
-            full_label = f"{label}\n[dim]{timeline}[/dim]"
-
-            # Add to tree
-            if parent_tree is None:
-                # Root node
-                tree = Tree(full_label)
-                current = tree
-            else:
-                current = parent_tree.add(full_label)
-
-            # Process children
-            for child in node.get("children", []):
-                add_to_tree(child, current, workflow_start, depth + 1)
-
-            return tree if parent_tree is None else current
-
-        # Print header
-        console.print("\n[bold cyan]Console Gantt Chart[/bold cyan]")
-        console.print("[dim]Timeline visualization (░ = idle, █ = active)[/dim]\n")
-
-        # Create tree visualization
-        workflow_start = datetime.fromisoformat(trace["start"])
-        tree = add_to_tree(trace, None, workflow_start)
-
-        # Print the tree
-        console.print(tree)
-
-        # Print summary
-        console.print(f"\n[dim]Total duration: {format_duration(workflow_duration)}[/dim]")
-
-    except ImportError:
-        # Fallback to simple text output if Rich not available
-        print("\nConsole Gantt Chart:")
-        print(f"  {trace['name']} - {trace.get('duration', 0):.3f}s")
-
-        def print_simple(node: Dict[str, Any], indent: int = 0) -> None:
-            """Print simplified trace output."""
-            prefix = "  " * indent
-            duration = node.get('duration') or 0
-            print(f"{prefix}├─ {node['name']} ({duration:.3f}s)")
-            for child in node.get("children", []):
-                print_simple(child, indent + 1)
-
-        for child in trace.get("children", []):
-            print_simple(child, 1)
+def _print_usage_tips() -> None:
+    """Print usage tips for the visualization."""
+    print()
+    print("✓ Visualization complete!")
+    print()
+    print("Features:")
+    print("  • Hover over bars to see detailed metrics")
+    print("  • Zoom in/out with scroll wheel")
+    print("  • Pan by clicking and dragging")
+    print("  • Click legend items to show/hide types")
+    print("  • Export to PNG using camera icon")
+    print()
 
 
 def visualize_trace(
@@ -522,64 +649,12 @@ def main() -> int:
     args = parser.parse_args()
 
     # Load trace data
-    trace = None
-
-    if args.file:
-        # Load from JSON file
-        print(f"Loading trace from: {args.file}")
-        with open(args.file) as f:
-            trace = json.load(f)
-    else:
-        # Load from database
-        try:
-            from sqlmodel import select
-
-            from examples.export_waterfall import export_waterfall_trace
-            from src.database import get_session
-            from src.database.models import WorkflowExecution
-        except ImportError as e:
-            print(f"ERROR: Cannot import observability modules: {e}")
-            print("Use --file to load from JSON instead")
-            return 1
-
-        workflow_id = args.workflow_id
-
-        if args.latest or workflow_id is None:
-            # Get latest workflow
-            with get_session() as session:
-                stmt = select(WorkflowExecution).order_by(
-                    WorkflowExecution.start_time.desc()  # type: ignore[attr-defined]
-                ).limit(1)
-                workflow = session.exec(stmt).first()
-
-                if not workflow:
-                    print("ERROR: No workflow executions found in database")
-                    return 1
-
-                workflow_id = workflow.id
-                print(f"Using latest workflow: {workflow_id}")
-
-        print(f"Exporting trace for workflow: {workflow_id}")
-        trace = export_waterfall_trace(workflow_id)
-
-        if "error" in trace:
-            print(f"ERROR: {trace['error']}")
-            return 1
+    trace = _load_trace_data(args)
+    if trace is None:
+        return 1
 
     # Print summary
-    print()
-    print("=" * CHART_SEPARATOR_WIDTH)
-    print("EXECUTION TRACE SUMMARY")
-    print("=" * CHART_SEPARATOR_WIDTH)
-    print(f"Workflow: {trace['name']}")
-    duration = trace.get('duration') or 0
-    print(f"Duration: {duration:.2f}s")
-    print(f"Status: {trace['status']}")
-    metadata = trace.get('metadata', {})
-    print(f"Total Tokens: {metadata.get('total_tokens', 0):,}")
-    total_cost = metadata.get('total_cost_usd') or 0
-    print(f"Total Cost: ${total_cost:.4f}")
-    print()
+    _print_trace_summary(trace)
 
     # Visualize
     print("=" * CHART_SEPARATOR_WIDTH)
@@ -594,16 +669,7 @@ def main() -> int:
         auto_open=not args.no_open
     )
 
-    print()
-    print("✓ Visualization complete!")
-    print()
-    print("Features:")
-    print("  • Hover over bars to see detailed metrics")
-    print("  • Zoom in/out with scroll wheel")
-    print("  • Pan by clicking and dragging")
-    print("  • Click legend items to show/hide types")
-    print("  • Export to PNG using camera icon")
-    print()
+    _print_usage_tips()
 
     return 0
 

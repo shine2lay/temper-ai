@@ -57,6 +57,27 @@ class MeritScoreService:
             decision_outcome: Outcome ("success", "failure", "neutral", "mixed")
             confidence: Confidence score (0.0-1.0)
         """
+        # Get or create merit score record
+        merit_score = self._get_or_create_merit_score(session, agent_name, domain)
+
+        # Update decision counts
+        self._update_decision_counts(merit_score, decision_outcome)
+
+        # Update cumulative metrics
+        self._update_cumulative_metrics(merit_score, confidence)
+
+        # Update time-windowed metrics
+        self._update_time_windowed_metrics(session, merit_score, agent_name)
+
+        # NOTE: Caller is responsible for session.commit().
+        # This allows atomic transactions when merit updates are part of
+        # a larger operation (e.g., DecisionTracker.track()).
+        session.flush()
+
+        self._log_merit_update(merit_score, agent_name, domain)
+
+    def _get_or_create_merit_score(self, session: Any, agent_name: str, domain: str) -> Any:
+        """Get existing merit score or create new one."""
         from sqlmodel import select
 
         from src.database.models import AgentMeritScore
@@ -82,7 +103,10 @@ class MeritScoreService:
             )
             session.add(merit_score)
 
-        # Update decision counts
+        return merit_score
+
+    def _update_decision_counts(self, merit_score: Any, decision_outcome: str) -> None:
+        """Update decision counts based on outcome."""
         merit_score.total_decisions += 1
         merit_score.last_decision_date = utcnow()
         merit_score.last_updated = utcnow()
@@ -94,6 +118,8 @@ class MeritScoreService:
         elif decision_outcome == "mixed":
             merit_score.mixed_decisions += 1
 
+    def _update_cumulative_metrics(self, merit_score: Any, confidence: Optional[float]) -> None:
+        """Update cumulative success rate, confidence, and expertise score."""
         # Update cumulative metrics
         # Mixed decisions count as half-success for rate calculation
         if merit_score.total_decisions > 0:
@@ -112,14 +138,8 @@ class MeritScoreService:
             confidence_component = merit_score.average_confidence or PROB_MEDIUM
             merit_score.expertise_score = MERIT_SUCCESS_RATE_WEIGHT * merit_score.success_rate + MERIT_CONFIDENCE_WEIGHT * confidence_component
 
-        # Update time-windowed metrics
-        self._update_time_windowed_metrics(session, merit_score, agent_name)
-
-        # NOTE: Caller is responsible for session.commit().
-        # This allows atomic transactions when merit updates are part of
-        # a larger operation (e.g., DecisionTracker.track()).
-        session.flush()
-
+    def _log_merit_update(self, merit_score: Any, agent_name: str, domain: str) -> None:
+        """Log merit score update."""
         success_rate_val = merit_score.success_rate if merit_score.success_rate is not None else 0.0
         expertise_val = merit_score.expertise_score if merit_score.expertise_score is not None else 0.0
         logger.info(

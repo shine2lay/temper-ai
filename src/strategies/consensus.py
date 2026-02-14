@@ -87,6 +87,82 @@ class ConsensusStrategy(CollaborationStrategy):
         {'yes': 2, 'no': 1}
     """
 
+    def _validate_config(
+        self,
+        min_consensus: float,
+        tie_breaker: str,
+        min_agents: int,
+        agent_count: int
+    ) -> None:
+        """Validate synthesis configuration."""
+        if not 0 <= min_consensus <= 1:
+            raise ValueError(
+                f"min_consensus must be between 0 and 1, got {min_consensus}"
+            )
+        if tie_breaker not in [CONFIG_KEY_CONFIDENCE, MODE_VALUE_FIRST]:
+            raise ValueError(
+                f"tie_breaker must be 'confidence' or 'first', got '{tie_breaker}'"
+            )
+        if agent_count < min_agents:
+            raise ValueError(
+                f"Need at least {min_agents} agents, got {agent_count}"
+            )
+
+    def _determine_winner(
+        self,
+        vote_counts: Dict[Any, int],
+        agent_outputs: List[AgentOutput],
+        tie_breaker: str
+    ) -> Any:
+        """Determine winning decision from vote counts."""
+        sorted_decisions = sorted(
+            vote_counts.items(),
+            key=lambda x: x[1],
+            reverse=True
+        )
+
+        if not sorted_decisions:
+            raise RuntimeError("No votes found")
+
+        # Check for tie
+        max_count = sorted_decisions[0][1]
+        tied_decisions = [d for d, count in sorted_decisions if count == max_count]
+
+        if len(tied_decisions) > 1:
+            return self._break_tie(tied_decisions, agent_outputs, tie_breaker)
+        else:
+            return sorted_decisions[0][0]
+
+    def _build_weak_consensus_result(
+        self,
+        decision: Any,
+        decision_support: float,
+        min_consensus: float,
+        vote_counts: Dict[Any, int],
+        agent_outputs: List[AgentOutput],
+        total_votes: int
+    ) -> SynthesisResult:
+        """Build result for weak consensus (below threshold)."""
+        conflicts = self.detect_conflicts(agent_outputs, threshold=PROB_LOW_MEDIUM)
+        return SynthesisResult(
+            decision=decision,
+            confidence=round(decision_support * WEAK_CONSENSUS_CONFIDENCE_PENALTY, 4),  # noqa: Standard precision
+            method="consensus_weak",
+            votes=vote_counts,
+            conflicts=conflicts,
+            reasoning=(
+                f"No clear majority. Decision '{decision}' had {decision_support:.1%} "
+                f"support, below {min_consensus:{FORMAT_PERCENT_1_DECIMAL}} threshold. "
+                f"Consider conflict resolution."
+            ),
+            metadata={
+                "total_agents": total_votes,
+                "decision_support": decision_support,
+                "min_consensus": min_consensus,
+                "needs_conflict_resolution": True
+            }
+        )
+
     def synthesize(
         self,
         agent_outputs: List[AgentOutput],
@@ -119,78 +195,31 @@ class ConsensusStrategy(CollaborationStrategy):
 
         # Get config
         min_agents = config.get("min_agents", 1)
-        min_consensus = config.get(CONFIG_KEY_MIN_CONSENSUS, PROB_MEDIUM + PERCENT_TO_FRACTION)  # >50% (0.51)
+        min_consensus = config.get(CONFIG_KEY_MIN_CONSENSUS, PROB_MEDIUM + PERCENT_TO_FRACTION)
         tie_breaker = config.get("tie_breaker", CONFIG_KEY_CONFIDENCE)
 
         # Validate config
-        if not 0 <= min_consensus <= 1:
-            raise ValueError(
-                f"min_consensus must be between 0 and 1, got {min_consensus}"
-            )
-        if tie_breaker not in [CONFIG_KEY_CONFIDENCE, MODE_VALUE_FIRST]:
-            raise ValueError(
-                f"tie_breaker must be 'confidence' or 'first', got '{tie_breaker}'"
-            )
+        self._validate_config(min_consensus, tie_breaker, min_agents, len(agent_outputs))
 
-        # Check minimum agents
-        if len(agent_outputs) < min_agents:
-            raise ValueError(
-                f"Need at least {min_agents} agents, got {len(agent_outputs)}"
-            )
-
-        # Count votes (preserve decision types, don't convert to strings)
+        # Count votes
         vote_counts = calculate_vote_distribution(agent_outputs)
         total_votes = len(agent_outputs)
 
-        # Get decisions sorted by vote count (highest first)
-        sorted_decisions = sorted(
-            vote_counts.items(),
-            key=lambda x: x[1],
-            reverse=True
-        )
-
-        if not sorted_decisions:
-            raise RuntimeError("No votes found")
-
-        # Check for tie (multiple decisions with same count)
-        max_count = sorted_decisions[0][1]
-        tied_decisions = [d for d, count in sorted_decisions if count == max_count]
-
-        if len(tied_decisions) > 1:
-            # Tie detected - use tie-breaking
-            decision = self._break_tie(tied_decisions, agent_outputs, tie_breaker)
-        else:
-            decision = sorted_decisions[0][0]
-
-        # Check if we have majority (>50%)
+        # Determine winner
+        decision = self._determine_winner(vote_counts, agent_outputs, tie_breaker)
         decision_support = vote_counts[decision] / total_votes
 
+        # Check if we have majority
         if decision_support < min_consensus:
-            # No clear majority - create conflict
-            conflicts = self.detect_conflicts(agent_outputs, threshold=PROB_LOW_MEDIUM)
-            return SynthesisResult(
-                decision=decision,  # Best effort decision
-                confidence=round(decision_support * WEAK_CONSENSUS_CONFIDENCE_PENALTY, 4),  # noqa: Standard precision
-                method="consensus_weak",
-                votes=vote_counts,
-                conflicts=conflicts,
-                reasoning=(
-                    f"No clear majority. Decision '{decision}' had {decision_support:.1%} "
-                    f"support, below {min_consensus:{FORMAT_PERCENT_1_DECIMAL}} threshold. "
-                    f"Consider conflict resolution."
-                ),
-                metadata={
-                    "total_agents": total_votes,
-                    "decision_support": decision_support,
-                    "min_consensus": min_consensus,
-                    "needs_conflict_resolution": True
-                }
+            return self._build_weak_consensus_result(
+                decision, decision_support, min_consensus,
+                vote_counts, agent_outputs, total_votes
             )
 
-        # Calculate confidence using utility function
+        # Calculate confidence
         confidence = calculate_consensus_confidence(agent_outputs, decision)
 
-        # Get supporting and dissenting agents
+        # Get supporters and dissenters
         supporters = [o.agent_name for o in agent_outputs if o.decision == decision]
         dissenters = [o.agent_name for o in agent_outputs if o.decision != decision]
 

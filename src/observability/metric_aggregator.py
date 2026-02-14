@@ -91,17 +91,20 @@ class MetricAggregator:
             num_llm_calls: Number of LLM calls made
             num_tool_calls: Number of tool calls made
         """
+        from src.observability.backend import AgentOutputData
         self.backend.set_agent_output(
             agent_id=agent_id,
             output_data=output_data,
-            reasoning=reasoning,
-            confidence_score=confidence_score,
-            total_tokens=total_tokens,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            estimated_cost_usd=estimated_cost_usd,
-            num_llm_calls=num_llm_calls,
-            num_tool_calls=num_tool_calls,
+            metrics=AgentOutputData(
+                reasoning=reasoning,
+                confidence_score=confidence_score,
+                total_tokens=total_tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                estimated_cost_usd=estimated_cost_usd,
+                num_llm_calls=num_llm_calls,
+                num_tool_calls=num_tool_calls,
+            ),
         )
 
     def set_stage_output(

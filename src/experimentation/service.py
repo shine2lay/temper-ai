@@ -9,7 +9,6 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import update
-from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
 from src.constants.limits import THRESHOLD_LARGE_COUNT
@@ -22,13 +21,10 @@ from src.experimentation.constants import (
     DEFAULT_CREDIBLE_LEVEL,
     ERROR_EXPERIMENT_NOT_FOUND,
     FIELD_CONFIDENCE,
-    FIELD_CREATED_BY,
-    FIELD_NAME,
     FIELD_RECOMMENDATION,
 )
 from src.experimentation.experiment_crud import ExperimentCRUD
 from src.experimentation.models import (
-    AssignmentStrategyType,
     ExecutionStatus,
     Experiment,
     ExperimentResult,
@@ -38,7 +34,6 @@ from src.experimentation.models import (
     VariantAssignment,
     utcnow,
 )
-from src.experimentation.validators import validate_experiment_name, validate_variant_list
 from src.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -123,6 +118,8 @@ class ExperimentService(Service):
         """
         Create new experiment.
 
+        Delegates to ExperimentCRUD for database operations.
+
         Args:
             name: Unique experiment name
             description: Experiment description/hypothesis
@@ -141,106 +138,18 @@ class ExperimentService(Service):
         Raises:
             ValueError: If experiment configuration is invalid
         """
-        # SECURITY: Validate experiment name
-        # Note: ORM already prevents SQL injection via parameterization.
-        # This validation prevents timing attacks, homograph attacks, and malicious naming patterns.
-        try:
-            name = validate_experiment_name(name)
-        except ValueError as e:
-            logger.warning(
-                f"Invalid experiment name rejected: {name[:100]}",
-                extra={
-                    "security_event": "INPUT_VALIDATION_FAILED",
-                    "input_name": name[:100],
-                    "input_length": len(name),
-                    "user": kwargs.get(FIELD_CREATED_BY),
-                    "error": str(e)
-                }
-            )
-            raise
-
-        # Validate inputs
-        if not variants or len(variants) < 2:
-            raise ValueError("Experiment must have at least 2 variants")
-
-        # SECURITY: Validate ALL variant names first (atomic operation)
-        # This ensures we don't partially mutate the variants list on error
-        variants = validate_variant_list(variants, name)
-
-        # Calculate traffic allocation
-        traffic_allocation = {
-            v["name"]: v.get("traffic", 1.0 / len(variants))
-            for v in variants
-        }
-
-        total_traffic = sum(traffic_allocation.values())
-        if total_traffic > 1.0:
-            raise ValueError(f"Total traffic allocation {total_traffic} exceeds 1.0")
-
-        # Create experiment
-        experiment_id = str(uuid.uuid4())
-        experiment = Experiment(
-            id=experiment_id,
+        return self._crud.create_experiment(
             name=name,
             description=description,
-            status=ExperimentStatus.DRAFT,
-            assignment_strategy=AssignmentStrategyType(assignment_strategy),
-            traffic_allocation=traffic_allocation,
+            variants=variants,
+            assignment_strategy=assignment_strategy,
             primary_metric=primary_metric,
-            secondary_metrics=secondary_metrics or [],
+            secondary_metrics=secondary_metrics,
             guardrail_metrics=guardrail_metrics,
             confidence_level=confidence_level,
             min_sample_size_per_variant=min_sample_size_per_variant,
-            tags=kwargs.get("tags", []),
-            created_by=kwargs.get(FIELD_CREATED_BY),
-            extra_metadata=kwargs.get("extra_metadata"),
-            created_at=utcnow(),
-            updated_at=utcnow(),
+            **kwargs
         )
-
-        # Create variants
-        variant_models = []
-        for variant_config in variants:
-            variant_id = str(uuid.uuid4())
-            variant = Variant(
-                id=variant_id,
-                experiment_id=experiment_id,
-                name=variant_config[FIELD_NAME],
-                description=variant_config.get("description", ""),
-                is_control=variant_config.get("is_control", False),
-                config_type=variant_config.get("config_type", "agent"),
-                config_overrides=variant_config.get("config", {}),
-                allocated_traffic=traffic_allocation[variant_config[FIELD_NAME]],
-                extra_metadata=variant_config.get("extra_metadata"),
-                created_at=utcnow(),
-            )
-            variant_models.append(variant)
-
-        # Save to database
-        try:
-            with get_session() as session:
-                session.add(experiment)
-                for variant in variant_models:
-                    session.add(variant)
-                session.commit()
-        except IntegrityError as e:
-            # SECURITY: Don't reveal which constraint failed (timing attack mitigation)
-            logger.warning(
-                "Experiment creation failed due to constraint violation",
-                extra={
-                    "security_event": "DATABASE_CONSTRAINT_VIOLATION",
-                    "experiment_name": name,
-                    "user": kwargs.get(FIELD_CREATED_BY),
-                    "error_type": type(e).__name__
-                }
-            )
-            raise ValueError(
-                "Experiment creation failed. "
-                "This may be due to a duplicate name or other constraint violation."
-            )
-
-        logger.info(f"Created experiment: {name} (ID: {experiment_id})")
-        return experiment_id
 
     def get_experiment(self, experiment_id: str) -> Optional[Experiment]:
         """Get experiment by ID."""

@@ -29,6 +29,113 @@ from src.utils.config_helpers import sanitize_config_for_display
 
 logger = logging.getLogger(__name__)
 
+
+def _record_initial_round(
+    current_outputs: list,
+    dialogue_history: List[Dict[str, Any]]
+) -> float:
+    """Record initial round outputs in dialogue history.
+
+    Returns:
+        Total cost from initial outputs
+    """
+    total_cost = 0.0
+    for output in current_outputs:
+        dialogue_history.append({
+            "agent": output.agent_name,
+            "round": 0,
+            StateKeys.OUTPUT: output.decision,
+            StateKeys.REASONING: output.reasoning,
+            StateKeys.CONFIDENCE: output.confidence,
+        })
+        total_cost += output.metadata.get(StateKeys.COST_USD, 0.0)
+    return total_cost
+
+
+def _track_dialogue_round(
+    tracker: Any,
+    strategy: Any,
+    state: Dict[str, Any],
+    current_outputs: list,
+    round_num: int,
+    round_outcome: str,
+    conv_score: Optional[float] = None,
+    agent_stances: Optional[Dict[str, str]] = None
+) -> None:
+    """Track dialogue round collaboration event."""
+    if not (tracker and hasattr(tracker, 'track_collaboration_event')):
+        return
+
+    try:
+        agent_names = [o.agent_name for o in current_outputs]
+        event_data: Dict[str, Any] = {
+            "agent_count": len(agent_names),
+            "avg_confidence": (
+                sum(o.confidence for o in current_outputs) / len(current_outputs)
+                if current_outputs else 0.0
+            ),
+        }
+
+        if agent_stances:
+            stance_dist: Dict[str, int] = {}
+            for s in agent_stances.values():
+                if s:
+                    stance_dist[s] = stance_dist.get(s, 0) + 1
+            event_data["stance_distribution"] = stance_dist
+            event_data["agent_stances"] = agent_stances
+
+        tracker.track_collaboration_event(
+            event_type=f"{strategy.mode}_round",
+            stage_id=state.get(StateKeys.CURRENT_STAGE_ID),
+            agents_involved=agent_names,
+            round_number=round_num,
+            outcome=round_outcome,
+            confidence_score=conv_score,
+            event_data=event_data,
+        )
+    except Exception:
+        logger.warning(
+            "Failed to track round %d collaboration event",
+            round_num,
+            exc_info=True,
+        )
+
+
+def _build_final_synthesis_result(
+    strategy: Any,
+    current_outputs: list,
+    final_round: int,
+    total_cost: float,
+    dialogue_history: List[Dict[str, Any]],
+    converged: bool,
+    convergence_round: int,
+    stage_name: str
+) -> Any:
+    """Build final synthesis result with metadata."""
+    result = strategy.synthesize(current_outputs, {})
+    result.metadata["dialogue_rounds"] = final_round + 1
+    result.metadata["total_cost_usd"] = total_cost
+    result.metadata["dialogue_history"] = dialogue_history
+    result.metadata["converged"] = converged
+
+    if converged:
+        result.metadata["convergence_round"] = convergence_round
+        result.metadata["early_stop_reason"] = "convergence"
+    elif strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
+        result.metadata["early_stop_reason"] = "budget"
+    else:
+        result.metadata["early_stop_reason"] = "max_rounds"
+
+    logger.info(
+        f"Dialogue completed{ERROR_MSG_FOR_STAGE_SUFFIX}{stage_name}': "
+        f"{final_round + 1} rounds, ${total_cost:.2f} cost, "
+        f"converged: {converged}, "
+        f"reason: {result.metadata['early_stop_reason']}"
+    )
+
+    return result
+
+
 class WorkflowStateDict(TypedDict, total=False):
     """Canonical type hints for the workflow state dictionary.
 
@@ -317,43 +424,16 @@ class StageExecutor(ABC):
         """
         dialogue_history: List[Dict[str, Any]] = []
         current_outputs = initial_outputs
-        total_cost = 0.0
 
         # Record initial round (round 0)
-        for output in current_outputs:
-            dialogue_history.append({
-                "agent": output.agent_name,
-                "round": 0,
-                StateKeys.OUTPUT: output.decision,
-                StateKeys.REASONING: output.reasoning,
-                StateKeys.CONFIDENCE: output.confidence,
-            })
-            total_cost += output.metadata.get(StateKeys.COST_USD, 0.0)
+        total_cost = _record_initial_round(current_outputs, dialogue_history)
 
         # Track round 0 collaboration event
         tracker = state.get(StateKeys.TRACKER)
-        if tracker and hasattr(tracker, 'track_collaboration_event'):
-            try:
-                agent_names = [o.agent_name for o in current_outputs]
-                tracker.track_collaboration_event(
-                    event_type=f"{strategy.mode}_round",
-                    stage_id=state.get(StateKeys.CURRENT_STAGE_ID),
-                    agents_involved=agent_names,
-                    round_number=0,
-                    outcome="initial",
-                    event_data={
-                        "agent_count": len(agent_names),
-                        "avg_confidence": (
-                            sum(o.confidence for o in current_outputs) / len(current_outputs)
-                            if current_outputs else 0.0
-                        ),
-                    },
-                )
-            except Exception:
-                logger.warning(
-                    "Failed to track round 0 collaboration event",
-                    exc_info=True,
-                )
+        _track_dialogue_round(
+            tracker, strategy, state, current_outputs,
+            round_num=0, round_outcome="initial"
+        )
 
         # Check budget after round 0
         if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
@@ -435,39 +515,11 @@ class StageExecutor(ABC):
                         f"{strategy.convergence_threshold:.1%}"
                     )
 
-            # Track round N collaboration event (with stance distribution)
-            stance_dist: Dict[str, int] = {}
-            for s in agent_stances.values():
-                if s:
-                    stance_dist[s] = stance_dist.get(s, 0) + 1
-
-            tracker = state.get(StateKeys.TRACKER)
-            if tracker and hasattr(tracker, 'track_collaboration_event'):
-                try:
-                    agent_names = [o.agent_name for o in current_outputs]
-                    tracker.track_collaboration_event(
-                        event_type=f"{strategy.mode}_round",
-                        stage_id=state.get(StateKeys.CURRENT_STAGE_ID),
-                        agents_involved=agent_names,
-                        round_number=round_num,
-                        outcome=round_outcome,
-                        confidence_score=conv_score,
-                        event_data={
-                            "agent_count": len(agent_names),
-                            "avg_confidence": (
-                                sum(o.confidence for o in current_outputs) / len(current_outputs)
-                                if current_outputs else 0.0
-                            ),
-                            "stance_distribution": stance_dist,
-                            "agent_stances": agent_stances,
-                        },
-                    )
-                except Exception:
-                    logger.warning(
-                        "Failed to track round %d collaboration event",
-                        round_num,
-                        exc_info=True,
-                    )
+            # Track round N collaboration event
+            _track_dialogue_round(
+                tracker, strategy, state, current_outputs,
+                round_num, round_outcome, conv_score, agent_stances
+            )
 
             if converged:
                 break
@@ -486,27 +538,10 @@ class StageExecutor(ABC):
             previous_outputs = current_outputs
 
         # Final synthesis
-        result = strategy.synthesize(current_outputs, {})
-        result.metadata["dialogue_rounds"] = final_round + 1
-        result.metadata["total_cost_usd"] = total_cost
-        result.metadata["dialogue_history"] = dialogue_history
-        result.metadata["converged"] = converged
-        if converged:
-            result.metadata["convergence_round"] = convergence_round
-            result.metadata["early_stop_reason"] = "convergence"
-        elif strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
-            result.metadata["early_stop_reason"] = "budget"
-        else:
-            result.metadata["early_stop_reason"] = "max_rounds"
-
-        logger.info(
-            f"Dialogue completed{ERROR_MSG_FOR_STAGE_SUFFIX}{stage_name}': "
-            f"{final_round + 1} rounds, ${total_cost:.2f} cost, "
-            f"converged: {converged}, "
-            f"reason: {result.metadata['early_stop_reason']}"
+        return _build_final_synthesis_result(
+            strategy, current_outputs, final_round, total_cost,
+            dialogue_history, converged, convergence_round, stage_name
         )
-
-        return result
 
     def _run_leader_synthesis(
         self,

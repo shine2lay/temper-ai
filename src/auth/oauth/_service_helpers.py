@@ -62,6 +62,41 @@ def generate_code_challenge(code_verifier: str) -> str:
     return challenge.decode('ascii')
 
 
+def _build_authorization_params(
+    provider_config: Any, state: str, code_challenge: str, extra_params: Optional[Dict[str, str]]
+) -> Dict[str, str]:
+    """Build OAuth authorization parameters.
+
+    Args:
+        provider_config: Provider configuration
+        state: State parameter
+        code_challenge: PKCE code challenge
+        extra_params: Additional parameters
+
+    Returns:
+        Dict of authorization parameters
+    """
+    params = {
+        'client_id': provider_config.client_id,
+        'redirect_uri': provider_config.redirect_uri,
+        'response_type': 'code',
+        'scope': ' '.join(provider_config.scopes),
+        'state': state,
+        'code_challenge': code_challenge,
+        'code_challenge_method': 'S256',
+        'access_type': 'offline',
+        'prompt': 'consent',
+    }
+
+    if provider_config.extra_params:
+        params.update(provider_config.extra_params)
+
+    if extra_params:
+        params.update(extra_params)
+
+    return params
+
+
 async def build_authorization_url(
     provider: str,
     user_id: str,
@@ -91,7 +126,7 @@ async def build_authorization_url(
     """
     from src.auth.oauth.service import OAuthError
 
-    # Rate limiting (if IP provided)
+    # Rate limiting
     if ip_address:
         try:
             rate_limiter.check_oauth_init(ip_address, user_id)
@@ -101,23 +136,21 @@ async def build_authorization_url(
             )
             raise
 
-    # Get provider config
+    # Get provider config and endpoints
     provider_config = config.get_provider_config(provider)
     if not provider_config:
         raise OAuthError(
             f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}",
             provider=provider
         )
-
-    # Get provider endpoints
     endpoints = get_provider_endpoints(provider_config)
 
-    # Generate state and PKCE parameters
+    # Generate PKCE and state
     state = generate_state()
     code_verifier = generate_code_verifier()
     code_challenge = generate_code_challenge(code_verifier)
 
-    # Store state data (TTL: 10 minutes)
+    # Store state data
     await state_store.set_state(
         state=state,
         data={
@@ -129,25 +162,8 @@ async def build_authorization_url(
         ttl_seconds=SECONDS_PER_10_MINUTES
     )
 
-    # Build authorization URL
-    params = {
-        'client_id': provider_config.client_id,
-        'redirect_uri': provider_config.redirect_uri,
-        'response_type': 'code',
-        'scope': ' '.join(provider_config.scopes),
-        'state': state,
-        'code_challenge': code_challenge,
-        'code_challenge_method': 'S256',
-        'access_type': 'offline',
-        'prompt': 'consent',
-    }
-
-    if provider_config.extra_params:
-        params.update(provider_config.extra_params)
-
-    if extra_params:
-        params.update(extra_params)
-
+    # Build and return URL
+    params = _build_authorization_params(provider_config, state, code_challenge, extra_params)
     auth_url = f"{endpoints[ENDPOINT_AUTHORIZATION]}?{urlencode(params)}"
 
     logger.info(
@@ -195,6 +211,59 @@ async def validate_state(
     return state_data
 
 
+async def _perform_token_exchange(
+    http_client: httpx.AsyncClient,
+    token_endpoint: str,
+    token_data: Dict[str, str],
+    provider: str,
+) -> Dict[str, Any]:
+    """Perform HTTP request to exchange code for tokens.
+
+    Args:
+        http_client: HTTP client
+        token_endpoint: Token endpoint URL
+        token_data: Request payload
+        provider: Provider name
+
+    Returns:
+        Token data from provider
+
+    Raises:
+        OAuthProviderError: If exchange fails
+    """
+    from src.auth.oauth.service import OAuthProviderError
+
+    try:
+        response = await http_client.post(
+            token_endpoint,
+            data=token_data,
+            headers={HEADER_ACCEPT: HEADER_CONTENT_TYPE_JSON}
+        )
+
+        if response.status_code != HTTP_OK:
+            error_detail = response.text
+            raise OAuthProviderError(
+                f"Token exchange failed: {response.status_code} - {error_detail}",
+                provider=provider
+            )
+
+        tokens: Dict[str, Any] = response.json()
+
+        if FIELD_ACCESS_TOKEN not in tokens:
+            raise OAuthProviderError(
+                "Token response missing access_token",
+                provider=provider
+            )
+
+        return tokens
+
+    except httpx.HTTPError as e:
+        raise OAuthProviderError(
+            f"HTTP error during token exchange: {e}",
+            provider=provider
+        ) from e
+
+
 async def exchange_code(
     provider: str,
     code: str,
@@ -229,35 +298,31 @@ async def exchange_code(
         OAuthProviderError: If token exchange fails
         RateLimitExceeded: If rate limit exceeded
     """
-    from src.auth.oauth.service import OAuthError, OAuthProviderError
+    from src.auth.oauth.service import OAuthError
 
-    # Rate limiting (if IP provided)
+    # Rate limiting
     if ip_address:
         try:
             rate_limiter.check_token_exchange(ip_address)
         except RateLimitExceeded:
-            logger.warning(
-                f"Rate limit exceeded for token exchange: ip={ip_address}"
-            )
+            logger.warning(f"Rate limit exceeded for token exchange: ip={ip_address}")
             raise
 
-    # Validate state (CSRF protection)
+    # Validate state and get provider config
     state_data = await validate_state(state, provider, state_store)
     user_id = state_data['user_id']
     code_verifier = state_data[FIELD_CODE_VERIFIER]
 
-    # Get provider config
     provider_config = config.get_provider_config(provider)
     if not provider_config:
         raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=provider)
 
-    # Get token endpoint
     endpoints = get_provider_endpoints(provider_config)
     token_endpoint = endpoints[ENDPOINT_TOKEN]
     if not token_endpoint:
         raise OAuthError(f"Token endpoint not configured for provider '{provider}'", provider=provider)
 
-    # Prepare token exchange request
+    # Prepare and execute token exchange
     token_data = {
         FIELD_CLIENT_ID: provider_config.client_id,
         FIELD_CLIENT_SECRET: provider_config.client_secret,
@@ -267,49 +332,57 @@ async def exchange_code(
         FIELD_CODE_VERIFIER: code_verifier,
     }
 
-    try:
-        response = await http_client.post(
-            token_endpoint,
-            data=token_data,
-            headers={HEADER_ACCEPT: HEADER_CONTENT_TYPE_JSON}
-        )
+    tokens = await _perform_token_exchange(http_client, token_endpoint, token_data, provider)
 
-        if response.status_code != HTTP_OK:
-            error_detail = response.text
-            raise OAuthProviderError(
-                f"Token exchange failed: {response.status_code} - {error_detail}",
-                provider=provider
-            )
+    # Store tokens
+    expires_in = tokens.get('expires_in', config.token_expiry_seconds)
+    token_store.store_token(user_id=user_id, token_data=tokens, expires_in=expires_in)
 
-        tokens: Dict[str, Any] = response.json()
+    logger.info(
+        f"Successfully exchanged OAuth code for tokens: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
+    )
 
-        if FIELD_ACCESS_TOKEN not in tokens:
-            raise OAuthProviderError(
-                "Token response missing access_token",
-                provider=provider
-            )
+    tokens['_flow_user_id'] = user_id
+    return tokens
 
-        # Store tokens securely
-        expires_in = tokens.get('expires_in', config.token_expiry_seconds)
-        token_store.store_token(
-            user_id=user_id,
-            token_data=tokens,
-            expires_in=expires_in
-        )
 
-        logger.info(
-            f"Successfully exchanged OAuth code for tokens: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
-        )
+async def _get_refresh_token_and_endpoint(
+    user_id: str, provider: str, config: OAuthConfig, token_store: SecureTokenStore
+) -> tuple:
+    """Get refresh token and endpoint for token refresh.
 
-        tokens['_flow_user_id'] = user_id
+    Args:
+        user_id: User identifier
+        provider: Provider name
+        config: OAuth configuration
+        token_store: Token storage
 
-        return tokens
+    Returns:
+        Tuple of (refresh_token_val, token_endpoint, provider_config)
 
-    except httpx.HTTPError as e:
-        raise OAuthProviderError(
-            f"HTTP error during token exchange: {e}",
-            provider=provider
-        ) from e
+    Raises:
+        OAuthError: If tokens or endpoint not found
+    """
+    from src.auth.oauth.service import OAuthError
+
+    tokens = token_store.retrieve_token(user_id)
+    if not tokens:
+        raise OAuthError(f"No tokens found for user {user_id}", provider=provider)
+
+    refresh_token_val = tokens.get('refresh_token')
+    if not refresh_token_val:
+        raise OAuthError("No refresh token available", provider=provider)
+
+    provider_config = config.get_provider_config(provider)
+    if not provider_config:
+        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=provider)
+
+    endpoints = get_provider_endpoints(provider_config)
+    token_endpoint = endpoints[ENDPOINT_TOKEN]
+    if not token_endpoint:
+        raise OAuthError(f"Token endpoint not configured for provider '{provider}'", provider=provider)
+
+    return refresh_token_val, token_endpoint, provider_config
 
 
 async def refresh_token(
@@ -334,31 +407,14 @@ async def refresh_token(
     Raises:
         OAuthError: If refresh fails or no refresh token
     """
-    from src.auth.oauth.service import OAuthError, OAuthProviderError
+    from src.auth.oauth.service import OAuthProviderError
 
-    tokens = token_store.retrieve_token(user_id)
-    if not tokens:
-        raise OAuthError(
-            f"No tokens found for user {user_id}",
-            provider=provider
-        )
+    # Get refresh token and endpoint
+    refresh_token_val, token_endpoint, provider_config = await _get_refresh_token_and_endpoint(
+        user_id, provider, config, token_store
+    )
 
-    refresh_token_val = tokens.get('refresh_token')
-    if not refresh_token_val:
-        raise OAuthError(
-            "No refresh token available",
-            provider=provider
-        )
-
-    provider_config = config.get_provider_config(provider)
-    if not provider_config:
-        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=provider)
-
-    endpoints = get_provider_endpoints(provider_config)
-    token_endpoint = endpoints[ENDPOINT_TOKEN]
-    if not token_endpoint:
-        raise OAuthError(f"Token endpoint not configured for provider '{provider}'", provider=provider)
-
+    # Prepare refresh request
     refresh_data = {
         'client_id': provider_config.client_id,
         'client_secret': provider_config.client_secret,
@@ -381,20 +437,15 @@ async def refresh_token(
 
         new_tokens: Dict[str, Any] = response.json()
 
+        # Preserve refresh token if not returned
         if 'refresh_token' not in new_tokens:
             new_tokens['refresh_token'] = refresh_token_val
 
+        # Store new tokens
         expires_in = new_tokens.get('expires_in', config.token_expiry_seconds)
-        token_store.store_token(
-            user_id=user_id,
-            token_data=new_tokens,
-            expires_in=expires_in
-        )
+        token_store.store_token(user_id=user_id, token_data=new_tokens, expires_in=expires_in)
 
-        logger.info(
-            f"Refreshed access token: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
-        )
-
+        logger.info(f"Refreshed access token: provider={provider}{LOG_USER_SEPARATOR}{user_id}")
         return new_tokens
 
     except httpx.HTTPError as e:
@@ -402,6 +453,48 @@ async def refresh_token(
             f"HTTP error during token refresh: {e}",
             provider=provider
         ) from e
+
+
+async def _get_access_token_and_endpoint(
+    user_id: str, provider: str, config: OAuthConfig, token_store: SecureTokenStore
+) -> tuple:
+    """Get access token and userinfo endpoint.
+
+    Args:
+        user_id: User identifier
+        provider: Provider name
+        config: OAuth configuration
+        token_store: Token storage
+
+    Returns:
+        Tuple of (access_token, userinfo_endpoint)
+
+    Raises:
+        OAuthError: If token or endpoint not found
+    """
+    from src.auth.oauth.service import OAuthError
+
+    tokens = token_store.retrieve_token(user_id)
+    if not tokens:
+        raise OAuthError(f"No tokens found for user {user_id}", provider=provider)
+
+    access_token = tokens.get('access_token')
+    if not access_token:
+        raise OAuthError("No access token available", provider=provider)
+
+    provider_config = config.get_provider_config(provider)
+    if not provider_config:
+        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=provider)
+
+    endpoints = get_provider_endpoints(provider_config)
+    userinfo_endpoint = endpoints.get(ENDPOINT_USERINFO)
+    if not userinfo_endpoint:
+        raise OAuthError(
+            f"Provider '{provider}' does not have userinfo endpoint configured",
+            provider=provider
+        )
+
+    return access_token, userinfo_endpoint
 
 
 async def fetch_user_info(
@@ -431,42 +524,19 @@ async def fetch_user_info(
         OAuthError: If user info retrieval fails
         RateLimitExceeded: If rate limit exceeded
     """
-    from src.auth.oauth.service import OAuthError, OAuthProviderError
+    from src.auth.oauth.service import OAuthProviderError
 
     # Rate limiting
     try:
         rate_limiter.check_userinfo(user_id)
     except RateLimitExceeded:
-        logger.warning(
-            f"Rate limit exceeded for user info: user={user_id}"
-        )
+        logger.warning(f"Rate limit exceeded for user info: user={user_id}")
         raise
 
-    tokens = token_store.retrieve_token(user_id)
-    if not tokens:
-        raise OAuthError(
-            f"No tokens found for user {user_id}",
-            provider=provider
-        )
-
-    access_token = tokens.get('access_token')
-    if not access_token:
-        raise OAuthError(
-            "No access token available",
-            provider=provider
-        )
-
-    provider_config = config.get_provider_config(provider)
-    if not provider_config:
-        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=provider)
-
-    endpoints = get_provider_endpoints(provider_config)
-    userinfo_endpoint = endpoints.get(ENDPOINT_USERINFO)
-    if not userinfo_endpoint:
-        raise OAuthError(
-            f"Provider '{provider}' does not have userinfo endpoint configured",
-            provider=provider
-        )
+    # Get token and endpoint
+    access_token, userinfo_endpoint = await _get_access_token_and_endpoint(
+        user_id, provider, config, token_store
+    )
 
     try:
         response = await http_client.get(
@@ -477,12 +547,10 @@ async def fetch_user_info(
             }
         )
 
+        # Handle token expiration with auto-refresh
         if response.status_code == HTTP_UNAUTHORIZED and auto_refresh:
-            logger.info(
-                f"Access token expired, refreshing: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
-            )
+            logger.info(f"Access token expired, refreshing: provider={provider}{LOG_USER_SEPARATOR}{user_id}")
             await refresh_token(user_id, provider, config, token_store, http_client)
-            # Retry with new token (auto_refresh=False to prevent infinite loop)
             return await fetch_user_info(
                 user_id, provider, config, token_store, http_client, rate_limiter,
                 auto_refresh=False
@@ -495,10 +563,7 @@ async def fetch_user_info(
             )
 
         user_info: Dict[str, Any] = response.json()
-
-        logger.info(
-            f"Retrieved user info: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
-        )
+        logger.info(f"Retrieved user info: provider={provider}{LOG_USER_SEPARATOR}{user_id}")
 
         return user_info
 

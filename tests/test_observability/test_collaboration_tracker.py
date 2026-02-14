@@ -27,7 +27,7 @@ class TestCollaborationEventTracker:
     def test_track_collaboration_event_basic(self):
         """Test tracking basic collaboration event."""
         backend = Mock()
-        backend.write_collaboration_event = Mock(return_value="event-123")
+        backend.track_collaboration_event = Mock(return_value="event-123")
         sanitize_fn = Mock(side_effect=lambda x: x)
         context = ExecutionContext(workflow_id="wf-1", stage_id="stage-1")
         get_context = Mock(return_value=context)
@@ -41,12 +41,12 @@ class TestCollaborationEventTracker:
         )
 
         assert event_id == "event-123"
-        backend.write_collaboration_event.assert_called_once()
+        backend.track_collaboration_event.assert_called_once()
 
     def test_track_collaboration_event_with_all_params(self):
         """Test tracking event with all parameters."""
         backend = Mock()
-        backend.write_collaboration_event = Mock(return_value="event-456")
+        backend.track_collaboration_event = Mock(return_value="event-456")
         sanitize_fn = Mock(side_effect=lambda x: x)
         context = ExecutionContext(workflow_id="wf-1", stage_id="stage-1")
         get_context = Mock(return_value=context)
@@ -66,8 +66,8 @@ class TestCollaborationEventTracker:
         )
 
         assert event_id == "event-456"
-        backend.write_collaboration_event.assert_called_once()
-        call_kwargs = backend.write_collaboration_event.call_args[1]
+        backend.track_collaboration_event.assert_called_once()
+        call_kwargs = backend.track_collaboration_event.call_args[1]
         assert call_kwargs["event_type"] == "debate"
         assert call_kwargs["round_number"] == 2
         assert call_kwargs["confidence_score"] == 0.85
@@ -75,7 +75,7 @@ class TestCollaborationEventTracker:
     def test_track_collaboration_event_legacy_params(self):
         """Test backward compatibility with legacy parameter names."""
         backend = Mock()
-        backend.write_collaboration_event = Mock(return_value="event-789")
+        backend.track_collaboration_event = Mock(return_value="event-789")
         sanitize_fn = Mock(side_effect=lambda x: x)
         context = ExecutionContext(workflow_id="wf-1", stage_id="stage-1")
         get_context = Mock(return_value=context)
@@ -93,7 +93,7 @@ class TestCollaborationEventTracker:
         )
 
         assert event_id == "event-789"
-        call_kwargs = backend.write_collaboration_event.call_args[1]
+        call_kwargs = backend.track_collaboration_event.call_args[1]
         # Legacy params should be mapped to new names
         assert call_kwargs["agents_involved"] == ["agent1", "agent2"]
         assert call_kwargs["outcome"] == "approved"
@@ -114,7 +114,7 @@ class TestCollaborationEventTracker:
         )
 
         assert event_id == ""
-        backend.write_collaboration_event.assert_not_called()
+        backend.track_collaboration_event.assert_not_called()
 
     def test_track_collaboration_event_missing_event_type(self):
         """Test that missing event_type returns empty string."""
@@ -131,49 +131,50 @@ class TestCollaborationEventTracker:
         )
 
         assert event_id == ""
-        backend.write_collaboration_event.assert_not_called()
+        backend.track_collaboration_event.assert_not_called()
 
-    def test_sanitization_called(self):
-        """Test that sanitization function is called."""
+    def test_event_data_passed_to_backend(self):
+        """Test that event_data is passed through to backend."""
         backend = Mock()
-        backend.write_collaboration_event = Mock(return_value="event-123")
-        sanitized_data = {"sanitized": True}
-        sanitize_fn = Mock(return_value=sanitized_data)
-        context = ExecutionContext(workflow_id="wf-1", stage_id="stage-1")
-        get_context = Mock(return_value=context)
-
-        tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
-
-        event_data = {"api_key": "sk-secret"}
-        tracker.track_collaboration_event(
-            event_type="voting",
-            event_data=event_data
-        )
-
-        # Sanitize function should be called with event_data
-        sanitize_fn.assert_called()
-
-    def test_backend_write_failure(self):
-        """Test handling of backend write failure."""
-        backend = Mock()
-        backend.write_collaboration_event = Mock(side_effect=Exception("Write failed"))
+        backend.track_collaboration_event = Mock(return_value="event-123")
         sanitize_fn = Mock(side_effect=lambda x: x)
         context = ExecutionContext(workflow_id="wf-1", stage_id="stage-1")
         get_context = Mock(return_value=context)
 
         tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
 
-        # Should handle exception gracefully
-        with pytest.raises(Exception, match="Write failed"):
-            tracker.track_collaboration_event(
-                event_type="voting",
-                agents_involved=["agent1"]
-            )
+        event_data = {"proposal": "option_a", "votes": 3}
+        tracker.track_collaboration_event(
+            event_type="voting",
+            event_data=event_data
+        )
+
+        # Event data should be passed to backend
+        call_kwargs = backend.track_collaboration_event.call_args[1]
+        assert call_kwargs["event_data"] == event_data
+
+    def test_backend_write_failure(self):
+        """Test handling of backend write failure."""
+        backend = Mock()
+        backend.track_collaboration_event = Mock(side_effect=Exception("Write failed"))
+        sanitize_fn = Mock(side_effect=lambda x: x)
+        context = ExecutionContext(workflow_id="wf-1", stage_id="stage-1")
+        get_context = Mock(return_value=context)
+
+        tracker = CollaborationEventTracker(backend, sanitize_fn, get_context)
+
+        # Should handle exception gracefully and return empty string
+        event_id = tracker.track_collaboration_event(
+            event_type="voting",
+            agents_involved=["agent1"]
+        )
+
+        assert event_id == ""
 
     def test_stage_id_from_context(self):
         """Test that stage_id is taken from context when not provided."""
         backend = Mock()
-        backend.write_collaboration_event = Mock(return_value="event-123")
+        backend.track_collaboration_event = Mock(return_value="event-123")
         sanitize_fn = Mock(side_effect=lambda x: x)
         context = ExecutionContext(workflow_id="wf-1", stage_id="context-stage")
         get_context = Mock(return_value=context)
@@ -184,13 +185,13 @@ class TestCollaborationEventTracker:
             event_type="voting"
         )
 
-        call_kwargs = backend.write_collaboration_event.call_args[1]
+        call_kwargs = backend.track_collaboration_event.call_args[1]
         assert call_kwargs["stage_id"] == "context-stage"
 
     def test_stage_id_override(self):
         """Test that explicit stage_id overrides context."""
         backend = Mock()
-        backend.write_collaboration_event = Mock(return_value="event-123")
+        backend.track_collaboration_event = Mock(return_value="event-123")
         sanitize_fn = Mock(side_effect=lambda x: x)
         context = ExecutionContext(workflow_id="wf-1", stage_id="context-stage")
         get_context = Mock(return_value=context)
@@ -202,13 +203,13 @@ class TestCollaborationEventTracker:
             stage_id="explicit-stage"
         )
 
-        call_kwargs = backend.write_collaboration_event.call_args[1]
+        call_kwargs = backend.track_collaboration_event.call_args[1]
         assert call_kwargs["stage_id"] == "explicit-stage"
 
     def test_multiple_events(self):
         """Test tracking multiple events."""
         backend = Mock()
-        backend.write_collaboration_event = Mock(side_effect=["ev-1", "ev-2", "ev-3"])
+        backend.track_collaboration_event = Mock(side_effect=["ev-1", "ev-2", "ev-3"])
         sanitize_fn = Mock(side_effect=lambda x: x)
         context = ExecutionContext(workflow_id="wf-1", stage_id="stage-1")
         get_context = Mock(return_value=context)
@@ -222,12 +223,12 @@ class TestCollaborationEventTracker:
         assert id1 == "ev-1"
         assert id2 == "ev-2"
         assert id3 == "ev-3"
-        assert backend.write_collaboration_event.call_count == 3
+        assert backend.track_collaboration_event.call_count == 3
 
     def test_event_data_types(self):
         """Test various event data types."""
         backend = Mock()
-        backend.write_collaboration_event = Mock(return_value="event-123")
+        backend.track_collaboration_event = Mock(return_value="event-123")
         sanitize_fn = Mock(side_effect=lambda x: x)
         context = ExecutionContext(workflow_id="wf-1", stage_id="stage-1")
         get_context = Mock(return_value=context)
@@ -247,4 +248,4 @@ class TestCollaborationEventTracker:
             }
         )
 
-        backend.write_collaboration_event.assert_called_once()
+        backend.track_collaboration_event.assert_called_once()

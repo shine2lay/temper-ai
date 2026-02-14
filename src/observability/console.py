@@ -106,26 +106,32 @@ class WorkflowVisualizer:
         # Add stages (always shown in minimal mode)
         for stage in workflow_exec.stages:
             stage_node = self._add_stage_node(tree, stage)
-
-            if self.verbosity in ["standard", "verbose"]:
-                # Add agents in standard and verbose modes
-                for agent in stage.agents:
-                    agent_node = self._add_agent_node(stage_node, agent)
-
-                    if self.verbosity == "verbose":
-                        # Add LLM calls in verbose mode
-                        for llm_call in agent.llm_calls:
-                            self._add_llm_node(agent_node, llm_call)
-
-                        # Add tool calls in verbose mode
-                        for tool_call in agent.tool_executions:
-                            self._add_tool_node(agent_node, tool_call)
-
-                # Add synthesis/collaboration info in standard and verbose modes
-                if stage.collaboration_events:
-                    self._add_synthesis_node(stage_node, stage)
+            self._populate_stage_details(stage_node, stage)
 
         return tree
+
+    def _populate_stage_details(self, stage_node: Tree, stage: Any) -> None:
+        """Populate stage node with agents and collaboration info based on verbosity."""
+        if self.verbosity in ["standard", "verbose"]:
+            # Add agents in standard and verbose modes
+            for agent in stage.agents:
+                agent_node = self._add_agent_node(stage_node, agent)
+                self._populate_agent_details(agent_node, agent)
+
+            # Add synthesis/collaboration info in standard and verbose modes
+            if stage.collaboration_events:
+                self._add_synthesis_node(stage_node, stage)
+
+    def _populate_agent_details(self, agent_node: Tree, agent: Any) -> None:
+        """Populate agent node with LLM and tool calls in verbose mode."""
+        if self.verbosity == "verbose":
+            # Add LLM calls in verbose mode
+            for llm_call in agent.llm_calls:
+                self._add_llm_node(agent_node, llm_call)
+
+            # Add tool calls in verbose mode
+            for tool_call in agent.tool_executions:
+                self._add_tool_node(agent_node, tool_call)
 
     def _add_stage_node(self, parent_tree: Tree, stage: Any) -> Tree:
         """Add stage node to tree.

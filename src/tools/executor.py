@@ -7,18 +7,14 @@ using weakref.finalize() to prevent thread leaks.
 from __future__ import annotations
 
 import time
+import threading
 import weakref
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
-from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, Optional
-
-from src.constants.durations import (
-    DEFAULT_TIMEOUT_SECONDS,
-    RATE_LIMIT_WINDOW_SECOND,
-)
+from typing import Any, Dict, Optional, Union
 from src.constants.limits import MIN_WORKERS
+from src.tools._executor_config import ToolExecutorConfig
 from src.tools._executor_helpers import (
     acquire_concurrent_slot,
     check_rate_limit,
@@ -52,18 +48,11 @@ from src.tools.registry import ToolRegistry
 from src.utils.exceptions import RateLimitError
 from src.utils.logging import get_logger
 
-if TYPE_CHECKING:
-    from src.safety.action_policy_engine import ActionPolicyEngine
-    from src.safety.approval import ApprovalWorkflow
-    from src.safety.rollback import RollbackManager
-
 # Module logger
 logger = get_logger(__name__)
 
 # Note: RateLimitError now imported from src.utils.exceptions
 # (unified base class for all rate limit exceptions)
-
-import threading
 
 
 class ToolExecutor:
@@ -80,22 +69,18 @@ class ToolExecutor:
     def __init__(
         self,
         registry: ToolRegistry,
-        default_timeout: int = DEFAULT_TIMEOUT_SECONDS,
-        max_workers: int = MIN_WORKERS,
-        max_concurrent: Optional[int] = None,
-        rate_limit: Optional[int] = None,
-        rate_window: float = RATE_LIMIT_WINDOW_SECOND,
-        rollback_manager: Optional[RollbackManager] = None,
-        policy_engine: Optional[ActionPolicyEngine] = None,
-        approval_workflow: Optional[ApprovalWorkflow] = None,
-        enable_auto_rollback: bool = True,
-        workspace_root: Optional[str] = None,
+        config: Optional[Union[ToolExecutorConfig, Dict[str, Any]]] = None,
+        **kwargs: Any,
     ):
         """
         Initialize tool executor.
 
         Args:
-            registry: ToolRegistry instance
+            registry: ToolRegistry instance (required)
+            config: Optional ToolExecutorConfig or dict with config params
+            **kwargs: Individual config params (for backward compatibility)
+
+        Supported config params:
             default_timeout: Default timeout in seconds
             max_workers: Max concurrent tool executions
             max_concurrent: Max total concurrent executions allowed
@@ -105,22 +90,33 @@ class ToolExecutor:
             policy_engine: ActionPolicyEngine for policy validation
             approval_workflow: ApprovalWorkflow for approval requests
             enable_auto_rollback: Enable automatic rollback on failure
+            workspace_root: Optional workspace root directory path
         """
+        # Parse config
+        if config is None:
+            cfg = ToolExecutorConfig(**kwargs)
+        elif isinstance(config, dict):
+            cfg = ToolExecutorConfig(**config)
+        else:
+            cfg = config
+
+        # Set attributes from config
         self.registry = registry
-        self.default_timeout = default_timeout
-        self.max_concurrent = max_concurrent
-        self.rate_limit = rate_limit
-        self.rate_window = rate_window
-        self.workspace_root: Optional[Path] = Path(workspace_root) if workspace_root else None
+        self.default_timeout = cfg.default_timeout
+        self.max_concurrent = cfg.max_concurrent
+        self.rate_limit = cfg.rate_limit
+        self.rate_window = cfg.rate_window
+        self.workspace_root = cfg.workspace_path
 
         # Safety components (optional)
-        self.rollback_manager = rollback_manager
-        self.policy_engine = policy_engine
-        self.approval_workflow = approval_workflow
-        self.enable_auto_rollback = enable_auto_rollback
+        self.rollback_manager = cfg.rollback_manager
+        self.policy_engine = cfg.policy_engine
+        self.approval_workflow = cfg.approval_workflow
+        self.enable_auto_rollback = cfg.enable_auto_rollback
 
+        # Thread pools
         self._executor = ThreadPoolExecutor(
-            max_workers=max_workers,
+            max_workers=cfg.max_workers,
             thread_name_prefix="tool-exec",
         )
         self._approval_executor = ThreadPoolExecutor(
@@ -149,9 +145,9 @@ class ToolExecutor:
         if self.approval_workflow and self.rollback_manager:
             self.approval_workflow.on_rejected(lambda req: handle_approval_rejection(self, req))
 
-        logger.debug(f"ToolExecutor initialized with {max_workers} workers, "
-                    f"max_concurrent={max_concurrent}, rate_limit={rate_limit}/{rate_window}s, "
-                    f"rollback={'enabled' if rollback_manager else 'disabled'}")
+        logger.debug(f"ToolExecutor initialized with {cfg.max_workers} workers, "
+                    f"max_concurrent={cfg.max_concurrent}, rate_limit={cfg.rate_limit}/{cfg.rate_window}s, "
+                    f"rollback={'enabled' if cfg.rollback_manager else 'disabled'}")
 
     def get_concurrent_execution_count(self) -> int:
         """Return current concurrent execution count."""

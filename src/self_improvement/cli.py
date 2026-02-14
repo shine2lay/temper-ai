@@ -451,8 +451,8 @@ class M5CLI:
             return LoopConfig()
 
 
-def main() -> int:
-    """Main CLI entry point."""
+def _setup_argparse() -> argparse.ArgumentParser:
+    """Setup argparse with all subcommands."""
     parser = argparse.ArgumentParser(
         description='M5 Self-Improvement CLI',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -519,6 +519,34 @@ Examples:
     # list-agents command
     subparsers.add_parser('list-agents', help='List all agents')
 
+    return parser
+
+
+def _route_command(cli: M5CLI, args: argparse.Namespace) -> int:
+    """Route parsed args to appropriate CLI command."""
+    command_map = {
+        'run': lambda: cli.run_iteration(args.agent_name, args.config),
+        'analyze': lambda: cli.analyze(args.agent_name, args.window),
+        'optimize': lambda: cli.optimize(args.agent_name, args.config),
+        'status': lambda: cli.status(args.agent_name),
+        'metrics': lambda: cli.metrics(args.agent_name),
+        'pause': lambda: cli.pause(args.agent_name),
+        'resume': lambda: cli.resume(args.agent_name),
+        'reset': lambda: cli.reset(args.agent_name),
+        'health': lambda: cli.health(),
+        'check-experiments': lambda: cli.check_experiments(args.agent_name),
+        'list-agents': lambda: cli.list_agents(),
+    }
+
+    handler = command_map.get(args.command)
+    if handler:
+        return handler()
+    return 1
+
+
+def main() -> int:
+    """Main CLI entry point."""
+    parser = _setup_argparse()
     args = parser.parse_args()
 
     if not args.command:
@@ -526,33 +554,7 @@ Examples:
         return 1
 
     cli = M5CLI()
-
-    # Route to appropriate command
-    if args.command == 'run':
-        return cli.run_iteration(args.agent_name, args.config)
-    elif args.command == 'analyze':
-        return cli.analyze(args.agent_name, args.window)
-    elif args.command == 'optimize':
-        return cli.optimize(args.agent_name, args.config)
-    elif args.command == 'status':
-        return cli.status(args.agent_name)
-    elif args.command == 'metrics':
-        return cli.metrics(args.agent_name)
-    elif args.command == 'pause':
-        return cli.pause(args.agent_name)
-    elif args.command == 'resume':
-        return cli.resume(args.agent_name)
-    elif args.command == 'reset':
-        return cli.reset(args.agent_name)
-    elif args.command == 'health':
-        return cli.health()
-    elif args.command == 'check-experiments':
-        return cli.check_experiments(args.agent_name)
-    elif args.command == 'list-agents':
-        return cli.list_agents()
-    else:
-        parser.print_help()
-        return 1
+    return _route_command(cli, args)
 
 
 if __name__ == '__main__':

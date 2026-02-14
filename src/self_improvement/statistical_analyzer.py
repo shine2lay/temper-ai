@@ -165,56 +165,50 @@ class SIStatisticalAnalyzer:
             confidence_level=1.0 - self.significance_level,
         )
 
-    def _compare_variant_to_control(
+    def _compute_metric_comparisons(
         self,
         control: VariantResults,
         variant: VariantResults
-    ) -> ComparisonResult:
-        """Compare a single variant against control."""
-
-        # Quality comparison (higher is better)
+    ) -> tuple[tuple[float, float, bool], tuple[float, float, bool], tuple[float, float, bool]]:
+        """Compute statistical comparisons for all metrics."""
         quality_improvement, quality_p, quality_sig = self._compare_metric(
             control.quality_scores,
             variant.quality_scores,
             higher_is_better=True
         )
 
-        # Speed comparison (lower is better)
         speed_improvement, speed_p, speed_sig = self._compare_metric(
             control.speed_scores,
             variant.speed_scores,
             higher_is_better=False
         )
 
-        # Cost comparison (lower is better)
         cost_improvement, cost_p, cost_sig = self._compare_metric(
             control.cost_scores,
             variant.cost_scores,
             higher_is_better=False
         )
 
-        # Calculate composite score
-        composite = self._calculate_composite_score(
-            quality_improvement,
-            speed_improvement,
-            cost_improvement
+        return (
+            (quality_improvement, quality_p, quality_sig),
+            (speed_improvement, speed_p, speed_sig),
+            (cost_improvement, cost_p, cost_sig)
         )
 
-        # Determine if better than control
-        is_better = bool(
-            quality_sig and quality_improvement > 0 and
-            composite > 0  # Overall improvement
-        )
-
-        # Generate recommendation
-        recommendation = self._generate_recommendation(
-            is_better,
-            quality_improvement,
-            quality_sig,
-            speed_improvement,
-            cost_improvement,
-            composite
-        )
+    def _build_comparison_result(
+        self,
+        variant: VariantResults,
+        quality_data: tuple[float, float, bool],
+        speed_data: tuple[float, float, bool],
+        cost_data: tuple[float, float, bool],
+        composite: float,
+        is_better: bool,
+        recommendation: str
+    ) -> ComparisonResult:
+        """Build ComparisonResult from computed values."""
+        quality_improvement, quality_p, quality_sig = quality_data
+        speed_improvement, speed_p, speed_sig = speed_data
+        cost_improvement, cost_p, cost_sig = cost_data
 
         return ComparisonResult(
             variant_id=variant.variant_id,
@@ -231,6 +225,38 @@ class SIStatisticalAnalyzer:
             composite_score=composite,
             is_better_than_control=is_better,
             recommendation=recommendation,
+        )
+
+    def _compare_variant_to_control(
+        self,
+        control: VariantResults,
+        variant: VariantResults
+    ) -> ComparisonResult:
+        """Compare a single variant against control."""
+        # Compute all metric comparisons
+        quality_data, speed_data, cost_data = self._compute_metric_comparisons(
+            control, variant
+        )
+
+        # Calculate composite score
+        composite = self._calculate_composite_score(
+            quality_data[0], speed_data[0], cost_data[0]
+        )
+
+        # Determine if better than control
+        is_better = bool(
+            quality_data[2] and quality_data[0] > 0 and composite > 0
+        )
+
+        # Generate recommendation
+        recommendation = self._generate_recommendation(
+            is_better, quality_data[0], quality_data[2],
+            speed_data[0], cost_data[0], composite
+        )
+
+        return self._build_comparison_result(
+            variant, quality_data, speed_data, cost_data,
+            composite, is_better, recommendation
         )
 
     def _compare_metric(

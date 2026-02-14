@@ -81,6 +81,7 @@ export class StageDetailPanel {
         this.container = container;
         this.dataStore = dataStore;
         this.eventBus = eventBus;
+        this._allExecutionIds = [];
         this._changeHandler = (e) => this._onDataChange(e.detail);
         this.dataStore.addEventListener('change', this._changeHandler);
         this.render();
@@ -118,6 +119,14 @@ export class StageDetailPanel {
 
         // Show cached data immediately if available
         let stage = this.dataStore.stages.get(stageId);
+
+        // Capture iteration context from flowchart click handler
+        if (stage && stage._allExecutionIds) {
+            this._allExecutionIds = stage._allExecutionIds;
+        } else {
+            this._allExecutionIds = [];
+        }
+
         if (stage) {
             this._renderStage(stage);
         }
@@ -197,6 +206,11 @@ export class StageDetailPanel {
         // Header
         scrollWrapper.appendChild(this._buildHeader(stage));
 
+        // Iteration picker (only when multiple iterations exist)
+        if (this._allExecutionIds && this._allExecutionIds.length > 1) {
+            scrollWrapper.appendChild(this._buildIterationPicker(stage));
+        }
+
         // Configuration section (description, inputs, outputs)
         const config = stage.stage_config_snapshot;
         if (config && (config.description || config.inputs || config.outputs)) {
@@ -245,6 +259,77 @@ export class StageDetailPanel {
 
         // Add scroll wrapper to container
         this.container.appendChild(scrollWrapper);
+    }
+
+    _buildIterationPicker(currentStage) {
+        const allIds = this._allExecutionIds;
+        const wrapper = document.createElement('div');
+        wrapper.className = 'iteration-picker';
+
+        const label = document.createElement('span');
+        label.style.cssText = 'font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.5px;margin-right:4px;';
+        label.textContent = 'Iteration';
+        wrapper.appendChild(label);
+
+        const dotColors = {
+            completed: '#66bb6a',
+            running: '#4fc3f7',
+            failed: '#ef5350',
+            pending: '#6a7080',
+        };
+
+        for (let i = 0; i < allIds.length; i++) {
+            const execId = allIds[i];
+            const isCurrent = execId === currentStage.id;
+            const stageData = this.dataStore.stages.get(execId);
+            const duration = stageData?.duration_seconds;
+            const status = stageData?.status || 'pending';
+
+            const chip = document.createElement('button');
+            chip.className = 'iteration-chip' + (isCurrent ? ' active' : '');
+
+            const num = document.createElement('span');
+            num.textContent = `#${i + 1}`;
+
+            const dot = document.createElement('span');
+            dot.style.cssText = 'width:6px;height:6px;border-radius:50%;flex-shrink:0;';
+            dot.style.background = dotColors[status] || dotColors.pending;
+
+            const dur = document.createElement('span');
+            dur.style.cssText = 'font-size:10px;color:var(--text-muted);';
+            dur.textContent = duration != null ? formatDuration(duration) : '--';
+
+            chip.appendChild(num);
+            chip.appendChild(dot);
+            chip.appendChild(dur);
+
+            if (!isCurrent) {
+                chip.addEventListener('click', () => this._switchIteration(execId));
+            }
+
+            wrapper.appendChild(chip);
+        }
+
+        return wrapper;
+    }
+
+    async _switchIteration(execId) {
+        this._pendingSwitchId = execId;
+        const fresh = await this._fetchStage(execId);
+        if (!fresh) return;
+        // Bail if user clicked a different iteration during fetch
+        if (this._pendingSwitchId !== execId) return;
+
+        let stage = this.dataStore.stages.get(execId);
+        if (stage) {
+            Object.assign(stage, fresh);
+        } else {
+            stage = fresh;
+            this.dataStore.stages.set(execId, stage);
+        }
+
+        this.container.innerHTML = '';
+        this._renderStage(stage);
     }
 
     _buildHeader(stage) {

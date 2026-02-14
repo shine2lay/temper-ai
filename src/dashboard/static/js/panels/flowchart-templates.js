@@ -81,6 +81,7 @@ export function stageHeaderTpl(data) {
 
     // Tooltip rows (all values escaped for XSS safety)
     const tipRows = [];
+    if (data.iterationCount > 1) tipRows.push(`<div class="fc-tip-row"><span class="fc-tip-key">Iterations</span><span class="fc-tip-val">${esc(data.iterationCount)}</span></div>`);
     if (data.numSucceeded != null) tipRows.push(`<div class="fc-tip-row"><span class="fc-tip-key">Succeeded</span><span class="fc-tip-val">${esc(data.numSucceeded)}</span></div>`);
     if (data.numFailed > 0)        tipRows.push(`<div class="fc-tip-row"><span class="fc-tip-key">Failed</span><span class="fc-tip-val">${esc(data.numFailed)}</span></div>`);
     if (data.collabRounds > 0)     tipRows.push(`<div class="fc-tip-row"><span class="fc-tip-key">Rounds</span><span class="fc-tip-val">${esc(data.collabRounds)}</span></div>`);
@@ -92,8 +93,13 @@ export function stageHeaderTpl(data) {
 
     const hoverClass = tooltipHtml ? ' fc-hoverable' : '';
 
+    // Iteration badge for collapsed nodes with multiple executions
+    const iterBadge = (data.iterationCount > 1)
+        ? `<span class="fc-iteration-badge">x${data.iterationCount}</span>`
+        : '';
+
     return `<div class="fc-stage-header${hoverClass}">` +
-        `<div class="fc-stage-top"><span class="fc-stage-dot ${dotClass(status)}"></span><span class="fc-stage-name">${name}</span></div>` +
+        `<div class="fc-stage-top"><span class="fc-stage-dot ${dotClass(status)}"></span><span class="fc-stage-name">${name}</span>${iterBadge}</div>` +
         badgeHtml +
         metricsHtml +
         tooltipHtml +

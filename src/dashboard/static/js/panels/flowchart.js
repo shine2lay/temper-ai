@@ -3,6 +3,9 @@
  * Shows stages as compound nodes with agent children, data flow edges,
  * and collaboration edges. HTML overlays via cytoscape-node-html-label
  * for rich stage headers and agent cards. Live updates via DataStore events.
+ *
+ * Collapsed DAG: groups repeat executions of the same stage name into
+ * a single node with iteration badges and aggregated metrics.
  */
 
 import {
@@ -111,6 +114,23 @@ const CYTOSCAPE_STYLE = [
             'text-margin-y': -10,
         },
     },
+    // Loop-back edges (dashed orange)
+    {
+        selector: 'edge[type="loop_back"]',
+        style: {
+            'curve-style': 'bezier',
+            'line-style': 'dashed',
+            'line-color': '#ffa726',
+            'target-arrow-shape': 'triangle',
+            'target-arrow-color': '#ffa726',
+            'width': 2,
+            'label': 'data(label)',
+            'font-size': 9,
+            'color': '#ffa726',
+            'text-rotation': 'autorotate',
+            'text-margin-y': -10,
+        },
+    },
     // Collaboration edges (agent-to-agent within stage)
     {
         selector: 'edge[type="collaboration"]',
@@ -195,14 +215,26 @@ export class FlowchartPanel {
             this.dataStore.select('agent', e.target.id());
         });
 
-        // Click stage node → select stage in DataStore
+        // Click stage node → attach _allExecutionIds then select
         this._cy.on('tap', 'node[type="stage"]', (e) => {
-            this.dataStore.select('stage', e.target.id());
+            const stageId = e.target.id();
+            const nodeIds = e.target.data('_allExecutionIds');
+            const stageData = this.dataStore.stages.get(stageId);
+            if (stageData && nodeIds) {
+                stageData._allExecutionIds = nodeIds;
+            }
+            this.dataStore.select('stage', stageId);
         });
 
-        // Click stage-header node → select parent stage in DataStore
+        // Click stage-header node → attach _allExecutionIds then select parent
         this._cy.on('tap', 'node[type="stage-header"]', (e) => {
-            this.dataStore.select('stage', e.target.data('parent'));
+            const parentId = e.target.data('parent');
+            const nodeIds = e.target.data('_allExecutionIds');
+            const stageData = this.dataStore.stages.get(parentId);
+            if (stageData && nodeIds) {
+                stageData._allExecutionIds = nodeIds;
+            }
+            this.dataStore.select('stage', parentId);
         });
 
         // Register HTML label overlays (graceful: guard if extension not loaded)
@@ -320,69 +352,128 @@ export class FlowchartPanel {
         }).run();
     }
 
+    // --- Collapsed DAG: group executions, aggregate metrics, build elements ---
+
     _buildElements(wf) {
         const elements = [];
         const stages = wf.stages || [];
         const dagInfo = this._extractDagInfo(wf);
-        const positions = this._computeStagePositions(stages, dagInfo);
+        const stageGroups = this._groupExecutionsByName(stages);
+        const positions = this._computeStagePositions(stageGroups, dagInfo);
 
-        for (let i = 0; i < stages.length; i++) {
-            const stage = stages[i];
-            if (!stage.id) continue;
+        for (const [name, executions] of stageGroups) {
+            const latest = executions[executions.length - 1];
+            if (!latest.id) continue;
 
-            const pos = positions.get(stage.id) || { x: i * 300, y: 0 };
-            this._addStageElements(elements, stage, pos);
-            this._addCollabEdges(elements, stage);
+            const pos = positions.get(name) || { x: 0, y: 0 };
+            const allExecutionIds = executions.map(e => e.id);
+            const iterationCount = executions.length;
+            const aggregated = this._aggregateIterationMetrics(executions);
+
+            this._addStageElements(elements, latest, pos, {
+                iterationCount,
+                _allExecutionIds: allExecutionIds,
+                ...aggregated,
+            });
+
+            // Collab edges only for latest execution's agents
+            this._addCollabEdges(elements, latest);
         }
 
-        // Build data flow edges (DAG-aware when depends_on info available)
-        if (dagInfo.hasDeps) {
-            this._addDagFlowEdges(elements, stages, dagInfo);
-        } else {
-            this._addSequentialFlowEdges(elements, stages);
-        }
+        this._addCollapsedDagEdges(elements, stageGroups, dagInfo);
 
         return elements;
     }
 
+    /** Group execution records by stage name, sorted by start_time within each group. */
+    _groupExecutionsByName(stages) {
+        const groups = new Map();
+        for (const stage of stages) {
+            if (!stage.id) continue;
+            const stageData = this.dataStore.stages.get(stage.id) || stage;
+            const name = stageData.stage_name || stageData.name || stage.id;
+            if (!groups.has(name)) groups.set(name, []);
+            groups.get(name).push(stage);
+        }
+        // Sort each group by start_time (preserves execution order)
+        for (const [, execs] of groups) {
+            execs.sort((a, b) => {
+                const ad = this.dataStore.stages.get(a.id) || a;
+                const bd = this.dataStore.stages.get(b.id) || b;
+                const at = ad.started_at || ad.start_time || '';
+                const bt = bd.started_at || bd.start_time || '';
+                return at < bt ? -1 : at > bt ? 1 : 0;
+            });
+        }
+        return groups;
+    }
+
+    /** Aggregate metrics across all iterations of a stage. */
+    _aggregateIterationMetrics(executions) {
+        let totalTokens = 0;
+        let totalCost = 0;
+        let durationSeconds = 0;
+        let numSucceeded = 0;
+        let numFailed = 0;
+        let collabRounds = 0;
+
+        for (const exec of executions) {
+            const agents = exec.agents || [];
+            totalTokens += this._sumAgentField(agents, 'total_tokens');
+            totalCost += this._sumAgentField(agents, 'estimated_cost_usd');
+
+            const sd = this.dataStore.stages.get(exec.id) || exec;
+            durationSeconds += sd.duration_seconds || 0;
+            numSucceeded += sd.num_agents_succeeded || 0;
+            numFailed += sd.num_agents_failed || 0;
+            collabRounds += (sd.collaboration_events || []).length;
+        }
+
+        return { totalTokens, totalCost, durationSeconds, numSucceeded, numFailed, collabRounds };
+    }
+
     /**
-     * Compute {stageId → {x, y}} positions from DAG topology.
+     * Compute {stageName → {x, y}} positions from DAG topology.
+     * Accepts stageGroups Map (name → executions[]) for collapsed view.
      * X = column from depth (longest path from root), Y = row within depth group.
      * Falls back to sequential left-to-right when no depends_on is present.
      */
-    _computeStagePositions(stages, dagInfo) {
+    _computeStagePositions(stageGroups, dagInfo) {
         const positions = new Map();
         const colWidth = LAYOUT.AGENT_WIDTH + 2 * LAYOUT.STAGE_PAD_X + LAYOUT.STAGE_GAP_X;
 
         if (!dagInfo.hasDeps) {
-            for (let i = 0; i < stages.length; i++) {
-                if (stages[i].id) positions.set(stages[i].id, { x: i * colWidth, y: 0 });
+            let i = 0;
+            for (const [name] of stageGroups) {
+                positions.set(name, { x: i * colWidth, y: 0 });
+                i++;
             }
             return positions;
         }
 
         const depths = this._computeDepthsFromDepMap(dagInfo.depMap);
 
-        // Group stages by depth for vertical distribution
+        // Group stage names by depth for vertical distribution
         const depthGroups = new Map();
-        for (const stage of stages) {
-            if (!stage.id) continue;
-            const stageData = this.dataStore.stages.get(stage.id) || stage;
-            const name = stageData.stage_name || stageData.name || '';
+        for (const [name] of stageGroups) {
             const depth = depths.get(name) ?? 0;
             if (!depthGroups.has(depth)) depthGroups.set(depth, []);
-            depthGroups.get(depth).push(stage);
+            depthGroups.get(depth).push(name);
         }
 
         // Assign X from depth, Y centered within each depth group
-        for (const [depth, group] of depthGroups) {
+        for (const [depth, names] of depthGroups) {
             const x = depth * colWidth;
-            const heights = group.map(s => this._estimateStageHeight(s));
+            const heights = names.map(name => {
+                const execs = stageGroups.get(name);
+                const latest = execs[execs.length - 1];
+                return this._estimateStageHeight(latest);
+            });
             const totalH = heights.reduce((a, b) => a + b, 0)
-                + (group.length - 1) * LAYOUT.STAGE_GAP_Y;
+                + (names.length - 1) * LAYOUT.STAGE_GAP_Y;
             let yCursor = -totalH / 2;
-            for (let i = 0; i < group.length; i++) {
-                positions.set(group[i].id, { x, y: yCursor });
+            for (let i = 0; i < names.length; i++) {
+                positions.set(names[i], { x, y: yCursor });
                 yCursor += heights[i] + LAYOUT.STAGE_GAP_Y;
             }
         }
@@ -425,8 +516,9 @@ export class FlowchartPanel {
     /**
      * Add stage compound node, header child, and agent child nodes at pos.
      * pos.x = center X, pos.y = top Y of the stage content area.
+     * overrides: optional object merged into header node data (for collapsed metrics).
      */
-    _addStageElements(elements, stage, pos) {
+    _addStageElements(elements, stage, pos, overrides = {}) {
         const stageData = this.dataStore.stages.get(stage.id) || stage;
         const status = stageData.status || 'pending';
         const name = stageData.stage_name || stageData.name || stage.id;
@@ -441,35 +533,40 @@ export class FlowchartPanel {
         // Stage compound (parent) node
         elements.push({
             group: 'nodes',
-            data: { id: stage.id, type: 'stage', status, label: name },
+            data: {
+                id: stage.id,
+                type: 'stage',
+                status,
+                label: name,
+                _allExecutionIds: overrides._allExecutionIds || [stage.id],
+            },
         });
 
         // Stage header child node (HTML overlay anchor)
         // Fields match stageHeaderTpl expectations: name, status, strategy,
         // execMode, agentCount, totalTokens, totalCost, durationSeconds, etc.
         const agents = stage.agents || [];
-        elements.push({
-            group: 'nodes',
-            data: {
-                id: `${stage.id}-header`,
-                parent: stage.id,
-                type: 'stage-header',
-                name,
-                label: name,
-                status,
-                strategy,
-                execMode,
-                agentCount: agents.length || stageData.num_agents_executed || 0,
-                totalTokens: this._sumAgentField(agents, 'total_tokens'),
-                totalCost: this._sumAgentField(agents, 'estimated_cost_usd'),
-                durationSeconds: stageData.duration_seconds || null,
-                numSucceeded: stageData.num_agents_succeeded ?? null,
-                numFailed: stageData.num_agents_failed ?? 0,
-                collabRounds: (stageData.collaboration_events || []).length,
-                _px: pos.x,
-                _py: pos.y + LAYOUT.STAGE_HEADER_HEIGHT / 2,
-            },
-        });
+        const headerData = {
+            id: `${stage.id}-header`,
+            parent: stage.id,
+            type: 'stage-header',
+            name,
+            label: name,
+            status,
+            strategy,
+            execMode,
+            agentCount: agents.length || stageData.num_agents_executed || 0,
+            totalTokens: this._sumAgentField(agents, 'total_tokens'),
+            totalCost: this._sumAgentField(agents, 'estimated_cost_usd'),
+            durationSeconds: stageData.duration_seconds || null,
+            numSucceeded: stageData.num_agents_succeeded ?? null,
+            numFailed: stageData.num_agents_failed ?? 0,
+            collabRounds: (stageData.collaboration_events || []).length,
+            _px: pos.x,
+            _py: pos.y + LAYOUT.STAGE_HEADER_HEIGHT / 2,
+            ...overrides,
+        };
+        elements.push({ group: 'nodes', data: headerData });
 
         // Agent child nodes
         for (let j = 0; j < agents.length; j++) {
@@ -543,7 +640,7 @@ export class FlowchartPanel {
      */
     _extractDagInfo(wf) {
         const result = { depMap: new Map(), loopsBackTo: new Map(), hasDeps: false };
-        const configSnap = wf.workflow_config_snapshot;
+        const configSnap = wf.workflow_config || wf.workflow_config_snapshot;
         if (!configSnap) return result;
 
         const wfConfig = configSnap.workflow || configSnap;
@@ -567,90 +664,87 @@ export class FlowchartPanel {
     }
 
     /**
-     * Add data flow edges based on DAG depends_on relationships.
-     * Matches execution records to config stage names and draws edges
-     * from dependency executions to dependent executions.
+     * Add collapsed DAG edges: one edge per dependency + loop-back edges.
+     * Replaces the old _addDagFlowEdges / _addSequentialFlowEdges pair.
      */
-    _addDagFlowEdges(elements, stages, dagInfo) {
-        const nameToLatestId = new Map();
-        const seenNames = new Set();
+    _addCollapsedDagEdges(elements, stageGroups, dagInfo) {
+        // Build nameToNodeId map (name → latest execution ID)
+        const nameToNodeId = new Map();
+        for (const [name, execs] of stageGroups) {
+            nameToNodeId.set(name, execs[execs.length - 1].id);
+        }
 
-        for (let i = 0; i < stages.length; i++) {
-            const stage = stages[i];
-            if (!stage.id) continue;
-            // Use enriched dataStore data for consistent name resolution
-            const stageData = this.dataStore.stages.get(stage.id) || stage;
-            const name = stageData.stage_name || stageData.name || '';
-            const isRepeat = seenNames.has(name);
+        if (dagInfo.hasDeps) {
+            // Normal forward dependency edges: one per dependency
+            for (const [name, deps] of dagInfo.depMap) {
+                const targetId = nameToNodeId.get(name);
+                if (!targetId) continue;
 
-            if (isRepeat) {
-                // Repeat execution (loop): draw loop-back edge from the
-                // stage that triggered the loop, NOT the original deps
-                for (const [loopSrc, loopTarget] of dagInfo.loopsBackTo) {
-                    if (loopTarget === name) {
-                        const srcId = nameToLatestId.get(loopSrc);
-                        if (srcId && srcId !== stage.id) {
-                            elements.push({
-                                group: 'edges',
-                                data: {
-                                    id: `loop-${srcId}-${stage.id}`,
-                                    source: srcId,
-                                    target: stage.id,
-                                    type: 'data_flow',
-                                    label: 'loop',
-                                },
-                            });
-                        }
-                    }
-                }
-            } else {
-                // First execution: draw normal dependency edges
-                const deps = dagInfo.depMap.get(name) || [];
                 for (const depName of deps) {
-                    const depId = nameToLatestId.get(depName);
-                    if (depId) {
-                        const prevData = this.dataStore.stages.get(depId) || {};
-                        const outputKeys = Object.keys(prevData.output_data || {});
-                        const label = formatDataFlowLabel(outputKeys);
-                        elements.push({
-                            group: 'edges',
-                            data: {
-                                id: `flow-${depId}-${stage.id}`,
-                                source: depId,
-                                target: stage.id,
-                                type: 'data_flow',
-                                label,
-                            },
-                        });
-                    }
+                    const sourceId = nameToNodeId.get(depName);
+                    if (!sourceId) continue;
+
+                    const prevData = this.dataStore.stages.get(sourceId) || {};
+                    const outputKeys = Object.keys(prevData.output_data || {});
+                    const label = formatDataFlowLabel(outputKeys);
+
+                    elements.push({
+                        group: 'edges',
+                        data: {
+                            id: `flow-${sourceId}-${targetId}`,
+                            source: sourceId,
+                            target: targetId,
+                            type: 'data_flow',
+                            label,
+                        },
+                    });
                 }
             }
 
-            seenNames.add(name);
-            nameToLatestId.set(name, stage.id);
-        }
-    }
+            // Loop-back edges (dashed orange with iteration count)
+            for (const [srcName, targetName] of dagInfo.loopsBackTo) {
+                const sourceId = nameToNodeId.get(srcName);
+                const targetId = nameToNodeId.get(targetName);
+                if (!sourceId || !targetId) continue;
 
-    /** Add sequential data flow edges (fallback when no depends_on). */
-    _addSequentialFlowEdges(elements, stages) {
-        for (let i = 1; i < stages.length; i++) {
-            const stage = stages[i];
-            const prevStage = stages[i - 1];
-            if (!stage.id || !prevStage.id) continue;
+                const targetExecs = stageGroups.get(targetName) || [];
+                const loopCount = targetExecs.length - 1;
+                if (loopCount <= 0) continue;
 
-            const prevData = this.dataStore.stages.get(prevStage.id) || prevStage;
-            const outputKeys = Object.keys(prevData.output_data || {});
-            const label = formatDataFlowLabel(outputKeys);
-            elements.push({
-                group: 'edges',
-                data: {
-                    id: `flow-${prevStage.id}-${stage.id}`,
-                    source: prevStage.id,
-                    target: stage.id,
-                    type: 'data_flow',
-                    label,
-                },
-            });
+                elements.push({
+                    group: 'edges',
+                    data: {
+                        id: `loop-${sourceId}-${targetId}`,
+                        source: sourceId,
+                        target: targetId,
+                        type: 'loop_back',
+                        label: `loop x${loopCount}`,
+                    },
+                });
+            }
+        } else {
+            // Sequential edges between unique stage names (no DAG info)
+            const names = [...stageGroups.keys()];
+            for (let i = 1; i < names.length; i++) {
+                const prevId = nameToNodeId.get(names[i - 1]);
+                const currId = nameToNodeId.get(names[i]);
+                if (!prevId || !currId) continue;
+
+                const prevData = this.dataStore.stages.get(prevId) || {};
+                const outputKeys = Object.keys(prevData.output_data || {});
+                const label = formatDataFlowLabel(outputKeys);
+
+                elements.push({
+                    group: 'edges',
+                    data: {
+                        id: `flow-${prevId}-${currId}`,
+                        source: prevId,
+                        target: currId,
+                        type: 'data_flow',
+                        label,
+                    },
+                });
+            }
         }
     }
 

@@ -81,6 +81,57 @@ class BaseSafetyPolicy(SafetyPolicy):
     _MAX_CONFIG_DEPTH = 4
 
     @classmethod
+    def _validate_config_key(cls, key: str) -> None:
+        """Validate a single config key is a string within size limits.
+
+        Args:
+            key: Key to validate.
+
+        Raises:
+            ValueError: If key is not a string or exceeds size limit.
+        """
+        if not isinstance(key, str):
+            raise ValueError(
+                f"config keys must be strings, got {type(key).__name__}: {key}"
+            )
+        if len(key) > THRESHOLD_LARGE_COUNT:
+            raise ValueError(
+                f"config key exceeds {THRESHOLD_LARGE_COUNT} characters: {key[:20]}..."  # noqa: Preview length
+            )
+
+    @classmethod
+    def _validate_config_value(cls, key: str, value: Any, depth: int) -> None:
+        """Validate a single config value for type, size, and nesting.
+
+        Args:
+            key: Key name (for error messages).
+            value: Value to validate.
+            depth: Current nesting depth.
+
+        Raises:
+            ValueError: If value fails validation.
+        """
+        if isinstance(value, dict):
+            if len(value) > THRESHOLD_LARGE_COUNT:
+                raise ValueError(
+                    f"config nested dict exceeds maximum size of {THRESHOLD_LARGE_COUNT} keys "
+                    f"for key '{key}'"
+                )
+            cls._validate_config_dict(value, depth + 1)
+        elif isinstance(value, (list, tuple, set)):
+            if len(value) > THRESHOLD_VERY_LARGE_COUNT:
+                raise ValueError(
+                    f"config list/tuple/set must have <= {THRESHOLD_VERY_LARGE_COUNT} items, "
+                    f"got {len(value)} for key '{key}'"
+                )
+        elif isinstance(value, str):
+            if len(value) > MAX_TEXT_LENGTH:
+                raise ValueError(
+                    f"config string must be <= {MAX_TEXT_LENGTH:,} chars, "
+                    f"got {len(value)} for key '{key}'"
+                )
+
+    @classmethod
     def _validate_config_dict(cls, d: dict, depth: int) -> None:
         """Recursively validate a config dictionary.
 
@@ -100,40 +151,8 @@ class BaseSafetyPolicy(SafetyPolicy):
             )
 
         for key, value in d.items():
-            # Validate key
-            if not isinstance(key, str):
-                raise ValueError(
-                    f"config keys must be strings, got {type(key).__name__}: {key}"
-                )
-            if len(key) > THRESHOLD_LARGE_COUNT:
-                raise ValueError(
-                    f"config key exceeds {THRESHOLD_LARGE_COUNT} characters: {key[:20]}..."  # noqa: Preview length
-                )
-
-            # SECURITY: Recursively validate nested dicts (depth-bounded)
-            if isinstance(value, dict):
-                if len(value) > THRESHOLD_LARGE_COUNT:
-                    raise ValueError(
-                        f"config nested dict exceeds maximum size of {THRESHOLD_LARGE_COUNT} keys "
-                        f"for key '{key}'"
-                    )
-                cls._validate_config_dict(value, depth + 1)
-
-            # SECURITY: Validate collection sizes
-            elif isinstance(value, (list, tuple, set)):
-                if len(value) > THRESHOLD_VERY_LARGE_COUNT:
-                    raise ValueError(
-                        f"config list/tuple/set must have <= {THRESHOLD_VERY_LARGE_COUNT} items, "
-                        f"got {len(value)} for key '{key}'"
-                    )
-
-            # SECURITY: Validate string lengths
-            elif isinstance(value, str):
-                if len(value) > MAX_TEXT_LENGTH:
-                    raise ValueError(
-                        f"config string must be <= {MAX_TEXT_LENGTH:,} chars, "
-                        f"got {len(value)} for key '{key}'"
-                    )
+            cls._validate_config_key(key)
+            cls._validate_config_value(key, value, depth)
 
     def add_child_policy(self, policy: SafetyPolicy) -> None:
         """Add a child policy for composition.

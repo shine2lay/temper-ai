@@ -149,6 +149,19 @@ class StreamDisplay:
         self._update_live()
 
     @staticmethod
+    def _apply_tool_result(stream: _SourceStream, event: StreamEvent) -> None:
+        """Handle TOOL_RESULT event."""
+        tool_name = event.metadata.get("tool_name", "tool")
+        success = event.metadata.get("success", True)
+        if success:
+            duration = event.metadata.get("duration_s")
+            dur_str = f" ({duration:.1f}s)" if duration is not None else ""
+            stream.tool_line = f"\u2713 {tool_name}{dur_str}"
+        else:
+            error = event.metadata.get("error", "failed")
+            stream.tool_line = f"\u2717 {tool_name}: {error}"
+
+    @staticmethod
     def _apply_event(stream: _SourceStream, event: StreamEvent) -> None:
         """Mutate *stream* state based on *event* type."""
         etype = event.event_type
@@ -161,7 +174,6 @@ class StreamDisplay:
                 stream.content_buffer += event.content
 
         elif etype == LLM_DONE:
-            # Final token text (often empty) goes to content
             if event.content:
                 stream.content_buffer += event.content
 
@@ -170,15 +182,7 @@ class StreamDisplay:
             stream.tool_line = f"\u26a1 {tool_name} running..."
 
         elif etype == TOOL_RESULT:
-            tool_name = event.metadata.get("tool_name", "tool")
-            success = event.metadata.get("success", True)
-            duration = event.metadata.get("duration_s")
-            if success:
-                dur_str = f" ({duration:.1f}s)" if duration is not None else ""
-                stream.tool_line = f"\u2713 {tool_name}{dur_str}"
-            else:
-                error = event.metadata.get("error", "failed")
-                stream.tool_line = f"\u2717 {tool_name}: {error}"
+            StreamDisplay._apply_tool_result(stream, event)
 
         elif etype == STATUS:
             stream.status_line = event.content
@@ -195,41 +199,37 @@ class StreamDisplay:
 
     # ── rendering ────────────────────────────────────────────────────
 
+    @staticmethod
+    def _truncated_tail(buf: str) -> str:
+        """Return the last _MAX_DISPLAY_CHARS of buf, prefixed with '...' if truncated."""
+        if len(buf) > _MAX_DISPLAY_CHARS:
+            return "..." + buf[-_MAX_DISPLAY_CHARS:]
+        return buf
+
+    @staticmethod
+    def _render_buffers(output: Text, stream: _SourceStream) -> None:
+        """Append thinking/content buffers to output Text."""
+        if stream.thinking_buffer:
+            output.append(StreamDisplay._truncated_tail(stream.thinking_buffer), style="dim italic")
+            if stream.content_buffer:
+                output.append("\n\n")
+        if stream.content_buffer:
+            output.append(StreamDisplay._truncated_tail(stream.content_buffer))
+        if not stream.thinking_buffer and not stream.content_buffer:
+            output.append("Waiting for tokens...", style="dim")
+
     def _build_source_panel(self, stream: _SourceStream) -> Panel:
         """Build a single source's panel."""
         output = Text()
+        self._render_buffers(output, stream)
 
-        thinking = stream.thinking_buffer
-        content = stream.content_buffer
-
-        if thinking:
-            display = thinking[-_MAX_DISPLAY_CHARS:]
-            if len(thinking) > _MAX_DISPLAY_CHARS:
-                display = "..." + display
-            output.append(display, style="dim italic")
-            if content:
-                output.append("\n\n")
-
-        if content:
-            display = content[-_MAX_DISPLAY_CHARS:]
-            if len(content) > _MAX_DISPLAY_CHARS:
-                display = "..." + display
-            output.append(display)
-
-        if not thinking and not content:
-            output.append("Waiting for tokens...", style="dim")
-
-        # Tool line
         if stream.tool_line:
             output.append("\n")
             output.append(stream.tool_line, style="dim")
-
-        # Status line
         if stream.status_line:
             output.append("\n")
             output.append(stream.status_line, style="dim")
 
-        # Title: source name + model if available
         title_parts = [stream.name]
         if stream.model and stream.model != stream.name:
             title_parts.append(f"({stream.model})")

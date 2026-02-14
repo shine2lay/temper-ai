@@ -123,15 +123,35 @@ def _render_agent_detail(agent_name: str, output_data: dict) -> List[Any]:
     return renderables
 
 
+def _is_internal_agent(agent_name: str) -> bool:
+    return agent_name.startswith("__") and agent_name.endswith("__")
+
+
+def _build_agent_row(agent_name: str, output_data: Any) -> Optional[tuple]:
+    """Build a table row tuple for one agent, or None if skipped."""
+    if not isinstance(output_data, dict):
+        return None
+    if _is_internal_agent(agent_name):
+        return None
+
+    raw_output = str(output_data.get("output", "") or "")
+    preview = raw_output[:MAX_MEDIUM_STRING_LENGTH] + "..." if len(raw_output) > MAX_MEDIUM_STRING_LENGTH else raw_output
+
+    confidence = output_data.get("confidence")
+    conf_str = f"{confidence:.2f}" if confidence is not None else "-"
+    tokens = output_data.get("tokens")
+    tokens_str = str(tokens) if tokens else "-"
+    cost = output_data.get("cost_usd") or output_data.get("cost")
+    cost_str = f"${cost:.4f}" if cost else "-"
+
+    tc_count = _tool_calls_count(output_data.get("tool_calls", 0))
+    tc_str = str(tc_count) if tc_count else "-"
+
+    return (agent_name, Text(preview), conf_str, tokens_str, cost_str, tc_str)
+
+
 def _render_agent_summary_table(agent_outputs: dict) -> Optional[Table]:
-    """Render agent summary table.
-
-    Args:
-        agent_outputs: Dict of agent name -> output data
-
-    Returns:
-        Rich Table or None if no agents
-    """
+    """Render agent summary table."""
     if not agent_outputs:
         return None
 
@@ -149,35 +169,9 @@ def _render_agent_summary_table(agent_outputs: dict) -> Optional[Table]:
     table.add_column("Tools", justify="right", max_width=TABLE_COL_TOOLS_MAX_WIDTH)
 
     for agent_name, output_data in agent_outputs.items():
-        if not isinstance(output_data, dict):
-            continue
-        if agent_name.startswith("__") and agent_name.endswith("__"):
-            continue
-
-        # Output preview (500 chars)
-        raw_output = str(output_data.get("output", "") or "")
-        preview = raw_output[:MAX_MEDIUM_STRING_LENGTH] + "..." if len(raw_output) > MAX_MEDIUM_STRING_LENGTH else raw_output
-        output_cell = Text(preview)
-
-        confidence = output_data.get("confidence")
-        conf_str = f"{confidence:.2f}" if confidence is not None else "-"
-        tokens = output_data.get("tokens")
-        tokens_str = str(tokens) if tokens else "-"
-        cost = output_data.get("cost_usd") or output_data.get("cost")
-        cost_str = f"${cost:.4f}" if cost else "-"
-
-        tc = output_data.get("tool_calls", 0)
-        tc_count = _tool_calls_count(tc)
-        tc_str = str(tc_count) if tc_count else "-"
-
-        table.add_row(
-            agent_name,
-            output_cell,
-            conf_str,
-            tokens_str,
-            cost_str,
-            tc_str,
-        )
+        row = _build_agent_row(agent_name, output_data)
+        if row is not None:
+            table.add_row(*row)
 
     return table
 
@@ -212,20 +206,71 @@ def _render_synthesis_section(synthesis: dict) -> List[Any]:
     return renderables
 
 
+def _render_stage_input_context(prior_stages: List[str]) -> Text:
+    if prior_stages:
+        return Text.from_markup(f"[bold]Input:[/bold] {', '.join(prior_stages)}")
+    return Text.from_markup("[bold]Input:[/bold] (workflow inputs)")
+
+
+def _render_stage_agents(stage_data: dict) -> List[Any]:
+    """Render agent summary table and per-agent details for a stage."""
+    renderables: list[Any] = []
+    agent_outputs = stage_data.get("agent_outputs", {})
+
+    table = _render_agent_summary_table(agent_outputs)
+    if table:
+        renderables.append(Text.from_markup("[bold]Agents:[/bold]"))
+        renderables.append(table)
+
+    for agent_name, output_data in agent_outputs.items():
+        if not isinstance(output_data, dict) or _is_internal_agent(agent_name):
+            continue
+        renderables.extend(_render_agent_detail(agent_name, output_data))
+
+    return renderables
+
+
+def _render_stage_output(stage_data: dict) -> List[Any]:
+    """Render synthesis and final output sections for a stage."""
+    renderables: list[Any] = []
+
+    synthesis = stage_data.get("synthesis_result") or stage_data.get("synthesis")
+    if synthesis and isinstance(synthesis, dict):
+        renderables.extend(_render_synthesis_section(synthesis))
+
+    final_output = stage_data.get("output") or stage_data.get("decision", "")
+    if final_output:
+        renderables.append(Text(""))
+        renderables.append(Text.from_markup("[bold]Stage Output:[/bold]"))
+        renderables.append(Text(str(final_output)))
+
+    return renderables
+
+
+def _render_stage_panel(
+    stage_name: str, stage_data: Any, prior_stages: List[str]
+) -> Optional[Panel]:
+    """Build a Panel for a single stage, or None if stage_data is not a dict."""
+    if not isinstance(stage_data, dict):
+        return None
+
+    renderables: list[Any] = [
+        _render_stage_input_context(prior_stages),
+        Text(""),
+    ]
+    renderables.extend(_render_stage_agents(stage_data))
+    renderables.extend(_render_stage_output(stage_data))
+
+    return Panel(
+        Group(*renderables),
+        title=f"[bold]Stage: {stage_name}[/bold]",
+        border_style="cyan",
+        expand=True,
+    )
+
+
 def print_detailed_report(result: dict, console: Console) -> None:
-    """Print a detailed post-execution report.
-
-    Iterates stage_outputs and renders per-stage panels with:
-    - Input context (prior stage names or filtered workflow input keys)
-    - Agent summary table (name, output preview, confidence, tokens, cost, tool count)
-    - Per-agent detail sections (full output, reasoning, tool calls)
-    - Synthesis section (method, confidence, votes)
-    - Stage output (full untruncated final output)
-
-    Args:
-        result: Workflow execution result dict
-        console: Rich Console instance for output
-    """
+    """Print a detailed post-execution report."""
     stage_outputs = result.get("stage_outputs")
     if not stage_outputs or not isinstance(stage_outputs, dict):
         return
@@ -235,55 +280,8 @@ def print_detailed_report(result: dict, console: Console) -> None:
 
     stage_names = list(stage_outputs.keys())
     for idx, stage_name in enumerate(stage_names):
-        stage_data = stage_outputs[stage_name]
-        if not isinstance(stage_data, dict):
-            continue
-
-        renderables: list[Any] = []
-
-        # Input context
-        prior_stages = stage_names[:idx]
-        if prior_stages:
-            renderables.append(Text.from_markup(
-                f"[bold]Input:[/bold] {', '.join(prior_stages)}"
-            ))
-        else:
-            renderables.append(Text.from_markup(
-                "[bold]Input:[/bold] (workflow inputs)"
-            ))
-        renderables.append(Text(""))
-
-        # Agent summary table
-        agent_outputs = stage_data.get("agent_outputs", {})
-        table = _render_agent_summary_table(agent_outputs)
-        if table:
-            renderables.append(Text.from_markup("[bold]Agents:[/bold]"))
-            renderables.append(table)
-
-        # Per-agent details
-        for agent_name, output_data in agent_outputs.items():
-            if not isinstance(output_data, dict):
-                continue
-            if agent_name.startswith("__") and agent_name.endswith("__"):
-                continue
-            renderables.extend(_render_agent_detail(agent_name, output_data))
-
-        # Synthesis section
-        synthesis = stage_data.get("synthesis_result") or stage_data.get("synthesis")
-        if synthesis and isinstance(synthesis, dict):
-            renderables.extend(_render_synthesis_section(synthesis))
-
-        # Stage output
-        final_output = stage_data.get("output") or stage_data.get("decision", "")
-        if final_output:
-            renderables.append(Text(""))
-            renderables.append(Text.from_markup("[bold]Stage Output:[/bold]"))
-            renderables.append(Text(str(final_output)))
-
-        panel = Panel(
-            Group(*renderables),
-            title=f"[bold]Stage: {stage_name}[/bold]",
-            border_style="cyan",
-            expand=True,
+        panel = _render_stage_panel(
+            stage_name, stage_outputs[stage_name], stage_names[:idx]
         )
-        console.print(panel)
+        if panel is not None:
+            console.print(panel)

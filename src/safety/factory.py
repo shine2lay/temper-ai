@@ -169,6 +169,90 @@ def _merge_configs(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, 
     return result
 
 
+def _build_policy_action_map(
+    policy_mappings: Dict[str, list],
+    global_policy_names: list,
+) -> Dict[str, set]:
+    """Collect unique policy names and their associated action types.
+
+    Args:
+        policy_mappings: Mapping of action_type -> list of policy names
+        global_policy_names: List of global policy names
+
+    Returns:
+        Dict mapping policy name to set of action types (empty set = global)
+    """
+    policy_action_map: Dict[str, set] = {}
+
+    for action_type, policy_names in policy_mappings.items():
+        for pname in policy_names:
+            policy_action_map.setdefault(pname, set()).add(str(action_type))
+
+    for pname in global_policy_names:
+        policy_action_map.setdefault(pname, set())
+
+    return policy_action_map
+
+
+def _instantiate_policy(
+    pname: str,
+    policy_configs: Dict[str, Any],
+) -> Optional[BaseSafetyPolicy]:
+    """Resolve and instantiate a single policy by name.
+
+    Args:
+        pname: Policy config name
+        policy_configs: Per-policy configuration dicts
+
+    Returns:
+        Instantiated policy or None if unresolvable/failed
+    """
+    policy_cls = _resolve_policy_class(pname)
+    if policy_cls is None:
+        logger.warning(
+            "Policy '%s' referenced in config but no built-in implementation found — skipping",
+            pname,
+        )
+        return None
+
+    raw_pcfg = policy_configs.get(pname, {})
+    pcfg = {k: v for k, v in raw_pcfg.items() if not isinstance(v, dict)}
+
+    try:
+        return policy_cls(config=pcfg)
+    except Exception:
+        logger.exception("Failed to instantiate policy '%s' — skipping", pname)
+        return None
+
+
+def _register_policy(
+    registry: PolicyRegistry,
+    pname: str,
+    policy_instance: BaseSafetyPolicy,
+    action_types: set,
+    global_policy_names: list,
+) -> None:
+    """Register a policy instance in the registry.
+
+    Args:
+        registry: PolicyRegistry to register into
+        pname: Policy config name
+        policy_instance: Instantiated policy
+        action_types: Action types for this policy
+        global_policy_names: List of global policy names
+    """
+    if pname in global_policy_names:
+        registry.register_policy(policy_instance, action_types=None)
+        logger.debug("Registered global policy: %s", pname)
+    else:
+        registry.register_policy(policy_instance, action_types=list(action_types))
+        logger.debug(
+            "Registered policy '%s' for action types: %s",
+            pname,
+            sorted(action_types),
+        )
+
+
 def create_policy_registry(config: Dict[str, Any]) -> PolicyRegistry:
     """Create and populate PolicyRegistry from config.
 
@@ -185,64 +269,24 @@ def create_policy_registry(config: Dict[str, Any]) -> PolicyRegistry:
     """
     registry = PolicyRegistry()
 
-    policy_mappings: Dict[str, list] = config.get("policy_mappings", {})
     global_policy_names: list = config.get("global_policies", [])
     policy_configs: Dict[str, Any] = config.get("policy_config", {})
+    policy_action_map = _build_policy_action_map(
+        config.get("policy_mappings", {}), global_policy_names,
+    )
 
-    # Collect all unique policy names referenced in the config, together
-    # with the action types they should be registered for.
-    # Key: policy config name  →  Value: set of action types (empty = global)
-    policy_action_map: Dict[str, set[str]] = {}
-
-    for action_type, policy_names in policy_mappings.items():
-        for pname in policy_names:
-            policy_action_map.setdefault(pname, set()).add(str(action_type))
-
-    for pname in global_policy_names:
-        # None sentinel will be handled below to register as global
-        policy_action_map.setdefault(pname, set())
-
-    # Instantiate and register each policy
     for pname, action_types in policy_action_map.items():
-        policy_cls = _resolve_policy_class(pname)
-        if policy_cls is None:
-            logger.warning(
-                "Policy '%s' referenced in config but no built-in implementation found — skipping",
-                pname,
-            )
+        policy_instance = _instantiate_policy(pname, policy_configs)
+        if policy_instance is None:
             continue
+        _register_policy(registry, pname, policy_instance, action_types, global_policy_names)
 
-        # Build per-policy config.  BaseSafetyPolicy validates that values
-        # are primitives (no nested dicts), so we filter out nested dicts.
-        # Policies fall back to their built-in defaults for any omitted keys.
-        raw_pcfg = policy_configs.get(pname, {})
-        pcfg = {k: v for k, v in raw_pcfg.items() if not isinstance(v, dict)}
-
-        try:
-            policy_instance = policy_cls(config=pcfg)
-        except Exception:
-            logger.exception("Failed to instantiate policy '%s' — skipping", pname)
-            continue
-
-        # Determine registration mode
-        is_global = pname in global_policy_names
-        if is_global:
-            # Register as global (applies to all action types)
-            registry.register_policy(policy_instance, action_types=None)
-            logger.debug("Registered global policy: %s", pname)
-        else:
-            registry.register_policy(policy_instance, action_types=list(action_types))
-            logger.debug(
-                "Registered policy '%s' for action types: %s",
-                pname,
-                sorted(action_types),
-            )
-
+    resolved_global = len([p for p in global_policy_names if _resolve_policy_class(p) is not None])
     logger.info(
         "Created PolicyRegistry with %d policies (%d global, %d action-specific)",
         registry.policy_count(),
-        len([p for p in global_policy_names if _resolve_policy_class(p) is not None]),
-        registry.policy_count() - len([p for p in global_policy_names if _resolve_policy_class(p) is not None]),
+        resolved_global,
+        registry.policy_count() - resolved_global,
     )
     return registry
 

@@ -128,20 +128,12 @@ def _populate_edges(
             successors[dep].append(name)
 
 
-def _detect_cycle(
+def _kahn_bfs(
+    in_degree: Dict[str, int],
     predecessors: Dict[str, List[str]],
     stage_names: List[str],
-) -> Optional[List[str]]:
-    """Detect a cycle using Kahn's algorithm.
-
-    Args:
-        predecessors: stage -> list of predecessor stages
-        stage_names: All stage names
-
-    Returns:
-        List of stage names forming a cycle, or None if acyclic
-    """
-    in_degree = {n: len(predecessors[n]) for n in stage_names}
+) -> int:
+    """Run Kahn's BFS and return the number of visited nodes."""
     queue: deque[str] = deque(n for n in stage_names if in_degree[n] == 0)
     visited_count = 0
 
@@ -154,12 +146,25 @@ def _detect_cycle(
                 if in_degree[child] == 0:
                     queue.append(child)
 
+    return visited_count
+
+
+def _detect_cycle(
+    predecessors: Dict[str, List[str]],
+    stage_names: List[str],
+) -> Optional[List[str]]:
+    """Detect a cycle using Kahn's algorithm.
+
+    Returns:
+        List of stage names forming a cycle, or None if acyclic
+    """
+    in_degree = {n: len(predecessors[n]) for n in stage_names}
+    visited_count = _kahn_bfs(in_degree, predecessors, stage_names)
+
     if visited_count == len(stage_names):
         return None
 
-    # Find one cycle for the error message
-    remaining = [n for n in stage_names if in_degree[n] > 0]
-    return remaining
+    return [n for n in stage_names if in_degree[n] > 0]
 
 
 def _topological_sort(

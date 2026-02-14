@@ -603,6 +603,43 @@ class WebScraper(BaseTool):
             )
         return None
 
+    def _validate_response(self, response: Any) -> Optional[ToolResult]:
+        """Validate response content type and size. Returns error or None."""
+        content_type = response.headers.get("content-type", "").lower()
+        error_result = self._validate_content_type(content_type)
+        if error_result is not None:
+            return error_result
+
+        content_length = len(response.content)
+        if content_length > self.MAX_CONTENT_SIZE:
+            return ToolResult(
+                success=False,
+                error=(
+                    f"Content size ({content_length} bytes) exceeds "
+                    f"maximum ({self.MAX_CONTENT_SIZE} bytes)"
+                ),
+            )
+        return None
+
+    def _fetch_response(
+        self, url: Any, headers: dict, timeout: Any
+    ) -> tuple[Any, Optional[ToolResult]]:
+        """Fetch URL and validate the response. Returns (response, error)."""
+        if not isinstance(url, str):
+            return None, ToolResult(
+                success=False, error="URL must be a string"
+            )
+        response, error_result = self._fetch_with_redirect_validation(
+            url, headers, timeout
+        )
+        if error_result is not None:
+            return None, error_result
+        if response is None:
+            return None, ToolResult(
+                success=False, error="No response received"
+            )
+        return response, None
+
     def execute(self, **kwargs: Any) -> ToolResult:
         """
         Execute web scraper with given parameters.
@@ -631,46 +668,28 @@ class WebScraper(BaseTool):
         if error_result is not None:
             return error_result
 
-        # Prepare headers
+        # Prepare headers and record request
         headers = {
-            "User-Agent": user_agent or "Mozilla/5.0 (compatible; MetaAutonomousBot/1.0)"
+            "User-Agent": (
+                user_agent
+                or "Mozilla/5.0 (compatible; MetaAutonomousBot/1.0)"
+            )
         }
-
-        # Record request for rate limiting
         self.rate_limiter.record_request()
 
-        # Fetch URL with redirect validation
-        if not isinstance(url, str):
-            return ToolResult(success=False, error="URL must be a string")
-        response, error_result = self._fetch_with_redirect_validation(url, headers, timeout)
-        if error_result is not None:
-            return error_result
-        if response is None:
-            return ToolResult(success=False, error="No response received")
-
-        # Validate content type
-        content_type = response.headers.get("content-type", "").lower()
-        error_result = self._validate_content_type(content_type)
+        # Fetch and validate response
+        response, error_result = self._fetch_response(url, headers, timeout)
         if error_result is not None:
             return error_result
 
-        # Check content size
-        content_length = len(response.content)
-        if content_length > self.MAX_CONTENT_SIZE:
-            return ToolResult(
-                success=False,
-                error=f"Content size ({content_length} bytes) exceeds maximum ({self.MAX_CONTENT_SIZE} bytes)"
-            )
+        error_result = self._validate_response(response)
+        if error_result is not None:
+            return error_result
 
         # Process content
         try:
             content = response.text
-
-            # Extract text if requested
-            if extract_text:
-                result = self._extract_text(content)
-            else:
-                result = content
+            result = self._extract_text(content) if extract_text else content
 
             return ToolResult(
                 success=True,
@@ -678,16 +697,18 @@ class WebScraper(BaseTool):
                 metadata={
                     "url": url,
                     "status_code": response.status_code,
-                    "content_type": response.headers.get("content-type", ""),
-                    "size_bytes": content_length,
-                    "text_extracted": extract_text
-                }
+                    "content_type": response.headers.get(
+                        "content-type", ""
+                    ),
+                    "size_bytes": len(response.content),
+                    "text_extracted": extract_text,
+                },
             )
 
         except (ValueError, UnicodeDecodeError) as e:
             return ToolResult(
                 success=False,
-                error=f"Content processing error: {str(e)}"
+                error=f"Content processing error: {str(e)}",
             )
 
     def _extract_text(self, html: str) -> str:

@@ -4,11 +4,27 @@ Extracted from ExecutionTracker to separate metric collection/storage
 concerns from core execution tracking.
 """
 import logging
+from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from src.observability.backend import ObservabilityBackend
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class AgentOutputParams:
+    """Parameters for setting agent output data."""
+    agent_id: str
+    output_data: Dict[str, Any]
+    reasoning: Optional[str] = None
+    confidence_score: Optional[float] = None
+    total_tokens: Optional[int] = None
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    estimated_cost_usd: Optional[float] = None
+    num_llm_calls: Optional[int] = None
+    num_tool_calls: Optional[int] = None
 
 
 class MetricAggregator:
@@ -64,46 +80,25 @@ class MetricAggregator:
                 exc_info=True,
             )
 
-    def set_agent_output(
-        self,
-        agent_id: str,
-        output_data: Dict[str, Any],
-        reasoning: Optional[str] = None,
-        confidence_score: Optional[float] = None,
-        total_tokens: Optional[int] = None,
-        prompt_tokens: Optional[int] = None,
-        completion_tokens: Optional[int] = None,
-        estimated_cost_usd: Optional[float] = None,
-        num_llm_calls: Optional[int] = None,
-        num_tool_calls: Optional[int] = None,
-    ) -> None:
+    def set_agent_output(self, params: AgentOutputParams) -> None:
         """Set agent output data after execution.
 
         Args:
-            agent_id: Agent execution ID
-            output_data: Agent output data
-            reasoning: Agent reasoning text
-            confidence_score: Confidence score (0-1)
-            total_tokens: Total tokens used
-            prompt_tokens: Prompt tokens used
-            completion_tokens: Completion tokens used
-            estimated_cost_usd: Estimated cost in USD
-            num_llm_calls: Number of LLM calls made
-            num_tool_calls: Number of tool calls made
+            params: AgentOutputParams with all agent output parameters
         """
         from src.observability.backend import AgentOutputData
         self.backend.set_agent_output(
-            agent_id=agent_id,
-            output_data=output_data,
+            agent_id=params.agent_id,
+            output_data=params.output_data,
             metrics=AgentOutputData(
-                reasoning=reasoning,
-                confidence_score=confidence_score,
-                total_tokens=total_tokens,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                estimated_cost_usd=estimated_cost_usd,
-                num_llm_calls=num_llm_calls,
-                num_tool_calls=num_tool_calls,
+                reasoning=params.reasoning,
+                confidence_score=params.confidence_score,
+                total_tokens=params.total_tokens,
+                prompt_tokens=params.prompt_tokens,
+                completion_tokens=params.completion_tokens,
+                estimated_cost_usd=params.estimated_cost_usd,
+                num_llm_calls=params.num_llm_calls,
+                num_tool_calls=params.num_tool_calls,
             ),
         )
 

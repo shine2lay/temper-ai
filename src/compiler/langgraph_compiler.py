@@ -47,6 +47,18 @@ from src.tools.registry import ToolRegistry
 __all__ = ['LangGraphCompiler', 'WorkflowExecutor']
 
 
+def _extract_agents_from_stage(stage_config: Any) -> list:
+    """Extract agent list from a stage config (object or dict)."""
+    if hasattr(stage_config, 'stage'):
+        agents: list = stage_config.stage.agents
+        return agents
+
+    from src.utils.config_helpers import get_nested_value
+
+    agents_from_config: list = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
+    return agents_from_config
+
+
 class LangGraphCompiler:
     """Orchestrates compilation of workflow configurations to LangGraph StateGraphs.
 
@@ -322,81 +334,89 @@ class LangGraphCompiler:
         return workflow_config.get("workflow", workflow_config)  # type: ignore[no-any-return]
 
     def _validate_all_configs(self, stages: list, workflow_config: Dict[str, Any]) -> None:
-        """Validate all stage and agent configs against Pydantic schemas.
-
-        Validates configs at compile time to catch errors early before execution.
-        Collects all validation errors and reports them together.
-
-        Args:
-            stages: List of stage references from workflow
-            workflow_config: Full workflow configuration
-
-        Raises:
-            ValueError: If any configs are invalid, with details of all errors
-
-        Example:
-            >>> self._validate_all_configs(["research", "analysis"], workflow_config)
-        """
-        from pydantic import ValidationError
-
-        from src.compiler.schemas import AgentConfig, StageConfig
-
-        errors = []
+        """Validate all stage and agent configs against Pydantic schemas."""
+        errors: list[str] = []
 
         for stage_ref in stages:
             stage_name = self.node_builder.extract_stage_name(stage_ref)
-
-            # Load stage config
-            try:
-                stage_config = self.node_builder._load_stage_config(stage_name, workflow_config)
-            except Exception as e:
-                errors.append(f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Failed to load config - {e}")
+            stage_config = self._load_and_validate_stage(
+                stage_name, workflow_config, errors,
+            )
+            if stage_config is None:
                 continue
+            agents = _extract_agents_from_stage(stage_config)
+            self._validate_agent_configs(agents, stage_name, errors)
 
-            # Validate stage config against Pydantic schema if it's a dict
-            # Note: Schema validation is advisory — missing optional fields like
-            # 'description' should not block compilation. Only log warnings.
-            if isinstance(stage_config, dict):
-                try:
-                    StageConfig(**stage_config)
-                except ValidationError as e:
-                    logger.warning(f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Config schema warnings - {e}")
-                except Exception as e:
-                    logger.debug(f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Config validation skipped - {e}")
-
-            # Get agents from stage config
-            if hasattr(stage_config, 'stage'):
-                agents = stage_config.stage.agents
-            else:
-                from src.utils.config_helpers import get_nested_value
-                agents = get_nested_value(stage_config, 'stage.agents') or stage_config.get('agents', [])
-
-            # Validate each agent config
-            for agent_ref in agents:
-                agent_name = self.node_builder.extract_agent_name(agent_ref)
-
-                try:
-                    agent_config = self.config_loader.load_agent(agent_name)
-                except Exception as e:
-                    errors.append(f"{ERROR_MSG_AGENT_PREFIX}{agent_name}' in stage '{stage_name}': Failed to load config - {e}")
-                    continue
-
-                # Validate agent config against Pydantic schema if it's a dict
-                # Note: Schema validation is advisory for agent configs as well
-                if isinstance(agent_config, dict):
-                    try:
-                        AgentConfig(**agent_config)
-                    except ValidationError as e:
-                        logger.warning(f"{ERROR_MSG_AGENT_PREFIX}{agent_name}' in stage '{stage_name}': Config schema warnings - {e}")
-                    except Exception as e:
-                        logger.debug(f"{ERROR_MSG_AGENT_PREFIX}{agent_name}': Config validation skipped - {e}")
-
-        # If any errors, fail fast with all details
         if errors:
-            error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {err}" for err in errors)
+            error_msg = "Configuration validation failed:\n" + "\n".join(
+                f"  - {err}" for err in errors
+            )
             raise ValueError(error_msg)
 
         logger.info(f"Configuration validation passed for {len(stages)} stages")
+
+    def _load_and_validate_stage(
+        self, stage_name: str, workflow_config: Dict[str, Any], errors: list,
+    ) -> Any:
+        """Load and validate a single stage config. Returns config or None on error."""
+        from pydantic import ValidationError
+
+        from src.compiler.schemas import StageConfig
+
+        try:
+            stage_config = self.node_builder._load_stage_config(stage_name, workflow_config)
+        except Exception as e:
+            errors.append(
+                f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Failed to load config - {e}"
+            )
+            return None
+
+        if isinstance(stage_config, dict):
+            try:
+                StageConfig(**stage_config)
+            except ValidationError as e:
+                logger.warning(
+                    f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Config schema warnings - {e}"
+                )
+            except Exception as e:
+                logger.debug(
+                    f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Config validation skipped - {e}"
+                )
+
+        return stage_config
+
+    def _validate_agent_configs(
+        self, agents: list, stage_name: str, errors: list,
+    ) -> None:
+        """Validate each agent config in a stage."""
+        from pydantic import ValidationError
+
+        from src.compiler.schemas import AgentConfig
+
+        for agent_ref in agents:
+            agent_name = self.node_builder.extract_agent_name(agent_ref)
+            try:
+                agent_config = self.config_loader.load_agent(agent_name)
+            except Exception as e:
+                errors.append(
+                    f"{ERROR_MSG_AGENT_PREFIX}{agent_name}' in stage "
+                    f"'{stage_name}': Failed to load config - {e}"
+                )
+                continue
+
+            if isinstance(agent_config, dict):
+                try:
+                    AgentConfig(**agent_config)
+                except ValidationError as e:
+                    logger.warning(
+                        f"{ERROR_MSG_AGENT_PREFIX}{agent_name}' in stage "
+                        f"'{stage_name}': Config schema warnings - {e}"
+                    )
+                except Exception as e:
+                    logger.debug(
+                        f"{ERROR_MSG_AGENT_PREFIX}{agent_name}': "
+                        f"Config validation skipped - {e}"
+                    )
 
     def _extract_stage_names(self, stages: list) -> list[str]:
         """Extract stage names from stage references.

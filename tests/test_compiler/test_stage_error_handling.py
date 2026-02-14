@@ -77,15 +77,18 @@ class TestStageStatusComputation:
 
     def test_sequential_stage_status_failed_all_agents(self):
         """All agents fail → stage_status='failed'."""
-        from src.compiler.executors._sequential_helpers import run_all_agents
+        from src.compiler.executors._sequential_helpers import (
+            AgentExecutionContext,
+            run_all_agents,
+        )
         from src.compiler.executors.sequential import SequentialStageExecutor
         from src.compiler.schemas import StageErrorHandlingConfig
 
         executor = SequentialStageExecutor()
 
         # Mock execute_agent to always return failure
-        def mock_execute_agent(**kwargs):
-            agent_name = executor._extract_agent_name(kwargs["agent_ref"])
+        def mock_execute_agent(ctx, agent_ref, prior_agent_outputs=None):
+            agent_name = executor._extract_agent_name(agent_ref)
             return {
                 "agent_name": agent_name,
                 "output_data": {"output": "", "error": "LLM timeout", "error_type": "llm_timeout"},
@@ -96,19 +99,23 @@ class TestStageStatusComputation:
         agents = [{"name": "agent1"}, {"name": "agent2"}]
         error_handling = StageErrorHandlingConfig(on_agent_failure="continue_with_remaining")
 
+        ctx = AgentExecutionContext(
+            executor=executor,
+            stage_id="stage-test",
+            stage_name="test_stage",
+            workflow_id="wf-test",
+            state={"stage_outputs": {}},
+            tracker=None,
+            config_loader=MagicMock(),
+        )
+
         with patch(
             "src.compiler.executors._sequential_helpers.execute_agent",
-            side_effect=lambda **kw: mock_execute_agent(**kw),
+            side_effect=mock_execute_agent,
         ):
             outputs, statuses, metrics = run_all_agents(
-                executor=executor,
+                ctx=ctx,
                 agents=agents,
-                stage_id="stage-test",
-                stage_name="test_stage",
-                workflow_id="wf-test",
-                state={"stage_outputs": {}},
-                tracker=None,
-                config_loader=MagicMock(),
                 error_handling=error_handling,
             )
 

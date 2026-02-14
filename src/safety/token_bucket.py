@@ -74,7 +74,7 @@ class RateLimit:
         max_tokens: Maximum bucket capacity
         refill_rate: Tokens added per second
         refill_period: How often to check for refills (seconds)
-        burst_size: Maximum tokens available for burst (≤ max_tokens)
+        burst_size: Maximum tokens available for burst (<= max_tokens)
 
     Example:
         >>> # 10 requests per hour with burst of 2
@@ -569,6 +569,19 @@ class TokenBucketManager:
 
         return bucket.get_wait_time(tokens)
 
+    def _reset_matching_buckets(self, index: int, value: str) -> None:
+        """Reset buckets where key tuple matches at the given index.
+
+        Must be called with ``self.lock`` held.
+
+        Args:
+            index: Tuple index to match (0 = entity_id, 1 = limit_type)
+            value: Value to match at that index
+        """
+        for key, bucket in self.buckets.items():
+            if key[index] == value:
+                bucket.reset()
+
     def reset(self, entity_id: Optional[str] = None, limit_type: Optional[str] = None) -> None:
         """Reset token buckets.
 
@@ -584,24 +597,16 @@ class TokenBucketManager:
         """
         with self.lock:
             if entity_id is None and limit_type is None:
-                # Reset all buckets
                 for bucket in self.buckets.values():
                     bucket.reset()
             elif entity_id and limit_type:
-                # Reset specific bucket
-                bucket_key = (entity_id, limit_type)
-                if bucket_key in self.buckets:
-                    self.buckets[bucket_key].reset()
+                specific_bucket = self.buckets.get((entity_id, limit_type))
+                if specific_bucket is not None:
+                    specific_bucket.reset()
             elif entity_id:
-                # Reset all buckets for entity
-                for (eid, _), bucket in self.buckets.items():
-                    if eid == entity_id:
-                        bucket.reset()
+                self._reset_matching_buckets(0, entity_id)
             elif limit_type:
-                # Reset all buckets for limit type
-                for (_, ltype), bucket in self.buckets.items():
-                    if ltype == limit_type:
-                        bucket.reset()
+                self._reset_matching_buckets(1, limit_type)
 
     def get_all_info(self) -> Dict[Tuple[str, str], Dict[str, Any]]:
         """Get information about all token buckets.

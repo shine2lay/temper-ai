@@ -31,6 +31,42 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class LLMCallBufferParams:
+    """Parameters for buffering an LLM call."""
+    llm_call_id: str
+    agent_id: str
+    provider: str
+    model: str
+    prompt: str
+    response: str
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: int
+    estimated_cost_usd: float
+    start_time: datetime
+    temperature: Optional[float] = None
+    max_tokens: Optional[int] = None
+    status: str = "success"
+    error_message: Optional[str] = None
+
+
+@dataclass
+class ToolCallBufferParams:
+    """Parameters for buffering a tool call."""
+    tool_execution_id: str
+    agent_id: str
+    tool_name: str
+    input_params: Dict[str, Any]
+    output_data: Dict[str, Any]
+    start_time: datetime
+    duration_seconds: float
+    status: str = "success"
+    error_message: Optional[str] = None
+    safety_checks: Optional[List[str]] = None
+    approval_required: bool = False
+
+
+@dataclass
 class BufferedLLMCall:
     """Buffered LLM call awaiting batch insert."""
     llm_call_id: str
@@ -203,46 +239,33 @@ class ObservabilityBuffer:
         """Set callback function to execute when buffer flushes."""
         self._flush_callback = callback
 
-    def buffer_llm_call(
-        self,
-        llm_call_id: str,
-        agent_id: str,
-        provider: str,
-        model: str,
-        prompt: str,
-        response: str,
-        prompt_tokens: int,
-        completion_tokens: int,
-        latency_ms: int,
-        estimated_cost_usd: float,
-        start_time: datetime,
-        temperature: Optional[float] = None,
-        max_tokens: Optional[int] = None,
-        status: str = "success",
-        error_message: Optional[str] = None
-    ) -> None:
-        """Buffer LLM call for batch insertion."""
+    def buffer_llm_call(self, params: LLMCallBufferParams) -> None:
+        """Buffer LLM call for batch insertion.
+
+        Args:
+            params: LLMCallBufferParams with all LLM call parameters
+        """
         deferred_flush = None
         with self.lock:
             self.llm_calls.append(BufferedLLMCall(
-                llm_call_id=llm_call_id, agent_id=agent_id,
-                provider=provider, model=model, prompt=prompt,
-                response=response, prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens, latency_ms=latency_ms,
-                estimated_cost_usd=estimated_cost_usd, start_time=start_time,
-                temperature=temperature, max_tokens=max_tokens,
-                status=status, error_message=error_message
+                llm_call_id=params.llm_call_id, agent_id=params.agent_id,
+                provider=params.provider, model=params.model, prompt=params.prompt,
+                response=params.response, prompt_tokens=params.prompt_tokens,
+                completion_tokens=params.completion_tokens, latency_ms=params.latency_ms,
+                estimated_cost_usd=params.estimated_cost_usd, start_time=params.start_time,
+                temperature=params.temperature, max_tokens=params.max_tokens,
+                status=params.status, error_message=params.error_message
             ))
 
             # Update agent metrics
-            if agent_id not in self.agent_metrics:
-                self.agent_metrics[agent_id] = AgentMetricUpdate(agent_id=agent_id)
-            metrics = self.agent_metrics[agent_id]
+            if params.agent_id not in self.agent_metrics:
+                self.agent_metrics[params.agent_id] = AgentMetricUpdate(agent_id=params.agent_id)
+            metrics = self.agent_metrics[params.agent_id]
             metrics.num_llm_calls += 1
-            metrics.total_tokens += prompt_tokens + completion_tokens
-            metrics.prompt_tokens += prompt_tokens
-            metrics.completion_tokens += completion_tokens
-            metrics.estimated_cost_usd += estimated_cost_usd
+            metrics.total_tokens += params.prompt_tokens + params.completion_tokens
+            metrics.prompt_tokens += params.prompt_tokens
+            metrics.completion_tokens += params.completion_tokens
+            metrics.estimated_cost_usd += params.estimated_cost_usd
 
             if self._should_flush():
                 deferred_flush = self._swap_and_prepare()
@@ -253,35 +276,26 @@ class ObservabilityBuffer:
                           self._pending_ids, self.retry_queue,
                           self._handle_flush_failure_impl, merge_agent_metrics)
 
-    def buffer_tool_call(
-        self,
-        tool_execution_id: str,
-        agent_id: str,
-        tool_name: str,
-        input_params: Dict[str, Any],
-        output_data: Dict[str, Any],
-        start_time: datetime,
-        duration_seconds: float,
-        status: str = "success",
-        error_message: Optional[str] = None,
-        safety_checks: Optional[List[str]] = None,
-        approval_required: bool = False
-    ) -> None:
-        """Buffer tool call for batch insertion."""
+    def buffer_tool_call(self, params: ToolCallBufferParams) -> None:
+        """Buffer tool call for batch insertion.
+
+        Args:
+            params: ToolCallBufferParams with all tool call parameters
+        """
         deferred_flush = None
         with self.lock:
             self.tool_calls.append(BufferedToolCall(
-                tool_execution_id=tool_execution_id, agent_id=agent_id,
-                tool_name=tool_name, input_params=input_params,
-                output_data=output_data, start_time=start_time,
-                duration_seconds=duration_seconds, status=status,
-                error_message=error_message, safety_checks=safety_checks,
-                approval_required=approval_required
+                tool_execution_id=params.tool_execution_id, agent_id=params.agent_id,
+                tool_name=params.tool_name, input_params=params.input_params,
+                output_data=params.output_data, start_time=params.start_time,
+                duration_seconds=params.duration_seconds, status=params.status,
+                error_message=params.error_message, safety_checks=params.safety_checks,
+                approval_required=params.approval_required
             ))
 
-            if agent_id not in self.agent_metrics:
-                self.agent_metrics[agent_id] = AgentMetricUpdate(agent_id=agent_id)
-            self.agent_metrics[agent_id].num_tool_calls += 1
+            if params.agent_id not in self.agent_metrics:
+                self.agent_metrics[params.agent_id] = AgentMetricUpdate(agent_id=params.agent_id)
+            self.agent_metrics[params.agent_id].num_tool_calls += 1
 
             if self._should_flush():
                 deferred_flush = self._swap_and_prepare()

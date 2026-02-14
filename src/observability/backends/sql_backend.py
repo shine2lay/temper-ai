@@ -275,7 +275,8 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
     ) -> None:
         """Record LLM call."""
         if self._buffer:
-            self._buffer.buffer_llm_call(
+            from src.observability.buffer import LLMCallBufferParams
+            params = LLMCallBufferParams(
                 llm_call_id=llm_call_id, agent_id=agent_id, provider=provider,
                 model=model, prompt=data.prompt, response=data.response,
                 prompt_tokens=data.prompt_tokens, completion_tokens=data.completion_tokens,
@@ -283,6 +284,7 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
                 start_time=start_time, temperature=data.temperature, max_tokens=data.max_tokens,
                 status=data.status, error_message=data.error_message
             )
+            self._buffer.buffer_llm_call(params)
             return
 
         llm_call = LLMCall(
@@ -315,13 +317,15 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
     ) -> None:
         """Record tool execution."""
         if self._buffer:
-            self._buffer.buffer_tool_call(
+            from src.observability.buffer import ToolCallBufferParams
+            params = ToolCallBufferParams(
                 tool_execution_id=tool_execution_id, agent_id=agent_id,
                 tool_name=tool_name, input_params=data.input_params, output_data=data.output_data,
                 start_time=start_time, duration_seconds=data.duration_seconds,
                 status=data.status, error_message=data.error_message,
                 safety_checks=data.safety_checks, approval_required=data.approval_required
             )
+            self._buffer.buffer_tool_call(params)
             return
 
         start_time_utc = ensure_utc(start_time)

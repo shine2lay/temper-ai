@@ -185,7 +185,42 @@ class PathSafetyValidator:
 
         return resolved
 
-    def validate_write(self, path: Union[str, Path], allow_overwrite: bool = True, allow_create_parents: bool = False) -> Path:
+    def _resolve_nearest_ancestor(self, parent: Path) -> Path:
+        """Find the nearest existing ancestor and resolve it."""
+        parent_to_check = parent
+        while not parent_to_check.exists() and parent_to_check != parent_to_check.parent:
+            parent_to_check = parent_to_check.parent
+
+        if parent_to_check.exists():
+            return parent_to_check.resolve()
+        # If no parent exists at all, use absolute path
+        return parent.resolve() if parent.exists() else Path(str(parent)).absolute()
+
+    def _check_parent_in_allowed_root(self, parent: Path) -> None:
+        """Raise PathSafetyError if parent is outside allowed root."""
+        parent_resolved = self._resolve_nearest_ancestor(parent)
+        try:
+            parent_resolved.relative_to(self.allowed_root)
+        except ValueError:
+            raise PathSafetyError(
+                f"Parent directory '{parent}' is outside allowed root"
+            )
+
+    def _validate_new_file_parent(
+        self, path: Path, allow_create_parents: bool
+    ) -> None:
+        """Validate that parent directory is safe for creating a new file."""
+        parent = path.parent
+        if not parent.exists() and not allow_create_parents:
+            raise PathSafetyError(f"Parent directory does not exist: {parent}")
+        self._check_parent_in_allowed_root(parent)
+
+    def validate_write(
+        self,
+        path: Union[str, Path],
+        allow_overwrite: bool = True,
+        allow_create_parents: bool = False,
+    ) -> Path:
         """
         Validate a path for writing.
 
@@ -200,44 +235,13 @@ class PathSafetyValidator:
         Raises:
             PathSafetyError: If validation fails
         """
-        # For new files, validate the parent directory
         if isinstance(path, str):
             path = Path(path)
 
         if not path.exists():
-            # Validate parent directory
-            parent = path.parent
-            if not parent.exists() and not allow_create_parents:
-                raise PathSafetyError(f"Parent directory does not exist: {parent}")
-
-            # Check parent path is safe (even if doesn't exist yet)
-            # Get the highest existing ancestor
-            parent_to_check = parent
-            while not parent_to_check.exists() and parent_to_check != parent_to_check.parent:
-                parent_to_check = parent_to_check.parent
-
-            # Check this ancestor is within allowed root
-            if parent_to_check.exists():
-                parent_resolved = parent_to_check.resolve()
-            else:
-                # If no parent exists at all, check the path itself
-                parent_resolved = parent.resolve() if parent.exists() else Path(str(parent)).absolute()
-
-            is_parent_allowed = False
-            try:
-                parent_resolved.relative_to(self.allowed_root)
-                is_parent_allowed = True
-            except ValueError:
-                pass
-
-            if not is_parent_allowed:
-                raise PathSafetyError(
-                    f"Parent directory '{parent}' is outside allowed root"
-                )
-        else:
-            # File exists - check overwrite permission
-            if not allow_overwrite:
-                raise PathSafetyError(f"File exists and overwrite not allowed: {path}")
+            self._validate_new_file_parent(path, allow_create_parents)
+        elif not allow_overwrite:
+            raise PathSafetyError(f"File exists and overwrite not allowed: {path}")
 
         resolved = self.validate_path(path, must_exist=False, allow_create=True)
 

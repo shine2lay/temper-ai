@@ -43,6 +43,23 @@ logger = logging.getLogger(__name__)
 VALID_MODES = frozenset({STRATEGY_NAME_DIALOGUE, STRATEGY_NAME_DEBATE, STRATEGY_NAME_CONSENSUS})
 VALID_CONTEXT_STRATEGIES = frozenset({MODE_VALUE_FULL, "recent", "relevant"})
 
+
+def _validate_config_ranges(config: "MultiRoundConfig", max_rounds: int, min_rounds: int, convergence_threshold: float) -> None:
+    """Validate numeric config ranges, raising ValueError on invalid values."""
+    if max_rounds < 1:
+        raise ValueError(f"max_rounds must be >= 1, got {max_rounds}")
+    if min_rounds < 1:
+        raise ValueError(f"min_rounds must be >= 1, got {min_rounds}")
+    if not 0 <= convergence_threshold <= 1:
+        raise ValueError(
+            f"convergence_threshold must be in [0, 1], got {convergence_threshold}"
+        )
+    if config.cost_budget_usd is not None and config.cost_budget_usd <= 0:
+        raise ValueError(f"cost_budget_usd must be > 0, got {config.cost_budget_usd}")
+    if config.context_window_size < 1:
+        raise ValueError(f"context_window_size must be >= 1, got {config.context_window_size}")
+
+
 # --- Stance extraction ---
 VALID_STANCES = frozenset({"AGREE", "DISAGREE", "PARTIAL"})
 _STANCE_BRACKET = re.compile(r"\[STANCE:\s*(AGREE|DISAGREE|PARTIAL)\]", re.IGNORECASE)
@@ -262,19 +279,7 @@ class MultiRoundStrategy(CollaborationStrategy):
             else defaults["convergence_threshold"]
         )
 
-        # Validate ranges
-        if self.max_rounds < 1:
-            raise ValueError(f"max_rounds must be >= 1, got {self.max_rounds}")
-        if self.min_rounds < 1:
-            raise ValueError(f"min_rounds must be >= 1, got {self.min_rounds}")
-        if not 0 <= self.convergence_threshold <= 1:
-            raise ValueError(
-                f"convergence_threshold must be in [0, 1], got {self.convergence_threshold}"
-            )
-        if config.cost_budget_usd is not None and config.cost_budget_usd <= 0:
-            raise ValueError(f"cost_budget_usd must be > 0, got {config.cost_budget_usd}")
-        if config.context_window_size < 1:
-            raise ValueError(f"context_window_size must be >= 1, got {config.context_window_size}")
+        _validate_config_ranges(config, self.max_rounds, self.min_rounds, self.convergence_threshold)
 
         # Store config values
         self.use_semantic_convergence = config.use_semantic_convergence

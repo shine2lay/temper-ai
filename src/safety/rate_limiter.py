@@ -347,6 +347,19 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
             policy_name=self.name
         )
 
+    def _delete_matching_keys(self, index: int, value: str) -> None:
+        """Delete history entries where the key tuple matches at the given index.
+
+        Must be called with ``_history_lock`` held.
+
+        Args:
+            index: Tuple index to match (0 = operation, 1 = entity)
+            value: Value to match at that index
+        """
+        keys_to_delete = [k for k in self._operation_history if k[index] == value]
+        for key in keys_to_delete:
+            del self._operation_history[key]
+
     def reset_limits(self, operation: Optional[str] = None, entity: Optional[str] = None) -> None:
         """Reset rate limit tracking (useful for testing).
 
@@ -358,17 +371,11 @@ class WindowRateLimitPolicy(BaseSafetyPolicy):
             if operation is None and entity is None:
                 self._operation_history.clear()
             elif operation and entity:
-                key = (operation, entity)
-                if key in self._operation_history:
-                    del self._operation_history[key]
+                self._operation_history.pop((operation, entity), None)
             elif operation:
-                keys_to_delete = [k for k in self._operation_history.keys() if k[0] == operation]
-                for key in keys_to_delete:
-                    del self._operation_history[key]
+                self._delete_matching_keys(0, operation)
             elif entity:
-                keys_to_delete = [k for k in self._operation_history.keys() if k[1] == entity]
-                for key in keys_to_delete:
-                    del self._operation_history[key]
+                self._delete_matching_keys(1, entity)
 
 
 # Backward-compatible alias (deprecated)

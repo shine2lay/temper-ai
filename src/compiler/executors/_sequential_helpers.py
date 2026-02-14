@@ -49,6 +49,14 @@ class AgentExecutionContext:
     config_loader: Any
     agent_factory_cls: Any = None
 
+
+@dataclass
+class AgentResultAccumulators:
+    """Groups mutable output accumulators passed through the agent execution chain."""
+    outputs: Dict[str, Any]
+    statuses: Dict[str, Any]
+    metrics: Dict[str, Any]
+
 # Error types classified as transient (worth retrying)
 _TRANSIENT_ERROR_TYPES: frozenset[str] = frozenset({
     ErrorCode.LLM_CONNECTION_ERROR.value,
@@ -75,44 +83,21 @@ def is_transient_error(error_type: str) -> bool:
 
 
 def execute_agent(
-    executor: Any,
+    ctx: AgentExecutionContext,
     agent_ref: Any,
-    stage_id: str,
-    stage_name: str,
-    workflow_id: str,
-    state: Dict[str, Any],
-    tracker: Optional[Any],
-    config_loader: Any,
     prior_agent_outputs: Optional[Dict[str, Any]] = None,
-    agent_factory_cls: Any = None,
 ) -> Dict[str, Any]:
     """Execute a single agent and return structured result.
 
     Args:
-        executor: The SequentialStageExecutor instance (for _extract_agent_name, _agent_cache)
+        ctx: Agent execution context bundle
         agent_ref: Agent reference from stage config
-        stage_id: Stage execution ID
-        stage_name: Stage name
-        workflow_id: Workflow execution ID
-        state: Current workflow state
-        tracker: ExecutionTracker instance (optional)
-        config_loader: ConfigLoader for loading agent configs
         prior_agent_outputs: Outputs from prior agents in the same stage
 
     Returns:
         Dict with keys: agent_name, output_data, status, metrics
     """
-    ctx = AgentExecutionContext(
-        executor=executor,
-        stage_id=stage_id,
-        stage_name=stage_name,
-        workflow_id=workflow_id,
-        state=state,
-        tracker=tracker,
-        config_loader=config_loader,
-        agent_factory_cls=agent_factory_cls,
-    )
-    agent_name = executor._extract_agent_name(agent_ref)
+    agent_name = ctx.executor._extract_agent_name(agent_ref)
     start_time = time.time()
 
     try:
@@ -371,16 +356,9 @@ def _execute_retry_attempt(
 ) -> tuple[Dict[str, Any], bool]:
     """Execute a single retry attempt. Returns (result, should_stop)."""
     last_result = execute_agent(
-        executor=ctx.executor,
+        ctx=ctx,
         agent_ref=agent_ref,
-        stage_id=ctx.stage_id,
-        stage_name=ctx.stage_name,
-        workflow_id=ctx.workflow_id,
-        state=ctx.state,
-        tracker=ctx.tracker,
-        config_loader=ctx.config_loader,
         prior_agent_outputs=prior_agent_outputs,
-        agent_factory_cls=ctx.agent_factory_cls,
     )
 
     if last_result[StateKeys.STATUS] == "success":
@@ -406,32 +384,27 @@ def _execute_retry_attempt(
 
 
 def retry_agent_with_backoff(
-    executor: Any,
+    ctx: AgentExecutionContext,
     agent_ref: Any,
-    stage_id: str,
-    stage_name: str,
-    workflow_id: str,
-    state: Dict[str, Any],
-    tracker: Optional[Any],
-    config_loader: Any,
     prior_agent_outputs: Dict[str, Any],
     max_retries: int,
     agent_name: str,
-    agent_factory_cls: Any = None,
 ) -> Dict[str, Any]:
     """Retry a failed agent with exponential backoff.
 
     Only retries on transient errors. Stops immediately if a
     permanent error is encountered during a retry attempt.
 
+    Args:
+        ctx: Agent execution context bundle
+        agent_ref: Agent reference from stage config
+        prior_agent_outputs: Outputs from prior agents in the same stage
+        max_retries: Maximum number of retry attempts
+        agent_name: Name of the agent being retried
+
     Returns:
         Dict with keys: agent_name, output_data, status, metrics
     """
-    ctx = AgentExecutionContext(
-        executor=executor, stage_id=stage_id, stage_name=stage_name,
-        workflow_id=workflow_id, state=state, tracker=tracker,
-        config_loader=config_loader, agent_factory_cls=agent_factory_cls,
-    )
     base_delay = MIN_BACKOFF_SECONDS
     last_result: Dict[str, Any] = {}
 
@@ -442,10 +415,10 @@ def retry_agent_with_backoff(
         )
         logger.info(
             "Retrying agent %s in stage %s (attempt %d/%d, backoff %.1fs)",
-            agent_name, stage_name, attempt, max_retries, delay,
+            agent_name, ctx.stage_name, attempt, max_retries, delay,
         )
 
-        if executor.shutdown_event.wait(timeout=delay):  # intentional wait for backoff
+        if ctx.executor.shutdown_event.wait(timeout=delay):  # intentional wait for backoff
             raise KeyboardInterrupt("Executor shutdown requested")
 
         last_result, should_stop = _execute_retry_attempt(
@@ -456,7 +429,7 @@ def retry_agent_with_backoff(
 
     logger.warning(
         "Agent %s exhausted all %d retries in stage %s",
-        agent_name, max_retries, stage_name,
+        agent_name, max_retries, ctx.stage_name,
     )
     if last_result:
         last_result[StateKeys.METRICS][StateKeys.RETRIES] = max_retries
@@ -490,10 +463,9 @@ def _handle_retry_policy(
     agent_name: str,
     agent_result: Dict[str, Any],
     error_handling: Any,
-    stage_name: str,
     ctx: AgentExecutionContext,
     agent_ref: Any,
-    agent_outputs: Dict[str, Any],
+    accum: AgentResultAccumulators,
 ) -> tuple[str, Dict[str, Any]]:
     """Handle retry_agent failure policy. Returns (action, result_to_store)."""
     max_retries = error_handling.max_agent_retries
@@ -501,18 +473,11 @@ def _handle_retry_policy(
 
     if is_transient_error(error_type) and max_retries > 0:
         retry_result = retry_agent_with_backoff(
-            executor=ctx.executor,
+            ctx=ctx,
             agent_ref=agent_ref,
-            stage_id=ctx.stage_id,
-            stage_name=ctx.stage_name,
-            workflow_id=ctx.workflow_id,
-            state=ctx.state,
-            tracker=ctx.tracker,
-            config_loader=ctx.config_loader,
-            prior_agent_outputs=agent_outputs,
+            prior_agent_outputs=accum.outputs,
             max_retries=max_retries,
             agent_name=agent_name,
-            agent_factory_cls=ctx.agent_factory_cls,
         )
         return "store", retry_result
 
@@ -520,14 +485,14 @@ def _handle_retry_policy(
         logger.warning(
             "Agent %s failed with permanent error type '%s' in stage %s "
             "(policy: retry_agent, not retrying): %s",
-            agent_name, error_type, stage_name,
+            agent_name, error_type, ctx.stage_name,
             agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, ""),
         )
     else:
         logger.warning(
             "Agent %s failed in stage %s (policy: retry_agent, "
             "max_retries=0): %s",
-            agent_name, stage_name,
+            agent_name, ctx.stage_name,
             agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, ""),
         )
     return "store", agent_result
@@ -537,13 +502,19 @@ def _handle_agent_failure(
     agent_name: str,
     agent_result: Dict[str, Any],
     error_handling: Any,
-    stage_name: str,
     ctx: AgentExecutionContext,
     agent_ref: Any,
-    agent_outputs: Dict[str, Any],
-    agent_metrics: Dict[str, Any]
+    accum: AgentResultAccumulators,
 ) -> tuple[str, Dict[str, Any]]:
     """Handle agent failure based on error_handling policy.
+
+    Args:
+        agent_name: Name of the failed agent
+        agent_result: Result dictionary from the failed agent
+        error_handling: Error handling configuration
+        ctx: Agent execution context bundle
+        agent_ref: Agent reference from stage config
+        accum: Result accumulators (outputs, statuses, metrics)
 
     Returns:
         Tuple of (action, result_to_store)
@@ -554,27 +525,27 @@ def _handle_agent_failure(
     if policy == "halt_stage":
         logger.warning(
             "Agent %s failed in stage %s (policy: halt_stage), stopping execution: %s",
-            agent_name, stage_name, agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, "")
+            agent_name, ctx.stage_name, agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, "")
         )
         return "break", agent_result
 
     if policy == "skip_agent":
         logger.warning(
             "Agent %s failed in stage %s (policy: skip_agent), skipping: %s",
-            agent_name, stage_name, agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, "")
+            agent_name, ctx.stage_name, agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, "")
         )
         return "continue", agent_result
 
     if policy == "retry_agent":
         return _handle_retry_policy(
-            agent_name, agent_result, error_handling, stage_name,
-            ctx, agent_ref, agent_outputs,
+            agent_name, agent_result, error_handling,
+            ctx, agent_ref, accum,
         )
 
     # continue_with_remaining
     logger.warning(
         "Agent %s failed in stage %s (policy: continue_with_remaining), continuing: %s",
-        agent_name, stage_name, agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, "")
+        agent_name, ctx.stage_name, agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, "")
     )
     return "store", agent_result
 
@@ -603,84 +574,86 @@ def _process_agent_failure(
     agent_name: str,
     agent_result: Dict[str, Any],
     error_handling: Any,
-    stage_name: str,
     ctx: AgentExecutionContext,
     agent_ref: Any,
-    agent_outputs: Dict[str, Any],
-    agent_statuses: Dict[str, Any],
-    agent_metrics: Dict[str, Any],
+    accum: AgentResultAccumulators,
 ) -> Optional[str]:
-    """Process a failed agent result. Returns 'break'/'continue' or None to store and continue."""
-    agent_statuses[agent_name] = {
+    """Process a failed agent result. Returns 'break'/'continue' or None to store and continue.
+
+    Args:
+        agent_name: Name of the failed agent
+        agent_result: Result dictionary from the failed agent
+        error_handling: Error handling configuration
+        ctx: Agent execution context bundle
+        agent_ref: Agent reference from stage config
+        accum: Result accumulators (outputs, statuses, metrics)
+
+    Returns:
+        Optional control flow directive: "break", "continue", or None
+    """
+    accum.statuses[agent_name] = {
         StateKeys.STATUS: "failed",
         StateKeys.ERROR: agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, ""),
         StateKeys.ERROR_TYPE: agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR_TYPE, ""),
     }
 
     action, result_to_store = _handle_agent_failure(
-        agent_name, agent_result, error_handling, stage_name,
-        ctx, agent_ref, agent_outputs, agent_metrics
+        agent_name, agent_result, error_handling,
+        ctx, agent_ref, accum
     )
 
     if action == "break":
-        agent_outputs[agent_name] = result_to_store[StateKeys.OUTPUT_DATA]
-        agent_metrics[agent_name] = result_to_store[StateKeys.METRICS]
+        accum.outputs[agent_name] = result_to_store[StateKeys.OUTPUT_DATA]
+        accum.metrics[agent_name] = result_to_store[StateKeys.METRICS]
         return "break"
     if action == "continue":
-        agent_metrics[agent_name] = result_to_store[StateKeys.METRICS]
+        accum.metrics[agent_name] = result_to_store[StateKeys.METRICS]
         return "continue"
 
-    _store_failure_result(result_to_store, agent_statuses, agent_outputs, agent_metrics)
+    _store_failure_result(result_to_store, accum.statuses, accum.outputs, accum.metrics)
     return None
 
 
 def run_all_agents(
-    executor: Any,
+    ctx: AgentExecutionContext,
     agents: list,
-    stage_id: str,
-    stage_name: str,
-    workflow_id: str,
-    state: Dict[str, Any],
-    tracker: Optional[Any],
-    config_loader: Any,
     error_handling: Any,
-    agent_factory_cls: Any = None,
 ) -> tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """Execute all agents in sequence with configurable error handling.
+
+    Args:
+        ctx: Agent execution context bundle
+        agents: List of agent references to execute
+        error_handling: Error handling configuration
 
     Returns:
         Tuple of (agent_outputs, agent_statuses, agent_metrics)
     """
-    ctx = AgentExecutionContext(
-        executor=executor, stage_id=stage_id, stage_name=stage_name,
-        workflow_id=workflow_id, state=state, tracker=tracker,
-        config_loader=config_loader, agent_factory_cls=agent_factory_cls,
+    accum = AgentResultAccumulators(
+        outputs={},
+        statuses={},
+        metrics={},
     )
 
-    agent_outputs: Dict[str, Any] = {}
-    agent_statuses: Dict[str, Any] = {}
-    agent_metrics: Dict[str, Any] = {}
-
-    show_details = state.get(StateKeys.SHOW_DETAILS, False)
-    detail_console = state.get(StateKeys.DETAIL_CONSOLE)
+    show_details = ctx.state.get(StateKeys.SHOW_DETAILS, False)
+    detail_console = ctx.state.get(StateKeys.DETAIL_CONSOLE)
     if show_details and detail_console:
-        detail_console.print(f"\n[bold cyan]── Stage: {stage_name} ──[/bold cyan]")
+        detail_console.print(f"\n[bold cyan]── Stage: {ctx.stage_name} ──[/bold cyan]")
 
     total_agents = len(agents)
-    prior_stages = list(state.get(StateKeys.STAGE_OUTPUTS, {}).keys())
+    prior_stages = list(ctx.state.get(StateKeys.STAGE_OUTPUTS, {}).keys())
     input_info = f"prior stages: {prior_stages}" if prior_stages else "workflow inputs only"
-    logger.info("Stage '%s' starting sequential execution with %d agent(s) (%s)", stage_name, total_agents, input_info)
+    logger.info("Stage '%s' starting sequential execution with %d agent(s) (%s)", ctx.stage_name, total_agents, input_info)
 
     for agent_idx, agent_ref in enumerate(agents):
         agent_result = execute_agent(
-            executor=executor, agent_ref=agent_ref, stage_id=stage_id,
-            stage_name=stage_name, workflow_id=workflow_id, state=state,
-            tracker=tracker, config_loader=config_loader,
-            prior_agent_outputs=agent_outputs, agent_factory_cls=agent_factory_cls,
+            ctx=ctx,
+            agent_ref=agent_ref,
+            prior_agent_outputs=accum.outputs,
         )
 
         agent_name = agent_result[StateKeys.AGENT_NAME]
-        logger.info("Stage '%s' agent '%s' completed (%s)", stage_name, agent_name, agent_result[StateKeys.STATUS])
+        logger.info("Stage '%s' agent '%s' completed (%s)", ctx.stage_name, agent_name, agent_result[StateKeys.STATUS])
 
         if show_details and detail_console:
             is_last = (agent_idx == total_agents - 1)
@@ -688,16 +661,16 @@ def run_all_agents(
 
         if agent_result[StateKeys.STATUS] == "failed":
             loop_action = _process_agent_failure(
-                agent_name, agent_result, error_handling, stage_name,
-                ctx, agent_ref, agent_outputs, agent_statuses, agent_metrics,
+                agent_name, agent_result, error_handling,
+                ctx, agent_ref, accum,
             )
             if loop_action == "break":
                 break
             if loop_action == "continue":
                 continue
         else:
-            agent_statuses[agent_name] = agent_result[StateKeys.STATUS]
-            agent_outputs[agent_name] = agent_result[StateKeys.OUTPUT_DATA]
-            agent_metrics[agent_name] = agent_result[StateKeys.METRICS]
+            accum.statuses[agent_name] = agent_result[StateKeys.STATUS]
+            accum.outputs[agent_name] = agent_result[StateKeys.OUTPUT_DATA]
+            accum.metrics[agent_name] = agent_result[StateKeys.METRICS]
 
-    return agent_outputs, agent_statuses, agent_metrics
+    return accum.outputs, accum.statuses, accum.metrics

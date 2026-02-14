@@ -34,6 +34,39 @@ from src.utils.exceptions import (
 logger = logging.getLogger(__name__)
 
 
+def _print_stage_header(state: Dict[str, Any], stage_name: str) -> None:
+    """Print stage header if detail console is active."""
+    if state.get(StateKeys.SHOW_DETAILS) and state.get(StateKeys.DETAIL_CONSOLE):
+        state[StateKeys.DETAIL_CONSOLE].print(
+            f"\n[bold cyan]\u2500\u2500 Stage: {stage_name} \u2500\u2500[/bold cyan]"
+        )
+
+
+def _persist_stage_output(
+    tracker: Optional[Any], stage_id: Optional[str],
+    state: Dict[str, Any], stage_name: str,
+) -> None:
+    """Persist stage output to DB for dashboard visibility."""
+    if not (tracker and stage_id and hasattr(tracker, 'set_stage_output')):
+        return
+    try:
+        stage_out = state.get(StateKeys.STAGE_OUTPUTS, {}).get(stage_name)
+        if stage_out:
+            tracker.set_stage_output(stage_id, stage_out)
+    except Exception:
+        logger.warning("Failed to persist stage output", exc_info=True)
+
+
+def _extract_collab_config(stage_config: Any) -> dict:
+    """Extract collaboration config from stage config (nested or flat format)."""
+    stage_dict = stage_config if isinstance(stage_config, dict) else {}
+    collab = stage_dict.get("collaboration")
+    if collab is None:
+        inner = stage_dict.get("stage", {})
+        collab = inner.get("collaboration", {}) if isinstance(inner, dict) else {}
+    return collab.get("config", {}) if isinstance(collab, dict) else {}
+
+
 class ParallelStageExecutor(StageExecutor):
     """Execute agents in parallel (M3 mode).
 
@@ -216,8 +249,7 @@ class ParallelStageExecutor(StageExecutor):
 
         while True:
             agents = self._get_agents(stage_config)
-            if state.get(StateKeys.SHOW_DETAILS) and state.get(StateKeys.DETAIL_CONSOLE):
-                state[StateKeys.DETAIL_CONSOLE].print(f"\n[bold cyan]\u2500\u2500 Stage: {stage_name} \u2500\u2500[/bold cyan]")
+            _print_stage_header(state, stage_name)
 
             try:
                 pr, ao_dict, agg, synth = self._run_parallel_and_synthesize(
@@ -240,16 +272,7 @@ class ParallelStageExecutor(StageExecutor):
                     agent_outputs_dict=ao_dict, parallel_result=pr,
                     aggregate_metrics=agg,
                 )
-
-                # Persist stage output to DB for dashboard visibility
-                if tracker and stage_id and hasattr(tracker, 'set_stage_output'):
-                    try:
-                        stage_out = state.get(StateKeys.STAGE_OUTPUTS, {}).get(stage_name)
-                        if stage_out:
-                            tracker.set_stage_output(stage_id, stage_out)
-                    except Exception:
-                        logger.warning("Failed to persist stage output", exc_info=True)
-
+                _persist_stage_output(tracker, stage_id, state, stage_name)
                 return state
 
             except (RuntimeError, ConfigNotFoundError, ConfigValidationError, ToolExecutionError, LLMError, ValueError) as exc:
@@ -258,38 +281,18 @@ class ParallelStageExecutor(StageExecutor):
     def _filter_leader_from_agents(
         self, agents: list, stage_config: Any,
     ) -> list:
-        """Remove leader agent from agent list if using leader strategy.
-
-        Args:
-            agents: Full list of agent refs from stage config
-            stage_config: Stage configuration
-
-        Returns:
-            Agent list without the leader (or unchanged if not leader strategy)
-        """
+        """Remove leader agent from agent list if using leader strategy."""
         try:
             from src.strategies.registry import get_strategy_from_config
 
             strategy = get_strategy_from_config(stage_config)
             if not (hasattr(strategy, 'requires_leader_synthesis') and strategy.requires_leader_synthesis):
                 return agents
-
             if not hasattr(strategy, 'get_leader_agent_name'):
                 return agents
 
-            # Extract collaboration config (handles nested "stage.collaboration.config"
-            # and flat "collaboration.config" formats)
-            stage_dict = stage_config if isinstance(stage_config, dict) else {}
-            collab = stage_dict.get("collaboration")
-            if collab is None:
-                inner = stage_dict.get("stage", {})
-                if isinstance(inner, dict):
-                    collab = inner.get("collaboration", {})
-                else:
-                    collab = {}
-            collab_config = collab.get("config", {}) if isinstance(collab, dict) else {}
+            collab_config = _extract_collab_config(stage_config)
             leader_name = strategy.get_leader_agent_name(collab_config)  # type: ignore[attr-defined]
-
             if not leader_name:
                 return agents
 

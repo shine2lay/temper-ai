@@ -390,13 +390,15 @@ class ExecutionTracker(TrackerCollaborationMixin):
         num_llm_calls: Optional[int] = None, num_tool_calls: Optional[int] = None
     ) -> None:
         """Set agent output data."""
-        self._metric_aggregator.set_agent_output(
+        from src.observability.metric_aggregator import AgentOutputParams
+        params = AgentOutputParams(
             agent_id=agent_id, output_data=output_data, reasoning=reasoning,
             confidence_score=confidence_score, total_tokens=total_tokens,
             prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
             estimated_cost_usd=estimated_cost_usd, num_llm_calls=num_llm_calls,
             num_tool_calls=num_tool_calls,
         )
+        self._metric_aggregator.set_agent_output(params)
         self._emit_event(_EVENT_AGENT_OUTPUT, {
             ObservabilityFields.AGENT_ID: agent_id,
             "confidence_score": confidence_score,

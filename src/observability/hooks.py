@@ -6,6 +6,7 @@ and automatically tracking to the observability database.
 """
 import inspect
 import threading
+from dataclasses import dataclass
 from functools import wraps
 from typing import Any, Callable, Dict, Optional, cast
 
@@ -14,6 +15,20 @@ from src.observability.tracker import ExecutionTracker
 # Global tracker instance (OB-06: double-check locking for thread safety)
 _global_tracker: Optional[ExecutionTracker] = None
 _tracker_lock = threading.Lock()
+
+
+@dataclass
+class LLMCallParams:
+    """Parameters for logging an LLM call."""
+    agent_id: str
+    provider: str
+    model: str
+    prompt: str
+    response: str
+    prompt_tokens: int
+    completion_tokens: int
+    latency_ms: int
+    cost: float
 
 
 def get_tracker() -> ExecutionTracker:
@@ -333,45 +348,26 @@ class ExecutionHook:
             else:
                 ctx.__exit__(None, None, None)
 
-    def log_llm_call(
-        self,
-        agent_id: str,
-        provider: str,
-        model: str,
-        prompt: str,
-        response: str,
-        prompt_tokens: int,
-        completion_tokens: int,
-        latency_ms: int,
-        cost: float
-    ) -> str:
+    def log_llm_call(self, params: LLMCallParams) -> str:
         """
         Log LLM call.
 
         Args:
-            agent_id: Parent agent ID
-            provider: LLM provider
-            model: Model name
-            prompt: Input prompt
-            response: LLM response
-            prompt_tokens: Prompt tokens
-            completion_tokens: Completion tokens
-            latency_ms: Latency in ms
-            cost: Estimated cost in USD
+            params: LLMCallParams with all LLM call parameters
 
         Returns:
             llm_call_id: UUID of LLM call
         """
         return self.tracker.track_llm_call(
-            agent_id,
-            provider,
-            model,
-            prompt,
-            response,
-            prompt_tokens,
-            completion_tokens,
-            latency_ms,
-            cost
+            params.agent_id,
+            params.provider,
+            params.model,
+            params.prompt,
+            params.response,
+            params.prompt_tokens,
+            params.completion_tokens,
+            params.latency_ms,
+            params.cost
         )
 
     def log_tool_call(

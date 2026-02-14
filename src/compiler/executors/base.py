@@ -338,10 +338,12 @@ class StageExecutor(ABC):
         current_outputs = initial_outputs
         total_cost = _record_initial_round(current_outputs, dialogue_history)
         tracker = state.get(StateKeys.TRACKER)
-        track_dialogue_round(
-            tracker, strategy, state, current_outputs,
-            round_num=0, round_outcome="initial"
+        from src.compiler.executors._base_helpers import DialogueTrackingParams
+        track_params = DialogueTrackingParams(
+            tracker=tracker, strategy=strategy, state=state,
+            current_outputs=current_outputs, round_num=0, round_outcome="initial"
         )
+        track_dialogue_round(track_params)
 
         if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
             return self._budget_stop_result(strategy, current_outputs, total_cost, stage_name)
@@ -353,11 +355,14 @@ class StageExecutor(ABC):
 
         for round_num in range(1, strategy.max_rounds):
             final_round = round_num
-            outputs, cost, _, conv, conv_round, _ = execute_dialogue_round(
-                round_num, self._reinvoke_agents_with_dialogue, agents, strategy,
-                stage_name, state, config_loader, tracker, dialogue_history,
-                previous_outputs,
+            from src.compiler.executors._base_helpers import DialogueRoundParams
+            round_params = DialogueRoundParams(
+                round_num=round_num, reinvoke_fn=self._reinvoke_agents_with_dialogue,
+                agents=agents, strategy=strategy, stage_name=stage_name,
+                state=state, config_loader=config_loader, tracker=tracker,
+                dialogue_history=dialogue_history, previous_outputs=previous_outputs,
             )
+            outputs, cost, _, conv, conv_round, _ = execute_dialogue_round(round_params)
             current_outputs = outputs
             total_cost += cost
             if conv:
@@ -507,7 +512,9 @@ class StageExecutor(ABC):
         strategy: Any = None
     ) -> tuple:
         """Re-invoke agents with dialogue history as context."""
-        return reinvoke_agents_with_dialogue(
+        from src.compiler.executors._base_helpers import DialogueReinvocationParams
+
+        params = DialogueReinvocationParams(
             agents=agents,
             stage_name=stage_name,
             state=state,
@@ -518,3 +525,4 @@ class StageExecutor(ABC):
             strategy=strategy,
             extract_agent_name_fn=self._extract_agent_name,
         )
+        return reinvoke_agents_with_dialogue(params)

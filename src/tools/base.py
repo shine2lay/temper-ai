@@ -485,6 +485,45 @@ class ParameterSanitizer:
     MAX_COMMAND_LENGTH = MAX_LONG_STRING_LENGTH
 
     @staticmethod
+    def _check_dangerous_chars(normalized: str) -> None:
+        """Raise SecurityError if command contains shell metacharacters."""
+        dangerous_chars = [
+            ";",   # Command separator
+            "|",   # Pipe
+            "&",   # Background/AND
+            "$",   # Variable expansion
+            "`",   # Command substitution
+            "\n",  # Newline injection
+            "\r",  # Carriage return
+            ">",   # Output redirection
+            "<",   # Input redirection
+        ]
+        for char in dangerous_chars:
+            if char in normalized:
+                raise SecurityError(
+                    f"Dangerous character '{char}' detected in command: "
+                    f"{normalized}"
+                )
+
+    @staticmethod
+    def _check_dangerous_patterns(normalized: str) -> None:
+        """Raise SecurityError if command contains injection patterns."""
+        import re
+
+        dangerous_patterns = [
+            (r"\$\(", "command substitution $()"),
+            (r"\$\{", "variable expansion ${}"),
+            (r"\{[^}]*,[^}]*\}", "brace expansion"),
+            (r"\{[^}]*\.\.[^}]*\}", "brace range expansion"),
+            (r"\\[xX][0-9a-fA-F]{2}", "hex escape sequence"),
+        ]
+        for pattern, description in dangerous_patterns:
+            if re.search(pattern, normalized):
+                raise SecurityError(
+                    f"Dangerous pattern detected ({description}) in command"
+                )
+
+    @staticmethod
     def sanitize_command(
         command: str,
         allowed_commands: Optional[list[str]] = None,
@@ -519,7 +558,6 @@ class ParameterSanitizer:
             >>> sanitizer.sanitize_command("ls; rm -rf /")
             SecurityError: Dangerous character ';' in command
         """
-        import re
         import unicodedata
 
         if not command:
@@ -531,53 +569,22 @@ class ParameterSanitizer:
             raise ValueError(f"Command too long ({len(command)} > {limit})")
 
         # Block null bytes before any other processing
-        if '\x00' in command:
+        if "\x00" in command:
             raise SecurityError("Null byte detected in command")
 
         # Normalize Unicode to NFKC to prevent homoglyph attacks
-        # (e.g., U+FF1B fullwidth semicolon → ASCII semicolon)
-        normalized = unicodedata.normalize('NFKC', command)
+        normalized = unicodedata.normalize("NFKC", command)
 
-        # Block shell metacharacters that enable command injection
-        dangerous_chars = [
-            ';',   # Command separator
-            '|',   # Pipe
-            '&',   # Background/AND
-            '$',   # Variable expansion
-            '`',   # Command substitution
-            '\n',  # Newline injection
-            '\r',  # Carriage return
-            '>',   # Output redirection
-            '<',   # Input redirection
-        ]
-
-        for char in dangerous_chars:
-            if char in normalized:
-                raise SecurityError(
-                    f"Dangerous character '{char}' detected in command: {normalized}"
-                )
-
-        # Block command substitution and expansion patterns
-        dangerous_patterns = [
-            (r'\$\(', "command substitution $()"),
-            (r'\$\{', "variable expansion ${}"),
-            (r'\{[^}]*,[^}]*\}', "brace expansion"),
-            (r'\{[^}]*\.\.[^}]*\}', "brace range expansion"),
-            (r'\\[xX][0-9a-fA-F]{2}', "hex escape sequence"),
-        ]
-
-        for pattern, description in dangerous_patterns:
-            if re.search(pattern, normalized):
-                raise SecurityError(
-                    f"Dangerous pattern detected ({description}) in command"
-                )
+        ParameterSanitizer._check_dangerous_chars(normalized)
+        ParameterSanitizer._check_dangerous_patterns(normalized)
 
         # Whitelist validation
         if allowed_commands is not None:
             cmd_name = normalized.split()[0] if normalized.split() else ""
             if cmd_name not in allowed_commands:
                 raise SecurityError(
-                    f"Command '{cmd_name}' not in allowed list: {allowed_commands}"
+                    f"Command '{cmd_name}' not in allowed list: "
+                    f"{allowed_commands}"
                 )
 
         return normalized

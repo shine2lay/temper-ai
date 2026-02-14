@@ -46,6 +46,54 @@ class ValidationRule:
     examples: list[str]
 
 
+def _is_windows_absolute_path(original_path: str) -> bool:
+    """Check if a path is a Windows absolute path (e.g. C:\\, D:\\)."""
+    return (
+        len(original_path) >= MIN_DRIVE_LETTER_PATH_LENGTH
+        and original_path[0].isalpha()
+        and original_path[1] == ':'
+        and original_path[2] in ('\\', '/')
+    )
+
+
+def _resolve_path_safe(path_str: str) -> Path:
+    """Resolve a path, falling back to non-strict if it doesn't exist."""
+    try:
+        return Path(path_str).resolve(strict=True)
+    except (FileNotFoundError, RuntimeError, OSError):
+        return Path(path_str).resolve()
+
+
+def _check_base_containment(
+    target: Path, base_dir: str, path_value: str,
+    is_unc: bool, is_windows_absolute: bool,
+) -> Tuple[bool, Optional[str]]:
+    """Check that target path is contained within base_dir."""
+    base = Path(base_dir).resolve()
+
+    if is_windows_absolute:
+        return False, f"Absolute Windows path not allowed: {path_value}"
+
+    base_is_unc = str(base_dir).startswith('\\\\') or str(base_dir).startswith('//')
+    if is_unc and not base_is_unc:
+        return False, "UNC path not allowed when base is not UNC"
+
+    try:
+        target.relative_to(base)
+    except ValueError:
+        return False, (
+            f"Path escapes base directory: {path_value} "
+            f"is not within {base_dir}"
+        )
+
+    if (base.drive or target.drive) and base.drive != target.drive:
+        return False, (
+            f"Path on different drive: {target.drive} vs {base.drive}"
+        )
+
+    return True, None
+
+
 class EnvVarValidator:
     """
     Context-aware environment variable validator.
@@ -257,81 +305,22 @@ class EnvVarValidator:
     def _validate_path_traversal(
         self,
         path_value: str,
-        base_dir: Optional[str] = None
+        base_dir: Optional[str] = None,
     ) -> Tuple[bool, Optional[str]]:
-        """
-        Validate path for traversal attempts (cross-platform).
-
-        Handles:
-        - Path normalization (. and ..)
-        - Symlink resolution
-        - Windows drive letters
-        - UNC paths (\\\\server\\share)
-        - Mixed separators (/ and \\)
-
-        Args:
-            path_value: Path to validate
-            base_dir: Optional base directory to check containment
-
-        Returns:
-            (is_valid, error_message) - error_message is None if valid
-        """
+        """Validate path for traversal attempts (cross-platform)."""
         try:
-            # Check for Windows absolute paths BEFORE normalization
             original_path = str(path_value)
             is_unc = original_path.startswith('\\\\') or original_path.startswith('//')
-            is_windows_absolute = (
-                len(original_path) >= MIN_DRIVE_LETTER_PATH_LENGTH and
-                original_path[0].isalpha() and
-                original_path[1] == ':' and
-                original_path[2] in ('\\', '/')
-            )
+            is_windows_absolute = _is_windows_absolute_path(original_path)
 
-            # Normalize path separators (convert backslash to forward slash)
-            # This ensures cross-platform handling of Windows-style paths on Unix
             path_str = original_path.replace('\\', '/')
+            target = _resolve_path_safe(path_str)
 
-            # Normalize and resolve the path (handles .., symlinks, etc.)
-            # Try with strict=True first (checks existence), fall back if path doesn't exist yet
-            try:
-                target = Path(path_str).resolve(strict=True)
-            except (FileNotFoundError, RuntimeError, OSError):
-                # Path doesn't exist yet (OK for validation), use non-strict resolve
-                target = Path(path_str).resolve()
-
-            # If base_dir provided, check containment and absolute path restrictions
             if base_dir:
-                base = Path(base_dir).resolve()
+                return _check_base_containment(
+                    target, base_dir, path_value, is_unc, is_windows_absolute,
+                )
 
-                # Reject Windows absolute paths (C:\, D:\, etc.)
-                if is_windows_absolute:
-                    return False, (
-                        f"Absolute Windows path not allowed: {path_value}"
-                    )
-
-                # Reject UNC paths if base is not UNC
-                base_is_unc = str(base_dir).startswith('\\\\') or str(base_dir).startswith('//')
-                if is_unc and not base_is_unc:
-                    return False, "UNC path not allowed when base is not UNC"
-
-                # Check if target is within base directory
-                try:
-                    target.relative_to(base)
-                except ValueError:
-                    return False, (
-                        f"Path escapes base directory: {path_value} "
-                        f"is not within {base_dir}"
-                    )
-
-                # Check for drive letter mismatch (Windows or when path has drive)
-                if base.drive or target.drive:
-                    if base.drive != target.drive:
-                        return False, (
-                            f"Path on different drive: {target.drive} vs {base.drive}"
-                        )
-
-            # Note: resolve() handles .. patterns, so no additional check needed
-            # The containment check above (relative_to) catches any escapes
             return True, None
 
         except (ValueError, OSError) as e:
@@ -341,29 +330,53 @@ class EnvVarValidator:
         self, var_name: str, value: str, level: "ValidationLevel",
     ) -> Tuple[bool, Optional[str]]:
         """Run context-specific pre-validation checks for better error messages."""
-        if level == ValidationLevel.PATH:
-            is_safe, error_msg = self._validate_path_traversal(value, base_dir=os.getcwd())
-            if not is_safe:
+        dispatch = {
+            ValidationLevel.PATH: self._check_path_context,
+            ValidationLevel.EXECUTABLE: self._check_executable_context,
+            ValidationLevel.IDENTIFIER: self._check_identifier_context,
+        }
+        checker = dispatch.get(level)
+        if checker:
+            return checker(var_name, value)
+        return True, None
+
+    def _check_path_context(
+        self, var_name: str, value: str,
+    ) -> Tuple[bool, Optional[str]]:
+        """Validate PATH-level environment variable."""
+        is_safe, error_msg = self._validate_path_traversal(value, base_dir=os.getcwd())
+        if not is_safe:
+            return False, (
+                f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' failed path validation: "
+                f"{error_msg}"
+            )
+        return True, None
+
+    def _check_executable_context(
+        self, var_name: str, value: str,
+    ) -> Tuple[bool, Optional[str]]:
+        """Validate EXECUTABLE-level environment variable."""
+        for pattern_regex, description in self.DANGEROUS_EXECUTABLE_PATTERNS:
+            if re.search(pattern_regex, value):
                 return False, (
-                    f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' failed path validation: "
-                    f"{error_msg}"
+                    f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' contains dangerous "
+                    f"pattern in executable context: {description}"
                 )
-        elif level == ValidationLevel.EXECUTABLE:
-            for pattern_regex, description in self.DANGEROUS_EXECUTABLE_PATTERNS:
-                if re.search(pattern_regex, value):
-                    return False, (
-                        f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' contains dangerous "
-                        f"pattern in executable context: {description}"
-                    )
-        elif level == ValidationLevel.IDENTIFIER:
-            db_patterns = ['db', 'database', 'table', 'schema', 'query', 'sql']
-            if any(pattern in var_name.lower() for pattern in db_patterns):
-                for pattern, description in self.SQL_INJECTION_PATTERNS:
-                    if pattern.upper() in value.upper():
-                        return False, (
-                            f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' contains SQL "
-                            f"injection pattern: {description}"
-                        )
+        return True, None
+
+    def _check_identifier_context(
+        self, var_name: str, value: str,
+    ) -> Tuple[bool, Optional[str]]:
+        """Validate IDENTIFIER-level environment variable for SQL injection."""
+        db_patterns = ['db', 'database', 'table', 'schema', 'query', 'sql']
+        if not any(pattern in var_name.lower() for pattern in db_patterns):
+            return True, None
+        for pattern, description in self.SQL_INJECTION_PATTERNS:
+            if pattern.upper() in value.upper():
+                return False, (
+                    f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' contains SQL "
+                    f"injection pattern: {description}"
+                )
         return True, None
 
     def validate(

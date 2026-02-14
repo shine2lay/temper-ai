@@ -35,6 +35,21 @@ from src.utils.exceptions import sanitize_error_message
 
 logger = logging.getLogger(__name__)
 
+# Keys excluded from auto-injection (already present via Jinja2 template rendering)
+_EXCLUDE_FROM_INJECT = frozenset({"command_results"})
+
+
+def _inject_input_context(template: str, filtered_input: Dict[str, Any]) -> str:
+    """Auto-inject string input context, excluding command_results."""
+    input_parts: List[str] = []
+    for key, value in filtered_input.items():
+        if value and isinstance(value, str) and key not in _EXCLUDE_FROM_INJECT:
+            label = key.replace("_", " ").title()
+            input_parts.append(f"## {label}\n{value}")
+    if input_parts:
+        return template + "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
+    return template
+
 
 class StaticCheckerAgent(BaseAgent):
     """Agent that runs deterministic pre_commands and synthesises results via LLM.
@@ -67,41 +82,35 @@ class StaticCheckerAgent(BaseAgent):
     # Prompt rendering (simplified — no tool schemas, no dialogue)
     # ------------------------------------------------------------------
 
-    def _render_prompt(
+    def _render_base_template(
         self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None,
+        all_variables: Dict[str, Any],
     ) -> str:
+        """Render prompt from template file or inline config."""
         prompt_config = self.config.agent.prompt
-
-        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
-        all_variables = {**filtered_input, **prompt_config.variables}
-
         if prompt_config.template:
             try:
-                template = self.prompt_engine.render_file(
+                return self.prompt_engine.render_file(
                     prompt_config.template, all_variables,
                 )
             except (PromptRenderError, ValueError, KeyError, FileNotFoundError) as e:
                 raise PromptRenderError(
                     f"Failed to render template file {prompt_config.template}: {e}"
                 )
-        elif prompt_config.inline:
-            template = self.prompt_engine.render(prompt_config.inline, all_variables)
-        else:
-            raise ValueError("No prompt template or inline prompt configured")
+        if prompt_config.inline:
+            return self.prompt_engine.render(prompt_config.inline, all_variables)
+        raise ValueError("No prompt template or inline prompt configured")
 
-        # Auto-inject string input context — exclude command_results (already
-        # rendered via Jinja2 {{ command_results }} in the template above).
-        _exclude_from_inject = frozenset({"command_results"})
-        input_parts: List[str] = []
-        for key, value in filtered_input.items():
-            if value and isinstance(value, str) and key not in _exclude_from_inject:
-                label = key.replace("_", " ").title()
-                input_parts.append(f"## {label}\n{value}")
-        if input_parts:
-            template += "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
+    def _render_prompt(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext] = None,
+    ) -> str:
+        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
+        all_variables = {**filtered_input, **self.config.agent.prompt.variables}
 
+        template = self._render_base_template(all_variables)
+        template = _inject_input_context(template, filtered_input)
         return template
 
     # ------------------------------------------------------------------

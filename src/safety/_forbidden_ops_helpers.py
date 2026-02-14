@@ -27,7 +27,7 @@ CATEGORY_SECURITY = "security"
 CATEGORY_CUSTOM = "custom"
 
 
-# ── Pattern dictionaries (extracted from ForbiddenOperationsPolicy class) ──
+# -- Pattern dictionaries (extracted from ForbiddenOperationsPolicy class) --
 
 FILE_WRITE_PATTERNS = {
     "cat_redirect": {
@@ -269,6 +269,27 @@ def compile_all_patterns(config: PatternConfig) -> Dict[str, Dict[str, Any]]:
     return patterns
 
 
+def _stringify_if_not_none(value: Any) -> Optional[str]:
+    """Return str(value) if value is not None, else None."""
+    return str(value) if value is not None else None
+
+
+def _extract_bash_tool_args(args: Any) -> Optional[str]:
+    """Extract command from bash tool args field.
+
+    Args:
+        args: The ``args`` value from a tool action (dict or str)
+
+    Returns:
+        Command string or None
+    """
+    if isinstance(args, dict):
+        return cast(Optional[str], args.get(COMMAND_KEY))
+    if isinstance(args, str):
+        return cast(Optional[str], args)
+    return None
+
+
 def extract_command(action: Dict[str, Any]) -> Optional[str]:
     """Extract command string from action.
 
@@ -279,22 +300,16 @@ def extract_command(action: Dict[str, Any]) -> Optional[str]:
     - {"content": "..."}  (for code content)
     """
     if COMMAND_KEY in action:
-        cmd = action[COMMAND_KEY]
-        return str(cmd) if cmd is not None else None
+        return _stringify_if_not_none(action[COMMAND_KEY])
 
     if BASH_KEY in action:
-        bash = action[BASH_KEY]
-        return str(bash) if bash is not None else None
+        return _stringify_if_not_none(action[BASH_KEY])
 
     if action.get("tool") == BASH_KEY and ARGS_KEY in action:
-        if isinstance(action[ARGS_KEY], dict):
-            return cast(Optional[str], action[ARGS_KEY].get(COMMAND_KEY))
-        elif isinstance(action[ARGS_KEY], str):
-            return cast(Optional[str], action[ARGS_KEY])
+        return _extract_bash_tool_args(action[ARGS_KEY])
 
     if "content" in action:
-        content = action["content"]
-        return str(content) if content is not None else None
+        return _stringify_if_not_none(action["content"])
 
     return None
 

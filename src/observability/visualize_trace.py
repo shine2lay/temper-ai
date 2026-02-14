@@ -395,69 +395,68 @@ def _create_timeline_bar(
     return bar[:width]
 
 
+_CONSOLE_TREE_COLOR_MAP = {
+    "workflow": "bold blue",
+    "stage": "bold green",
+    "agent": "bold yellow",
+    "llm": "bold red",
+    "tool": "bold cyan",
+}
+
+
+def _get_type_specific_info(
+    node_type: str, metadata: Dict[str, Any]
+) -> Optional[str]:
+    """Return type-specific metadata string for tree label, or None."""
+    if node_type == "agent":
+        tokens = metadata.get("total_tokens", 0)
+        if tokens > 0:
+            return f"[dim]({tokens:,} tokens)[/dim]"
+    elif node_type == "llm":
+        model = metadata.get("model", "")
+        if model:
+            return f"[dim]({model})[/dim]"
+    elif node_type == "tool":
+        tool_name = metadata.get("tool_name", "")
+        if tool_name:
+            return f"[dim]({tool_name})[/dim]"
+    return None
+
+
 def _build_console_tree(
     node: Dict[str, Any],
     parent_tree: Any,
     workflow_start: datetime,
-    workflow_duration: float
+    workflow_duration: float,
 ) -> Any:
     """Recursively build Rich tree with timeline bars."""
     from rich.tree import Tree
 
-    # Color map for different types
-    color_map = {
-        "workflow": "bold blue",
-        "stage": "bold green",
-        "agent": "bold yellow",
-        "llm": "bold red",
-        "tool": "bold cyan"
-    }
-
     # Parse timing
     start = datetime.fromisoformat(node["start"])
     duration = node.get("duration") or 0
-
-    # Calculate offset from workflow start
     start_offset = (start - workflow_start).total_seconds()
 
     # Create timeline bar
-    timeline = _create_timeline_bar(start_offset, duration, workflow_duration, width=TIMELINE_BAR_WIDTH)
+    timeline = _create_timeline_bar(
+        start_offset, duration, workflow_duration, width=TIMELINE_BAR_WIDTH
+    )
 
-    # Get metadata
-    metadata = node.get("metadata", {})
-
-    # Build label with color
+    # Build label
     node_type = node["type"]
-    color = color_map.get(node_type, "white")
-
-    # Create label with timing info
+    color = _CONSOLE_TREE_COLOR_MAP.get(node_type, "white")
     label_parts = [
         f"[{color}]{node['name']}[/{color}]",
-        f"[dim]{_format_duration_simple(duration)}[/dim]"
+        f"[dim]{_format_duration_simple(duration)}[/dim]",
     ]
+    type_info = _get_type_specific_info(node_type, node.get("metadata", {}))
+    if type_info:
+        label_parts.append(type_info)
 
-    # Add type-specific info
-    if node_type == "agent":
-        tokens = metadata.get('total_tokens', 0)
-        if tokens > 0:
-            label_parts.append(f"[dim]({tokens:,} tokens)[/dim]")
-    elif node_type == "llm":
-        model = metadata.get('model', '')
-        if model:
-            label_parts.append(f"[dim]({model})[/dim]")
-    elif node_type == "tool":
-        tool_name = metadata.get('tool_name', '')
-        if tool_name:
-            label_parts.append(f"[dim]({tool_name})[/dim]")
-
-    label = " ".join(label_parts)
-
-    # Add timeline bar
-    full_label = f"{label}\n[dim]{timeline}[/dim]"
+    full_label = f"{' '.join(label_parts)}\n[dim]{timeline}[/dim]"
 
     # Add to tree
     if parent_tree is None:
-        # Root node
         tree = Tree(full_label)
         current = tree
     else:

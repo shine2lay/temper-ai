@@ -23,6 +23,25 @@ from src.constants.probabilities import CONFIDENCE_LOW, PROB_MEDIUM
 from src.core.context import ExecutionContext  # canonical definition; re-exported here
 
 
+def _tool_failure_penalty(tool_calls: List[Any]) -> float:
+    """Calculate penalty for tool call failures.
+
+    Returns a penalty value (0.0 if no penalty) based on the tool success rate.
+    """
+    if not tool_calls:
+        return 0.0
+    successful_calls = sum(1 for tc in tool_calls if tc.get('success', False))
+    total_calls = len(tool_calls)
+    if total_calls == 0:
+        return 0.0
+    tool_success_rate = successful_calls / total_calls
+    if tool_success_rate < PROB_MEDIUM:
+        return TOOL_FAILURE_MAJOR_PENALTY
+    if tool_success_rate < BASE_CONFIDENCE:
+        return TOOL_FAILURE_MINOR_PENALTY
+    return 0.0
+
+
 class ToolCallRecord(TypedDict):
     """Structured record of a single tool call made during agent execution.
 
@@ -85,34 +104,19 @@ class AgentResponse:
         Returns:
             Confidence score between 0.0 and 1.0
         """
+        if self.error:
+            return CONFIDENCE_LOW
+
         confidence = BASE_CONFIDENCE
 
-        # Major penalty for errors
-        if self.error:
-            confidence = CONFIDENCE_LOW
-            return confidence
-
-        # Penalty for very short outputs (likely incomplete)
         if len(self.output.strip()) < MIN_OUTPUT_LENGTH:
             confidence -= CONFIDENCE_LOW
 
-        # Bonus for reasoning (shows thoughtful response)
         if self.reasoning and len(self.reasoning.strip()) > MIN_REASONING_LENGTH:
             confidence = min(BASE_CONFIDENCE, confidence + REASONING_BONUS)
 
-        # Check tool call success rate
-        if self.tool_calls:
-            successful_calls = sum(1 for tc in self.tool_calls if tc.get('success', False))
-            total_calls = len(self.tool_calls)
-            if total_calls > 0:
-                tool_success_rate = successful_calls / total_calls
-                # Penalize if tools failed
-                if tool_success_rate < PROB_MEDIUM:
-                    confidence -= TOOL_FAILURE_MAJOR_PENALTY
-                elif tool_success_rate < BASE_CONFIDENCE:
-                    confidence -= TOOL_FAILURE_MINOR_PENALTY
+        confidence -= _tool_failure_penalty(self.tool_calls)
 
-        # Clamp to valid range
         return max(0.0, min(BASE_CONFIDENCE, confidence))
 
 

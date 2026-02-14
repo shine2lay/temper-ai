@@ -293,45 +293,23 @@ def create_agent_node(
     return agent_node
 
 
-def validate_quality_gates(
-    quality_gate_validator: Optional[Any],
-    synthesis_result: Any,
-    stage_config: Any,
-    stage_name: str,
-    state: Dict[str, Any],
-) -> tuple[bool, list[str]]:
-    """Validate synthesis result against quality gates.
+def _extract_result_field(synthesis_result: Any, field: str) -> list:
+    """Extract a list field from synthesis_result metadata or decision dict."""
+    if hasattr(synthesis_result, "metadata"):
+        result: list = synthesis_result.metadata.get(field, [])
+        return result
+    if hasattr(synthesis_result, "decision") and isinstance(synthesis_result.decision, dict):
+        result_from_decision: list = synthesis_result.decision.get(field, [])
+        return result_from_decision
+    return []
 
-    Args:
-        quality_gate_validator: Optional validator instance
-        synthesis_result: SynthesisResult from synthesis
-        stage_config: Stage configuration
-        stage_name: Stage name
-        state: Current workflow state
 
-    Returns:
-        Tuple of (passed: bool, violations: List[str])
-    """
-    if quality_gate_validator:
-        return cast(
-            tuple[bool, list[str]],
-            quality_gate_validator.validate(
-                synthesis_result=synthesis_result,
-                stage_config=stage_config,
-                stage_name=stage_name
-            )
-        )
+def _check_inline_quality_gates(
+    quality_gates_config: Dict[str, Any], synthesis_result: Any,
+) -> list[str]:
+    """Run inline quality gate checks and return violations."""
+    violations: list[str] = []
 
-    # Fallback to inline implementation
-    stage_dict = stage_config if isinstance(stage_config, dict) else {}
-    quality_gates_config = stage_dict.get("quality_gates", {})
-
-    if not quality_gates_config.get("enabled", False):
-        return True, []
-
-    violations = []
-
-    # Check minimum confidence
     min_confidence = quality_gates_config.get("min_confidence", PROB_HIGH)
     actual_confidence = getattr(synthesis_result, "confidence", 0.0)
     if actual_confidence < min_confidence:
@@ -339,33 +317,47 @@ def validate_quality_gates(
             f"Confidence {actual_confidence:.2f} below minimum {min_confidence:.2f}"
         )
 
-    # Check minimum findings
     min_findings = quality_gates_config.get("min_findings", SMALL_ITEM_LIMIT)
-    findings = []
-    if hasattr(synthesis_result, "metadata"):
-        findings = synthesis_result.metadata.get("findings", [])
-    elif hasattr(synthesis_result, "decision") and isinstance(synthesis_result.decision, dict):
-        findings = synthesis_result.decision.get("findings", [])
-
+    findings = _extract_result_field(synthesis_result, "findings")
     if min_findings > 0 and len(findings) < min_findings:
         violations.append(
             f"Only {len(findings)} findings, minimum {min_findings} required"
         )
 
-    # Check citations required
-    require_citations = quality_gates_config.get("require_citations", True)
-    if require_citations:
-        citations = []
-        if hasattr(synthesis_result, "metadata"):
-            citations = synthesis_result.metadata.get("citations", [])
-        elif hasattr(synthesis_result, "decision") and isinstance(synthesis_result.decision, dict):
-            citations = synthesis_result.decision.get("citations", [])
-
+    if quality_gates_config.get("require_citations", True):
+        citations = _extract_result_field(synthesis_result, "citations")
         if not citations:
             violations.append("No citations provided")
 
-    passed = len(violations) == 0
-    return passed, violations
+    return violations
+
+
+def validate_quality_gates(
+    quality_gate_validator: Optional[Any],
+    synthesis_result: Any,
+    stage_config: Any,
+    stage_name: str,
+    state: Dict[str, Any],
+) -> tuple[bool, list[str]]:
+    """Validate synthesis result against quality gates."""
+    if quality_gate_validator:
+        return cast(
+            tuple[bool, list[str]],
+            quality_gate_validator.validate(
+                synthesis_result=synthesis_result,
+                stage_config=stage_config,
+                stage_name=stage_name,
+            ),
+        )
+
+    stage_dict = stage_config if isinstance(stage_config, dict) else {}
+    quality_gates_config = stage_dict.get("quality_gates", {})
+
+    if not quality_gates_config.get("enabled", False):
+        return True, []
+
+    violations = _check_inline_quality_gates(quality_gates_config, synthesis_result)
+    return len(violations) == 0, violations
 
 
 def build_collect_outputs_node(

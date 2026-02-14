@@ -394,42 +394,24 @@ def _execute_workflow(
         raise SystemExit(EXIT_CODE_KEYBOARD_INTERRUPT)
 
 
-def _handle_post_execution(
-    result: Any,
-    show_details: bool,
-    output: Optional[str],
-    workflow_id: str,
-    workflow_name: str,
-    verbose: bool,
-) -> None:
-    """Handle post-execution tasks: summary, reports, gantt chart, and output saving.
+def _display_detailed_report(result: Any) -> None:
+    """Display detailed report if result is a dict."""
+    if not isinstance(result, dict):
+        return
+    try:
+        from src.cli.detail_report import print_detailed_report
+        print_detailed_report(result, console)
+    except ImportError as e:
+        logger.debug(f"Could not display detailed report: {e}")
+    except Exception as e:  # noqa: BLE001 -- optional feature, non-fatal
+        logger.debug(f"Error displaying detailed report: {e}")
 
-    Args:
-        result: Workflow execution result
-        show_details: Enable detailed output
-        output: Optional output file path
-        workflow_id: Workflow execution ID
-        workflow_name: Workflow name
-        verbose: Enable verbose output
-    """
-    # Display Rich summary
-    _print_run_summary(workflow_name, workflow_id, result)
 
-    # Display detailed report if --show-details
-    if show_details and isinstance(result, dict):
-        try:
-            from src.cli.detail_report import print_detailed_report
-            print_detailed_report(result, console)
-        except ImportError as e:
-            logger.debug(f"Could not display detailed report: {e}")
-        except Exception as e:  # noqa: BLE001 -- optional feature, non-fatal
-            logger.debug(f"Error displaying detailed report: {e}")
-
-    # Display hierarchical gantt chart
+def _display_gantt_chart(workflow_id: str) -> None:
+    """Display hierarchical gantt chart for the workflow run."""
     try:
         import sys
         from pathlib import Path as ImportPath
-        # Add project root to Python path for examples module
         project_root = ImportPath(__file__).parent.parent.parent
         if str(project_root) not in sys.path:
             sys.path.insert(0, str(project_root))
@@ -445,19 +427,39 @@ def _handle_post_execution(
     except Exception as e:  # noqa: BLE001 -- optional visualization, non-fatal
         logger.debug(f"Could not display gantt chart: {e}")
 
-    # Save results if --output
+
+def _save_results(output: str, result: Any, verbose: bool) -> None:
+    """Save workflow results to a JSON file."""
+    try:
+        output_path = Path(output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, "w") as f:
+            json.dump(result, f, indent=2, default=str)
+        console.print(f"\nResults saved to [cyan]{output}[/cyan]")
+    except (IOError, OSError, PermissionError) as e:
+        console.print(f"[red]Error saving results:[/red] {e}")
+        if verbose:
+            logger.exception("Failed to save results")
+
+
+def _handle_post_execution(
+    result: Any,
+    show_details: bool,
+    output: Optional[str],
+    workflow_id: str,
+    workflow_name: str,
+    verbose: bool,
+) -> None:
+    """Handle post-execution tasks: summary, reports, gantt chart, and output saving."""
+    _print_run_summary(workflow_name, workflow_id, result)
+
+    if show_details:
+        _display_detailed_report(result)
+
+    _display_gantt_chart(workflow_id)
+
     if output:
-        try:
-            output_path = Path(output)
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            with open(output_path, "w") as f:
-                json.dump(result, f, indent=2, default=str)
-            console.print(f"\nResults saved to [cyan]{output}[/cyan]")
-        except (IOError, OSError, PermissionError) as e:
-            console.print(f"[red]Error saving results:[/red] {e}")
-            if verbose:
-                logger.exception("Failed to save results")
-            # Non-fatal, continue
+        _save_results(output, result, verbose)
 
 
 def _handle_dashboard_keepalive(
@@ -990,19 +992,23 @@ def _check_workflow_file(
         _check_agents_in_stage(stage_ref, stage_path, config_root, errors, warnings, verbose)
 
 
+def _print_config_issues(errors: list[str], warnings: list[str]) -> None:
+    """Print errors and warnings from config check."""
+    if errors:
+        console.print(f"\n[red]Errors ({len(errors)}):[/red]")
+        for err in errors:
+            console.print(f"  \u2717 {err}")
+    if warnings:
+        console.print(f"\n[yellow]Warnings ({len(warnings)}):[/yellow]")
+        for warn in warnings:
+            console.print(f"  \u26a0 {warn}")
+
+
 def _report_config_results(
     errors: list[str], warnings: list[str], fail_on_warning: bool
 ) -> None:
     """Print config check results and exit on errors."""
-    if errors:
-        console.print(f"\n[red]Errors ({len(errors)}):[/red]")
-        for err in errors:
-            console.print(f"  ✗ {err}")
-
-    if warnings:
-        console.print(f"\n[yellow]Warnings ({len(warnings)}):[/yellow]")
-        for warn in warnings:
-            console.print(f"  ⚠ {warn}")
+    _print_config_issues(errors, warnings)
 
     if not errors and not warnings:
         console.print("[green]All configs valid[/green]")

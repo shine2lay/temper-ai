@@ -61,27 +61,21 @@ class ResponseBuildData:
 # Tool execution helpers
 # ---------------------------------------------------------------------------
 
-def execute_tool_calls(
-    agent: "StandardAgent",
-    tool_calls: List[Dict[str, Any]],
-    get_tool_executor_fn: Callable[[], concurrent.futures.ThreadPoolExecutor],
-) -> List[Dict[str, Any]]:
-    """Execute a list of tool calls (parallel if independent, sequential if dependent)."""
+def _validate_tool_calls_input(tool_calls: List[Dict[str, Any]]) -> None:
+    """Validate that tool_calls is a list of dicts."""
     if not isinstance(tool_calls, list):
         raise TypeError(f"tool_calls must be a list, got {type(tool_calls).__name__}")
-
     for i, tool_call in enumerate(tool_calls):
         if not isinstance(tool_call, dict):
             raise TypeError(f"tool_call at index {i} must be a dictionary, got {type(tool_call).__name__}")
 
-    if len(tool_calls) <= 1:
-        return [execute_single_tool(agent, tool_call) for tool_call in tool_calls]
 
-    parallel_enabled = getattr(agent.config.agent.safety, "parallel_tool_calls", True)
-
-    if not parallel_enabled:
-        return [execute_single_tool(agent, tool_call) for tool_call in tool_calls]
-
+def _execute_parallel_tool_calls(
+    agent: "StandardAgent",
+    tool_calls: List[Dict[str, Any]],
+    get_tool_executor_fn: Callable[[], concurrent.futures.ThreadPoolExecutor],
+) -> List[Dict[str, Any]]:
+    """Execute tool calls in parallel using a thread pool."""
     tool_results: List[Any] = [None] * len(tool_calls)
 
     future_to_index = {
@@ -92,8 +86,7 @@ def execute_tool_calls(
     for future in concurrent.futures.as_completed(future_to_index):
         index = future_to_index[future]
         try:
-            result = future.result()
-            tool_results[index] = result
+            tool_results[index] = future.result()
         except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
             logger.error(f"Tool execution failed in parallel mode: {e}")
             tool_results[index] = {
@@ -105,6 +98,23 @@ def execute_tool_calls(
             }
 
     return tool_results
+
+
+def execute_tool_calls(
+    agent: "StandardAgent",
+    tool_calls: List[Dict[str, Any]],
+    get_tool_executor_fn: Callable[[], concurrent.futures.ThreadPoolExecutor],
+) -> List[Dict[str, Any]]:
+    """Execute a list of tool calls (parallel if independent, sequential if dependent)."""
+    _validate_tool_calls_input(tool_calls)
+
+    parallel_enabled = getattr(agent.config.agent.safety, "parallel_tool_calls", True)
+    use_parallel = len(tool_calls) > 1 and parallel_enabled
+
+    if not use_parallel:
+        return [execute_single_tool(agent, tool_call) for tool_call in tool_calls]
+
+    return _execute_parallel_tool_calls(agent, tool_calls, get_tool_executor_fn)
 
 
 def _check_safety_mode_blocking(
@@ -473,21 +483,40 @@ def inject_tool_results(
 
 def build_final_response(
     agent: "StandardAgent",
-    output: str,
-    reasoning: Optional[str],
-    tool_calls: List[Dict[str, Any]],
-    tokens: int,
-    cost: float,
-    start_time: float,
-    error: Optional[str] = None,
-    metadata: Optional[Dict[str, Any]] = None,
+    data: Optional[ResponseBuildData] = None,
+    **kwargs: Any
 ) -> Any:  # Return type must be Any to avoid circular import issues with AgentResponse
     """Build final AgentResponse.
 
-    Note: Maintains backward-compatible signature. Consider using
-    ResponseBuildData for new code to bundle parameters.
+    Args:
+        agent: StandardAgent instance
+        data: ResponseBuildData bundle (recommended)
+        **kwargs: Legacy individual parameters (output, reasoning, etc.)
+
+    Returns:
+        AgentResponse with execution results
     """
     from src.agents.base_agent import AgentResponse
+
+    # Extract from data or kwargs
+    if data is not None:
+        output = data.output
+        reasoning = data.reasoning
+        tool_calls = data.tool_calls
+        tokens = data.tokens
+        cost = data.cost
+        start_time = data.start_time
+        error = data.error
+        metadata = data.metadata
+    else:
+        output = kwargs['output']
+        reasoning = kwargs.get('reasoning')
+        tool_calls = kwargs['tool_calls']
+        tokens = kwargs['tokens']
+        cost = kwargs['cost']
+        start_time = kwargs['start_time']
+        error = kwargs.get('error')
+        metadata = kwargs.get('metadata')
 
     duration = time.time() - start_time
     output_preview = (output[:OUTPUT_PREVIEW_LENGTH].replace('\n', ' ').strip() + "...") if len(output) > OUTPUT_PREVIEW_LENGTH else output.replace('\n', ' ').strip()
@@ -712,35 +741,23 @@ def _execute_and_inject_tools(ctx: LLMProcessingContext, tool_calls: List[Dict[s
 
 
 def process_llm_response(
-    agent: "StandardAgent",
-    llm_response: Any,
-    tool_calls_made: List[Dict[str, Any]],
-    total_tokens: int,
-    total_cost: float,
-    start_time: float,
-    prompt: str,
-    max_iterations: Optional[int],
-    get_tool_executor_fn: Callable[[], concurrent.futures.ThreadPoolExecutor]
+    ctx: LLMProcessingContext,
 ) -> Dict[str, Any]:
-    """Process LLM response: parse tool calls, execute if any, build result dict."""
-    ctx = LLMProcessingContext(
-        agent=agent,
-        llm_response=llm_response,
-        tool_calls_made=tool_calls_made,
-        total_tokens=total_tokens,
-        total_cost=total_cost,
-        start_time=start_time,
-        prompt=prompt,
-        max_iterations=max_iterations,
-        get_tool_executor_fn=get_tool_executor_fn
-    )
+    """Process LLM response: parse tool calls, execute if any, build result dict.
+
+    Args:
+        ctx: LLMProcessingContext bundle containing all needed parameters
+
+    Returns:
+        Dict with completion status and response/continuation data
+    """
 
     # Parse tool calls
-    tool_calls = parse_tool_calls(llm_response.content)
+    tool_calls = parse_tool_calls(ctx.llm_response.content)
 
     if tool_calls:
         tool_names = ", ".join(tc.get(ToolKeys.NAME, "?") for tc in tool_calls)
-        logger.info("[%s] Calling %d tool(s): %s", agent.name, len(tool_calls), tool_names)
+        logger.info("[%s] Calling %d tool(s): %s", ctx.agent.name, len(tool_calls), tool_names)
         return _execute_and_inject_tools(ctx, tool_calls)
 
     return _build_no_tools_response(ctx)
@@ -786,6 +803,36 @@ def setup_execution(
     logger.info("[%s] Starting %sexecution", agent.name, "async " if async_mode else "")
 
 
+def _get_tools_dict(agent: "StandardAgent") -> Optional[Dict[str, Any]]:
+    """Get tools dict from agent registry, or None if unavailable."""
+    registry = getattr(agent, "tool_registry", None)
+    if registry is None:
+        return None
+    try:
+        tools_dict = registry.get_all_tools()
+    except (AttributeError, TypeError):
+        return None
+    return tools_dict if tools_dict else None
+
+
+def _resolve_single_tool_config(
+    tool: Any,
+    input_data: Dict[str, Any],
+) -> bool:
+    """Resolve Jinja2 templates in a single tool's config. Returns True if changed."""
+    if not hasattr(tool, "config") or not isinstance(tool.config, dict):
+        return False
+
+    changed = False
+    for key, value in tool.config.items():
+        if isinstance(value, str) and "{{" in value:
+            rendered = _render_template_value(value, input_data)
+            if rendered != value:
+                tool.config[key] = rendered
+                changed = True
+    return changed
+
+
 def _resolve_tool_config_templates(
     agent: "StandardAgent",
     input_data: Dict[str, Any],
@@ -796,32 +843,12 @@ def _resolve_tool_config_templates(
     so any ``{{ variable }}`` references remain as literal strings. This function
     resolves them at execution time when input_data provides the actual values.
     """
-    registry = getattr(agent, "tool_registry", None)
-    if registry is None:
-        return
-
-    try:
-        tools_dict = registry.get_all_tools()
-    except (AttributeError, TypeError):
-        return
-    if not tools_dict:
+    tools_dict = _get_tools_dict(agent)
+    if tools_dict is None:
         return
 
     for tool in tools_dict.values():
-        if not hasattr(tool, "config") or not isinstance(tool.config, dict):
-            continue
-
-        changed = False
-        for key, value in tool.config.items():
-            if isinstance(value, str) and "{{" in value:
-                rendered = _render_template_value(value, input_data)
-                if rendered != value:
-                    tool.config[key] = rendered
-                    changed = True
-            elif isinstance(value, list):
-                # Lists (e.g. allowed_commands) don't need template rendering
-                continue
-
+        changed = _resolve_single_tool_config(tool, input_data)
         if changed:
             logger.debug(
                 "[%s] Resolved tool config templates for %s: %s",

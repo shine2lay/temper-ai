@@ -6,6 +6,7 @@ on explicit parameters and do not depend on StageExecutor instance state.
 """
 import logging
 import uuid
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from src.compiler.constants import (
@@ -18,6 +19,92 @@ from src.constants.sizes import UUID_HEX_SHORT_LENGTH
 from src.utils.config_helpers import sanitize_config_for_display
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class DialogueReinvocationParams:
+    """Parameters for dialogue agent re-invocation (reduces 9 params to 1)."""
+    agents: list
+    stage_name: str
+    state: Dict[str, Any]
+    config_loader: ConfigLoaderProtocol
+    dialogue_history: list
+    round_number: int
+    max_rounds: int
+    strategy: Any
+    extract_agent_name_fn: Callable[[Any], str]
+
+
+@dataclass
+class AgentExecutionParams:
+    """Parameters for agent execution with tracking (reduces 12 params to 7)."""
+    agent: Any
+    input_data: Dict[str, Any]
+    tracker: Any
+    agent_config: Any
+    agent_config_dict: Dict[str, Any]
+    current_stage_id: str
+    stage_name: str
+    agent_name: str
+    state: Dict[str, Any]
+    execution_mode: str
+    tracking_input: Dict[str, Any]
+    extra_metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class AgentExecutionParamsNoTracking:
+    """Parameters for agent execution without tracking (reduces 8 params to 7)."""
+    agent: Any
+    input_data: Dict[str, Any]
+    current_stage_id: str
+    stage_name: str
+    agent_name: str
+    state: Dict[str, Any]
+    execution_mode: str
+    extra_metadata: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class DialogueRoundParams:
+    """Parameters for dialogue round execution (reduces 10 params to 7)."""
+    round_num: int
+    reinvoke_fn: Callable[..., Tuple[list, Dict[str, Any]]]
+    agents: list
+    strategy: Any
+    stage_name: str
+    state: Dict[str, Any]
+    config_loader: ConfigLoaderProtocol
+    tracker: Any
+    dialogue_history: List[Dict[str, Any]]
+    previous_outputs: list
+
+
+@dataclass
+class DialogueTrackingParams:
+    """Parameters for dialogue round tracking (reduces 8 params to 7)."""
+    tracker: Any
+    strategy: Any
+    state: Dict[str, Any]
+    current_outputs: list
+    round_num: int
+    round_outcome: str
+    conv_score: Optional[float] = None
+    agent_stances: Optional[Dict[str, str]] = None
+
+
+@dataclass
+class SingleDialogueAgentParams:
+    """Parameters for single dialogue agent invocation (reduces 9 params to 7)."""
+    agent_name: str
+    agent_ref: Any
+    config_loader: ConfigLoaderProtocol
+    state: Dict[str, Any]
+    stage_name: str
+    dialogue_history: list
+    round_number: int
+    max_rounds: int
+    strategy: Any
 
 
 def _create_execution_context(
@@ -80,57 +167,35 @@ def _get_stage_id(state: Dict[str, Any]) -> str:
     return state.get(StateKeys.CURRENT_STAGE_ID) or f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
 
 
-def _execute_agent_with_tracking(
-    agent: Any,
-    input_data: Dict[str, Any],
-    tracker: Any,
-    agent_config: Any,
-    agent_config_dict: Dict[str, Any],
-    current_stage_id: str,
-    stage_name: str,
-    agent_name: str,
-    state: Dict[str, Any],
-    execution_mode: str,
-    tracking_input: Dict[str, Any],
-    extra_metadata: Optional[Dict[str, Any]] = None,
-) -> Any:
+def _execute_agent_with_tracking(params: AgentExecutionParams) -> Any:
     """Execute agent under tracker context and record output."""
     agent_config_for_tracking = sanitize_config_for_display(
-        agent_config.model_dump() if hasattr(agent_config, 'model_dump') else dict(agent_config_dict)
+        params.agent_config.model_dump() if hasattr(params.agent_config, 'model_dump') else dict(params.agent_config_dict)
     )
-    with tracker.track_agent(
-        agent_name=agent_name,
+    with params.tracker.track_agent(
+        agent_name=params.agent_name,
         agent_config=agent_config_for_tracking,
-        stage_id=current_stage_id,
-        input_data=tracking_input,
+        stage_id=params.current_stage_id,
+        input_data=params.tracking_input,
     ) as agent_id:
         context = _create_execution_context(
-            state, current_stage_id, agent_id,
-            stage_name, agent_name, execution_mode, extra_metadata,
+            params.state, params.current_stage_id, agent_id,
+            params.stage_name, params.agent_name, params.execution_mode, params.extra_metadata,
         )
-        response = agent.execute(input_data, context)
-        _record_agent_tracking(tracker, agent_id, response, agent_name, execution_mode)
+        response = params.agent.execute(params.input_data, context)
+        _record_agent_tracking(params.tracker, agent_id, response, params.agent_name, params.execution_mode)
     return response
 
 
-def _execute_agent_without_tracking(
-    agent: Any,
-    input_data: Dict[str, Any],
-    current_stage_id: str,
-    stage_name: str,
-    agent_name: str,
-    state: Dict[str, Any],
-    execution_mode: str,
-    extra_metadata: Optional[Dict[str, Any]] = None,
-) -> Any:
+def _execute_agent_without_tracking(params: AgentExecutionParamsNoTracking) -> Any:
     """Execute agent without tracker (synthetic IDs)."""
-    input_data.pop(StateKeys.TRACKER, None)
+    params.input_data.pop(StateKeys.TRACKER, None)
     agent_id = f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
     context = _create_execution_context(
-        state, current_stage_id, agent_id,
-        stage_name, agent_name, execution_mode, extra_metadata,
+        params.state, params.current_stage_id, agent_id,
+        params.stage_name, params.agent_name, params.execution_mode, params.extra_metadata,
     )
-    return agent.execute(input_data, context)
+    return params.agent.execute(params.input_data, context)
 
 
 def _build_agent_output(
@@ -191,16 +256,21 @@ def invoke_leader_agent(
     tracking_input = {"role": AGENT_ROLE_LEADER, "team_outputs_length": len(team_outputs_text)}
 
     if tracker:
-        response = _execute_agent_with_tracking(
-            agent, input_data, tracker, agent_config, agent_config_dict,
-            current_stage_id, stage_name, leader_name, state,
-            AGENT_ROLE_LEADER, tracking_input,
+        exec_params = AgentExecutionParams(
+            agent=agent, input_data=input_data, tracker=tracker,
+            agent_config=agent_config, agent_config_dict=agent_config_dict,
+            current_stage_id=current_stage_id, stage_name=stage_name,
+            agent_name=leader_name, state=state,
+            execution_mode=AGENT_ROLE_LEADER, tracking_input=tracking_input,
         )
+        response = _execute_agent_with_tracking(exec_params)
     else:
-        response = _execute_agent_without_tracking(
-            agent, input_data, current_stage_id,
-            stage_name, leader_name, state, AGENT_ROLE_LEADER,
+        exec_params_no_track = AgentExecutionParamsNoTracking(
+            agent=agent, input_data=input_data, current_stage_id=current_stage_id,
+            stage_name=stage_name, agent_name=leader_name, state=state,
+            execution_mode=AGENT_ROLE_LEADER,
         )
+        response = _execute_agent_without_tracking(exec_params_no_track)
 
     return _build_agent_output(leader_name, response)
 
@@ -257,17 +327,7 @@ def _curate_and_get_context(
     return curated_history, mode_context
 
 
-def _invoke_single_dialogue_agent(
-    agent_name: str,
-    agent_ref: Any,
-    config_loader: ConfigLoaderProtocol,
-    state: Dict[str, Any],
-    stage_name: str,
-    dialogue_history: list,
-    round_number: int,
-    max_rounds: int,
-    strategy: Any,
-) -> Tuple[Any, Any]:
+def _invoke_single_dialogue_agent(params: SingleDialogueAgentParams) -> Tuple[Any, Any]:
     """Invoke a single agent for a dialogue round.
 
     Returns:
@@ -276,65 +336,55 @@ def _invoke_single_dialogue_agent(
     from src.agents.agent_factory import AgentFactory
     from src.compiler.schemas import AgentConfig
 
-    agent_config_dict = config_loader.load_agent(agent_name)
+    agent_config_dict = params.config_loader.load_agent(params.agent_name)
     agent_config = AgentConfig(**agent_config_dict)
     agent = AgentFactory.create(agent_config)
 
     agent_role = _extract_agent_role(agent_config)
     curated_history, mode_context = _curate_and_get_context(
-        strategy, dialogue_history, round_number, agent_name,
+        params.strategy, params.dialogue_history, params.round_number, params.agent_name,
     )
     input_data = _prepare_dialogue_input(
-        state, curated_history, round_number, max_rounds, agent_role, mode_context,
+        params.state, curated_history, params.round_number, params.max_rounds, agent_role, mode_context,
     )
 
-    tracker = state.get(StateKeys.TRACKER)
-    current_stage_id = _get_stage_id(state)
-    extra_meta = {"round": round_number}
-    tracking_input = {"round": round_number, "max_rounds": max_rounds}
+    tracker = params.state.get(StateKeys.TRACKER)
+    current_stage_id = _get_stage_id(params.state)
+    extra_meta = {"round": params.round_number}
+    tracking_input = {"round": params.round_number, "max_rounds": params.max_rounds}
 
     if tracker:
-        response = _execute_agent_with_tracking(
-            agent, input_data, tracker, agent_config, agent_config_dict,
-            current_stage_id, stage_name, agent_name, state,
-            "dialogue", tracking_input, extra_meta,
+        exec_params = AgentExecutionParams(
+            agent=agent, input_data=input_data, tracker=tracker,
+            agent_config=agent_config, agent_config_dict=agent_config_dict,
+            current_stage_id=current_stage_id, stage_name=params.stage_name,
+            agent_name=params.agent_name, state=params.state,
+            execution_mode="dialogue", tracking_input=tracking_input,
+            extra_metadata=extra_meta,
         )
+        response = _execute_agent_with_tracking(exec_params)
     else:
-        response = _execute_agent_without_tracking(
-            agent, input_data, current_stage_id,
-            stage_name, agent_name, state, "dialogue", extra_meta,
+        exec_params_no_track = AgentExecutionParamsNoTracking(
+            agent=agent, input_data=input_data, current_stage_id=current_stage_id,
+            stage_name=params.stage_name, agent_name=params.agent_name,
+            state=params.state, execution_mode="dialogue", extra_metadata=extra_meta,
         )
+        response = _execute_agent_without_tracking(exec_params_no_track)
 
     output = _build_agent_output(
-        agent_name, response, role="dialogue",
-        extra_metadata={"round": round_number},
+        params.agent_name, response, role="dialogue",
+        extra_metadata={"round": params.round_number},
     )
     return output, agent.llm  # type: ignore[attr-defined]
 
 
 def reinvoke_agents_with_dialogue(
-    agents: list,
-    stage_name: str,
-    state: Dict[str, Any],
-    config_loader: ConfigLoaderProtocol,
-    dialogue_history: list,
-    round_number: int,
-    max_rounds: int,
-    strategy: Any,
-    extract_agent_name_fn: Callable[[Any], str],
+    params: DialogueReinvocationParams,
 ) -> Tuple[list, Dict[str, Any]]:
     """Re-invoke agents with dialogue history as context.
 
     Args:
-        agents: List of agent refs
-        stage_name: Stage name
-        state: Workflow state
-        config_loader: Config loader
-        dialogue_history: Accumulated dialogue history
-        round_number: Current round number
-        max_rounds: Maximum rounds
-        strategy: DialogueOrchestrator strategy (for context curation)
-        extract_agent_name_fn: Callable to extract agent name from ref
+        params: DialogueReinvocationParams bundle containing all needed parameters
 
     Returns:
         Tuple of (agent_outputs, llm_providers) where llm_providers
@@ -343,12 +393,16 @@ def reinvoke_agents_with_dialogue(
     agent_outputs: list = []
     llm_providers: Dict[str, Any] = {}
 
-    for agent_ref in agents:
-        agent_name = extract_agent_name_fn(agent_ref)
-        output, llm = _invoke_single_dialogue_agent(
-            agent_name, agent_ref, config_loader, state, stage_name,
-            dialogue_history, round_number, max_rounds, strategy,
+    for agent_ref in params.agents:
+        agent_name = params.extract_agent_name_fn(agent_ref)
+        single_agent_params = SingleDialogueAgentParams(
+            agent_name=agent_name, agent_ref=agent_ref,
+            config_loader=params.config_loader, state=params.state,
+            stage_name=params.stage_name, dialogue_history=params.dialogue_history,
+            round_number=params.round_number, max_rounds=params.max_rounds,
+            strategy=params.strategy,
         )
+        output, llm = _invoke_single_dialogue_agent(single_agent_params)
         agent_outputs.append(output)
         llm_providers[agent_name] = llm
 
@@ -414,51 +468,42 @@ def record_dialogue_round_outputs(
     return round_cost
 
 
-def track_dialogue_round(
-    tracker: Any,
-    strategy: Any,
-    state: Dict[str, Any],
-    current_outputs: list,
-    round_num: int,
-    round_outcome: str,
-    conv_score: Optional[float] = None,
-    agent_stances: Optional[Dict[str, str]] = None
-) -> None:
+def track_dialogue_round(params: DialogueTrackingParams) -> None:
     """Track dialogue round collaboration event."""
-    if not (tracker and hasattr(tracker, 'track_collaboration_event')):
+    if not (params.tracker and hasattr(params.tracker, 'track_collaboration_event')):
         return
 
     try:
-        agent_names = [o.agent_name for o in current_outputs]
+        agent_names = [o.agent_name for o in params.current_outputs]
         event_data: Dict[str, Any] = {
             "agent_count": len(agent_names),
             "avg_confidence": (
-                sum(o.confidence for o in current_outputs) / len(current_outputs)
-                if current_outputs else 0.0
+                sum(o.confidence for o in params.current_outputs) / len(params.current_outputs)
+                if params.current_outputs else 0.0
             ),
         }
 
-        if agent_stances:
+        if params.agent_stances:
             stance_dist: Dict[str, int] = {}
-            for s in agent_stances.values():
+            for s in params.agent_stances.values():
                 if s:
                     stance_dist[s] = stance_dist.get(s, 0) + 1
             event_data["stance_distribution"] = stance_dist
-            event_data["agent_stances"] = agent_stances
+            event_data["agent_stances"] = params.agent_stances
 
-        tracker.track_collaboration_event(
-            event_type=f"{strategy.mode}_round",
-            stage_id=state.get(StateKeys.CURRENT_STAGE_ID),
+        params.tracker.track_collaboration_event(
+            event_type=f"{params.strategy.mode}_round",
+            stage_id=params.state.get(StateKeys.CURRENT_STAGE_ID),
             agents_involved=agent_names,
-            round_number=round_num,
-            outcome=round_outcome,
-            confidence_score=conv_score,
+            round_number=params.round_num,
+            outcome=params.round_outcome,
+            confidence_score=params.conv_score,
             event_data=event_data,
         )
     except Exception:
         logger.warning(
             "Failed to track round %d collaboration event",
-            round_num,
+            params.round_num,
             exc_info=True,
         )
 
@@ -495,35 +540,24 @@ def check_dialogue_convergence(
     return conv_score, False, "in_progress"
 
 
-def execute_dialogue_round(
-    round_num: int,
-    reinvoke_fn: Callable[..., Tuple[list, Dict[str, Any]]],
-    agents: list,
-    strategy: Any,
-    stage_name: str,
-    state: Dict[str, Any],
-    config_loader: ConfigLoaderProtocol,
-    tracker: Any,
-    dialogue_history: List[Dict[str, Any]],
-    previous_outputs: list,
-) -> Tuple[list, float, Optional[float], bool, int, str]:
+def execute_dialogue_round(params: DialogueRoundParams) -> Tuple[list, float, Optional[float], bool, int, str]:
     """Execute a single dialogue round: re-invoke, record, check convergence.
 
     Returns:
         Tuple of (current_outputs, round_cost, conv_score, converged, convergence_round, round_outcome)
     """
-    current_outputs, llm_providers = reinvoke_fn(
-        agents=agents, stage_name=stage_name, state=state,
-        config_loader=config_loader, dialogue_history=dialogue_history,
-        round_number=round_num, max_rounds=strategy.max_rounds, strategy=strategy,
+    current_outputs, llm_providers = params.reinvoke_fn(
+        agents=params.agents, stage_name=params.stage_name, state=params.state,
+        config_loader=params.config_loader, dialogue_history=params.dialogue_history,
+        round_number=params.round_num, max_rounds=params.strategy.max_rounds, strategy=params.strategy,
     )
 
     agent_stances: Dict[str, str] = {}
-    if hasattr(strategy, 'extract_stances'):
-        agent_stances = strategy.extract_stances(current_outputs, llm_providers)
+    if hasattr(params.strategy, 'extract_stances'):
+        agent_stances = params.strategy.extract_stances(current_outputs, llm_providers)
 
     round_cost = record_dialogue_round_outputs(
-        current_outputs, round_num, agent_stances, dialogue_history,
+        current_outputs, params.round_num, agent_stances, params.dialogue_history,
     )
 
     conv_score: Optional[float] = None
@@ -531,16 +565,18 @@ def execute_dialogue_round(
     convergence_round = -1
     round_outcome = "in_progress"
 
-    if round_num >= strategy.min_rounds:
+    if params.round_num >= params.strategy.min_rounds:
         conv_score, converged, round_outcome = check_dialogue_convergence(
-            strategy, current_outputs, previous_outputs, round_num, stage_name,
+            params.strategy, current_outputs, params.previous_outputs, params.round_num, params.stage_name,
         )
         if converged:
-            convergence_round = round_num
+            convergence_round = params.round_num
 
-    track_dialogue_round(
-        tracker, strategy, state, current_outputs,
-        round_num, round_outcome, conv_score, agent_stances,
+    track_params = DialogueTrackingParams(
+        tracker=params.tracker, strategy=params.strategy, state=params.state,
+        current_outputs=current_outputs, round_num=params.round_num,
+        round_outcome=round_outcome, conv_score=conv_score, agent_stances=agent_stances,
     )
+    track_dialogue_round(track_params)
 
     return current_outputs, round_cost, conv_score, converged, convergence_round, round_outcome

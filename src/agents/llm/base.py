@@ -187,33 +187,51 @@ class BaseLLM(LLMContextManagerMixin, ABC):
 
     def __init__(
         self,
-        model: str,
-        base_url: str,
-        api_key: Optional[str] = None,
-        temperature: float = DEFAULT_TEMPERATURE,
-        max_tokens: int = 2048,
-        top_p: float = DEFAULT_TOP_P,
-        timeout: int = DEFAULT_REQUEST_TIMEOUT,
-        max_retries: int = DEFAULT_MAX_RETRIES,
-        retry_delay: float = 2.0,
-        enable_cache: bool = False,
-        cache_ttl: Optional[int] = DEFAULT_CACHE_TTL,
-        rate_limiter: Optional[Any] = None,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+        config: Optional[LLMConfig] = None,
+        **kwargs: Any
     ):
         """Initialize LLM provider.
 
-        Note: This constructor maintains backward compatibility with individual parameters.
-        For new code, consider using LLMConfig dataclass and unpacking with **config.__dict__
+        Args:
+            model: Model name (required if config not provided)
+            base_url: Base URL (required if config not provided)
+            config: LLMConfig bundle (recommended for new code)
+            **kwargs: Legacy individual parameters (api_key, temperature, etc.)
+
+        The config parameter takes precedence. If not provided, model/base_url
+        are required and kwargs are used for other parameters.
         """
-        self.model = model
-        self.base_url = _validate_base_url(base_url.rstrip('/'))
-        self.api_key = api_key
-        self.temperature = temperature
-        self.max_tokens = max_tokens
-        self.top_p = top_p
-        self.timeout = timeout
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
+        # Extract params from config or kwargs
+        if config is not None:
+            self.model = config.model
+            self.base_url = _validate_base_url(config.base_url.rstrip('/'))
+            self.api_key = config.api_key
+            self.temperature = config.temperature
+            self.max_tokens = config.max_tokens
+            self.top_p = config.top_p
+            self.timeout = config.timeout
+            self.max_retries = config.max_retries
+            self.retry_delay = config.retry_delay
+            enable_cache = config.enable_cache
+            cache_ttl = config.cache_ttl
+            rate_limiter = config.rate_limiter
+        else:
+            if model is None or base_url is None:
+                raise ValueError("model and base_url are required when config is not provided")
+            self.model = model
+            self.base_url = _validate_base_url(base_url.rstrip('/'))
+            self.api_key = kwargs.get('api_key')
+            self.temperature = kwargs.get('temperature', DEFAULT_TEMPERATURE)
+            self.max_tokens = kwargs.get('max_tokens', 2048)
+            self.top_p = kwargs.get('top_p', DEFAULT_TOP_P)
+            self.timeout = kwargs.get('timeout', DEFAULT_REQUEST_TIMEOUT)
+            self.max_retries = kwargs.get('max_retries', DEFAULT_MAX_RETRIES)
+            self.retry_delay = kwargs.get('retry_delay', 2.0)
+            enable_cache = kwargs.get('enable_cache', False)
+            cache_ttl = kwargs.get('cache_ttl', DEFAULT_CACHE_TTL)
+            rate_limiter = kwargs.get('rate_limiter')
 
         # Lazy initialization - clients created on first use
         self._client: Optional[httpx.Client] = None

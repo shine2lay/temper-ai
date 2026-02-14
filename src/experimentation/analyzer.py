@@ -11,7 +11,7 @@ import numpy as np
 from scipy import stats  # type: ignore[import-untyped]
 
 from src.constants.limits import PERCENT_50, PERCENT_95, PERCENT_99
-from src.constants.probabilities import PROB_MEDIUM, TOLERANCE_TIGHT
+from src.constants.probabilities import TOLERANCE_TIGHT
 from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.models import (
     ExecutionStatus,
@@ -137,6 +137,21 @@ class StatisticalAnalyzer:
             grouped[assignment.variant_id].append(assignment)
         return grouped
 
+    @staticmethod
+    def _compute_primary_metric_stats(values: List[float]) -> Dict[str, Any]:
+        """Compute full statistics for the primary metric values."""
+        return {
+            "count": len(values),
+            "mean": float(np.mean(values)),
+            "median": float(np.median(values)),
+            "std": float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
+            "min": float(np.min(values)),
+            "max": float(np.max(values)),
+            "p50": float(np.percentile(values, PERCENT_50)),
+            "p95": float(np.percentile(values, PERCENT_95)),
+            "p99": float(np.percentile(values, PERCENT_99)) if len(values) >= 100 else float(np.max(values)),
+        }
+
     def _calculate_variant_metrics(
         self,
         variant_assignments: Dict[str, List[VariantAssignment]],
@@ -156,30 +171,15 @@ class StatisticalAnalyzer:
 
             # Calculate statistics for each metric
             for metric_name in all_metric_names:
-                values = [
-                    a.metrics[metric_name]
-                    for a in assignments
-                    if a.metrics and metric_name in a.metrics
-                ]
-
+                values = self._extract_metric_values(assignments, metric_name)
                 if not values:
                     continue
 
-                # For primary metric, calculate full statistics
                 if metric_name == primary_metric:
-                    variant_metrics[variant_id].update({
-                        "count": len(values),
-                        "mean": float(np.mean(values)),
-                        "median": float(np.median(values)),
-                        "std": float(np.std(values, ddof=1)) if len(values) > 1 else 0.0,
-                        "min": float(np.min(values)),
-                        "max": float(np.max(values)),
-                        "p50": float(np.percentile(values, PERCENT_50)),
-                        "p95": float(np.percentile(values, PERCENT_95)),
-                        "p99": float(np.percentile(values, PERCENT_99)) if len(values) >= 100 else float(np.max(values)),
-                    })
+                    variant_metrics[variant_id].update(
+                        self._compute_primary_metric_stats(values)
+                    )
                 else:
-                    # For other metrics (guardrails), calculate basic statistics
                     variant_metrics[variant_id][metric_name] = float(np.mean(values))
 
         return variant_metrics
@@ -346,6 +346,28 @@ class StatisticalAnalyzer:
 
         return violations
 
+    @staticmethod
+    def _find_best_variant(
+        significant_tests: List[Tuple[str, Dict[str, Any]]],
+    ) -> Tuple[Optional[str], float, float]:
+        """Find the variant with highest absolute improvement from significant tests.
+
+        Returns:
+            (best_variant_id, best_improvement_abs, best_confidence)
+        """
+        best_improvement_abs = 0.0
+        best_variant = None
+        best_confidence = 0.0
+
+        for test_key, result in significant_tests:
+            improvement_abs = abs(result.get("improvement", 0))
+            if improvement_abs > best_improvement_abs:
+                best_improvement_abs = improvement_abs
+                best_variant = test_key.split("control_vs_")[1] if "_" in test_key else None
+                best_confidence = 1 - result.get("p_value", 1.0)
+
+        return best_variant, best_improvement_abs, best_confidence
+
     def _generate_recommendation(
         self,
         statistical_tests: Dict[str, Dict[str, Any]],
@@ -358,11 +380,9 @@ class StatisticalAnalyzer:
         Returns:
             (recommendation_type, recommended_winner, confidence)
         """
-        # Check for guardrail violations first
         if guardrail_violations:
             return (RecommendationType.STOP_GUARDRAIL_VIOLATION, None, 1.0)
 
-        # Check for statistically significant winner
         significant_tests = [
             (test_key, result)
             for test_key, result in statistical_tests.items()
@@ -370,32 +390,16 @@ class StatisticalAnalyzer:
         ]
 
         if not significant_tests:
-            # No significant difference
             return (RecommendationType.STOP_NO_DIFFERENCE, None, confidence_level)
 
-        # Find best variant (highest absolute improvement)
-        # Uses absolute value to handle both "higher is better" and "lower is better" metrics
-        # Requires minimum effect size to avoid declaring trivial differences as winners
-        best_improvement_abs = 0.0
-        best_variant = None
-        best_confidence = 0.0
-
-        for test_key, result in significant_tests:
-            improvement = result.get("improvement", 0)
-            improvement_abs = abs(improvement)
-            if improvement_abs > best_improvement_abs:
-                best_improvement_abs = improvement_abs
-                # Extract variant ID from test_key "control_vs_{variant_id}"
-                best_variant = test_key.split("control_vs_")[1] if "_" in test_key else None
-                best_confidence = 1 - result.get("p_value", 1.0)
+        best_variant, best_improvement_abs, best_confidence = self._find_best_variant(
+            significant_tests
+        )
 
         if best_variant and best_improvement_abs >= self.min_effect_size:
             return (RecommendationType.STOP_WINNER, best_variant, best_confidence)
-        else:
-            # Significant but effect size too small, or no winner found
-            if significant_tests:
-                return (RecommendationType.STOP_NO_DIFFERENCE, None, confidence_level)
-            return (RecommendationType.CONTINUE, None, PROB_MEDIUM)
+
+        return (RecommendationType.STOP_NO_DIFFERENCE, None, confidence_level)
 
     def _inconclusive_result(self, reason: str) -> Dict[str, Any]:
         """Return inconclusive result."""

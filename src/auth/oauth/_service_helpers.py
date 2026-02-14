@@ -45,6 +45,28 @@ HTTP_OK = 200
 HTTP_UNAUTHORIZED = 401
 
 
+from dataclasses import dataclass
+
+
+@dataclass
+class TokenExchangeParams:
+    """Parameters for OAuth token exchange.
+
+    Bundles the multiple parameters needed for token exchange,
+    reducing function parameter count from 10 to 1.
+    """
+    provider: str
+    code: str
+    state: str
+    config: OAuthConfig
+    state_store: Any
+    token_store: SecureTokenStore
+    http_client: httpx.AsyncClient
+    rate_limiter: Any
+    redirect_uri: Optional[str] = None
+    ip_address: Optional[str] = None
+
+
 def generate_state() -> str:
     """Generate cryptographically secure state token for CSRF protection."""
     return secrets.token_urlsafe(TOKEN_BYTES_STATE)
@@ -265,30 +287,12 @@ async def _perform_token_exchange(
 
 
 async def exchange_code(
-    provider: str,
-    code: str,
-    state: str,
-    config: OAuthConfig,
-    state_store: Any,
-    token_store: SecureTokenStore,
-    http_client: httpx.AsyncClient,
-    rate_limiter: Any,
-    redirect_uri: Optional[str] = None,
-    ip_address: Optional[str] = None,
+    params: TokenExchangeParams,
 ) -> Dict[str, Any]:
     """Exchange authorization code for access/refresh tokens.
 
     Args:
-        provider: Provider name
-        code: Authorization code from callback
-        state: State token from callback
-        config: OAuth configuration
-        state_store: State storage backend
-        token_store: Token storage backend
-        http_client: HTTP client for API calls
-        rate_limiter: Rate limiter instance
-        redirect_uri: Override redirect URI
-        ip_address: Client IP address (for rate limiting)
+        params: TokenExchangeParams object with all parameters bundled
 
     Returns:
         Token data dict
@@ -301,45 +305,45 @@ async def exchange_code(
     from src.auth.oauth.service import OAuthError
 
     # Rate limiting
-    if ip_address:
+    if params.ip_address:
         try:
-            rate_limiter.check_token_exchange(ip_address)
+            params.rate_limiter.check_token_exchange(params.ip_address)
         except RateLimitExceeded:
-            logger.warning(f"Rate limit exceeded for token exchange: ip={ip_address}")
+            logger.warning(f"Rate limit exceeded for token exchange: ip={params.ip_address}")
             raise
 
     # Validate state and get provider config
-    state_data = await validate_state(state, provider, state_store)
+    state_data = await validate_state(params.state, params.provider, params.state_store)
     user_id = state_data['user_id']
     code_verifier = state_data[FIELD_CODE_VERIFIER]
 
-    provider_config = config.get_provider_config(provider)
+    provider_config = params.config.get_provider_config(params.provider)
     if not provider_config:
-        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=provider)
+        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{params.provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=params.provider)
 
     endpoints = get_provider_endpoints(provider_config)
     token_endpoint = endpoints[ENDPOINT_TOKEN]
     if not token_endpoint:
-        raise OAuthError(f"Token endpoint not configured for provider '{provider}'", provider=provider)
+        raise OAuthError(f"Token endpoint not configured for provider '{params.provider}'", provider=params.provider)
 
     # Prepare and execute token exchange
     token_data = {
         FIELD_CLIENT_ID: provider_config.client_id,
         FIELD_CLIENT_SECRET: provider_config.client_secret,
-        'code': code,
-        'redirect_uri': redirect_uri or provider_config.redirect_uri,
+        'code': params.code,
+        'redirect_uri': params.redirect_uri or provider_config.redirect_uri,
         'grant_type': 'authorization_code',
         FIELD_CODE_VERIFIER: code_verifier,
     }
 
-    tokens = await _perform_token_exchange(http_client, token_endpoint, token_data, provider)
+    tokens = await _perform_token_exchange(params.http_client, token_endpoint, token_data, params.provider)
 
     # Store tokens
-    expires_in = tokens.get('expires_in', config.token_expiry_seconds)
-    token_store.store_token(user_id=user_id, token_data=tokens, expires_in=expires_in)
+    expires_in = tokens.get('expires_in', params.config.token_expiry_seconds)
+    params.token_store.store_token(user_id=user_id, token_data=tokens, expires_in=expires_in)
 
     logger.info(
-        f"Successfully exchanged OAuth code for tokens: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
+        f"Successfully exchanged OAuth code for tokens: provider={params.provider}{LOG_USER_SEPARATOR}{user_id}"
     )
 
     tokens['_flow_user_id'] = user_id

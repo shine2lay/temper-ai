@@ -148,6 +148,27 @@ def _detect_merit_conflicts(
     return conflicts
 
 
+def _build_merit_metadata(
+    agent_outputs: List[AgentOutput],
+    winning_decision: Any,
+    decision_support: float,
+    merit_weights: Dict[str, float],
+    weighted_votes: Dict[Any, float],
+) -> Dict[str, Any]:
+    """Build metadata dict for merit-weighted synthesis result."""
+    supporting_agents = [
+        out for out in agent_outputs if out.decision == winning_decision
+    ]
+    return {
+        "total_agents": len(agent_outputs),
+        "decision_support": decision_support,
+        "merit_weights": merit_weights,
+        "weighted_votes": weighted_votes,
+        "supporters": [out.agent_name for out in supporting_agents],
+        "dissenters": [out.agent_name for out in agent_outputs if out.decision != winning_decision],
+    }
+
+
 def merit_weighted_synthesis(
     agent_outputs: List[AgentOutput],
     merit_domain: Optional[str],
@@ -177,27 +198,15 @@ def merit_weighted_synthesis(
     final_confidence = _calculate_merit_confidence(
         agent_outputs, winning_decision, decision_support, merit_weights
     )
-
     reasoning = build_merit_weighted_reasoning(
         winning_decision, decision_support, agent_outputs, merit_weights, weighted_votes
     )
-
     conflicts = _detect_merit_conflicts(
         agent_outputs, winning_decision, decision_support, weighted_votes
     )
-
-    supporting_agents = [
-        out for out in agent_outputs if out.decision == winning_decision
-    ]
-    metadata = {
-        "total_agents": len(agent_outputs),
-        "decision_support": decision_support,
-        "merit_weights": merit_weights,
-        "weighted_votes": weighted_votes,
-        "supporters": [out.agent_name for out in supporting_agents],
-        "dissenters": [out.agent_name for out in agent_outputs if out.decision != winning_decision],
-    }
-
+    metadata = _build_merit_metadata(
+        agent_outputs, winning_decision, decision_support, merit_weights, weighted_votes
+    )
     vote_counts = {
         decision: len([o for o in agent_outputs if o.decision == decision])
         for decision in weighted_votes.keys()

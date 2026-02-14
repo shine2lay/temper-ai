@@ -297,6 +297,37 @@ async def _call_llm_with_retry_async(
     return None, last_error
 
 
+def _ensure_tools_discovered(registry: ToolRegistry) -> None:
+    """Auto-discover tools if registry is empty."""
+    if len(registry.list_tools()) == 0:
+        discovered_count = registry.auto_discover()
+        if discovered_count == 0:
+            logger.warning(
+                "No tools discovered via auto-discovery. "
+                "Check that src/tools/ contains valid BaseTool subclasses."
+            )
+
+
+def _resolve_tool_spec(tool_spec: Any) -> tuple[str, Dict[str, Any]]:
+    """Resolve a tool spec into (name, config) tuple."""
+    if isinstance(tool_spec, str):
+        return tool_spec, {}
+    tool_config = tool_spec.config if hasattr(tool_spec, 'config') else {}
+    return tool_spec.name, tool_config
+
+
+def _apply_tool_config(tool_instance: Any, tool_name: str, tool_config: Dict[str, Any]) -> None:
+    """Apply config dict to a tool instance."""
+    if not tool_config:
+        return
+    logger.debug(f"Tool config provided for {tool_name}: {tool_config}")
+    if hasattr(tool_instance, 'config'):
+        if isinstance(tool_instance.config, dict):
+            tool_instance.config.update(tool_config)
+        else:
+            tool_instance.config = tool_config
+
+
 class StandardAgent(BaseAgent):
     """Standard agent with LLM and tool execution loop.
 
@@ -349,28 +380,12 @@ class StandardAgent(BaseAgent):
         Auto-discovers all tools to populate the registry, then filters
         to keep ONLY the tools listed in the agent config.
         """
-        if len(registry.list_tools()) == 0:
-            discovered_count = registry.auto_discover()
-            if discovered_count == 0:
-                logger.warning(
-                    "No tools discovered via auto-discovery. "
-                    "Check that src/tools/ contains valid BaseTool subclasses."
-                )
-
+        _ensure_tools_discovered(registry)
         available_tools = registry.list_tools()
 
-        # Resolve configured tool names and apply configs
         configured_names: set[str] = set()
         for tool_spec in configured_tools:
-            tool_name: str
-            tool_config: Dict[str, Any]
-            if isinstance(tool_spec, str):
-                tool_name = tool_spec
-                tool_config = {}
-            else:
-                tool_name = tool_spec.name
-                tool_config = tool_spec.config if hasattr(tool_spec, 'config') else {}
-
+            tool_name, tool_config = _resolve_tool_spec(tool_spec)
             tool_instance = registry.get(tool_name)
 
             if tool_instance is None:
@@ -380,18 +395,10 @@ class StandardAgent(BaseAgent):
                 )
 
             configured_names.add(tool_name)
-
-            if tool_config:
-                logger.debug(f"Tool config provided for {tool_name}: {tool_config}")
-                if hasattr(tool_instance, 'config'):
-                    if isinstance(tool_instance.config, dict):
-                        tool_instance.config.update(tool_config)
-                    else:
-                        tool_instance.config = tool_config  # type: ignore[unreachable]
+            _apply_tool_config(tool_instance, tool_name, tool_config)
 
         # Remove tools not in the configured list
-        unconfigured = set(registry.list_tools()) - configured_names
-        for name in unconfigured:
+        for name in set(registry.list_tools()) - configured_names:
             registry.unregister(name)
 
     def execute(
@@ -556,10 +563,19 @@ class StandardAgent(BaseAgent):
         _track_llm_call(self, inf_config, prompt, llm_response, cost)
 
         # Process response: parse tool calls, execute if any
-        return _process_llm_response(
-            self, llm_response, tool_calls_made, total_tokens, total_cost,
-            start_time, prompt, max_iterations, _get_tool_executor
+        from src.agents._standard_agent_helpers import LLMProcessingContext
+        ctx = LLMProcessingContext(
+            agent=self,
+            llm_response=llm_response,
+            tool_calls_made=tool_calls_made,
+            total_tokens=total_tokens,
+            total_cost=total_cost,
+            start_time=start_time,
+            prompt=prompt,
+            max_iterations=max_iterations,
+            get_tool_executor_fn=_get_tool_executor
         )
+        return _process_llm_response(ctx)
 
     def _execute_iteration(
         self,
@@ -611,10 +627,19 @@ class StandardAgent(BaseAgent):
         _track_llm_call(self, inf_config, prompt, llm_response, cost)
 
         # Process response: parse tool calls, execute if any
-        return _process_llm_response(
-            self, llm_response, tool_calls_made, total_tokens, total_cost,
-            start_time, prompt, max_iterations, _get_tool_executor
+        from src.agents._standard_agent_helpers import LLMProcessingContext
+        ctx = LLMProcessingContext(
+            agent=self,
+            llm_response=llm_response,
+            tool_calls_made=tool_calls_made,
+            total_tokens=total_tokens,
+            total_cost=total_cost,
+            start_time=start_time,
+            prompt=prompt,
+            max_iterations=max_iterations,
+            get_tool_executor_fn=_get_tool_executor
         )
+        return _process_llm_response(ctx)
 
     def _render_base_template(
         self,
@@ -761,7 +786,7 @@ def _build_final_response_method(
     error: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None
 ) -> Any:
-    return _build_final_response(self, output, reasoning, tool_calls, tokens, cost, start_time, error, metadata)
+    return _build_final_response(self, output=output, reasoning=reasoning, tool_calls=tool_calls, tokens=tokens, cost=cost, start_time=start_time, error=error, metadata=metadata)
 
 def _get_cached_tool_schemas_method(self: "StandardAgent") -> Optional[str]:
     return _get_cached_tool_schemas(self)

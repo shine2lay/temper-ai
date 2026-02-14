@@ -427,6 +427,63 @@ class OutputSanitizer:
             for pattern, name in self.dangerous_patterns
         ]
 
+    def _detect_secrets(
+        self, output: str
+    ) -> Tuple[List[SecurityViolation], List[Tuple[int, int, str]]]:
+        """Detect secrets in output and collect replacements."""
+        violations: List[SecurityViolation] = []
+        replacements: List[Tuple[int, int, str]] = []
+        for pattern, secret_type, severity in self.compiled_secret_patterns:
+            for match in pattern.finditer(output):
+                violations.append(
+                    SecurityViolation(
+                        violation_type="secret_leakage",
+                        severity=severity,
+                        description=f"Detected {secret_type} in output",
+                        evidence=f"{match.group(0)[:EVIDENCE_PREFIX_LENGTH]}...",
+                    )
+                )
+                replacements.append(
+                    (match.start(), match.end(), f"[REDACTED_{secret_type.upper()}]")
+                )
+        return violations, replacements
+
+    def _deduplicate_replacements(
+        self, replacements: List[Tuple[int, int, str]]
+    ) -> List[Tuple[int, int, str]]:
+        """Deduplicate overlapping replacements, keeping longest matches first.
+
+        SECURITY FIX (code-crit-20): Uses longest-match-first strategy to prevent
+        partial secret leakage when patterns overlap.
+        """
+        # Sort by length (longest first), then start position (leftmost first)
+        replacements.sort(key=lambda x: (-(x[1] - x[0]), x[0]))
+        deduplicated: List[Tuple[int, int, str]] = []
+        for start, end, replacement in replacements:
+            overlaps = any(
+                not (end <= es or start >= ee) for es, ee, _ in deduplicated
+            )
+            if not overlaps:
+                deduplicated.append((start, end, replacement))
+        # Sort by start position in reverse for safe string replacement
+        deduplicated.sort(key=lambda x: x[0], reverse=True)
+        return deduplicated
+
+    def _detect_dangerous_content(self, text: str) -> List[SecurityViolation]:
+        """Detect dangerous content patterns (no redaction, just detection)."""
+        violations: List[SecurityViolation] = []
+        for pattern, danger_type in self.compiled_dangerous_patterns:
+            for match in pattern.finditer(text):
+                violations.append(
+                    SecurityViolation(
+                        violation_type="dangerous_content",
+                        severity="high",
+                        description=f"Detected {danger_type} in output",
+                        evidence=match.group(0),
+                    )
+                )
+        return violations
+
     def sanitize(self, output: str) -> Tuple[str, List[SecurityViolation]]:
         """
         Sanitize LLM output.
@@ -437,71 +494,20 @@ class OutputSanitizer:
         Returns:
             Tuple of (sanitized_output, violations_list)
         """
-        violations = []
         sanitized = output
 
-        # Collect all replacements first to avoid index shifting issues
-        replacements = []
-
         # Detect secrets and collect replacements
-        for pattern, secret_type, severity in self.compiled_secret_patterns:
-            for match in pattern.finditer(output):
-                violation = SecurityViolation(
-                    violation_type="secret_leakage",
-                    severity=severity,
-                    description=f"Detected {secret_type} in output",
-                    evidence=f"{match.group(0)[:EVIDENCE_PREFIX_LENGTH]}..."
-                )
-                violations.append(violation)
-
-                # Collect replacement (will apply in reverse order later)
-                replacements.append((match.start(), match.end(), f"[REDACTED_{secret_type.upper()}]"))
-
-        # SECURITY FIX (code-crit-20): Use longest-match-first strategy to prevent
-        # partial secret leakage when patterns overlap
-        #
-        # Sort by:
-        # 1. Length (longest first) - ensures we redact the maximum sensitive span
-        # 2. Start position (leftmost first) - stable ordering for same length
-        #
-        # Example attack prevented:
-        #   Text: "my secret is password123"
-        #   Pattern 1 (long): "secret is password123" (len=20)
-        #   Pattern 2 (short): "password123" (len=11)
-        #   Without fix: Only "password123" redacted, "my secret is " leaked
-        #   With fix: Entire "secret is password123" redacted
-        replacements.sort(key=lambda x: (-(x[1] - x[0]), x[0]))
+        violations, replacements = self._detect_secrets(output)
 
         # Deduplicate overlapping replacements (keep longest match)
-        deduplicated: List[Tuple[int, int, str]] = []
-        for start, end, replacement in replacements:
-            # Check if this replacement overlaps with any already added
-            overlaps = False
-            for existing_start, existing_end, _ in deduplicated:
-                if not (end <= existing_start or start >= existing_end):
-                    # Overlaps with existing longer match, skip this shorter one
-                    overlaps = True
-                    break
-            if not overlaps:
-                deduplicated.append((start, end, replacement))
-
-        # Sort by start position in reverse for safe string replacement
-        deduplicated.sort(key=lambda x: x[0], reverse=True)
+        deduplicated = self._deduplicate_replacements(replacements)
 
         # Apply all deduplicated replacements
         for start, end, replacement in deduplicated:
             sanitized = sanitized[:start] + replacement + sanitized[end:]
 
-        # Detect dangerous content (no redaction, just detection)
-        for pattern, danger_type in self.compiled_dangerous_patterns:
-            for match in pattern.finditer(sanitized):
-                violation = SecurityViolation(
-                    violation_type="dangerous_content",
-                    severity="high",
-                    description=f"Detected {danger_type} in output",
-                    evidence=match.group(0)
-                )
-                violations.append(violation)
+        # Detect dangerous content
+        violations.extend(self._detect_dangerous_content(sanitized))
 
         return sanitized, violations
 

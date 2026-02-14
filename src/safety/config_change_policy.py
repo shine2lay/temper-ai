@@ -86,6 +86,36 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         """Action types this policy applies to."""
         return ["config_change"]
 
+    def _check_change(
+        self,
+        change: ConfigChange,
+        agent_name: str,
+        action: Dict[str, Any],
+        context: Dict[str, Any],
+    ) -> List[SafetyViolation]:
+        """Dispatch a single config change to the appropriate checker.
+
+        Args:
+            change: The detected config change
+            agent_name: Name of agent
+            action: Action dict
+            context: Execution context
+
+        Returns:
+            List of violations for this change
+        """
+        field_lower = change.field_path.lower()
+
+        if "model" in field_lower:
+            return self._check_model_change(change, agent_name, action, context)
+        if "temperature" in field_lower:
+            return self._check_temperature_change(change, agent_name, action, context)
+        if "safety" in field_lower and "mode" in field_lower:
+            return self._check_safety_mode_change(change, agent_name, action, context)
+        if "tools" in field_lower:
+            return self._check_tool_change(change, agent_name, action, context)
+        return []
+
     def _validate_impl(self, action: Dict[str, Any], context: Dict[str, Any]) -> ValidationResult:
         """Validate config change action.
 
@@ -102,58 +132,31 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         """
         violations: List[SafetyViolation] = []
 
-        # Extract configs
         agent_name = action.get("agent_name", "unknown")
         old_config = action.get("old_config", {})
         new_config = action.get("new_config", {})
 
-        # Detect changes
         changes = self._detect_changes(old_config, new_config)
 
-        # Check each change type
         for change in changes:
-            # Model changes
-            if "model" in change.field_path.lower():
-                model_violations = self._check_model_change(change, agent_name, action, context)
-                violations.extend(model_violations)
+            violations.extend(self._check_change(change, agent_name, action, context))
 
-            # Temperature changes
-            elif "temperature" in change.field_path.lower():
-                temp_violations = self._check_temperature_change(change, agent_name, action, context)
-                violations.extend(temp_violations)
+        violations.extend(self._check_cost_impact(old_config, new_config, agent_name, action, context))
 
-            # Safety mode changes
-            elif "safety" in change.field_path.lower() and "mode" in change.field_path.lower():
-                safety_violations = self._check_safety_mode_change(change, agent_name, action, context)
-                violations.extend(safety_violations)
-
-            # Tool configuration changes
-            elif "tools" in change.field_path.lower():
-                tool_violations = self._check_tool_change(change, agent_name, action, context)
-                violations.extend(tool_violations)
-
-        # Check estimated cost impact
-        cost_violations = self._check_cost_impact(old_config, new_config, agent_name, action, context)
-        violations.extend(cost_violations)
-
-        # Determine if valid
-        critical_violations = [v for v in violations if v.severity == ViolationSeverity.CRITICAL]
-        high_violations = [v for v in violations if v.severity == ViolationSeverity.HIGH]
-
-        # Block if critical violations
-        valid = len(critical_violations) == 0
+        critical_count = sum(1 for v in violations if v.severity == ViolationSeverity.CRITICAL)
+        high_count = sum(1 for v in violations if v.severity == ViolationSeverity.HIGH)
 
         return ValidationResult(
-            valid=valid,
+            valid=critical_count == 0,
             violations=violations,
             policy_name=self.name,
             metadata={
                 "num_changes": len(changes),
-                "num_critical_violations": len(critical_violations),
-                "num_high_violations": len(high_violations),
-                "requires_approval": len(high_violations) > 0,
-                "agent_name": agent_name
-            }
+                "num_critical_violations": critical_count,
+                "num_high_violations": high_count,
+                "requires_approval": high_count > 0,
+                "agent_name": agent_name,
+            },
         )
 
     def _detect_changes(

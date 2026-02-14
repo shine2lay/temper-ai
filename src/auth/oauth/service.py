@@ -16,6 +16,9 @@ from src.auth.oauth._service_helpers import (
     exchange_code as _exchange_code,
 )
 from src.auth.oauth._service_helpers import (
+    TokenExchangeParams,
+)
+from src.auth.oauth._service_helpers import (
     fetch_user_info as _fetch_user_info,
 )
 from src.auth.oauth._service_helpers import (
@@ -217,11 +220,19 @@ class OAuthService:
     ) -> Dict[str, Any]:
         """Exchange authorization code for access/refresh tokens."""
         client = await self._get_http_client()
-        return await _exchange_code(
-            provider, code, state, self.config, self._state_store,
-            self.token_store, client, self._rate_limiter,
-            redirect_uri, ip_address,
+        params = TokenExchangeParams(
+            provider=provider,
+            code=code,
+            state=state,
+            config=self.config,
+            state_store=self._state_store,
+            token_store=self.token_store,
+            http_client=client,
+            rate_limiter=self._rate_limiter,
+            redirect_uri=redirect_uri,
+            ip_address=ip_address,
         )
+        return await _exchange_code(params)
 
     async def refresh_access_token(
         self,

@@ -706,18 +706,14 @@ class LLMCache:
 
     def generate_key(
         self,
-        model: str,
-        prompt: str,
-        temperature: float = DEFAULT_TEMPERATURE,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
-        user_id: Optional[str] = None,
-        tenant_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
+        params: Optional[CacheKeyParams] = None,
         **kwargs: Any
     ) -> str:
         """Generate cache key with mandatory user/tenant isolation.
+
+        Args:
+            params: CacheKeyParams bundle (recommended)
+            **kwargs: Legacy individual parameters (model, prompt, etc.)
 
         SECURITY: Requires user_id OR tenant_id to prevent cross-tenant
         data leakage (HIPAA, GDPR, SOC 2).
@@ -725,19 +721,43 @@ class LLMCache:
         Raises:
             ValueError: If neither user_id nor tenant_id provided
         """
+        # Extract from params or kwargs
+        if params is not None:
+            model = params.model
+            prompt = params.prompt
+            temperature = params.temperature
+            max_tokens = params.max_tokens
+            user_id = params.user_id
+            tenant_id = params.tenant_id
+            session_id = params.session_id
+            system_prompt = params.system_prompt
+            tools = params.tools
+            extra_params = params.extra_params
+        else:
+            model = kwargs.pop('model')
+            prompt = kwargs.pop('prompt')
+            temperature = kwargs.pop('temperature', DEFAULT_TEMPERATURE)
+            max_tokens = kwargs.pop('max_tokens', DEFAULT_MAX_TOKENS)
+            user_id = kwargs.pop('user_id', None)
+            tenant_id = kwargs.pop('tenant_id', None)
+            session_id = kwargs.pop('session_id', None)
+            system_prompt = kwargs.pop('system_prompt', None)
+            tools = kwargs.pop('tools', None)
+            extra_params = kwargs
+
         # Validation
         _validate_cache_key_isolation(user_id, tenant_id)
         _validate_cache_key_types(
             model, prompt, temperature, max_tokens,
             user_id, tenant_id, session_id,
         )
-        _validate_cache_kwargs(self._RESERVED_PARAMS, kwargs)
+        _validate_cache_kwargs(self._RESERVED_PARAMS, extra_params)
 
         # Build request dict and hash
         cache_key = _generate_cache_key_hash(
             model, prompt, temperature, max_tokens,
             user_id, tenant_id, session_id,
-            system_prompt, tools, kwargs
+            system_prompt, tools, extra_params
         )
 
         logger.debug(

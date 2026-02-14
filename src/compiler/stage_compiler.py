@@ -296,39 +296,10 @@ class StageCompiler:
         gate_name = f"{LOOP_GATE_PREFIX}{stage}"
         gate_node = _create_loop_gate_node(stage)
         graph.add_node(gate_name, gate_node)
-
         graph.add_edge(stage, gate_name)
 
-        # Exit targets: successors in DAG (fan-out), or END.
-        # Filter out successors reachable via another exit target to
-        # prevent double-fire.  E.g. if successors = [review, validate]
-        # and validate depends_on [stage, review], validate is reachable
-        # through review and should not be a direct exit target.
-        raw_targets: List[Optional[str]] = list(successors) if successors else [None]
-        if len(raw_targets) > 1:
-            target_set = set(t for t in raw_targets if t)
-            filtered: List[Optional[str]] = []
-            for target in raw_targets:
-                if target is None:
-                    filtered.append(target)
-                    continue
-                other_preds = set(dag.predecessors.get(target, []))
-                other_preds.discard(stage)  # exclude current loop stage
-                if other_preds & target_set:
-                    continue  # reachable through another exit target
-                filtered.append(target)
-            raw_targets = filtered if filtered else raw_targets
-
-        # Remap targets that have barrier chains to use the barrier
-        # entry point so fan-in depth equalization is preserved.
-        exit_targets: List[Optional[str]] = []
-        for target in raw_targets:
-            if target and barrier_edges and (stage, target) in barrier_edges:
-                # Route through barrier entry instead of direct target
-                barrier_entry = f"{BARRIER_PREFIX}{stage}_to_{target}_0"
-                exit_targets.append(barrier_entry)
-            else:
-                exit_targets.append(target)
+        raw_targets = _filter_reachable_targets(successors, stage, dag)
+        exit_targets = _remap_barrier_targets(raw_targets, stage, barrier_edges)
 
         router = create_loop_router(
             stage_ref, exit_targets, self.condition_evaluator,
@@ -442,7 +413,8 @@ class StageCompiler:
             next_ref, after_next, next_index, stage_refs, self.condition_evaluator,
         )
         # next_name is guaranteed non-None because next_ref is non-None (from line 429)
-        assert next_name is not None
+        if next_name is None:
+            raise ValueError("next_name must not be None when next_ref is set")
         graph.add_conditional_edges(
             current_name, router, cast(Dict[Hashable, str], _build_path_map(next_name, after_next)),
         )
@@ -580,6 +552,44 @@ def _build_loop_path_map_multi(
         path_map[resolved] = resolved
     # Key for the list-return case (LangGraph uses individual entries)
     return path_map
+
+
+def _filter_reachable_targets(
+    successors: List[str], stage: str, dag: Any,
+) -> "List[Optional[str]]":
+    """Filter out successors reachable via another exit target to prevent double-fire."""
+    raw_targets: List[Optional[str]] = list(successors) if successors else [None]
+    if len(raw_targets) <= 1:
+        return raw_targets
+
+    target_set = set(t for t in raw_targets if t)
+    filtered: List[Optional[str]] = []
+    for target in raw_targets:
+        if target is None:
+            filtered.append(target)
+            continue
+        other_preds = set(dag.predecessors.get(target, []))
+        other_preds.discard(stage)
+        if other_preds & target_set:
+            continue
+        filtered.append(target)
+    return filtered if filtered else raw_targets
+
+
+def _remap_barrier_targets(
+    raw_targets: "List[Optional[str]]",
+    stage: str,
+    barrier_edges: Optional[Dict],
+) -> "List[Optional[str]]":
+    """Remap targets to barrier entry points for fan-in equalization."""
+    exit_targets: List[Optional[str]] = []
+    for target in raw_targets:
+        if target and barrier_edges and (stage, target) in barrier_edges:
+            barrier_entry = f"{BARRIER_PREFIX}{stage}_to_{target}_0"
+            exit_targets.append(barrier_entry)
+        else:
+            exit_targets.append(target)
+    return exit_targets
 
 
 BARRIER_PREFIX = "_barrier_"

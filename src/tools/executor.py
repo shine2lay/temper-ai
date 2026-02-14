@@ -153,20 +153,49 @@ class ToolExecutor:
         """Return current rate limit usage stats."""
         return _get_rate_limit_usage(self)
 
+    def _resolve_defaults(
+        self,
+        params: Optional[Dict[str, Any]],
+        timeout: Optional[int],
+        context: Optional[Dict[str, Any]],
+    ) -> tuple[Dict[str, Any], int, Dict[str, Any]]:
+        """Resolve None parameters to their defaults."""
+        return (
+            params if params is not None else {},
+            timeout if timeout is not None else self.default_timeout,
+            context if context is not None else {},
+        )
+
+    def _handle_execution_error(
+        self,
+        error: Exception,
+        snapshot: Any,
+        tool_name: str,
+        context: Dict[str, Any],
+    ) -> ToolResult:
+        """Handle exception during tool execution with optional rollback."""
+        if snapshot and self.enable_auto_rollback and self.rollback_manager:
+            handle_exception_rollback(
+                self, snapshot, tool_name, error, context
+            )
+        logger.error(f"Tool execution failed: {error}", exc_info=True)
+        return ToolResult(
+            success=False,
+            result=None,
+            error="Tool execution failed due to an internal error",
+        )
+
     def execute(
         self,
         tool_name: str,
         params: Optional[Dict[str, Any]] = None,
         timeout: Optional[int] = None,
-        context: Optional[Dict[str, Any]] = None
+        context: Optional[Dict[str, Any]] = None,
     ) -> ToolResult:
         """Execute tool with parameters."""
-        if params is None:
-            params = {}
-        if timeout is None:
-            timeout = self.default_timeout
-        if context is None:
-            context = {}
+        params, timeout, context = self._resolve_defaults(
+            params, timeout, context
+        )
 
         try:
             check_rate_limit(self)
@@ -177,7 +206,9 @@ class ToolExecutor:
         if error is not None:
             return error
         if tool is None:
-            return ToolResult(success=False, error=f"Tool '{tool_name}' not found")
+            return ToolResult(
+                success=False, error=f"Tool '{tool_name}' not found"
+            )
 
         policy_error = validate_policy(self, tool_name, params, context)
         if policy_error is not None:
@@ -190,12 +221,8 @@ class ToolExecutor:
                 self, tool, params, timeout, snapshot, tool_name, context
             )
         except (RuntimeError, OSError, MemoryError) as e:
-            if snapshot and self.enable_auto_rollback and self.rollback_manager:
-                handle_exception_rollback(self, snapshot, tool_name, e, context)
-            logger.error(f"Tool execution failed: {e}", exc_info=True)
-            return ToolResult(
-                success=False, result=None,
-                error="Tool execution failed due to an internal error"
+            return self._handle_execution_error(
+                e, snapshot, tool_name, context
             )
 
     def execute_batch(self, executions: list[tuple[str, Dict[str, Any]]], timeout: Optional[int] = None, overall_timeout: Optional[int] = None) -> list[ToolResult]:

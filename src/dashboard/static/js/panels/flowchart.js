@@ -22,6 +22,20 @@ const STATUS_COLORS = {
     pending:   '#6a7080',
 };
 
+// Distinct colors for each unique stage (edges + name text)
+const STAGE_PALETTE = [
+    '#42a5f5', // blue
+    '#ab47bc', // purple
+    '#26a69a', // teal
+    '#ffa726', // orange
+    '#ec407a', // pink
+    '#7e57c2', // deep purple
+    '#26c6da', // cyan
+    '#d4e157', // lime
+    '#8d6e63', // brown
+    '#78909c', // blue-grey
+];
+
 const CYTOSCAPE_STYLE = [
     // Stage (compound/parent) nodes — label removed, HTML overlay replaces it
     {
@@ -114,11 +128,13 @@ const CYTOSCAPE_STYLE = [
             'text-margin-y': -10,
         },
     },
-    // Loop-back edges (dashed orange)
+    // Loop-back edges (dashed, forced arc so they never look straight)
     {
         selector: 'edge[type="loop_back"]',
         style: {
-            'curve-style': 'bezier',
+            'curve-style': 'unbundled-bezier',
+            'control-point-distances': [80],
+            'control-point-weights': [0.5],
             'line-style': 'dashed',
             'line-color': '#ffa726',
             'target-arrow-shape': 'triangle',
@@ -148,6 +164,14 @@ const CYTOSCAPE_STYLE = [
     {
         selector: ':selected',
         style: { 'border-color': '#4fc3f7', 'border-width': 3 },
+    },
+    // Per-stage edge coloring (overrides default edge colors when set)
+    {
+        selector: 'edge[edgeColor]',
+        style: {
+            'line-color': 'data(edgeColor)',
+            'target-arrow-color': 'data(edgeColor)',
+        },
     },
 ];
 
@@ -361,6 +385,14 @@ export class FlowchartPanel {
         const stageGroups = this._groupExecutionsByName(stages);
         const positions = this._computeStagePositions(stageGroups, dagInfo);
 
+        // Assign a distinct color to each unique stage name
+        const stageColors = new Map();
+        let colorIdx = 0;
+        for (const [name] of stageGroups) {
+            stageColors.set(name, STAGE_PALETTE[colorIdx % STAGE_PALETTE.length]);
+            colorIdx++;
+        }
+
         for (const [name, executions] of stageGroups) {
             const latest = executions[executions.length - 1];
             if (!latest.id) continue;
@@ -373,6 +405,7 @@ export class FlowchartPanel {
             this._addStageElements(elements, latest, pos, {
                 iterationCount,
                 _allExecutionIds: allExecutionIds,
+                stageColor: stageColors.get(name),
                 ...aggregated,
             });
 
@@ -380,7 +413,7 @@ export class FlowchartPanel {
             this._addCollabEdges(elements, latest);
         }
 
-        this._addCollapsedDagEdges(elements, stageGroups, dagInfo);
+        this._addCollapsedDagEdges(elements, stageGroups, dagInfo, stageColors);
 
         return elements;
     }
@@ -667,7 +700,7 @@ export class FlowchartPanel {
      * Add collapsed DAG edges: one edge per dependency + loop-back edges.
      * Replaces the old _addDagFlowEdges / _addSequentialFlowEdges pair.
      */
-    _addCollapsedDagEdges(elements, stageGroups, dagInfo) {
+    _addCollapsedDagEdges(elements, stageGroups, dagInfo, stageColors) {
         // Build nameToNodeId map (name → latest execution ID)
         const nameToNodeId = new Map();
         for (const [name, execs] of stageGroups) {
@@ -696,12 +729,13 @@ export class FlowchartPanel {
                             target: targetId,
                             type: 'data_flow',
                             label,
+                            edgeColor: stageColors.get(depName),
                         },
                     });
                 }
             }
 
-            // Loop-back edges (dashed orange with iteration count)
+            // Loop-back edges (dashed, curved arc with iteration count)
             for (const [srcName, targetName] of dagInfo.loopsBackTo) {
                 const sourceId = nameToNodeId.get(srcName);
                 const targetId = nameToNodeId.get(targetName);
@@ -719,6 +753,7 @@ export class FlowchartPanel {
                         target: targetId,
                         type: 'loop_back',
                         label: `loop x${loopCount}`,
+                        edgeColor: stageColors.get(srcName),
                     },
                 });
             }
@@ -742,6 +777,7 @@ export class FlowchartPanel {
                         target: currId,
                         type: 'data_flow',
                         label,
+                        edgeColor: stageColors.get(names[i - 1]),
                     },
                 });
             }

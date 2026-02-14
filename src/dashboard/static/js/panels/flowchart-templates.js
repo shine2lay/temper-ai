@@ -99,7 +99,7 @@ export function stageHeaderTpl(data) {
         : '';
 
     return `<div class="fc-stage-header${hoverClass}">` +
-        `<div class="fc-stage-top"><span class="fc-stage-dot ${dotClass(status)}"></span><span class="fc-stage-name">${name}</span>${iterBadge}</div>` +
+        `<div class="fc-stage-top"><span class="fc-stage-dot ${dotClass(status)}"></span><span class="fc-stage-name"${data.stageColor ? ` style="color:${data.stageColor}"` : ''}>${name}</span>${iterBadge}</div>` +
         badgeHtml +
         metricsHtml +
         tooltipHtml +

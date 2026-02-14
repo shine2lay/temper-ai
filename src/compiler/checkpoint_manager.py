@@ -39,6 +39,7 @@ from src.compiler.checkpoint_backends import (
     CheckpointNotFoundError,
     FileCheckpointBackend,
 )
+from src.compiler.constants import LOG_SEPARATOR_CHECKPOINT
 from src.compiler.domain_state import WorkflowDomainState
 from src.constants.durations import SECONDS_PER_5_MINUTES
 from src.constants.limits import MEDIUM_ITEM_LIMIT
@@ -166,8 +167,8 @@ class CheckpointManager:
             )
 
             logger.info(
-                f"Checkpoint saved: workflow={domain_state.workflow_id}, "
-                f"checkpoint={saved_checkpoint_id}, stage={domain_state.current_stage}"
+                f"Checkpoint saved: workflow={domain_state.workflow_id}"
+                f"{LOG_SEPARATOR_CHECKPOINT}{saved_checkpoint_id}, stage={domain_state.current_stage}"
             )
 
             # Trigger callback
@@ -219,8 +220,8 @@ class CheckpointManager:
             domain_state = self.backend.load_checkpoint(workflow_id, checkpoint_id)
 
             logger.info(
-                f"Checkpoint loaded: workflow={workflow_id}, "
-                f"checkpoint={checkpoint_id or 'latest'}, "
+                f"Checkpoint loaded: workflow={workflow_id}"
+                f"{LOG_SEPARATOR_CHECKPOINT}{checkpoint_id or 'latest'}, "
                 f"stage={domain_state.current_stage}"
             )
 
@@ -298,7 +299,7 @@ class CheckpointManager:
         """
         success = self.backend.delete_checkpoint(workflow_id, checkpoint_id)
         if success:
-            logger.info(f"Checkpoint deleted: workflow={workflow_id}, checkpoint={checkpoint_id}")
+            logger.info(f"Checkpoint deleted: workflow={workflow_id}LOG_SEPARATOR_CHECKPOINT{checkpoint_id}")
         return success
 
     def get_latest_checkpoint_id(self, workflow_id: str) -> Optional[str]:
@@ -349,8 +350,8 @@ class CheckpointManager:
             for cp in to_delete:
                 self.delete_checkpoint(workflow_id, cp["checkpoint_id"])
                 logger.debug(
-                    f"Cleaned up old checkpoint: workflow={workflow_id}, "
-                    f"checkpoint={cp['checkpoint_id']}"
+                    f"Cleaned up old checkpoint: workflow={workflow_id}"
+                    f"{LOG_SEPARATOR_CHECKPOINT}{cp['checkpoint_id']}"
                 )
 
 

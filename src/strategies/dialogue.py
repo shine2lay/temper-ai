@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 DialogueRound = CommunicationRound
 DialogueHistory = CommunicationHistory
 
+DEFAULT_MAX_ROUNDS = 3
+DEFAULT_CONVERGENCE_THRESHOLD = 0.85
+
 
 class DialogueOrchestrator(MultiRoundStrategy):
     """Deprecated. Use MultiRoundStrategy(mode='dialogue').
@@ -55,8 +58,8 @@ class DialogueOrchestrator(MultiRoundStrategy):
 
     def __init__(
         self,
-        max_rounds: int = 3,
-        convergence_threshold: float = 0.85,
+        max_rounds: int = DEFAULT_MAX_ROUNDS,
+        convergence_threshold: float = DEFAULT_CONVERGENCE_THRESHOLD,
         cost_budget_usd: Optional[float] = None,
         min_rounds: int = 1,
         use_semantic_convergence: bool = True,

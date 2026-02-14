@@ -29,6 +29,7 @@ from src.safety._forbidden_ops_helpers import (
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
     CATEGORY_KEY,
+    CUSTOM_FORBIDDEN_PATTERNS_PREFIX,
     MAX_EXCLUDED_PATH_LENGTH,
     MAX_EXCLUDED_PATHS,
     VIOLATION_MESSAGE,
@@ -293,11 +294,11 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 )
             if not isinstance(pattern, str):
                 raise ValueError(
-                    f"CUSTOM_FORBIDDEN_PATTERNS_PREFIX{name}'] must be a string, got {type(pattern).__name__}"
+                    f"{CUSTOM_FORBIDDEN_PATTERNS_PREFIX}{name}'] must be a string, got {type(pattern).__name__}"
                 )
             if len(pattern) > MAX_EXCLUDED_PATH_LENGTH:
                 raise ValueError(
-                    f"CUSTOM_FORBIDDEN_PATTERNS_PREFIX{name}'] must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(pattern)}"
+                    f"{CUSTOM_FORBIDDEN_PATTERNS_PREFIX}{name}'] must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(pattern)}"
                 )
 
             # SECURITY: Validate regex pattern doesn't have ReDoS vulnerability
@@ -305,13 +306,13 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             try:
                 self._validate_regex_pattern(
                     pattern,
-                    f"CUSTOM_FORBIDDEN_PATTERNS_PREFIX{name}']",
+                    f"{CUSTOM_FORBIDDEN_PATTERNS_PREFIX}{name}']",
                     max_length=MAX_EXCLUDED_PATH_LENGTH,
                     test_timeout=PROB_VERY_LOW
                 )
                 self.custom_forbidden_patterns[name] = pattern
             except ValueError as e:
-                raise ValueError(f"Invalid regex in CUSTOM_FORBIDDEN_PATTERNS_PREFIX{name}']: {e}")
+                raise ValueError(f"Invalid regex in {CUSTOM_FORBIDDEN_PATTERNS_PREFIX}{name}']: {e}")
 
         if len(self.custom_forbidden_patterns) > MAX_CUSTOM_PATTERNS:
             raise ValueError(

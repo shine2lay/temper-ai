@@ -16,6 +16,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.observability.backend import ObservabilityBackend, ReadableBackendMixin
+from src.observability.constants import LOG_SEPARATOR_STATUS
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +61,7 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
 
     def track_workflow_end(self, workflow_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Track workflow end (stub - logs only)."""
-        logger.debug(f"[Prometheus STUB] Workflow end: {workflow_id} status={status}")
+        logger.debug(f"[Prometheus STUB] Workflow end: {workflow_id}{LOG_SEPARATOR_STATUS}{status}")
 
     def update_workflow_metrics(self, workflow_id: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Update workflow metrics (stub - logs only)."""
@@ -72,7 +73,7 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
 
     def track_stage_end(self, stage_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Track stage end (stub - logs only)."""
-        logger.debug(f"[Prometheus STUB] Stage end: {stage_id} status={status}")
+        logger.debug(f"[Prometheus STUB] Stage end: {stage_id}{LOG_SEPARATOR_STATUS}{status}")
 
     def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
         """Set stage output (stub - logs only)."""
@@ -84,7 +85,7 @@ class PrometheusObservabilityBackend(ObservabilityBackend, ReadableBackendMixin)
 
     def track_agent_end(self, agent_id: str, end_time: datetime, status: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Track agent end (stub - logs only)."""
-        logger.debug(f"[Prometheus STUB] Agent end: {agent_id} status={status}")
+        logger.debug(f"[Prometheus STUB] Agent end: {agent_id}{LOG_SEPARATOR_STATUS}{status}")
 
     def set_agent_output(self, agent_id: str, **kwargs: Any) -> None:  # type: ignore[override]
         """Set agent output (stub - logs only)."""

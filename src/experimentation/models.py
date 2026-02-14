@@ -18,6 +18,7 @@ from sqlmodel import Column, Field, Index, Relationship, SQLModel
 from src.constants.limits import THRESHOLD_LARGE_COUNT
 from src.constants.probabilities import FRACTION_HALF, PROB_NEAR_CERTAIN
 from src.database.datetime_utils import utcnow
+from src.experimentation.constants import FK_EXPERIMENTS_ID
 
 
 # Enum types for type safety
@@ -189,7 +190,7 @@ class Variant(SQLModel, table=True):
     # Identity
     id: str = Field(primary_key=True)
     experiment_id: str = Field(
-        sa_column=Column(String, ForeignKey("experiments.id", ondelete="CASCADE"), index=True)
+        sa_column=Column(String, ForeignKey(FK_EXPERIMENTS_ID, ondelete="CASCADE"), index=True)
     )
     name: str
     description: str
@@ -253,7 +254,7 @@ class VariantAssignment(SQLModel, table=True):
     # Identity
     id: str = Field(primary_key=True)
     experiment_id: str = Field(
-        sa_column=Column(String, ForeignKey("experiments.id", ondelete="CASCADE"), index=True)
+        sa_column=Column(String, ForeignKey(FK_EXPERIMENTS_ID, ondelete="CASCADE"), index=True)
     )
     variant_id: str = Field(
         sa_column=Column(String, ForeignKey("variants.id", ondelete="CASCADE"), index=True)
@@ -321,7 +322,7 @@ class ExperimentResult(SQLModel, table=True):
     # Identity
     id: str = Field(primary_key=True)
     experiment_id: str = Field(
-        sa_column=Column(String, ForeignKey("experiments.id", ondelete="CASCADE"), index=True)
+        sa_column=Column(String, ForeignKey(FK_EXPERIMENTS_ID, ondelete="CASCADE"), index=True)
     )
 
     # Analysis metadata

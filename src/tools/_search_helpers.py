@@ -7,6 +7,8 @@ from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
+DEFAULT_FORMAT_MAX_RESULTS = 5
+
 
 class SearchResultItem(BaseModel):
     """A single search result."""
@@ -28,7 +30,7 @@ class SearchResponse(BaseModel):
     search_time_ms: Optional[float] = None
 
 
-def format_results_for_llm(response: SearchResponse, max_results: int = 5) -> str:
+def format_results_for_llm(response: SearchResponse, max_results: int = DEFAULT_FORMAT_MAX_RESULTS) -> str:
     """Format search results as readable text for LLM consumption.
 
     Args:

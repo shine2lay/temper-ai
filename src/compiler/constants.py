@@ -69,6 +69,7 @@ ERROR_MSG_ENV_VAR_PREFIX = "Environment variable '"
 ERROR_MSG_QUALITY_GATE_FAILED = "Quality gates failed for stage '"
 ERROR_MSG_STAGE_PREFIX = "Stage '"
 ERROR_MSG_AGENT_PREFIX = "Agent '"
+ERROR_MSG_FOR_STAGE_SUFFIX = " for stage '"
 
 # ============================================================================
 # Logging Prefixes
@@ -77,6 +78,7 @@ ERROR_MSG_AGENT_PREFIX = "Agent '"
 LOG_PREFIX_CHECKPOINT = "Checkpoint "
 LOG_PREFIX_CHECKPOINT_LABEL = "checkpoint:"
 LOG_PREFIX_CHECKPOINT_INDEX = "checkpoint_index:"
+LOG_SEPARATOR_CHECKPOINT = ", checkpoint="
 
 # ============================================================================
 # Stage Transition Actions
@@ -107,6 +109,12 @@ COLLAB_EVENT_TRACK_COLLABORATION = "track_collaboration_event"
 LANGGRAPH_NODE_INIT = "init"
 LANGGRAPH_NODE_COLLECT = "collect"
 LANGGRAPH_NODE_EXECUTION = "execution"
+
+# ============================================================================
+# LangGraph Internal Keys
+# ============================================================================
+
+LANGGRAPH_DICT_CACHE_KEY = "_dict_cache"
 
 # ============================================================================
 # Agent Roles

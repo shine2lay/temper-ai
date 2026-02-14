@@ -30,6 +30,8 @@ from src.constants.limits import (
 )
 from src.security.constants import (
     DETECTION_PREFIX,
+    RATE_LIMIT_ERROR_MESSAGE,
+    RATE_LIMIT_PREFIX,
     SEVERITY_HIGH,
     SEVERITY_MEDIUM,
     ThreatTypes,
@@ -680,9 +682,9 @@ class LLMSecurityRateLimiter:
         if self._rate_limit_script is None:
             raise RuntimeError("Rate limit script not initialized")
 
-        minute_key = f"rate_limit:{entity_id}:minute"
-        hour_key = f"rate_limit:{entity_id}:hour"
-        burst_key = f"rate_limit:{entity_id}:burst"
+        minute_key = f"{RATE_LIMIT_PREFIX}{entity_id}:minute"
+        hour_key = f"{RATE_LIMIT_PREFIX}{entity_id}:hour"
+        burst_key = f"{RATE_LIMIT_PREFIX}{entity_id}:burst"
 
         # Single atomic check of all limits
         result = self._rate_limit_script(
@@ -696,8 +698,8 @@ class LLMSecurityRateLimiter:
         if allowed == 0:
             # Build detailed error message based on which limit was hit
             limit_messages = {
-                'minute': f"Rate limit exceeded: {self.max_calls_per_minute} calls/minute",
-                'hour': f"Rate limit exceeded: {self.max_calls_per_hour} calls/hour",
+                'minute': f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_minute} calls/minute",
+                'hour': f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_hour} calls/hour",
                 'burst': f"Burst limit exceeded: {self.burst_size} calls in {RATE_LIMIT_WINDOW_BURST} seconds"
             }
 
@@ -709,7 +711,7 @@ class LLMSecurityRateLimiter:
                 }
             )
 
-            return False, limit_messages.get(reason, f"Rate limit exceeded: {reason}")
+            return False, limit_messages.get(reason, f"{RATE_LIMIT_ERROR_MESSAGE}{reason}")
 
         return True, None
 
@@ -736,13 +738,13 @@ class LLMSecurityRateLimiter:
             minute_ago = now - RATE_LIMIT_WINDOW_MINUTE
             recent_calls = [t for t in self.call_history[entity_id] if t > minute_ago]
             if len(recent_calls) >= self.max_calls_per_minute:
-                return False, f"Rate limit exceeded: {self.max_calls_per_minute} calls/minute"
+                return False, f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_minute} calls/minute"
 
             # Check hour limit
             hour_ago = now - RATE_LIMIT_WINDOW_HOUR
             hourly_calls = [t for t in self.call_history[entity_id] if t > hour_ago]
             if len(hourly_calls) >= self.max_calls_per_hour:
-                return False, f"Rate limit exceeded: {self.max_calls_per_hour} calls/hour"
+                return False, f"{RATE_LIMIT_ERROR_MESSAGE}{self.max_calls_per_hour} calls/hour"
 
             # Check burst limit
             burst_window = now - RATE_LIMIT_WINDOW_BURST

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from src.agents.standard_agent import StandardAgent
 
 from src.agents.constants import (
+    ERROR_MSG_TOOL_PREFIX,
     FALLBACK_UNKNOWN_VALUE,
     OUTPUT_PREVIEW_LENGTH,
 )
@@ -116,7 +117,7 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
             ToolKeys.NAME: tool_name,
             ToolKeys.PARAMETERS: tool_params,
             ToolKeys.RESULT: None,
-            ToolKeys.ERROR: f"Tool '{tool_name}' blocked: safety mode is 'require_approval'",
+            ToolKeys.ERROR: f"{ERROR_MSG_TOOL_PREFIX}{tool_name}' blocked: safety mode is 'require_approval'",
             ToolKeys.SUCCESS: False
         }
 
@@ -125,7 +126,7 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
             "name": tool_name,
             "parameters": tool_params,
             "result": None,
-            "error": f"Tool '{tool_name}' requires approval before execution",
+            "error": f"{ERROR_MSG_TOOL_PREFIX}{tool_name}' requires approval before execution",
             "success": False
         }
 
@@ -133,7 +134,7 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
         return {
             ToolKeys.NAME: tool_name,
             ToolKeys.PARAMETERS: tool_params,
-            ToolKeys.RESULT: f"[DRY RUN] Tool '{tool_name}' would be executed with parameters: {tool_params}",
+            ToolKeys.RESULT: f"[DRY RUN] {ERROR_MSG_TOOL_PREFIX}{tool_name}' would be executed with parameters: {tool_params}",
             ToolKeys.ERROR: None,
             ToolKeys.SUCCESS: True
         }
@@ -145,7 +146,7 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
     # SECURITY: No silent fallback
     logger.critical(
         "SECURITY: No tool_executor configured for agent '%s'. "
-        "Tool '%s' execution blocked to prevent safety bypass.",
+        f"{ERROR_MSG_TOOL_PREFIX}%s' execution blocked to prevent safety bypass.",
         agent.name, tool_name
     )
     return {
@@ -153,7 +154,7 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
         ToolKeys.PARAMETERS: tool_params,
         ToolKeys.RESULT: None,
         ToolKeys.ERROR: (
-            f"Tool '{tool_name}' execution blocked: no tool_executor configured. "
+            f"{ERROR_MSG_TOOL_PREFIX}{tool_name}' execution blocked: no tool_executor configured. "
             f"The safety stack is required for tool execution."
         ),
         ToolKeys.SUCCESS: False

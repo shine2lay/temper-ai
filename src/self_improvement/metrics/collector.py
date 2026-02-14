@@ -5,7 +5,11 @@ from abc import ABC, abstractmethod
 from threading import RLock
 from typing import Any, Dict, List, Optional, Protocol
 
-from src.self_improvement.constants import MAX_EXTRACTION_SCORE, MIN_EXTRACTION_SCORE
+from src.self_improvement.constants import (
+    ERROR_MSG_COLLECTOR_PREFIX,
+    MAX_EXTRACTION_SCORE,
+    MIN_EXTRACTION_SCORE,
+)
 from src.self_improvement.metrics.types import SIMetricType
 
 logger = logging.getLogger(__name__)
@@ -259,7 +263,7 @@ class MetricRegistry:
                 # Check if collector applies to this execution
                 if not collector.is_applicable(execution):
                     logger.debug(
-                        f"Collector '{metric_name}' not applicable for "
+                        f"{ERROR_MSG_COLLECTOR_PREFIX}{metric_name}' not applicable for "
                         f"execution {getattr(execution, 'id', 'unknown')}"
                     )
                     continue
@@ -272,7 +276,7 @@ class MetricRegistry:
                     # Validate value is in valid range
                     if not (MIN_EXTRACTION_SCORE <= value <= MAX_EXTRACTION_SCORE):
                         logger.error(
-                            f"Collector '{metric_name}' returned invalid value "
+                            f"{ERROR_MSG_COLLECTOR_PREFIX}{metric_name}' returned invalid value "
                             f"{value} (must be in [{MIN_EXTRACTION_SCORE}, {MAX_EXTRACTION_SCORE}])"
                         )
                         continue
@@ -284,14 +288,14 @@ class MetricRegistry:
                     )
                 else:
                     logger.debug(
-                        f"Collector '{metric_name}' returned None for "
+                        f"{ERROR_MSG_COLLECTOR_PREFIX}{metric_name}' returned None for "
                         f"execution {getattr(execution, 'id', 'unknown')}"
                     )
 
             except Exception as e:
                 # Log error but continue with other collectors
                 logger.error(
-                    f"Collector '{metric_name}' failed for execution "
+                    f"{ERROR_MSG_COLLECTOR_PREFIX}{metric_name}' failed for execution "
                     f"{getattr(execution, 'id', 'unknown')}: {e}",
                     exc_info=True
                 )

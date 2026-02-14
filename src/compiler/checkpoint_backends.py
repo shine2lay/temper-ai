@@ -38,6 +38,11 @@ from typing import Any, Dict, List, Optional, cast
 
 logger = logging.getLogger(__name__)
 
+from src.compiler.constants import (
+    LOG_PREFIX_CHECKPOINT,
+    LOG_PREFIX_CHECKPOINT_INDEX,
+    LOG_PREFIX_CHECKPOINT_LABEL,
+)
 from src.compiler.domain_state import WorkflowDomainState
 from src.constants.durations import TIMEOUT_SHORT
 from src.constants.limits import MAX_SHORT_STRING_LENGTH
@@ -435,7 +440,7 @@ class FileCheckpointBackend(CheckpointBackend):
         checkpoint_path = self._get_checkpoint_path(workflow_id, checkpoint_id)
         if not checkpoint_path.exists():
             raise CheckpointNotFoundError(
-                f"Checkpoint {checkpoint_id} not found for workflow {workflow_id}"
+                f"{LOG_PREFIX_CHECKPOINT}{checkpoint_id} not found for workflow {workflow_id}"
             )
 
         with open(checkpoint_path, 'r') as f:
@@ -451,7 +456,7 @@ class FileCheckpointBackend(CheckpointBackend):
             canonical_json = json.dumps(checkpoint_data, indent=2).encode()
             if not self._verify_hmac(canonical_json, stored_hmac):
                 raise CheckpointNotFoundError(
-                    f"Checkpoint {checkpoint_id} for workflow {workflow_id} "
+                    f"{LOG_PREFIX_CHECKPOINT}{checkpoint_id} for workflow {workflow_id} "
                     "failed HMAC integrity verification (possible tampering)"
                 )
         else:
@@ -624,8 +629,8 @@ class RedisCheckpointBackend(CheckpointBackend):
         safe_cp = self._sanitize_id(checkpoint_id)
 
         # CO-08: Atomic save using pipeline (SET + ZADD)
-        key = f"checkpoint:{safe_wf}:{safe_cp}"
-        index_key = f"checkpoint_index:{safe_wf}"
+        key = f"{LOG_PREFIX_CHECKPOINT_LABEL}{safe_wf}:{safe_cp}"
+        index_key = f"{LOG_PREFIX_CHECKPOINT_INDEX}{safe_wf}"
         timestamp = time.time()
 
         pipe = self.redis_client.pipeline(transaction=True)
@@ -667,12 +672,12 @@ class RedisCheckpointBackend(CheckpointBackend):
         # Load from Redis (CO-04: sanitize IDs)
         safe_wf = self._sanitize_id(workflow_id)
         safe_cp = self._sanitize_id(checkpoint_id)
-        key = f"checkpoint:{safe_wf}:{safe_cp}"
+        key = f"{LOG_PREFIX_CHECKPOINT_LABEL}{safe_wf}:{safe_cp}"
         data = self.redis_client.get(key)
 
         if data is None:
             raise CheckpointNotFoundError(
-                f"Checkpoint {checkpoint_id} not found for workflow {workflow_id}"
+                f"{LOG_PREFIX_CHECKPOINT}{checkpoint_id} not found for workflow {workflow_id}"
             )
 
         checkpoint_data = json.loads(data)
@@ -688,7 +693,7 @@ class RedisCheckpointBackend(CheckpointBackend):
             List of checkpoint metadata dicts (sorted by created_at desc)
         """
         safe_wf = self._sanitize_id(workflow_id)
-        index_key = f"checkpoint_index:{safe_wf}"
+        index_key = f"{LOG_PREFIX_CHECKPOINT_INDEX}{safe_wf}"
         # Get all checkpoint IDs (sorted by score descending)
         checkpoint_ids = self.redis_client.zrevrange(index_key, 0, -1)
 
@@ -698,7 +703,7 @@ class RedisCheckpointBackend(CheckpointBackend):
             return []
 
         keys = [
-            f"checkpoint:{safe_wf}:{self._sanitize_id(cp_id)}"
+            f"{LOG_PREFIX_CHECKPOINT_LABEL}{safe_wf}:{self._sanitize_id(cp_id)}"
             for cp_id in checkpoint_ids
         ]
         results = self.redis_client.mget(keys)
@@ -729,8 +734,8 @@ class RedisCheckpointBackend(CheckpointBackend):
         # CO-04: Sanitize IDs; CO-08: Atomic delete
         safe_wf = self._sanitize_id(workflow_id)
         safe_cp = self._sanitize_id(checkpoint_id)
-        key = f"checkpoint:{safe_wf}:{safe_cp}"
-        index_key = f"checkpoint_index:{safe_wf}"
+        key = f"{LOG_PREFIX_CHECKPOINT_LABEL}{safe_wf}:{safe_cp}"
+        index_key = f"{LOG_PREFIX_CHECKPOINT_INDEX}{safe_wf}"
 
         pipe = self.redis_client.pipeline(transaction=True)
         pipe.delete(key)
@@ -748,7 +753,7 @@ class RedisCheckpointBackend(CheckpointBackend):
         Returns:
             Latest checkpoint ID, or None if no checkpoints exist
         """
-        index_key = f"checkpoint_index:{self._sanitize_id(workflow_id)}"
+        index_key = f"{LOG_PREFIX_CHECKPOINT_INDEX}{self._sanitize_id(workflow_id)}"
         # Get the highest-scored item (most recent)
         checkpoint_ids = self.redis_client.zrevrange(index_key, 0, 0)
         if checkpoint_ids:

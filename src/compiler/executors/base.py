@@ -11,6 +11,11 @@ from typing import Any, Callable, Dict, List, Optional
 
 from typing_extensions import TypedDict
 
+from src.compiler.constants import (
+    AGENT_ROLE_LEADER,
+    ERROR_MSG_FOR_STAGE_SUFFIX,
+    STATUS_UNKNOWN,
+)
 from src.compiler.domain_state import (
     ConfigLoaderProtocol,
     DomainToolRegistryProtocol,
@@ -218,9 +223,9 @@ class StageExecutor(ABC):
 
             strategy = get_strategy_from_config(stage_config)
 
-            # Check if strategy requires AGENT_ROLE_LEADER-based synthesis
-            if hasattr(strategy, 'requires_AGENT_ROLE_LEADER_synthesis') and strategy.requires_AGENT_ROLE_LEADER_synthesis:
-                return self._run_AGENT_ROLE_LEADER_synthesis(
+            # Check if strategy requires leader-based synthesis
+            if hasattr(strategy, 'requires_leader_synthesis') and strategy.requires_leader_synthesis:
+                return self._run_leader_synthesis(
                     agent_outputs=agent_outputs,
                     strategy=strategy,
                     stage_config=stage_config,
@@ -353,7 +358,7 @@ class StageExecutor(ABC):
         # Check budget after round 0
         if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
             logger.warning(
-                f"Dialogue stopped after round 0 for stage '{stage_name}': "
+                f"Dialogue stopped after round 0{ERROR_MSG_FOR_STAGE_SUFFIX}{stage_name}': "
                 f"budget ${strategy.cost_budget_usd:.2f} reached "
                 f"(cost: ${total_cost:.2f})"
             )
@@ -415,7 +420,7 @@ class StageExecutor(ABC):
                     previous_outputs
                 )
                 logger.info(
-                    f"Dialogue round {round_num + 1} for stage '{stage_name}': "
+                    f"Dialogue round {round_num + 1}{ERROR_MSG_FOR_STAGE_SUFFIX}{stage_name}': "
                     f"convergence {conv_score:.1%} "
                     f"(threshold: {strategy.convergence_threshold:.1%})"
                 )
@@ -495,7 +500,7 @@ class StageExecutor(ABC):
             result.metadata["early_stop_reason"] = "max_rounds"
 
         logger.info(
-            f"Dialogue completed for stage '{stage_name}': "
+            f"Dialogue completed{ERROR_MSG_FOR_STAGE_SUFFIX}{stage_name}': "
             f"{final_round + 1} rounds, ${total_cost:.2f} cost, "
             f"converged: {converged}, "
             f"reason: {result.metadata['early_stop_reason']}"
@@ -503,7 +508,7 @@ class StageExecutor(ABC):
 
         return result
 
-    def _run_AGENT_ROLE_LEADER_synthesis(
+    def _run_leader_synthesis(
         self,
         agent_outputs: list,
         strategy: Any,
@@ -513,15 +518,15 @@ class StageExecutor(ABC):
         config_loader: Optional[ConfigLoaderProtocol] = None,
         agents: Optional[List] = None,
     ) -> Any:
-        """Execute AGENT_ROLE_LEADER-based synthesis: re-invoke AGENT_ROLE_LEADER with team outputs.
+        """Execute leader-based synthesis: re-invoke leader with team outputs.
 
         The perspective agents have already run (their outputs are in
         agent_outputs). This method:
         1. Formats perspective outputs as structured text
-        2. Re-invokes the AGENT_ROLE_LEADER agent with ``team_outputs`` in its input
-        3. Calls strategy.synthesize() with all outputs (perspectives + AGENT_ROLE_LEADER)
+        2. Re-invokes the leader agent with ``team_outputs`` in its input
+        3. Calls strategy.synthesize() with all outputs (perspectives + leader)
 
-        Falls back to consensus on perspective outputs if AGENT_ROLE_LEADER invocation fails.
+        Falls back to consensus on perspective outputs if leader invocation fails.
 
         Args:
             agent_outputs: Outputs from perspective agents (round 0)
@@ -533,8 +538,10 @@ class StageExecutor(ABC):
             agents: List of agent refs from stage config
 
         Returns:
-            SynthesisResult from AGENT_ROLE_LEADER or consensus fallback
+            SynthesisResult from leader or consensus fallback
         """
+        from src.strategies.base import AgentOutput, SynthesisResult
+
         # Extract collaboration config (handles nested "stage.collaboration.config"
         # and flat "collaboration.config" formats)
         stage_dict = stage_config if isinstance(stage_config, dict) else {}
@@ -546,72 +553,72 @@ class StageExecutor(ABC):
             else:
                 collab = {}
         collaboration_config = collab.get("config", {}) if isinstance(collab, dict) else {}
-        AGENT_ROLE_LEADER_name = strategy.get_AGENT_ROLE_LEADER_agent_name(collaboration_config)
+        leader_name = strategy.get_leader_agent_name(collaboration_config)
 
-        if not AGENT_ROLE_LEADER_name:
+        if not leader_name:
             logger.warning(
-                "Leader strategy for stage '%s' has no AGENT_ROLE_LEADER_agent configured; "
+                "Leader strategy for stage '%s' has no leader_agent configured; "
                 "falling back to consensus.",
                 stage_name,
             )
             return strategy.synthesize(agent_outputs, collaboration_config)
 
-        # Format perspective outputs for AGENT_ROLE_LEADER prompt injection
+        # Format perspective outputs for leader prompt injection
         team_outputs_text = strategy.format_team_outputs(agent_outputs)
 
-        # Re-invoke the AGENT_ROLE_LEADER agent
+        # Re-invoke the leader agent
         try:
             if state is None or config_loader is None:
-                raise ValueError("state and config_loader required for AGENT_ROLE_LEADER synthesis")
+                raise ValueError("state and config_loader required for leader synthesis")
 
-            AGENT_ROLE_LEADER_output = self._invoke_AGENT_ROLE_LEADER_agent(
-                AGENT_ROLE_LEADER_name=AGENT_ROLE_LEADER_name,
+            leader_output = self._invoke_leader_agent(
+                leader_name=leader_name,
                 team_outputs_text=team_outputs_text,
                 stage_name=stage_name,
                 state=state,
                 config_loader=config_loader,
             )
 
-            # Combine perspective + AGENT_ROLE_LEADER outputs and synthesize
-            all_outputs = list(agent_outputs) + [AGENT_ROLE_LEADER_output]
+            # Combine perspective + leader outputs and synthesize
+            all_outputs = list(agent_outputs) + [leader_output]
             return strategy.synthesize(all_outputs, collaboration_config)
 
         except Exception as exc:
             logger.warning(
                 "Leader agent '%s' failed for stage '%s': %s. "
                 "Falling back to consensus on perspective outputs.",
-                AGENT_ROLE_LEADER_name,
+                leader_name,
                 stage_name,
                 exc,
             )
             return strategy.synthesize(agent_outputs, collaboration_config)
 
-    def _invoke_AGENT_ROLE_LEADER_agent(
+    def _invoke_leader_agent(
         self,
-        AGENT_ROLE_LEADER_name: str,
+        leader_name: str,
         team_outputs_text: str,
         stage_name: str,
         state: Dict[str, Any],
         config_loader: ConfigLoaderProtocol,
     ) -> Any:
-        """Invoke the AGENT_ROLE_LEADER agent with team outputs injected.
+        """Invoke the leader agent with team outputs injected.
 
         Args:
-            AGENT_ROLE_LEADER_name: Leader agent name
+            leader_name: Leader agent name
             team_outputs_text: Formatted perspective outputs
             stage_name: Stage name
             state: Workflow state
             config_loader: Config loader
 
         Returns:
-            AgentOutput from the AGENT_ROLE_LEADER agent
+            AgentOutput from the leader agent
         """
         from src.agents.agent_factory import AgentFactory
         from src.compiler.schemas import AgentConfig
         from src.core.context import ExecutionContext
         from src.strategies.base import AgentOutput
 
-        agent_config_dict = config_loader.load_agent(AGENT_ROLE_LEADER_name)
+        agent_config_dict = config_loader.load_agent(leader_name)
         agent_config = AgentConfig(**agent_config_dict)
         agent = AgentFactory.create(agent_config)
 
@@ -629,19 +636,19 @@ class StageExecutor(ABC):
                 agent_config.model_dump() if hasattr(agent_config, 'model_dump') else dict(agent_config_dict)
             )
             with tracker.track_agent(
-                agent_name=AGENT_ROLE_LEADER_name,
+                agent_name=leader_name,
                 agent_config=agent_config_for_tracking,
                 stage_id=current_stage_id,
-                input_data={"role": "AGENT_ROLE_LEADER", "team_outputs_length": len(team_outputs_text)},
+                input_data={"role": AGENT_ROLE_LEADER, "team_outputs_length": len(team_outputs_text)},
             ) as agent_id:
                 context = ExecutionContext(
-                    workflow_id=state.get(StateKeys.WORKFLOW_ID, "STATUS_UNKNOWN"),
+                    workflow_id=state.get(StateKeys.WORKFLOW_ID, STATUS_UNKNOWN),
                     stage_id=current_stage_id,
                     agent_id=agent_id,
                     metadata={
                         "stage_name": stage_name,
-                        "agent_name": AGENT_ROLE_LEADER_name,
-                        "execution_mode": "AGENT_ROLE_LEADER",
+                        "agent_name": leader_name,
+                        "execution_mode": AGENT_ROLE_LEADER,
                     },
                 )
                 response = agent.execute(input_data, context)
@@ -658,33 +665,33 @@ class StageExecutor(ABC):
                     )
                 except Exception:
                     logger.warning(
-                        "Failed to set agent output tracking for AGENT_ROLE_LEADER agent %s",
-                        AGENT_ROLE_LEADER_name,
+                        "Failed to set agent output tracking for leader agent %s",
+                        leader_name,
                         exc_info=True,
                     )
         else:
             input_data.pop(StateKeys.TRACKER, None)
             context = ExecutionContext(
-                workflow_id=state.get(StateKeys.WORKFLOW_ID, "STATUS_UNKNOWN"),
+                workflow_id=state.get(StateKeys.WORKFLOW_ID, STATUS_UNKNOWN),
                 stage_id=current_stage_id,
                 agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
                 metadata={
                     "stage_name": stage_name,
-                    "agent_name": AGENT_ROLE_LEADER_name,
-                    "execution_mode": "AGENT_ROLE_LEADER",
+                    "agent_name": leader_name,
+                    "execution_mode": AGENT_ROLE_LEADER,
                 },
             )
             response = agent.execute(input_data, context)
 
         return AgentOutput(
-            agent_name=AGENT_ROLE_LEADER_name,
+            agent_name=leader_name,
             decision=response.output,
             reasoning=response.reasoning or "",
             confidence=response.confidence or 0.0,
             metadata={
                 StateKeys.TOKENS: response.tokens,
                 StateKeys.COST_USD: response.estimated_cost_usd,
-                "role": "AGENT_ROLE_LEADER",
+                "role": AGENT_ROLE_LEADER,
             },
         )
 
@@ -779,7 +786,7 @@ class StageExecutor(ABC):
                     input_data={"round": round_number, "max_rounds": max_rounds},
                 ) as agent_id:
                     context = ExecutionContext(
-                        workflow_id=state.get(StateKeys.WORKFLOW_ID, "STATUS_UNKNOWN"),
+                        workflow_id=state.get(StateKeys.WORKFLOW_ID, STATUS_UNKNOWN),
                         stage_id=current_stage_id,
                         agent_id=agent_id,
                         metadata={
@@ -808,7 +815,7 @@ class StageExecutor(ABC):
                 # so don't pass tracker to avoid FK violations on llm_calls).
                 input_data.pop(StateKeys.TRACKER, None)
                 context = ExecutionContext(
-                    workflow_id=state.get(StateKeys.WORKFLOW_ID, "STATUS_UNKNOWN"),
+                    workflow_id=state.get(StateKeys.WORKFLOW_ID, STATUS_UNKNOWN),
                     stage_id=current_stage_id,
                     agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
                     metadata={

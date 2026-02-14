@@ -249,7 +249,7 @@ async def exchange_code(
     # Get provider config
     provider_config = config.get_provider_config(provider)
     if not provider_config:
-        raise OAuthError(f"Provider '{provider}' not configured", provider=provider)
+        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=provider)
 
     # Get token endpoint
     endpoints = get_provider_endpoints(provider_config)
@@ -352,7 +352,7 @@ async def refresh_token(
 
     provider_config = config.get_provider_config(provider)
     if not provider_config:
-        raise OAuthError(f"Provider '{provider}' not configured", provider=provider)
+        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=provider)
 
     endpoints = get_provider_endpoints(provider_config)
     token_endpoint = endpoints[ENDPOINT_TOKEN]
@@ -392,7 +392,7 @@ async def refresh_token(
         )
 
         logger.info(
-            f"Refreshed access token: provider={provider}, user={user_id}"
+            f"Refreshed access token: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
         )
 
         return new_tokens
@@ -458,7 +458,7 @@ async def fetch_user_info(
 
     provider_config = config.get_provider_config(provider)
     if not provider_config:
-        raise OAuthError(f"Provider '{provider}' not configured", provider=provider)
+        raise OAuthError(f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}", provider=provider)
 
     endpoints = get_provider_endpoints(provider_config)
     userinfo_endpoint = endpoints.get(ENDPOINT_USERINFO)
@@ -479,7 +479,7 @@ async def fetch_user_info(
 
         if response.status_code == HTTP_UNAUTHORIZED and auto_refresh:
             logger.info(
-                f"Access token expired, refreshing: provider={provider}, user={user_id}"
+                f"Access token expired, refreshing: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
             )
             await refresh_token(user_id, provider, config, token_store, http_client)
             # Retry with new token (auto_refresh=False to prevent infinite loop)
@@ -497,7 +497,7 @@ async def fetch_user_info(
         user_info: Dict[str, Any] = response.json()
 
         logger.info(
-            f"Retrieved user info: provider={provider}, user={user_id}"
+            f"Retrieved user info: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
         )
 
         return user_info
@@ -541,7 +541,7 @@ async def revoke_tokens(
         except (httpx.HTTPError, OAuthError, KeyError, AttributeError) as e:
             logger.warning(
                 f"Provider revocation failed (continuing with local deletion): "
-                f"provider={provider}, user={user_id}, error={e}"
+                f"provider={provider}{LOG_USER_SEPARATOR}{user_id}, error={e}"
             )
 
     deleted = token_store.delete_token(user_id)

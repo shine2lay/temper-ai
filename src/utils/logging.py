@@ -23,6 +23,7 @@ from urllib.parse import unquote
 from src.constants.limits import DEFAULT_MAX_ITEMS
 from src.constants.probabilities import PROB_VERY_HIGH
 from src.constants.sizes import SIZE_10KB
+from src.utils.constants import REDACTION_REPLACEMENT
 
 # ASCII control character boundaries
 ASCII_CONTROL_CHAR_MAX = 0x20  # Characters below this (0x00-0x1F) are control characters
@@ -51,9 +52,9 @@ def _build_sensitive_patterns() -> list[tuple[re.Pattern[str], str]]:
 
     patterns = [
         # Key=value assignment patterns (log-specific, exclude template refs)
-        (re.compile(r'(password|passwd|pwd)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
-        (re.compile(r'(api[_-]?key|apikey|token)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
-        (re.compile(r'(secret|credential)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), r'\1=[REDACTED]'),
+        (re.compile(r'(password|passwd|pwd)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), REDACTION_REPLACEMENT),
+        (re.compile(r'(api[_-]?key|apikey|token)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), REDACTION_REPLACEMENT),
+        (re.compile(r'(secret|credential)[=:]\s*(?!\$\{)(\S+)', re.IGNORECASE), REDACTION_REPLACEMENT),
     ]
     # Add vendor-specific patterns from centralized registry
     for name in ('openai_key', 'anthropic_key', 'aws_access_key',

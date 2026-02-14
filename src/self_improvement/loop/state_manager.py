@@ -14,6 +14,7 @@ from sqlmodel import Column, Field, SQLModel, select
 
 from src.database import get_session
 from src.database.datetime_utils import utcnow
+from src.self_improvement.constants import ERROR_MSG_NO_STATE_FOUND
 from src.utils.exceptions import ErrorCode, WorkflowError
 
 from .models import LoopState, LoopStatus, Phase
@@ -193,7 +194,7 @@ class LoopStateManager:
         """
         state = self.get_state(agent_name)
         if not state:
-            raise StateTransitionError(f"No state found for {agent_name}")
+            raise StateTransitionError(f"{ERROR_MSG_NO_STATE_FOUND}{agent_name}")
 
         # Validate transition
         if not self.can_transition(state.current_phase, next_phase):
@@ -250,7 +251,7 @@ class LoopStateManager:
         """
         state = self.get_state(agent_name)
         if not state:
-            raise ValueError(f"No state found for {agent_name}")
+            raise ValueError(f"{ERROR_MSG_NO_STATE_FOUND}{agent_name}")
 
         state.status = LoopStatus.PAUSED
         self.update_state(state)
@@ -265,7 +266,7 @@ class LoopStateManager:
         """
         state = self.get_state(agent_name)
         if not state:
-            raise ValueError(f"No state found for {agent_name}")
+            raise ValueError(f"{ERROR_MSG_NO_STATE_FOUND}{agent_name}")
 
         if state.status != LoopStatus.PAUSED:
             raise ValueError(f"Loop not paused for {agent_name}")
@@ -284,7 +285,7 @@ class LoopStateManager:
         """
         state = self.get_state(agent_name)
         if not state:
-            raise ValueError(f"No state found for {agent_name}")
+            raise ValueError(f"{ERROR_MSG_NO_STATE_FOUND}{agent_name}")
 
         state.status = LoopStatus.FAILED
         state.last_error = error
@@ -300,7 +301,7 @@ class LoopStateManager:
         """
         state = self.get_state(agent_name)
         if not state:
-            raise ValueError(f"No state found for {agent_name}")
+            raise ValueError(f"{ERROR_MSG_NO_STATE_FOUND}{agent_name}")
 
         state.status = LoopStatus.COMPLETED
         self.update_state(state)
@@ -333,7 +334,7 @@ class LoopStateManager:
         """
         state = self.get_state(agent_name)
         if not state:
-            raise ValueError(f"No state found for {agent_name}")
+            raise ValueError(f"{ERROR_MSG_NO_STATE_FOUND}{agent_name}")
 
         state.phase_data.update(data)
         self.update_state(state)

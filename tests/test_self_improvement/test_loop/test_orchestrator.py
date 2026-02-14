@@ -26,18 +26,30 @@ def mock_session_factory():
     return factory
 
 
+@pytest.fixture
+def mock_coord_db():
+    """Create a mock coord_db with context manager support for transaction()."""
+    coord_db = Mock()
+    mock_conn = Mock()
+    mock_conn.execute = Mock()
+    mock_transaction = Mock()
+    mock_transaction.__enter__ = Mock(return_value=mock_conn)
+    mock_transaction.__exit__ = Mock(return_value=False)
+    coord_db.transaction = Mock(return_value=mock_transaction)
+    return coord_db
+
+
 class TestM5SelfImprovementLoopInit:
     """Test orchestrator initialization."""
 
-    def test_initialization_defaults(self, mock_session_factory):
+    def test_initialization_defaults(self, mock_coord_db, mock_session_factory):
         """Test initialization with default config."""
-        coord_db = Mock()
         obs_session = Mock()
 
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
-            assert loop.coord_db is coord_db
+            assert loop.coord_db is mock_coord_db
             assert loop.obs_session is obs_session
             assert isinstance(loop.config, LoopConfig)
             assert loop.state_manager is not None
@@ -49,39 +61,35 @@ class TestM5SelfImprovementLoopInit:
             assert loop.state_coordinator is not None
             assert loop.health_checker is not None
 
-    def test_initialization_custom_config(self, mock_session_factory):
+    def test_initialization_custom_config(self, mock_coord_db, mock_session_factory):
         """Test initialization with custom config."""
-        coord_db = Mock()
         obs_session = Mock()
-        config = LoopConfig(max_iterations=5, check_interval_minutes=10)
+        config = LoopConfig(detection_window_hours=5, analysis_window_hours=10)
 
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session, config=config)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session, config=config)
 
             assert loop.config is config
-            assert loop.config.max_iterations == 5
-            assert loop.config.check_interval_minutes == 10
+            assert loop.config.detection_window_hours == 5
+            assert loop.config.analysis_window_hours == 10
 
 
 class TestM5SelfImprovementLoopIteration:
     """Test single iteration execution."""
 
-    def test_run_iteration_success(self, mock_session_factory):
+    def test_run_iteration_success(self, mock_coord_db, mock_session_factory):
         """Test successful iteration execution."""
-        coord_db = Mock()
         obs_session = Mock()
 
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         # Mock executor
-        now = datetime.now(timezone.utc)
         expected_result = IterationResult(
+            agent_name="test_agent",
             iteration_number=1,
             phases_completed=[Phase.DETECT, Phase.ANALYZE],
-            success=True,
-            duration_seconds=100.0,
-            timestamp=now
+            success=True
         )
         loop.executor.execute_iteration = Mock(return_value=expected_result)
 
@@ -96,12 +104,11 @@ class TestM5SelfImprovementLoopIteration:
             start_phase=Phase.DETECT
         )
 
-    def test_run_iteration_custom_start_phase(self, mock_session_factory):
+    def test_run_iteration_custom_start_phase(self, mock_coord_db, mock_session_factory):
         """Test iteration with custom start phase."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         expected_result = Mock(spec=IterationResult)
         loop.executor.execute_iteration = Mock(return_value=expected_result)
@@ -114,12 +121,11 @@ class TestM5SelfImprovementLoopIteration:
             start_phase=Phase.STRATEGY
         )
 
-    def test_run_iteration_paused_raises_error(self, mock_session_factory):
+    def test_run_iteration_paused_raises_error(self, mock_coord_db, mock_session_factory):
         """Test that running paused loop raises error."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         # Mock paused state
         paused_state = LoopState(
@@ -137,12 +143,11 @@ class TestM5SelfImprovementLoopIteration:
 class TestM5SelfImprovementLoopContinuous:
     """Test continuous execution mode."""
 
-    def test_run_continuous(self, mock_session_factory):
+    def test_run_continuous(self, mock_coord_db, mock_session_factory):
         """Test continuous execution delegates to executor."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         expected_summary = {"total_iterations": 5, "convergence": True}
         loop.continuous_executor.execute = Mock(return_value=expected_summary)
@@ -158,12 +163,11 @@ class TestM5SelfImprovementLoopContinuous:
             15
         )
 
-    def test_run_continuous_default_interval(self, mock_session_factory):
+    def test_run_continuous_default_interval(self, mock_coord_db, mock_session_factory):
         """Test continuous execution with default interval."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         loop.continuous_executor.execute = Mock(return_value={})
 
@@ -171,12 +175,11 @@ class TestM5SelfImprovementLoopContinuous:
 
         loop.continuous_executor.execute.assert_called_once_with(["agent1"], None)
 
-    def test_run_continuous_empty_agents_list(self, mock_session_factory):
+    def test_run_continuous_empty_agents_list(self, mock_coord_db, mock_session_factory):
         """Test continuous execution with empty agent list."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         loop.continuous_executor.execute = Mock(return_value={})
 
@@ -188,12 +191,11 @@ class TestM5SelfImprovementLoopContinuous:
 class TestM5SelfImprovementLoopScheduled:
     """Test scheduled execution mode."""
 
-    def test_run_scheduled_not_implemented(self, mock_session_factory):
+    def test_run_scheduled_not_implemented(self, mock_coord_db, mock_session_factory):
         """Test scheduled mode raises NotImplementedError."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         with pytest.raises(NotImplementedError, match="Scheduled mode not yet implemented"):
             loop.run_scheduled("0 0 * * *")
@@ -202,12 +204,11 @@ class TestM5SelfImprovementLoopScheduled:
 class TestM5SelfImprovementLoopState:
     """Test state management operations."""
 
-    def test_get_state(self, mock_session_factory):
+    def test_get_state(self, mock_coord_db, mock_session_factory):
         """Test getting state for agent."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         expected_state = {
             "agent_name": "test_agent",
@@ -222,12 +223,11 @@ class TestM5SelfImprovementLoopState:
         assert result == expected_state
         loop.state_coordinator.get_state_info.assert_called_once_with("test_agent")
 
-    def test_get_state_none(self, mock_session_factory):
+    def test_get_state_none(self, mock_coord_db, mock_session_factory):
         """Test getting state when agent has no state."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         loop.state_coordinator.get_state_info = Mock(return_value=None)
 
@@ -235,12 +235,11 @@ class TestM5SelfImprovementLoopState:
 
         assert result is None
 
-    def test_reset_state(self, mock_session_factory):
+    def test_reset_state(self, mock_coord_db, mock_session_factory):
         """Test resetting state for agent."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         loop.state_coordinator.reset_state_and_metrics = Mock()
 
@@ -248,12 +247,11 @@ class TestM5SelfImprovementLoopState:
 
         loop.state_coordinator.reset_state_and_metrics.assert_called_once_with("test_agent")
 
-    def test_pause(self, mock_session_factory):
+    def test_pause(self, mock_coord_db, mock_session_factory):
         """Test pausing loop for agent."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         loop.state_coordinator.pause_execution = Mock()
 
@@ -261,12 +259,11 @@ class TestM5SelfImprovementLoopState:
 
         loop.state_coordinator.pause_execution.assert_called_once_with("test_agent")
 
-    def test_resume(self, mock_session_factory):
+    def test_resume(self, mock_coord_db, mock_session_factory):
         """Test resuming paused loop."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         loop.state_coordinator.resume_execution = Mock()
 
@@ -278,12 +275,11 @@ class TestM5SelfImprovementLoopState:
 class TestM5SelfImprovementLoopProgress:
     """Test progress reporting."""
 
-    def test_get_progress(self, mock_session_factory):
+    def test_get_progress(self, mock_coord_db, mock_session_factory):
         """Test getting progress report."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         state = Mock(spec=LoopState)
         metrics = Mock()
@@ -313,23 +309,21 @@ class TestM5SelfImprovementLoopProgress:
 class TestM5SelfImprovementLoopHistory:
     """Test history retrieval."""
 
-    def test_get_history_not_implemented(self, mock_session_factory):
+    def test_get_history_not_implemented(self, mock_coord_db, mock_session_factory):
         """Test history returns empty list (not implemented)."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         result = loop.get_history("test_agent")
 
         assert result == []
 
-    def test_get_history_with_limit(self, mock_session_factory):
+    def test_get_history_with_limit(self, mock_coord_db, mock_session_factory):
         """Test history with limit parameter."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         result = loop.get_history("test_agent", limit=10)
 
@@ -339,12 +333,11 @@ class TestM5SelfImprovementLoopHistory:
 class TestM5SelfImprovementLoopMetrics:
     """Test metrics retrieval."""
 
-    def test_get_metrics(self, mock_session_factory):
+    def test_get_metrics(self, mock_coord_db, mock_session_factory):
         """Test getting metrics for agent."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         mock_metrics = Mock()
         expected_dict = {
@@ -361,12 +354,11 @@ class TestM5SelfImprovementLoopMetrics:
         assert result == expected_dict
         loop.metrics_collector.get_metrics.assert_called_once_with("test_agent")
 
-    def test_get_metrics_none(self, mock_session_factory):
+    def test_get_metrics_none(self, mock_coord_db, mock_session_factory):
         """Test getting metrics when none exist."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         loop.metrics_collector.get_metrics = Mock(return_value=None)
 
@@ -378,12 +370,11 @@ class TestM5SelfImprovementLoopMetrics:
 class TestM5SelfImprovementLoopHealth:
     """Test health check."""
 
-    def test_health_check(self, mock_session_factory):
+    def test_health_check(self, mock_coord_db, mock_session_factory):
         """Test health check delegates to health checker."""
-        coord_db = Mock()
         obs_session = Mock()
         with patch('src.self_improvement.loop.state_manager.get_session', side_effect=mock_session_factory):
-            loop = M5SelfImprovementLoop(coord_db, obs_session)
+            loop = M5SelfImprovementLoop(mock_coord_db, obs_session)
 
         expected_health = {
             "status": "healthy",

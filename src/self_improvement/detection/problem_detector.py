@@ -14,6 +14,7 @@ from src.self_improvement.constants import (
     FIELD_CURRENT_EXECUTIONS,
     FIELD_METRIC_CHANGE,
     FIELD_RELATIVE,
+    LOG_SEPARATOR_ABS,
 )
 from src.self_improvement.performance_comparison import PerformanceComparison
 
@@ -213,8 +214,8 @@ class ProblemDetector:
             if not (relative_exceeds and absolute_exceeds):
                 logger.debug(
                     f"Quality change below threshold: {change.metric_name} "
-                    f"rel={degradation_pct:.1%} (need {self.config.quality_relative_threshold:.1%}), "
-                    f"abs={abs(change.absolute_change):.3f} "
+                    f"rel={degradation_pct:.1%} (need {self.config.quality_relative_threshold:.1%}{LOG_SEPARATOR_ABS}"
+                    f"{abs(change.absolute_change):.3f} "
                     f"(need {self.config.quality_absolute_threshold:.3f})"
                 )
                 continue
@@ -292,8 +293,8 @@ class ProblemDetector:
             if not (relative_exceeds and absolute_exceeds):
                 logger.debug(
                     f"Cost change below threshold: {change.metric_name} "
-                    f"rel={increase_pct:.1%} (need {self.config.cost_relative_threshold:.1%}), "
-                    f"abs={abs(change.absolute_change):.3f} "
+                    f"rel={increase_pct:.1%} (need {self.config.cost_relative_threshold:.1%}{LOG_SEPARATOR_ABS}"
+                    f"{abs(change.absolute_change):.3f} "
                     f"(need {self.config.cost_absolute_threshold:.3f})"
                 )
                 continue
@@ -381,8 +382,8 @@ class ProblemDetector:
             if not (relative_exceeds and absolute_exceeds):
                 logger.debug(
                     f"Speed change below threshold: {change.metric_name} "
-                    f"rel={increase_pct:.1%} (need {self.config.speed_relative_threshold:.1%}), "
-                    f"abs={abs(change.absolute_change):.3f} "
+                    f"rel={increase_pct:.1%} (need {self.config.speed_relative_threshold:.1%}{LOG_SEPARATOR_ABS}"
+                    f"{abs(change.absolute_change):.3f} "
                     f"(need {self.config.speed_absolute_threshold:.3f})"
                 )
                 continue

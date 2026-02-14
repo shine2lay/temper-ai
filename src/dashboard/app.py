@@ -13,6 +13,8 @@ from starlette.datastructures import MutableHeaders
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MAX_WORKERS = 4
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 # Header value for static assets — revalidate on every request
@@ -35,6 +37,14 @@ class _NoCacheStaticMiddleware:
             return
 
         async def send_no_cache(message: Any) -> None:
+            """Inject Cache-Control: no-cache header into HTTP responses.
+
+            Ensures browsers always revalidate static files, allowing fast 304
+            responses for unchanged assets and fresh content for changes.
+
+            Args:
+                message: ASGI message dict containing response headers and type.
+            """
             if message["type"] == "http.response.start":
                 headers = MutableHeaders(scope=message)
                 headers.append("Cache-Control", _NO_CACHE)
@@ -48,7 +58,7 @@ def create_app(
     event_bus: Any = None,
     mode: str = "dashboard",
     config_root: str = "configs",
-    max_workers: int = 4,
+    max_workers: int = DEFAULT_MAX_WORKERS,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -143,8 +153,8 @@ def create_app(
         app.include_router(create_router(data_service), prefix="/api")
 
         # Studio config CRUD routes
-        from src.dashboard.studio_service import StudioService
         from src.dashboard.studio_routes import create_studio_router
+        from src.dashboard.studio_service import StudioService
 
         studio_service = StudioService(config_root=config_root)
         app.include_router(create_studio_router(studio_service), prefix="/api/studio")

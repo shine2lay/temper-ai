@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
+from src.self_improvement.constants import ERROR_MSG_NO_METRICS_FOUND
+
 from .models import IterationResult, Phase
 
 logger = logging.getLogger(__name__)
@@ -127,7 +129,7 @@ class MetricsCollector:
         """
         metrics = self._metrics.get(agent_name)
         if not metrics:
-            logger.warning(f"No metrics found for {agent_name}")
+            logger.warning(f"{ERROR_MSG_NO_METRICS_FOUND}{agent_name}")
             return
 
         # Calculate duration if not provided
@@ -164,7 +166,7 @@ class MetricsCollector:
         """
         metrics = self._metrics.get(agent_name)
         if not metrics:
-            logger.warning(f"No metrics found for {agent_name}")
+            logger.warning(f"{ERROR_MSG_NO_METRICS_FOUND}{agent_name}")
             return
 
         metrics.phase_failures[phase] = metrics.phase_failures.get(phase, 0) + 1
@@ -226,7 +228,7 @@ class MetricsCollector:
         """
         metrics = self._metrics.get(agent_name)
         if not metrics:
-            logger.warning(f"No metrics found for {agent_name}")
+            logger.warning(f"{ERROR_MSG_NO_METRICS_FOUND}{agent_name}")
             return
 
         metrics.rollbacks += 1

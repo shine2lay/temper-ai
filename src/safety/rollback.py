@@ -44,6 +44,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from src.constants.limits import MAX_MEDIUM_STRING_LENGTH, THRESHOLD_LARGE_COUNT
+from src.safety.constants import EXISTED_SUFFIX, STRATEGY_PREFIX
 
 # Import rollback data types from observability (canonical location)
 from src.observability.rollback_types import (
@@ -322,14 +323,14 @@ class FileRollbackStrategy(RollbackStrategy):
                 try:
                     with open(path, 'r') as f:
                         snapshot.file_snapshots[file_path] = f.read()
-                    snapshot.metadata[f"{file_path}_existed"] = True
+                    snapshot.metadata[f"{file_path}{EXISTED_SUFFIX}"] = True
                 except (OSError, UnicodeDecodeError):
                     # Binary file or read error - skip content snapshot
-                    snapshot.metadata[f"{file_path}_existed"] = True
+                    snapshot.metadata[f"{file_path}{EXISTED_SUFFIX}"] = True
                     snapshot.metadata[f"{file_path}_unreadable"] = True
             else:
                 # File doesn't exist yet (will be created)
-                snapshot.metadata[f"{file_path}_existed"] = False
+                snapshot.metadata[f"{file_path}{EXISTED_SUFFIX}"] = False
 
         return snapshot
 
@@ -395,8 +396,8 @@ class FileRollbackStrategy(RollbackStrategy):
 
         # Delete files that didn't exist before
         for key, existed in snapshot.metadata.items():
-            if key.endswith("_existed") and not existed:
-                file_path = key.replace("_existed", "")
+            if key.endswith(EXISTED_SUFFIX) and not existed:
+                file_path = key.replace(EXISTED_SUFFIX, "")
 
                 # SECURITY: Validate path before deletion
                 is_valid, error = validate_rollback_path(file_path)
@@ -561,9 +562,9 @@ class CompositeRollbackStrategy(RollbackStrategy):
                 snapshot.state_snapshots.update(sub_snapshot.state_snapshots)
 
                 # Track which strategies contributed
-                snapshot.metadata[f"strategy_{strategy.name}"] = True
+                snapshot.metadata[f"{STRATEGY_PREFIX}{strategy.name}"] = True
             except Exception as e:  # noqa: BLE001 -- arbitrary strategy callback
-                snapshot.metadata[f"strategy_{strategy.name}_error"] = str(e)
+                snapshot.metadata[f"{STRATEGY_PREFIX}{strategy.name}_error"] = str(e)
 
         return snapshot
 
@@ -591,7 +592,7 @@ class CompositeRollbackStrategy(RollbackStrategy):
                 if not result.success:
                     composite_result.success = False
 
-                composite_result.metadata[f"strategy_{strategy.name}_status"] = result.status.value
+                composite_result.metadata[f"{STRATEGY_PREFIX}{strategy.name}_status"] = result.status.value
             except Exception as e:  # noqa: BLE001 -- arbitrary strategy callback
                 composite_result.success = False
                 composite_result.errors.append(f"Strategy {strategy.name} failed: {str(e)}")

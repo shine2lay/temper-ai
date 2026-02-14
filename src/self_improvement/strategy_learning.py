@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 
 from src.constants.durations import DAYS_90
 from src.constants.probabilities import PROB_VERY_HIGH
+from src.self_improvement.constants import SQL_FILTER_PROBLEM_TYPE, SQL_FILTER_RECORDED_AT
 from src.self_improvement.data_models import StrategyOutcome
 
 logger = logging.getLogger(__name__)
@@ -176,12 +177,12 @@ class StrategyLearningStore:
         params: List[Any] = [strategy_name, min_confidence]
 
         if problem_type:
-            query += " AND problem_type = ?"
+            query += SQL_FILTER_PROBLEM_TYPE
             params.append(problem_type)
 
         if days_back:
             cutoff = (datetime.now() - timedelta(days=days_back)).isoformat()
-            query += " AND recorded_at >= ?"
+            query += SQL_FILTER_RECORDED_AT
             params.append(cutoff)
 
         query += " ORDER BY recorded_at DESC"
@@ -238,7 +239,7 @@ class StrategyLearningStore:
 
         if days_back:
             cutoff = (datetime.now() - timedelta(days=days_back)).isoformat()
-            query += " AND recorded_at >= ?"
+            query += SQL_FILTER_RECORDED_AT
             params.append(cutoff)
 
         rows = self.db.query(query, tuple(params))
@@ -281,7 +282,7 @@ class StrategyLearningStore:
 
         if days_back:
             cutoff = (datetime.now() - timedelta(days=days_back)).isoformat()
-            query += " AND recorded_at >= ?"
+            query += SQL_FILTER_RECORDED_AT
             params.append(cutoff)
 
         rows = self.db.query(query, tuple(params))
@@ -317,7 +318,7 @@ class StrategyLearningStore:
 
         if days_back:
             cutoff = (datetime.now() - timedelta(days=days_back)).isoformat()
-            query += " AND recorded_at >= ?"
+            query += SQL_FILTER_RECORDED_AT
             params.append(cutoff)
 
         rows = self.db.query(query, tuple(params))

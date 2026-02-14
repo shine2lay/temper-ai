@@ -16,6 +16,14 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 from src.constants.durations import TIMEOUT_VERY_LONG
+from src.self_improvement.constants import (
+    ERC721_CONTRACTS_PATH,
+    ERC721_FILE_EXT_SOL,
+    ERC721_FILE_EXT_TEST_JS,
+    ERC721_SIMPLENFT,
+    ERC721_TEST_PATH,
+    ERROR_MSG_NPX_NOT_FOUND,
+)
 from src.self_improvement.metrics.collector import ExecutionProtocol, MetricCollector
 from src.self_improvement.metrics.types import SIMetricType
 
@@ -74,8 +82,8 @@ REQUIRED_FILES = [
 
 # Files that should exist under directories
 REQUIRED_PATTERNS = {
-    "contracts": ".sol",
-    "test": ".test.js",
+    "contracts": ERC721_FILE_EXT_SOL,
+    "test": ERC721_FILE_EXT_TEST_JS,
 }
 
 
@@ -111,7 +119,7 @@ def _validate_workspace_path(workspace: Path, allowed_root: Optional[Path] = Non
     return resolved
 
 
-def score_project_structure(workspace: Path, contract_name: str = "SimpleNFT") -> Dict[str, Any]:
+def score_project_structure(workspace: Path, contract_name: str = ERC721_SIMPLENFT) -> Dict[str, Any]:
     """Score project structure by checking file existence.
 
     Args:
@@ -135,27 +143,27 @@ def score_project_structure(workspace: Path, contract_name: str = "SimpleNFT") -
             missing.append(fname)
 
     # Check contract file
-    contract_path = workspace / "contracts" / f"{contract_name}.sol"
+    contract_path = workspace / ERC721_CONTRACTS_PATH.rstrip("/") / f"{contract_name}{ERC721_FILE_EXT_SOL}"
     if contract_path.exists():
-        found.append(f"contracts/{contract_name}.sol")
+        found.append(f"{ERC721_CONTRACTS_PATH}{contract_name}{ERC721_FILE_EXT_SOL}")
     else:
         # Check for any .sol file
-        sol_files = list((workspace / "contracts").glob("*.sol")) if (workspace / "contracts").exists() else []
+        sol_files = list((workspace / ERC721_CONTRACTS_PATH.rstrip("/")).glob(f"*{ERC721_FILE_EXT_SOL}")) if (workspace / ERC721_CONTRACTS_PATH.rstrip("/")).exists() else []
         if sol_files:
-            found.append(f"contracts/{sol_files[0].name}")
+            found.append(f"{ERC721_CONTRACTS_PATH}{sol_files[0].name}")
         else:
-            missing.append(f"contracts/{contract_name}.sol")
+            missing.append(f"{ERC721_CONTRACTS_PATH}{contract_name}{ERC721_FILE_EXT_SOL}")
 
     # Check test file
-    test_path = workspace / "test" / f"{contract_name}.test.js"
+    test_path = workspace / ERC721_TEST_PATH.rstrip("/") / f"{contract_name}{ERC721_FILE_EXT_TEST_JS}"
     if test_path.exists():
-        found.append(f"test/{contract_name}.test.js")
+        found.append(f"{ERC721_TEST_PATH}{contract_name}{ERC721_FILE_EXT_TEST_JS}")
     else:
-        test_files = list((workspace / "test").glob("*.test.js")) if (workspace / "test").exists() else []
+        test_files = list((workspace / ERC721_TEST_PATH.rstrip("/")).glob(f"*{ERC721_FILE_EXT_TEST_JS}")) if (workspace / ERC721_TEST_PATH.rstrip("/")).exists() else []
         if test_files:
-            found.append(f"test/{test_files[0].name}")
+            found.append(f"{ERC721_TEST_PATH}{test_files[0].name}")
         else:
-            missing.append(f"test/{contract_name}.test.js")
+            missing.append(f"{ERC721_TEST_PATH}{contract_name}{ERC721_FILE_EXT_TEST_JS}")
 
     # Check deploy script
     if (workspace / "scripts" / "deploy.js").exists():
@@ -221,7 +229,7 @@ def score_compilation(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict
     except subprocess.TimeoutExpired:
         return {KEY_SCORE: 0.0, KEY_DETAILS: "Compilation timed out"}
     except FileNotFoundError:
-        return {KEY_SCORE: 0.0, KEY_DETAILS: "npx not found"}
+        return {KEY_SCORE: 0.0, KEY_DETAILS: ERROR_MSG_NPX_NOT_FOUND}
     except Exception as e:
         return {KEY_SCORE: 0.0, KEY_DETAILS: f"Error: {e}"}
 
@@ -292,7 +300,7 @@ def score_tests(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[str, 
         return {KEY_SCORE: 0.0, KEY_DETAILS: f"Error: {e}"}
 
 
-def score_code_quality(workspace: Path, contract_name: str = "SimpleNFT") -> Dict[str, Any]:
+def score_code_quality(workspace: Path, contract_name: str = ERC721_SIMPLENFT) -> Dict[str, Any]:
     """Score code quality with static checks on Solidity source.
 
     Checks:
@@ -308,18 +316,18 @@ def score_code_quality(workspace: Path, contract_name: str = "SimpleNFT") -> Dic
     Returns:
         Dict with 'score' (0.0-1.0) and 'details'
     """
-    contract_path = workspace / "contracts" / f"{contract_name}.sol"
+    contract_path = workspace / ERC721_CONTRACTS_PATH.rstrip("/") / f"{contract_name}{ERC721_FILE_EXT_SOL}"
     if not contract_path.exists():
         # Try any .sol file
-        contracts_dir = workspace / "contracts"
+        contracts_dir = workspace / ERC721_CONTRACTS_PATH.rstrip("/")
         if contracts_dir.exists():
-            sol_files = list(contracts_dir.glob("*.sol"))
+            sol_files = list(contracts_dir.glob(f"*{ERC721_FILE_EXT_SOL}"))
             if sol_files:
                 contract_path = sol_files[0]
             else:
-                return {KEY_SCORE: 0.0, KEY_DETAILS: "No .sol files found"}
+                return {KEY_SCORE: 0.0, KEY_DETAILS: f"No {ERC721_FILE_EXT_SOL} files found"}
         else:
-            return {KEY_SCORE: 0.0, KEY_DETAILS: "No contracts/ directory"}
+            return {KEY_SCORE: 0.0, KEY_DETAILS: f"No {ERC721_CONTRACTS_PATH} directory"}
 
     try:
         content = contract_path.read_text(encoding="utf-8")
@@ -391,7 +399,7 @@ def score_deployment(workspace: Path, timeout: int = TIMEOUT_VERY_LONG) -> Dict[
 
 def score_erc721_workflow(
     workspace_path: str,
-    contract_name: str = "SimpleNFT",
+    contract_name: str = ERC721_SIMPLENFT,
     run_commands: bool = True,
     timeout: int = TIMEOUT_VERY_LONG,
     allowed_root: Optional[str] = None,
@@ -505,9 +513,9 @@ class ERC721QualityCollector(MetricCollector):
             logger.warning("No workspace_path available for ERC721 quality scoring")
             return None
 
-        contract_name = "SimpleNFT"
+        contract_name = ERC721_SIMPLENFT
         if hasattr(execution, "metadata") and isinstance(execution.metadata, dict):
-            contract_name = execution.metadata.get("contract_name", "SimpleNFT")
+            contract_name = execution.metadata.get("contract_name", ERC721_SIMPLENFT)
 
         try:
             result = score_erc721_workflow(

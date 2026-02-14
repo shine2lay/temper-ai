@@ -7,14 +7,16 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+from src.agents.constants import REGEX_XML_TAG_CLOSING
+
 # XML tag constants for parsing LLM responses
 TOOL_CALL_TAG = "tool_call"
 ANSWER_TAG = "answer"
 REASONING_TAGS = ["reasoning", "thinking", "think", "thought"]
 
 # Pre-compiled regex patterns for performance (compiled once at module load)
-TOOL_CALL_PATTERN = re.compile(rf'<{TOOL_CALL_TAG}>(.*?)</{TOOL_CALL_TAG}>', re.DOTALL)
-ANSWER_PATTERN = re.compile(rf'<{ANSWER_TAG}>(.*?)</{ANSWER_TAG}>', re.DOTALL)
+TOOL_CALL_PATTERN = re.compile(rf'<{TOOL_CALL_TAG}{REGEX_XML_TAG_CLOSING}{TOOL_CALL_TAG}>', re.DOTALL)
+ANSWER_PATTERN = re.compile(rf'<{ANSWER_TAG}{REGEX_XML_TAG_CLOSING}{ANSWER_TAG}>', re.DOTALL)
 
 # Pattern to match structural tags in tool output (for sanitization) (AG-02)
 # Covers: tool_call, answer, reasoning, thinking, think, thought,
@@ -26,7 +28,7 @@ _TOOL_RESULT_SANITIZE_PATTERN = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 REASONING_PATTERNS = {
-    tag: re.compile(f'<{tag}>(.*?)</{tag}>', re.DOTALL)
+    tag: re.compile(f'<{tag}{REGEX_XML_TAG_CLOSING}{tag}>', re.DOTALL)
     for tag in REASONING_TAGS
 }
 

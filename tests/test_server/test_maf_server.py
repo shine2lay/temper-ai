@@ -116,7 +116,8 @@ class TestWorkspacePathValidation:
         inner = tmp_path / "subdir"
         inner.mkdir()
         # Should not raise
-        validate_workspace_path(str(inner), tmp_path)
+        result = validate_workspace_path(str(inner), tmp_path)
+        assert result is None  # validate_workspace_path returns None on success
 
     def test_path_outside_workspace_rejected(self, tmp_path: Path) -> None:
         from src.tools._executor_helpers import validate_workspace_path

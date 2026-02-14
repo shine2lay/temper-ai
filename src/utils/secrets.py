@@ -20,6 +20,7 @@ from typing import Any, Optional, Tuple
 from cryptography.fernet import Fernet
 
 from src.constants.sizes import SIZE_10KB, SIZE_100KB
+from src.utils.constants import ERROR_SECRET_PREFIX
 
 __all__ = [
     # Secret resolution
@@ -203,18 +204,18 @@ class SecretReference:
         """
         # Check for empty value
         if not value or not value.strip():
-            raise ValueError(f"Secret '{name}' is empty")
+            raise ValueError(f"{ERROR_SECRET_PREFIX}{name}' is empty")
 
         # Check for excessively long values (likely misconfiguration)
         if len(value) > SIZE_10KB:
             raise ValueError(
-                f"Secret '{name}' is too long ({len(value)} bytes). "
+                f"{ERROR_SECRET_PREFIX}{name}' is too long ({len(value)} bytes). "
                 f"Maximum {SIZE_10KB} bytes allowed."
             )
 
         # Check for null bytes (security risk)
         if '\x00' in value:
-            raise ValueError(f"Secret '{name}' contains null bytes")
+            raise ValueError(f"{ERROR_SECRET_PREFIX}{name}' contains null bytes")
 
 
 class ObfuscatedCredential:

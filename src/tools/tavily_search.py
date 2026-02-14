@@ -13,11 +13,16 @@ from pydantic import BaseModel, Field, field_validator
 from src.tools._search_helpers import SearchResponse, SearchResultItem
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.constants import (
+    DEFAULT_SEARCH_MAX_RESULTS,
     DEFAULT_SEARCH_TIMEOUT,
+    ERROR_RESPONSE_TEXT_MAX_LENGTH,
+    HTTP_STATUS_TOO_MANY_REQUESTS,
+    HTTP_STATUS_UNAUTHORIZED,
     MAX_SEARCH_RESULTS,
-    TAVILY_DEFAULT_BASE_URL,
-    TAVILY_RATE_LIMIT,
     RATE_LIMIT_WINDOW_SECONDS,
+    TAVILY_DEFAULT_BASE_URL,
+    TAVILY_MAX_QUERY_LENGTH,
+    TAVILY_RATE_LIMIT,
 )
 from src.tools.web_scraper import ScraperRateLimiter
 
@@ -31,10 +36,10 @@ class TavilySearchParams(BaseModel):
         ...,
         description="Search query string",
         min_length=1,
-        max_length=400,
+        max_length=TAVILY_MAX_QUERY_LENGTH,
     )
     max_results: int = Field(
-        default=5,
+        default=DEFAULT_SEARCH_MAX_RESULTS,
         description="Maximum number of results to return",
         ge=1,
         le=MAX_SEARCH_RESULTS,
@@ -140,7 +145,7 @@ class TavilySearch(BaseTool):
                 "max_results": {
                     "type": "integer",
                     "description": "Maximum number of results (default: 5, max: 20)",
-                    "default": 5,
+                    "default": DEFAULT_SEARCH_MAX_RESULTS,
                 },
                 "search_depth": {
                     "type": "string",
@@ -256,12 +261,12 @@ class TavilySearch(BaseTool):
             )
         except httpx.HTTPStatusError as e:
             status = e.response.status_code
-            if status == 401:
+            if status == HTTP_STATUS_UNAUTHORIZED:
                 error_msg = "Tavily API authentication failed. Check your TAVILY_API_KEY."
-            elif status == 429:
+            elif status == HTTP_STATUS_TOO_MANY_REQUESTS:
                 error_msg = "Tavily API rate limit exceeded. Try again later."
             else:
-                error_msg = f"Tavily API error (HTTP {status}): {e.response.text[:200]}"
+                error_msg = f"Tavily API error (HTTP {status}): {e.response.text[:ERROR_RESPONSE_TEXT_MAX_LENGTH]}"
             return ToolResult(
                 success=False,
                 error=error_msg,

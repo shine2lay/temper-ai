@@ -6,6 +6,7 @@ Server-Side Template Injection (SSTI) attacks.
 """
 from typing import Any, Dict
 
+from src.agents.constants import ERROR_MSG_VARIABLE_PREFIX
 from src.constants.limits import MULTIPLIER_MEDIUM, MULTIPLIER_SMALL
 from src.constants.sizes import SIZE_100MB
 from src.utils.exceptions import AgentError, ErrorCode
@@ -79,12 +80,12 @@ class TemplateVariableValidator:
         """Recursively validate a single value."""
         if depth > MULTIPLIER_MEDIUM * MULTIPLIER_SMALL:  # 20 = 10 * 2
             raise PromptRenderError(
-                f"Variable '{key}' has excessive nesting depth (>{MULTIPLIER_MEDIUM * MULTIPLIER_SMALL})"
+                f"{ERROR_MSG_VARIABLE_PREFIX}{key}' has excessive nesting depth (>{MULTIPLIER_MEDIUM * MULTIPLIER_SMALL})"
             )
 
         if not isinstance(value, self.ALLOWED_TYPES):
             raise PromptRenderError(
-                f"Variable '{key}' has disallowed type: {type(value).__name__}. "
+                f"{ERROR_MSG_VARIABLE_PREFIX}{key}' has disallowed type: {type(value).__name__}. "
                 f"Allowed: str, int, float, bool, list, dict, tuple, None"
             )
 
@@ -93,7 +94,7 @@ class TemplateVariableValidator:
             size = len(value.encode('utf-8', errors='replace'))
             if size > self.MAX_VAR_SIZE:
                 raise PromptRenderError(
-                    f"Variable '{key}' exceeds size limit: {size} > {self.MAX_VAR_SIZE}"
+                    f"{ERROR_MSG_VARIABLE_PREFIX}{key}' exceeds size limit: {size} > {self.MAX_VAR_SIZE}"
                 )
 
         # Recursively validate nested structures

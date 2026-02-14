@@ -16,7 +16,9 @@ from src.database.constants import (
     CASCADE_SIMPLE,
     FIELD_EXTRA_METADATA,
     FIELD_WORKFLOW_CONFIG_SNAPSHOT,
+    FK_AGENT_EXECUTIONS_ID,
     FK_CASCADE,
+    FK_STAGE_EXECUTIONS_ID,
     FK_WORKFLOW_EXECUTIONS_ID,
     STATUS_CONSTRAINT,
 )
@@ -191,7 +193,7 @@ class AgentExecution(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     stage_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey("stage_executions.id", ondelete="CASCADE"), index=True)
+        sa_column=Column(String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), index=True)
     )
 
     # Identity
@@ -291,7 +293,7 @@ class LLMCall(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     agent_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey("agent_executions.id", ondelete="CASCADE"), index=True)
+        sa_column=Column(String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), index=True)
     )
 
     # Provider info
@@ -349,7 +351,7 @@ class ToolExecution(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     agent_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey("agent_executions.id", ondelete="CASCADE"), index=True)
+        sa_column=Column(String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), index=True)
     )
 
     # Tool info
@@ -390,7 +392,7 @@ class CollaborationEvent(SQLModel, table=True):
 
     id: str = Field(primary_key=True)
     stage_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey("stage_executions.id", ondelete="CASCADE"), index=True)
+        sa_column=Column(String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), index=True)
     )
 
     # Event type
@@ -467,11 +469,11 @@ class DecisionOutcome(SQLModel, table=True):
     id: str = Field(primary_key=True)
     agent_execution_id: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, ForeignKey("agent_executions.id", ondelete="CASCADE"), nullable=True),
+        sa_column=Column(String, ForeignKey(FK_AGENT_EXECUTIONS_ID, ondelete="CASCADE"), nullable=True),
     )
     stage_execution_id: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, ForeignKey("stage_executions.id", ondelete="CASCADE"), nullable=True),
+        sa_column=Column(String, ForeignKey(FK_STAGE_EXECUTIONS_ID, ondelete="CASCADE"), nullable=True),
     )
     workflow_execution_id: Optional[str] = Field(
         default=None,

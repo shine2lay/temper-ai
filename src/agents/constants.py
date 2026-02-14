@@ -104,6 +104,8 @@ AGENT_TYPE_STANDARD = "standard"
 
 ERROR_MSG_RATE_LIMIT_EXCEEDED = "LLM rate limit exceeded"
 ERROR_MSG_VALID_PROVIDERS_SUFFIX = "'. Valid providers: "
+ERROR_MSG_TOOL_PREFIX = "Tool '"
+ERROR_MSG_VARIABLE_PREFIX = "Variable '"
 
 # ============================================================================
 # Streaming & API Sentinels
@@ -117,3 +119,9 @@ SSE_STREAM_DONE_MARKER = "[DONE]"
 
 PRICING_DEFAULT_KEY = "_default"
 FALLBACK_UNKNOWN_VALUE = "unknown"
+
+# ============================================================================
+# Regex Patterns
+# ============================================================================
+
+REGEX_XML_TAG_CLOSING = ">(.*?)</"

@@ -74,6 +74,13 @@ DECISION_CONTEXT_MAX_LENGTH = 5000
 DEFAULT_QUERY_LIMIT = 1000
 DEFAULT_AGGREGATION_INTERVAL_SECONDS = 60
 
+# ============================================================================
+# Logging Separators
+# ============================================================================
+
+LOG_SEPARATOR_STATUS = " status="
+LOG_MESSAGE_METRICS_CREATED = " metrics created for period "
+
 
 # ============================================================================
 # Database Field Names

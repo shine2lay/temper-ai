@@ -18,6 +18,11 @@ import yaml
 
 logger = logging.getLogger(__name__)
 
+EXECUTION_ID_LENGTH = 12
+
+# Default max concurrent workflow executions
+DEFAULT_MAX_WORKFLOW_WORKERS = 4
+
 # Keys from WorkflowStateDict that hold non-serializable infrastructure objects
 _NON_SERIALIZABLE_KEYS = frozenset({
     "tracker",
@@ -109,7 +114,7 @@ class WorkflowExecutionService:
         backend: Any,
         event_bus: Any,
         config_root: str = "configs",
-        max_workers: int = 4,
+        max_workers: int = DEFAULT_MAX_WORKFLOW_WORKERS,
     ):
         """Initialize the execution service.
 
@@ -160,7 +165,7 @@ class WorkflowExecutionService:
         if run_id:
             execution_id = f"exec-{run_id}"
         else:
-            execution_id = f"exec-{uuid.uuid4().hex[:12]}"
+            execution_id = f"exec-{uuid.uuid4().hex[:EXECUTION_ID_LENGTH]}"
 
         # Resolve workflow path
         workflow_file = Path(self.config_root) / workflow_path

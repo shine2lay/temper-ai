@@ -10,7 +10,11 @@ from typing import Any, Dict, List, Optional
 import yaml
 from fastapi import APIRouter, Body, HTTPException, Query, Request
 from pydantic import BaseModel
-from starlette.status import HTTP_404_NOT_FOUND
+from starlette.status import (
+    HTTP_404_NOT_FOUND,
+    HTTP_500_INTERNAL_SERVER_ERROR,
+    HTTP_503_SERVICE_UNAVAILABLE,
+)
 
 from src.server.health import check_health, check_readiness
 
@@ -78,7 +82,7 @@ def create_server_router(
             readiness_gate=gate,
         )
         if resp.status != "ready":
-            raise HTTPException(status_code=503, detail=resp.model_dump())
+            raise HTTPException(status_code=HTTP_503_SERVICE_UNAVAILABLE, detail=resp.model_dump())
         return resp.model_dump()
 
     # ── Workflow runs ──────────────────────────────────────────────
@@ -98,7 +102,7 @@ def create_server_router(
             raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=str(e)) from e
         except Exception as e:
             logger.exception("Run creation failed")
-            raise HTTPException(status_code=500, detail="Internal server error: workflow execution failed") from e
+            raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error: workflow execution failed") from e
 
     @router.get("/runs/{run_id}")
     async def get_run(run_id: str) -> Dict[str, Any]:
@@ -107,7 +111,7 @@ def create_server_router(
             result = await execution_service.get_execution_status(run_id)
         except Exception:
             logger.exception("Failed to retrieve run status for %s", run_id)
-            raise HTTPException(status_code=500, detail="Failed to retrieve run status")
+            raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve run status")
         if result is None:
             raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Run not found")
         return result

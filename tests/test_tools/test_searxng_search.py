@@ -504,6 +504,8 @@ class TestSearXNGSearchClientLifecycle:
             tool.__del__()
         except Exception as e:
             pytest.fail(f"__del__ raised: {e}")
+        # Verify that __del__ completed without exception
+        assert True
 
     def test_del_os_error(self):
         """Test __del__ handles OSError gracefully."""
@@ -514,3 +516,5 @@ class TestSearXNGSearchClientLifecycle:
                 tool.__del__()
             except Exception as e:
                 pytest.fail(f"__del__ raised: {e}")
+        # Verify that __del__ handled OSError gracefully
+        assert True

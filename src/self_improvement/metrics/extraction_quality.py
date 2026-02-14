@@ -21,7 +21,11 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
-from src.self_improvement.constants import MAX_EXTRACTION_SCORE, MIN_EXTRACTION_SCORE
+from src.self_improvement.constants import (
+    ERROR_MSG_EXECUTION_PREFIX,
+    MAX_EXTRACTION_SCORE,
+    MIN_EXTRACTION_SCORE,
+)
 from src.self_improvement.metrics.collector import ExecutionProtocol, MetricCollector
 from src.self_improvement.metrics.types import SIMetricType
 
@@ -103,13 +107,13 @@ class ExtractionQualityCollector(MetricCollector):
             # Check for required attributes
             if not hasattr(execution, 'input_data'):
                 logger.debug(
-                    f"Execution {execution.id} missing 'input_data' attribute"
+                    f"{ERROR_MSG_EXECUTION_PREFIX}{execution.id} missing 'input_data' attribute"
                 )
                 return False
 
             if not hasattr(execution, 'output'):
                 logger.debug(
-                    f"Execution {execution.id} missing 'output' attribute"
+                    f"{ERROR_MSG_EXECUTION_PREFIX}{execution.id} missing 'output' attribute"
                 )
                 return False
 
@@ -117,13 +121,13 @@ class ExtractionQualityCollector(MetricCollector):
             input_data = execution.input_data
             if not isinstance(input_data, dict):
                 logger.debug(
-                    f"Execution {execution.id} input_data is not a dict"
+                    f"{ERROR_MSG_EXECUTION_PREFIX}{execution.id} input_data is not a dict"
                 )
                 return False
 
             if 'ground_truth' not in input_data:
                 logger.debug(
-                    f"Execution {execution.id} missing 'ground_truth' in input_data"
+                    f"{ERROR_MSG_EXECUTION_PREFIX}{execution.id} missing 'ground_truth' in input_data"
                 )
                 return False
 

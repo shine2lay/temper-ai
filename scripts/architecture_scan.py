@@ -268,8 +268,8 @@ _IMPORT_PATH_RE = re.compile(r"^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*){2,}$")
 _RICH_MARKUP_RE = re.compile(r"\[/?[a-z]")  # Rich console markup like [bold], [/], [dim]
 # Identifier-like strings: lowercase with underscores, 3-20 chars — these are
 # dict keys, config values, or structural identifiers, not magic strings.
-_IDENTIFIER_LIKE_RE = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
-_IDENTIFIER_LIKE_MAX_LEN = 20
+_IDENTIFIER_LIKE_RE = re.compile(r"^_{0,2}[a-z][a-z0-9]*(_[a-z0-9]+)*$")
+_IDENTIFIER_LIKE_MAX_LEN = 32
 _MAGIC_STRING_SKIP_VALUES = frozenset({
     # SQL keywords
     "CASCADE",

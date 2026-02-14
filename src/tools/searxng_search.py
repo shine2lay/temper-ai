@@ -15,7 +15,9 @@ from pydantic import BaseModel, Field, field_validator
 from src.tools._search_helpers import SearchResponse, SearchResultItem
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.constants import (
+    DEFAULT_SEARCH_MAX_RESULTS,
     DEFAULT_SEARCH_TIMEOUT,
+    MAX_SEARCH_QUERY_LENGTH,
     MAX_SEARCH_RESULTS,
     RATE_LIMIT_WINDOW_SECONDS,
     SEARXNG_DEFAULT_BASE_URL,
@@ -32,11 +34,11 @@ class SearXNGSearchParams(BaseModel):
     query: str = Field(
         ...,
         min_length=1,
-        max_length=2000,
+        max_length=MAX_SEARCH_QUERY_LENGTH,
         description="Search query string",
     )
     max_results: int = Field(
-        default=5,
+        default=DEFAULT_SEARCH_MAX_RESULTS,
         ge=1,
         le=MAX_SEARCH_RESULTS,
         description="Maximum number of results to return",
@@ -189,7 +191,7 @@ class SearXNGSearch(BaseTool):
                 "max_results": {
                     "type": "integer",
                     "description": "Maximum number of results (default: 5)",
-                    "default": 5,
+                    "default": DEFAULT_SEARCH_MAX_RESULTS,
                 },
                 "categories": {
                     "type": "array",
@@ -218,7 +220,7 @@ class SearXNGSearch(BaseTool):
             ToolResult with SearchResponse data or error.
         """
         query = kwargs.get("query")
-        max_results = kwargs.get("max_results", 5)
+        max_results = kwargs.get("max_results", DEFAULT_SEARCH_MAX_RESULTS)
         categories = kwargs.get("categories")
         language = kwargs.get("language", "en")
 

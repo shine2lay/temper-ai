@@ -7,6 +7,7 @@ the quality/consistency/creativity tradeoff for agent outputs.
 import copy
 from typing import Dict, List
 
+from src.self_improvement.constants import LOG_TEMPERATURE_PREFIX
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
     LearnedPattern,
@@ -140,7 +141,7 @@ class TemperatureSearchStrategy(ImprovementStrategy):
             variant_low_temp.extra_metadata[META_STRATEGY] = self.name
             variant_low_temp.extra_metadata[META_VARIANT_TYPE] = "lower_temperature"
             variant_low_temp.extra_metadata[META_CHANGE] = (
-                f"temperature: {current_temp} -> {target_temp:.2f} (more deterministic)"
+                f"{LOG_TEMPERATURE_PREFIX}{current_temp} -> {target_temp:.2f} (more deterministic)"
             )
             variants.append(variant_low_temp)
 
@@ -154,7 +155,7 @@ class TemperatureSearchStrategy(ImprovementStrategy):
             variant_high_temp.extra_metadata[META_STRATEGY] = self.name
             variant_high_temp.extra_metadata[META_VARIANT_TYPE] = "higher_temperature"
             variant_high_temp.extra_metadata[META_CHANGE] = (
-                f"temperature: {current_temp} -> {target_temp:.2f} (more creative)"
+                f"{LOG_TEMPERATURE_PREFIX}{current_temp} -> {target_temp:.2f} (more creative)"
             )
             variants.append(variant_high_temp)
 

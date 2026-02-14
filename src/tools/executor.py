@@ -9,9 +9,9 @@ from __future__ import annotations
 import time
 import weakref
 from collections import deque
-from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
 from src.constants.durations import (

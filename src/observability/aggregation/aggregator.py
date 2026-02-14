@@ -7,6 +7,7 @@ from src.observability.aggregation.metric_creator import MetricRecordCreator
 from src.observability.aggregation.period import AggregationPeriod
 from src.observability.aggregation.query_builder import AggregationQueryBuilder
 from src.observability.aggregation.time_window import TimeWindowCalculator
+from src.observability.constants import LOG_MESSAGE_METRICS_CREATED
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +88,7 @@ class AggregationOrchestrator:
             self.session.commit()
             logger.info(
                 f"Aggregated workflow metrics: {len(results)} workflows, "
-                f"{len(created_metrics)} metrics created for period {period.value}"
+                f"{len(created_metrics)}{LOG_MESSAGE_METRICS_CREATED}{period.value}"
             )
 
         except Exception as e:
@@ -144,7 +145,7 @@ class AggregationOrchestrator:
             self.session.commit()
             logger.info(
                 f"Aggregated agent metrics: {len(results)} agents, "
-                f"{len(created_metrics)} metrics created for period {period.value}"
+                f"{len(created_metrics)}{LOG_MESSAGE_METRICS_CREATED}{period.value}"
             )
 
         except Exception as e:
@@ -201,7 +202,7 @@ class AggregationOrchestrator:
             self.session.commit()
             logger.info(
                 f"Aggregated LLM metrics: {len(results)} provider/model combinations, "
-                f"{len(created_metrics)} metrics created for period {period.value}"
+                f"{len(created_metrics)}{LOG_MESSAGE_METRICS_CREATED}{period.value}"
             )
 
         except Exception as e:

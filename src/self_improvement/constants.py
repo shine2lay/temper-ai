@@ -286,6 +286,13 @@ ERROR_MSG_ERROR_PREFIX = "Error: "
 ERROR_MSG_NPX_NOT_FOUND = "npx not found"
 
 # ============================================================================
+# Logging Separators
+# ============================================================================
+
+LOG_SEPARATOR_ABS = "), abs="
+LOG_TEMPERATURE_PREFIX = "temperature: "
+
+# ============================================================================
 # ERC721 / Smart Contract Constants
 # ============================================================================
 
@@ -314,3 +321,10 @@ METRIC_QUALITY_SCORE = "quality_score"
 # ============================================================================
 
 MODULE_SELF_IMPROVEMENT = "self_improvement"
+
+# ============================================================================
+# SQL Query Fragments
+# ============================================================================
+
+SQL_FILTER_PROBLEM_TYPE = " AND problem_type = ?"
+SQL_FILTER_RECORDED_AT = " AND recorded_at >= ?"

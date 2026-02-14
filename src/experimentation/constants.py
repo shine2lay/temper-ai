@@ -89,3 +89,4 @@ ERROR_EXPERIMENT_NOT_FOUND = "Experiment not found: "
 # ============================================================================
 
 RELATIONSHIP_EXPERIMENT = "experiment"
+FK_EXPERIMENTS_ID = "experiments.id"

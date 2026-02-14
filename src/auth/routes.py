@@ -325,7 +325,7 @@ class OAuthRouteHandlers:
         # Handle OAuth errors from provider
         if error:
             logger.warning(
-                f"OAuth error from provider: {error}, description={error_description}, IP={client_ip}"
+                f"OAuth error from provider: {error}, description={error_description}{LOG_IP_SEPARATOR}{client_ip}"
             )
             # Redirect to login with error message
             return "/login?error=oauth_denied", self._get_security_headers()
@@ -409,7 +409,7 @@ class OAuthRouteHandlers:
             headers["Set-Cookie"] = session_cookie
 
             logger.info(
-                f"OAuth login successful: user={user.user_id}, IP={client_ip}"
+                f"OAuth login successful: user={user.user_id}{LOG_IP_SEPARATOR}{client_ip}"
             )
 
             # SECURITY: Return redirect only, NO tokens in response
@@ -417,13 +417,13 @@ class OAuthRouteHandlers:
 
         except OAuthStateError as e:
             logger.warning(
-                f"OAuth state validation failed: {e}, IP={client_ip}. "
+                f"OAuth state validation failed: {e}{LOG_IP_SEPARATOR}{client_ip}. "
                 f"Possible CSRF attack."
             )
             return "/login?error=invalid_state", self._get_security_headers()
 
         except OAuthProviderError as e:
-            logger.error(f"OAuth provider error: {e}, IP={client_ip}")
+            logger.error(f"OAuth provider error: {e}{LOG_IP_SEPARATOR}{client_ip}")
             return "/login?error=oauth_error", self._get_security_headers()
 
         except RateLimitExceeded:
@@ -485,7 +485,7 @@ class OAuthRouteHandlers:
             # Delete session
             await self.session_store.delete_session(session_id)
 
-            logger.info(f"User logged out: user={user_id}, IP={client_ip}")
+            logger.info(f"User logged out: user={user_id}{LOG_IP_SEPARATOR}{client_ip}")
         else:
             logger.info(f"Logout with invalid/expired session: IP={client_ip}")
 

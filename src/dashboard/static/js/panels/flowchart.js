@@ -423,7 +423,7 @@ export class FlowchartPanel {
             this._addCollabEdges(elements, latest);
         }
 
-        this._addCollapsedDagEdges(elements, stageGroups, dagInfo, stageColors);
+        this._addCollapsedDagEdges(elements, stageGroups, dagInfo, stageColors, iterationTriggers);
 
         return elements;
     }
@@ -661,16 +661,21 @@ export class FlowchartPanel {
      * Infer who triggered each iteration of re-executed stages.
      * Returns Map<execId, triggerStageName|null>.
      * Iteration #1 → null (normal DAG flow), iteration #2+ → name of the
-     * loop-back source whose last execution started just before this one.
+     * upstream stage (depends_on or loop-back source) whose execution
+     * most recently started before this one.
      */
     _computeIterationTriggers(stageGroups, dagInfo) {
         const triggers = new Map();
 
-        // Reverse map: target name → [source names that loop back to it]
-        const loopSources = new Map();
+        // Build predecessor map: stage name → all upstream names (depends_on + loop-back sources)
+        const predecessors = new Map();
+        for (const [name, deps] of dagInfo.depMap) {
+            predecessors.set(name, [...deps]);
+        }
         for (const [srcName, targetName] of dagInfo.loopsBackTo) {
-            if (!loopSources.has(targetName)) loopSources.set(targetName, []);
-            loopSources.get(targetName).push(srcName);
+            if (!predecessors.has(targetName)) predecessors.set(targetName, []);
+            const preds = predecessors.get(targetName);
+            if (!preds.includes(srcName)) preds.push(srcName);
         }
 
         // Global timeline: all executions sorted by start_time
@@ -689,25 +694,25 @@ export class FlowchartPanel {
 
         for (const [name, execs] of stageGroups) {
             if (execs.length <= 1) continue;
-            const sources = loopSources.get(name) || [];
-            if (sources.length === 0) continue;
+            const preds = predecessors.get(name) || [];
+            if (preds.length === 0) continue;
 
             // First iteration: normal flow, no trigger label
             triggers.set(execs[0].id, null);
 
-            // Subsequent iterations: find most recent loop-back source before this exec
+            // Subsequent iterations: find most recent predecessor before this exec
             for (let i = 1; i < execs.length; i++) {
                 const sd = this.dataStore.stages.get(execs[i].id) || execs[i];
                 const myStart = sd.started_at || sd.start_time || '';
                 let triggerName = null;
                 for (let t = timeline.length - 1; t >= 0; t--) {
                     if (timeline[t].startTime >= myStart) continue;
-                    if (sources.includes(timeline[t].name)) {
+                    if (preds.includes(timeline[t].name)) {
                         triggerName = timeline[t].name;
                         break;
                     }
                 }
-                triggers.set(execs[i].id, triggerName || (sources.length === 1 ? sources[0] : 'loop'));
+                triggers.set(execs[i].id, triggerName || (preds.length === 1 ? preds[0] : 'rerun'));
             }
         }
 
@@ -768,7 +773,7 @@ export class FlowchartPanel {
      * Add collapsed DAG edges: one edge per dependency + loop-back edges.
      * Replaces the old _addDagFlowEdges / _addSequentialFlowEdges pair.
      */
-    _addCollapsedDagEdges(elements, stageGroups, dagInfo, stageColors) {
+    _addCollapsedDagEdges(elements, stageGroups, dagInfo, stageColors, iterationTriggers) {
         // Build nameToNodeId map (name → latest execution ID)
         const nameToNodeId = new Map();
         for (const [name, execs] of stageGroups) {
@@ -803,14 +808,18 @@ export class FlowchartPanel {
                 }
             }
 
-            // Loop-back edges (dashed, curved arc with iteration count)
+            // Loop-back edges (dashed, curved arc with per-source trigger count)
             for (const [srcName, targetName] of dagInfo.loopsBackTo) {
                 const sourceId = nameToNodeId.get(srcName);
                 const targetId = nameToNodeId.get(targetName);
                 if (!sourceId || !targetId) continue;
 
+                // Count how many times this specific source triggered the target
                 const targetExecs = stageGroups.get(targetName) || [];
-                const loopCount = targetExecs.length - 1;
+                let loopCount = 0;
+                for (const exec of targetExecs) {
+                    if (iterationTriggers.get(exec.id) === srcName) loopCount++;
+                }
                 if (loopCount <= 0) continue;
 
                 elements.push({
@@ -820,7 +829,7 @@ export class FlowchartPanel {
                         source: sourceId,
                         target: targetId,
                         type: 'loop_back',
-                        label: `loop x${loopCount}`,
+                        label: loopCount > 1 ? `loop x${loopCount}` : 'loop',
                         edgeColor: stageColors.get(srcName),
                     },
                 });

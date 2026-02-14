@@ -538,14 +538,15 @@ def _track_quality_gate_event(
         elif event_type == "quality_gate_retry":
             metadata["retry_attempt"] = retry_count + 1
 
-        tracker.track_collaboration_event(
+        from src.observability._tracker_helpers import CollaborationEventData
+        tracker.track_collaboration_event(CollaborationEventData(
             event_type=event_type,
             stage_name=stage_name,
             agents=[],
             decision=None,
             confidence=getattr(synthesis_result, "confidence", 0.0),
             metadata=metadata
-        )
+        ))
 
 
 def _handle_quality_gate_escalate(stage_name: str, violations: list) -> None:
@@ -763,11 +764,12 @@ def update_state_with_results(
         tracker_metadata = _build_synthesis_metadata(
             synthesis_result, parallel_result, aggregate_metrics
         )
-        tracker.track_collaboration_event(
+        from src.observability._tracker_helpers import CollaborationEventData
+        tracker.track_collaboration_event(CollaborationEventData(
             event_type="synthesis",
             stage_name=stage_name,
             agents=list(agent_outputs_dict.keys()),
             decision=synthesis_result.decision,
             confidence=synthesis_result.confidence,
             metadata=tracker_metadata
-        )
+        ))

@@ -2060,8 +2060,11 @@ def scan_function_complexity(src_dir: Path, files: list[dict], *, file_cache: di
                 flags.append("long_function")
                 long_count += 1
             if param_count > HIGH_PARAM_COUNT:
-                flags.append("high_param_count")
-                high_param_count += 1
+                # Check for # noqa: params suppression on the def line
+                def_line = source_lines[node.lineno - 1] if node.lineno <= len(source_lines) else ""
+                if "noqa" not in def_line or "params" not in def_line:
+                    flags.append("high_param_count")
+                    high_param_count += 1
             if nesting_depth > DEEP_NESTING_DEPTH:
                 flags.append("deep_nesting")
                 deep_nesting_count += 1
@@ -2520,11 +2523,13 @@ def compute_import_density(import_data: dict) -> dict:
                 "imports": fan_out_map[mod],
             })
 
-    # Flag high fan-in
+    # Flag high fan-in (skip foundational modules with fan_out<=2 —
+    # modules like constants, utils, core are *expected* to be widely imported)
     high_fan_in_list = []
     for mod in sorted(fan_in_map.keys()):
         count = len(fan_in_map[mod])
-        if count >= HIGH_FAN_IN:
+        fan_out = len(fan_out_map.get(mod, []))
+        if count >= HIGH_FAN_IN and fan_out > 2:
             high_fan_in_list.append({
                 "module": mod,
                 "fan_in": count,

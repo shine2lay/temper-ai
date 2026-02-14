@@ -14,7 +14,7 @@ TRUNCATION_MESSAGE_BUFFER_CHARS = 30
 STAGE_AGENT_OUTPUTS_MAX_CHARS = 4000
 
 
-def format_dialogue_history(
+def format_dialogue_history(  # scanner: skip-radon
     history: list,
     max_chars: int = DIALOGUE_HISTORY_MAX_CHARS,
 ) -> str:

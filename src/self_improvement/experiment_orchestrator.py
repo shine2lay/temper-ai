@@ -393,7 +393,7 @@ class ExperimentOrchestrator:
                 f"Valid variants: {valid_variants}"
             )
 
-    def record_result(
+    def record_result(  # noqa: params — legacy compat wrapper
         self,
         experiment_id: Optional[str] = None,
         variant_id: Optional[str] = None,

@@ -514,6 +514,22 @@ class RedisCache(CacheBackend):
         return self.__repr__()
 
 
+def _extract_cache_key_kwargs(kwargs: Dict[str, Any]) -> CacheKeyParams:
+    """Extract CacheKeyParams from legacy kwargs dict."""
+    return CacheKeyParams(
+        model=kwargs.pop('model'),
+        prompt=kwargs.pop('prompt'),
+        temperature=kwargs.pop('temperature', DEFAULT_TEMPERATURE),
+        max_tokens=kwargs.pop('max_tokens', DEFAULT_MAX_TOKENS),
+        user_id=kwargs.pop('user_id', None),
+        tenant_id=kwargs.pop('tenant_id', None),
+        session_id=kwargs.pop('session_id', None),
+        system_prompt=kwargs.pop('system_prompt', None),
+        tools=kwargs.pop('tools', None),
+        extra_params=kwargs,
+    )
+
+
 def _validate_cache_key_isolation(
     user_id: Optional[str], tenant_id: Optional[str],
 ) -> None:
@@ -708,59 +724,25 @@ class LLMCache:
             ValueError: If neither user_id nor tenant_id provided
         """
         # Extract from params or kwargs
-        if params is not None:
-            model = params.model
-            prompt = params.prompt
-            temperature = params.temperature
-            max_tokens = params.max_tokens
-            user_id = params.user_id
-            tenant_id = params.tenant_id
-            session_id = params.session_id
-            system_prompt = params.system_prompt
-            tools = params.tools
-            extra_params = params.extra_params
-        else:
-            model = kwargs.pop('model')
-            prompt = kwargs.pop('prompt')
-            temperature = kwargs.pop('temperature', DEFAULT_TEMPERATURE)
-            max_tokens = kwargs.pop('max_tokens', DEFAULT_MAX_TOKENS)
-            user_id = kwargs.pop('user_id', None)
-            tenant_id = kwargs.pop('tenant_id', None)
-            session_id = kwargs.pop('session_id', None)
-            system_prompt = kwargs.pop('system_prompt', None)
-            tools = kwargs.pop('tools', None)
-            extra_params = kwargs
+        key_params = params if params is not None else _extract_cache_key_kwargs(kwargs)
 
         # Validation
-        _validate_cache_key_isolation(user_id, tenant_id)
+        _validate_cache_key_isolation(key_params.user_id, key_params.tenant_id)
         _validate_cache_key_types(
-            model, prompt, temperature, max_tokens,
-            user_id, tenant_id, session_id,
+            key_params.model, key_params.prompt, key_params.temperature, key_params.max_tokens,
+            key_params.user_id, key_params.tenant_id, key_params.session_id,
         )
-        _validate_cache_kwargs(self._RESERVED_PARAMS, extra_params)
+        _validate_cache_kwargs(self._RESERVED_PARAMS, key_params.extra_params)
 
         # Build request dict and hash
-        cache_key = _generate_cache_key_hash(
-            CacheKeyParams(
-                model=model,
-                prompt=prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                user_id=user_id,
-                tenant_id=tenant_id,
-                session_id=session_id,
-                system_prompt=system_prompt,
-                tools=tools,
-                extra_params=extra_params,
-            )
-        )
+        cache_key = _generate_cache_key_hash(key_params)
 
         logger.debug(
             "Generated cache key with isolation: %s...",
             cache_key[:CACHE_KEY_LOG_LENGTH],
             extra={
-                'model': model, 'tenant_id': tenant_id,
-                'user_id': user_id, 'has_session': bool(session_id),
+                'model': key_params.model, 'tenant_id': key_params.tenant_id,
+                'user_id': key_params.user_id, 'has_session': bool(key_params.session_id),
             },
         )
         return cache_key

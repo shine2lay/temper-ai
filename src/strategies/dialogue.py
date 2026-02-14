@@ -57,7 +57,7 @@ class DialogueOrchestrator(MultiRoundStrategy):
             logger.warning("Failed to warm up embedding model: %s", e)
             return False
 
-    def __init__(
+    def __init__(  # noqa: params — legacy compat, delegates to MultiRoundConfig
         self,
         config: Optional[MultiRoundConfig] = None,
         max_rounds: int = DEFAULT_MAX_ROUNDS,

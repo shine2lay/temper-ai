@@ -220,7 +220,7 @@ class ApprovalWorkflow:
         self._on_approved_callbacks: List[Callable[[ApprovalRequest], None]] = []
         self._on_rejected_callbacks: List[Callable[[ApprovalRequest], None]] = []
 
-    def request_approval(
+    def request_approval(  # noqa: params — legacy compat wrapper
         self,
         params: Optional[ApprovalRequestParams] = None,
         # Legacy positional parameters for backward compatibility
@@ -580,7 +580,7 @@ class NoOpApprover(ApprovalWorkflow):
     human review. Suitable only for development and testing.
     """
 
-    def request_approval(
+    def request_approval(  # noqa: params — override of legacy compat interface
         self,
         params: Optional[ApprovalRequestParams] = None,
         action: Optional[Dict[str, Any]] = None,

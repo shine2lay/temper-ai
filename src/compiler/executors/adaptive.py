@@ -86,7 +86,8 @@ def _execute_parallel_with_switch_check(params: ParallelSwitchCheckParams) -> tu
     should_switch = disagreement_rate > params.disagreement_threshold
 
     if should_switch and params.tracker and hasattr(params.tracker, 'track_collaboration_event'):
-        params.tracker.track_collaboration_event(
+        from src.observability._tracker_helpers import CollaborationEventData
+        params.tracker.track_collaboration_event(CollaborationEventData(
             event_type="adaptive_mode_switch",
             stage_name=params.stage_name,
             agents=list(stage_output.get("agent_outputs", {}).keys()),
@@ -99,7 +100,7 @@ def _execute_parallel_with_switch_check(params: ParallelSwitchCheckParams) -> tu
                 "switching_from": EXECUTION_MODE_PARALLEL,
                 "switching_to": EXECUTION_MODE_SEQUENTIAL
             }
-        )
+        ))
 
     return parallel_state, should_switch, disagreement_rate, mode_metadata
 
@@ -193,7 +194,8 @@ class AdaptiveStageExecutor(StageExecutor):
         }
 
         if params.tracker and hasattr(params.tracker, 'track_collaboration_event'):
-            params.tracker.track_collaboration_event(
+            from src.observability._tracker_helpers import CollaborationEventData
+            params.tracker.track_collaboration_event(CollaborationEventData(
                 event_type="adaptive_mode_switch",
                 stage_name=params.stage_name,
                 agents=[],
@@ -205,7 +207,7 @@ class AdaptiveStageExecutor(StageExecutor):
                     "switching_from": EXECUTION_MODE_PARALLEL,
                     "switching_to": EXECUTION_MODE_SEQUENTIAL
                 }
-            )
+            ))
 
         return self._fallback_to_sequential(
             params.stage_name, params.stage_config, params.state, params.config_loader,

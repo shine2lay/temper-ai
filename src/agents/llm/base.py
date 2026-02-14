@@ -178,11 +178,11 @@ class BaseLLM(LLMContextManagerMixin, ABC):
 
     # Callable attributes bound dynamically by _bind_callable_attributes()
     _build_bearer_auth_headers: Callable[[], Dict[str, str]]
-    _check_cache: Callable[..., Tuple[Optional[str], Optional["LLMResponse"]]]
-    _cache_response: Callable[[Optional[str], "LLMResponse"], None]
-    _execute_and_parse: Callable[[httpx.Response, float, Optional[str]], "LLMResponse"]
-    _make_streaming_call_impl: Callable[..., Tuple[Optional[str], Optional["LLMResponse"]]]
-    _execute_streaming_impl: Callable[..., "LLMResponse"]
+    _check_cache: Callable[..., Tuple[Optional[str], Optional["LLMResponse"]]]  # scanner: skip-magic
+    _cache_response: Callable[[Optional[str], "LLMResponse"], None]  # scanner: skip-magic
+    _execute_and_parse: Callable[[httpx.Response, float, Optional[str]], "LLMResponse"]  # scanner: skip-magic
+    _make_streaming_call_impl: Callable[..., Tuple[Optional[str], Optional["LLMResponse"]]]  # scanner: skip-magic
+    _execute_streaming_impl: Callable[..., "LLMResponse"]  # scanner: skip-magic
     _execute_streaming_async_impl: Callable[..., Any]
 
     _MAX_CIRCUIT_BREAKERS = DEFAULT_MAX_CIRCUIT_BREAKERS

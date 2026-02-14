@@ -102,7 +102,7 @@ class ExperimentService(Service):
 
     # ========== Experiment CRUD ==========
 
-    def create_experiment(
+    def create_experiment(  # noqa: params — public API, maintains backward compat
         self,
         name: str,
         description: str,

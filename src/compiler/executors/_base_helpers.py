@@ -491,7 +491,8 @@ def track_dialogue_round(params: DialogueTrackingParams) -> None:
             event_data["stance_distribution"] = stance_dist
             event_data["agent_stances"] = params.agent_stances
 
-        params.tracker.track_collaboration_event(
+        from src.observability._tracker_helpers import CollaborationEventData
+        params.tracker.track_collaboration_event(CollaborationEventData(
             event_type=f"{params.strategy.mode}_round",
             stage_id=params.state.get(StateKeys.CURRENT_STAGE_ID),
             agents_involved=agent_names,
@@ -499,7 +500,7 @@ def track_dialogue_round(params: DialogueTrackingParams) -> None:
             outcome=params.round_outcome,
             confidence_score=params.conv_score,
             event_data=event_data,
-        )
+        ))
     except Exception:
         logger.warning(
             "Failed to track round %d collaboration event",

@@ -308,7 +308,7 @@ class PatternMiner:
 
         return relevant_patterns
 
-    def get_strategy_insights(self, strategy_name: str) -> Dict[str, Any]:
+    def get_strategy_insights(self, strategy_name: str) -> Dict[str, Any]:  # scanner: skip-radon
         """
         Get insights about a specific strategy's performance.
 

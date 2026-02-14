@@ -258,59 +258,68 @@ def _handle_agent_error(
     safe_msg = sanitize_error_message(str(error))
     label = "Agent async execution error" if async_mode else "Agent execution error"
     logger.warning("%s: %s", label, safe_msg, exc_info=True)
-    return _build_final_response(
+    result: AgentResponse = _build_final_response(
         agent, output="", reasoning=None, tool_calls=tool_calls_made,
         tokens=total_tokens, cost=total_cost, start_time=start_time,
         error=f"Agent execution error: {safe_msg}"
     )
+    return result
+
+
+@dataclass
+class LLMResultParams:
+    """Parameters for handling LLM call result (reduces 11 params)."""
+    llm_response: Optional[Any]
+    last_error: Optional[Exception]
+    inf_config: Any
+    prompt: str
+    tool_calls_made: List[Dict[str, Any]]
+    total_tokens: int
+    total_cost: float
+    start_time: float
+    max_agent_retries: int
+    max_iterations: Optional[int] = None
 
 
 def _handle_llm_result(
     agent: "StandardAgent",
-    llm_response: Optional[Any],
-    last_error: Optional[Exception],
-    inf_config: Any,
-    prompt: str,
-    tool_calls_made: List[Dict[str, Any]],
-    total_tokens: int,
-    total_cost: float,
-    start_time: float,
-    max_agent_retries: int,
-    max_iterations: Optional[int] = None,
+    params: LLMResultParams,
 ) -> Dict[str, Any]:
     """Handle LLM call result: error check, token tracking, response processing."""
-    if llm_response is None:
-        error_msg = f"LLM call failed after {max_agent_retries + 1} attempts"
-        if last_error:
-            error_msg += f": {sanitize_error_message(str(last_error))}"
+    if params.llm_response is None:
+        error_msg = f"LLM call failed after {params.max_agent_retries + 1} attempts"
+        if params.last_error:
+            error_msg += f": {sanitize_error_message(str(params.last_error))}"
         return {
             "complete": True,
             "response": _build_final_response(
-                agent, output="", reasoning=None, tool_calls=tool_calls_made,
-                tokens=total_tokens, cost=total_cost, start_time=start_time,
+                agent, output="", reasoning=None, tool_calls=params.tool_calls_made,
+                tokens=params.total_tokens, cost=params.total_cost, start_time=params.start_time,
                 error=error_msg
             )
         }
 
-    logger.info("[%s] LLM responded (%s tokens)", agent.name, llm_response.total_tokens or "?")
+    logger.info("[%s] LLM responded (%s tokens)", agent.name, params.llm_response.total_tokens or "?")
 
-    if llm_response.total_tokens:
-        total_tokens += llm_response.total_tokens
-    cost = _estimate_cost_for_response(agent, llm_response)
+    total_tokens = params.total_tokens
+    total_cost = params.total_cost
+    if params.llm_response.total_tokens:
+        total_tokens += params.llm_response.total_tokens
+    cost = _estimate_cost_for_response(agent, params.llm_response)
     total_cost += cost
 
-    _track_llm_call(agent, inf_config, prompt, llm_response, cost)
+    _track_llm_call(agent, params.inf_config, params.prompt, params.llm_response, cost)
 
     from src.agents._standard_agent_helpers import LLMProcessingContext
     ctx = LLMProcessingContext(
         agent=agent,
-        llm_response=llm_response,
-        tool_calls_made=tool_calls_made,
+        llm_response=params.llm_response,
+        tool_calls_made=params.tool_calls_made,
         total_tokens=total_tokens,
         total_cost=total_cost,
-        start_time=start_time,
-        prompt=prompt,
-        max_iterations=max_iterations,
+        start_time=params.start_time,
+        prompt=params.prompt,
+        max_iterations=params.max_iterations,
         get_tool_executor_fn=_get_tool_executor
     )
     return _process_llm_response(ctx)
@@ -623,9 +632,13 @@ class StandardAgent(BaseAgent):
         )
 
         return _handle_llm_result(
-            self, llm_response, last_error, inf_config, prompt,
-            tool_calls_made, total_tokens, total_cost, start_time,
-            max_agent_retries, max_iterations,
+            self, LLMResultParams(
+                llm_response=llm_response, last_error=last_error,
+                inf_config=inf_config, prompt=prompt,
+                tool_calls_made=tool_calls_made, total_tokens=total_tokens,
+                total_cost=total_cost, start_time=start_time,
+                max_agent_retries=max_agent_retries, max_iterations=max_iterations,
+            ),
         )
 
     def _execute_iteration(
@@ -655,9 +668,13 @@ class StandardAgent(BaseAgent):
         )
 
         return _handle_llm_result(
-            self, llm_response, last_error, inf_config, prompt,
-            tool_calls_made, total_tokens, total_cost, start_time,
-            max_agent_retries, max_iterations,
+            self, LLMResultParams(
+                llm_response=llm_response, last_error=last_error,
+                inf_config=inf_config, prompt=prompt,
+                tool_calls_made=tool_calls_made, total_tokens=total_tokens,
+                total_cost=total_cost, start_time=start_time,
+                max_agent_retries=max_agent_retries, max_iterations=max_iterations,
+            ),
         )
 
     def _render_base_template(
@@ -794,7 +811,7 @@ def _execute_single_tool_method(self: "StandardAgent", tool_call: Dict[str, Any]
 def _execute_via_tool_executor_method(self: "StandardAgent", tool_name: str, tool_params: Dict[str, Any]) -> Dict[str, Any]:
     return _execute_via_tool_executor(self, tool_name, tool_params)
 
-def _build_final_response_method(
+def _build_final_response_method(  # noqa: params — thin backward-compat wrapper
     self: "StandardAgent",
     output: str,
     reasoning: Optional[str],

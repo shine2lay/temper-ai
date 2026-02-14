@@ -1292,6 +1292,7 @@ class TestImportDensity:
 
     def test_high_fan_in_flagged(self):
         graph = {f"mod{i}": ["popular"] for i in range(7)}
+        graph["popular"] = ["dep_a", "dep_b", "dep_c"]  # fan_out>2 so not foundational
         import_data = {"module_graph": graph}
         result = scanner.compute_import_density(import_data)
         assert result["summary"]["high_fan_in_count"] == 1

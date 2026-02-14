@@ -31,6 +31,8 @@ from src.compiler.executors.state_keys import StateKeys
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_MAX_DIALOGUE_ROUNDS = 3
+
 
 @dataclass
 class FinalSynthesisResultParams:
@@ -45,37 +47,42 @@ class FinalSynthesisResultParams:
     stage_name: str
 
 
-def _run_dialogue_rounds(
-    executor: Any,
-    strategy: Any,
-    agents: list,
-    stage_name: str,
-    state: Dict[str, Any],
-    config_loader: ConfigLoaderProtocol,
-    tracker: Any,
-    dialogue_history: List[Dict[str, Any]],
-    initial_outputs: list,
-    total_cost: float,
-) -> tuple:
+@dataclass
+class DialogueRoundsParams:
+    """Parameters for running dialogue rounds (reduces 10 params)."""
+    executor: Any
+    strategy: Any
+    agents: list
+    stage_name: str
+    state: Dict[str, Any]
+    config_loader: ConfigLoaderProtocol
+    tracker: Any
+    dialogue_history: List[Dict[str, Any]]
+    initial_outputs: list
+    total_cost: float
+
+
+def _run_dialogue_rounds(params: DialogueRoundsParams) -> tuple:
     """Run dialogue rounds until convergence, budget, or max rounds.
 
     Returns:
         (final_round, current_outputs, total_cost, converged, convergence_round)
     """
-    previous_outputs = initial_outputs
-    current_outputs = initial_outputs
+    previous_outputs = params.initial_outputs
+    current_outputs = params.initial_outputs
     converged = False
     convergence_round = -1
     final_round = 0
+    total_cost = params.total_cost
 
-    for round_num in range(1, strategy.max_rounds):
+    for round_num in range(1, params.strategy.max_rounds):
         final_round = round_num
         from src.compiler.executors._base_helpers import DialogueRoundParams
         round_params = DialogueRoundParams(
-            round_num=round_num, reinvoke_fn=executor._reinvoke_agents_with_dialogue,
-            agents=agents, strategy=strategy, stage_name=stage_name,
-            state=state, config_loader=config_loader, tracker=tracker,
-            dialogue_history=dialogue_history, previous_outputs=previous_outputs,
+            round_num=round_num, reinvoke_fn=params.executor._reinvoke_agents_with_dialogue,
+            agents=params.agents, strategy=params.strategy, stage_name=params.stage_name,
+            state=params.state, config_loader=params.config_loader, tracker=params.tracker,
+            dialogue_history=params.dialogue_history, previous_outputs=previous_outputs,
         )
         outputs, cost, _, conv, conv_round, _ = execute_dialogue_round(round_params)
         current_outputs = outputs
@@ -84,10 +91,10 @@ def _run_dialogue_rounds(
             converged = True
             convergence_round = conv_round
             break
-        if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
+        if params.strategy.cost_budget_usd and total_cost >= params.strategy.cost_budget_usd:
             logger.warning(
-                f"Dialogue stopped at round {round_num + 1} for stage '{stage_name}': "
-                f"budget ${strategy.cost_budget_usd:.2f} reached (cost: ${total_cost:.2f})"
+                f"Dialogue stopped at round {round_num + 1} for stage '{params.stage_name}': "
+                f"budget ${params.strategy.cost_budget_usd:.2f} reached (cost: ${total_cost:.2f})"
             )
             break
         previous_outputs = current_outputs
@@ -406,10 +413,12 @@ class StageExecutor(ABC):
             return self._budget_stop_result(strategy, current_outputs, total_cost, stage_name)
 
         final_round, current_outputs, total_cost, converged, convergence_round = (
-            _run_dialogue_rounds(
-                self, strategy, agents, stage_name, state, config_loader,
-                tracker, dialogue_history, initial_outputs, total_cost,
-            )
+            _run_dialogue_rounds(DialogueRoundsParams(
+                executor=self, strategy=strategy, agents=agents, stage_name=stage_name,
+                state=state, config_loader=config_loader, tracker=tracker,
+                dialogue_history=dialogue_history, initial_outputs=initial_outputs,
+                total_cost=total_cost,
+            ))
         )
 
         synth_params = FinalSynthesisResultParams(
@@ -536,7 +545,7 @@ class StageExecutor(ABC):
             config_loader=config_loader,
         )
 
-    def _reinvoke_agents_with_dialogue(
+    def _reinvoke_agents_with_dialogue(  # noqa: params — legacy compat wrapper
         self,
         params: Optional["DialogueReinvocationParams"] = None,
         agents: Optional[list] = None,
@@ -573,6 +582,8 @@ class StageExecutor(ABC):
         if params is None:
             if agents is None or stage_name is None:
                 raise ValueError("Either params or all legacy args must be provided")
+            if config_loader is None:
+                raise ValueError("config_loader is required")
             params = DialogueReinvocationParams(
                 agents=agents,
                 stage_name=stage_name,
@@ -580,7 +591,7 @@ class StageExecutor(ABC):
                 config_loader=config_loader,
                 dialogue_history=dialogue_history or [],
                 round_number=round_number or 0,
-                max_rounds=max_rounds or 3,
+                max_rounds=max_rounds or DEFAULT_MAX_DIALOGUE_ROUNDS,
                 strategy=strategy,
                 extract_agent_name_fn=self._extract_agent_name,
             )

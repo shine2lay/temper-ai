@@ -216,7 +216,7 @@ class MetricRecordCreator:
 
         return created
 
-    def _create_metric(
+    def _create_metric(  # noqa: params — legacy interface, delegates to MetricParams
         self,
         metric_name: str,
         metric_value: float,

@@ -493,6 +493,46 @@ def _handle_dashboard_keepalive(
     console.print("\n[yellow]Dashboard stopped[/yellow]")
 
 
+def _setup_event_routing(
+    event_bus: Any, events_to: str, event_format: str,
+    run_id: Optional[str], verbose: bool,
+) -> None:
+    """Set up event output routing on the event bus if non-default options are requested."""
+    if not event_bus or (events_to == "stderr" and event_format == "text"):
+        return
+    try:
+        from src.cli.event_output import EventOutputHandler
+        handler = EventOutputHandler(mode=events_to, fmt=event_format, run_id=run_id)
+        event_bus.subscribe(handler.handle_event)
+    except ImportError:
+        if verbose:
+            console.print("[yellow]Warning:[/yellow] Event output routing not available")
+
+
+def _compile_workflow(
+    workflow_config: Any, tool_registry: Any, config_loader: Any, verbose: bool,
+) -> tuple:
+    """Compile workflow config into an executable graph.
+
+    Returns (engine, compiled) tuple.
+    """
+    try:
+        from src.compiler.engine_registry import EngineRegistry
+        registry = EngineRegistry()
+        engine = registry.get_engine_from_config(
+            workflow_config,
+            tool_registry=tool_registry,
+            config_loader=config_loader,
+        )
+        compiled = engine.compile(workflow_config)
+        return engine, compiled
+    except (ValueError, KeyError, AttributeError) as e:
+        console.print(f"[red]Workflow compilation error:[/red] {e}")
+        if verbose:
+            logger.exception("Failed to compile workflow")
+        raise SystemExit(1)
+
+
 @main.command()
 @click.argument("workflow", type=click.Path(exists=True))
 @click.option(
@@ -554,47 +594,7 @@ def _handle_dashboard_keepalive(
     default=None,
     help="Externally-provided run ID for tracking",
 )
-def _setup_event_routing(
-    event_bus: Any, events_to: str, event_format: str,
-    run_id: Optional[str], verbose: bool,
-) -> None:
-    """Set up event output routing on the event bus if non-default options are requested."""
-    if not event_bus or (events_to == "stderr" and event_format == "text"):
-        return
-    try:
-        from src.cli.event_output import EventOutputHandler
-        handler = EventOutputHandler(mode=events_to, fmt=event_format, run_id=run_id)
-        event_bus.subscribe(handler.handle_event)
-    except ImportError:
-        if verbose:
-            console.print("[yellow]Warning:[/yellow] Event output routing not available")
-
-
-def _compile_workflow(
-    workflow_config: Any, tool_registry: Any, config_loader: Any, verbose: bool,
-) -> tuple:
-    """Compile workflow config into an executable graph.
-
-    Returns (engine, compiled) tuple.
-    """
-    try:
-        from src.compiler.engine_registry import EngineRegistry
-        registry = EngineRegistry()
-        engine = registry.get_engine_from_config(
-            workflow_config,
-            tool_registry=tool_registry,
-            config_loader=config_loader,
-        )
-        compiled = engine.compile(workflow_config)
-        return engine, compiled
-    except (ValueError, KeyError, AttributeError) as e:
-        console.print(f"[red]Workflow compilation error:[/red] {e}")
-        if verbose:
-            logger.exception("Failed to compile workflow")
-        raise SystemExit(1)
-
-
-def run(
+def run(  # noqa: params — Click command, params are CLI args
     workflow: str,
     input_file: Optional[str],
     verbose: bool,
@@ -609,6 +609,7 @@ def run(
     run_id: Optional[str],
 ) -> None:
     """Run a workflow from a YAML config file."""
+    from src.observability.tracker import WorkflowTrackingParams
     _setup_logging(verbose, show_details)
     workflow_config, inputs = _load_workflow_config(workflow, input_file, config_root, verbose)
 
@@ -623,12 +624,12 @@ def run(
 
     wf = workflow_config.get("workflow", {})
     workflow_name = wf.get("name", Path(workflow).stem)
-    with tracker.track_workflow(
+    with tracker.track_workflow(WorkflowTrackingParams(
         workflow_name=workflow_name,
         workflow_config=workflow_config,
         trigger_type="cli",
         environment="local",
-    ) as workflow_id:
+    )) as workflow_id:
         exec_params = WorkflowExecutionParams(
             compiled=compiled, workflow_config=workflow_config, inputs=inputs,
             tracker=tracker, config_loader=config_loader, tool_registry=tool_registry,
@@ -915,13 +916,15 @@ def _check_agent_tools(
         with open(agent_path) as f:
             agent_config = yaml.safe_load(f)
         agent_tools = agent_config.get("agent", {}).get("tools", None)
-        if agent_tools is not None:
-            for tool_entry in agent_tools:
-                tool_name = tool_entry if isinstance(tool_entry, str) else tool_entry.get("name", "")
-                if tool_name:
-                    tool_path = Path(config_root) / "tools" / f"{tool_name}{YAML_FILE_EXTENSION}"
-                    if not tool_path.exists():
-                        warnings.append(f"{agent_name}: tool config not found — {tool_name}")
+        if agent_tools is None:
+            return
+        for tool_entry in agent_tools:
+            tool_name = tool_entry if isinstance(tool_entry, str) else tool_entry.get("name", "")
+            if not tool_name:
+                continue
+            tool_path = Path(config_root) / "tools" / f"{tool_name}{YAML_FILE_EXTENSION}"
+            if not tool_path.exists():
+                warnings.append(f"{agent_name}: tool config not found — {tool_name}")
     except Exception as exc:  # noqa: BLE001
         warnings.append(f"{agent_name}: could not check tools — {exc}")
 

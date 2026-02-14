@@ -1,8 +1,16 @@
 /**
  * Flowchart Panel — Cytoscape.js node graph (LangFlow-style).
  * Shows stages as compound nodes with agent children, data flow edges,
- * and collaboration edges. Live updates via DataStore events.
+ * and collaboration edges. HTML overlays via cytoscape-node-html-label
+ * for rich stage headers and agent cards. Live updates via DataStore events.
  */
+
+import {
+    stageHeaderTpl,
+    agentCardTpl,
+    formatDataFlowLabel,
+    formatCollabLabel,
+} from './flowchart-templates.js';
 
 const STATUS_COLORS = {
     completed: '#66bb6a',
@@ -12,7 +20,7 @@ const STATUS_COLORS = {
 };
 
 const CYTOSCAPE_STYLE = [
-    // Stage (compound/parent) nodes
+    // Stage (compound/parent) nodes — label removed, HTML overlay replaces it
     {
         selector: 'node[type="stage"]',
         style: {
@@ -20,19 +28,35 @@ const CYTOSCAPE_STYLE = [
             'border-color': '#2a3a5c',
             'border-width': 2,
             'shape': 'roundrectangle',
-            'label': 'data(name)',
             'text-valign': 'top',
             'text-halign': 'center',
-            'color': '#a0a0b0',
-            'font-size': 12,
-            'font-weight': 'bold',
             'padding': '20px',
-            'text-margin-y': -5,
-            'min-width': 180,
-            'min-height': 80,
+            'min-width': 200,
+            'min-height': 100,
         },
     },
-    // Agent (child) nodes
+    // Completed stage tinted background
+    {
+        selector: 'node[type="stage"][status="completed"]',
+        style: { 'background-color': '#162318' },
+    },
+    // Failed stage tinted background
+    {
+        selector: 'node[type="stage"][status="failed"]',
+        style: { 'background-color': '#231616' },
+    },
+    // Stage header child node — invisible canvas node for HTML overlay
+    {
+        selector: 'node[type="stage-header"]',
+        style: {
+            'background-opacity': 0,
+            'border-width': 0,
+            'width': 180,
+            'height': 50,
+            'shape': 'roundrectangle',
+        },
+    },
+    // Agent (child) nodes — label removed, HTML overlay replaces it
     {
         selector: 'node[type="agent"]',
         style: {
@@ -40,16 +64,19 @@ const CYTOSCAPE_STYLE = [
             'border-color': '#2a3a5c',
             'border-width': 2,
             'shape': 'roundrectangle',
-            'width': 160,
-            'height': 60,
-            'label': 'data(label)',
-            'text-wrap': 'wrap',
-            'text-max-width': '140px',
-            'color': '#e0e0e0',
-            'font-size': 11,
-            'text-valign': 'center',
-            'text-halign': 'center',
+            'width': 180,
+            'height': 90,
         },
+    },
+    // Completed agent tinted background
+    {
+        selector: 'node[type="agent"][status="completed"]',
+        style: { 'background-color': '#121f14' },
+    },
+    // Failed agent tinted background
+    {
+        selector: 'node[type="agent"][status="failed"]',
+        style: { 'background-color': '#1f1212' },
     },
     // Status-based border colors
     {
@@ -106,12 +133,14 @@ const CYTOSCAPE_STYLE = [
 
 // Spacing constants for manual LR layout (stages left-to-right, agents top-to-bottom)
 const LAYOUT = {
-    AGENT_WIDTH: 160,
-    AGENT_HEIGHT: 60,
-    AGENT_GAP_Y: 20,       // vertical gap between agents
-    STAGE_GAP_X: 120,      // horizontal gap between stages
-    STAGE_PAD_X: 30,       // horizontal padding inside stage
-    STAGE_PAD_Y: 40,       // vertical padding inside stage (top has label)
+    AGENT_WIDTH: 180,
+    AGENT_HEIGHT: 90,
+    AGENT_GAP_Y: 20,            // vertical gap between agents
+    STAGE_GAP_X: 120,           // horizontal gap between stages
+    STAGE_GAP_Y: 40,            // vertical gap between parallel stages
+    STAGE_PAD_X: 30,            // horizontal padding inside stage
+    STAGE_PAD_Y: 60,            // vertical padding inside stage (room for header)
+    STAGE_HEADER_HEIGHT: 50,    // height of the stage header node
 };
 
 export class FlowchartPanel {
@@ -121,9 +150,25 @@ export class FlowchartPanel {
         this.eventBus = eventBus;
         this._cy = null;
         this._lastTopology = '';
-        this._changeHandler = () => this.render();
+        this._dirty = false;
+        this._rafId = null;
+        this._changeHandler = (e) => {
+            const ct = e.detail?.changeType;
+            // Update on snapshot and event changes (stage/agent lifecycle)
+            // Skip only stream content and selection changes
+            if (ct === 'stream' || ct === 'selection') return;
+            this._scheduleRender();
+        };
         this.dataStore.addEventListener('change', this._changeHandler);
         this.render();
+    }
+
+    _scheduleRender() {
+        if (this._rafId) return;
+        this._rafId = requestAnimationFrame(() => {
+            this._rafId = null;
+            this.render();
+        });
     }
 
     _initCytoscape() {
@@ -154,6 +199,35 @@ export class FlowchartPanel {
         this._cy.on('tap', 'node[type="stage"]', (e) => {
             this.dataStore.select('stage', e.target.id());
         });
+
+        // Click stage-header node → select parent stage in DataStore
+        this._cy.on('tap', 'node[type="stage-header"]', (e) => {
+            this.dataStore.select('stage', e.target.data('parent'));
+        });
+
+        // Register HTML label overlays (graceful: guard if extension not loaded)
+        if (typeof this._cy.nodeHtmlLabel === 'function') {
+            this._cy.nodeHtmlLabel([
+                {
+                    query: 'node[type="stage-header"]',
+                    halign: 'center',
+                    valign: 'center',
+                    halignBox: 'center',
+                    valignBox: 'center',
+                    tpl: (data) => stageHeaderTpl(data),
+                    enablePointerEvents: true,
+                },
+                {
+                    query: 'node[type="agent"]',
+                    halign: 'center',
+                    valign: 'center',
+                    halignBox: 'center',
+                    valignBox: 'center',
+                    tpl: (data) => agentCardTpl(data),
+                    enablePointerEvents: true,
+                },
+            ]);
+        }
     }
 
     render() {
@@ -167,6 +241,13 @@ export class FlowchartPanel {
             this._renderLibMissing();
             return;
         }
+
+        // Defer rendering when container is hidden (e.g. inactive tab)
+        if (this.container.offsetWidth === 0 || this.container.offsetHeight === 0) {
+            this._dirty = true;
+            return;
+        }
+        this._dirty = false;
 
         this._initCytoscape();
         if (!this._cy) return;
@@ -202,6 +283,9 @@ export class FlowchartPanel {
             }
         });
 
+        // Force style recalculation for data-bound selectors (e.g. node[status])
+        this._cy.style().update();
+
         // Only re-layout when topology (set of element IDs) changes
         const currentTopology = this._cy.elements().map(e => e.id()).sort().join(',');
         if (currentTopology !== this._lastTopology) {
@@ -213,20 +297,20 @@ export class FlowchartPanel {
     _applyLayout() {
         if (!this._cy || this._cy.elements().length === 0) return;
 
-        // Position map: agent id → { x, y }
+        // Position map: node id → { x, y } for agent and stage-header nodes
         const positions = {};
-        const agentNodes = this._cy.nodes('[type="agent"]');
-        agentNodes.forEach(n => {
+        this._cy.nodes('[type="agent"], [type="stage-header"]').forEach(n => {
             positions[n.id()] = { x: n.data('_px'), y: n.data('_py') };
         });
 
         this._cy.layout({
             name: 'preset',
             positions: (node) => {
-                // Only position agent (child) nodes — compound parents auto-wrap
-                if (node.data('type') === 'agent') {
+                const t = node.data('type');
+                if (t === 'agent' || t === 'stage-header') {
                     return positions[node.id()] || { x: 0, y: 0 };
                 }
+                // Compound parents auto-wrap children
                 return undefined;
             },
             fit: true,
@@ -239,117 +323,335 @@ export class FlowchartPanel {
     _buildElements(wf) {
         const elements = [];
         const stages = wf.stages || [];
-        let collabIdx = 0;
-        let xCursor = 0;
+        const dagInfo = this._extractDagInfo(wf);
+        const positions = this._computeStagePositions(stages, dagInfo);
 
         for (let i = 0; i < stages.length; i++) {
             const stage = stages[i];
-            const stageData = this.dataStore.stages.get(stage.id) || stage;
+            if (!stage.id) continue;
 
-            // Stage compound node (position derived from children)
-            elements.push({
-                group: 'nodes',
-                data: {
-                    id: stage.id,
-                    name: stageData.stage_name || stageData.name || stage.id,
-                    type: 'stage',
-                    status: stageData.status || 'pending',
-                },
-            });
+            const pos = positions.get(stage.id) || { x: i * 300, y: 0 };
+            this._addStageElements(elements, stage, pos);
+            this._addCollabEdges(elements, stage);
+        }
 
-            // Agent child nodes — positioned left-to-right by stage, top-to-bottom within
-            const agents = stageData.agents || stage.agents || [];
-            const agentCount = agents.filter(a => a.id).length;
-            const stageX = xCursor + LAYOUT.STAGE_PAD_X + LAYOUT.AGENT_WIDTH / 2;
-            let agentIdx = 0;
-
-            for (const agent of agents) {
-                if (!agent.id) continue;
-                const agentData = this.dataStore.agents.get(agent.id) || agent;
-                const name = agentData.agent_name || agentData.name || agent.id;
-                const model = (agentData.agent_config_snapshot || {}).model || '';
-                const tokens = agentData.total_tokens;
-                const cost = agentData.estimated_cost_usd;
-                const status = agentData.status || 'pending';
-
-                // Build multi-line label
-                const lines = [name];
-                if (model) lines.push(model);
-                const metricParts = [];
-                if (tokens) metricParts.push(`${tokens} tok`);
-                if (cost != null && cost > 0) metricParts.push(`$${cost.toFixed(4)}`);
-                if (metricParts.length) lines.push(metricParts.join(' | '));
-
-                // Compute position: x = stage column, y = agent row within stage
-                const px = stageX;
-                const py = LAYOUT.STAGE_PAD_Y + agentIdx * (LAYOUT.AGENT_HEIGHT + LAYOUT.AGENT_GAP_Y);
-
-                elements.push({
-                    group: 'nodes',
-                    data: {
-                        id: agent.id,
-                        parent: stage.id,
-                        name: name,
-                        label: lines.join('\n'),
-                        type: 'agent',
-                        status: status,
-                        model: model,
-                        _px: px,
-                        _py: py,
-                    },
-                });
-                agentIdx++;
-            }
-
-            // Advance x cursor past this stage
-            const stageWidth = LAYOUT.STAGE_PAD_X * 2 + LAYOUT.AGENT_WIDTH;
-            xCursor += stageWidth + LAYOUT.STAGE_GAP_X;
-
-            // If stage has no agents, add a placeholder width
-            if (agentCount === 0) {
-                // Stage still needs some width even without agents
-                // xCursor already advanced above
-            }
-
-            // Collaboration edges within stage
-            const collabEvents = stageData.collaboration_events || stage.collaboration_events || [];
-            for (const event of collabEvents) {
-                const involved = event.agents_involved || [];
-                if (involved.length >= 2) {
-                    const edgeId = `collab-${involved[0]}-${involved[1]}-${collabIdx++}`;
-                    elements.push({
-                        group: 'edges',
-                        data: {
-                            id: edgeId,
-                            source: involved[0],
-                            target: involved[1],
-                            type: 'collaboration',
-                            label: event.event_type || '',
-                        },
-                    });
-                }
-            }
-
-            // Sequential stage-to-stage data flow edges
-            if (i > 0) {
-                const prevStage = stages[i - 1];
-                const prevData = this.dataStore.stages.get(prevStage.id) || prevStage;
-                const outputKeys = Object.keys(prevData.output_data || {});
-                const label = outputKeys.join(', ');
-                elements.push({
-                    group: 'edges',
-                    data: {
-                        id: `flow-${prevStage.id}-${stage.id}`,
-                        source: prevStage.id,
-                        target: stage.id,
-                        type: 'data_flow',
-                        label: label,
-                    },
-                });
-            }
+        // Build data flow edges (DAG-aware when depends_on info available)
+        if (dagInfo.hasDeps) {
+            this._addDagFlowEdges(elements, stages, dagInfo);
+        } else {
+            this._addSequentialFlowEdges(elements, stages);
         }
 
         return elements;
+    }
+
+    /**
+     * Compute {stageId → {x, y}} positions from DAG topology.
+     * X = column from depth (longest path from root), Y = row within depth group.
+     * Falls back to sequential left-to-right when no depends_on is present.
+     */
+    _computeStagePositions(stages, dagInfo) {
+        const positions = new Map();
+        const colWidth = LAYOUT.AGENT_WIDTH + 2 * LAYOUT.STAGE_PAD_X + LAYOUT.STAGE_GAP_X;
+
+        if (!dagInfo.hasDeps) {
+            for (let i = 0; i < stages.length; i++) {
+                if (stages[i].id) positions.set(stages[i].id, { x: i * colWidth, y: 0 });
+            }
+            return positions;
+        }
+
+        const depths = this._computeDepthsFromDepMap(dagInfo.depMap);
+
+        // Group stages by depth for vertical distribution
+        const depthGroups = new Map();
+        for (const stage of stages) {
+            if (!stage.id) continue;
+            const stageData = this.dataStore.stages.get(stage.id) || stage;
+            const name = stageData.stage_name || stageData.name || '';
+            const depth = depths.get(name) ?? 0;
+            if (!depthGroups.has(depth)) depthGroups.set(depth, []);
+            depthGroups.get(depth).push(stage);
+        }
+
+        // Assign X from depth, Y centered within each depth group
+        for (const [depth, group] of depthGroups) {
+            const x = depth * colWidth;
+            const heights = group.map(s => this._estimateStageHeight(s));
+            const totalH = heights.reduce((a, b) => a + b, 0)
+                + (group.length - 1) * LAYOUT.STAGE_GAP_Y;
+            let yCursor = -totalH / 2;
+            for (let i = 0; i < group.length; i++) {
+                positions.set(group[i].id, { x, y: yCursor });
+                yCursor += heights[i] + LAYOUT.STAGE_GAP_Y;
+            }
+        }
+
+        return positions;
+    }
+
+    /**
+     * Compute longest-path depths from a dependency map (name → [dep names]).
+     * Roots (no deps) get depth 0; each other stage = max(pred depths) + 1.
+     */
+    _computeDepthsFromDepMap(depMap) {
+        const depths = new Map();
+        for (const [name, deps] of depMap) {
+            if (deps.length === 0) depths.set(name, 0);
+        }
+        let changed = true;
+        while (changed) {
+            changed = false;
+            for (const [name, deps] of depMap) {
+                if (deps.length === 0) continue;
+                if (!deps.every(d => depths.has(d))) continue;
+                const newDepth = Math.max(...deps.map(d => depths.get(d))) + 1;
+                if (depths.get(name) !== newDepth) {
+                    depths.set(name, newDepth);
+                    changed = true;
+                }
+            }
+        }
+        return depths;
+    }
+
+    /** Estimate total height of a stage for vertical spacing. */
+    _estimateStageHeight(stage) {
+        const agentCount = Math.max((stage.agents || []).length, 1);
+        return LAYOUT.STAGE_PAD_Y
+            + agentCount * (LAYOUT.AGENT_HEIGHT + LAYOUT.AGENT_GAP_Y);
+    }
+
+    /**
+     * Add stage compound node, header child, and agent child nodes at pos.
+     * pos.x = center X, pos.y = top Y of the stage content area.
+     */
+    _addStageElements(elements, stage, pos) {
+        const stageData = this.dataStore.stages.get(stage.id) || stage;
+        const status = stageData.status || 'pending';
+        const name = stageData.stage_name || stageData.name || stage.id;
+
+        // Extract stage config for strategy/execMode
+        const stageConfig = stageData.stage_config_snapshot?.stage || {};
+        const collaboration = stageConfig.collaboration || {};
+        const execution = stageConfig.execution || {};
+        const strategy = collaboration.strategy || '';
+        const execMode = execution.agent_mode || '';
+
+        // Stage compound (parent) node
+        elements.push({
+            group: 'nodes',
+            data: { id: stage.id, type: 'stage', status, label: name },
+        });
+
+        // Stage header child node (HTML overlay anchor)
+        // Fields match stageHeaderTpl expectations: name, status, strategy,
+        // execMode, agentCount, totalTokens, totalCost, durationSeconds, etc.
+        const agents = stage.agents || [];
+        elements.push({
+            group: 'nodes',
+            data: {
+                id: `${stage.id}-header`,
+                parent: stage.id,
+                type: 'stage-header',
+                name,
+                label: name,
+                status,
+                strategy,
+                execMode,
+                agentCount: agents.length || stageData.num_agents_executed || 0,
+                totalTokens: this._sumAgentField(agents, 'total_tokens'),
+                totalCost: this._sumAgentField(agents, 'estimated_cost_usd'),
+                durationSeconds: stageData.duration_seconds || null,
+                numSucceeded: stageData.num_agents_succeeded ?? null,
+                numFailed: stageData.num_agents_failed ?? 0,
+                collabRounds: (stageData.collaboration_events || []).length,
+                _px: pos.x,
+                _py: pos.y + LAYOUT.STAGE_HEADER_HEIGHT / 2,
+            },
+        });
+
+        // Agent child nodes
+        for (let j = 0; j < agents.length; j++) {
+            const agent = agents[j];
+            if (!agent.id) continue;
+            const ad = this.dataStore.agents.get(agent.id) || agent;
+            const agentName = ad.agent_name || ad.name || agent.id;
+            const agentConfig = ad.agent_config_snapshot?.agent || {};
+            elements.push({
+                group: 'nodes',
+                data: {
+                    id: agent.id,
+                    parent: stage.id,
+                    type: 'agent',
+                    name: agentName,
+                    agentName,
+                    label: agentName,
+                    status: ad.status || 'pending',
+                    role: ad.role || agentConfig.type || '',
+                    model: agentConfig.model || '',
+                    promptTokens: ad.prompt_tokens || 0,
+                    completionTokens: ad.completion_tokens || 0,
+                    durationSeconds: ad.duration_seconds || null,
+                    numLlmCalls: ad.num_llm_calls || 0,
+                    numToolCalls: ad.num_tool_calls || 0,
+                    estimatedCost: ad.estimated_cost_usd || 0,
+                    confidenceScore: ad.confidence_score ?? null,
+                    _px: pos.x,
+                    _py: pos.y + LAYOUT.STAGE_PAD_Y
+                        + j * (LAYOUT.AGENT_HEIGHT + LAYOUT.AGENT_GAP_Y)
+                        + LAYOUT.AGENT_HEIGHT / 2,
+                },
+            });
+        }
+    }
+
+    /** Sum a numeric field across agents in a stage. */
+    _sumAgentField(agents, field) {
+        let total = 0;
+        for (const agent of agents) {
+            const ad = this.dataStore.agents.get(agent.id) || agent;
+            total += ad[field] || 0;
+        }
+        return total;
+    }
+
+    /** Add collaboration edges between consecutive agents within a stage. */
+    _addCollabEdges(elements, stage) {
+        const agents = stage.agents || [];
+        const stageData = this.dataStore.stages.get(stage.id) || stage;
+        const stageType = stageData.stage_type || 'collab';
+        for (let j = 1; j < agents.length; j++) {
+            if (!agents[j].id || !agents[j - 1].id) continue;
+            elements.push({
+                group: 'edges',
+                data: {
+                    id: `collab-${agents[j - 1].id}-${agents[j].id}`,
+                    source: agents[j - 1].id,
+                    target: agents[j].id,
+                    type: 'collaboration',
+                    label: formatCollabLabel(stageType, agents.length),
+                },
+            });
+        }
+    }
+
+    /**
+     * Extract DAG dependency info from workflow config snapshot.
+     * Returns { depMap, loopsBackTo, hasDeps } where depMap maps
+     * stage name → [dependency names] and loopsBackTo maps stage name → loop target.
+     */
+    _extractDagInfo(wf) {
+        const result = { depMap: new Map(), loopsBackTo: new Map(), hasDeps: false };
+        const configSnap = wf.workflow_config_snapshot;
+        if (!configSnap) return result;
+
+        const wfConfig = configSnap.workflow || configSnap;
+        const configStages = wfConfig.stages || [];
+
+        for (const cs of configStages) {
+            if (typeof cs === 'string') continue;
+            const name = cs.name || '';
+            if (!name) continue;
+
+            const deps = cs.depends_on || [];
+            result.depMap.set(name, deps);
+            if (deps.length > 0) result.hasDeps = true;
+
+            if (cs.loops_back_to) {
+                result.loopsBackTo.set(name, cs.loops_back_to);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * Add data flow edges based on DAG depends_on relationships.
+     * Matches execution records to config stage names and draws edges
+     * from dependency executions to dependent executions.
+     */
+    _addDagFlowEdges(elements, stages, dagInfo) {
+        const nameToLatestId = new Map();
+        const seenNames = new Set();
+
+        for (let i = 0; i < stages.length; i++) {
+            const stage = stages[i];
+            if (!stage.id) continue;
+            // Use enriched dataStore data for consistent name resolution
+            const stageData = this.dataStore.stages.get(stage.id) || stage;
+            const name = stageData.stage_name || stageData.name || '';
+            const isRepeat = seenNames.has(name);
+
+            if (isRepeat) {
+                // Repeat execution (loop): draw loop-back edge from the
+                // stage that triggered the loop, NOT the original deps
+                for (const [loopSrc, loopTarget] of dagInfo.loopsBackTo) {
+                    if (loopTarget === name) {
+                        const srcId = nameToLatestId.get(loopSrc);
+                        if (srcId && srcId !== stage.id) {
+                            elements.push({
+                                group: 'edges',
+                                data: {
+                                    id: `loop-${srcId}-${stage.id}`,
+                                    source: srcId,
+                                    target: stage.id,
+                                    type: 'data_flow',
+                                    label: 'loop',
+                                },
+                            });
+                        }
+                    }
+                }
+            } else {
+                // First execution: draw normal dependency edges
+                const deps = dagInfo.depMap.get(name) || [];
+                for (const depName of deps) {
+                    const depId = nameToLatestId.get(depName);
+                    if (depId) {
+                        const prevData = this.dataStore.stages.get(depId) || {};
+                        const outputKeys = Object.keys(prevData.output_data || {});
+                        const label = formatDataFlowLabel(outputKeys);
+                        elements.push({
+                            group: 'edges',
+                            data: {
+                                id: `flow-${depId}-${stage.id}`,
+                                source: depId,
+                                target: stage.id,
+                                type: 'data_flow',
+                                label,
+                            },
+                        });
+                    }
+                }
+            }
+
+            seenNames.add(name);
+            nameToLatestId.set(name, stage.id);
+        }
+    }
+
+    /** Add sequential data flow edges (fallback when no depends_on). */
+    _addSequentialFlowEdges(elements, stages) {
+        for (let i = 1; i < stages.length; i++) {
+            const stage = stages[i];
+            const prevStage = stages[i - 1];
+            if (!stage.id || !prevStage.id) continue;
+
+            const prevData = this.dataStore.stages.get(prevStage.id) || prevStage;
+            const outputKeys = Object.keys(prevData.output_data || {});
+            const label = formatDataFlowLabel(outputKeys);
+            elements.push({
+                group: 'edges',
+                data: {
+                    id: `flow-${prevStage.id}-${stage.id}`,
+                    source: prevStage.id,
+                    target: stage.id,
+                    type: 'data_flow',
+                    label,
+                },
+            });
+        }
     }
 
     _renderEmptyState() {
@@ -402,8 +704,20 @@ export class FlowchartPanel {
         this.container.appendChild(msg);
     }
 
+    refresh() {
+        this.render();
+        if (this._cy) {
+            this._cy.resize();
+            this._cy.fit();
+        }
+    }
+
     destroy() {
         this.dataStore.removeEventListener('change', this._changeHandler);
+        if (this._rafId) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+        }
         if (this._cy) {
             this._cy.destroy();
             this._cy = null;

@@ -58,7 +58,7 @@ def _sanitize_workflow_result(result: Any) -> Optional[Dict[str, Any]]:
 
 
 # Execution status constants
-class ExecutionStatus(str, Enum):
+class WorkflowExecutionStatus(str, Enum):
     """Workflow execution status."""
 
     PENDING = "pending"
@@ -76,7 +76,7 @@ class WorkflowExecutionMetadata:
         execution_id: str,
         workflow_path: str,
         workflow_name: str,
-        status: ExecutionStatus,
+        status: WorkflowExecutionStatus,
         started_at: Optional[datetime] = None,
         completed_at: Optional[datetime] = None,
         error_message: Optional[str] = None,
@@ -182,7 +182,7 @@ class WorkflowExecutionService:
             execution_id=execution_id,
             workflow_path=str(workflow_path),
             workflow_name=workflow_name,
-            status=ExecutionStatus.PENDING,
+            status=WorkflowExecutionStatus.PENDING,
         )
 
         async with self._lock:
@@ -219,7 +219,7 @@ class WorkflowExecutionService:
 
         try:
             # Update status to running
-            metadata.status = ExecutionStatus.RUNNING
+            metadata.status = WorkflowExecutionStatus.RUNNING
             metadata.started_at = datetime.now(timezone.utc)
 
             logger.info("Executing workflow in thread pool: %s", execution_id)
@@ -236,7 +236,7 @@ class WorkflowExecutionService:
             )
 
             # Update metadata with success
-            metadata.status = ExecutionStatus.COMPLETED
+            metadata.status = WorkflowExecutionStatus.COMPLETED
             metadata.completed_at = datetime.now(timezone.utc)
             metadata.result = _sanitize_workflow_result(result)
 
@@ -244,7 +244,7 @@ class WorkflowExecutionService:
 
         except Exception as e:  # noqa: BLE001
             # Update metadata with failure
-            metadata.status = ExecutionStatus.FAILED
+            metadata.status = WorkflowExecutionStatus.FAILED
             metadata.completed_at = datetime.now(timezone.utc)
             metadata.error_message = str(e)
 
@@ -348,7 +348,7 @@ class WorkflowExecutionService:
 
     async def list_executions(
         self,
-        status: Optional[ExecutionStatus] = None,
+        status: Optional[WorkflowExecutionStatus] = None,
         limit: int = 100,
     ) -> list[Dict[str, Any]]:
         """List all tracked executions.
@@ -395,10 +395,10 @@ class WorkflowExecutionService:
             if not metadata:
                 return False
 
-            if metadata.status not in (ExecutionStatus.PENDING, ExecutionStatus.RUNNING):
+            if metadata.status not in (WorkflowExecutionStatus.PENDING, WorkflowExecutionStatus.RUNNING):
                 return False
 
-            metadata.status = ExecutionStatus.CANCELLED
+            metadata.status = WorkflowExecutionStatus.CANCELLED
             metadata.completed_at = datetime.now(timezone.utc)
             metadata.error_message = "Execution cancelled by user"
 

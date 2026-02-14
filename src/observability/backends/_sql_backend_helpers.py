@@ -254,7 +254,7 @@ def cleanup_old_records(retention_days: int, dry_run: bool = False) -> Dict[str,
             delete_statement = delete(WorkflowExecution).where(
                 WorkflowExecution.start_time < cutoff_date  # type: ignore[arg-type]
             )
-            session.exec(delete_statement)
+            session.execute(delete_statement)
             session.commit()
             logger.info(
                 f"Deleted {counts['workflows']} workflows older than {retention_days} days"

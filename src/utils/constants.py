@@ -37,7 +37,7 @@ CONFIG_SCHEMA_VERSION_DEFAULT = "1.0"
 # Error Messages
 # ============================================================================
 
-ERROR_SECRET_PREFIX = "Secret '"
+ERROR_SECRET_PREFIX = "Secret '"  # noqa: S105
 
 # ============================================================================
 # Exception Fields

@@ -28,6 +28,7 @@ from src.constants.limits import (
     MAX_SHORT_STRING_LENGTH,
     SMALL_ITEM_LIMIT,
 )
+from src.constants.sizes import SIZE_10KB, SIZE_100KB
 from src.security.constants import (
     DETECTION_PREFIX,
     RATE_LIMIT_ERROR_MESSAGE,
@@ -36,7 +37,6 @@ from src.security.constants import (
     SEVERITY_MEDIUM,
     ThreatTypes,
 )
-from src.constants.sizes import SIZE_10KB, SIZE_100KB
 
 # Entropy threshold for detecting obfuscated attacks
 ENTROPY_THRESHOLD_RANDOM = 5.5

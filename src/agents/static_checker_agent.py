@@ -123,7 +123,7 @@ class StaticCheckerAgent(BaseAgent):
             Tuple of (output, reasoning, total_tokens, total_cost)
         """
         # Single LLM call — no tool-calling loop
-        combined_cb = _make_stream_callback(self)
+        combined_cb = _make_stream_callback(self)  # type: ignore[arg-type]
         if combined_cb:
             llm_response = self.llm.stream(prompt, on_chunk=combined_cb)
         else:
@@ -167,7 +167,7 @@ class StaticCheckerAgent(BaseAgent):
         if not isinstance(input_data, dict):
             raise TypeError(f"input_data must be a dictionary, got {type(input_data).__name__}")
 
-        _setup_execution(self, input_data, context, async_mode=False)
+        _setup_execution(self, input_data, context, async_mode=False)  # type: ignore[arg-type]
 
         start_time = time.time()
         total_tokens = 0
@@ -184,8 +184,8 @@ class StaticCheckerAgent(BaseAgent):
             # Execute LLM call and extract output/reasoning
             output, reasoning, total_tokens, total_cost = self._execute_llm_call_and_extract(prompt, input_data)
 
-            return _build_final_response(  # type: ignore[return-value]
-                self,
+            return _build_final_response(  # type: ignore[no-any-return]
+                self,  # type: ignore[arg-type]
                 output=output,
                 reasoning=reasoning,
                 tool_calls=[],
@@ -197,8 +197,8 @@ class StaticCheckerAgent(BaseAgent):
         except (LLMError, PromptRenderError, RuntimeError, ValueError, TimeoutError) as e:
             safe_msg = sanitize_error_message(str(e))
             logger.warning("StaticCheckerAgent execution error: %s", safe_msg, exc_info=True)
-            return _build_final_response(  # type: ignore[return-value]
-                self,
+            return _build_final_response(  # type: ignore[no-any-return]
+                self,  # type: ignore[arg-type]
                 output="",
                 reasoning=None,
                 tool_calls=[],
@@ -226,7 +226,7 @@ class StaticCheckerAgent(BaseAgent):
         Returns:
             Tuple of (output, reasoning, total_tokens, total_cost)
         """
-        combined_cb = _make_stream_callback(self)
+        combined_cb = _make_stream_callback(self)  # type: ignore[arg-type]
         if combined_cb:
             llm_response = await self.llm.astream(prompt, on_chunk=combined_cb)
         else:
@@ -270,7 +270,7 @@ class StaticCheckerAgent(BaseAgent):
         if not isinstance(input_data, dict):
             raise TypeError(f"input_data must be a dictionary, got {type(input_data).__name__}")
 
-        _setup_execution(self, input_data, context, async_mode=True)
+        _setup_execution(self, input_data, context, async_mode=True)  # type: ignore[arg-type]
 
         start_time = time.time()
         total_tokens = 0
@@ -287,8 +287,8 @@ class StaticCheckerAgent(BaseAgent):
             # Execute async LLM call and extract output/reasoning
             output, reasoning, total_tokens, total_cost = await self._aexecute_llm_call_and_extract(prompt, input_data)
 
-            return _build_final_response(  # type: ignore[return-value]
-                self,
+            return _build_final_response(  # type: ignore[no-any-return]
+                self,  # type: ignore[arg-type]
                 output=output,
                 reasoning=reasoning,
                 tool_calls=[],
@@ -300,8 +300,8 @@ class StaticCheckerAgent(BaseAgent):
         except (LLMError, PromptRenderError, RuntimeError, ValueError, TimeoutError) as e:
             safe_msg = sanitize_error_message(str(e))
             logger.warning("StaticCheckerAgent async execution error: %s", safe_msg, exc_info=True)
-            return _build_final_response(  # type: ignore[return-value]
-                self,
+            return _build_final_response(  # type: ignore[no-any-return]
+                self,  # type: ignore[arg-type]
                 output="",
                 reasoning=None,
                 tool_calls=[],

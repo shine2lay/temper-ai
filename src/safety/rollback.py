@@ -44,7 +44,6 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from src.constants.limits import MAX_MEDIUM_STRING_LENGTH, THRESHOLD_LARGE_COUNT
-from src.safety.constants import EXISTED_SUFFIX, STRATEGY_PREFIX
 
 # Import rollback data types from observability (canonical location)
 from src.observability.rollback_types import (
@@ -52,6 +51,7 @@ from src.observability.rollback_types import (
     RollbackSnapshot,
     RollbackStatus,
 )
+from src.safety.constants import EXISTED_SUFFIX, STRATEGY_PREFIX
 from src.utils.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)

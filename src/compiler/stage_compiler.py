@@ -5,7 +5,7 @@ Supports sequential, conditional, and loop-back stage execution patterns via
 LangGraph's native ``add_conditional_edges``.
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Hashable, List, Optional, cast
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.pregel import Pregel
@@ -109,7 +109,7 @@ class StageCompiler:
     ) -> List[Any]:
         """Extract WorkflowStageReference list from workflow config."""
         workflow = workflow_config.get("workflow", workflow_config)
-        return workflow.get("stages", [])
+        return cast(List[Any], workflow.get("stages", []))
 
     def _add_edges(
         self,
@@ -226,7 +226,7 @@ class StageCompiler:
                     self.condition_evaluator,
                 )
                 graph.add_conditional_edges(
-                    "init", router, _build_path_map(root, skip_target),
+                    "init", router, cast(Dict[Hashable, str], _build_path_map(root, skip_target)),
                 )
             else:
                 graph.add_edge("init", root)
@@ -263,7 +263,7 @@ class StageCompiler:
                     self.condition_evaluator,
                 )
                 graph.add_conditional_edges(
-                    stage, router, _build_path_map(succ, skip_target),
+                    stage, router, cast(Dict[Hashable, str], _build_path_map(succ, skip_target)),
                 )
             else:
                 graph.add_edge(stage, succ)
@@ -295,7 +295,7 @@ class StageCompiler:
 
         gate_name = f"{LOOP_GATE_PREFIX}{stage}"
         gate_node = _create_loop_gate_node(stage)
-        graph.add_node(gate_name, gate_node)  # type: ignore
+        graph.add_node(gate_name, gate_node)
 
         graph.add_edge(stage, gate_name)
 
@@ -334,7 +334,7 @@ class StageCompiler:
             stage_ref, exit_targets, self.condition_evaluator,
         )
         path_map = _build_loop_path_map_multi(loops_back_to, exit_targets)
-        graph.add_conditional_edges(gate_name, router, path_map)
+        graph.add_conditional_edges(gate_name, router, cast(Dict[Hashable, str], path_map))
         return True
 
     @staticmethod
@@ -353,7 +353,7 @@ class StageCompiler:
         if skip_to == "end":
             return None  # None maps to END in routing
         if skip_to:
-            return skip_to
+            return cast(str, skip_to)
         # Default: skip to first successor of the conditional stage
         successors = dag.successors.get(stage, [])
         return successors[0] if successors else None
@@ -373,7 +373,7 @@ class StageCompiler:
                 first_ref, next_after, 0, stage_refs, self.condition_evaluator,
             )
             graph.add_conditional_edges(
-                "init", router, _build_path_map(stage_names[0], next_after),
+                "init", router, cast(Dict[Hashable, str], _build_path_map(stage_names[0], next_after)),
             )
         else:
             graph.add_edge("init", stage_names[0])
@@ -400,7 +400,7 @@ class StageCompiler:
         # Add loop gate node that increments counter
         gate_name = f"{LOOP_GATE_PREFIX}{current_name}"
         gate_node = _create_loop_gate_node(current_name)
-        graph.add_node(gate_name, gate_node)  # type: ignore
+        graph.add_node(gate_name, gate_node)
 
         # current_stage -> gate_node -> [loop_router] -> target/exit
         graph.add_edge(current_name, gate_name)
@@ -409,7 +409,7 @@ class StageCompiler:
             current_ref, next_name, self.condition_evaluator,
         )
         path_map = _build_loop_path_map(loops_back_to, next_name)
-        graph.add_conditional_edges(gate_name, router, path_map)
+        graph.add_conditional_edges(gate_name, router, cast(Dict[Hashable, str], path_map))
         return True
 
     def _add_conditional_edge(
@@ -441,8 +441,10 @@ class StageCompiler:
         router = create_conditional_router(
             next_ref, after_next, next_index, stage_refs, self.condition_evaluator,
         )
+        # next_name is guaranteed non-None because next_ref is non-None (from line 429)
+        assert next_name is not None
         graph.add_conditional_edges(
-            current_name, router, _build_path_map(next_name, after_next),
+            current_name, router, cast(Dict[Hashable, str], _build_path_map(next_name, after_next)),
         )
         return True
 

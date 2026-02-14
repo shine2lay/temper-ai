@@ -540,8 +540,6 @@ class StageExecutor(ABC):
         Returns:
             SynthesisResult from leader or consensus fallback
         """
-        from src.strategies.base import AgentOutput, SynthesisResult
-
         # Extract collaboration config (handles nested "stage.collaboration.config"
         # and flat "collaboration.config" formats)
         stage_dict = stage_config if isinstance(stage_config, dict) else {}
@@ -840,6 +838,6 @@ class StageExecutor(ABC):
                 }
             ))
             # Keep LLM provider reference for stance extraction (not serialized)
-            llm_providers[agent_name] = agent.llm
+            llm_providers[agent_name] = agent.llm  # type: ignore[attr-defined]
 
         return agent_outputs, llm_providers

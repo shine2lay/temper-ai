@@ -5,7 +5,7 @@ and event retrieval — separate from the dashboard UI routes.
 """
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 import yaml
 from fastapi import APIRouter, Body, HTTPException, Query, Request
@@ -114,7 +114,7 @@ def create_server_router(
             raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to retrieve run status")
         if result is None:
             raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail="Run not found")
-        return result
+        return cast(Dict[str, Any], result)
 
     @router.post("/runs/{run_id}/cancel")
     async def cancel_run(run_id: str) -> Dict[str, Any]:

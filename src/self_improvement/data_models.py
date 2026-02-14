@@ -25,6 +25,7 @@ from src.self_improvement.constants import (
     FIELD_METRICS,
     FIELD_RECORDED_AT,
     FIELD_ROLLBACK_AT,
+    FIELD_STATUS,
     FIELD_TOTAL_EXECUTIONS,
     FIELD_WINDOW_END,
     FIELD_WINDOW_START,

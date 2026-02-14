@@ -38,7 +38,7 @@ YAML_GLOB_PATTERN = "*.yaml"
 # Network Configuration
 # ============================================================================
 
-DEFAULT_SERVER_HOST = "0.0.0.0"  # noqa: S104
+DEFAULT_SERVER_HOST = "0.0.0.0"  # noqa: S104  # nosec B104
 
 # ============================================================================
 # Database Configuration

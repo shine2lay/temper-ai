@@ -13,14 +13,6 @@ from urllib.parse import urlencode
 
 import httpx
 
-from src.auth.oauth.config import (
-    ENDPOINT_AUTHORIZATION,
-    ENDPOINT_REVOCATION,
-    ENDPOINT_TOKEN,
-    ENDPOINT_USERINFO,
-    OAuthConfig,
-    get_provider_endpoints,
-)
 from src.auth.constants import (
     ERROR_PROVIDER_NOT_CONFIGURED,
     ERROR_PROVIDER_PREFIX,
@@ -32,6 +24,14 @@ from src.auth.constants import (
     HEADER_ACCEPT,
     HEADER_CONTENT_TYPE_JSON,
     LOG_USER_SEPARATOR,
+)
+from src.auth.oauth.config import (
+    ENDPOINT_AUTHORIZATION,
+    ENDPOINT_REVOCATION,
+    ENDPOINT_TOKEN,
+    ENDPOINT_USERINFO,
+    OAuthConfig,
+    get_provider_endpoints,
 )
 from src.auth.oauth.rate_limiter import RateLimitExceeded
 from src.auth.oauth.token_store import SecureTokenStore

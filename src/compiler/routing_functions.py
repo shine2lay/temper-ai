@@ -8,7 +8,7 @@ Example:
     >>> target = router(state)  # returns "fix" or "next_stage" or "__end__"
 """
 import logging
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union, cast
 
 from langgraph.graph import END
 
@@ -161,7 +161,7 @@ def create_loop_router(
 def _get_loop_counts(state: Any) -> Dict[str, int]:
     """Extract loop counts from state (dict or dataclass)."""
     if isinstance(state, dict):
-        return state.get(LOOP_COUNTS_KEY, {})
+        return cast(Dict[str, int], state.get(LOOP_COUNTS_KEY, {}))
     if hasattr(state, LOOP_COUNTS_KEY):
         return getattr(state, LOOP_COUNTS_KEY) or {}
     return {}
@@ -179,7 +179,7 @@ def _to_dict(state: Any) -> Dict[str, Any]:
     if isinstance(state, dict):
         return state
     if hasattr(state, "to_dict"):
-        return state.to_dict()
+        return cast(Dict[str, Any], state.to_dict())
     if hasattr(state, "__dict__"):
-        return state.__dict__
+        return cast(Dict[str, Any], state.__dict__)
     return {}

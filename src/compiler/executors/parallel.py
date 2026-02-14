@@ -288,7 +288,7 @@ class ParallelStageExecutor(StageExecutor):
                 else:
                     collab = {}
             collab_config = collab.get("config", {}) if isinstance(collab, dict) else {}
-            leader_name = strategy.get_leader_agent_name(collab_config)
+            leader_name = strategy.get_leader_agent_name(collab_config)  # type: ignore[attr-defined]
 
             if not leader_name:
                 return agents

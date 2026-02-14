@@ -199,7 +199,7 @@ class TavilySearch(BaseTool):
             ToolResult with SearchResponse.model_dump() in result field.
         """
         query = kwargs.get("query")
-        max_results = kwargs.get("max_results", 5)
+        max_results = kwargs.get("max_results", DEFAULT_SEARCH_MAX_RESULTS)
         search_depth = kwargs.get("search_depth", "basic")
         include_domains = kwargs.get("include_domains")
         exclude_domains = kwargs.get("exclude_domains")

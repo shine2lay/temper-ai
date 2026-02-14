@@ -9,7 +9,7 @@ Example:
     True
 """
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 from jinja2 import Undefined
 from jinja2.sandbox import ImmutableSandboxedEnvironment
@@ -125,10 +125,10 @@ class _SilentUndefined(Undefined):
     def __getattr__(self, _name: str) -> "_SilentUndefined":
         return _SilentUndefined()
 
-    def __getitem__(self, _key: Any) -> "_SilentUndefined":
+    def __getitem__(self, _key: Any) -> "_SilentUndefined":  # type: ignore[override]
         return _SilentUndefined()
 
-    def __call__(self, *_args: Any, **_kwargs: Any) -> "_SilentUndefined":
+    def __call__(self, *_args: Any, **_kwargs: Any) -> "_SilentUndefined":  # type: ignore[override]
         return _SilentUndefined()
 
     def __eq__(self, other: Any) -> bool:
@@ -198,5 +198,5 @@ def _get_stage_name(stage_ref: Any) -> str:
     if isinstance(stage_ref, str):
         return stage_ref
     if isinstance(stage_ref, dict):
-        return stage_ref["name"]
-    return stage_ref.name
+        return cast(str, stage_ref["name"])
+    return cast(str, stage_ref.name)

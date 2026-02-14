@@ -13,7 +13,7 @@ Example:
 import logging
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 
 logger = logging.getLogger(__name__)
 
@@ -255,5 +255,5 @@ def _get_depends_on(ref: Any) -> List[str]:
     if ref is None or isinstance(ref, str):
         return []
     if isinstance(ref, dict):
-        return ref.get("depends_on", [])
+        return cast(List[str], ref.get("depends_on", []))
     return getattr(ref, "depends_on", [])

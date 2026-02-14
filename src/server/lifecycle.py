@@ -56,7 +56,7 @@ class GracefulShutdownManager:
         logger.info("Received shutdown signal, starting drain")
         self.readiness_gate = False
 
-    def _handle_signal_sync(self, signum: int, frame: Any) -> None:
+    def _handle_signal_sync(self, signum: int, _frame: Any) -> None:
         """Sync signal callback — flips readiness gate."""
         logger.info("Received signal %s, starting drain", signum)
         self.readiness_gate = False

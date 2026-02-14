@@ -19,7 +19,7 @@ from src.agents.constants import (
     ENV_VAR_VIRTUAL_ENV,
     PRE_COMMAND_MAX_OUTPUT_CHARS,
 )
-from src.cli.stream_events import PROGRESS, TOOL_RESULT, TOOL_START, StreamEvent
+from src.core.stream_events import PROGRESS, TOOL_RESULT, TOOL_START, StreamEvent
 from src.tools.field_names import ToolResultFields
 
 if TYPE_CHECKING:
@@ -171,7 +171,7 @@ def _execute_single_pre_command(
         # shell=True required for compound commands (pipelines, conditionals);
         # mitigated by: restricted env (_build_safe_env), timeout enforcement,
         # shlex.quote on template variables (_render_command)
-        proc = subprocess.run(
+        proc = subprocess.run(  # noqa: S602
             rendered_command,
             shell=True,  # nosec B602
             capture_output=True,

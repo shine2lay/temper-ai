@@ -779,7 +779,7 @@ def serve(host: str, port: int, config_root: str, db: Optional[str], workers: in
     console.print("Press Ctrl+C to stop\n")
 
     try:
-        uvicorn.run(app, host=host, port=port, log_level="info")
+        uvicorn.run(app, host=host, port=port, log_level="info", reload=dev_reload)
     except KeyboardInterrupt:
         console.print("\n[yellow]Server stopped[/yellow]")
 

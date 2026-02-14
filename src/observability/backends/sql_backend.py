@@ -33,10 +33,10 @@ from src.observability.backends._sql_backend_helpers import (
     _STATUS_RUNNING,
     SQLDelegatedMethodsMixin,
 )
-from src.observability.constants import ObservabilityFields
 from src.observability.backends._sql_backend_helpers import (
     flush_buffer as _flush_buffer,
 )
+from src.observability.constants import ObservabilityFields
 
 logger = logging.getLogger(__name__)
 
@@ -381,7 +381,7 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
             stages = session.exec(
                 select(StageExecution)
                 .where(StageExecution.workflow_execution_id == workflow_id)
-                .order_by(StageExecution.start_time)
+                .order_by(StageExecution.start_time)  # type: ignore[arg-type]
             ).all()
             for s in stages:
                 events.append({
@@ -398,7 +398,7 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
                 agents = session.exec(
                     select(AgentExecution)
                     .where(AgentExecution.stage_execution_id == s.id)
-                    .order_by(AgentExecution.start_time)
+                    .order_by(AgentExecution.start_time)  # type: ignore[arg-type]
                 ).all()
                 for a in agents:
                     events.append({

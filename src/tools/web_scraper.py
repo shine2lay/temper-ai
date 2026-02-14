@@ -22,6 +22,7 @@ from src.tools.constants import (
 from src.tools.constants import (
     DEFAULT_WEB_TIMEOUT,
     MAX_WEB_TIMEOUT,
+    SSRF_ERROR_SUFFIX,
 )
 from src.tools.constants import (
     DNS_CACHE_MAX_SIZE as _DNS_CACHE_MAX_SIZE,
@@ -50,7 +51,6 @@ from src.tools.constants import (
 from src.tools.constants import (
     USER_AGENT_MAX_LENGTH as _USER_AGENT_MAX_LENGTH,
 )
-from src.tools.constants import SSRF_ERROR_SUFFIX
 
 logger = logging.getLogger(__name__)
 

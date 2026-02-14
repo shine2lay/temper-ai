@@ -4,7 +4,7 @@ Extracted from ForbiddenOperationsPolicy to keep the class below 500 lines.
 These are internal implementation details and should not be used directly.
 """
 import re
-from typing import Any, Dict, Optional, Set
+from typing import Any, Dict, Optional, Set, cast
 
 from src.safety.constants import (
     ARGS_KEY,
@@ -116,9 +116,9 @@ def extract_command(action: Dict[str, Any]) -> Optional[str]:
 
     if action.get("tool") == BASH_KEY and ARGS_KEY in action:
         if isinstance(action[ARGS_KEY], dict):
-            return action[ARGS_KEY].get(COMMAND_KEY)
+            return cast(Optional[str], action[ARGS_KEY].get(COMMAND_KEY))
         elif isinstance(action[ARGS_KEY], str):
-            return action[ARGS_KEY]
+            return cast(Optional[str], action[ARGS_KEY])
 
     if "content" in action:
         content = action["content"]

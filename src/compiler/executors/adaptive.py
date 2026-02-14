@@ -142,6 +142,68 @@ class AdaptiveStageExecutor(StageExecutor):
             quality_gate_validator=quality_gate_validator
         )
 
+    def _fallback_to_sequential(
+        self,
+        stage_name: str,
+        stage_config: Any,
+        state: Dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+        tool_registry: Optional[DomainToolRegistryProtocol],
+        mode_metadata: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Fall back to sequential execution and attach mode metadata."""
+        state["stage_outputs"].pop(stage_name, None)
+        sequential_state = self.sequential_executor.execute_stage(
+            stage_name=stage_name,
+            stage_config=stage_config,
+            state=state,
+            config_loader=config_loader,
+            tool_registry=tool_registry
+        )
+        if isinstance(sequential_state["stage_outputs"].get(stage_name), dict):
+            sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = mode_metadata
+        return sequential_state
+
+    def _handle_parallel_error(
+        self,
+        e: Exception,
+        stage_name: str,
+        stage_config: Any,
+        state: Dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+        tool_registry: Optional[DomainToolRegistryProtocol],
+        disagreement_threshold: float,
+        tracker: Optional[Any],
+    ) -> Dict[str, Any]:
+        """Handle parallel execution failure by falling back to sequential."""
+        error_mode_metadata = {
+            ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
+            ADAPTIVE_META_SWITCHED_TO: EXECUTION_MODE_SEQUENTIAL,
+            ADAPTIVE_META_DISAGREEMENT_RATE: None,
+            "disagreement_threshold": disagreement_threshold,
+            "error": str(e)
+        }
+
+        if tracker and hasattr(tracker, 'track_collaboration_event'):
+            tracker.track_collaboration_event(
+                event_type="adaptive_mode_switch",
+                stage_name=stage_name,
+                agents=[],
+                decision=None,
+                confidence=None,
+                metadata={
+                    "reason": "parallel_execution_failed",
+                    "error": str(e),
+                    "switching_from": EXECUTION_MODE_PARALLEL,
+                    "switching_to": EXECUTION_MODE_SEQUENTIAL
+                }
+            )
+
+        return self._fallback_to_sequential(
+            stage_name, stage_config, state, config_loader,
+            tool_registry, error_mode_metadata
+        )
+
     def execute_stage(
         self,
         stage_name: str,
@@ -174,14 +236,12 @@ class AdaptiveStageExecutor(StageExecutor):
         """
         tracker = state.get("tracker")
 
-        # Get adaptive config
         stage_dict = stage_config if isinstance(stage_config, dict) else {}
         execution_config = stage_dict.get("execution", {})
         adaptive_config = execution_config.get("adaptive_config", {})
         disagreement_threshold = adaptive_config.get("disagreement_threshold", PROB_MEDIUM)
 
         try:
-            # Try parallel execution with disagreement check
             parallel_state, should_switch, disagreement_rate, mode_metadata = (
                 _execute_parallel_with_switch_check(
                     self.parallel_executor, stage_name, stage_config, state,
@@ -189,29 +249,13 @@ class AdaptiveStageExecutor(StageExecutor):
                 )
             )
 
-            # Check if we need to switch to sequential
             if should_switch:
                 mode_metadata[ADAPTIVE_META_SWITCHED_TO] = EXECUTION_MODE_SEQUENTIAL
-
-                # Reset state to before parallel execution
-                state["stage_outputs"].pop(stage_name, None)
-
-                # Execute sequentially
-                sequential_state = self.sequential_executor.execute_stage(
-                    stage_name=stage_name,
-                    stage_config=stage_config,
-                    state=state,
-                    config_loader=config_loader,
-                    tool_registry=tool_registry
+                return self._fallback_to_sequential(
+                    stage_name, stage_config, state, config_loader,
+                    tool_registry, mode_metadata
                 )
 
-                # Add mode switch metadata
-                if isinstance(sequential_state["stage_outputs"].get(stage_name), dict):
-                    sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = mode_metadata
-
-                return sequential_state
-
-            # No switch needed - keep parallel result
             stage_output = parallel_state["stage_outputs"][stage_name]
             if isinstance(stage_output, dict):
                 stage_output[COLLAB_EVENT_MODE_SWITCH] = mode_metadata
@@ -220,46 +264,10 @@ class AdaptiveStageExecutor(StageExecutor):
             return parallel_state
 
         except (KeyError, TypeError, AttributeError, ValueError, RuntimeError) as e:
-            # Parallel execution failed, fall back to sequential
-            error_mode_metadata = {
-                ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
-                ADAPTIVE_META_SWITCHED_TO: EXECUTION_MODE_SEQUENTIAL,
-                ADAPTIVE_META_DISAGREEMENT_RATE: None,
-                "disagreement_threshold": disagreement_threshold,
-                "error": str(e)
-            }
-
-            # Track mode switch due to error
-            if tracker and hasattr(tracker, 'track_collaboration_event'):
-                tracker.track_collaboration_event(
-                    event_type="adaptive_mode_switch",
-                    stage_name=stage_name,
-                    agents=[],
-                    decision=None,
-                    confidence=None,
-                    metadata={
-                        "reason": "parallel_execution_failed",
-                        "error": str(e),
-                        "switching_from": EXECUTION_MODE_PARALLEL,
-                        "switching_to": EXECUTION_MODE_SEQUENTIAL
-                    }
-                )
-
-            # Fall back to sequential
-            state["stage_outputs"].pop(stage_name, None)
-            sequential_state = self.sequential_executor.execute_stage(
-                stage_name=stage_name,
-                stage_config=stage_config,
-                state=state,
-                config_loader=config_loader,
-                tool_registry=tool_registry
+            return self._handle_parallel_error(
+                e, stage_name, stage_config, state, config_loader,
+                tool_registry, disagreement_threshold, tracker
             )
-
-            # Add mode switch metadata
-            if isinstance(sequential_state["stage_outputs"].get(stage_name), dict):
-                sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = error_mode_metadata
-
-            return sequential_state
 
     def supports_stage_type(self, stage_type: str) -> bool:
         """Check if executor supports this stage type.

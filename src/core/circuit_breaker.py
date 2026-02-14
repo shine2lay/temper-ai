@@ -149,6 +149,69 @@ def _apply_loaded_state(breaker: "CircuitBreaker", loaded: dict) -> None:
         breaker.config = loaded["config"]
 
 
+def _validate_name(name: str) -> None:
+    """Validate circuit breaker name."""
+    if not isinstance(name, str):
+        raise ValueError(f"name must be a string, got {type(name).__name__}")
+    if not name or len(name) > MAX_CIRCUIT_BREAKER_NAME_LENGTH:
+        raise ValueError(f"name must be 1-100 characters, got {len(name)}")
+
+
+def _build_config(
+    config: Optional["CircuitBreakerConfig"],
+    failure_threshold: Optional[int],
+    timeout_seconds: Optional[int],
+    success_threshold: Optional[int],
+    name: str,
+) -> "CircuitBreakerConfig":
+    """Build config from explicit config object or individual params."""
+    individual_params = [failure_threshold, timeout_seconds, success_threshold]
+    if config is not None and any(p is not None for p in individual_params):
+        logger.warning(
+            "CircuitBreaker(%s): both config and individual parameters supplied; "
+            "config takes precedence",
+            name,
+        )
+
+    if config is not None:
+        return config
+
+    ft = failure_threshold if failure_threshold is not None else CIRCUIT_BREAKER_FAILURE_THRESHOLD
+    ts = timeout_seconds if timeout_seconds is not None else CIRCUIT_BREAKER_RESET_TIMEOUT
+    st = success_threshold if success_threshold is not None else 2
+
+    if not isinstance(ft, int) or ft < MIN_FAILURE_THRESHOLD or ft > MAX_FAILURE_THRESHOLD:
+        raise ValueError(
+            f"failure_threshold must be int {MIN_FAILURE_THRESHOLD}-{MAX_FAILURE_THRESHOLD}, got {ft}"
+        )
+    if not isinstance(ts, int) or ts < MIN_TIMEOUT_SECONDS or ts > MAX_TIMEOUT_SECONDS:
+        raise ValueError(
+            f"timeout_seconds must be int {MIN_TIMEOUT_SECONDS}-{MAX_TIMEOUT_SECONDS}, got {ts}"
+        )
+    if not isinstance(st, int) or st < MIN_SUCCESS_THRESHOLD or st > MAX_SUCCESS_THRESHOLD:
+        raise ValueError(
+            f"success_threshold must be int {MIN_SUCCESS_THRESHOLD}-{MAX_SUCCESS_THRESHOLD}, got {st}"
+        )
+    return CircuitBreakerConfig(failure_threshold=ft, success_threshold=st, timeout=ts)
+
+
+def _init_state_from_storage(
+    storage: Optional["StateStorage"],
+    name: str,
+) -> dict:
+    """Initialize circuit breaker state from storage or defaults."""
+    if storage:
+        return _load_state_helper(storage, name)
+    return {
+        "state": CircuitState.CLOSED,
+        "failure_count": 0,
+        "success_count": 0,
+        "last_failure_time": None,
+        "opened_at": None,
+        "config": None,
+    }
+
+
 class CircuitBreaker:
     """Unified circuit breaker for resilience and safety.
 
@@ -172,90 +235,33 @@ class CircuitBreaker:
         timeout_seconds: Optional[int] = None,
         success_threshold: Optional[int] = None,
     ):
-        # Validate name
-        if not isinstance(name, str):
-            raise ValueError(
-                f"name must be a string, got {type(name).__name__}"
-            )
-        if not name or len(name) > MAX_CIRCUIT_BREAKER_NAME_LENGTH:
-            raise ValueError(
-                f"name must be 1-100 characters, got {len(name)}"
-            )
+        _validate_name(name)
         self.name = name
 
-        # Warn on config+params conflict (API-19)
-        individual_params = [failure_threshold, timeout_seconds, success_threshold]
-        if config is not None and any(p is not None for p in individual_params):
-            logger.warning(
-                "CircuitBreaker(%s): both config and individual parameters supplied; "
-                "config takes precedence",
-                name,
-            )
+        self.config = _build_config(config, failure_threshold, timeout_seconds, success_threshold, name)
 
-        # Config from explicit config object OR individual params
-        if config is not None:
-            self.config = config
-        else:
-            # Apply defaults for any parameters not explicitly provided
-            ft = failure_threshold if failure_threshold is not None else CIRCUIT_BREAKER_FAILURE_THRESHOLD
-            ts = timeout_seconds if timeout_seconds is not None else CIRCUIT_BREAKER_RESET_TIMEOUT
-            st = success_threshold if success_threshold is not None else 2
-
-            # Validate individual params
-            if not isinstance(ft, int) or ft < MIN_FAILURE_THRESHOLD or ft > MAX_FAILURE_THRESHOLD:
-                raise ValueError(
-                    f"failure_threshold must be int {MIN_FAILURE_THRESHOLD}-{MAX_FAILURE_THRESHOLD}, got {ft}"
-                )
-            if not isinstance(ts, int) or ts < MIN_TIMEOUT_SECONDS or ts > MAX_TIMEOUT_SECONDS:
-                raise ValueError(
-                    f"timeout_seconds must be int {MIN_TIMEOUT_SECONDS}-{MAX_TIMEOUT_SECONDS}, got {ts}"
-                )
-            if not isinstance(st, int) or st < MIN_SUCCESS_THRESHOLD or st > MAX_SUCCESS_THRESHOLD:
-                raise ValueError(
-                    f"success_threshold must be int {MIN_SUCCESS_THRESHOLD}-{MAX_SUCCESS_THRESHOLD}, got {st}"
-                )
-            self.config = CircuitBreakerConfig(
-                failure_threshold=ft,
-                success_threshold=st,
-                timeout=ts,
-            )
-
-        # Backward-compatible attribute aliases
         self.failure_threshold = self.config.failure_threshold
         self.success_threshold = self.config.success_threshold
         self.timeout_seconds = self.config.timeout
 
-        # Storage for state persistence
         self.storage = storage
         self.lock = threading.Lock()
-
-        # Semaphore to prevent thundering herd in HALF_OPEN state
         self._half_open_semaphore = threading.Semaphore(1)
 
-        # Metrics (safety module feature)
         self.metrics = CircuitBreakerMetrics()
         self._on_state_change_callbacks: List[
             Callable[[CircuitState, CircuitState], None]
         ] = []
 
-        # Load persisted state or initialize fresh
-        if self.storage:
-            loaded = _load_state_helper(self.storage, self.name)
-            self._state = loaded["state"]
-            self._failure_count = loaded["failure_count"]
-            self._success_count = loaded["success_count"]
-            self._last_failure_time: Optional[float] = loaded["last_failure_time"]
-            self._opened_at: Optional[datetime] = loaded["opened_at"]
-            if loaded["config"] is not None:
-                self.config = loaded["config"]
-        else:
-            self._state = CircuitState.CLOSED
-            self._failure_count = 0
-            self._success_count = 0
-            self._last_failure_time = None
-            self._opened_at = None
+        loaded = _init_state_from_storage(self.storage, self.name)
+        self._state = loaded["state"]
+        self._failure_count = loaded["failure_count"]
+        self._success_count = loaded["success_count"]
+        self._last_failure_time: Optional[float] = loaded["last_failure_time"]
+        self._opened_at: Optional[datetime] = loaded["opened_at"]
+        if loaded["config"] is not None:
+            self.config = loaded["config"]
 
-        # Backward-compatible callable aliases (not class methods, saves method count)
         self._on_success = lambda reserved_state=None: _on_call_success_helper(self, reserved_state)
         self._on_failure = lambda error, reserved_state=None: _on_call_failure_helper(self, error, reserved_state)
         self._reserve_execution = lambda: _reserve_execution_helper(self)

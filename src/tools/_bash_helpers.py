@@ -22,68 +22,73 @@ logger = logging.getLogger(__name__)
 # Shell mode validation
 # ---------------------------------------------------------------------------
 
+def _check_metachar_simple(command: str, chars: str, error_msg: str) -> Optional[ToolResult]:
+    """Check if command contains any of the given characters. Returns error or None."""
+    for ch in chars:
+        if ch in command:
+            return ToolResult(success=False, error=error_msg)
+    return None
+
+
+def _check_metachar_substring(command: str, substrings: List[str], error_msg: str) -> Optional[ToolResult]:
+    """Check if command contains any of the given substrings. Returns error or None."""
+    for sub in substrings:
+        if sub in command:
+            return ToolResult(success=False, error=error_msg)
+    return None
+
+
 def _check_shell_metacharacters(command: str, allowed_commands: Set[str]) -> Optional[ToolResult]:
     """Check for dangerous shell metacharacters. Returns error or None."""
     import re as _re
 
+    allowed_list_msg = f"Allowed commands: {sorted(allowed_commands)}"
+
     # SECURITY: Reject command substitution
-    if '`' in command or '$(' in command:
-        return ToolResult(
-            success=False,
-            error=(
-                "Command substitution ($() and backticks) is not allowed. "
-                f"Allowed commands: {sorted(allowed_commands)}"
-            ),
-        )
+    result = _check_metachar_substring(
+        command, ['`', '$('],
+        f"Command substitution ($() and backticks) is not allowed. {allowed_list_msg}",
+    )
+    if result is not None:
+        return result
 
     # SECURITY: Block heredoc syntax
-    if '<<' in command:
-        return ToolResult(
-            success=False,
-            error=(
-                "Heredoc syntax (<<) is not allowed in shell mode. "
-                "Use echo or printf with redirection instead."
-            ),
-        )
+    result = _check_metachar_substring(
+        command, ['<<'],
+        "Heredoc syntax (<<) is not allowed in shell mode. Use echo or printf with redirection instead.",
+    )
+    if result is not None:
+        return result
 
     # SECURITY: Block brace expansion
-    if '{' in command or '}' in command:
-        return ToolResult(
-            success=False,
-            error=(
-                "Brace expansion ({, }) is not allowed in shell mode. "
-                "List files explicitly instead."
-            ),
-        )
+    result = _check_metachar_simple(
+        command, '{}',
+        "Brace expansion ({, }) is not allowed in shell mode. List files explicitly instead.",
+    )
+    if result is not None:
+        return result
 
     # H-20: Block glob patterns
-    if '*' in command or '?' in command or '[' in command:
-        return ToolResult(
-            success=False,
-            error=(
-                "Glob patterns (*, ?, []) are not allowed in shell mode. "
-                "List files explicitly instead."
-            ),
-        )
+    result = _check_metachar_simple(
+        command, '*?[',
+        "Glob patterns (*, ?, []) are not allowed in shell mode. List files explicitly instead.",
+    )
+    if result is not None:
+        return result
 
     # SECURITY: Block process substitution
-    if '<(' in command or '>(' in command:
-        return ToolResult(
-            success=False,
-            error=(
-                "Process substitution (<() and >()) is not allowed. "
-                f"Allowed commands: {sorted(allowed_commands)}"
-            ),
-        )
+    result = _check_metachar_substring(
+        command, ['<(', '>('],
+        f"Process substitution (<() and >()) is not allowed. {allowed_list_msg}",
+    )
+    if result is not None:
+        return result
 
     # SECURITY: Block stderr redirection
     if _re.search(r'(?:^|[^<>])(?:2>|&>)', command):
         return ToolResult(
             success=False,
-            error=(
-                "Stderr redirection (2>, &>) is not allowed in shell mode. "
-                "Use stdout redirection only."
-            ),
+            error="Stderr redirection (2>, &>) is not allowed in shell mode. Use stdout redirection only.",
         )
 
     return None
@@ -393,6 +398,50 @@ def _build_success_result(
     )
 
 
+def _handle_run_error(
+    exc: Exception,
+    command: str,
+    parts: Optional[List[str]],
+    resolved_cwd: Path,
+    timeout: int,
+    shell_mode: bool,
+) -> ToolResult:
+    """Handle subprocess execution errors. Returns an appropriate ToolResult."""
+    if isinstance(exc, subprocess.TimeoutExpired):
+        return ToolResult(
+            success=False,
+            error=f"Command timed out after {timeout} seconds",
+            metadata={
+                ToolResultFields.COMMAND: command,
+                "working_directory": str(resolved_cwd),
+                ToolResultFields.TIMEOUT: timeout,
+            },
+        )
+
+    cmd_display = command.split()[0] if shell_mode else (parts[0] if parts else "unknown")
+
+    if isinstance(exc, FileNotFoundError):
+        return ToolResult(
+            success=False,
+            error=f"Command not found: {cmd_display}",
+            metadata={ToolResultFields.COMMAND: command},
+        )
+
+    if isinstance(exc, PermissionError):
+        return ToolResult(
+            success=False,
+            error=f"Permission denied executing: {cmd_display}",
+            metadata={ToolResultFields.COMMAND: command},
+        )
+
+    logger.error(f"OS error executing command: {exc}", exc_info=True)
+    return ToolResult(
+        success=False,
+        error="OS error executing command",
+        metadata={ToolResultFields.COMMAND: command},
+    )
+
+
 def run_command(
     command: str,
     parts: Optional[List[str]],
@@ -415,7 +464,6 @@ def run_command(
             env=safe_env,
         )
 
-        # Truncate output if needed
         stdout = _truncate_output(result.stdout or "")
         stderr = _truncate_output(result.stderr or "")
 
@@ -423,40 +471,8 @@ def run_command(
             stdout, stderr, result.returncode, command, resolved_cwd, timeout
         )
 
-    except subprocess.TimeoutExpired:
-        return ToolResult(
-            success=False,
-            error=f"Command timed out after {timeout} seconds",
-            metadata={
-                ToolResultFields.COMMAND: command,
-                "working_directory": str(resolved_cwd),
-                ToolResultFields.TIMEOUT: timeout,
-            },
-        )
-
-    except FileNotFoundError:
-        cmd_display = command.split()[0] if use_shell else (parts[0] if parts else "unknown")
-        return ToolResult(
-            success=False,
-            error=f"Command not found: {cmd_display}",
-            metadata={ToolResultFields.COMMAND: command},
-        )
-
-    except PermissionError:
-        cmd_display = command.split()[0] if use_shell else (parts[0] if parts else "unknown")
-        return ToolResult(
-            success=False,
-            error=f"Permission denied executing: {cmd_display}",
-            metadata={ToolResultFields.COMMAND: command},
-        )
-
-    except OSError as e:
-        logger.error(f"OS error executing command: {e}", exc_info=True)
-        return ToolResult(
-            success=False,
-            error="OS error executing command",
-            metadata={ToolResultFields.COMMAND: command},
-        )
+    except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError, OSError) as e:
+        return _handle_run_error(e, command, parts, resolved_cwd, timeout, shell_mode)
 
 
 def get_safe_env(safe_env_vars: Set[str]) -> Dict[str, str]:

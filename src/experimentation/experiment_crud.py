@@ -172,6 +172,46 @@ class ExperimentCRUD:
             variant_models.append(variant)
         return variant_models
 
+    def _persist_experiment(
+        self,
+        experiment: Experiment,
+        variant_models: List[Variant],
+        validated_name: str,
+        kwargs: Dict[str, Any],
+    ) -> None:
+        """Save experiment and variants to database.
+
+        Args:
+            experiment: Experiment model to persist.
+            variant_models: Variant models to persist.
+            validated_name: Validated experiment name (for logging).
+            kwargs: Extra kwargs (for logging created_by).
+
+        Raises:
+            ValueError: If a database constraint is violated.
+        """
+        try:
+            with get_session() as session:
+                session.add(experiment)
+                for variant in variant_models:
+                    session.add(variant)
+                session.commit()
+        except IntegrityError as e:
+            # SECURITY: Don't reveal which constraint failed (timing attack mitigation)
+            logger.warning(
+                "Experiment creation failed due to constraint violation",
+                extra={
+                    "security_event": "DATABASE_CONSTRAINT_VIOLATION",
+                    "experiment_name": validated_name,
+                    "user": kwargs.get("created_by"),
+                    "error_type": type(e).__name__
+                }
+            )
+            raise ValueError(
+                "Experiment creation failed. "
+                "This may be due to a duplicate name or other constraint violation."
+            )
+
     def create_experiment(
         self,
         name: str,
@@ -255,27 +295,7 @@ class ExperimentCRUD:
         )
 
         # Save to database
-        try:
-            with get_session() as session:
-                session.add(experiment)
-                for variant in variant_models:
-                    session.add(variant)
-                session.commit()
-        except IntegrityError as e:
-            # SECURITY: Don't reveal which constraint failed (timing attack mitigation)
-            logger.warning(
-                "Experiment creation failed due to constraint violation",
-                extra={
-                    "security_event": "DATABASE_CONSTRAINT_VIOLATION",
-                    "experiment_name": validated_name,
-                    "user": kwargs.get("created_by"),
-                    "error_type": type(e).__name__
-                }
-            )
-            raise ValueError(
-                "Experiment creation failed. "
-                "This may be due to a duplicate name or other constraint violation."
-            )
+        self._persist_experiment(experiment, variant_models, validated_name, kwargs)
 
         logger.info(f"Created experiment: {validated_name} (ID: {experiment_id})")
         return experiment_id

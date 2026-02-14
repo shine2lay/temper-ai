@@ -346,6 +346,36 @@ class OAuthRouteHandlers:
             picture=user_info.get("picture"),
         )
 
+    async def _build_session_response(
+        self,
+        user: User,
+        client_ip: str,
+        user_agent: Optional[str],
+    ) -> Tuple[str, Dict[str, str]]:
+        """Create session and build redirect response with session cookie."""
+        session = await self.session_store.create_session(
+            user=user,
+            ip_address=client_ip,
+            user_agent=user_agent,
+            session_max_age=SECONDS_PER_HOUR,
+        )
+
+        redirect_url = "/dashboard"
+        if not self._validate_redirect_url(redirect_url):
+            redirect_url = "/dashboard"
+
+        headers = self._get_security_headers()
+        session_cookie = self._create_secure_cookie(
+            name="session_id",
+            value=session.session_id,
+            max_age=SECONDS_PER_HOUR,
+        )
+        headers["Set-Cookie"] = session_cookie
+
+        logger.info(f"OAuth login successful: user={user.user_id}{LOG_IP_SEPARATOR}{client_ip}")
+
+        return redirect_url, headers
+
     async def handle_oauth_callback(
         self,
         provider: str,
@@ -385,7 +415,6 @@ class OAuthRouteHandlers:
             OAuthProviderError: If provider returns error
             OAuthError: If token exchange fails
         """
-        # Handle OAuth errors from provider
         if error:
             logger.warning(
                 f"OAuth error from provider: {error}, description={error_description}{LOG_IP_SEPARATOR}{client_ip}"
@@ -393,38 +422,11 @@ class OAuthRouteHandlers:
             return "/login?error=oauth_denied", self._get_security_headers()
 
         try:
-            # Exchange code and get user info
             flow_user_id, user_info = await self._exchange_code_and_get_user_info(
                 provider, code, state, client_ip
             )
-
-            # Create or get user
             user = await self._create_or_get_user(provider, user_info)
-
-            # Create session
-            session = await self.session_store.create_session(
-                user=user,
-                ip_address=client_ip,
-                user_agent=user_agent,
-                session_max_age=SECONDS_PER_HOUR,
-            )
-
-            # Prepare redirect with session cookie
-            redirect_url = "/dashboard"
-            if not self._validate_redirect_url(redirect_url):
-                redirect_url = "/dashboard"
-
-            headers = self._get_security_headers()
-            session_cookie = self._create_secure_cookie(
-                name="session_id",
-                value=session.session_id,
-                max_age=SECONDS_PER_HOUR,
-            )
-            headers["Set-Cookie"] = session_cookie
-
-            logger.info(f"OAuth login successful: user={user.user_id}{LOG_IP_SEPARATOR}{client_ip}")
-
-            return redirect_url, headers
+            return await self._build_session_response(user, client_ip, user_agent)
 
         except OAuthStateError as e:
             logger.warning(

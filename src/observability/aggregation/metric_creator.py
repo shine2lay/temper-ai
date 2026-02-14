@@ -433,50 +433,22 @@ class MetricRecordCreator:
         timestamp: datetime
     ) -> List[str]:
         """Create LLM performance metrics (latencies and cost)."""
+        metric_specs = [
+            ("llm_avg_latency", avg_latency, "ms"),
+            ("llm_p95_latency", p95_latency, "ms"),
+            ("llm_p99_latency", p99_latency, "ms"),
+            ("llm_total_cost", total_cost, "usd"),
+        ]
         created = []
-
-        if avg_latency > 0:
-            params = MetricParams(
-                metric_name="llm_avg_latency",
-                metric_value=avg_latency,
-                metric_unit="ms",
-                period=period,
-                timestamp=timestamp,
-                tags=tags
-            )
-            created.append(self._create_metric_from_params(params))
-
-        if p95_latency > 0:
-            params = MetricParams(
-                metric_name="llm_p95_latency",
-                metric_value=p95_latency,
-                metric_unit="ms",
-                period=period,
-                timestamp=timestamp,
-                tags=tags
-            )
-            created.append(self._create_metric_from_params(params))
-
-        if p99_latency > 0:
-            params = MetricParams(
-                metric_name="llm_p99_latency",
-                metric_value=p99_latency,
-                metric_unit="ms",
-                period=period,
-                timestamp=timestamp,
-                tags=tags
-            )
-            created.append(self._create_metric_from_params(params))
-
-        if total_cost > 0:
-            params = MetricParams(
-                metric_name="llm_total_cost",
-                metric_value=total_cost,
-                metric_unit="usd",
-                period=period,
-                timestamp=timestamp,
-                tags=tags
-            )
-            created.append(self._create_metric_from_params(params))
-
+        for name, value, unit in metric_specs:
+            if value > 0:
+                params = MetricParams(
+                    metric_name=name,
+                    metric_value=value,
+                    metric_unit=unit,
+                    period=period,
+                    timestamp=timestamp,
+                    tags=tags
+                )
+                created.append(self._create_metric_from_params(params))
         return created

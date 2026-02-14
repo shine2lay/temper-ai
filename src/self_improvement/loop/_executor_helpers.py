@@ -347,6 +347,52 @@ def create_no_winner_result(
     return result
 
 
+def _mine_and_log_patterns(
+    pattern_miner: Any,
+    min_support: int,
+    min_confidence: float,
+    min_win_rate: float,
+    min_improvement: float,
+    days_back: int,
+    top_patterns_limit: int,
+) -> List[Any]:
+    """Mine patterns from experiment history and log top results.
+
+    Args:
+        pattern_miner: PatternMiner instance.
+        min_support: Minimum support for pattern mining.
+        min_confidence: Minimum confidence for pattern mining.
+        min_win_rate: Minimum win rate for pattern mining.
+        min_improvement: Minimum improvement threshold for pattern mining.
+        days_back: Number of days to look back for patterns.
+        top_patterns_limit: Number of top patterns to log.
+
+    Returns:
+        List of mined patterns, or empty list on failure.
+    """
+    try:
+        patterns = pattern_miner.mine_patterns(
+            min_support=min_support,
+            min_confidence=min_confidence,
+            min_win_rate=min_win_rate,
+            min_improvement=min_improvement,
+            days_back=days_back,
+        )
+        logger.info(f"Mined {len(patterns)} patterns from experiment history")
+
+        for pattern in patterns[:top_patterns_limit]:
+            logger.info(
+                f"  Pattern: {pattern.evidence['strategy_name']} for "
+                f"{pattern.evidence['problem_type']} "
+                f"(confidence={pattern.confidence:.2f})"
+            )
+    except Exception as e:
+        logger.warning(f"Failed to mine patterns: {e}")
+        patterns = []
+
+    return patterns
+
+
 def execute_strategy_phase(
     agent_name: str,
     analysis_result: AnalysisResult,
@@ -384,25 +430,10 @@ def execute_strategy_phase(
 
     control_config = config_deployer.get_agent_config(agent_name)
 
-    try:
-        patterns = pattern_miner.mine_patterns(
-            min_support=min_support,
-            min_confidence=min_confidence,
-            min_win_rate=min_win_rate,
-            min_improvement=min_improvement,
-            days_back=days_back,
-        )
-        logger.info(f"Mined {len(patterns)} patterns from experiment history")
-
-        for pattern in patterns[:top_patterns_limit]:
-            logger.info(
-                f"  Pattern: {pattern.evidence['strategy_name']} for "
-                f"{pattern.evidence['problem_type']} "
-                f"(confidence={pattern.confidence:.2f})"
-            )
-    except Exception as e:
-        logger.warning(f"Failed to mine patterns: {e}")
-        patterns = []
+    patterns = _mine_and_log_patterns(
+        pattern_miner, min_support, min_confidence,
+        min_win_rate, min_improvement, days_back, top_patterns_limit,
+    )
 
     variant_configs: List[Any] = []
 

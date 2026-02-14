@@ -107,6 +107,16 @@ class EnforcementResult:
         return [v for v in self.violations if v.severity == severity]
 
 
+def _should_short_circuit_on_critical(
+    short_circuit_critical: bool,
+    violations: List[SafetyViolation],
+) -> bool:
+    """Check if we should short-circuit on CRITICAL violations."""
+    return short_circuit_critical and any(
+        v.severity == ViolationSeverity.CRITICAL for v in violations
+    )
+
+
 class ActionPolicyEngine:
     """Central policy enforcement engine.
 
@@ -308,7 +318,7 @@ class ActionPolicyEngine:
                 all_violations.extend(result.violations)
 
                 # Short-circuit on CRITICAL violations (if configured)
-                if self._should_short_circuit(result.violations):
+                if _should_short_circuit_on_critical(self.short_circuit_critical, result.violations):
                     logger.warning(
                         f"Short-circuiting on CRITICAL violation from {policy.name}"
                     )
@@ -324,12 +334,6 @@ class ActionPolicyEngine:
             await self._log_violations(all_violations, context)
 
         return all_violations, policies_executed, cache_hits
-
-    def _should_short_circuit(self, violations: List[SafetyViolation]) -> bool:
-        """Check if we should short-circuit on CRITICAL violations."""
-        return self.short_circuit_critical and any(
-            v.severity == ViolationSeverity.CRITICAL for v in violations
-        )
 
     def _create_execution_error_violation(
         self,
@@ -469,7 +473,7 @@ class ActionPolicyEngine:
                 all_violations.extend(result.violations)
 
                 # Short-circuit on CRITICAL violations (if configured)
-                if self._should_short_circuit(result.violations):
+                if _should_short_circuit_on_critical(self.short_circuit_critical, result.violations):
                     logger.warning(
                         f"Short-circuiting on CRITICAL violation from {policy.name}"
                     )

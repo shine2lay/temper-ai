@@ -211,6 +211,39 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         """
         return PERCENT_80
 
+    def _check_file_violations(
+        self,
+        operation: str,
+        file_path: str,
+        context: Dict[str, Any],
+    ) -> List[SafetyViolation]:
+        """Check file size and disk space violations for file operations."""
+        violations: List[SafetyViolation] = []
+        if os.path.exists(file_path):
+            params = FileSizeCheckParams(
+                operation=operation,
+                file_path=file_path,
+                context=context,
+                max_file_size_read=self.max_file_size_read,
+                max_file_size_write=self.max_file_size_write,
+                file_read_operations=self.FILE_READ_OPERATIONS,
+                file_write_operations=self.FILE_WRITE_OPERATIONS,
+                policy_name=self.name
+            )
+            file_violation = check_file_size(params=params)
+            if file_violation:
+                violations.append(file_violation)
+
+        if operation in self.FILE_WRITE_OPERATIONS:
+            disk_violation = check_disk_space(
+                file_path, context, self.track_disk,
+                self.min_free_disk_space, self.name,
+            )
+            if disk_violation:
+                violations.append(disk_violation)
+
+        return violations
+
     def _validate_impl(
         self,
         action: Dict[str, Any],
@@ -229,37 +262,12 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             ValidationResult with violations if limits exceeded
         """
         violations: List[SafetyViolation] = []
-
-        # Extract operation details
         operation = action.get("operation") or action.get("type", "unknown")
         file_path = action.get("path") or action.get("file_path")
 
-        # Check file size limits
-        if file_path and os.path.exists(file_path):
-            params = FileSizeCheckParams(
-                operation=operation,
-                file_path=file_path,
-                context=context,
-                max_file_size_read=self.max_file_size_read,
-                max_file_size_write=self.max_file_size_write,
-                file_read_operations=self.FILE_READ_OPERATIONS,
-                file_write_operations=self.FILE_WRITE_OPERATIONS,
-                policy_name=self.name
-            )
-            file_violation = check_file_size(params=params)
-            if file_violation:
-                violations.append(file_violation)
+        if file_path:
+            violations.extend(self._check_file_violations(operation, file_path, context))
 
-        # Check disk space for write operations
-        if operation in self.FILE_WRITE_OPERATIONS and file_path:
-            disk_violation = check_disk_space(
-                file_path, context, self.track_disk,
-                self.min_free_disk_space, self.name,
-            )
-            if disk_violation:
-                violations.append(disk_violation)
-
-        # Check current memory usage
         if self.track_memory:
             memory_violation = check_memory_usage(
                 context, self.track_memory,
@@ -268,7 +276,6 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
             if memory_violation:
                 violations.append(memory_violation)
 
-        # Determine validity
         valid = len(violations) == 0
 
         return ValidationResult(

@@ -18,13 +18,17 @@ from src.tools._executor_config import ToolExecutorConfig
 from src.tools._executor_helpers import (
     acquire_concurrent_slot,
     check_rate_limit,
+    create_snapshot,
     execute_tool_internal,
+    execute_with_timeout,
     handle_approval_rejection,
     handle_auto_rollback,
     handle_exception_rollback,
     handle_timeout_rollback,
     release_concurrent_slot,
     should_snapshot,
+    validate_and_get_tool,
+    validate_policy,
     validate_workspace_path,
     wait_for_approval,
 )
@@ -172,133 +176,25 @@ class ToolExecutor:
         if context is None:
             context = {}
 
-        snapshot = None
-
-        # Check rate limit before execution
         try:
             check_rate_limit(self)
         except RateLimitError as e:
             return ToolResult(success=False, result=None, error=str(e))
 
-        # Workspace path validation (if workspace isolation is enabled)
-        if self.workspace_root is not None:
-            for key in ("path", "file_path", "directory", "filename", "output_path"):
-                if key in params:
-                    try:
-                        validate_workspace_path(str(params[key]), self.workspace_root)
-                    except ValueError as e:
-                        return ToolResult(success=False, result=None, error=str(e))
+        tool, error = validate_and_get_tool(self, tool_name, params)
+        if error is not None:
+            return error
 
-        # Get tool
-        tool = self.registry.get(tool_name)
-        if not tool:
-            return ToolResult(success=False, result=None, error=f"Tool not found: {tool_name}")
+        policy_error = validate_policy(self, tool_name, params, context)
+        if policy_error is not None:
+            return policy_error
 
-        # Validate parameters
+        snapshot = create_snapshot(self, tool_name, params, context)
+
         try:
-            validation = tool.validate_params(params)
-            if not validation.valid:
-                return ToolResult(success=False, result=None, error=f"Invalid parameters for tool '{tool_name}'")
-        except (TypeError, ValueError, KeyError, AttributeError) as e:
-            return ToolResult(success=False, result=None, error=f"Parameter validation failed: {str(e)}")
-
-        # Policy validation (if engine provided)
-        try:
-            if self.policy_engine:
-                from src.safety.action_policy_engine import PolicyExecutionContext
-                enforcement = self.policy_engine.validate_action_sync(
-                    action={"tool": tool_name, "params": params},
-                    context=PolicyExecutionContext(
-                        agent_id=context.get("agent_id", "unknown"),
-                        workflow_id=context.get("workflow_id", "unknown"),
-                        stage_id=context.get("stage_id", "unknown"),
-                        action_type="tool_execution",
-                        action_data={"tool_name": tool_name, "params": params}
-                    )
-                )
-
-                if not enforcement.allowed:
-                    return ToolResult(
-                        success=False, result=None,
-                        error=f"Action blocked by policy: {enforcement.violations[0].message}",
-                        metadata={"violations": [v.to_dict() for v in enforcement.violations]}
-                    )
-
-                if enforcement.has_blocking_violations() and self.approval_workflow:
-                    approval_request = self.approval_workflow.request_approval(
-                        action={"tool": tool_name, "params": params},
-                        reason="HIGH/CRITICAL policy violations detected",
-                        context=context,
-                        violations=enforcement.violations,
-                        metadata={"enforcement_result": enforcement.metadata}
-                    )
-                    if not wait_for_approval(self, approval_request.id):
-                        return ToolResult(
-                            success=False, result=None,
-                            error="Action requires approval but was not approved",
-                            metadata={"approval_request_id": approval_request.id}
-                        )
-        except (TypeError, ValueError, KeyError, AttributeError, ImportError, RuntimeError) as e:
-            logger.error(f"Policy validation error (fail-closed): {e}")
-            return ToolResult(
-                success=False, result=None,
-                error=f"Policy validation failed: {e}",
-                metadata={"policy_error": str(e)}
+            return execute_with_timeout(
+                self, tool, params, timeout, snapshot, tool_name, context
             )
-
-        # Create snapshot (if rollback enabled and state-modifying tool)
-        try:
-            if self.rollback_manager and should_snapshot(self, tool_name, params):
-                snapshot = self.rollback_manager.create_snapshot(
-                    action={"tool": tool_name, "params": params},
-                    context=context, strategy_name="file"
-                )
-                logger.debug(f"Created snapshot {snapshot.id} for tool {tool_name}")
-                # Persist snapshot to DB so rollback_events FK is satisfied
-                try:
-                    from src.observability.rollback_logger import log_rollback_snapshot
-                    log_rollback_snapshot(snapshot, workflow_execution_id=context.get("workflow_id"))
-                except Exception as e:
-                    logger.warning(f"Failed to persist rollback snapshot to DB: {e}")
-        except (TypeError, ValueError, OSError, AttributeError) as e:
-            logger.warning(f"Failed to create snapshot: {e}")
-
-        # Execute with timeout
-        try:
-            try:
-                acquire_concurrent_slot(self)
-            except RateLimitError as e:
-                return ToolResult(success=False, result=None, error=str(e))
-
-            try:
-                start_time = time.time()
-                future = self._executor.submit(execute_tool_internal, tool, params)
-
-                try:
-                    result = future.result(timeout=timeout)
-                    execution_time = time.time() - start_time
-
-                    if result.metadata is None:
-                        result.metadata = {}  # type: ignore[unreachable]
-                    result.metadata["execution_time_seconds"] = execution_time
-
-                    if not result.success and snapshot and self.enable_auto_rollback:
-                        handle_auto_rollback(self, snapshot, tool_name, result, context)
-
-                    return result
-
-                except FuturesTimeoutError:
-                    future.cancel()
-                    if snapshot and self.enable_auto_rollback and self.rollback_manager:
-                        handle_timeout_rollback(self, snapshot, context)
-                    return ToolResult(
-                        success=False, result=None,
-                        error=f"Tool execution timed out after {timeout} seconds"
-                    )
-
-            finally:
-                release_concurrent_slot(self)
-
         except (RuntimeError, OSError, MemoryError) as e:
             if snapshot and self.enable_auto_rollback and self.rollback_manager:
                 handle_exception_rollback(self, snapshot, tool_name, e, context)

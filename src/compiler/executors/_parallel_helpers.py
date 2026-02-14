@@ -144,6 +144,85 @@ def _execute_agent_with_tracking(
     return response
 
 
+def _resolve_agent_factory(agent_factory_cls: Any) -> Any:
+    """Resolve agent factory class, importing default if needed."""
+    if agent_factory_cls is not None:
+        return agent_factory_cls
+    from src.agents.agent_factory import AgentFactory as _AgentFactory
+    return _AgentFactory
+
+
+def _load_or_cache_agent(
+    agent_name: str,
+    config_loader: Any,
+    agent_cache: Dict[str, Any],
+    agent_factory: Any,
+) -> tuple[Any, Any, Dict[str, Any]]:
+    """Load agent config, create or retrieve cached agent instance.
+
+    Returns:
+        Tuple of (agent, agent_config, agent_config_dict)
+    """
+    from src.compiler.schemas import AgentConfig
+
+    agent_config_dict = config_loader.load_agent(agent_name)
+    agent_config = AgentConfig(**agent_config_dict)
+    if agent_name in agent_cache:
+        agent = agent_cache[agent_name]
+    else:
+        agent = agent_factory.create(agent_config)
+        agent_cache[agent_name] = agent
+    return agent, agent_config, agent_config_dict
+
+
+def _config_to_tracking_dict(agent_config: Any, agent_config_dict: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert agent config to a dict suitable for tracking."""
+    if hasattr(agent_config, 'model_dump'):
+        return agent_config.model_dump()
+    if hasattr(agent_config, 'dict'):
+        return agent_config.dict()
+    return dict(agent_config_dict)
+
+
+def _create_agent_context(
+    state: Dict[str, Any],
+    stage_name: str,
+    agent_name: str,
+    effective_stage_id: str,
+) -> Any:
+    """Create ExecutionContext for an agent node."""
+    return ExecutionContext(
+        workflow_id=state.get(StateKeys.WORKFLOW_ID, "unknown"),
+        stage_id=effective_stage_id,
+        agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
+        metadata={
+            "stage_name": stage_name,
+            "agent_name": agent_name,
+            "execution_mode": "parallel"
+        }
+    )
+
+
+def _run_agent(
+    agent: Any,
+    input_data: Dict[str, Any],
+    context: Any,
+    agent_name: str,
+    agent_config_dict_for_tracking: Dict[str, Any],
+    tracker: Optional[Any],
+    stage_id: Optional[str],
+    effective_stage_id: str,
+) -> Any:
+    """Execute agent with or without tracking."""
+    if tracker and stage_id:
+        return _execute_agent_with_tracking(
+            agent, input_data, context, agent_name,
+            agent_config_dict_for_tracking, tracker, effective_stage_id
+        )
+    input_data.pop(StateKeys.TRACKER, None)
+    return agent.execute(input_data, context)
+
+
 def create_agent_node(
     agent_name: str,
     agent_ref: Any,
@@ -176,59 +255,19 @@ def create_agent_node(
         start_time = time.time()
 
         try:
-            # Load agent factory
-            if agent_factory_cls is not None:
-                agent_factory = agent_factory_cls
-            else:
-                from src.agents.agent_factory import AgentFactory as _AgentFactory
-                agent_factory = _AgentFactory
-            from src.compiler.schemas import AgentConfig
-
-            # Load/cache agent
-            agent_config_dict = config_loader.load_agent(agent_name)
-            agent_config = AgentConfig(**agent_config_dict)
-            if agent_name in agent_cache:
-                agent = agent_cache[agent_name]
-            else:
-                agent = agent_factory.create(agent_config)
-                agent_cache[agent_name] = agent
-
-            # Prepare input data
-            input_data = _prepare_agent_input(s)
-
-            # Prepare config dict for tracking
-            if hasattr(agent_config, 'model_dump'):
-                agent_config_dict_for_tracking = agent_config.model_dump()
-            elif hasattr(agent_config, 'dict'):
-                agent_config_dict_for_tracking = agent_config.dict()
-            else:
-                agent_config_dict_for_tracking = dict(agent_config_dict)
-
-            # Determine effective stage_id
-            effective_stage_id = stage_id if stage_id else f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
-
-            # Create execution context
-            context = ExecutionContext(
-                workflow_id=state.get(StateKeys.WORKFLOW_ID, "unknown"),
-                stage_id=effective_stage_id,
-                agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
-                metadata={
-                    "stage_name": stage_name,
-                    "agent_name": agent_name,
-                    "execution_mode": "parallel"
-                }
+            agent_factory = _resolve_agent_factory(agent_factory_cls)
+            agent, agent_config, agent_config_dict = _load_or_cache_agent(
+                agent_name, config_loader, agent_cache, agent_factory
             )
+            input_data = _prepare_agent_input(s)
+            agent_config_dict_for_tracking = _config_to_tracking_dict(agent_config, agent_config_dict)
+            effective_stage_id = stage_id if stage_id else f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
+            context = _create_agent_context(state, stage_name, agent_name, effective_stage_id)
 
-            # Execute with or without tracking
-            if tracker and stage_id:
-                response = _execute_agent_with_tracking(
-                    agent, input_data, context, agent_name,
-                    agent_config_dict_for_tracking, tracker, effective_stage_id
-                )
-            else:
-                # No tracker - strip tracker from input to prevent FK violations
-                input_data.pop(StateKeys.TRACKER, None)
-                response = agent.execute(input_data, context)
+            response = _run_agent(
+                agent, input_data, context, agent_name,
+                agent_config_dict_for_tracking, tracker, stage_id, effective_stage_id
+            )
 
             duration = time.time() - start_time
             return _build_agent_success_result(agent_name, response, duration)
@@ -525,6 +564,72 @@ def _check_retry_timeout(
         )
 
 
+def _reset_retry_counter_on_pass(
+    passed: bool, state: Dict[str, Any], stage_name: str
+) -> None:
+    """Reset retry counter if quality gates passed after retries."""
+    if passed and StateKeys.STAGE_RETRY_COUNTS in state and stage_name in state[StateKeys.STAGE_RETRY_COUNTS]:
+        retry_count = state[StateKeys.STAGE_RETRY_COUNTS][stage_name]
+        del state[StateKeys.STAGE_RETRY_COUNTS][stage_name]
+        logger.info(
+            f"Stage '{stage_name}' passed quality gates after {retry_count} retries"
+        )
+
+
+def _handle_quality_gate_retry(
+    quality_gates_config: Dict[str, Any],
+    stage_name: str,
+    state: Dict[str, Any],
+    tracker: Any,
+    synthesis_result: Any,
+    violations: list,
+    wall_clock_start: float,
+    wall_clock_timeout: float,
+) -> str:
+    """Handle retry_stage policy for quality gate failure.
+
+    Returns:
+        "continue" to signal retry needed.
+
+    Raises:
+        RuntimeError: If max retries exhausted or wall-clock timeout exceeded.
+    """
+    max_retries = quality_gates_config.get("max_retries", 2)
+
+    if StateKeys.STAGE_RETRY_COUNTS not in state:
+        state[StateKeys.STAGE_RETRY_COUNTS] = {}
+
+    retry_count = state[StateKeys.STAGE_RETRY_COUNTS].get(stage_name, 0)
+
+    if retry_count >= max_retries:
+        raise RuntimeError(
+            f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}' after {retry_count} retries "
+            f"(max: {max_retries}). Final violations: {'; '.join(violations)}"
+        )
+
+    state[StateKeys.STAGE_RETRY_COUNTS][stage_name] = retry_count + 1
+
+    _track_quality_gate_event(
+        tracker, "quality_gate_retry", stage_name,
+        synthesis_result, violations, quality_gates_config, retry_count
+    )
+
+    _check_retry_timeout(
+        stage_name, wall_clock_start, wall_clock_timeout,
+        retry_count, violations
+    )
+
+    elapsed = time.monotonic() - wall_clock_start
+    logger.warning(
+        f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}', retrying "
+        f"(attempt {retry_count + 2}/{max_retries + 1}, "
+        f"elapsed {elapsed:.1f}s/{wall_clock_timeout:.0f}s). "
+        f"Violations: {'; '.join(violations)}"
+    )
+
+    return "continue"
+
+
 def handle_quality_gate_failure(
     passed: bool,
     violations: list,
@@ -553,13 +658,7 @@ def handle_quality_gate_failure(
     Raises:
         RuntimeError: If escalation or retries exhausted
     """
-    # Reset retry counter if quality gates passed (successful after retry)
-    if passed and StateKeys.STAGE_RETRY_COUNTS in state and stage_name in state[StateKeys.STAGE_RETRY_COUNTS]:
-        retry_count = state[StateKeys.STAGE_RETRY_COUNTS][stage_name]
-        del state[StateKeys.STAGE_RETRY_COUNTS][stage_name]
-        logger.info(
-            f"Stage '{stage_name}' passed quality gates after {retry_count} retries"
-        )
+    _reset_retry_counter_on_pass(passed, state, stage_name)
 
     if passed:
         return None
@@ -568,10 +667,8 @@ def handle_quality_gate_failure(
     quality_gates_config = stage_dict.get("quality_gates", {})
     on_failure = quality_gates_config.get("on_failure", "retry_stage")
 
-    # Get retry count for observability tracking
     retry_count = state.get(StateKeys.STAGE_RETRY_COUNTS, {}).get(stage_name, 0)
 
-    # Track quality gate failure in observability
     tracker = state.get(StateKeys.TRACKER)
     _track_quality_gate_event(
         tracker, "quality_gate_failure", stage_name,
@@ -580,47 +677,17 @@ def handle_quality_gate_failure(
 
     if on_failure == "escalate":
         _handle_quality_gate_escalate(stage_name, violations)
-        return None  # Unreachable, but satisfies type checker
+        return None
 
     if on_failure == "proceed_with_warning":
         _handle_quality_gate_warn(stage_name, violations, synthesis_result)
         return None
 
     if on_failure == "retry_stage":
-        max_retries = quality_gates_config.get("max_retries", 2)
-
-        if StateKeys.STAGE_RETRY_COUNTS not in state:
-            state[StateKeys.STAGE_RETRY_COUNTS] = {}
-
-        retry_count = state[StateKeys.STAGE_RETRY_COUNTS].get(stage_name, 0)
-
-        if retry_count >= max_retries:
-            raise RuntimeError(
-                f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}' after {retry_count} retries "
-                f"(max: {max_retries}). Final violations: {'; '.join(violations)}"
-            )
-
-        state[StateKeys.STAGE_RETRY_COUNTS][stage_name] = retry_count + 1
-
-        _track_quality_gate_event(
-            tracker, "quality_gate_retry", stage_name,
-            synthesis_result, violations, quality_gates_config, retry_count
+        return _handle_quality_gate_retry(
+            quality_gates_config, stage_name, state, tracker,
+            synthesis_result, violations, wall_clock_start, wall_clock_timeout
         )
-
-        _check_retry_timeout(
-            stage_name, wall_clock_start, wall_clock_timeout,
-            retry_count, violations
-        )
-
-        elapsed = time.monotonic() - wall_clock_start
-        logger.warning(
-            f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}', retrying "
-            f"(attempt {retry_count + 2}/{max_retries + 1}, "
-            f"elapsed {elapsed:.1f}s/{wall_clock_timeout:.0f}s). "
-            f"Violations: {'; '.join(violations)}"
-        )
-
-        return "continue"
 
     return None
 

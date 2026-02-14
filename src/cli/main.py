@@ -551,6 +551,46 @@ def _handle_dashboard_keepalive(
     default=None,
     help="Externally-provided run ID for tracking",
 )
+def _setup_event_routing(
+    event_bus: Any, events_to: str, event_format: str,
+    run_id: Optional[str], verbose: bool,
+) -> None:
+    """Set up event output routing on the event bus if non-default options are requested."""
+    if not event_bus or (events_to == "stderr" and event_format == "text"):
+        return
+    try:
+        from src.cli.event_output import EventOutputHandler
+        handler = EventOutputHandler(mode=events_to, fmt=event_format, run_id=run_id)
+        event_bus.subscribe(handler.handle_event)
+    except ImportError:
+        if verbose:
+            console.print("[yellow]Warning:[/yellow] Event output routing not available")
+
+
+def _compile_workflow(
+    workflow_config: Any, tool_registry: Any, config_loader: Any, verbose: bool,
+) -> tuple:
+    """Compile workflow config into an executable graph.
+
+    Returns (engine, compiled) tuple.
+    """
+    try:
+        from src.compiler.engine_registry import EngineRegistry
+        registry = EngineRegistry()
+        engine = registry.get_engine_from_config(
+            workflow_config,
+            tool_registry=tool_registry,
+            config_loader=config_loader,
+        )
+        compiled = engine.compile(workflow_config)
+        return engine, compiled
+    except (ValueError, KeyError, AttributeError) as e:
+        console.print(f"[red]Workflow compilation error:[/red] {e}")
+        if verbose:
+            logger.exception("Failed to compile workflow")
+        raise SystemExit(1)
+
+
 def run(
     workflow: str,
     input_file: Optional[str],
@@ -566,52 +606,18 @@ def run(
     run_id: Optional[str],
 ) -> None:
     """Run a workflow from a YAML config file."""
-    # 1. Setup logging
     _setup_logging(verbose, show_details)
-
-    # 2. Load workflow config and inputs
     workflow_config, inputs = _load_workflow_config(workflow, input_file, config_root, verbose)
 
-    # 3. Initialize infrastructure (db, registries, tracker, dashboard)
     db_path = db or DEFAULT_DB_PATH
-    # Create event bus when events-to or dashboard is requested
     needs_event_bus = dashboard is not None or events_to != "stderr" or event_format != "text"
     config_loader, tool_registry, tracker, event_bus, dashboard_server = _initialize_infrastructure(
         config_root, db_path, dashboard if dashboard is not None else (0 if needs_event_bus else None), verbose
     )
+    _setup_event_routing(event_bus, events_to, event_format, run_id, verbose)
 
-    # 3b. Set up event output routing if requested
-    event_output_handler = None
-    if event_bus and (events_to != "stderr" or event_format != "text"):
-        try:
-            from src.cli.event_output import EventOutputHandler
-            event_output_handler = EventOutputHandler(
-                mode=events_to,
-                fmt=event_format,
-                run_id=run_id,
-            )
-            event_bus.subscribe(event_output_handler.handle_event)
-        except ImportError:
-            if verbose:
-                console.print("[yellow]Warning:[/yellow] Event output routing not available")
+    engine, compiled = _compile_workflow(workflow_config, tool_registry, config_loader, verbose)
 
-    # 4. Compile workflow
-    try:
-        from src.compiler.engine_registry import EngineRegistry
-        registry = EngineRegistry()
-        engine = registry.get_engine_from_config(
-            workflow_config,
-            tool_registry=tool_registry,
-            config_loader=config_loader,
-        )
-        compiled = engine.compile(workflow_config)
-    except (ValueError, KeyError, AttributeError) as e:
-        console.print(f"[red]Workflow compilation error:[/red] {e}")
-        if verbose:
-            logger.exception("Failed to compile workflow")
-        raise SystemExit(1)
-
-    # 5. Execute workflow with tracking
     wf = workflow_config.get("workflow", {})
     workflow_name = wf.get("name", Path(workflow).stem)
     with tracker.track_workflow(
@@ -628,14 +634,11 @@ def run(
             run_id=run_id,
         )
 
-    # 6. Handle post-execution (reports, gantt, output saving)
     _handle_post_execution(result, show_details, output, workflow_id, workflow_name, verbose)
 
-    # 7. Keep dashboard alive if enabled
     if dashboard is not None:
         _handle_dashboard_keepalive(dashboard_server, dashboard)
 
-    # 8. Cleanup resources
     _cleanup_tool_executor(engine)
 
 
@@ -787,6 +790,55 @@ def serve(host: str, port: int, config_root: str, db: Optional[str], workers: in
 # ─── validate command ─────────────────────────────────────────────────
 
 
+def _extract_agent_name(agent_entry: Any) -> str:
+    """Extract agent name from a string or dict entry."""
+    if isinstance(agent_entry, str):
+        return agent_entry
+    if isinstance(agent_entry, dict):
+        return agent_entry.get("name", "")
+    return ""
+
+
+def _resolve_stage_path(stage_ref: str, workflow_dir: Path, config_root: str) -> Optional[Path]:
+    """Resolve a stage_ref to an existing file path, or return None."""
+    for base in [Path(stage_ref), workflow_dir / stage_ref, Path(config_root) / stage_ref]:
+        if base.exists():
+            return base
+    return None
+
+
+def _check_stage_references(
+    stages: list, workflow_dir: Path, config_root: str,
+    check_refs: bool, errors: list[str],
+) -> None:
+    """Check stage file existence and optionally validate agent references."""
+    for stage in stages:
+        stage_ref = stage.get("stage_ref", "")
+        if not stage_ref:
+            continue
+
+        stage_path = _resolve_stage_path(stage_ref, workflow_dir, config_root)
+        if stage_path is None:
+            errors.append(f"Stage file not found: {stage_ref}")
+            continue
+
+        if not check_refs:
+            continue
+
+        with open(stage_path) as f:
+            stage_config = yaml.safe_load(f)
+        if not stage_config:
+            continue
+
+        for agent_entry in stage_config.get("stage", {}).get("agents", []):
+            agent_name = _extract_agent_name(agent_entry)
+            if not agent_name:
+                continue
+            agent_path = Path(config_root) / "agents" / f"{agent_name}{YAML_FILE_EXTENSION}"
+            if not agent_path.exists():
+                errors.append(f"Agent config not found: {agent_path}")
+
+
 @main.command()
 @click.argument("workflow", type=click.Path(exists=True))
 @click.option(
@@ -814,7 +866,6 @@ def validate(workflow: str, config_root: str, output_format: str, check_refs: bo
     errors: list[str] = []
     warnings: list[str] = []
 
-    # Schema validation
     try:
         workflow_config = _load_and_validate_workflow(workflow, verbose=(output_format == "text"))
     except SystemExit:
@@ -822,46 +873,10 @@ def validate(workflow: str, config_root: str, output_format: str, check_refs: bo
             console.print(json.dumps({"valid": False, "errors": ["Schema validation failed"], "warnings": []}))
         raise
 
-    # Check stage references (always, plus deep check with --check-refs)
     wf = workflow_config.get("workflow", {})
-    workflow_dir = Path(workflow).parent
-    for stage in wf.get("stages", []):
-        stage_ref = stage.get("stage_ref", "")
-        if not stage_ref:
-            continue
-
-        # Try resolving relative to CWD first, then relative to workflow dir
-        stage_path = Path(stage_ref)
-        if not stage_path.exists():
-            stage_path = workflow_dir / stage_ref
-        if not stage_path.exists():
-            stage_path = Path(config_root) / stage_ref
-        if not stage_path.exists():
-            errors.append(f"Stage file not found: {stage_ref}")
-            continue
-
-        if not check_refs:
-            continue
-
-        # Load stage and check agent references
-        with open(stage_path) as f:
-            stage_config = yaml.safe_load(f)
-
-        if not stage_config:
-            continue
-
-        for agent_entry in stage_config.get("stage", {}).get("agents", []):
-            if isinstance(agent_entry, str):
-                agent_name = agent_entry
-            elif isinstance(agent_entry, dict):
-                agent_name = agent_entry.get("name", "")
-            else:
-                continue
-            if not agent_name:
-                continue
-            agent_path = Path(config_root) / "agents" / f"{agent_name}{YAML_FILE_EXTENSION}"
-            if not agent_path.exists():
-                errors.append(f"Agent config not found: {agent_path}")
+    _check_stage_references(
+        wf.get("stages", []), Path(workflow).parent, config_root, check_refs, errors,
+    )
 
     is_valid = len(errors) == 0
 
@@ -888,6 +903,115 @@ def config_group() -> None:
     pass
 
 
+def _check_agent_tools(
+    agent_name: str, agent_path: Path, config_root: str, warnings: list[str]
+) -> None:
+    """Check tool references inside an agent config file."""
+    try:
+        with open(agent_path) as f:
+            agent_config = yaml.safe_load(f)
+        agent_tools = agent_config.get("agent", {}).get("tools", None)
+        if agent_tools is not None:
+            for tool_entry in agent_tools:
+                tool_name = tool_entry if isinstance(tool_entry, str) else tool_entry.get("name", "")
+                if tool_name:
+                    tool_path = Path(config_root) / "tools" / f"{tool_name}{YAML_FILE_EXTENSION}"
+                    if not tool_path.exists():
+                        warnings.append(f"{agent_name}: tool config not found — {tool_name}")
+    except Exception as exc:  # noqa: BLE001
+        warnings.append(f"{agent_name}: could not check tools — {exc}")
+
+
+def _check_agents_in_stage(
+    stage_ref: str, stage_path: Path, config_root: str,
+    errors: list[str], warnings: list[str], verbose: bool,
+) -> None:
+    """Check agent and tool references inside a stage config."""
+    try:
+        with open(stage_path) as f:
+            stage_config = yaml.safe_load(f)
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"{stage_ref}: YAML parse error — {exc}")
+        return
+
+    if not stage_config:
+        return
+
+    for agent_entry in stage_config.get("stage", {}).get("agents", []):
+        agent_name = _extract_agent_name(agent_entry)
+        if not agent_name:
+            continue
+        agent_path = Path(config_root) / "agents" / f"{agent_name}{YAML_FILE_EXTENSION}"
+        if not agent_path.exists():
+            errors.append(f"{stage_ref}: agent not found — {agent_name}")
+            continue
+        if verbose:
+            _check_agent_tools(agent_name, agent_path, config_root, warnings)
+
+
+def _check_workflow_file(
+    wf_path: Path, config_root: str,
+    errors: list[str], warnings: list[str], verbose: bool,
+) -> None:
+    """Validate a single workflow file: schema, stage refs, agent refs."""
+    try:
+        with open(wf_path) as f:
+            wf_config = yaml.safe_load(f)
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"{wf_path.name}: YAML parse error — {exc}")
+        return
+
+    if not wf_config:
+        warnings.append(f"{wf_path.name}: empty file")
+        return
+
+    wf = wf_config.get("workflow", {})
+    if not wf:
+        errors.append(f"{wf_path.name}: missing 'workflow' key")
+        return
+
+    try:
+        from src.compiler.schemas import WorkflowConfig as WfSchema
+        WfSchema(**wf_config)
+    except Exception as exc:  # noqa: BLE001
+        errors.append(f"{wf_path.name}: schema error — {exc}")
+
+    for stage in wf.get("stages", []):
+        stage_ref = stage.get("stage_ref", "")
+        if not stage_ref:
+            continue
+        stage_path = Path(config_root) / stage_ref
+        if not stage_path.exists():
+            stage_path = Path(stage_ref)
+        if not stage_path.exists():
+            errors.append(f"{wf_path.name}: stage not found — {stage_ref}")
+            continue
+        _check_agents_in_stage(stage_ref, stage_path, config_root, errors, warnings, verbose)
+
+
+def _report_config_results(
+    errors: list[str], warnings: list[str], fail_on_warning: bool
+) -> None:
+    """Print config check results and exit on errors."""
+    if errors:
+        console.print(f"\n[red]Errors ({len(errors)}):[/red]")
+        for err in errors:
+            console.print(f"  ✗ {err}")
+
+    if warnings:
+        console.print(f"\n[yellow]Warnings ({len(warnings)}):[/yellow]")
+        for warn in warnings:
+            console.print(f"  ⚠ {warn}")
+
+    if not errors and not warnings:
+        console.print("[green]All configs valid[/green]")
+    elif not errors:
+        console.print(f"\n[green]No errors[/green] ({len(warnings)} warning(s))")
+
+    if errors or (fail_on_warning and warnings):
+        raise SystemExit(1)
+
+
 @config_group.command("check")
 @click.option(
     CLI_OPTION_CONFIG_ROOT,
@@ -909,102 +1033,9 @@ def config_check(config_root: str, fail_on_warning: bool, verbose: bool) -> None
         raise SystemExit(1)
 
     for wf_path in sorted(workflows_dir.glob(YAML_GLOB_PATTERN)):
-        try:
-            with open(wf_path) as f:
-                wf_config = yaml.safe_load(f)
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{wf_path.name}: YAML parse error — {exc}")
-            continue
+        _check_workflow_file(wf_path, config_root, errors, warnings, verbose)
 
-        if not wf_config:
-            warnings.append(f"{wf_path.name}: empty file")
-            continue
-
-        wf = wf_config.get("workflow", {})
-        if not wf:
-            errors.append(f"{wf_path.name}: missing 'workflow' key")
-            continue
-
-        # Validate schema
-        try:
-            from src.compiler.schemas import WorkflowConfig as WfSchema
-            WfSchema(**wf_config)
-        except Exception as exc:  # noqa: BLE001
-            errors.append(f"{wf_path.name}: schema error — {exc}")
-
-        # Check stage references
-        for stage in wf.get("stages", []):
-            stage_ref = stage.get("stage_ref", "")
-            if not stage_ref:
-                continue
-
-            stage_path = Path(config_root) / stage_ref
-            if not stage_path.exists():
-                stage_path = Path(stage_ref)
-            if not stage_path.exists():
-                errors.append(f"{wf_path.name}: stage not found — {stage_ref}")
-                continue
-
-            # Check agent refs inside stage
-            try:
-                with open(stage_path) as f:
-                    stage_config = yaml.safe_load(f)
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"{stage_ref}: YAML parse error — {exc}")
-                continue
-
-            if not stage_config:
-                continue
-
-            for agent_entry in stage_config.get("stage", {}).get("agents", []):
-                if isinstance(agent_entry, str):
-                    agent_name = agent_entry
-                elif isinstance(agent_entry, dict):
-                    agent_name = agent_entry.get("name", "")
-                else:
-                    continue
-                if not agent_name:
-                    continue
-
-                agent_path = Path(config_root) / "agents" / f"{agent_name}{YAML_FILE_EXTENSION}"
-                if not agent_path.exists():
-                    errors.append(f"{stage_ref}: agent not found — {agent_name}")
-                    continue
-
-                # Check tool refs inside agent
-                if verbose:
-                    try:
-                        with open(agent_path) as f:
-                            agent_config = yaml.safe_load(f)
-                        agent_tools = agent_config.get("agent", {}).get("tools", None)
-                        if agent_tools is not None:
-                            for tool_entry in agent_tools:
-                                tool_name = tool_entry if isinstance(tool_entry, str) else tool_entry.get("name", "")
-                                if tool_name:
-                                    tool_path = Path(config_root) / "tools" / f"{tool_name}{YAML_FILE_EXTENSION}"
-                                    if not tool_path.exists():
-                                        warnings.append(f"{agent_name}: tool config not found — {tool_name}")
-                    except Exception as exc:  # noqa: BLE001
-                        warnings.append(f"{agent_name}: could not check tools — {exc}")
-
-    # Report results
-    if errors:
-        console.print(f"\n[red]Errors ({len(errors)}):[/red]")
-        for err in errors:
-            console.print(f"  ✗ {err}")
-
-    if warnings:
-        console.print(f"\n[yellow]Warnings ({len(warnings)}):[/yellow]")
-        for warn in warnings:
-            console.print(f"  ⚠ {warn}")
-
-    if not errors and not warnings:
-        console.print("[green]All configs valid[/green]")
-    elif not errors:
-        console.print(f"\n[green]No errors[/green] ({len(warnings)} warning(s))")
-
-    if errors or (fail_on_warning and warnings):
-        raise SystemExit(1)
+    _report_config_results(errors, warnings, fail_on_warning)
 
 
 # ─── list group ───────────────────────────────────────────────────────

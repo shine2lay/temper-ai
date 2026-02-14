@@ -18,11 +18,13 @@ from src.compiler.domain_state import (
     VisualizerProtocol,
 )
 from src.compiler.executors._base_helpers import (
+    execute_dialogue_round,
+    fallback_consensus_synthesis,
     invoke_leader_agent,
     reinvoke_agents_with_dialogue,
+    track_dialogue_round,
 )
 from src.compiler.executors.state_keys import StateKeys
-from src.constants.probabilities import PROB_MEDIUM
 
 logger = logging.getLogger(__name__)
 
@@ -47,55 +49,6 @@ def _record_initial_round(
         })
         total_cost += output.metadata.get(StateKeys.COST_USD, 0.0)
     return total_cost
-
-
-def _track_dialogue_round(
-    tracker: Any,
-    strategy: Any,
-    state: Dict[str, Any],
-    current_outputs: list,
-    round_num: int,
-    round_outcome: str,
-    conv_score: Optional[float] = None,
-    agent_stances: Optional[Dict[str, str]] = None
-) -> None:
-    """Track dialogue round collaboration event."""
-    if not (tracker and hasattr(tracker, 'track_collaboration_event')):
-        return
-
-    try:
-        agent_names = [o.agent_name for o in current_outputs]
-        event_data: Dict[str, Any] = {
-            "agent_count": len(agent_names),
-            "avg_confidence": (
-                sum(o.confidence for o in current_outputs) / len(current_outputs)
-                if current_outputs else 0.0
-            ),
-        }
-
-        if agent_stances:
-            stance_dist: Dict[str, int] = {}
-            for s in agent_stances.values():
-                if s:
-                    stance_dist[s] = stance_dist.get(s, 0) + 1
-            event_data["stance_distribution"] = stance_dist
-            event_data["agent_stances"] = agent_stances
-
-        tracker.track_collaboration_event(
-            event_type=f"{strategy.mode}_round",
-            stage_id=state.get(StateKeys.CURRENT_STAGE_ID),
-            agents_involved=agent_names,
-            round_number=round_num,
-            outcome=round_outcome,
-            confidence_score=conv_score,
-            event_data=event_data,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to track round %d collaboration event",
-            round_num,
-            exc_info=True,
-        )
 
 
 def _build_final_synthesis_result(
@@ -363,33 +316,7 @@ class StageExecutor(ABC):
             return strategy.synthesize(agent_outputs, collaboration_config)
 
         except ImportError:
-            # Fallback: strategy registry not available, use simple consensus
-            from src.strategies.base import (
-                SynthesisResult,
-                calculate_vote_distribution,
-                extract_majority_decision,
-            )
-
-            decision = extract_majority_decision(agent_outputs)
-            votes = calculate_vote_distribution(agent_outputs)
-
-            if decision and votes:
-                confidence = votes.get(str(decision), 0) / len(agent_outputs)
-            else:
-                confidence = PROB_MEDIUM
-
-            return SynthesisResult(
-                decision=decision or "",
-                confidence=confidence,
-                method="fallback_consensus",
-                votes=votes,
-                conflicts=[],
-                reasoning=(
-                    f"Fallback synthesis: {len(agent_outputs)} agents, "
-                    f"decision='{decision}'"
-                ),
-                metadata={"fallback": True}
-            )
+            return fallback_consensus_synthesis(agent_outputs)
 
     def _run_dialogue_synthesis(
         self,
@@ -406,46 +333,19 @@ class StageExecutor(ABC):
         Includes convergence detection: once agent outputs stabilise
         beyond ``strategy.convergence_threshold`` after
         ``strategy.min_rounds``, the dialogue terminates early.
-
-        Args:
-            initial_outputs: Initial round agent outputs
-            strategy: DialogueOrchestrator strategy
-            stage_config: Stage configuration
-            stage_name: Stage name
-            state: Workflow state
-            config_loader: Config loader
-            agents: List of agent refs
-
-        Returns:
-            SynthesisResult from final dialogue round
         """
         dialogue_history: List[Dict[str, Any]] = []
         current_outputs = initial_outputs
-
-        # Record initial round (round 0)
         total_cost = _record_initial_round(current_outputs, dialogue_history)
-
-        # Track round 0 collaboration event
         tracker = state.get(StateKeys.TRACKER)
-        _track_dialogue_round(
+        track_dialogue_round(
             tracker, strategy, state, current_outputs,
             round_num=0, round_outcome="initial"
         )
 
-        # Check budget after round 0
         if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
-            logger.warning(
-                f"Dialogue stopped after round 0{ERROR_MSG_FOR_STAGE_SUFFIX}{stage_name}': "
-                f"budget ${strategy.cost_budget_usd:.2f} reached "
-                f"(cost: ${total_cost:.2f})"
-            )
-            result = strategy.synthesize(current_outputs, {})
-            result.metadata["dialogue_rounds"] = 1
-            result.metadata["total_cost_usd"] = total_cost
-            result.metadata["early_stop_reason"] = "budget"
-            return result
+            return self._budget_stop_result(strategy, current_outputs, total_cost, stage_name)
 
-        # Execute additional rounds (1 to max_rounds-1)
         final_round = 0
         previous_outputs = initial_outputs
         converged = False
@@ -453,75 +353,17 @@ class StageExecutor(ABC):
 
         for round_num in range(1, strategy.max_rounds):
             final_round = round_num
-
-            # Re-invoke agents with dialogue history
-            current_outputs, llm_providers = self._reinvoke_agents_with_dialogue(
-                agents=agents,
-                stage_name=stage_name,
-                state=state,
-                config_loader=config_loader,
-                dialogue_history=dialogue_history,
-                round_number=round_num,
-                max_rounds=strategy.max_rounds,
-                strategy=strategy
+            outputs, cost, _, conv, conv_round, _ = execute_dialogue_round(
+                round_num, self._reinvoke_agents_with_dialogue, agents, strategy,
+                stage_name, state, config_loader, tracker, dialogue_history,
+                previous_outputs,
             )
-
-            # Delegate stance extraction to the strategy (LLM-based)
-            agent_stances: Dict[str, str] = {}
-            if hasattr(strategy, 'extract_stances'):
-                agent_stances = strategy.extract_stances(
-                    current_outputs, llm_providers
-                )
-
-            # Record this round
-            for output in current_outputs:
-                entry: Dict[str, Any] = {
-                    "agent": output.agent_name,
-                    "round": round_num,
-                    "output": output.decision,
-                    "reasoning": output.reasoning,
-                    "confidence": output.confidence,
-                }
-                stance = agent_stances.get(output.agent_name, "")
-                if stance:
-                    entry["stance"] = stance
-                dialogue_history.append(entry)
-                total_cost += output.metadata.get(StateKeys.COST_USD, 0.0)
-
-            # Check convergence (after min_rounds)
-            conv_score = None
-            round_outcome = "in_progress"
-            if round_num >= strategy.min_rounds:
-                conv_score = strategy.calculate_convergence(
-                    current_outputs,
-                    previous_outputs
-                )
-                logger.info(
-                    f"Dialogue round {round_num + 1}{ERROR_MSG_FOR_STAGE_SUFFIX}{stage_name}': "
-                    f"convergence {conv_score:.1%} "
-                    f"(threshold: {strategy.convergence_threshold:.1%})"
-                )
-
-                if conv_score >= strategy.convergence_threshold:
-                    converged = True
-                    convergence_round = round_num
-                    round_outcome = "converged"
-                    logger.info(
-                        f"Dialogue converged at round {round_num + 1} for "
-                        f"stage '{stage_name}': {conv_score:.1%} >= "
-                        f"{strategy.convergence_threshold:.1%}"
-                    )
-
-            # Track round N collaboration event
-            _track_dialogue_round(
-                tracker, strategy, state, current_outputs,
-                round_num, round_outcome, conv_score, agent_stances
-            )
-
-            if converged:
+            current_outputs = outputs
+            total_cost += cost
+            if conv:
+                converged = True
+                convergence_round = conv_round
                 break
-
-            # Check budget
             if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
                 logger.warning(
                     f"Dialogue stopped at round {round_num + 1} for "
@@ -530,15 +372,28 @@ class StageExecutor(ABC):
                     f"(cost: ${total_cost:.2f})"
                 )
                 break
-
-            # Update previous outputs for next convergence check
             previous_outputs = current_outputs
 
-        # Final synthesis
         return _build_final_synthesis_result(
             strategy, current_outputs, final_round, total_cost,
             dialogue_history, converged, convergence_round, stage_name
         )
+
+    @staticmethod
+    def _budget_stop_result(
+        strategy: Any, current_outputs: list, total_cost: float, stage_name: str
+    ) -> Any:
+        """Return early synthesis result when budget is exhausted after round 0."""
+        logger.warning(
+            f"Dialogue stopped after round 0{ERROR_MSG_FOR_STAGE_SUFFIX}{stage_name}': "
+            f"budget ${strategy.cost_budget_usd:.2f} reached "
+            f"(cost: ${total_cost:.2f})"
+        )
+        result = strategy.synthesize(current_outputs, {})
+        result.metadata["dialogue_rounds"] = 1
+        result.metadata["total_cost_usd"] = total_cost
+        result.metadata["early_stop_reason"] = "budget"
+        return result
 
     def _run_leader_synthesis(
         self,

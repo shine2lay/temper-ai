@@ -35,6 +35,29 @@ class ContinuousExecutionStats:
     stop_reason: Optional[str] = None
 
 
+def _build_result_dict(stats: ContinuousExecutionStats) -> Dict[str, Any]:
+    """Build the result dictionary from execution stats.
+
+    Args:
+        stats: Collected execution statistics.
+
+    Returns:
+        Dictionary with execution summary.
+    """
+    return {
+        "total_iterations": stats.total_iterations,
+        "successful_iterations": stats.successful_iterations,
+        "failed_iterations": stats.failed_iterations,
+        "total_deployments": stats.total_deployments,
+        "total_cost": stats.total_cost,
+        "iterations_without_deployment": stats.iterations_without_deployment,
+        "agents": stats.agents,
+        "started_at": stats.started_at.isoformat(),
+        "stopped_at": stats.stopped_at.isoformat() if stats.stopped_at else None,
+        "stop_reason": stats.stop_reason,
+    }
+
+
 class ContinuousExecutor:
     """
     Execute continuous improvement loop with convergence detection.
@@ -165,18 +188,7 @@ class ContinuousExecutor:
             stats.stopped_at = datetime.now(timezone.utc)
             self._log_final_summary(stats)
 
-        return {
-            "total_iterations": stats.total_iterations,
-            "successful_iterations": stats.successful_iterations,
-            "failed_iterations": stats.failed_iterations,
-            "total_deployments": stats.total_deployments,
-            "total_cost": stats.total_cost,
-            "iterations_without_deployment": stats.iterations_without_deployment,
-            "agents": stats.agents,
-            "started_at": stats.started_at.isoformat(),
-            "stopped_at": stats.stopped_at.isoformat() if stats.stopped_at else None,
-            "stop_reason": stats.stop_reason,
-        }
+        return _build_result_dict(stats)
 
     def _should_stop(
         self,

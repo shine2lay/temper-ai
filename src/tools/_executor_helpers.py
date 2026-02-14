@@ -366,3 +366,165 @@ def get_tool_info(executor: ToolExecutor, tool_name: str) -> Optional[Dict[str, 
         "parameters_schema": tool.get_parameters_schema(),
         "llm_schema": tool.to_llm_schema(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Execute method helpers (extracted from ToolExecutor.execute)
+# ---------------------------------------------------------------------------
+
+_WORKSPACE_PATH_KEYS = ("path", "file_path", "directory", "filename", "output_path")
+
+
+def validate_and_get_tool(
+    executor: ToolExecutor,
+    tool_name: str,
+    params: Dict[str, Any],
+) -> Tuple[Optional[BaseTool], Optional[ToolResult]]:
+    """Validate workspace paths and tool params. Returns (tool, None) or (None, error)."""
+    if executor.workspace_root is not None:
+        for key in _WORKSPACE_PATH_KEYS:
+            if key in params:
+                try:
+                    validate_workspace_path(str(params[key]), executor.workspace_root)
+                except ValueError as e:
+                    return None, ToolResult(success=False, result=None, error=str(e))
+
+    tool = executor.registry.get(tool_name)
+    if not tool:
+        return None, ToolResult(success=False, result=None, error=f"Tool not found: {tool_name}")
+
+    try:
+        validation = tool.validate_params(params)
+        if not validation.valid:
+            return None, ToolResult(success=False, result=None, error=f"Invalid parameters for tool '{tool_name}'")
+    except (TypeError, ValueError, KeyError, AttributeError) as e:
+        return None, ToolResult(success=False, result=None, error=f"Parameter validation failed: {str(e)}")
+
+    return tool, None
+
+
+def validate_policy(
+    executor: ToolExecutor,
+    tool_name: str,
+    params: Dict[str, Any],
+    context: Dict[str, Any],
+) -> Optional[ToolResult]:
+    """Run policy validation. Returns ToolResult on error/block, None if allowed."""
+    if not executor.policy_engine:
+        return None
+
+    try:
+        from src.safety.action_policy_engine import PolicyExecutionContext
+        enforcement = executor.policy_engine.validate_action_sync(
+            action={"tool": tool_name, "params": params},
+            context=PolicyExecutionContext(
+                agent_id=context.get("agent_id", "unknown"),
+                workflow_id=context.get("workflow_id", "unknown"),
+                stage_id=context.get("stage_id", "unknown"),
+                action_type="tool_execution",
+                action_data={"tool_name": tool_name, "params": params}
+            )
+        )
+
+        if not enforcement.allowed:
+            return ToolResult(
+                success=False, result=None,
+                error=f"Action blocked by policy: {enforcement.violations[0].message}",
+                metadata={"violations": [v.to_dict() for v in enforcement.violations]}
+            )
+
+        if enforcement.has_blocking_violations() and executor.approval_workflow:
+            approval_request = executor.approval_workflow.request_approval(
+                action={"tool": tool_name, "params": params},
+                reason="HIGH/CRITICAL policy violations detected",
+                context=context,
+                violations=enforcement.violations,
+                metadata={"enforcement_result": enforcement.metadata}
+            )
+            if not wait_for_approval(executor, approval_request.id):
+                return ToolResult(
+                    success=False, result=None,
+                    error="Action requires approval but was not approved",
+                    metadata={"approval_request_id": approval_request.id}
+                )
+    except (TypeError, ValueError, KeyError, AttributeError, ImportError, RuntimeError) as e:
+        logger.error(f"Policy validation error (fail-closed): {e}")
+        return ToolResult(
+            success=False, result=None,
+            error=f"Policy validation failed: {e}",
+            metadata={"policy_error": str(e)}
+        )
+
+    return None
+
+
+def create_snapshot(
+    executor: ToolExecutor,
+    tool_name: str,
+    params: Dict[str, Any],
+    context: Dict[str, Any],
+) -> Any:
+    """Create a rollback snapshot if applicable. Returns snapshot or None."""
+    if not executor.rollback_manager or not should_snapshot(executor, tool_name, params):
+        return None
+
+    try:
+        snapshot = executor.rollback_manager.create_snapshot(
+            action={"tool": tool_name, "params": params},
+            context=context, strategy_name="file"
+        )
+        logger.debug(f"Created snapshot {snapshot.id} for tool {tool_name}")
+        try:
+            from src.observability.rollback_logger import log_rollback_snapshot
+            log_rollback_snapshot(snapshot, workflow_execution_id=context.get("workflow_id"))
+        except Exception as e:
+            logger.warning(f"Failed to persist rollback snapshot to DB: {e}")
+        return snapshot
+    except (TypeError, ValueError, OSError, AttributeError) as e:
+        logger.warning(f"Failed to create snapshot: {e}")
+        return None
+
+
+def execute_with_timeout(
+    executor: ToolExecutor,
+    tool: BaseTool,
+    params: Dict[str, Any],
+    timeout: int,
+    snapshot: Any,
+    tool_name: str,
+    context: Dict[str, Any],
+) -> ToolResult:
+    """Execute tool in thread pool with timeout and rollback handling."""
+    try:
+        acquire_concurrent_slot(executor)
+    except RateLimitError as e:
+        return ToolResult(success=False, result=None, error=str(e))
+
+    try:
+        start_time = time.time()
+        future = executor._executor.submit(execute_tool_internal, tool, params)
+
+        try:
+            result = future.result(timeout=timeout)
+            execution_time = time.time() - start_time
+
+            if result.metadata is None:
+                result.metadata = {}  # type: ignore[unreachable]
+            result.metadata["execution_time_seconds"] = execution_time
+
+            if not result.success and snapshot and executor.enable_auto_rollback:
+                handle_auto_rollback(executor, snapshot, tool_name, result, context)
+
+            return result
+
+        except concurrent.futures.TimeoutError:
+            future.cancel()
+            if snapshot and executor.enable_auto_rollback and executor.rollback_manager:
+                handle_timeout_rollback(executor, snapshot, context)
+            return ToolResult(
+                success=False, result=None,
+                error=f"Tool execution timed out after {timeout} seconds"
+            )
+
+    finally:
+        release_concurrent_slot(executor)

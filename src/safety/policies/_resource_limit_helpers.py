@@ -165,6 +165,31 @@ def validate_bool(name: str, value: Any) -> bool:
     return value
 
 
+def _build_params_from_legacy(
+    operation: Optional[str],
+    file_path: Optional[str],
+    context: Optional[Dict[str, Any]],
+    max_file_size_read: Optional[int],
+    max_file_size_write: Optional[int],
+    file_read_operations: Optional[Set[str]],
+    file_write_operations: Optional[Set[str]],
+    policy_name: Optional[str],
+) -> FileSizeCheckParams:
+    """Convert legacy positional arguments to FileSizeCheckParams."""
+    if any(arg is None for arg in [operation, file_path, context, policy_name]):
+        raise ValueError("Either params or all legacy args must be provided")
+    return FileSizeCheckParams(
+        operation=operation,  # type: ignore
+        file_path=file_path,  # type: ignore
+        context=context,  # type: ignore
+        max_file_size_read=max_file_size_read or 0,
+        max_file_size_write=max_file_size_write or 0,
+        file_read_operations=file_read_operations or set(),
+        file_write_operations=file_write_operations or set(),
+        policy_name=policy_name  # type: ignore
+    )
+
+
 def check_file_size(
     params: Optional[FileSizeCheckParams] = None,
     # Legacy positional parameters for backward compatibility
@@ -193,19 +218,11 @@ def check_file_size(
     Returns:
         SafetyViolation if file too large, None otherwise
     """
-    # Support both new and legacy calling styles
     if params is None:
-        if any(arg is None for arg in [operation, file_path, context, policy_name]):
-            raise ValueError("Either params or all legacy args must be provided")
-        params = FileSizeCheckParams(
-            operation=operation,  # type: ignore
-            file_path=file_path,  # type: ignore
-            context=context,  # type: ignore
-            max_file_size_read=max_file_size_read or 0,
-            max_file_size_write=max_file_size_write or 0,
-            file_read_operations=file_read_operations or set(),
-            file_write_operations=file_write_operations or set(),
-            policy_name=policy_name  # type: ignore
+        params = _build_params_from_legacy(
+            operation, file_path, context, max_file_size_read,
+            max_file_size_write, file_read_operations, file_write_operations,
+            policy_name,
         )
 
     try:

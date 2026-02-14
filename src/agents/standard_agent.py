@@ -58,6 +58,12 @@ from src.agents._standard_agent_helpers import (
     setup_execution as _setup_execution,
 )
 from src.agents._standard_agent_helpers import (
+    prepare_execution_prompt as _prepare_execution_prompt,
+)
+from src.agents._standard_agent_helpers import (
+    build_max_iterations_response as _build_max_iterations_response,
+)
+from src.agents._standard_agent_helpers import (
     track_failed_llm_call as _track_failed_llm_call,
 )
 from src.agents._standard_agent_helpers import (
@@ -67,7 +73,6 @@ from src.agents._standard_agent_helpers import (
     validate_safety_for_llm_call as _validate_safety,
 )
 from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
-from src.agents.constants import PROMPT_PREVIEW_LENGTH
 from src.agents.cost_estimator import estimate_cost
 from src.agents.llm import (  # M-04: Import from new location
     LLMError,
@@ -406,11 +411,7 @@ class StandardAgent(BaseAgent):
         self._conversation_turns: List[str] = []
 
         try:
-            prompt = self._render_prompt(input_data, context)
-            self._system_prompt = prompt
-            prompt_preview = prompt[-PROMPT_PREVIEW_LENGTH:].replace('\n', ' ').strip()
-            logger.info("[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), prompt_preview)
-
+            prompt = _prepare_execution_prompt(self, input_data, context)
             max_iterations = self.config.agent.safety.max_tool_calls_per_execution
             max_execution_time = self.config.agent.safety.max_execution_time_seconds
 
@@ -435,12 +436,9 @@ class StandardAgent(BaseAgent):
                 total_cost = iteration_result["total_cost"]
                 tool_calls_made = iteration_result["tool_calls_made"]
 
-            return _build_final_response(  # type: ignore[no-any-return]
-                self, output=llm_response.content if llm_response else "",
-                reasoning=extract_reasoning(llm_response.content) if llm_response else None,
-                tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
-                start_time=start_time, error="Max tool calling iterations reached",
-                metadata={"iterations": max_iterations}
+            return _build_max_iterations_response(  # type: ignore[no-any-return]
+                self, llm_response, tool_calls_made, total_tokens, total_cost,
+                start_time, max_iterations
             )
 
         except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:
@@ -469,11 +467,7 @@ class StandardAgent(BaseAgent):
         self._conversation_turns = []  # Redefinition is intentional for async path
 
         try:
-            prompt = self._render_prompt(input_data, context)
-            self._system_prompt = prompt
-            prompt_preview = prompt[-PROMPT_PREVIEW_LENGTH:].replace('\n', ' ').strip()
-            logger.info("[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), prompt_preview)
-
+            prompt = _prepare_execution_prompt(self, input_data, context)
             max_iterations = self.config.agent.safety.max_tool_calls_per_execution
             max_execution_time = self.config.agent.safety.max_execution_time_seconds
 
@@ -498,12 +492,9 @@ class StandardAgent(BaseAgent):
                 total_cost = iteration_result["total_cost"]
                 tool_calls_made = iteration_result["tool_calls_made"]
 
-            return _build_final_response(  # type: ignore[no-any-return]
-                self, output=llm_response.content if llm_response else "",
-                reasoning=extract_reasoning(llm_response.content) if llm_response else None,
-                tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
-                start_time=start_time, error="Max tool calling iterations reached",
-                metadata={"iterations": max_iterations}
+            return _build_max_iterations_response(  # type: ignore[no-any-return]
+                self, llm_response, tool_calls_made, total_tokens, total_cost,
+                start_time, max_iterations
             )
 
         except (LLMError, ToolExecutionError, PromptRenderError, ConfigValidationError, RuntimeError, ValueError, TimeoutError) as e:

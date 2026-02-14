@@ -681,6 +681,29 @@ def build_extra_metadata(
     return extra_metadata if extra_metadata else None
 
 
+def track_agent_start_and_emit(
+    backend: Any,
+    emit_event_fn: Any,
+    agent_id: str,
+    stage_id: str,
+    agent_name: str,
+    sanitized_config: Any,
+    start_time: "datetime",
+    input_data: Any,
+) -> None:
+    """Record agent start in backend and emit event."""
+    backend.track_agent_start(
+        agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
+        agent_config=sanitized_config, start_time=start_time, input_data=input_data
+    )
+    emit_event_fn("agent_start", {
+        ObservabilityFields.AGENT_ID: agent_id,
+        ObservabilityFields.STAGE_ID: stage_id,
+        ObservabilityFields.AGENT_NAME: agent_name,
+        ObservabilityFields.START_TIME: start_time.isoformat(),
+    })
+
+
 def handle_workflow_success(
     backend: Any,
     alert_manager: Any,

@@ -516,6 +516,17 @@ async def execute_streaming_async_impl(
 # Context manager mixin
 # ---------------------------------------------------------------------------
 
+def bind_callable_attributes(instance: BaseLLM) -> None:
+    """Bind callable attributes (not methods) to reduce class method count."""
+    instance._build_bearer_auth_headers = lambda: build_bearer_auth_headers(instance)
+    instance._check_cache = lambda prompt, context, **kw: check_cache(instance, prompt, context, **kw)
+    instance._cache_response = lambda cache_key, llm_response: cache_response(instance, cache_key, llm_response)
+    instance._execute_and_parse = lambda response, start_time, cache_key: execute_and_parse(instance, response, start_time, cache_key)
+    instance._make_streaming_call_impl = lambda prompt, context=None, on_chunk=None, **kw: make_streaming_call_impl(instance, prompt, context, **kw)
+    instance._execute_streaming_impl = lambda start_time, response, on_chunk, cache_key: execute_streaming_impl(instance, start_time, response, on_chunk, cache_key)
+    instance._execute_streaming_async_impl = lambda start_time, response, on_chunk, cache_key: execute_streaming_async_impl(instance, start_time, response, on_chunk, cache_key)
+
+
 class LLMContextManagerMixin:
     """Mixin providing sync and async context manager support for LLM classes."""
 

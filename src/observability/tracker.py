@@ -24,6 +24,7 @@ from src.observability._tracker_helpers import (
     handle_stage_success as _handle_stage_success,
     handle_workflow_error as _handle_workflow_error,
     handle_workflow_success as _handle_workflow_success,
+    track_agent_start_and_emit as _track_agent_start_and_emit,
     sanitize_dict,
     LLMCallTrackingData,
     ToolCallTrackingData,
@@ -285,16 +286,10 @@ class ExecutionTracker(TrackerCollaborationMixin):
         sanitized_config = sanitize_config_for_display(agent_config)
 
         if self._session_stack:
-            self.backend.track_agent_start(
-                agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
-                agent_config=sanitized_config, start_time=start_time, input_data=input_data
+            _track_agent_start_and_emit(
+                self.backend, self._emit_event, agent_id, stage_id,
+                agent_name, sanitized_config, start_time, input_data
             )
-            self._emit_event(_EVENT_AGENT_START, {
-                ObservabilityFields.AGENT_ID: agent_id,
-                ObservabilityFields.STAGE_ID: stage_id,
-                ObservabilityFields.AGENT_NAME: agent_name,
-                ObservabilityFields.START_TIME: start_time.isoformat(),
-            })
             try:
                 yield agent_id
                 _handle_agent_success(
@@ -308,16 +303,10 @@ class ExecutionTracker(TrackerCollaborationMixin):
         else:
             with self.backend.get_session_context() as session:
                 self._session_stack.append(session)
-                self.backend.track_agent_start(
-                    agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
-                    agent_config=sanitized_config, start_time=start_time, input_data=input_data
+                _track_agent_start_and_emit(
+                    self.backend, self._emit_event, agent_id, stage_id,
+                    agent_name, sanitized_config, start_time, input_data
                 )
-                self._emit_event(_EVENT_AGENT_START, {
-                    ObservabilityFields.AGENT_ID: agent_id,
-                    ObservabilityFields.STAGE_ID: stage_id,
-                    ObservabilityFields.AGENT_NAME: agent_name,
-                    ObservabilityFields.START_TIME: start_time.isoformat(),
-                })
                 try:
                     yield agent_id
                     _handle_agent_success(

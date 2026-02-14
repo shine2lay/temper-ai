@@ -19,6 +19,7 @@ from src.agents.constants import (
     ERROR_MSG_TOOL_PREFIX,
     FALLBACK_UNKNOWN_VALUE,
     OUTPUT_PREVIEW_LENGTH,
+    PROMPT_PREVIEW_LENGTH,
 )
 from src.agents.cost_estimator import estimate_cost
 from src.agents.llm import (
@@ -879,6 +880,35 @@ def make_stream_callback(agent: "StandardAgent") -> Optional[Callable]:
                 pass
 
     return combined_callback
+
+
+def prepare_execution_prompt(agent: "StandardAgent", input_data: Dict[str, Any], context: Any) -> str:
+    """Render prompt, set system prompt, and log preview. Returns the prompt."""
+    prompt = agent._render_prompt(input_data, context)
+    agent._system_prompt = prompt
+    prompt_preview = prompt[-PROMPT_PREVIEW_LENGTH:].replace('\n', ' ').strip()
+    logger.info("[%s] Prompt ready (%d chars) ...%s", agent.name, len(prompt), prompt_preview)
+    return prompt
+
+
+def build_max_iterations_response(
+    agent: "StandardAgent",
+    llm_response: Any,
+    tool_calls_made: List[Dict[str, Any]],
+    total_tokens: int,
+    total_cost: float,
+    start_time: float,
+    max_iterations: int,
+) -> Any:
+    """Build response when max tool calling iterations reached."""
+    return build_final_response(
+        agent,
+        output=llm_response.content if llm_response else "",
+        reasoning=extract_reasoning(llm_response.content) if llm_response else None,
+        tool_calls=tool_calls_made, tokens=total_tokens, cost=total_cost,
+        start_time=start_time, error="Max tool calling iterations reached",
+        metadata={"iterations": max_iterations}
+    )
 
 
 def estimate_cost_for_response(agent: "StandardAgent", llm_response: Any) -> float:

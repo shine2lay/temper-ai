@@ -607,56 +607,32 @@ def visualize_trace(
     return fig
 
 
-def main() -> int:
-    """CLI entry point."""
+def _build_arg_parser() -> "argparse.ArgumentParser":
+    """Build the CLI argument parser for trace visualization."""
     import argparse
 
     parser = argparse.ArgumentParser(
         description="Visualize execution trace as hierarchical Gantt chart"
     )
-    parser.add_argument(
-        "workflow_id",
-        nargs="?",
-        help="Workflow ID to visualize"
-    )
-    parser.add_argument(
-        "--file",
-        "-f",
-        help="Load trace from JSON file instead of database"
-    )
-    parser.add_argument(
-        "--latest",
-        "-l",
-        action="store_true",
-        help="Visualize latest workflow execution"
-    )
-    parser.add_argument(
-        "--output",
-        "-o",
-        help="Output HTML file path"
-    )
-    parser.add_argument(
-        "--no-tree",
-        action="store_true",
-        help="Disable tree structure characters"
-    )
-    parser.add_argument(
-        "--no-open",
-        action="store_true",
-        help="Don't auto-open browser"
-    )
+    parser.add_argument("workflow_id", nargs="?", help="Workflow ID to visualize")
+    parser.add_argument("--file", "-f", help="Load trace from JSON file instead of database")
+    parser.add_argument("--latest", "-l", action="store_true", help="Visualize latest workflow execution")
+    parser.add_argument("--output", "-o", help="Output HTML file path")
+    parser.add_argument("--no-tree", action="store_true", help="Disable tree structure characters")
+    parser.add_argument("--no-open", action="store_true", help="Don't auto-open browser")
+    return parser
 
-    args = parser.parse_args()
 
-    # Load trace data
+def main() -> int:
+    """CLI entry point."""
+    args = _build_arg_parser().parse_args()
+
     trace = _load_trace_data(args)
     if trace is None:
         return 1
 
-    # Print summary
     _print_trace_summary(trace)
 
-    # Visualize
     print("=" * CHART_SEPARATOR_WIDTH)
     print("Creating hierarchical Gantt chart...")
     print("=" * CHART_SEPARATOR_WIDTH)

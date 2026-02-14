@@ -305,7 +305,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             ValidationResult with violations if access denied
         """
         violations: List[SafetyViolation] = []
-        paths = self._extract_paths(action)
+        paths = extract_paths(action)
 
         for path in paths:
             normalized_path = self._normalize_path(path)
@@ -437,10 +437,6 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_IN_DENYLIST}
                 )
         return None
-
-    def _extract_paths(self, action: Dict[str, Any]) -> List[str]:
-        """Extract file paths from action. Delegates to helper."""
-        return extract_paths(action)
 
     def _normalize_path(self, path: str) -> str:
         """Normalize path for comparison. Delegates to helper."""

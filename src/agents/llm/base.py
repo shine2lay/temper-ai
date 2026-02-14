@@ -29,6 +29,7 @@ from src.agents.constants import (
 # Helper functions extracted to reduce class size
 from src.agents.llm._base_helpers import (
     LLMContextManagerMixin,
+    bind_callable_attributes as _bind_callable_attributes,
     build_bearer_auth_headers,
 )
 from src.agents.llm._base_helpers import (
@@ -255,13 +256,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         self._rate_limiter = rate_limiter
 
         # Callable attributes (not methods) to reduce class method count
-        self._build_bearer_auth_headers = lambda: build_bearer_auth_headers(self)
-        self._check_cache = lambda prompt, context, **kw: _check_cache(self, prompt, context, **kw)
-        self._cache_response = lambda cache_key, llm_response: _cache_response(self, cache_key, llm_response)
-        self._execute_and_parse = lambda response, start_time, cache_key: _execute_and_parse(self, response, start_time, cache_key)
-        self._make_streaming_call_impl = lambda prompt, context=None, on_chunk=None, **kw: _make_streaming_call_impl(self, prompt, context, **kw)
-        self._execute_streaming_impl = lambda start_time, response, on_chunk, cache_key: _execute_streaming_impl(self, start_time, response, on_chunk, cache_key)
-        self._execute_streaming_async_impl = lambda start_time, response, on_chunk, cache_key: _execute_streaming_async_impl(self, start_time, response, on_chunk, cache_key)
+        _bind_callable_attributes(self)
 
     @classmethod
     def reset_shared_circuit_breakers(cls) -> None:

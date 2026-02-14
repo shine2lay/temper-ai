@@ -1382,6 +1382,222 @@ def _run_radon_cc(src_dir: Path) -> dict:
         return {"available": False, "reason": str(e)[:200]}
 
 
+def _has_radon_suppression(source: str, func_lineno: int) -> bool:
+    """Check if a function has a comment suppressing radon CC detection.
+
+    Looks for comments like:
+    - # scanner: skip-radon
+    - # noqa: radon
+    on the line before or same line as the function definition.
+    """
+    if not source:
+        return False
+
+    lines = source.splitlines()
+    if not lines or func_lineno < 1 or func_lineno > len(lines):
+        return False
+
+    check_lines = []
+    if func_lineno > 1:
+        check_lines.append(lines[func_lineno - 2])
+    if func_lineno <= len(lines):
+        check_lines.append(lines[func_lineno - 1])
+
+    for line in check_lines:
+        line_lower = line.lower()
+        if ("scanner" in line_lower and "skip-radon" in line_lower) or \
+           ("noqa" in line_lower and "radon" in line_lower):
+            return True
+
+    return False
+
+
+def _find_function_node(
+    tree: ast.Module, func_name: str, lineno: int
+) -> "ast.FunctionDef | ast.AsyncFunctionDef | None":
+    """Find AST node for a function by name and line number."""
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if node.name == func_name and node.lineno == lineno:
+                return node
+    return None
+
+
+def _is_guard_clause_chain(func_node: ast.FunctionDef) -> bool:
+    """Detect functions inflated by sequential guard clauses.
+
+    False positive when: guard_count >= 5 AND guard_ratio >= 60%
+    of top-level statements AND max nesting <= 2.
+    """
+    MIN_GUARD_COUNT = 5  # noqa
+    top_stmts = func_node.body
+    total_stmts = len(top_stmts)
+    if total_stmts == 0:
+        return False
+
+    guard_count = 0
+    max_nesting = 0
+    for stmt in top_stmts:
+        max_nesting = max(max_nesting, _stmt_nesting_depth(stmt))
+        if _is_guard_stmt(stmt):
+            guard_count += 1
+
+    if max_nesting > 2:
+        return False
+    if guard_count < MIN_GUARD_COUNT:
+        return False
+    # guard_count / total_stmts >= 0.6 → guard_count * 10 >= total_stmts * 6
+    return guard_count * 10 >= total_stmts * 6
+
+
+def _is_guard_stmt(stmt: ast.stmt) -> bool:
+    """Check if a statement is a guard clause: if COND: return/raise."""
+    if not isinstance(stmt, ast.If):
+        return False
+    if stmt.orelse:
+        return False
+    if len(stmt.body) != 1:
+        return False
+    return isinstance(stmt.body[0], (ast.Return, ast.Raise))
+
+
+def _stmt_nesting_depth(node: ast.AST, depth: int = 0) -> int:
+    """Compute maximum nesting depth of a statement."""
+    max_depth = depth
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, (ast.If, ast.For, ast.While, ast.With, ast.Try)):
+            max_depth = max(max_depth, _stmt_nesting_depth(child, depth + 1))
+        else:
+            max_depth = max(max_depth, _stmt_nesting_depth(child, depth))
+    return max_depth
+
+
+def _has_compound_boolean_inflation(
+    func_node: ast.FunctionDef, radon_cc: int
+) -> bool:
+    """Detect functions inflated by compound boolean expressions.
+
+    False positive when: inflation >= 3 AND (radon_cc - inflation) < 11.
+    """
+    RADON_C_THRESHOLD = 11  # noqa
+    MIN_INFLATION = 3  # noqa
+    inflation = 0
+    for node in ast.walk(func_node):
+        if isinstance(node, ast.BoolOp):
+            inflation += len(node.values) - 1
+
+    if inflation < MIN_INFLATION:
+        return False
+    return (radon_cc - inflation) < RADON_C_THRESHOLD
+
+
+def _is_simple_type_dispatch(func_node: ast.FunctionDef) -> bool:
+    """Detect functions inflated by simple isinstance dispatch.
+
+    False positive when: isinstance_count >= 4 AND isinstance_ratio >= 50%
+    of all ifs AND all isinstance branch bodies have nesting depth <= 1.
+    """
+    MIN_ISINSTANCE_COUNT = 4  # noqa
+    all_ifs = []
+    isinstance_ifs = []
+
+    for node in ast.walk(func_node):
+        if not isinstance(node, ast.If):
+            continue
+        all_ifs.append(node)
+        if _test_is_isinstance(node.test):
+            isinstance_ifs.append(node)
+
+    if len(isinstance_ifs) < MIN_ISINSTANCE_COUNT:
+        return False
+    if len(all_ifs) == 0:
+        return False
+    # isinstance_count / all_ifs >= 0.5 → isinstance_count * 2 >= all_ifs
+    if len(isinstance_ifs) * 2 < len(all_ifs):
+        return False
+
+    # Check all isinstance branch bodies have shallow nesting
+    for if_node in isinstance_ifs:
+        for stmt in if_node.body:
+            if _stmt_nesting_depth(stmt) > 1:
+                return False
+    return True
+
+
+def _test_is_isinstance(test: ast.expr) -> bool:
+    """Check if an if-test is isinstance(...) or not isinstance(...)."""
+    if isinstance(test, ast.Call):
+        func = test.func
+        if isinstance(func, ast.Name) and func.id == "isinstance":
+            return True
+    if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+        return _test_is_isinstance(test.operand)
+    return False
+
+
+def _filter_radon_false_positives(
+    radon_cc: dict, src_dir: Path, file_cache: dict
+) -> dict:
+    """Post-process radon CC results to filter false positives.
+
+    Annotates each item with fp_reason (str or None) and returns
+    updated dict with filtered counts.
+    """
+    if not radon_cc.get("available") or not radon_cc.get("details"):
+        return radon_cc
+
+    details = radon_cc["details"]
+    total_raw = len(details)
+    filtered_count = 0
+
+    for item in details:
+        item["fp_reason"] = None
+        rel_path = item.get("file", "")
+        abs_path = str((src_dir.parent / rel_path).resolve())
+        cached = file_cache.get(abs_path)
+        if not cached:
+            continue
+
+        source, tree = cached
+        if not tree:
+            continue
+
+        func_name = item.get("name", "")
+        lineno = item.get("line", 0)
+
+        # Manual suppression first
+        if _has_radon_suppression(source, lineno):
+            item["fp_reason"] = "suppressed"
+            filtered_count += 1
+            continue
+
+        func_node = _find_function_node(tree, func_name, lineno)
+        if not func_node:
+            continue
+
+        complexity = item.get("complexity", 0)
+
+        if _is_guard_clause_chain(func_node):
+            item["fp_reason"] = "guard_clauses"
+            filtered_count += 1
+        elif _has_compound_boolean_inflation(func_node, complexity):
+            item["fp_reason"] = "compound_booleans"
+            filtered_count += 1
+        elif _is_simple_type_dispatch(func_node):
+            item["fp_reason"] = "type_dispatch"
+            filtered_count += 1
+
+    genuine = [d for d in details if d["fp_reason"] is None]
+    return {
+        "available": True,
+        "total_complex": len(genuine),
+        "total_raw": total_raw,
+        "filtered_count": filtered_count,
+        "details": details,
+        "filtered_details": genuine,
+    }
+
+
 def _run_radon_mi(src_dir: Path) -> dict:
     """Run radon maintainability index analysis."""
     try:
@@ -2698,7 +2914,13 @@ def compute_deterministic_score(
     # Radon CC complex items (C+ rating)
     radon_cc = static_analysis.get("radon_cc", {})
     if radon_cc.get("available"):
-        deduct("radon complex items (C+)", radon_cc.get("total_complex", 0), 0.5, 5)
+        filtered = radon_cc.get("filtered_count", 0)
+        label = (
+            f"radon complex items (C+, {filtered} FP filtered)"
+            if filtered
+            else "radon complex items (C+)"
+        )
+        deduct(label, radon_cc.get("total_complex", 0), 0.5, 5)
 
     # pip-audit findings (if available)
     pip_audit = static_analysis.get("pip_audit", {})
@@ -2911,6 +3133,12 @@ def main() -> None:
     static = dependent_results["static"]
     test_coverage = dependent_results["test_coverage"]
     test_quality = dependent_results["test_quality"]
+
+    # Post-process radon CC to filter false positives
+    if static.get("radon_cc", {}).get("available"):
+        static["radon_cc"] = _filter_radon_false_positives(
+            static["radon_cc"], src_dir, file_cache
+        )
 
     # Step 2: Compute deterministic score
     det_score = compute_deterministic_score(

@@ -12,6 +12,7 @@ import traceback
 import uuid
 from typing import Any, Dict, Optional, cast
 
+from src.compiler.executors.state_keys import StateKeys
 from src.constants.durations import SECONDS_PER_MINUTE
 from src.constants.retries import (
     DEFAULT_BACKOFF_MULTIPLIER,
@@ -48,9 +49,9 @@ _TRANSIENT_ERROR_TYPES: frozenset[str] = frozenset({
 
 # Reserved keys that must not be overwritten when unwrapping workflow_inputs
 _RESERVED_UNWRAP_KEYS: frozenset[str] = frozenset({
-    "stage_outputs", "current_stage", "workflow_id", "tracker",
-    "tool_registry", "config_loader", "visualizer", "show_details",
-    "detail_console", "workflow_inputs", "tool_executor", "stream_callback",
+    StateKeys.STAGE_OUTPUTS, StateKeys.CURRENT_STAGE, StateKeys.WORKFLOW_ID, StateKeys.TRACKER,
+    StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER, StateKeys.SHOW_DETAILS,
+    StateKeys.DETAIL_CONSOLE, StateKeys.WORKFLOW_INPUTS, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
 })
 
 
@@ -155,19 +156,19 @@ def _build_error_result(agent_name: str, e: Exception, duration: float) -> Dict[
         )
 
     return {
-        "agent_name": agent_name,
-        "output_data": {
-            "output": "",
-            "error": error_message,
-            "error_type": error_type,
-            "traceback": error_traceback,
+        StateKeys.AGENT_NAME: agent_name,
+        StateKeys.OUTPUT_DATA: {
+            StateKeys.OUTPUT: "",
+            StateKeys.ERROR: error_message,
+            StateKeys.ERROR_TYPE: error_type,
+            StateKeys.TRACEBACK: error_traceback,
         },
-        "status": "failed",
-        "metrics": {
-            "tokens": 0,
-            "cost_usd": 0.0,
-            "duration_seconds": duration,
-            "tool_calls": 0,
+        StateKeys.STATUS: "failed",
+        StateKeys.METRICS: {
+            StateKeys.TOKENS: 0,
+            StateKeys.COST_USD: 0.0,
+            StateKeys.DURATION_SECONDS: duration,
+            StateKeys.TOOL_CALLS: 0,
         },
     }
 
@@ -219,13 +220,13 @@ def run_agent(
 
     # Unwrap workflow_inputs to top level so agents see custom fields.
     # Filter out reserved keys to prevent user inputs from overwriting framework state.
-    wi = {k: v for k, v in state_dict.get("workflow_inputs", {}).items()
+    wi = {k: v for k, v in state_dict.get(StateKeys.WORKFLOW_INPUTS, {}).items()
           if k not in _RESERVED_UNWRAP_KEYS}
     input_data = {
         **state_dict,
         **wi,
-        "stage_outputs": state_dict.get("stage_outputs", {}),
-        "current_stage_agents": dict(prior_agent_outputs),
+        StateKeys.STAGE_OUTPUTS: state_dict.get(StateKeys.STAGE_OUTPUTS, {}),
+        StateKeys.CURRENT_STAGE_AGENTS: dict(prior_agent_outputs),
     }
 
     # Create execution context
@@ -251,8 +252,8 @@ def run_agent(
     if tracker:
         # Allowlist of known non-serializable/infrastructure keys
         _non_serializable_keys: frozenset[str] = frozenset({
-            'tracker', 'tool_registry', 'config_loader', 'visualizer',
-            'show_details', 'detail_console', 'tool_executor', 'stream_callback',
+            StateKeys.TRACKER, StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER,
+            StateKeys.SHOW_DETAILS, StateKeys.DETAIL_CONSOLE, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
         })
 
         tracking_input_data = {
@@ -269,13 +270,13 @@ def run_agent(
         ) as agent_id:
             context.agent_id = agent_id
 
-            input_data['tracker'] = tracker
+            input_data[StateKeys.TRACKER] = tracker
 
             response = agent.execute(input_data, context)
 
             tracker.set_agent_output(
                 agent_id=agent_id,
-                output_data={"output": response.output},
+                output_data={StateKeys.OUTPUT: response.output},
                 reasoning=response.reasoning,
                 total_tokens=response.tokens,
                 estimated_cost_usd=response.estimated_cost_usd,
@@ -287,21 +288,21 @@ def run_agent(
 
     duration = time.time() - start_time
     return {
-        "agent_name": agent_name,
-        "output_data": {
-            "output": response.output,
-            "reasoning": response.reasoning,
-            "confidence": response.confidence,
-            "tokens": response.tokens,
-            "cost_usd": response.estimated_cost_usd,
-            "tool_calls": response.tool_calls if response.tool_calls else [],
+        StateKeys.AGENT_NAME: agent_name,
+        StateKeys.OUTPUT_DATA: {
+            StateKeys.OUTPUT: response.output,
+            StateKeys.REASONING: response.reasoning,
+            StateKeys.CONFIDENCE: response.confidence,
+            StateKeys.TOKENS: response.tokens,
+            StateKeys.COST_USD: response.estimated_cost_usd,
+            StateKeys.TOOL_CALLS: response.tool_calls if response.tool_calls else [],
         },
-        "status": "success",
-        "metrics": {
-            "tokens": response.tokens or 0,
-            "cost_usd": response.estimated_cost_usd or 0.0,
-            "duration_seconds": duration,
-            "tool_calls": len(response.tool_calls) if response.tool_calls else 0,
+        StateKeys.STATUS: "success",
+        StateKeys.METRICS: {
+            StateKeys.TOKENS: response.tokens or 0,
+            StateKeys.COST_USD: response.estimated_cost_usd or 0.0,
+            StateKeys.DURATION_SECONDS: duration,
+            StateKeys.TOOL_CALLS: len(response.tool_calls) if response.tool_calls else 0,
         },
     }
 
@@ -354,23 +355,23 @@ def retry_agent_with_backoff(
             agent_factory_cls=agent_factory_cls,
         )
 
-        if last_result["status"] == "success":
+        if last_result[StateKeys.STATUS] == "success":
             logger.info(
                 "Agent %s succeeded on retry attempt %d/%d in stage %s",
                 agent_name, attempt, max_retries, stage_name,
             )
-            last_result["metrics"]["retries"] = attempt
+            last_result[StateKeys.METRICS][StateKeys.RETRIES] = attempt
             return last_result
 
-        retry_error_type = last_result["output_data"].get("error_type", "")
+        retry_error_type = last_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR_TYPE, "")
         if not is_transient_error(retry_error_type):
             logger.warning(
                 "Agent %s retry %d/%d hit permanent error type '%s' in stage %s, "
                 "stopping retries: %s",
                 agent_name, attempt, max_retries, retry_error_type, stage_name,
-                last_result["output_data"].get("error", ""),
+                last_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, ""),
             )
-            last_result["metrics"]["retries"] = attempt
+            last_result[StateKeys.METRICS][StateKeys.RETRIES] = attempt
             return last_result
 
     # All retries exhausted
@@ -379,7 +380,7 @@ def retry_agent_with_backoff(
         agent_name, max_retries, stage_name,
     )
     if last_result:
-        last_result["metrics"]["retries"] = max_retries
+        last_result[StateKeys.METRICS][StateKeys.RETRIES] = max_retries
     return last_result
 
 
@@ -404,13 +405,13 @@ def run_all_agents(
     agent_statuses: Dict[str, Any] = {}
     agent_metrics: Dict[str, Any] = {}
 
-    show_details = state.get("show_details", False)
-    detail_console = state.get("detail_console")
+    show_details = state.get(StateKeys.SHOW_DETAILS, False)
+    detail_console = state.get(StateKeys.DETAIL_CONSOLE)
     if show_details and detail_console:
         detail_console.print(f"\n[bold cyan]── Stage: {stage_name} ──[/bold cyan]")
 
     total_agents = len(agents)
-    prior_stages = list(state.get("stage_outputs", {}).keys())
+    prior_stages = list(state.get(StateKeys.STAGE_OUTPUTS, {}).keys())
     input_info = f"prior stages: {prior_stages}" if prior_stages else "workflow inputs only"
     logger.info("Stage '%s' starting sequential execution with %d agent(s) (%s)", stage_name, total_agents, input_info)
     for agent_idx, agent_ref in enumerate(agents):
@@ -427,19 +428,19 @@ def run_all_agents(
             agent_factory_cls=agent_factory_cls,
         )
 
-        agent_name = agent_result["agent_name"]
-        logger.info("Stage '%s' agent '%s' completed (%s)", stage_name, agent_name, agent_result["status"])
+        agent_name = agent_result[StateKeys.AGENT_NAME]
+        logger.info("Stage '%s' agent '%s' completed (%s)", stage_name, agent_name, agent_result[StateKeys.STATUS])
 
         # Print real-time progress if show_details enabled
         if show_details and detail_console:
             is_last = (agent_idx == total_agents - 1)
             connector = "└─" if is_last else "├─"
-            metrics = agent_result.get("metrics", {})
-            duration = metrics.get("duration_seconds", 0.0)
-            tokens = metrics.get("tokens", 0)
+            metrics = agent_result.get(StateKeys.METRICS, {})
+            duration = metrics.get(StateKeys.DURATION_SECONDS, 0.0)
+            tokens = metrics.get(StateKeys.TOKENS, 0)
 
-            if agent_result["status"] == "failed":
-                error_type = agent_result.get("output_data", {}).get("error_type", "error")
+            if agent_result[StateKeys.STATUS] == "failed":
+                error_type = agent_result.get(StateKeys.OUTPUT_DATA, {}).get(StateKeys.ERROR_TYPE, "error")
                 detail_console.print(
                     f"  {connector} [red]{agent_name} ✗[/red] ({duration:.1f}s) [{error_type}]"
                 )
@@ -449,11 +450,11 @@ def run_all_agents(
                 )
 
         # Store status with error details for failed agents
-        if agent_result["status"] == "failed":
+        if agent_result[StateKeys.STATUS] == "failed":
             agent_statuses[agent_name] = {
-                "status": "failed",
-                "error": agent_result["output_data"].get("error", ""),
-                "error_type": agent_result["output_data"].get("error_type", ""),
+                StateKeys.STATUS: "failed",
+                StateKeys.ERROR: agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, ""),
+                StateKeys.ERROR_TYPE: agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR_TYPE, ""),
             }
 
             policy = error_handling.on_agent_failure
@@ -461,23 +462,23 @@ def run_all_agents(
             if policy == "halt_stage":
                 logger.warning(
                     "Agent %s failed in stage %s (policy: halt_stage), stopping execution: %s",
-                    agent_name, stage_name, agent_result["output_data"].get("error", "")
+                    agent_name, stage_name, agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, "")
                 )
-                agent_outputs[agent_name] = agent_result["output_data"]
-                agent_metrics[agent_name] = agent_result["metrics"]
+                agent_outputs[agent_name] = agent_result[StateKeys.OUTPUT_DATA]
+                agent_metrics[agent_name] = agent_result[StateKeys.METRICS]
                 break
 
             elif policy == "skip_agent":
                 logger.warning(
                     "Agent %s failed in stage %s (policy: skip_agent), skipping: %s",
-                    agent_name, stage_name, agent_result["output_data"].get("error", "")
+                    agent_name, stage_name, agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, "")
                 )
-                agent_metrics[agent_name] = agent_result["metrics"]
+                agent_metrics[agent_name] = agent_result[StateKeys.METRICS]
                 continue
 
             elif policy == "retry_agent":
                 max_retries = error_handling.max_agent_retries
-                error_type = agent_result["output_data"].get("error_type", "")
+                error_type = agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR_TYPE, "")
 
                 if is_transient_error(error_type) and max_retries > 0:
                     retry_result = retry_agent_with_backoff(
@@ -494,47 +495,47 @@ def run_all_agents(
                         agent_name=agent_name,
                         agent_factory_cls=agent_factory_cls,
                     )
-                    agent_name = retry_result["agent_name"]
-                    if retry_result["status"] == "success":
-                        agent_statuses[agent_name] = retry_result["status"]
+                    agent_name = retry_result[StateKeys.AGENT_NAME]
+                    if retry_result[StateKeys.STATUS] == "success":
+                        agent_statuses[agent_name] = retry_result[StateKeys.STATUS]
                     else:
                         agent_statuses[agent_name] = {
-                            "status": "failed",
-                            "error": retry_result["output_data"].get("error", ""),
-                            "error_type": retry_result["output_data"].get("error_type", ""),
+                            StateKeys.STATUS: "failed",
+                            StateKeys.ERROR: retry_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, ""),
+                            StateKeys.ERROR_TYPE: retry_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR_TYPE, ""),
                         }
-                    agent_outputs[agent_name] = retry_result["output_data"]
-                    agent_metrics[agent_name] = retry_result["metrics"]
+                    agent_outputs[agent_name] = retry_result[StateKeys.OUTPUT_DATA]
+                    agent_metrics[agent_name] = retry_result[StateKeys.METRICS]
                 else:
                     if not is_transient_error(error_type):
                         logger.warning(
                             "Agent %s failed with permanent error type '%s' in stage %s "
                             "(policy: retry_agent, not retrying): %s",
                             agent_name, error_type, stage_name,
-                            agent_result["output_data"].get("error", ""),
+                            agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, ""),
                         )
                     else:
                         logger.warning(
                             "Agent %s failed in stage %s (policy: retry_agent, "
                             "max_retries=0): %s",
                             agent_name, stage_name,
-                            agent_result["output_data"].get("error", ""),
+                            agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, ""),
                         )
-                    agent_outputs[agent_name] = agent_result["output_data"]
-                    agent_metrics[agent_name] = agent_result["metrics"]
+                    agent_outputs[agent_name] = agent_result[StateKeys.OUTPUT_DATA]
+                    agent_metrics[agent_name] = agent_result[StateKeys.METRICS]
 
             elif policy == "continue_with_remaining":
                 logger.warning(
                     "Agent %s failed in stage %s (policy: continue_with_remaining), continuing: %s",
-                    agent_name, stage_name, agent_result["output_data"].get("error", "")
+                    agent_name, stage_name, agent_result[StateKeys.OUTPUT_DATA].get(StateKeys.ERROR, "")
                 )
-                agent_outputs[agent_name] = agent_result["output_data"]
-                agent_metrics[agent_name] = agent_result["metrics"]
+                agent_outputs[agent_name] = agent_result[StateKeys.OUTPUT_DATA]
+                agent_metrics[agent_name] = agent_result[StateKeys.METRICS]
 
         else:
             # Success
-            agent_statuses[agent_name] = agent_result["status"]
-            agent_outputs[agent_name] = agent_result["output_data"]
-            agent_metrics[agent_name] = agent_result["metrics"]
+            agent_statuses[agent_name] = agent_result[StateKeys.STATUS]
+            agent_outputs[agent_name] = agent_result[StateKeys.OUTPUT_DATA]
+            agent_metrics[agent_name] = agent_result[StateKeys.METRICS]
 
     return agent_outputs, agent_statuses, agent_metrics

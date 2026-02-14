@@ -66,9 +66,13 @@ Trigger Activated
     ↓
 Load Workflow Config (YAML)
     ↓
-Compile to LangGraph
+Compile to LangGraph (with conditional edges and loop gates)
     ↓
 For each Stage:
+    ↓
+    Conditional router evaluates skip_if / condition / default
+        ├─ Condition met → Execute stage
+        └─ Condition not met → Skip to next stage or END
     ↓
     Load Stage Config → Load Agent Configs
     ↓
@@ -84,6 +88,11 @@ For each Stage:
         ├─ Apply collaboration strategy module
         ├─ Resolve conflicts via resolution strategy
         └─ Produce unified output
+    ↓
+    If loops_back_to is set:
+        Loop gate increments stage_loop_counts
+        ├─ count <= max_loops AND condition met → Loop back to target stage
+        └─ Otherwise → Proceed to next stage or END
     ↓
     Pass output to next stage
     ↓
@@ -1434,7 +1443,7 @@ Runtime capability detection for engine features.
 **Standard features:**
 - `sequential_stages`: Sequential stage execution
 - `parallel_stages`: Parallel stage execution
-- `conditional_routing`: Conditional transitions
+- `conditional_routing`: Conditional transitions (condition/skip_if/loops_back_to)
 - `convergence_detection`: Convergence detection (M5+)
 - `dynamic_stage_injection`: Runtime stage injection (M5+)
 - `nested_workflows`: Nested workflow support

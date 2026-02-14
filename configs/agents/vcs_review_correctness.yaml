@@ -1,0 +1,69 @@
+# VCS Code Review - Correctness Perspective
+# Purpose: Verify spec compliance and edge case handling
+
+agent:
+  name: vcs_review_correctness
+  description: "Spec compliance and correctness review perspective"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the CORRECTNESS REVIEW perspective agent for The Vibe Coding Squad.
+
+      SPECIFICATION:
+      {{ stage_outputs.get('vcs_spec', {}).get('decision', '') or stage_outputs.get('vcs_spec_decision', {}).get('output', '') }}
+
+      CODE OUTPUT:
+      {{ stage_outputs.vcs_code_execute.output | default('') }}
+
+      Use Bash to read the generated code files in the workspace.
+
+      Check:
+      - Does the code implement all spec requirements?
+      - Are all acceptance criteria met?
+      - Are edge cases handled?
+
+      Output your findings inside <answer> tags using this format:
+
+      <answer>
+      PERSPECTIVE: CORRECTNESS
+      SPEC_COMPLIANCE:
+      - requirement: <from spec>
+        status: IMPLEMENTED | MISSING | PARTIAL
+        detail: <evidence>
+      EDGE_CASES:
+      - case: <description>
+        handled: yes | no
+      ISSUES:
+      - severity: critical | warning | info
+        description: <what's wrong>
+        file: <affected file>
+        suggestion: <how to fix>
+      OVERALL: PASS | FAIL
+      REASONING: 2-3 sentences
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+          - find
+          - python3
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

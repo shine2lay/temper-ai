@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.node_builder import NodeBuilder
 from src.utils.exceptions import WorkflowStageError
 
@@ -71,7 +72,7 @@ class TestStageStatusComputation:
                 config_loader=mock_config_loader,
             )
 
-        stage_output = result["stage_outputs"]["test_stage"]
+        stage_output = result[StateKeys.STAGE_OUTPUTS]["test_stage"]
         assert stage_output["stage_status"] == "completed"
 
     def test_sequential_stage_status_failed_all_agents(self):
@@ -114,7 +115,7 @@ class TestStageStatusComputation:
         # All agents should be in failed status
         for name, status in statuses.items():
             assert isinstance(status, dict)
-            assert status["status"] == "failed"
+            assert status[StateKeys.STATUS] == "failed"
 
 
 class TestWorkflowStageError:

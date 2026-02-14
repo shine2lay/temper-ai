@@ -1,0 +1,59 @@
+# Market Research Stage Configuration
+# Purpose: Web-search-powered market research using a single agent
+
+stage:
+  name: market_research
+  description: "Market research stage with web search tools"
+  version: "1.0"
+
+  # Agent configuration
+  agents:
+    - market_researcher
+
+  # Stage execution settings
+  execution:
+    max_iterations: 10
+    timeout_seconds: 1800
+
+  # Input/output schema
+  inputs:
+    topic:
+      type: string
+      required: true
+      description: "The market research topic"
+    focus_areas:
+      type: array
+      required: false
+      description: "Specific areas to focus research on"
+
+  outputs:
+    findings:
+      type: string
+      description: "Market research findings and analysis"
+    sources:
+      type: array
+      description: "List of sources referenced"
+    confidence_score:
+      type: number
+      description: "Confidence in the research findings (0-1)"
+
+  # Collaboration configuration
+  collaboration:
+    strategy: "sequential"
+    max_rounds: 1
+    convergence_threshold: 0.8
+
+  # Conflict resolution configuration
+  conflict_resolution:
+    strategy: "highest_confidence"
+
+  # Error handling
+  error_handling:
+    on_agent_failure: retry_agent
+    min_successful_agents: 1
+    max_agent_retries: 2
+
+  # Metadata
+  tags:
+    - market-research
+    - web-search

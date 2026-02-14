@@ -6,6 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.node_builder import NodeBuilder
 from src.compiler.stage_compiler import StageCompiler
 from src.compiler.state_manager import StateManager
@@ -342,7 +343,7 @@ class TestIntegrationWithRealGraph:
             assert result is not None, "Graph should return a result"
             assert "workflow_id" in result, "Result should contain workflow_id"
             assert "stage_outputs" in result, "Result should contain stage_outputs"
-            assert result["stage_outputs"]["test_stage"] == "output", \
+            assert result[StateKeys.STAGE_OUTPUTS]["test_stage"] == "output", \
                 "Stage should produce expected output"
 
     def test_compile_sequential_flow_execution(self):
@@ -394,14 +395,14 @@ class TestIntegrationWithRealGraph:
                 f"Expected sequential execution, got {execution_order}"
 
             # Verify all stages executed
-            assert "research" in result["stage_outputs"], "research stage should execute"
-            assert "analysis" in result["stage_outputs"], "analysis stage should execute"
-            assert "synthesis" in result["stage_outputs"], "synthesis stage should execute"
+            assert "research" in result[StateKeys.STAGE_OUTPUTS], "research stage should execute"
+            assert "analysis" in result[StateKeys.STAGE_OUTPUTS], "analysis stage should execute"
+            assert "synthesis" in result[StateKeys.STAGE_OUTPUTS], "synthesis stage should execute"
 
             # Verify outputs are correct
-            assert result["stage_outputs"]["research"] == "output_research"
-            assert result["stage_outputs"]["analysis"] == "output_analysis"
-            assert result["stage_outputs"]["synthesis"] == "output_synthesis"
+            assert result[StateKeys.STAGE_OUTPUTS]["research"] == "output_research"
+            assert result[StateKeys.STAGE_OUTPUTS]["analysis"] == "output_analysis"
+            assert result[StateKeys.STAGE_OUTPUTS]["synthesis"] == "output_synthesis"
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from __future__ import annotations
 import time
 import weakref
 from collections import deque
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import TYPE_CHECKING, Any, Dict, Optional
@@ -28,6 +29,7 @@ from src.tools._executor_helpers import (
     handle_timeout_rollback,
     release_concurrent_slot,
     should_snapshot,
+    validate_workspace_path,
     wait_for_approval,
 )
 from src.tools._executor_helpers import (
@@ -86,7 +88,8 @@ class ToolExecutor:
         rollback_manager: Optional[RollbackManager] = None,
         policy_engine: Optional[ActionPolicyEngine] = None,
         approval_workflow: Optional[ApprovalWorkflow] = None,
-        enable_auto_rollback: bool = True
+        enable_auto_rollback: bool = True,
+        workspace_root: Optional[str] = None,
     ):
         """
         Initialize tool executor.
@@ -108,6 +111,7 @@ class ToolExecutor:
         self.max_concurrent = max_concurrent
         self.rate_limit = rate_limit
         self.rate_window = rate_window
+        self.workspace_root: Optional[Path] = Path(workspace_root) if workspace_root else None
 
         # Safety components (optional)
         self.rollback_manager = rollback_manager
@@ -180,6 +184,15 @@ class ToolExecutor:
         except RateLimitError as e:
             return ToolResult(success=False, result=None, error=str(e))
 
+        # Workspace path validation (if workspace isolation is enabled)
+        if self.workspace_root is not None:
+            for key in ("path", "file_path", "directory", "filename", "output_path"):
+                if key in params:
+                    try:
+                        validate_workspace_path(str(params[key]), self.workspace_root)
+                    except ValueError as e:
+                        return ToolResult(success=False, result=None, error=str(e))
+
         # Get tool
         tool = self.registry.get(tool_name)
         if not tool:
@@ -245,6 +258,12 @@ class ToolExecutor:
                     context=context, strategy_name="file"
                 )
                 logger.debug(f"Created snapshot {snapshot.id} for tool {tool_name}")
+                # Persist snapshot to DB so rollback_events FK is satisfied
+                try:
+                    from src.observability.rollback_logger import log_rollback_snapshot
+                    log_rollback_snapshot(snapshot, workflow_execution_id=context.get("workflow_id"))
+                except Exception as e:
+                    logger.warning(f"Failed to persist rollback snapshot to DB: {e}")
         except (TypeError, ValueError, OSError, AttributeError) as e:
             logger.warning(f"Failed to create snapshot: {e}")
 

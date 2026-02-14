@@ -240,9 +240,12 @@ def sanitize_config_for_display(
         elif isinstance(obj, str):
             # Check if value contains secret patterns
             if detect_secret_patterns is not None:
-                is_secret, confidence = detect_secret_patterns(obj)
-                if is_secret and confidence == "high":
-                    return "***REDACTED***"
+                try:
+                    is_secret, confidence = detect_secret_patterns(obj)
+                    if is_secret and confidence == "high":
+                        return "***REDACTED***"
+                except ValueError:
+                    pass  # Skip detection for oversized inputs
             # Check if value is a secret reference
             if SecretReference is not None and SecretReference.is_reference(obj):
                 return "***SECRET_REF***"

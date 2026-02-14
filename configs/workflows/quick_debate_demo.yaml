@@ -1,0 +1,62 @@
+workflow:
+  name: quick_debate_demo
+  description: "Quick adversarial debate between optimist, skeptic, and pragmatist"
+  version: "1.0"
+  product_type: data_product
+
+  stages:
+    - name: quick_debate
+      stage_ref: configs/stages/quick_debate.yaml
+      inputs:
+        topic: "{{ workflow.inputs.topic }}"
+        context: "{{ workflow.inputs.context }}"
+
+      on_success:
+        action: continue
+      on_failure:
+        action: escalate
+
+  error_handling:
+    on_stage_failure: retry
+    max_stage_retries: 1
+    escalation_policy: GracefulDegradation
+    enable_rollback: false
+
+  inputs:
+    required:
+      - topic
+    optional:
+      - context
+
+  outputs:
+    - name: final_decision
+      description: "Consensus decision after debate"
+      source: quick_debate.decision
+
+    - name: debate_transcript
+      description: "Complete debate history"
+      source: quick_debate.debate_history
+
+    - name: convergence_info
+      description: "Convergence metrics"
+      source: quick_debate.convergence_info
+
+  execution:
+    timeout_seconds: 3600
+    parallel_execution: false
+    allow_early_termination: true
+
+  observability:
+    trace_all_decisions: true
+    track_collaboration_events: true
+    log_level: INFO
+
+  tags:
+    - debate
+    - decision-making
+    - multi-round
+
+  use_cases:
+    - "Architecture decisions"
+    - "Technology selection"
+    - "Strategic planning"

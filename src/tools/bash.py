@@ -300,6 +300,28 @@ class Bash(BaseTool):
         working_directory = kwargs.get("working_directory")
         timeout = kwargs.get("timeout", self.default_timeout)
 
+        # Sync workspace_root from config (may be updated after init by agent)
+        cfg_root = self.config.get("workspace_root")
+        if cfg_root:
+            resolved = Path(cfg_root).resolve()
+            if resolved != self.workspace_root:
+                logger.warning(
+                    "Bash workspace_root changed: %s -> %s",
+                    self.workspace_root, resolved,
+                )
+                self.workspace_root = resolved
+
+        # Sync allowed_commands from config (may be updated after init by agent)
+        cfg_cmds = self.config.get("allowed_commands")
+        if cfg_cmds is not None:
+            new_cmds = set(cfg_cmds)
+            if new_cmds != self.allowed_commands:
+                logger.warning(
+                    "Bash allowed_commands changed: %s -> %s",
+                    sorted(self.allowed_commands), sorted(new_cmds),
+                )
+                self.allowed_commands = new_cmds
+
         # --- Validate command ---
         if not command or not isinstance(command, str):
             return ToolResult(

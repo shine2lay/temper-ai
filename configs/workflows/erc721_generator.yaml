@@ -22,6 +22,8 @@ workflow:
     - name: fix
       stage_ref: configs/stages/erc721_fix.yaml
       conditional: true  # Only runs if test stage reports failures
+      loops_back_to: test
+      max_loops: 3
 
   # Error handling configuration
   error_handling:
@@ -95,6 +97,3 @@ workflow:
     - "ERC721 NFT project generation"
     - "Smart contract scaffolding"
     - "Automated Solidity development"
-
-  created_by: erc721-workflow
-  created_at: "2026-02-02"

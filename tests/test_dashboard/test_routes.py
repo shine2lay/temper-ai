@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.dashboard.app import create_app
+from src.observability.constants import ObservabilityFields
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -13,23 +14,23 @@ from src.dashboard.app import create_app
 SAMPLE_WORKFLOW = {
     "id": "wf-1",
     "workflow_name": "test-workflow",
-    "status": "completed",
-    "start_time": "2026-01-01T00:00:00",
-    "end_time": "2026-01-01T00:01:00",
+    ObservabilityFields.STATUS: "completed",
+    ObservabilityFields.START_TIME: "2026-01-01T00:00:00",
+    ObservabilityFields.END_TIME: "2026-01-01T00:01:00",
     "stages": [
         {
             "id": "st-1",
             "stage_name": "stage-1",
-            "status": "completed",
-            "input_data": {"key": "value"},
-            "output_data": {"result": 42},
+            ObservabilityFields.STATUS: "completed",
+            ObservabilityFields.INPUT_DATA: {"key": "value"},
+            ObservabilityFields.OUTPUT_DATA: {"result": 42},
         },
         {
             "id": "st-2",
             "stage_name": "stage-2",
-            "status": "completed",
-            "input_data": None,
-            "output_data": None,
+            ObservabilityFields.STATUS: "completed",
+            ObservabilityFields.INPUT_DATA: None,
+            ObservabilityFields.OUTPUT_DATA: None,
         },
     ],
 }
@@ -37,14 +38,14 @@ SAMPLE_WORKFLOW = {
 SAMPLE_STAGE = {
     "id": "st-1",
     "stage_name": "stage-1",
-    "status": "completed",
+    ObservabilityFields.STATUS: "completed",
     "agents": [],
 }
 
 SAMPLE_AGENT = {
     "id": "ag-1",
-    "agent_name": "researcher",
-    "status": "completed",
+    ObservabilityFields.AGENT_NAME: "researcher",
+    ObservabilityFields.STATUS: "completed",
     "llm_calls": [],
     "tool_calls": [],
 }
@@ -61,7 +62,7 @@ SAMPLE_TOOL_CALL = {
     "id": "tc-1",
     "tool_name": "web_search",
     "input_params": {"q": "test"},
-    "output_data": {"result": "ok"},
+    ObservabilityFields.OUTPUT_DATA: {"result": "ok"},
 }
 
 
@@ -70,8 +71,8 @@ def _make_backend():
     backend = MagicMock()
     backend.get_workflow.return_value = SAMPLE_WORKFLOW
     backend.list_workflows.return_value = [
-        {"id": "wf-1", "workflow_name": "test-workflow", "status": "completed"},
-        {"id": "wf-2", "workflow_name": "test-workflow-2", "status": "running"},
+        {"id": "wf-1", "workflow_name": "test-workflow", ObservabilityFields.STATUS: "completed"},
+        {"id": "wf-2", "workflow_name": "test-workflow-2", ObservabilityFields.STATUS: "running"},
     ]
     backend.get_stage.return_value = SAMPLE_STAGE
     backend.get_agent.return_value = SAMPLE_AGENT
@@ -198,29 +199,29 @@ class TestGetDataFlow:
         workflow = {
             "id": "wf-agents",
             "workflow_name": "agents-test",
-            "status": "completed",
+            ObservabilityFields.STATUS: "completed",
             "stages": [
                 {
                     "id": "st-a",
                     "stage_name": "research",
-                    "status": "completed",
-                    "input_data": None,
-                    "output_data": {"findings": "data"},
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.INPUT_DATA: None,
+                    ObservabilityFields.OUTPUT_DATA: {"findings": "data"},
                     "agents": [
                         {
                             "id": "ag-1",
-                            "agent_name": "analyst",
-                            "status": "completed",
+                            ObservabilityFields.AGENT_NAME: "analyst",
+                            ObservabilityFields.STATUS: "completed",
                             "agent_config_snapshot": {"model": "gpt-4"},
-                            "total_tokens": 500,
+                            ObservabilityFields.TOTAL_TOKENS: 500,
                             "estimated_cost_usd": 0.01,
                             "num_llm_calls": 2,
                             "num_tool_calls": 1,
                         },
                         {
                             "id": "ag-2",
-                            "agent_name": "reviewer",
-                            "status": "completed",
+                            ObservabilityFields.AGENT_NAME: "reviewer",
+                            ObservabilityFields.STATUS: "completed",
                             "agent_config_snapshot": None,
                         },
                     ],
@@ -234,9 +235,9 @@ class TestGetDataFlow:
                 {
                     "id": "st-b",
                     "stage_name": "decision",
-                    "status": "completed",
-                    "input_data": {"findings": "data"},
-                    "output_data": None,
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.INPUT_DATA: {"findings": "data"},
+                    ObservabilityFields.OUTPUT_DATA: None,
                     "agents": [],
                 },
             ],
@@ -255,7 +256,7 @@ class TestGetDataFlow:
         assert len(agent_nodes) == 2
         assert agent_nodes[0]["parent"] == "st-a"
         assert agent_nodes[0]["model"] == "gpt-4"
-        assert agent_nodes[0]["total_tokens"] == 500
+        assert agent_nodes[0][ObservabilityFields.TOTAL_TOKENS] == 500
         assert agent_nodes[1]["parent"] == "st-a"
         assert agent_nodes[1]["model"] is None
 
@@ -275,17 +276,17 @@ class TestGetDataFlow:
         workflow = {
             "id": "wf-skip",
             "workflow_name": "skip-test",
-            "status": "completed",
+            ObservabilityFields.STATUS: "completed",
             "stages": [
                 {
                     "id": "st-1",
                     "stage_name": "stage-1",
-                    "status": "completed",
-                    "input_data": None,
-                    "output_data": None,
+                    ObservabilityFields.STATUS: "completed",
+                    ObservabilityFields.INPUT_DATA: None,
+                    ObservabilityFields.OUTPUT_DATA: None,
                     "agents": [
-                        {"agent_name": "no-id-agent", "status": "completed"},
-                        {"id": "ag-ok", "agent_name": "good", "status": "completed"},
+                        {ObservabilityFields.AGENT_NAME: "no-id-agent", ObservabilityFields.STATUS: "completed"},
+                        {"id": "ag-ok", ObservabilityFields.AGENT_NAME: "good", ObservabilityFields.STATUS: "completed"},
                     ],
                 },
             ],
@@ -307,6 +308,158 @@ class TestGetDataFlow:
         resp = client_no_backend.get("/api/workflows/wf-1/data-flow")
         assert resp.status_code == 200
         assert resp.json() == {"nodes": [], "edges": []}
+
+    def test_data_flow_dag_edges(self):
+        """DAG depends_on produces correct edges instead of sequential."""
+        workflow = {
+            "id": "wf-dag",
+            "workflow_name": "dag-test",
+            ObservabilityFields.STATUS: "completed",
+            "workflow_config_snapshot": {
+                "workflow": {
+                    "stages": [
+                        {"name": "A", "stage_ref": "a.yaml"},
+                        {"name": "B", "stage_ref": "b.yaml", "depends_on": ["A"]},
+                        {"name": "C", "stage_ref": "c.yaml", "depends_on": ["A"]},
+                        {"name": "D", "stage_ref": "d.yaml", "depends_on": ["B", "C"]},
+                    ]
+                }
+            },
+            "stages": [
+                {"id": "st-a", "stage_name": "A", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: {"result": 1}},
+                {"id": "st-b", "stage_name": "B", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: {"b_out": 2}},
+                {"id": "st-c", "stage_name": "C", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: {"c_out": 3}},
+                {"id": "st-d", "stage_name": "D", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: None},
+            ],
+        }
+        backend = _make_backend()
+        backend.get_workflow.return_value = workflow
+        app = create_app(backend=backend)
+        c = TestClient(app)
+        resp = c.get("/api/workflows/wf-dag/data-flow")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        flow = [e for e in data["edges"] if e["type"] == "data_flow"]
+        # Diamond: A->B, A->C, B->D, C->D = 4 edges
+        assert len(flow) == 4
+
+        edge_pairs = {(e["from"], e["to"]) for e in flow}
+        assert ("st-a", "st-b") in edge_pairs
+        assert ("st-a", "st-c") in edge_pairs
+        assert ("st-b", "st-d") in edge_pairs
+        assert ("st-c", "st-d") in edge_pairs
+
+        # Verify data_keys populated from dependency output
+        a_to_b = [e for e in flow if e["from"] == "st-a" and e["to"] == "st-b"][0]
+        assert a_to_b["data_keys"] == ["result"]
+
+    def test_data_flow_dag_loop_back(self):
+        """Loop-back edge appears when stage re-executes."""
+        workflow = {
+            "id": "wf-loop",
+            "workflow_name": "loop-test",
+            ObservabilityFields.STATUS: "completed",
+            "workflow_config_snapshot": {
+                "workflow": {
+                    "stages": [
+                        {"name": "code", "stage_ref": "code.yaml"},
+                        {"name": "check", "stage_ref": "check.yaml",
+                         "depends_on": ["code"],
+                         "loops_back_to": "code", "max_loops": 2},
+                    ]
+                }
+            },
+            "stages": [
+                {"id": "st-code-1", "stage_name": "code", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: {"files": ["a.py"]}},
+                {"id": "st-check-1", "stage_name": "check", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: {"pass": False}},
+                # Loop iteration 2
+                {"id": "st-code-2", "stage_name": "code", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: {"files": ["a.py", "b.py"]}},
+                {"id": "st-check-2", "stage_name": "check", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: {"pass": True}},
+            ],
+        }
+        backend = _make_backend()
+        backend.get_workflow.return_value = workflow
+        app = create_app(backend=backend)
+        c = TestClient(app)
+        resp = c.get("/api/workflows/wf-loop/data-flow")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        flow = [e for e in data["edges"] if e["type"] == "data_flow"]
+        edge_pairs = {(e["from"], e["to"]) for e in flow}
+
+        # code-1 -> check-1 (depends_on)
+        assert ("st-code-1", "st-check-1") in edge_pairs
+        # check-1 -> code-2 (loop-back)
+        assert ("st-check-1", "st-code-2") in edge_pairs
+        # code-2 -> check-2 (depends_on, iteration 2)
+        assert ("st-code-2", "st-check-2") in edge_pairs
+
+        # Verify loop edge has 'loop' label
+        loop_edges = [e for e in flow if e["label"] == "loop"]
+        assert len(loop_edges) == 1
+        assert loop_edges[0]["from"] == "st-check-1"
+        assert loop_edges[0]["to"] == "st-code-2"
+
+    def test_data_flow_stage_missing_id(self):
+        """Stages without 'id' are gracefully skipped."""
+        workflow = {
+            "id": "wf-noid",
+            "workflow_name": "no-id-test",
+            ObservabilityFields.STATUS: "completed",
+            "stages": [
+                {"stage_name": "missing-id", ObservabilityFields.STATUS: "completed"},
+                {"id": "st-ok", "stage_name": "ok", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: None},
+            ],
+        }
+        backend = _make_backend()
+        backend.get_workflow.return_value = workflow
+        app = create_app(backend=backend)
+        c = TestClient(app)
+        resp = c.get("/api/workflows/wf-noid/data-flow")
+        assert resp.status_code == 200
+        data = resp.json()
+        # Only 1 stage node (missing-id skipped)
+        stage_nodes = [n for n in data["nodes"] if n["type"] == "stage"]
+        assert len(stage_nodes) == 1
+        assert stage_nodes[0]["id"] == "st-ok"
+
+    def test_data_flow_sequential_fallback_without_config(self):
+        """Without workflow_config_snapshot, falls back to sequential edges."""
+        workflow = {
+            "id": "wf-seq",
+            "workflow_name": "seq-test",
+            ObservabilityFields.STATUS: "completed",
+            "stages": [
+                {"id": "st-1", "stage_name": "first", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: {"x": 1}},
+                {"id": "st-2", "stage_name": "second", ObservabilityFields.STATUS: "completed",
+                 ObservabilityFields.OUTPUT_DATA: None},
+            ],
+        }
+        backend = _make_backend()
+        backend.get_workflow.return_value = workflow
+        app = create_app(backend=backend)
+        c = TestClient(app)
+        resp = c.get("/api/workflows/wf-seq/data-flow")
+        assert resp.status_code == 200
+        data = resp.json()
+
+        flow = [e for e in data["edges"] if e["type"] == "data_flow"]
+        assert len(flow) == 1
+        assert flow[0]["from"] == "st-1"
+        assert flow[0]["to"] == "st-2"
+        assert flow[0]["data_keys"] == ["x"]
 
 
 # ---------------------------------------------------------------------------
@@ -338,7 +491,7 @@ class TestGetAgent:
     def test_get_agent(self, client):
         resp = client.get("/api/agents/ag-1")
         assert resp.status_code == 200
-        assert resp.json()["agent_name"] == "researcher"
+        assert resp.json()[ObservabilityFields.AGENT_NAME] == "researcher"
 
     def test_agent_not_found(self, client):
         backend = _make_backend()

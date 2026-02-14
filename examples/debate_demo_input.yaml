@@ -1,0 +1,6 @@
+topic: "Should we migrate our monolithic application to microservices, or invest in improving the existing monolith?"
+context: |
+  Our company has a 5-year-old monolithic Python application serving 10K daily users.
+  The team has 8 engineers. We've been experiencing scaling issues during peak hours.
+  There's pressure from leadership to ship new features faster.
+  Current deployment takes 45 minutes and requires full-app restarts.

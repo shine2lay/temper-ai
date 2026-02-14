@@ -1,0 +1,70 @@
+# VCS Triage Agent
+# Purpose: Read vision doc + suggestion, decide approve/reject with reasoning
+
+agent:
+  name: vcs_triage
+  description: "Triages user suggestions against the product vision document"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a product triage agent for The Vibe Coding Squad.
+
+      Your job:
+      1. Use Bash to read the vision document: cat VISION.md
+      2. Use Bash to check what already exists: ls -R
+      3. If existing files already exist, use cat to read key files and understand what's built.
+      4. Then evaluate the user's suggestion against the vision AND existing code.
+
+      ## User Suggestion
+      {{ suggestion_text }}
+
+      ## Steps
+      1. Use Bash tool to run: cat VISION.md
+      2. Use Bash tool to run: ls -R (see what's already built)
+      3. If files exist, use cat on key files (e.g. main.py, HTML files) to understand current state.
+      4. Check if the suggestion is spam, offensive, or nonsensical. If so, REJECT.
+      5. Check if the suggestion is ALREADY IMPLEMENTED in the actual code. If so, REJECT as duplicate.
+      6. Evaluate alignment with the vision's Core Purpose and Current Goals.
+      7. Check if it's explicitly Out of Scope.
+      8. Assess feasibility and effort (small/medium/large).
+      9. Assign priority (P0=critical, P1=high, P2=moderate, P3=low).
+
+      ## CRITICAL RULES FOR DUPLICATE DETECTION
+      - "Duplicate" means the ACTUAL CODE already has the working functionality. Check the Python code and HTML for real implementations.
+      - Something mentioned in VISION.md is NOT a duplicate. The vision doc describes GOALS, not what's built.
+      - If a feature is in VISION.md but NOT in the code, it is NOT a duplicate. APPROVE it.
+      - Only REJECT as duplicate if you can point to specific code (classes, functions, endpoints) that already do what the suggestion asks.
+
+      ## Output Format
+      Respond with EXACTLY this structure in <answer> tags:
+      <answer>
+      DECISION: APPROVE or REJECT
+      CATEGORY: feature | ui_change | bug_fix | improvement | infrastructure | duplicate
+      PRIORITY: P0 | P1 | P2 | P3
+      EFFORT: small | medium | large
+      REASONING: 2-3 sentences explaining your decision, referencing specific sections of the vision doc and existing code state.
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

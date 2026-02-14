@@ -19,7 +19,7 @@ from typing import Any, Optional, Tuple
 
 from cryptography.fernet import Fernet
 
-from src.constants.sizes import SIZE_10KB
+from src.constants.sizes import SIZE_10KB, SIZE_100KB
 
 __all__ = [
     # Secret resolution
@@ -433,10 +433,11 @@ def detect_secret_patterns(text: str) -> Tuple[bool, Optional[str]]:
         (False, None)
     """
     # SECURITY: Input length validation (Defense in Depth against ReDoS)
-    if len(text) > SIZE_10KB:
+    # 100KB limit supports multi-stage workflows with accumulated context
+    if len(text) > SIZE_100KB:
         raise ValueError(
             f"Input too long for secret detection ({len(text)} bytes). "
-            f"Maximum {SIZE_10KB} bytes allowed. "
+            f"Maximum {SIZE_100KB} bytes allowed. "
             "This protects against ReDoS attacks."
         )
 

@@ -289,6 +289,8 @@
     line-height: 1.6;
     color: var(--text-primary);
     padding: 8px 12px;
+    max-height: 400px;
+    overflow-y: auto;
     overflow-wrap: break-word;
 }
 
@@ -636,4 +638,523 @@
     background: var(--accent);
     border-radius: 2px;
     transition: width 0.3s ease;
+}
+
+/* --- Debate Rounds Panel --- */
+.debate-panel-wrapper {
+    padding: 12px;
+    overflow-y: auto;
+    max-height: calc(100vh - 200px);
+}
+
+.debate-stage-section {
+    margin-bottom: 16px;
+}
+
+.debate-stage-header {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 10px;
+}
+
+.debate-rounds-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.debate-round-card {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.debate-round-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-panel-header);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.debate-round-title {
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* --- Consensus Summary --- */
+.consensus-summary {
+    padding: 6px 12px;
+    background: rgba(79, 195, 247, 0.05);
+    border-top: 1px solid var(--border-color);
+}
+
+.consensus-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    margin-bottom: 4px;
+}
+
+.consensus-majority {
+    font-weight: 600;
+    color: var(--accent);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+.consensus-majority.consensus-tie {
+    color: var(--warning);
+}
+
+.consensus-avg-conf {
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.consensus-agent-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-top: 4px;
+}
+
+.consensus-agent-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.consensus-agent-name {
+    font-size: 10px;
+    color: var(--text-muted);
+    width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.consensus-agent-bar-track {
+    flex: 1;
+    height: 4px;
+    background: var(--bg-input);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.consensus-agent-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.3s ease;
+}
+
+.consensus-agent-pct {
+    font-size: 10px;
+    font-family: var(--font-mono);
+    color: var(--text-muted);
+    width: 30px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.agent-output-card {
+    padding: 8px 12px;
+    border-top: 1px solid rgba(42, 58, 92, 0.3);
+}
+
+.agent-output-card:first-of-type {
+    border-top: 1px solid var(--border-color);
+}
+
+.agent-output-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.agent-output-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.agent-output-body {
+    max-height: 200px;
+}
+
+.reasoning-toggle {
+    font-size: 11px;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 4px 0;
+    user-select: none;
+}
+
+.reasoning-toggle:hover {
+    color: var(--accent);
+}
+
+.reasoning-content {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    background: var(--bg-input);
+    border-radius: var(--radius-sm);
+    margin-top: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+    line-height: 1.5;
+}
+
+.reasoning-content.hidden {
+    display: none;
+}
+
+/* --- Convergence Indicator --- */
+.convergence-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+}
+
+.convergence-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border-color);
+}
+
+.convergence-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
+    font-family: var(--font-mono);
+}
+
+.convergence-indicator.converged .convergence-line {
+    background: var(--success);
+}
+
+.convergence-indicator.converged .convergence-label {
+    color: var(--success);
+}
+
+/* --- Synthesis Card --- */
+.synthesis-card {
+    border: 1px solid var(--success);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: rgba(102, 187, 106, 0.05);
+}
+
+.synthesis-header {
+    padding: 6px 12px;
+    background: rgba(102, 187, 106, 0.12);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--success);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.synthesis-meta {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 6px 12px 0;
+}
+
+.synthesis-decision {
+    padding: 8px 12px;
+    max-height: 300px;
+}
+
+/* --- Stance Badges --- */
+.stance-badge {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+}
+
+.stance-agree {
+    background: rgba(102, 187, 106, 0.18);
+    color: var(--success);
+}
+
+.stance-disagree {
+    background: rgba(239, 83, 80, 0.18);
+    color: var(--error);
+}
+
+.stance-partial {
+    background: rgba(255, 167, 38, 0.18);
+    color: var(--warning);
+}
+
+/* Mini stance badge (single letter, used in agent rows) */
+.stance-badge-mini {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    font-size: 9px;
+    font-weight: 700;
+    flex-shrink: 0;
+    cursor: help;
+}
+
+.stance-badge-mini.stance-agree {
+    background: rgba(102, 187, 106, 0.25);
+    color: var(--success);
+}
+
+.stance-badge-mini.stance-disagree {
+    background: rgba(239, 83, 80, 0.25);
+    color: var(--error);
+}
+
+.stance-badge-mini.stance-partial {
+    background: rgba(255, 167, 38, 0.25);
+    color: var(--warning);
+}
+
+/* Stance distribution row in consensus summary */
+.consensus-stance-row {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 4px;
+}
+
+/* ===========================
+   Flowchart Node HTML Overlays
+   All classes prefixed fc- to avoid collisions
+   =========================== */
+
+/* --- Stage Header Overlay --- */
+.fc-stage-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 6px;
+    pointer-events: none;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+}
+
+.fc-stage-top {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.fc-stage-name {
+    font-size: 12px;
+    font-weight: 700;
+    color: #c0c8d8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+
+.fc-stage-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.fc-agent-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+/* Status dot color classes */
+.fc-dot-completed { background: var(--success); }
+.fc-dot-running   { background: var(--accent); animation: fc-pulse 1.5s ease-in-out infinite; }
+.fc-dot-failed    { background: var(--error); }
+.fc-dot-pending   { background: var(--text-muted); }
+.fc-dot-halted    { background: var(--warning); }
+.fc-dot-timeout   { background: var(--warning); }
+
+@keyframes fc-pulse {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(79, 195, 247, 0.4); }
+    50%      { opacity: 0.6; box-shadow: 0 0 6px 2px rgba(79, 195, 247, 0.3); }
+}
+
+/* Strategy / execution mode badges */
+.fc-stage-badge {
+    display: inline-block;
+    padding: 0 5px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    line-height: 16px;
+}
+
+.fc-badge-debate     { background: rgba(197, 148, 255, 0.2); color: #c594ff; }
+.fc-badge-dialogue   { background: rgba(79, 195, 247, 0.2);  color: #4fc3f7; }
+.fc-badge-parallel   { background: rgba(255, 167, 38, 0.2);  color: #ffa726; }
+.fc-badge-sequential { background: rgba(102, 187, 106, 0.2); color: #66bb6a; }
+
+/* Stage metrics row */
+.fc-stage-metrics {
+    display: flex;
+    gap: 6px;
+    font-size: 9px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+/* --- Agent Card Overlay --- */
+.fc-agent-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 4px 6px;
+    pointer-events: none;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    width: 168px;
+}
+
+.fc-agent-top {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 100%;
+}
+
+.fc-agent-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: #e0e0e0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 130px;
+}
+
+.fc-agent-model-badge {
+    font-size: 9px;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 140px;
+}
+
+/* Token mini-bar (prompt blue / completion green) */
+.fc-token-bar {
+    width: 90%;
+    height: 4px;
+    border-radius: 2px;
+    overflow: hidden;
+    background: rgba(42, 58, 92, 0.5);
+    display: flex;
+    margin: 1px 0;
+}
+
+.fc-token-prompt {
+    height: 100%;
+    background: var(--info);
+}
+
+.fc-token-completion {
+    height: 100%;
+    background: var(--success);
+}
+
+/* Agent bottom metrics row */
+.fc-agent-bottom {
+    display: flex;
+    gap: 6px;
+    font-size: 9px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+}
+
+/* --- Hover Tooltip (pure CSS) --- */
+/* Override pointer-events: none from fc-stage-header / fc-agent-card
+   when tooltip content is present */
+.fc-hoverable,
+.fc-stage-header.fc-hoverable,
+.fc-agent-card.fc-hoverable {
+    pointer-events: auto;
+    position: relative;
+    cursor: default;
+}
+
+.fc-tooltip {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1a2040;
+    border: 1px solid #2a3a5c;
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 10px;
+    color: #c0c8d8;
+    white-space: nowrap;
+    z-index: 100;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    pointer-events: none;
+    font-family: var(--font-mono);
+    line-height: 1.5;
+}
+
+.fc-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #2a3a5c;
+}
+
+.fc-hoverable:hover .fc-tooltip {
+    display: block;
+}
+
+/* Tooltip key-value rows */
+.fc-tip-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.fc-tip-key {
+    color: var(--text-muted);
+}
+
+.fc-tip-val {
+    color: #e0e0e0;
+    text-align: right;
 }

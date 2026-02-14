@@ -27,7 +27,6 @@ from src.cli.stream_events import (
     from_llm_chunk,
 )
 
-
 # Maximum characters to display per source in the streaming window
 _MAX_DISPLAY_CHARS = 1500
 

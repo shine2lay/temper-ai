@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
+from src.observability.constants import ObservabilityFields
 from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 
 
@@ -258,7 +259,7 @@ class TestTrackerEventBusIntegration:
         assert start_event.data["workflow_name"] == "test_wf"
 
         end_event = next(e for e in received_events if e.event_type == "workflow_end")
-        assert end_event.data["status"] == "completed"
+        assert end_event.data[ObservabilityFields.STATUS] == "completed"
 
     def test_workflow_failure_emits_end_with_failed_status(self, tracker, received_events):
         with pytest.raises(ValueError, match="boom"):
@@ -267,8 +268,8 @@ class TestTrackerEventBusIntegration:
 
         end_events = [e for e in received_events if e.event_type == "workflow_end"]
         assert len(end_events) == 1
-        assert end_events[0].data["status"] == "failed"
-        assert end_events[0].data["error_message"] == "boom"
+        assert end_events[0].data[ObservabilityFields.STATUS] == "failed"
+        assert end_events[0].data[ObservabilityFields.ERROR_MESSAGE] == "boom"
 
     def test_stage_emits_start_and_end(self, tracker, received_events):
         with tracker.track_workflow("wf", {}) as wf_id:
@@ -293,10 +294,10 @@ class TestTrackerEventBusIntegration:
         assert "agent_end" in types
 
         start_event = next(e for e in received_events if e.event_type == "agent_start")
-        assert start_event.data["agent_name"] == "agent1"
+        assert start_event.data[ObservabilityFields.AGENT_NAME] == "agent1"
 
         end_event = next(e for e in received_events if e.event_type == "agent_end")
-        assert end_event.data["status"] == "completed"
+        assert end_event.data[ObservabilityFields.STATUS] == "completed"
 
     def test_set_agent_output_emits_event(self, tracker, received_events):
         tracker.set_agent_output(
@@ -309,7 +310,7 @@ class TestTrackerEventBusIntegration:
         assert "agent_output" in types
 
         event = next(e for e in received_events if e.event_type == "agent_output")
-        assert event.data["agent_id"] == "ag-1"
+        assert event.data[ObservabilityFields.AGENT_ID] == "ag-1"
         assert event.data["confidence_score"] == 0.95
 
     def test_set_stage_output_emits_event(self, tracker, received_events):
@@ -405,5 +406,5 @@ class TestTrackerEventBusIntegration:
 
         event = next(e for e in received_events if e.event_type == "tool_call")
         assert event.data["tool_name"] == "web_search"
-        assert event.data["duration_seconds"] == 1.5
+        assert event.data[ObservabilityFields.DURATION_SECONDS] == 1.5
         assert event.agent_id == "ag-1"

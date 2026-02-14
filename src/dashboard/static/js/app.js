@@ -2,7 +2,7 @@
  * MAF Dashboard — Entry point.
  * Initializes data store, WebSocket, panel registry, and wires everything together.
  */
-import { DataStore } from './data-store.js';
+import { DataStore, ensureUTCString } from './data-store.js';
 import { WebSocketClient } from './websocket-client.js';
 import { PanelRegistry } from './panel-registry.js';
 import { ClientEventBus } from './event-bus.js';
@@ -60,14 +60,18 @@ document.addEventListener('DOMContentLoaded', async () => {
             const target = document.getElementById('panel-' + tab.dataset.view);
             if (target) target.classList.add('active');
 
-            // Re-render flowchart when its tab becomes visible (Cytoscape
-            // needs a visible container with non-zero dimensions to init)
+            // Re-render panels when their tab becomes visible
             if (tab.dataset.view === 'flowchart') {
                 const fp = registry.panels.get('flowchart');
-                if (fp) {
-                    fp.render();
-                    if (fp._cy) fp._cy.resize();
-                }
+                if (fp) fp.refresh();
+            }
+            if (tab.dataset.view === 'timeline') {
+                const tp = registry.panels.get('timeline');
+                if (tp && tp.refresh) tp.refresh();
+            }
+            if (tab.dataset.view === 'debate-rounds') {
+                const dp = registry.panels.get('debate-rounds');
+                if (dp && dp.refresh) dp.refresh();
             }
         });
     });
@@ -89,6 +93,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) { console.debug('FlowchartPanel not yet available'); }
 
     try {
+        const { DebateRoundsPanel } = await import('./panels/debate-rounds.js');
+        registry.register(DebateRoundsPanel, 'panel-debate-rounds');
+    } catch (e) { console.debug('DebateRoundsPanel not yet available'); }
+
+    try {
         const { StageDetailPanel } = await import('./panels/stage-detail.js');
         registry.register(StageDetailPanel, 'panel-stage-detail');
     } catch (e) { console.debug('StageDetailPanel not yet available'); }
@@ -102,6 +111,126 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { LLMInspectorPanel } = await import('./panels/llm-inspector.js');
         registry.register(LLMInspectorPanel, 'panel-llm-inspector');
     } catch (e) { console.debug('LLMInspectorPanel not yet available'); }
+
+    // --- Detail overlay management ---
+    const overlay = document.getElementById('detail-overlay');
+    const backdrop = document.getElementById('detail-backdrop');
+    const overlayClose = document.getElementById('detail-overlay-close');
+    const overlayTitle = document.getElementById('detail-overlay-title');
+
+    const panelMap = {
+        stage: 'panel-stage-detail',
+        agent: 'panel-agent-detail',
+        llmCall: 'panel-llm-inspector',
+        toolCall: 'panel-llm-inspector',
+    };
+    const titleMap = {
+        stage: 'Stage Detail',
+        agent: 'Agent Detail',
+        llmCall: 'LLM Inspector',
+        toolCall: 'Tool Inspector',
+    };
+
+    function showDetailOverlay(type) {
+        // Hide all detail panels
+        overlay.querySelectorAll('.detail-panel').forEach(p => {
+            p.classList.remove('visible');
+            p.classList.add('hidden');
+        });
+
+        // Show the matching panel
+        const panelId = panelMap[type];
+        if (panelId) {
+            const panel = document.getElementById(panelId);
+            if (panel) {
+                panel.classList.remove('hidden');
+                panel.classList.add('visible');
+            }
+        }
+
+        overlayTitle.textContent = titleMap[type] || 'Details';
+        overlay.classList.remove('hidden');
+        backdrop.classList.remove('hidden');
+
+        // Trigger transition on next frame
+        requestAnimationFrame(() => {
+            overlay.classList.add('visible');
+            backdrop.classList.add('visible');
+        });
+    }
+
+    function hideDetailOverlay() {
+        overlay.classList.remove('visible');
+        backdrop.classList.remove('visible');
+        setTimeout(() => {
+            overlay.classList.add('hidden');
+            backdrop.classList.add('hidden');
+        }, 250);
+    }
+
+    overlayClose.addEventListener('click', () => dataStore.clearSelection());
+    backdrop.addEventListener('click', () => dataStore.clearSelection());
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !overlay.classList.contains('hidden')) {
+            dataStore.clearSelection();
+        }
+    });
+
+    dataStore.addEventListener('change', (e) => {
+        if (e.detail?.changeType !== 'selection') return;
+        const { type, id } = e.detail;
+        if (!type || !id) {
+            hideDetailOverlay();
+        } else {
+            showDetailOverlay(type);
+        }
+    });
+
+    // --- Streaming button management (multi-agent) ---
+    const streamingBtns = document.getElementById('streaming-btns');
+
+    function onStreamingBtnClick(agentId) {
+        dataStore.selectedAgentId = agentId;
+        showDetailOverlay('llmCall');
+        dataStore._notify('stream');
+    }
+
+    dataStore.addEventListener('change', (e) => {
+        if (e.detail?.changeType !== 'stream') return;
+        updateStreamingBtns(dataStore);
+    });
+
+    function updateStreamingBtns(ds) {
+        // Collect currently active agent IDs
+        const activeIds = new Set();
+        for (const [agentId, entry] of ds.streamingContent) {
+            if (!entry.done) activeIds.add(agentId);
+        }
+
+        // Remove buttons for agents that are no longer streaming
+        for (const btn of [...streamingBtns.children]) {
+            if (!activeIds.has(btn.dataset.agentId)) {
+                btn.remove();
+            }
+        }
+
+        // Add buttons for new streaming agents (skip if already present)
+        const existing = new Set(
+            [...streamingBtns.children].map(b => b.dataset.agentId)
+        );
+        for (const agentId of activeIds) {
+            if (existing.has(agentId)) continue;
+            const agentData = ds.agents.get(agentId);
+            const agentName = agentData?.agent_name || agentData?.name || 'Agent';
+            const btn = document.createElement('button');
+            btn.className = 'streaming-btn';
+            btn.dataset.agentId = agentId;
+            btn.title = 'View LLM stream — ' + agentName;
+            btn.innerHTML = '<span class="streaming-dot"></span><span>' + agentName + '</span>';
+            btn.addEventListener('click', () => onStreamingBtnClick(agentId));
+            streamingBtns.appendChild(btn);
+        }
+    }
 });
 
 function updateHeader(dataStore) {
@@ -118,7 +247,7 @@ function updateHeader(dataStore) {
     if (wf.duration_seconds) {
         durEl.textContent = formatDuration(wf.duration_seconds);
     } else if (wf.start_time && wf.status === 'running') {
-        const start = new Date(wf.start_time);
+        const start = new Date(ensureUTCString(wf.start_time));
         const elapsed = (Date.now() - start.getTime()) / 1000;
         durEl.textContent = formatDuration(elapsed);
     }
@@ -222,7 +351,7 @@ function createEventEntry(timestamp, eventType, label) {
 
     const timeSpan = document.createElement('span');
     timeSpan.className = 'event-time';
-    timeSpan.textContent = new Date(timestamp).toLocaleTimeString();
+    timeSpan.textContent = new Date(ensureUTCString(timestamp)).toLocaleTimeString();
 
     const typeSpan = document.createElement('span');
     typeSpan.className = 'event-type';

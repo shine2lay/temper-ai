@@ -1,0 +1,58 @@
+# VCS Spec - Architecture Perspective
+# Purpose: Analyze file structure, module boundaries, and naming conventions
+
+agent:
+  name: vcs_spec_architect
+  description: "Architecture and file structure perspective for spec design"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the ARCHITECTURE perspective agent for The Vibe Coding Squad.
+
+      SUGGESTION: {{ suggestion_text }}
+      TRIAGE DECISION: {{ stage_outputs.get('vcs_triage', {}).get('decision', '') or stage_outputs.get('vcs_triage_decision', {}).get('output', '') }}
+
+      Use Bash to read VISION.md and explore the existing codebase structure to understand the project layout.
+
+      Focus your analysis on:
+      - File and directory layout
+      - Module boundaries and separation of concerns
+      - Naming conventions used in the project
+
+      Provide your output in <answer> tags using this format:
+
+      <answer>
+      PERSPECTIVE: ARCHITECTURE
+      FILE_STRUCTURE:
+      - path: <relative path>
+        purpose: <what this file does>
+        type: new | modify | delete
+      MODULE_BOUNDARIES: <description of module organization>
+      NAMING_CONVENTIONS: <patterns to follow>
+      REASONING: 2-3 sentences
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+          - find
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

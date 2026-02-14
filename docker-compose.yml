@@ -1,0 +1,17 @@
+services:
+  maf-server:
+    build:
+      context: .
+      target: server
+    ports:
+      - "8420:8420"
+    volumes:
+      - ./configs:/app/configs:ro
+      - maf-data:/app/.meta-autonomous
+    environment:
+      - MAF_CONFIG_ROOT=/app/configs
+      - MAF_DB_PATH=/app/.meta-autonomous/observability.db
+    restart: unless-stopped
+
+volumes:
+  maf-data:

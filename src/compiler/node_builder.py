@@ -225,9 +225,10 @@ class NodeBuilder:
             if execution:
                 return getattr(execution, 'agent_mode', 'sequential')
 
-        # Handle dict
+        # Handle dict — config may be {"stage": {"execution": ...}} or {"execution": ...}
         stage_dict = stage_config if isinstance(stage_config, dict) else {}
-        execution = stage_dict.get("execution", {})
+        inner = stage_dict.get("stage", stage_dict)
+        execution = inner.get("execution", {}) if isinstance(inner, dict) else {}
         if isinstance(execution, dict):
             return cast(str, execution.get("agent_mode", "sequential"))
 

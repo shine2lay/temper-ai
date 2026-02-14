@@ -12,6 +12,7 @@ import pytest
 
 from src.compiler.executors.base import ParallelRunner
 from src.compiler.executors.parallel import ParallelStageExecutor
+from src.compiler.executors.state_keys import StateKeys
 from src.strategies.base import SynthesisResult
 
 
@@ -164,7 +165,7 @@ class TestIterativeRetry:
         finally:
             sys.setrecursionlimit(initial_limit)
 
-        assert result["stage_outputs"]["test_stage"]["decision"] == "test_decision"
+        assert result[StateKeys.STAGE_OUTPUTS]["test_stage"][StateKeys.DECISION] == "test_decision"
         assert executor.parallel_runner.call_count == 100
 
     def test_pass_on_nth_retry(self):
@@ -192,8 +193,8 @@ class TestIterativeRetry:
         )
 
         # Should succeed on 3rd attempt
-        assert "test_stage" in result["stage_outputs"]
-        assert result["stage_outputs"]["test_stage"]["decision"] == "test_decision"
+        assert "test_stage" in result[StateKeys.STAGE_OUTPUTS]
+        assert result[StateKeys.STAGE_OUTPUTS]["test_stage"][StateKeys.DECISION] == "test_decision"
         # Synthesis was called 3 times
         assert executor.synthesis_coordinator.synthesize.call_count == 3
         assert executor.parallel_runner.call_count == 3

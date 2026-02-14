@@ -24,6 +24,8 @@ agent:
 
       {% if question is defined %}
       Decision Question: {{ question }}
+      {% elif topic is defined %}
+      Topic: {{ topic }}
       {% endif %}
       {% if options is defined %}
       Options: {{ options }}
@@ -33,12 +35,12 @@ agent:
       {% endif %}
 
   inference:
-    provider: ollama
-    model: qwen3-next:latest
-    base_url: http://localhost:11434
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
     temperature: 0.7
-    max_tokens: 1024
-    timeout_seconds: 600  # 10 minutes
+    max_tokens: 16384
+    timeout_seconds: 1800  # 30 minutes
 
   tools: []
 

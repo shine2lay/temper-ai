@@ -2,6 +2,18 @@
  * Reactive state container for dashboard data.
  * Uses EventTarget for change notification.
  */
+
+/**
+ * Normalize naive ISO-8601 strings (no timezone suffix) to explicit UTC
+ * by appending 'Z'. Strings that already have a timezone indicator are
+ * returned unchanged.
+ */
+export function ensureUTCString(isoString) {
+    if (!isoString || typeof isoString !== 'string') return isoString;
+    if (/[Zz]$/.test(isoString) || /[+-]\d{2}:\d{2}$/.test(isoString)) return isoString;
+    return isoString + 'Z';
+}
+
 export class DataStore extends EventTarget {
     constructor() {
         super();
@@ -46,6 +58,7 @@ export class DataStore extends EventTarget {
     }
 
     applyEvent(event) {
+        console.log('[DataStore] applyEvent:', event.event_type, event);
         this.events.push(event);
 
         const data = event.data || {};
@@ -54,17 +67,52 @@ export class DataStore extends EventTarget {
             case 'workflow_end':
                 if (this.workflow) Object.assign(this.workflow, data);
                 break;
-            case 'stage_start':
-                this.stages.set(data.stage_id || event.stage_id, data);
+            case 'stage_start': {
+                const stageId = data.stage_id || event.stage_id;
+                if (!data.id) data.id = stageId;
+                const existingStage = this.stages.get(stageId);
+                if (existingStage) {
+                    // Merge into existing entry — preserves rich snapshot fields
+                    Object.assign(existingStage, data);
+                } else {
+                    this.stages.set(stageId, data);
+                    // Add to workflow.stages array so flowchart can discover new stages
+                    if (this.workflow) {
+                        if (!this.workflow.stages) this.workflow.stages = [];
+                        this.workflow.stages.push(data);
+                    }
+                }
                 break;
+            }
             case 'stage_end': {
                 const stage = this.stages.get(data.stage_id || event.stage_id);
                 if (stage) Object.assign(stage, data);
                 break;
             }
-            case 'agent_start':
-                this.agents.set(data.agent_id || event.agent_id, data);
+            case 'agent_start': {
+                const agentId = data.agent_id || event.agent_id;
+                if (!data.id) data.id = agentId;
+                const existingAgent = this.agents.get(agentId);
+                if (existingAgent) {
+                    // Merge into existing entry — preserves rich snapshot fields
+                    // (llm_calls, tool_calls, tokens, cost, reasoning, config, etc.)
+                    Object.assign(existingAgent, data);
+                } else {
+                    this.agents.set(agentId, data);
+                    // Link new agent to its parent stage's agents array
+                    if (data.stage_id) {
+                        const parentStage = this.stages.get(data.stage_id);
+                        if (parentStage) {
+                            if (!parentStage.agents) parentStage.agents = [];
+                            const exists = parentStage.agents.some(a => a.id === agentId);
+                            if (!exists) {
+                                parentStage.agents.push(data);
+                            }
+                        }
+                    }
+                }
                 break;
+            }
             case 'agent_end':
             case 'agent_output': {
                 const agent = this.agents.get(data.agent_id || event.agent_id);
@@ -132,7 +180,16 @@ export class DataStore extends EventTarget {
         this._notify('selection', { type, id });
     }
 
+    clearSelection() {
+        this.selectedStageId = null;
+        this.selectedAgentId = null;
+        this.selectedLLMCallId = null;
+        this.selectedToolCallId = null;
+        this._notify('selection', { type: null, id: null });
+    }
+
     _notify(changeType, detail = null) {
+        console.log('[DataStore] _notify:', changeType, detail);
         this.dispatchEvent(new CustomEvent('change', {
             detail: { changeType, ...detail }
         }));

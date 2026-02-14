@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.dashboard.app import create_app
+from src.observability.constants import ObservabilityFields
 from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 
 # ---------------------------------------------------------------------------
@@ -17,7 +18,7 @@ from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBu
 SAMPLE_WORKFLOW = {
     "id": "wf-ws-1",
     "workflow_name": "ws-test",
-    "status": "running",
+    ObservabilityFields.STATUS: "running",
     "stages": [],
 }
 

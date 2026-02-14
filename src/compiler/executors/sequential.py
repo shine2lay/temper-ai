@@ -24,6 +24,7 @@ from src.compiler.executors._sequential_helpers import (
     run_all_agents,
 )
 from src.compiler.executors.base import StageExecutor
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.schemas import StageErrorHandlingConfig
 from src.utils.config_helpers import get_nested_value
 
@@ -77,8 +78,10 @@ class SequentialStageExecutor(StageExecutor):
             stage_config_dict = state.get("_stage_config_dict", {})
             with tracker.track_stage(
                 stage_name=stage_name, stage_config=stage_config_dict,
-                workflow_id=workflow_id, input_data=state.get("stage_outputs", {}),
+                workflow_id=workflow_id, input_data=state.get(StateKeys.STAGE_OUTPUTS, {}),
             ) as stage_id:
+                # Store stage_id for dialogue synthesis tracking
+                state[StateKeys.CURRENT_STAGE_ID] = stage_id
                 return run_all_agents(
                     executor=self, agents=agents, stage_id=stage_id,
                     stage_name=stage_name, workflow_id=workflow_id, state=state,
@@ -111,9 +114,9 @@ class SequentialStageExecutor(StageExecutor):
                 agent_output_list = [
                     AgentOutput(
                         agent_name=name,
-                        decision=data.get("output", ""),
-                        reasoning=data.get("reasoning", ""),
-                        confidence=data.get("confidence", PROB_VERY_HIGH),
+                        decision=data.get(StateKeys.OUTPUT, ""),
+                        reasoning=data.get(StateKeys.REASONING, ""),
+                        confidence=data.get(StateKeys.CONFIDENCE, PROB_VERY_HIGH),
                         metadata=data.get("metadata", {}),
                     )
                     for name, data in agent_outputs.items()
@@ -133,10 +136,14 @@ class SequentialStageExecutor(StageExecutor):
                     "Falling back to last agent output.", stage_name, e,
                 )
 
-        final_output = ""
-        if agent_outputs:
-            last_key = list(agent_outputs.keys())[-1]
-            final_output = agent_outputs[last_key].get("output", "")
+        # Concatenate all non-empty agent outputs (preserves all work
+        # when multiple agents contribute, e.g. foundation + integration specs).
+        parts = [
+            data.get(StateKeys.OUTPUT, "")
+            for data in agent_outputs.values()
+            if data.get(StateKeys.OUTPUT)
+        ]
+        final_output = "\n\n".join(parts) if parts else ""
         return final_output, None
 
     @staticmethod
@@ -147,37 +154,37 @@ class SequentialStageExecutor(StageExecutor):
         agent_metrics: Dict[str, Any], agents: list,
     ) -> None:
         """Build and store stage output in state."""
-        if not isinstance(state.get("stage_outputs"), dict):
-            state["stage_outputs"] = {}
+        if not isinstance(state.get(StateKeys.STAGE_OUTPUTS), dict):
+            state[StateKeys.STAGE_OUTPUTS] = {}
 
         stage_output: Dict[str, Any] = {
-            "output": final_output,
-            "agent_outputs": agent_outputs,
-            "agent_statuses": agent_statuses,
-            "agent_metrics": agent_metrics,
+            StateKeys.OUTPUT: final_output,
+            StateKeys.AGENT_OUTPUTS: agent_outputs,
+            StateKeys.AGENT_STATUSES: agent_statuses,
+            StateKeys.AGENT_METRICS: agent_metrics,
         }
         if synthesis_result:
             stage_output["synthesis_result"] = {
-                "method": synthesis_result.method,
-                "confidence": synthesis_result.confidence,
-                "votes": getattr(synthesis_result, "votes", {}),
+                StateKeys.METHOD: synthesis_result.method,
+                StateKeys.CONFIDENCE: synthesis_result.confidence,
+                StateKeys.VOTES: getattr(synthesis_result, "votes", {}),
                 "metadata": getattr(synthesis_result, "metadata", {}),
             }
 
         failed_count = sum(
             1 for s in agent_statuses.values()
-            if (isinstance(s, dict) and s.get("status") == "failed") or s == "failed"
+            if (isinstance(s, dict) and s.get(StateKeys.STATUS) == "failed") or s == "failed"
         )
         total_count = len(agents)
         if failed_count == total_count and total_count > 0:
-            stage_output["stage_status"] = "failed"
+            stage_output[StateKeys.STAGE_STATUS] = "failed"
         elif failed_count > 0:
-            stage_output["stage_status"] = "degraded"
+            stage_output[StateKeys.STAGE_STATUS] = "degraded"
         else:
-            stage_output["stage_status"] = "completed"
+            stage_output[StateKeys.STAGE_STATUS] = "completed"
 
-        state["stage_outputs"][stage_name] = stage_output
-        state["current_stage"] = stage_name
+        state[StateKeys.STAGE_OUTPUTS][stage_name] = stage_output
+        state[StateKeys.CURRENT_STAGE] = stage_name
 
     def execute_stage(
         self,
@@ -189,8 +196,8 @@ class SequentialStageExecutor(StageExecutor):
         halt_on_failure: bool = True
     ) -> Dict[str, Any]:
         """Execute stage with sequential agent execution. Returns updated state."""
-        tracker = state.get("tracker")
-        workflow_id = state.get("workflow_id", "unknown")
+        tracker = state.get(StateKeys.TRACKER)
+        workflow_id = state.get(StateKeys.WORKFLOW_ID, "unknown")
 
         agents, error_handling = self._parse_stage_config(stage_config, halt_on_failure)
 
@@ -210,6 +217,16 @@ class SequentialStageExecutor(StageExecutor):
             state, stage_name, final_output, synthesis_result,
             agent_outputs, agent_statuses, agent_metrics, agents,
         )
+
+        # Persist stage output to DB for dashboard visibility
+        stage_id = state.get(StateKeys.CURRENT_STAGE_ID)
+        if tracker and stage_id and hasattr(tracker, 'set_stage_output'):
+            try:
+                stage_out = state.get(StateKeys.STAGE_OUTPUTS, {}).get(stage_name)
+                if stage_out:
+                    tracker.set_stage_output(stage_id, stage_out)
+            except Exception:
+                logger.warning("Failed to persist stage output", exc_info=True)
 
         return state
 

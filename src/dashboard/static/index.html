@@ -9,6 +9,7 @@
     <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
     <script src="https://unpkg.com/cytoscape@3.30.4/dist/cytoscape.min.js"></script>
     <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+    <script src="https://unpkg.com/cytoscape-node-html-label@1.2.2/dist/cytoscape-node-html-label.min.js"></script>
     <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
     <script src="https://unpkg.com/marked@15.0.7/marked.min.js"></script>
     <script src="https://unpkg.com/dompurify@3.2.4/dist/purify.min.js"></script>
@@ -39,30 +40,42 @@
         <section id="content-area">
             <div id="visualization-area" class="panel panel-full-width">
                 <div class="panel-header viz-tabs">
-                    <button class="viz-tab active" data-view="timeline">Timeline</button>
-                    <button class="viz-tab" data-view="flowchart">Flowchart</button>
+                    <div class="viz-tabs-left">
+                        <button class="viz-tab active" data-view="flowchart">Flowchart</button>
+                        <button class="viz-tab" data-view="timeline">Timeline</button>
+                        <button class="viz-tab" data-view="debate-rounds">Debate</button>
+                    </div>
+                    <div id="streaming-btns" class="streaming-btns"></div>
                 </div>
                 <div class="panel-content">
-                    <div id="panel-timeline" class="viz-view active"></div>
-                    <div id="panel-flowchart" class="viz-view"></div>
+                    <div id="panel-flowchart" class="viz-view active"></div>
+                    <div id="panel-timeline" class="viz-view"></div>
+                    <div id="panel-debate-rounds" class="viz-view"></div>
                 </div>
             </div>
+        </section>
 
-            <div id="detail-area">
-                <div id="panel-stage-detail" class="panel">
+        <div id="detail-backdrop" class="detail-backdrop hidden"></div>
+        <aside id="detail-overlay" class="detail-overlay hidden">
+            <div class="detail-overlay-header">
+                <span id="detail-overlay-title">Details</span>
+                <button id="detail-overlay-close" aria-label="Close">&times;</button>
+            </div>
+            <div class="detail-overlay-body">
+                <div id="panel-stage-detail" class="panel detail-panel hidden">
                     <div class="panel-header">Stage Detail</div>
                     <div class="panel-content"></div>
                 </div>
-                <div id="panel-agent-detail" class="panel">
+                <div id="panel-agent-detail" class="panel detail-panel hidden">
                     <div class="panel-header">Agent Detail</div>
                     <div class="panel-content"></div>
                 </div>
-                <div id="panel-llm-inspector" class="panel">
+                <div id="panel-llm-inspector" class="panel detail-panel hidden">
                     <div class="panel-header">Inspector</div>
                     <div class="panel-content"></div>
                 </div>
             </div>
-        </section>
+        </aside>
     </main>
 
     <footer id="event-log" class="panel">

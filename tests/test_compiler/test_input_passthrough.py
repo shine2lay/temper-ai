@@ -6,6 +6,7 @@ survive LangGraph dataclass coercion and reach agents.
 import pytest
 
 from src.compiler.domain_state import WorkflowDomainState
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.langgraph_state import LangGraphWorkflowState
 from src.compiler.state_manager import StateManager
 
@@ -148,7 +149,7 @@ class TestInputPassthrough:
 
         assert input_data["problem_description"] == "test"
         assert input_data["technical_context"] == "ctx"
-        assert input_data["stage_outputs"] == {"stage1": {"output": "result"}}
+        assert input_data[StateKeys.STAGE_OUTPUTS] == {"stage1": {"output": "result"}}
 
     def test_parallel_helpers_unwrap(self):
         """Parallel executor unwraps workflow_inputs into input_data."""

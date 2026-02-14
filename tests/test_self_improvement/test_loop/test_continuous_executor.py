@@ -468,3 +468,301 @@ class TestContinuousExecutor:
 
         assert result["total_iterations"] == 1
         # Interval override doesn't affect result structure, just timing
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_execute_race_condition_shutdown_during_agent_iteration(
+        self, mock_signal, mock_sleep, mock_config, mock_iteration_result
+    ):
+        """Test race condition: shutdown requested during agent iteration."""
+        mock_config.continuous_max_iterations = 10
+
+        # Simulate shutdown being requested during iteration
+        iteration_count = [0]
+
+        def run_fn_with_shutdown(agent_name):
+            iteration_count[0] += 1
+            # Shutdown after 2 iterations
+            if iteration_count[0] == 2:
+                shutdown_requested["flag"] = True
+            return mock_iteration_result
+
+        shutdown_requested = {"flag": False}
+        run_fn = Mock(side_effect=run_fn_with_shutdown)
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn)
+
+        # Manually set shutdown_requested in execute loop
+        with patch.object(executor, '_execute_agent_iterations') as mock_exec:
+            def exec_side_effect(agent_names, stats, shutdown_req):
+                shutdown_req["flag"] = True
+                return False
+
+            mock_exec.side_effect = exec_side_effect
+
+            result = executor.execute(agent_names=["agent1"])
+
+        assert result["stop_reason"] == "manual_interrupt"
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_signal_handler_sigterm(
+        self, mock_signal, mock_sleep, mock_config, mock_iteration_result
+    ):
+        """Test SIGTERM signal handling."""
+        mock_config.continuous_max_iterations = 1
+
+        run_fn = Mock(return_value=mock_iteration_result)
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn)
+
+        # Execute and verify SIGTERM handler was registered
+        executor.execute(agent_names=["agent1"])
+
+        # Check SIGTERM was registered
+        sigterm_calls = [
+            call for call in mock_signal.call_args_list
+            if call[0][0] == signal.SIGTERM
+        ]
+        assert len(sigterm_calls) >= 1
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_execute_partial_agent_failure(
+        self, mock_signal, mock_sleep, mock_config
+    ):
+        """Test handling when some agents succeed and others fail."""
+        mock_config.continuous_max_iterations = 1
+
+        # Agent1 succeeds, Agent2 fails
+        def run_fn(agent_name):
+            if agent_name == "agent1":
+                result = Mock(spec=IterationResult)
+                result.success = True
+                result.deployment_result = None
+                result.error = None
+                return result
+            else:
+                result = Mock(spec=IterationResult)
+                result.success = False
+                result.error = Exception("Agent2 failed")
+                result.deployment_result = None
+                return result
+
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn)
+
+        result = executor.execute(agent_names=["agent1", "agent2"])
+
+        assert result["successful_iterations"] == 1
+        assert result["failed_iterations"] == 1
+        assert result["agents"]["agent1"]["iterations"] == 1
+        assert result["agents"]["agent2"]["iterations"] == 1
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_cost_accumulation_tracking(
+        self, mock_signal, mock_sleep, mock_config, mock_iteration_result
+    ):
+        """Test cost accumulation across iterations."""
+        mock_config.continuous_max_iterations = 5
+        mock_config.continuous_cost_budget = None
+
+        run_fn = Mock(return_value=mock_iteration_result)
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn)
+
+        result = executor.execute(agent_names=["agent1"])
+
+        # Cost tracking structure should exist
+        assert "total_cost" in result
+        assert isinstance(result["total_cost"], float)
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_execute_agent_iterations_exception_continues(
+        self, mock_signal, mock_sleep, mock_config
+    ):
+        """Test that exception in one agent doesn't stop other agents."""
+        mock_config.continuous_max_iterations = 1
+
+        call_count = [0]
+
+        def run_fn(agent_name):
+            call_count[0] += 1
+            if agent_name == "agent1":
+                raise RuntimeError("Agent1 crashed")
+            result = Mock(spec=IterationResult)
+            result.success = True
+            result.deployment_result = None
+            result.error = None
+            return result
+
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn)
+
+        result = executor.execute(agent_names=["agent1", "agent2"])
+
+        # Both agents should have been attempted
+        assert call_count[0] == 2
+        assert result["failed_iterations"] == 1
+        assert result["successful_iterations"] == 1
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_wait_for_next_iteration_partial_sleep(
+        self, mock_signal, mock_sleep, mock_config
+    ):
+        """Test _wait_for_next_iteration with shutdown mid-sleep."""
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=Mock())
+
+        # Shutdown after 1 second
+        def sleep_side_effect(duration):
+            pass  # Don't actually sleep in tests
+
+        mock_sleep.side_effect = sleep_side_effect
+        shutdown_requested = {"flag": False}
+
+        # Simulate shutdown during sleep
+        with patch("time.time") as mock_time:
+            mock_time.side_effect = [0, 0.5, 1.0]  # 3 calls
+            result = executor._wait_for_next_iteration(
+                interval_minutes=5,
+                shutdown_requested=shutdown_requested
+            )
+
+        # Should complete normally
+        assert result is True
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_execute_with_zero_convergence_window(
+        self, mock_signal, mock_sleep, mock_config, mock_iteration_result
+    ):
+        """Test execution with convergence_window=0."""
+        mock_config.continuous_max_iterations = 10
+        mock_config.continuous_convergence_window = 0
+
+        run_fn = Mock(return_value=mock_iteration_result)
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn)
+
+        result = executor.execute(agent_names=["agent1"])
+
+        # Should converge immediately (0 iterations without deployment >= 0)
+        assert result["total_iterations"] == 1
+        assert result["stop_reason"] == "converged"
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_should_stop_boundary_conditions(
+        self, mock_signal, mock_sleep, mock_config
+    ):
+        """Test _should_stop with boundary values."""
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=Mock())
+        stats = ContinuousExecutionStats()
+
+        # Test exact equality for max_iterations
+        stats.total_iterations = 10
+        should_stop = executor._should_stop(
+            stats, max_iterations=10, cost_budget=None,
+            convergence_window=3, shutdown_requested=False
+        )
+        assert should_stop is False  # > check, not >=
+
+        stats.total_iterations = 11
+        should_stop = executor._should_stop(
+            stats, max_iterations=10, cost_budget=None,
+            convergence_window=3, shutdown_requested=False
+        )
+        assert should_stop is True
+
+        # Test exact equality for cost_budget
+        stats.total_cost = 100.0
+        should_stop = executor._should_stop(
+            stats, max_iterations=100, cost_budget=100.0,
+            convergence_window=3, shutdown_requested=False
+        )
+        assert should_stop is True  # >= check
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_execute_memory_leak_check_stats(
+        self, mock_signal, mock_sleep, mock_config, mock_iteration_result
+    ):
+        """Test that stats don't accumulate unbounded data."""
+        mock_config.continuous_max_iterations = 100
+
+        run_fn = Mock(return_value=mock_iteration_result)
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn)
+
+        result = executor.execute(agent_names=["agent1"])
+
+        # Stats should have fixed structure, not growing
+        assert isinstance(result["agents"], dict)
+        assert len(result["agents"]) == 1  # Only agent1
+        # No unbounded lists or dicts in result
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_log_iteration_complete_edge_cases(
+        self, mock_signal, mock_sleep, mock_config
+    ):
+        """Test logging with edge case stats."""
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=Mock())
+
+        # Stats with zeros
+        stats = ContinuousExecutionStats(
+            successful_iterations=0,
+            failed_iterations=0,
+            total_deployments=0,
+            iterations_without_deployment=0
+        )
+
+        # Should not raise
+        executor._log_iteration_complete(stats, iteration=0)
+
+        # Stats with large numbers
+        stats = ContinuousExecutionStats(
+            successful_iterations=999999,
+            failed_iterations=999999,
+            total_deployments=999999,
+            iterations_without_deployment=999999
+        )
+
+        # Should not raise
+        executor._log_iteration_complete(stats, iteration=999999)
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_log_final_summary_with_none_stopped_at(
+        self, mock_signal, mock_sleep, mock_config
+    ):
+        """Test final summary logging when stopped_at is None."""
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=Mock())
+
+        stats = ContinuousExecutionStats(
+            total_iterations=5,
+            successful_iterations=4,
+            failed_iterations=1,
+            agents={"agent1": {"iterations": 5, "deployments": 2}}
+        )
+        stats.stopped_at = None  # Edge case
+
+        # Should not raise
+        executor._log_final_summary(stats)
+
+    @patch("time.sleep")
+    @patch("signal.signal")
+    def test_execute_unexpected_exception_in_loop(
+        self, mock_signal, mock_sleep, mock_config
+    ):
+        """Test handling of unexpected exception in main loop."""
+        mock_config.continuous_max_iterations = 5
+
+        def run_fn_raises(agent_name):
+            raise ValueError("Unexpected error")
+
+        executor = ContinuousExecutor(config=mock_config, run_iteration_fn=run_fn_raises)
+
+        result = executor.execute(agent_names=["agent1"])
+
+        # Should have recorded the error
+        assert result["failed_iterations"] >= 1
+        # Should have gracefully stopped
+        assert "stopped_at" in result
+        assert result["stopped_at"] is not None

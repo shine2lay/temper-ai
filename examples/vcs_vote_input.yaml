@@ -1,0 +1,21 @@
+# VCS Suggestion - Add voting/upvote feature
+# A new feature that doesn't exist: users can upvote suggestions
+
+suggestion_text: |
+  Add upvote/downvote functionality to suggestions.
+
+  1. Add vote_count integer field to the Suggestion model (default 0).
+
+  2. Add POST /api/suggestions/{id}/vote endpoint:
+     - Accepts JSON body with "direction": "up" or "down"
+     - Increments or decrements vote_count accordingly
+     - Returns the updated Suggestion object
+     - Returns 404 if suggestion not found
+     - Returns 400 if direction is invalid
+
+  3. Update the index.html to show vote counts:
+     - Display current vote count next to each suggestion
+     - Add up/down arrow buttons that call the vote endpoint
+     - Update the displayed count after a successful vote
+
+workspace_path: /home/shinelay/vibe-coding-squad

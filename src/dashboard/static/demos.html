@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAF Dashboard - Run Demos</title>
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/panels.css">
+    <style>
+        html, body {
+            overflow: auto;
+        }
+
+        #demos-main {
+            max-width: 1000px;
+            margin: 0 auto;
+            padding: 20px 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 16px;
+        }
+
+        .form-group:last-child {
+            margin-bottom: 0;
+        }
+
+        .form-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-select {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: var(--font-sans);
+            outline: none;
+            transition: border-color var(--transition);
+            cursor: pointer;
+        }
+
+        .form-select:focus {
+            border-color: var(--accent-dim);
+        }
+
+        .form-select:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .form-textarea {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            background: var(--bg-input);
+            color: var(--text-primary);
+            font-size: 13px;
+            font-family: var(--font-mono);
+            outline: none;
+            transition: border-color var(--transition);
+            resize: vertical;
+            min-height: 150px;
+            line-height: 1.5;
+        }
+
+        .form-textarea:focus {
+            border-color: var(--accent-dim);
+        }
+
+        .form-textarea::placeholder {
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        .demo-description {
+            padding: 12px;
+            background: rgba(79, 195, 247, 0.05);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-top: 8px;
+        }
+
+        .demo-description h4 {
+            margin: 0 0 8px 0;
+            color: var(--accent);
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .demo-description p {
+            margin: 4px 0;
+        }
+
+        .demo-meta {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid var(--border-color);
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .demo-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .demo-meta-item strong {
+            color: var(--text-secondary);
+            font-weight: 600;
+        }
+
+        .demo-meta-item span {
+            font-family: var(--font-mono);
+        }
+
+        .demo-tags {
+            display: flex;
+            gap: 4px;
+            flex-wrap: wrap;
+            margin-top: 8px;
+        }
+
+        .demo-tag {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 500;
+            background: rgba(79, 195, 247, 0.15);
+            color: var(--accent);
+        }
+
+        .btn-primary {
+            padding: 10px 24px;
+            border: none;
+            border-radius: var(--radius-sm);
+            background: var(--accent);
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background var(--transition);
+            font-family: var(--font-sans);
+            margin-top: 8px;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--accent-dim);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary.loading {
+            position: relative;
+        }
+
+        .btn-primary.loading::after {
+            content: '';
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: translateY(-50%) rotate(360deg); }
+        }
+
+        #status-message {
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        .status-success {
+            color: var(--success);
+            font-weight: 600;
+        }
+
+        .status-error {
+            color: var(--error);
+            font-weight: 600;
+        }
+
+        .status-info {
+            color: var(--text-secondary);
+        }
+
+        .execution-link {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: rgba(79, 195, 247, 0.1);
+            border: 1px solid var(--accent-dim);
+            border-radius: var(--radius-sm);
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background var(--transition), border-color var(--transition);
+        }
+
+        .execution-link:hover {
+            background: rgba(79, 195, 247, 0.2);
+            border-color: var(--accent);
+        }
+
+        .execution-id {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        .error-banner {
+            padding: 12px 16px;
+            background: rgba(239, 83, 80, 0.1);
+            border: 1px solid rgba(239, 83, 80, 0.3);
+            border-radius: var(--radius-sm);
+            color: var(--error);
+            font-size: 13px;
+            margin-bottom: 16px;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 16px;
+            transition: color var(--transition);
+        }
+
+        .back-link:hover {
+            color: var(--text-primary);
+        }
+
+        .back-link::before {
+            content: '←';
+            font-size: 16px;
+        }
+    </style>
+</head>
+<body>
+    <header id="dashboard-header">
+        <div class="header-left">
+            <a href="list.html" style="text-decoration:none;color:inherit">
+                <h1>MAF Dashboard</h1>
+            </a>
+            <span class="workflow-name">Run Demo Workflows</span>
+        </div>
+        <div class="header-right">
+            <a href="studio.html" class="demo-link-btn">Studio</a>
+        </div>
+    </header>
+
+    <main id="demos-main">
+        <a href="list.html" class="back-link">Back to Workflow List</a>
+
+        <div id="error-container"></div>
+
+        <div class="panel">
+            <div class="panel-header">Select Demo Workflow</div>
+            <div class="panel-content">
+                <div class="form-group">
+                    <label for="demo-selector">Demo Workflow</label>
+                    <select id="demo-selector" class="form-select" disabled>
+                        <option value="">Loading demos...</option>
+                    </select>
+                </div>
+
+                <div id="demo-description" class="demo-description hidden"></div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">Input Configuration</div>
+            <div class="panel-content">
+                <div class="form-group">
+                    <label for="input-config">YAML Input (or leave empty to use demo defaults)</label>
+                    <textarea
+                        id="input-config"
+                        class="form-textarea"
+                        rows="10"
+                        placeholder="# Leave empty to use demo defaults&#10;# Or provide custom YAML input:&#10;&#10;topic: AI trends in 2026"></textarea>
+                </div>
+
+                <button id="run-workflow-btn" class="btn-primary" disabled>
+                    Run Workflow
+                </button>
+            </div>
+        </div>
+
+        <div id="status-panel" class="panel hidden">
+            <div class="panel-header">Execution Status</div>
+            <div class="panel-content">
+                <div id="status-message"></div>
+            </div>
+        </div>
+    </main>
+
+    <script type="module" src="js/demos.js"></script>
+</body>
+</html>

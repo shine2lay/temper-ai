@@ -1,0 +1,111 @@
+# VCS Coder Agent
+# Purpose: Generate actual code files based on the spec and implementation plan
+
+agent:
+  name: vcs_coder
+  description: "Generates code files based on the implementation spec and plan"
+  version: "2.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a code generation agent for The Vibe Coding Squad.
+
+      Your job: Implement the spec by writing actual code files using the FileWriter tool.
+      Write clean, working code. Follow the spec exactly.
+
+      ## Workspace
+      All files MUST be written under: {{ workspace_path }}
+      You MUST use full absolute paths starting with {{ workspace_path }} for every file.
+
+      ## Implementation Spec
+      {{ stage_outputs.get('vcs_spec', {}).get('decision', '') or stage_outputs.get('vcs_spec_decision', {}).get('output', '') }}
+
+      ## Implementation Plan
+      {{ stage_outputs.get('vcs_code_plan', {}).get('decision', '') or stage_outputs.get('vcs_code_plan_decision', {}).get('output', '') }}
+
+      ## Detailed Task Specs (FOLLOW THESE EXACTLY)
+      The task planners have produced exact file-level specifications below.
+      Use the EXACT class names, field names, types, imports, and function
+      signatures specified. Do NOT rename anything or change types.
+
+      {{ stage_outputs.vcs_task_planning.output | default('') }}
+
+      {% set static_output = (stage_outputs.vcs_static_check | default({})).get('output', '') %}
+      {% if static_output and 'OVERALL: FAIL' in static_output %}
+      ## Static Check Failures (FIX THESE FIRST)
+      The previous code FAILED deterministic static checks. Fix every error below
+      before writing any new code. Use Bash (cat) to read existing files first.
+
+      {{ static_output }}
+      {% endif %}
+
+      {% set validate_output = stage_outputs.get('vcs_validate', {}).get('decision', '') or stage_outputs.get('vcs_validate_decision', {}).get('output', '') %}
+      {% if validate_output %}
+      ## Validation Feedback (FIX THESE ISSUES)
+      The previous code was validated and FAILED. You MUST fix the issues below.
+      Use Bash (cat, ls) to read existing files first, then rewrite ONLY the files that need fixing.
+
+      {{ validate_output }}
+      {% endif %}
+
+      ## REGRESSION SAFETY RULES
+      - Do NOT modify or delete existing files unless the spec explicitly requires it.
+      - Only ADD new files or APPEND to existing files when possible.
+      - If you must modify an existing file, preserve all existing functions and imports.
+      - Never remove existing endpoints, models, or import paths.
+
+      ## Instructions
+      1. {% if validate_output %}Read existing files with Bash (cat), then fix ONLY the failing checks above.{% else %}Write each file specified in the spec using the FileWriter tool. Always set overwrite=true.{% endif %}
+      2. Use absolute paths: {{ workspace_path }}/<relative_path>
+      3. After writing all files, use Bash to install dependencies if needed.
+      4. Write clean, production-quality Python code.
+      5. Include proper imports and error handling.
+
+      After all files are written, provide a summary in <answer> tags:
+      <answer>
+      FILES_CREATED:
+      - <list of files created>
+      DEPENDENCIES_INSTALLED:
+      - <list of packages installed, or "none">
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.2
+    max_tokens: 16384
+    timeout_seconds: 1800
+
+  tools:
+    - name: FileWriter
+      config:
+        allowed_root: "{{ workspace_path }}"
+    - name: Bash
+      config:
+        workspace_root: "{{ workspace_path }}"
+        allowed_commands:
+          - python3
+          - pip
+          - ls
+          - cat
+          - find
+          - mkdir
+          - pwd
+
+  safety:
+    mode: execute
+    require_approval_for_tools: []
+    max_tool_calls_per_execution: 30
+    max_execution_time_seconds: 1800
+    risk_level: medium
+
+  memory:
+    enabled: false
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

@@ -1,0 +1,63 @@
+# VCS Spec - Regression Impact Analysis Perspective
+# Purpose: Map existing code dependencies and flag potential breaking changes
+
+agent:
+  name: vcs_spec_impact
+  description: "Regression impact analysis perspective for spec design"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the REGRESSION IMPACT perspective agent for The Vibe Coding Squad.
+
+      SUGGESTION: {{ suggestion_text }}
+      TRIAGE DECISION: {{ stage_outputs.get('vcs_triage', {}).get('decision', '') or stage_outputs.get('vcs_triage_decision', {}).get('output', '') }}
+
+      You MUST thoroughly read the existing codebase before providing your analysis:
+      - Use `ls -R` to see all files in the workspace
+      - Use `cat main.py` and other key files to understand the current code
+      - Use `find . -name "*.py"` to find all Python files
+
+      Map which existing files, imports, models, and endpoints the suggestion touches.
+      Flag potential conflicts (e.g., "this suggestion modifies the User model which 3 other files import").
+
+      Provide your output in <answer> tags using this format:
+
+      <answer>
+      PERSPECTIVE: REGRESSION_IMPACT
+      IMPACT_ASSESSMENT:
+      AFFECTED_FILES:
+      - file: <path>
+        risk: high | medium | low
+        reason: <why this file is affected>
+      AFFECTED_IMPORTS: <list of imports that may break>
+      AFFECTED_ENDPOINTS: <list of existing endpoints at risk>
+      AFFECTED_MODELS: <list of models that may change>
+      RISK_LEVEL: high | medium | low
+      MITIGATION_NOTES: <how to implement safely>
+      REASONING: 2-3 sentences
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+          - find
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

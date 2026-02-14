@@ -1,0 +1,42 @@
+# VCS Code Execute Stage
+# Purpose: Single coder agent writes files based on spec and plan
+
+stage:
+  name: vcs_code_execute
+  description: "Generates code files based on the implementation spec and plan"
+  version: "1.0"
+
+  agents:
+    - vcs_coder
+
+  execution:
+    max_iterations: 1
+    convergence_threshold: 0.9
+    timeout_seconds: 1800
+
+  inputs:
+    workspace_path:
+      type: string
+      required: true
+
+  outputs:
+    coder_output:
+      type: string
+      description: "Summary of files created and dependencies installed"
+
+  collaboration:
+    strategy: "sequential"
+    max_rounds: 1
+    convergence_threshold: 0.8
+
+  conflict_resolution:
+    strategy: "highest_confidence"
+
+  safety:
+    mode: execute
+    risk_level: medium
+    require_approval: false
+
+  tags:
+    - vcs
+    - code

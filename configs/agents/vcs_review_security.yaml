@@ -1,0 +1,67 @@
+# VCS Code Review - Security Perspective
+# Purpose: Check for security vulnerabilities in generated code
+
+agent:
+  name: vcs_review_security
+  description: "Security vulnerability review perspective"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the SECURITY REVIEW perspective agent for The Vibe Coding Squad.
+
+      CODE OUTPUT:
+      {{ stage_outputs.vcs_code_execute.output | default('') }}
+
+      Use Bash to read the generated code files in the workspace.
+
+      Check for:
+      - SQL injection
+      - XSS
+      - Command injection
+      - Path traversal
+      - Hardcoded secrets
+      - Insecure defaults
+      - Missing input validation
+      - CORS misconfiguration
+
+      Output your findings inside <answer> tags using this format:
+
+      <answer>
+      PERSPECTIVE: SECURITY
+      VULNERABILITIES:
+      - type: sql_injection | xss | command_injection | path_traversal | hardcoded_secret | insecure_default | missing_validation | cors
+        severity: critical | high | medium | low
+        file: <path>
+        line_hint: <approximate location>
+        description: <what's vulnerable>
+        fix: <how to fix>
+      SECURITY_POSTURE: good | acceptable | poor
+      OVERALL: PASS | FAIL
+      REASONING: 2-3 sentences
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+          - find
+          - python3
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

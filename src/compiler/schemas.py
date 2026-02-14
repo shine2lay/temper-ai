@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.constants.durations import (
     SECONDS_PER_5_MINUTES,
-    SECONDS_PER_10_MINUTES,
+    SECONDS_PER_30_MINUTES,
     SECONDS_PER_HOUR,
     SECONDS_PER_MINUTE,
     SECONDS_PER_WEEK,
@@ -46,6 +46,7 @@ from src.schemas.agent_config import (  # noqa: E402, F401
     MeritTrackingConfig,
     MetadataConfig,
     ObservabilityConfig,
+    PreCommand,
     PromptConfig,
     RetryConfig,
     SafetyConfig,
@@ -144,7 +145,7 @@ class ToolConfig(BaseModel):
 class StageExecutionConfig(BaseModel):
     """Stage execution configuration."""
     agent_mode: Literal["parallel", "sequential", "adaptive"] = "parallel"
-    timeout_seconds: int = Field(default=SECONDS_PER_10_MINUTES, gt=0)
+    timeout_seconds: int = Field(default=SECONDS_PER_30_MINUTES, gt=0)
     adaptive_config: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -345,14 +346,55 @@ class StageConfig(BaseModel):
 class WorkflowStageReference(BaseModel):
     """Reference to a stage in a workflow."""
     name: str
-    stage_ref: str
+    stage_ref: Optional[str] = None
+    config_path: Optional[str] = Field(
+        default=None,
+        json_schema_extra={"deprecated": True},
+        description="Deprecated: use stage_ref instead",
+    )
     depends_on: List[str] = Field(default_factory=list)
     optional: bool = False
     skip_if: Optional[str] = None
     conditional: bool = False
     condition: Optional[str] = None
+    skip_to: Optional[str] = None
     loops_back_to: Optional[str] = None
+    loop_condition: Optional[str] = None
     max_loops: int = Field(default=MIN_RETRY_ATTEMPTS, gt=0)
+
+    @model_validator(mode='after')
+    def resolve_stage_ref(self) -> 'WorkflowStageReference':
+        """Resolve config_path alias to stage_ref with deprecation warning."""
+        if self.config_path and not self.stage_ref:
+            import warnings
+            warnings.warn(
+                "'config_path' is deprecated in WorkflowStageReference, use 'stage_ref'",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.stage_ref = self.config_path
+        if not self.stage_ref:
+            raise ValueError("stage_ref is required (or use deprecated config_path)")
+        return self
+
+    @model_validator(mode='after')
+    def validate_conditional_config(self) -> 'WorkflowStageReference':
+        """Validate conditional stage configuration.
+
+        Rules:
+        - condition and skip_if are mutually exclusive
+        - loops_back_to must be a non-empty string if set
+        """
+        if self.condition and self.skip_if:
+            raise ValueError(
+                f"Stage '{self.name}': 'condition' and 'skip_if' are mutually "
+                "exclusive — use one or the other"
+            )
+        if self.loops_back_to is not None and not self.loops_back_to.strip():
+            raise ValueError(
+                f"Stage '{self.name}': 'loops_back_to' must be a non-empty string"
+            )
+        return self
 
 
 class BudgetConfig(BaseModel):
@@ -427,6 +469,18 @@ class WorkflowConfigInner(BaseModel):
         if not v:
             raise ValueError("At least one stage must be specified")
         return v
+
+    @model_validator(mode='after')
+    def validate_stage_dependencies(self) -> 'WorkflowConfigInner':
+        """Validate all depends_on references point to existing stages."""
+        stage_names = {s.name for s in self.stages}
+        for stage in self.stages:
+            for dep in stage.depends_on:
+                if dep not in stage_names:
+                    raise ValueError(
+                        f"Stage '{stage.name}' depends_on unknown stage '{dep}'"
+                    )
+        return self
 
 
 class WorkflowConfig(BaseModel):

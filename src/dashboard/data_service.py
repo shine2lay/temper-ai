@@ -2,6 +2,8 @@
 import logging
 from typing import Any, Callable, Dict, List, Optional
 
+from src.observability.constants import ObservabilityFields
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_PAGE_LIMIT = 50
@@ -88,67 +90,172 @@ class DashboardDataService:
         edges: List[Dict[str, Any]] = []
         stages = workflow.get("stages", [])
 
-        for i, stage in enumerate(stages):
-            nodes.append(
-                {
-                    "id": stage["id"],
-                    "name": stage["stage_name"],
-                    "type": "stage",
-                    "status": stage.get("status"),
-                    "has_input": stage.get("input_data") is not None,
-                    "has_output": stage.get("output_data") is not None,
-                }
-            )
+        for stage in stages:
+            self._add_stage_nodes(nodes, stage)
+            self._add_collaboration_edges(edges, stage)
 
-            # Agent nodes as children of this stage
-            for agent in stage.get("agents", []):
-                agent_id = agent.get("id")
-                if not agent_id:
-                    continue
-                config_snapshot = agent.get("agent_config_snapshot") or {}
-                nodes.append(
-                    {
-                        "id": agent_id,
-                        "name": agent.get("agent_name", "agent"),
-                        "type": "agent",
-                        "parent": stage["id"],
-                        "status": agent.get("status"),
-                        "model": config_snapshot.get("model"),
-                        "total_tokens": agent.get("total_tokens"),
-                        "estimated_cost_usd": agent.get("estimated_cost_usd"),
-                        "num_llm_calls": agent.get("num_llm_calls"),
-                        "num_tool_calls": agent.get("num_tool_calls"),
-                    }
-                )
+        # Build data flow edges (DAG-aware when depends_on available)
+        dag_info = self._extract_dependency_map(workflow)
+        if dag_info:
+            self._add_dag_flow_edges(edges, stages, dag_info)
+        else:
+            self._add_sequential_flow_edges(edges, stages)
 
-            # Collaboration edges within stage
-            for event in stage.get("collaboration_events", []):
-                agents_involved = event.get("agents_involved", [])
-                if len(agents_involved) >= 2:
-                    edges.append(
-                        {
-                            "from": agents_involved[0],
-                            "to": agents_involved[1],
-                            "type": "collaboration",
-                            "label": event.get("event_type", ""),
-                        }
-                    )
+        return {"nodes": nodes, "edges": edges}
 
-            # Connect stages sequentially
-            if i > 0:
-                prev_output = stages[i - 1].get("output_data") or {}
-                data_keys = list(prev_output.keys())
-                edges.append(
-                    {
-                        "from": stages[i - 1]["id"],
-                        "to": stage["id"],
+    @staticmethod
+    def _add_stage_nodes(nodes: List[Dict[str, Any]], stage: Dict[str, Any]) -> None:
+        """Add stage and agent nodes to the node list."""
+        stage_id = stage.get("id")
+        if not stage_id:
+            return
+        nodes.append({
+            "id": stage_id,
+            "name": stage.get("stage_name", ""),
+            "type": "stage",
+            ObservabilityFields.STATUS: stage.get(ObservabilityFields.STATUS),
+            "has_input": stage.get(ObservabilityFields.INPUT_DATA) is not None,
+            "has_output": stage.get(ObservabilityFields.OUTPUT_DATA) is not None,
+        })
+        for agent in stage.get("agents", []):
+            agent_id = agent.get("id")
+            if not agent_id:
+                continue
+            config_snapshot = agent.get("agent_config_snapshot") or {}
+            nodes.append({
+                "id": agent_id,
+                "name": agent.get(ObservabilityFields.AGENT_NAME, "agent"),
+                "type": "agent",
+                "parent": stage_id,
+                ObservabilityFields.STATUS: agent.get(ObservabilityFields.STATUS),
+                "model": config_snapshot.get("model"),
+                ObservabilityFields.TOTAL_TOKENS: agent.get(ObservabilityFields.TOTAL_TOKENS),
+                "estimated_cost_usd": agent.get("estimated_cost_usd"),
+                "num_llm_calls": agent.get("num_llm_calls"),
+                "num_tool_calls": agent.get("num_tool_calls"),
+            })
+
+    @staticmethod
+    def _add_collaboration_edges(
+        edges: List[Dict[str, Any]], stage: Dict[str, Any],
+    ) -> None:
+        """Add collaboration edges from stage events."""
+        for event in stage.get("collaboration_events", []):
+            agents_involved = event.get("agents_involved", [])
+            if len(agents_involved) >= 2:
+                edges.append({
+                    "from": agents_involved[0],
+                    "to": agents_involved[1],
+                    "type": "collaboration",
+                    "label": event.get("event_type", ""),
+                })
+
+    @staticmethod
+    def _extract_dependency_map(
+        workflow: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        """Extract DAG info from workflow config snapshot.
+
+        Returns dict with 'dep_map' and 'loops_back_to', or None if no
+        stage uses depends_on (sequential fallback).
+        """
+        config_snap = workflow.get("workflow_config_snapshot")
+        if not config_snap:
+            return None
+
+        wf_config = config_snap.get("workflow", config_snap)
+        config_stages = wf_config.get("stages", [])
+
+        dep_map: Dict[str, List[str]] = {}
+        loops_back_to: Dict[str, str] = {}
+        has_deps = False
+        for cs in config_stages:
+            if not isinstance(cs, dict):
+                continue
+            name = cs.get("name", "")
+            if not name:
+                continue
+            deps = cs.get("depends_on", [])
+            dep_map[name] = deps
+            if deps:
+                has_deps = True
+            loop_target = cs.get("loops_back_to")
+            if loop_target:
+                loops_back_to[name] = loop_target
+
+        if not has_deps:
+            return None
+        return {"dep_map": dep_map, "loops_back_to": loops_back_to}
+
+    @staticmethod
+    def _add_dag_flow_edges(
+        edges: List[Dict[str, Any]],
+        stages: List[Dict[str, Any]],
+        dag_info: Dict[str, Any],
+    ) -> None:
+        """Add data flow edges based on DAG depends_on relationships."""
+        dep_map = dag_info["dep_map"]
+        loops_back_to = dag_info["loops_back_to"]
+        name_to_latest: Dict[str, Dict[str, Any]] = {}
+        seen_names: set = set()
+
+        for stage in stages:
+            stage_id = stage.get("id")
+            if not stage_id:
+                continue
+            name = stage.get("stage_name", "")
+            deps = dep_map.get(name, [])
+
+            for dep_name in deps:
+                dep_stage = name_to_latest.get(dep_name)
+                if dep_stage:
+                    dep_output = dep_stage.get(ObservabilityFields.OUTPUT_DATA) or {}
+                    data_keys = list(dep_output.keys())
+                    edges.append({
+                        "from": dep_stage["id"],
+                        "to": stage_id,
                         "type": "data_flow",
                         "data_keys": data_keys,
                         "label": ", ".join(data_keys) if data_keys else "",
-                    }
-                )
+                    })
 
-        return {"nodes": nodes, "edges": edges}
+            # Loop-back edge: if this name already appeared, find the
+            # stage with loops_back_to pointing to this name
+            if name in seen_names:
+                for src_name, target in loops_back_to.items():
+                    if target == name:
+                        src_stage = name_to_latest.get(src_name)
+                        if src_stage and src_stage["id"] != stage_id:
+                            edges.append({
+                                "from": src_stage["id"],
+                                "to": stage_id,
+                                "type": "data_flow",
+                                "data_keys": [],
+                                "label": "loop",
+                            })
+
+            seen_names.add(name)
+            name_to_latest[name] = stage
+
+    @staticmethod
+    def _add_sequential_flow_edges(
+        edges: List[Dict[str, Any]], stages: List[Dict[str, Any]],
+    ) -> None:
+        """Add sequential data flow edges (fallback when no depends_on)."""
+        for i in range(1, len(stages)):
+            prev_id = stages[i - 1].get("id")
+            curr_id = stages[i].get("id")
+            if not prev_id or not curr_id:
+                continue
+            prev_output = stages[i - 1].get(ObservabilityFields.OUTPUT_DATA) or {}
+            data_keys = list(prev_output.keys())
+            edges.append({
+                "from": prev_id,
+                "to": curr_id,
+                "type": "data_flow",
+                "data_keys": data_keys,
+                "label": ", ".join(data_keys) if data_keys else "",
+            })
 
     # ------------------------------------------------------------------
     # Event-bus helpers

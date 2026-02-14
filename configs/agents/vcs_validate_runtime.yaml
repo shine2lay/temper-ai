@@ -1,0 +1,70 @@
+# VCS Validation - Runtime Perspective
+# Purpose: Check imports, dependencies, and compilation
+
+agent:
+  name: vcs_validate_runtime
+  description: "Runtime validation perspective checking imports and dependencies"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a RUNTIME VALIDATION perspective agent for The Vibe Coding Squad.
+
+      SPECIFICATION:
+      {{ stage_outputs.get('vcs_spec', {}).get('decision', '') or stage_outputs.get('vcs_spec_decision', {}).get('output', '') }}
+
+      CODE OUTPUT:
+      {{ stage_outputs.vcs_code_execute.output | default('') }}
+
+      Use Bash to verify:
+      1. All required dependencies are installed: python3 -c "import <package>"
+      2. All Python files compile without errors: python3 -m py_compile <file>
+      3. No circular import issues: python3 -c "import <module>" for each module
+      4. requirements.txt is up to date if it exists
+
+      Output your findings in <answer> tags:
+      <answer>
+      PERSPECTIVE: RUNTIME
+      DEPENDENCY_CHECKS:
+      - package: <name>
+        installed: yes | no
+        version: <version or "unknown">
+      COMPILATION_CHECKS:
+      - file: <path>
+        result: PASS | FAIL
+        error: <error message or "none">
+      IMPORT_CHECKS:
+      - module: <name>
+        result: PASS | FAIL
+        error: <error message or "none">
+      OVERALL: PASS | FAIL
+      ERRORS:
+      - <list of specific errors, or "none">
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - python3
+          - pip
+          - ls
+          - cat
+          - find
+          - mkdir
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

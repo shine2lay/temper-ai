@@ -12,6 +12,7 @@ from src.compiler.checkpoint import (
     FileCheckpointStorage,
 )
 from src.compiler.domain_state import WorkflowDomainState
+from src.compiler.executors.state_keys import StateKeys
 
 
 class TestCheckpointMetadata:
@@ -45,8 +46,8 @@ class TestCheckpointMetadata:
 
         data = metadata.to_dict()
 
-        assert data["workflow_id"] == "wf-456"
-        assert data["current_stage"] == "synthesis"
+        assert data[StateKeys.WORKFLOW_ID] == "wf-456"
+        assert data[StateKeys.CURRENT_STAGE] == "synthesis"
         assert data["completed_stages"] == ["research"]
         assert data["file_path"] == "/path/to/checkpoint.json"
         assert data["size_bytes"] == 1024
@@ -199,7 +200,7 @@ class TestFileCheckpointStorage:
         assert "data" in checkpoint_data
         data = checkpoint_data["data"]
         assert "workflow_id" in data
-        assert data["workflow_id"] == "wf-test-123"
+        assert data[StateKeys.WORKFLOW_ID] == "wf-test-123"
         assert "domain_state" in data
         assert "stage_outputs" in data["domain_state"]
         assert "current_stage" in data["domain_state"]

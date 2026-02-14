@@ -15,10 +15,43 @@ Design:
 - Checkpointing still uses WorkflowDomainState for serialization
 """
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional
+
+from typing_extensions import Annotated
 
 from src.compiler.domain_state import WorkflowDomainState
+
+
+def _merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
+    """Merge two dicts for LangGraph parallel branch state reduction.
+
+    When parallel branches both update the same dict field (e.g. stage_outputs),
+    LangGraph calls this reducer to merge the updates instead of last-write-wins.
+
+    Args:
+        left: Existing dict from prior state
+        right: Update dict from a parallel branch
+
+    Returns:
+        Merged dict (right wins on key conflicts)
+    """
+    merged = left.copy()
+    merged.update(right)
+    return merged
+
+
+def _keep_latest(left: Any, right: Any) -> Any:
+    """Reducer that keeps the latest (rightmost) value.
+
+    Args:
+        left: Prior value
+        right: New value from a branch
+
+    Returns:
+        The new value
+    """
+    return right
 
 
 @dataclass
@@ -53,17 +86,40 @@ class LangGraphWorkflowState(WorkflowDomainState):
         ... })
     """
 
+    # Override parent fields with Annotated reducers for LangGraph parallel
+    # branch state merging.  Without these, parallel fan-out branches that both
+    # update the same field would cause InvalidUpdateError.
+    # Dict fields use _merge_dicts (union); scalar fields use _keep_latest.
+    stage_outputs: Annotated[Dict[str, Any], _merge_dicts] = field(default_factory=dict)
+    current_stage: Annotated[str, _keep_latest] = ""
+    workflow_id: Annotated[str, _keep_latest] = ""
+    stage_loop_counts: Annotated[Dict[str, int], _merge_dicts] = field(default_factory=dict)
+    topic: Annotated[Optional[str], _keep_latest] = None
+    depth: Annotated[Optional[str], _keep_latest] = None
+    focus_areas: Annotated[Optional[List[str]], _keep_latest] = None
+    query: Annotated[Optional[str], _keep_latest] = None
+    input: Annotated[Optional[str], _keep_latest] = None
+    context: Annotated[Optional[str], _keep_latest] = None
+    data: Annotated[Optional[Dict[str, Any]], _keep_latest] = None
+    workflow_inputs: Annotated[Dict[str, Any], _merge_dicts] = field(default_factory=dict)
+    version: Annotated[str, _keep_latest] = "1.0"
+    created_at: Annotated[datetime, _keep_latest] = field(
+        default_factory=lambda: datetime.now(UTC)
+    )
+    metadata: Annotated[Dict[str, Any], _merge_dicts] = field(default_factory=dict)
+
     # Infrastructure components (added on top of inherited domain fields)
-    tracker: Optional[Any] = None
-    tool_registry: Optional[Any] = None
-    config_loader: Optional[Any] = None
-    visualizer: Optional[Any] = None
+    # Also need reducers for parallel branch compatibility.
+    tracker: Annotated[Optional[Any], _keep_latest] = None
+    tool_registry: Annotated[Optional[Any], _keep_latest] = None
+    config_loader: Annotated[Optional[Any], _keep_latest] = None
+    visualizer: Annotated[Optional[Any], _keep_latest] = None
 
     # Cache for to_dict() results (performance optimization)
     # Note: init=True (default) is needed because LangGraph's _coerce_state passes
     # ALL dataclass fields as kwargs during state construction, including internal ones.
-    _dict_cache: Optional[Dict[str, Any]] = field(default=None, repr=False)
-    _dict_cache_exclude_internal: Optional[Dict[str, Any]] = field(default=None, repr=False)
+    _dict_cache: Annotated[Optional[Dict[str, Any]], _keep_latest] = field(default=None, repr=False)
+    _dict_cache_exclude_internal: Annotated[Optional[Dict[str, Any]], _keep_latest] = field(default=None, repr=False)
 
     def __setattr__(self, name: str, value: Any) -> None:
         """Override setattr to invalidate cache on field modification.

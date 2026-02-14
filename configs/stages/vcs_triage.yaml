@@ -1,0 +1,55 @@
+# VCS Triage Stage (Leader Strategy)
+# Purpose: 4 perspectives + 1 decider in a single stage
+# Replaces: vcs_triage_perspectives + vcs_triage_decision
+
+stage:
+  name: vcs_triage
+  description: "Multi-perspective triage with leader decision"
+  version: "2.0"
+
+  agents:
+    - vcs_triage_product
+    - vcs_triage_technical
+    - vcs_triage_ux
+    - vcs_triage_duplicate
+    - vcs_triage_decider
+
+  execution:
+    agent_mode: parallel
+    timeout_seconds: 600
+    max_concurrent: 4
+
+  collaboration:
+    strategy: leader
+    config:
+      leader_agent: vcs_triage_decider
+      fallback_to_consensus: true
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 2
+
+  inputs:
+    suggestion_text:
+      type: string
+      required: true
+    workspace_path:
+      type: string
+      required: true
+
+  outputs:
+    triage_output:
+      type: string
+      description: "Final triage decision"
+
+  safety:
+    mode: execute
+    risk_level: low
+    require_approval: false
+
+  tags:
+    - vcs
+    - triage
+    - leader

@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Dict, Type
 
 from src.agents.base_agent import BaseAgent
 from src.agents.standard_agent import StandardAgent
+from src.agents.static_checker_agent import StaticCheckerAgent
 
 if TYPE_CHECKING:
     from src.schemas import AgentConfig
@@ -34,10 +35,7 @@ class AgentFactory:
     # Map of agent type strings to implementation classes
     _agent_types: Dict[str, Type[BaseAgent]] = {
         "standard": StandardAgent,
-        # Future types:
-        # "debate": DebateAgent,
-        # "human": HumanAgent,
-        # "custom": CustomAgent,
+        "static_checker": StaticCheckerAgent,
     }
 
     @classmethod
@@ -115,4 +113,5 @@ class AgentFactory:
         with cls._lock:
             cls._agent_types = {
                 "standard": StandardAgent,
+                "static_checker": StaticCheckerAgent,
             }

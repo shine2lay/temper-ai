@@ -47,3 +47,14 @@ MAX_COLLECTION_SIZE = 1000
 # ============================================================================
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+
+# ============================================================================
+# Web Search (Tavily, SearXNG)
+# ============================================================================
+
+DEFAULT_SEARCH_TIMEOUT = 30  # seconds
+MAX_SEARCH_RESULTS = 20
+TAVILY_RATE_LIMIT = 5  # requests per minute
+SEARXNG_RATE_LIMIT = 10  # requests per minute
+TAVILY_DEFAULT_BASE_URL = "https://api.tavily.com"
+SEARXNG_DEFAULT_BASE_URL = "http://localhost:8888"

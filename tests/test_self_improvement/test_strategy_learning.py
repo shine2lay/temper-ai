@@ -426,3 +426,303 @@ class TestStrategyLearningStore:
 
         assert outcome.context == {}
         assert outcome.was_winner is False
+
+    def test_row_to_outcome_malformed_json_context(self):
+        """Test converting row with malformed JSON context."""
+        mock_db = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=Mock())
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+
+        store = StrategyLearningStore(mock_db)
+
+        now = datetime.now(timezone.utc)
+        row = {
+            "id": "out1",
+            "strategy_name": "test_strategy",
+            "problem_type": "quality_low",
+            "agent_name": "agent1",
+            "experiment_id": "exp1",
+            "was_winner": 1,
+            "actual_quality_improvement": 0.3,
+            "actual_speed_improvement": 0.1,
+            "actual_cost_improvement": -0.05,
+            "composite_score": 0.25,
+            "confidence": 0.9,
+            "sample_size": 50,
+            "recorded_at": now.isoformat(),
+            "context": "invalid{json"
+        }
+
+        # Should raise JSONDecodeError on malformed JSON
+        with pytest.raises(Exception):
+            store._row_to_outcome(row)
+
+    def test_record_outcome_large_context(self):
+        """Test recording outcome with large context data."""
+        mock_db = Mock()
+        mock_conn = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=mock_conn)
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+
+        store = StrategyLearningStore(mock_db)
+
+        now = datetime.now(timezone.utc)
+        # Large context with 1000 keys
+        large_context = {f"key_{i}": f"value_{i}" for i in range(1000)}
+
+        outcome = StrategyOutcome(
+            id="outcome-large",
+            strategy_name="test_strategy",
+            problem_type="quality_low",
+            agent_name="test_agent",
+            experiment_id="exp-123",
+            was_winner=True,
+            actual_quality_improvement=0.25,
+            actual_speed_improvement=0.10,
+            actual_cost_improvement=-0.05,
+            composite_score=0.20,
+            confidence=0.90,
+            sample_size=100,
+            recorded_at=now,
+            context=large_context
+        )
+
+        store.record_outcome(outcome)
+
+        # Should successfully execute INSERT with large JSON
+        assert mock_conn.execute.call_count >= 1
+        call_args = mock_conn.execute.call_args[0]
+        # Context should be JSON serialized
+        assert isinstance(call_args[1][13], str)
+
+    def test_get_average_improvement_sql_injection_attempt(self):
+        """Test that SQL injection in metric parameter is blocked."""
+        mock_db = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=Mock())
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+
+        store = StrategyLearningStore(mock_db)
+
+        # Attempt SQL injection via metric parameter
+        with pytest.raises(ValueError, match="Invalid metric"):
+            store.get_average_improvement(
+                "test_strategy",
+                "quality_low",
+                metric="composite_score; DROP TABLE strategy_outcomes; --"
+            )
+
+    def test_concurrent_record_outcome_calls(self):
+        """Test multiple concurrent record_outcome calls."""
+        from threading import Thread
+
+        mock_db = Mock()
+        mock_conn = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=mock_conn)
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+
+        store = StrategyLearningStore(mock_db)
+
+        now = datetime.now(timezone.utc)
+        outcomes = []
+        for i in range(10):
+            outcome = StrategyOutcome(
+                id=f"outcome-{i}",
+                strategy_name="test_strategy",
+                problem_type="quality_low",
+                agent_name=f"agent_{i}",
+                experiment_id=f"exp-{i}",
+                was_winner=i % 2 == 0,
+                actual_quality_improvement=0.1 * i,
+                actual_speed_improvement=0.05 * i,
+                actual_cost_improvement=-0.02 * i,
+                composite_score=0.08 * i,
+                confidence=0.8 + 0.01 * i,
+                sample_size=10 + i,
+                recorded_at=now,
+                context={"thread": i}
+            )
+            outcomes.append(outcome)
+
+        # Record outcomes concurrently
+        threads = []
+        for outcome in outcomes:
+            thread = Thread(target=store.record_outcome, args=(outcome,))
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+        # All outcomes should have been recorded
+        assert mock_conn.execute.call_count >= 10
+
+    def test_get_outcomes_for_strategy_large_result_set(self):
+        """Test retrieving large result sets."""
+        mock_db = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=Mock())
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+
+        now = datetime.now(timezone.utc)
+        # Generate 1000 mock rows
+        large_result_set = []
+        for i in range(1000):
+            large_result_set.append({
+                "id": f"out{i}",
+                "strategy_name": "test_strategy",
+                "problem_type": "quality_low",
+                "agent_name": f"agent{i}",
+                "experiment_id": f"exp{i}",
+                "was_winner": i % 2,
+                "actual_quality_improvement": 0.1 + 0.001 * i,
+                "actual_speed_improvement": 0.05,
+                "actual_cost_improvement": -0.02,
+                "composite_score": 0.08 + 0.001 * i,
+                "confidence": 0.85,
+                "sample_size": 50,
+                "recorded_at": now.isoformat(),
+                "context": '{}'
+            })
+
+        mock_db.query.return_value = large_result_set
+
+        store = StrategyLearningStore(mock_db)
+        outcomes = store.get_outcomes_for_strategy("test_strategy")
+
+        assert len(outcomes) == 1000
+        assert all(isinstance(o, StrategyOutcome) for o in outcomes)
+
+    def test_get_outcomes_for_strategy_all_filters_combined(self):
+        """Test getting outcomes with all filters applied simultaneously."""
+        mock_db = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=Mock())
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+        mock_db.query.return_value = []
+
+        store = StrategyLearningStore(mock_db)
+        store.get_outcomes_for_strategy(
+            "test_strategy",
+            problem_type="quality_low",
+            min_confidence=0.85,
+            days_back=60,
+            limit=100
+        )
+
+        # Check all filters are in the query
+        call_args = mock_db.query.call_args
+        query = call_args[0][0]
+        params = call_args[0][1]
+
+        assert "problem_type = ?" in query
+        assert "confidence >= ?" in query
+        assert "recorded_at >= ?" in query
+        assert "LIMIT" in query
+
+        assert len(params) == 5  # strategy, confidence, problem_type, days_back cutoff, limit
+
+    def test_get_average_improvement_with_null_values(self):
+        """Test average improvement calculation with NULL metric values."""
+        mock_db = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=Mock())
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+        mock_db.query.return_value = [{"weighted_avg": None, "count": 5}]
+
+        store = StrategyLearningStore(mock_db)
+        avg = store.get_average_improvement("test_strategy", "quality_low")
+
+        assert avg is None
+
+    def test_get_win_rate_empty_result(self):
+        """Test win rate calculation with empty result set."""
+        mock_db = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=Mock())
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+        mock_db.query.return_value = []
+
+        store = StrategyLearningStore(mock_db)
+        win_rate = store.get_win_rate("nonexistent_strategy")
+
+        assert win_rate == 0.0
+
+    def test_get_sample_count_all_filters(self):
+        """Test sample count with all filters."""
+        mock_db = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=Mock())
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+        mock_db.query.return_value = [{"count": 42}]
+
+        store = StrategyLearningStore(mock_db)
+        count = store.get_sample_count(
+            "test_strategy",
+            problem_type="error_rate_high",
+            days_back=14
+        )
+
+        assert count == 42
+
+        # Verify query includes all filters
+        call_args = mock_db.query.call_args
+        query = call_args[0][0]
+        assert "problem_type = ?" in query
+        assert "recorded_at >= ?" in query
+
+    def test_record_outcome_with_empty_context(self):
+        """Test recording outcome with explicitly empty context."""
+        mock_db = Mock()
+        mock_conn = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=mock_conn)
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+
+        store = StrategyLearningStore(mock_db)
+
+        now = datetime.now(timezone.utc)
+        outcome = StrategyOutcome(
+            id="outcome-empty-ctx",
+            strategy_name="test_strategy",
+            problem_type="quality_low",
+            agent_name="test_agent",
+            experiment_id="exp-999",
+            was_winner=False,
+            actual_quality_improvement=0.0,
+            actual_speed_improvement=0.0,
+            actual_cost_improvement=0.0,
+            composite_score=0.0,
+            confidence=0.5,
+            sample_size=1,
+            recorded_at=now,
+            context={}
+        )
+
+        store.record_outcome(outcome)
+
+        # Should serialize empty dict as '{}'
+        call_args = mock_conn.execute.call_args[0]
+        assert call_args[1][13] == '{}'
+
+    def test_get_average_improvement_all_valid_metrics(self):
+        """Test average improvement with all allowed metrics."""
+        mock_db = Mock()
+        mock_db.transaction.return_value.__enter__ = Mock(return_value=Mock())
+        mock_db.transaction.return_value.__exit__ = Mock(return_value=False)
+        mock_db.query.return_value = [{"weighted_avg": 0.35, "count": 10}]
+
+        store = StrategyLearningStore(mock_db)
+
+        allowed_metrics = [
+            "composite_score",
+            "actual_quality_improvement",
+            "predicted_improvement",
+            "confidence"
+        ]
+
+        for metric in allowed_metrics:
+            avg = store.get_average_improvement(
+                "test_strategy",
+                "quality_low",
+                metric=metric
+            )
+            assert avg == 0.35
+
+            # Verify metric is used in query
+            call_args = mock_db.query.call_args
+            query = call_args[0][0]
+            assert metric in query

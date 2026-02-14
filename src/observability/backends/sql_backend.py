@@ -27,11 +27,14 @@ from src.database.models import (
 )
 from src.observability.backend import ObservabilityBackend, ReadableBackendMixin
 from src.observability.backends._sql_backend_helpers import (
-    SQLDelegatedMethodsMixin,
     _DEFAULT_VERSION,
     _STATUS_COMPLETED,
     _STATUS_FAILED,
     _STATUS_RUNNING,
+    SQLDelegatedMethodsMixin,
+)
+from src.observability.constants import ObservabilityFields
+from src.observability.backends._sql_backend_helpers import (
     flush_buffer as _flush_buffer,
 )
 
@@ -361,6 +364,57 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
             if agent:
                 session.expunge(agent)
             return agent
+
+    def get_run_events(
+        self,
+        workflow_id: str,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """Query stage and agent execution events for a workflow run.
+
+        Returns a chronological list of event dicts suitable for API responses.
+        """
+        events: List[Dict[str, Any]] = []
+        with get_session() as session:
+            # Stage events
+            stages = session.exec(
+                select(StageExecution)
+                .where(StageExecution.workflow_execution_id == workflow_id)
+                .order_by(StageExecution.start_time)
+            ).all()
+            for s in stages:
+                events.append({
+                    "id": s.id,
+                    "event_type": "stage",
+                    "stage": s.stage_name,
+                    "agent": None,
+                    ObservabilityFields.STATUS: s.status,
+                    "timestamp": s.start_time.isoformat() if s.start_time else None,
+                })
+
+            # Agent events
+            for s in stages:
+                agents = session.exec(
+                    select(AgentExecution)
+                    .where(AgentExecution.stage_execution_id == s.id)
+                    .order_by(AgentExecution.start_time)
+                ).all()
+                for a in agents:
+                    events.append({
+                        "id": a.id,
+                        "event_type": "agent",
+                        "stage": s.stage_name,
+                        "agent": a.agent_name,
+                        ObservabilityFields.STATUS: a.status,
+                        "timestamp": a.start_time.isoformat() if a.start_time else None,
+                    })
+
+        # Sort chronologically
+        events.sort(key=lambda e: e.get("timestamp") or "")
+
+        # Apply offset and limit
+        return events[offset : offset + limit]
 
     @staticmethod
     def create_indexes() -> None:

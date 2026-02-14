@@ -87,3 +87,11 @@ DEFAULT_MAX_PATH_DEPTH = 20
 
 MAX_ROLLBACK_HISTORY = 100
 ROLLBACK_COOLDOWN_SECONDS = 60
+
+# ============================================================================
+# Violation Dictionary Keys
+# ============================================================================
+
+VIOLATION_MESSAGE = "message"
+VIOLATION_SEVERITY = "severity"
+VIOLATION_PATTERN = "pattern"

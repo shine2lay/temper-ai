@@ -289,6 +289,145 @@ class BaseLLM(LLMContextManagerMixin, ABC):
         """Get provider-specific API endpoint path."""
         pass
 
+    @abstractmethod
+    def _consume_stream(
+        self,
+        response: httpx.Response,
+        on_chunk: StreamCallback,
+    ) -> LLMResponse:
+        """Consume streaming response synchronously (provider-specific).
+
+        Args:
+            response: HTTPx response object with streaming enabled
+            on_chunk: Callback invoked for each chunk
+
+        Returns:
+            LLMResponse with aggregated content and metadata
+        """
+        pass
+
+    @abstractmethod
+    async def _aconsume_stream(
+        self,
+        response: httpx.Response,
+        on_chunk: StreamCallback,
+    ) -> LLMResponse:
+        """Consume streaming response asynchronously (provider-specific).
+
+        Args:
+            response: HTTPx response object with streaming enabled
+            on_chunk: Callback invoked for each chunk
+
+        Returns:
+            LLMResponse with aggregated content and metadata
+        """
+        pass
+
+    def _make_streaming_call_impl(
+        self,
+        prompt: str,
+        context: Optional[ExecutionContext] = None,
+        on_chunk: Optional[StreamCallback] = None,
+        **kwargs: Any
+    ) -> Tuple[Optional[str], Optional[LLMResponse]]:
+        """Prepare streaming call with rate limiting and cache check.
+
+        Template method extracting duplicated logic from stream() implementations.
+
+        Args:
+            prompt: Input prompt
+            context: Execution context
+            on_chunk: Streaming callback
+            **kwargs: Additional parameters
+
+        Returns:
+            Tuple of (cache_key, cached_response_or_none)
+        """
+        # Rate limiter check
+        if self._rate_limiter is not None:
+            entity_id = (context.agent_id if context and hasattr(context, 'agent_id') else self.model)
+            allowed, reason = self._rate_limiter.check_and_record_rate_limit(entity_id)
+            if not allowed:
+                raise LLMRateLimitError(reason or "LLM rate limit exceeded")
+
+        # Cache check
+        cache_key, cached = self._check_cache(prompt, context, **kwargs)
+        return cache_key, cached
+
+    def _execute_streaming_impl(
+        self,
+        start_time: float,
+        response: httpx.Response,
+        on_chunk: StreamCallback,
+        cache_key: Optional[str],
+    ) -> LLMResponse:
+        """Execute streaming request and handle response (synchronous).
+
+        Template method extracting duplicated error handling and caching logic.
+
+        Args:
+            start_time: Request start timestamp
+            response: HTTPx streaming response
+            on_chunk: Streaming callback
+            cache_key: Cache key for result
+
+        Returns:
+            LLMResponse with latency and cached result
+        """
+        try:
+            if response.status_code != HTTP_OK:
+                response.read()
+                from src.agents.llm._base_helpers import handle_error_response
+                handle_error_response(response)
+
+            result = self._consume_stream(response, on_chunk)
+        finally:
+            response.close()
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        result.latency_ms = latency_ms
+
+        # Cache the result
+        self._cache_response(cache_key, result)
+        return result
+
+    async def _execute_streaming_async_impl(
+        self,
+        start_time: float,
+        response: httpx.Response,
+        on_chunk: StreamCallback,
+        cache_key: Optional[str],
+    ) -> LLMResponse:
+        """Execute streaming request and handle response (asynchronous).
+
+        Template method extracting duplicated error handling and caching logic.
+
+        Args:
+            start_time: Request start timestamp
+            response: HTTPx streaming response
+            on_chunk: Streaming callback
+            cache_key: Cache key for result
+
+        Returns:
+            LLMResponse with latency and cached result
+        """
+        try:
+            if response.status_code != HTTP_OK:
+                await response.aread()
+                from src.agents.llm._base_helpers import handle_error_response
+                handle_error_response(response)
+
+            result = await self._aconsume_stream(response, on_chunk)
+        finally:
+            await response.aclose()
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        result.latency_ms = latency_ms
+
+        # Cache the result
+        self._cache_response(cache_key, result)
+        return result
+
     def stream(
         self,
         prompt: str,

@@ -1,0 +1,20 @@
+# VCS Suggestion - Add search endpoint
+# A new feature that doesn't exist yet: search suggestions by text
+
+suggestion_text: |
+  Add a search endpoint to find suggestions by text content.
+
+  1. Add GET /api/suggestions/search?q=<query> endpoint:
+     - Accepts a query string parameter 'q'
+     - Returns suggestions where the text contains the query (case-insensitive)
+     - Returns 400 if 'q' is missing or empty
+     - Results ordered by created_at descending (newest first)
+     - Response is a JSON array of Suggestion objects
+
+  2. Add a simple search box to the index.html page:
+     - A text input field with a "Search" button
+     - When clicked, fetches /api/suggestions/search?q=<input value>
+     - Displays matching results below the search box
+     - Shows "No results found" if empty
+
+workspace_path: /home/shinelay/vibe-coding-squad

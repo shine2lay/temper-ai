@@ -2254,10 +2254,48 @@ def _normalize_ast_body(body: list[ast.stmt]) -> str:
     return ast.dump(fresh)
 
 
+def _has_duplicate_suppression(source: str, node_lineno: int) -> bool:
+    """Check if a function has a comment suppressing duplicate detection.
+
+    Looks for comments like:
+    - # scanner-ignore: duplicate
+    - # noqa: duplicate
+    on the line before or same line as the function definition.
+    """
+    if not source:
+        return False
+
+    lines = source.splitlines()
+    if not lines or node_lineno < 1 or node_lineno > len(lines):
+        return False
+
+    # Check line before function definition (1-indexed to 0-indexed)
+    check_lines = []
+    if node_lineno > 1:
+        check_lines.append(lines[node_lineno - 2])
+    if node_lineno <= len(lines):
+        check_lines.append(lines[node_lineno - 1])
+
+    for line in check_lines:
+        line_lower = line.lower()
+        if ('scanner-ignore' in line_lower and 'duplicate' in line_lower) or \
+           ('noqa' in line_lower and 'duplicate' in line_lower):
+            return True
+
+    return False
+
+
 def scan_duplicate_code(
     src_dir: Path, files: list[dict], *, file_cache: dict | None = None
 ) -> dict:
-    """Detect duplicate function bodies via AST normalization and hashing."""
+    """Detect duplicate function bodies via AST normalization and hashing.
+
+    Functions can be excluded from duplicate detection by adding a comment:
+        # scanner-ignore: duplicate
+    or
+        # noqa: duplicate
+    on the line before the function definition.
+    """
     parse_errors: list[str] = []
     func_entries: list[tuple[str, str, int, int, list]] = []
 
@@ -2276,6 +2314,11 @@ def scan_duplicate_code(
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 if not node.body:
                     continue
+
+                # Skip if function has duplicate suppression comment
+                if _has_duplicate_suppression(source, node.lineno):
+                    continue
+
                 start = node.body[0].lineno
                 end = max(
                     getattr(n, "end_lineno", getattr(n, "lineno", start))

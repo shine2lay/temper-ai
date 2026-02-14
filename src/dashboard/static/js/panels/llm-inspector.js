@@ -103,21 +103,28 @@ export class LLMInspectorPanel {
             this._updateStreamingDisplay();
             return;
         }
-        if (detail.changeType === 'selection' || detail.changeType === 'snapshot' || detail.changeType === 'event') {
-            this.render();
+        if (detail.changeType === 'selection' || detail.changeType === 'snapshot') {
+            this._renderWithFetch();
         }
+        // LLM/tool call data doesn't change via events — no need to re-render on 'event'
     }
 
-    async render() {
+    async _renderWithFetch() {
         this.container.innerHTML = '';
+        this.container.style.overflow = '';
 
         const llmCallId = this.dataStore.selectedLLMCallId;
         const toolCallId = this.dataStore.selectedToolCallId;
 
         if (llmCallId) {
-            let llmCall = this.dataStore.llmCalls.get(llmCallId);
-            if (!llmCall) {
-                llmCall = await this._fetchData('llm-calls', llmCallId);
+            // Try API first for full prompt/response data
+            let llmCall = await this._fetchData('llm-calls', llmCallId);
+            if (llmCall) {
+                const existing = this.dataStore.llmCalls.get(llmCallId);
+                if (existing) Object.assign(existing, llmCall);
+                else this.dataStore.llmCalls.set(llmCallId, llmCall);
+            } else {
+                llmCall = this.dataStore.llmCalls.get(llmCallId);
             }
             if (llmCall) {
                 this._renderLLMCall(llmCall);
@@ -126,9 +133,13 @@ export class LLMInspectorPanel {
         }
 
         if (toolCallId) {
-            let toolCall = this.dataStore.toolCalls.get(toolCallId);
-            if (!toolCall) {
-                toolCall = await this._fetchData('tool-calls', toolCallId);
+            let toolCall = await this._fetchData('tool-calls', toolCallId);
+            if (toolCall) {
+                const existing = this.dataStore.toolCalls.get(toolCallId);
+                if (existing) Object.assign(existing, toolCall);
+                else this.dataStore.toolCalls.set(toolCallId, toolCall);
+            } else {
+                toolCall = this.dataStore.toolCalls.get(toolCallId);
             }
             if (toolCall) {
                 this._renderToolCall(toolCall);
@@ -136,6 +147,24 @@ export class LLMInspectorPanel {
             }
         }
 
+        this._renderEmptyState();
+    }
+
+    render() {
+        this.container.innerHTML = '';
+        this.container.style.overflow = '';
+
+        const llmCallId = this.dataStore.selectedLLMCallId;
+        const toolCallId = this.dataStore.selectedToolCallId;
+
+        if (llmCallId) {
+            const llmCall = this.dataStore.llmCalls.get(llmCallId);
+            if (llmCall) { this._renderLLMCall(llmCall); return; }
+        }
+        if (toolCallId) {
+            const toolCall = this.dataStore.toolCalls.get(toolCallId);
+            if (toolCall) { this._renderToolCall(toolCall); return; }
+        }
         this._renderEmptyState();
     }
 
@@ -541,10 +570,11 @@ export class LLMInspectorPanel {
             if (contentEl) {
                 const newText = streamData.content.slice(prev.content);
                 contentEl.appendChild(document.createTextNode(newText));
-                // Auto-scroll to bottom
-                contentEl.scrollTop = contentEl.scrollHeight;
             }
         }
+
+        // Auto-scroll the container to bottom
+        streamContainer.scrollTop = streamContainer.scrollHeight;
 
         this._streamLengths.set(agentId, {
             content: streamData.content.length,
@@ -553,8 +583,11 @@ export class LLMInspectorPanel {
     }
 
     _renderStreamingView(agentId, streamData) {
+        // Override panel-content overflow so flex children control scrolling
+        this.container.style.overflow = 'hidden';
+
         const header = document.createElement('div');
-        header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+        header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-shrink:0;';
 
         const title = document.createElement('span');
         title.style.cssText = 'font-size:16px;font-weight:600;';
@@ -570,22 +603,26 @@ export class LLMInspectorPanel {
 
         const streamContainer = document.createElement('div');
         streamContainer.className = 'streaming-content';
+        streamContainer.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;overflow-y:auto;background:var(--bg-input);border:1px solid var(--border-color);border-radius:var(--radius-sm);padding:8px 12px;';
 
         if (streamData.thinking) {
             const thinkingEl = document.createElement('div');
             thinkingEl.className = 'streaming-thinking';
-            thinkingEl.style.cssText = 'color:var(--text-muted);font-style:italic;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-break:break-word;margin-bottom:8px;max-height:20vh;overflow-y:auto;';
+            thinkingEl.style.cssText = 'color:var(--text-muted);font-style:italic;font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-break:break-word;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--border-color);';
             thinkingEl.appendChild(document.createTextNode(streamData.thinking));
             streamContainer.appendChild(thinkingEl);
         }
 
         const contentEl = document.createElement('div');
         contentEl.className = 'streaming-text';
-        contentEl.style.cssText = 'font-family:var(--font-mono);font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:40vh;overflow-y:auto;';
+        contentEl.style.cssText = 'font-family:var(--font-mono);font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-word;color:var(--text-primary);';
         contentEl.appendChild(document.createTextNode(streamData.content));
         streamContainer.appendChild(contentEl);
 
         this.container.appendChild(streamContainer);
+
+        // Auto-scroll to bottom on initial render
+        streamContainer.scrollTop = streamContainer.scrollHeight;
 
         this._streamLengths.set(agentId, {
             content: streamData.content.length,

@@ -1,0 +1,36 @@
+stage:
+  name: quick_debate
+  description: "Quick 3-agent adversarial debate with convergence detection"
+  version: "1.0"
+
+  agents:
+    - optimist
+    - skeptic
+    - pragmatist
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 1800
+
+  collaboration:
+    strategy: multi_round
+    config:
+      mode: debate
+      max_rounds: 3
+      convergence_threshold: 0.80
+      context_strategy: full
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+
+  inputs:
+    required:
+      - topic
+    optional:
+      - context
+
+  outputs:
+    decision: "Final consensus decision"
+    debate_history: "Full debate transcript"
+    convergence_info: "Convergence metrics"

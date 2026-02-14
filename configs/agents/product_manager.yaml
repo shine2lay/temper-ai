@@ -29,7 +29,8 @@ agent:
     model: qwen3-next:latest
     base_url: http://localhost:11434
     temperature: 0.6
-    max_tokens: 1500
+    max_tokens: 16384
+    timeout_seconds: 1800  # 30 minutes
 
   tools: []
 

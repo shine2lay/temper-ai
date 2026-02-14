@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased] - Milestone 5
 
+### Added
+- **Conditional Stage Execution:** Stages can be conditionally skipped or executed based on Jinja2 expressions (`condition`, `skip_if`, `conditional` fields)
+- **Loop-Back Stages:** `loops_back_to` and `max_loops` enable iterative test-fix patterns with automatic loop counter tracking
+- **ConditionEvaluator:** Jinja2-based condition evaluation using `ImmutableSandboxedEnvironment` with template caching and safe undefined handling
+- **Routing Functions:** LangGraph-native `add_conditional_edges` integration via `create_conditional_router` and `create_loop_router` factories
+- **Loop Gate Nodes:** Passthrough nodes that increment loop counters as proper LangGraph state updates (routing functions cannot mutate state)
+- **Default Conditions:** Automatic condition generation for `conditional: true` stages (checks if previous stage failed/degraded)
+- **Schema Validation:** `condition` and `skip_if` are mutually exclusive; `loops_back_to` validated as non-empty
+- **`stage_loop_counts` State Field:** New field in `WorkflowDomainState` for loop iteration tracking across checkpoints
+- Comprehensive test suite: 57 new tests (unit + integration) for condition evaluation, routing, and conditional stage compilation
+- **Real-time Streaming:** Generic `StreamEvent` system for multi-source real-time display
+- **LLM Response Streaming:** Real-time token display during LLM calls
+
 ### Planned
 - Self-improvement loop implementation
 - Automated testing improvement detection
@@ -146,4 +159,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ---
 
 **Maintained by:** Meta-Autonomous Framework Team
-**Last Updated:** 2026-02-01
+**Last Updated:** 2026-02-12

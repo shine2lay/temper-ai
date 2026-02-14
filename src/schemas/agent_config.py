@@ -19,10 +19,12 @@ from src.agents.constants import (
     MAX_EXECUTION_TIME_SECONDS,
     MAX_PROMPT_LENGTH,
     MAX_TOOL_CALLS_PER_EXECUTION,
+    PRE_COMMAND_DEFAULT_TIMEOUT,
+    PRE_COMMAND_MAX_TIMEOUT,
 )
 from src.constants.durations import (
     DAYS_90,
-    SECONDS_PER_10_MINUTES,
+    SECONDS_PER_30_MINUTES,
     SECONDS_PER_MINUTE,
 )
 from src.constants.limits import (
@@ -55,7 +57,7 @@ class InferenceConfig(BaseModel):
     temperature: float = Field(default=DEFAULT_TEMPERATURE, ge=0.0, le=2.0)
     max_tokens: int = Field(default=DEFAULT_MAX_TOKENS, gt=0)
     top_p: float = Field(default=DEFAULT_TOP_P, ge=0.0, le=1.0)
-    timeout_seconds: int = Field(default=SECONDS_PER_10_MINUTES, gt=0)
+    timeout_seconds: int = Field(default=SECONDS_PER_30_MINUTES, gt=0)
     max_retries: int = Field(default=DEFAULT_MAX_RETRIES, ge=0)
     retry_delay_seconds: int = Field(default=int(SHORT_BACKOFF_SECONDS), ge=0)
 
@@ -213,6 +215,21 @@ class ToolReference(BaseModel):
     config: Dict[str, Any] = Field(default_factory=dict)
 
 
+class PreCommand(BaseModel):
+    """Pre-command to execute deterministically before LLM invocation.
+
+    Commands run via subprocess before the agent prompt is sent to the LLM.
+    Results are injected as ``{{ command_results }}`` in the prompt template.
+    """
+    name: str
+    command: str  # Supports {{ var }} template substitution
+    timeout_seconds: int = Field(
+        default=PRE_COMMAND_DEFAULT_TIMEOUT,
+        gt=0,
+        le=PRE_COMMAND_MAX_TIMEOUT,
+    )
+
+
 class MetadataConfig(BaseModel):
     """Metadata configuration."""
     tags: List[str] = Field(default_factory=list)
@@ -231,12 +248,22 @@ class AgentConfigInner(BaseModel):
     prompt: PromptConfig
     inference: InferenceConfig
     tools: Optional[List[Union[str, ToolReference]]] = None
+    pre_commands: Optional[List[PreCommand]] = None
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     error_handling: ErrorHandlingConfig
     merit_tracking: MeritTrackingConfig = Field(default_factory=MeritTrackingConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)
     metadata: MetadataConfig = Field(default_factory=MetadataConfig)
+    dialogue_aware: bool = Field(
+        default=True,
+        description="Auto-inject dialogue context into prompt. Set to False for agents that handle dialogue in their own templates."
+    )
+    max_dialogue_context_chars: int = Field(
+        default=8000,
+        gt=0,
+        description="Max chars for auto-injected dialogue context"
+    )
 
 
 class AgentConfig(BaseModel):

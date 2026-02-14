@@ -9,12 +9,19 @@ workflow:
 
   # Workflow metadata
   lifecycle_type: research
-  product_type: comprehensive_analysis
+  product_type: data_product
+
+  # Error handling
+  error_handling:
+    on_stage_failure: retry
+    max_stage_retries: 1
+    escalation_policy: GracefulDegradation
+    enable_rollback: false
 
   # Workflow stages
   stages:
     - name: parallel_research
-      config_path: configs/stages/parallel_research_stage.yaml
+      stage_ref: configs/stages/parallel_research_stage.yaml
       inputs:
         topic: "{{ workflow.inputs.topic }}"
         focus_areas: "{{ workflow.inputs.focus_areas }}"
@@ -67,12 +74,8 @@ workflow:
     - multi-agent
     - parallel
     - consensus
-    - milestone-3
 
   use_cases:
     - "Market + Competitor + User research in parallel"
     - "Multi-perspective analysis"
     - "Comprehensive insights from diverse agents"
-
-  created_by: m3-14-example-workflows
-  created_at: "2026-01-26"

@@ -1,4 +1,9 @@
-"""REST API routes for the dashboard."""
+"""REST API routes for the dashboard (data query endpoints only).
+
+Workflow execution, health, and validation endpoints are provided by the
+server router (src/server/routes.py), which is included in both server
+and dashboard modes.
+"""
 import logging
 from typing import Any, Optional
 

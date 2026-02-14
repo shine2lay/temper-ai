@@ -321,6 +321,22 @@ class CollaborationStrategy(ABC):
         """
         return False
 
+    @property
+    def requires_leader_synthesis(self) -> bool:
+        """Whether this strategy uses leader-based synthesis.
+
+        Leader strategies separate agents into perspectives (run in parallel)
+        and a leader (runs after perspectives, with their outputs injected).
+        The leader makes the final decision.
+
+        Returns:
+            True: Leader strategy requiring separate leader invocation
+            False: Standard synthesis (default)
+
+        Default: False
+        """
+        return False
+
     def validate_inputs(self, agent_outputs: List[AgentOutput]) -> None:
         """Validate agent outputs before synthesis.
 

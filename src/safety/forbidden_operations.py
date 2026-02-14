@@ -30,6 +30,9 @@ from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
     MAX_EXCLUDED_PATH_LENGTH,
     MAX_EXCLUDED_PATHS,
+    VIOLATION_MESSAGE,
+    VIOLATION_PATTERN,
+    VIOLATION_SEVERITY,
 )
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
@@ -52,55 +55,55 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
     # Forbidden file write operations (NEVER allowed)
     FILE_WRITE_PATTERNS = {
         "cat_redirect": {
-            "pattern": r"\bcat\s+>",
-            "message": "Use Write() tool instead of 'cat >' for file operations",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bcat\s+>",
+            VIOLATION_MESSAGE: "Use Write() tool instead of 'cat >' for file operations",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "cat_append": {
-            "pattern": r"\bcat\s+>>",
-            "message": "Use Edit() tool instead of 'cat >>' for file operations",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bcat\s+>>",
+            VIOLATION_MESSAGE: "Use Edit() tool instead of 'cat >>' for file operations",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "cat_heredoc": {
-            "pattern": r"\bcat\s+<<\s*['\"]?EOF",
-            "message": "Use Write() tool instead of 'cat <<EOF' for file operations",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bcat\s+<<\s*['\"]?EOF",
+            VIOLATION_MESSAGE: "Use Write() tool instead of 'cat <<EOF' for file operations",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "echo_redirect": {
             # SECURITY FIX: Simplified pattern to prevent ReDoS - requires filename with extension
             # Use bounded repetition {0,200} instead of .* to prevent scanning huge strings
-            "pattern": r"\becho\s+.{0,200}>\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
-            "message": "Use Write() tool instead of 'echo >' for file operations",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\becho\s+.{0,200}>\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
+            VIOLATION_MESSAGE: "Use Write() tool instead of 'echo >' for file operations",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "echo_append": {
             # SECURITY FIX: Simplified pattern to prevent ReDoS - requires filename with extension
             # Use bounded repetition {0,200} instead of .* to prevent scanning huge strings
-            "pattern": r"\becho\s+.{0,200}>>\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
-            "message": "Use Edit() tool instead of 'echo >>' for file operations",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\becho\s+.{0,200}>>\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
+            VIOLATION_MESSAGE: "Use Edit() tool instead of 'echo >>' for file operations",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "printf_redirect": {
             # SECURITY FIX: Simplified pattern to prevent ReDoS - requires filename with extension
             # Use bounded repetition {0,200} instead of .* to prevent scanning huge strings
-            "pattern": r"\bprintf\s+.{0,200}>>?\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
-            "message": "Use Write() tool instead of 'printf >' for file operations",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bprintf\s+.{0,200}>>?\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
+            VIOLATION_MESSAGE: "Use Write() tool instead of 'printf >' for file operations",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "tee_write": {
-            "pattern": r"\btee\s+(?!-a\s+/dev/null)",
-            "message": "Use Write() tool instead of 'tee' for file operations",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\btee\s+(?!-a\s+/dev/null)",
+            VIOLATION_MESSAGE: "Use Write() tool instead of 'tee' for file operations",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "sed_inplace": {
-            "pattern": r"\bsed\s+-i",
-            "message": "Use Edit() tool instead of 'sed -i' for file modifications",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bsed\s+-i",
+            VIOLATION_MESSAGE: "Use Edit() tool instead of 'sed -i' for file modifications",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "awk_redirect": {
-            "pattern": r"\bawk\s+[^|]+>\s*\S+",
-            "message": "Use Write() tool instead of 'awk >' for file operations",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bawk\s+[^|]+>\s*\S+",
+            VIOLATION_MESSAGE: "Use Write() tool instead of 'awk >' for file operations",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "redirect_output": {
             # SECURITY FIX: Simplified pattern to prevent ReDoS vulnerability
@@ -109,9 +112,9 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             #
             # New approach: Simple pattern + context validation in Python code
             # Pattern just detects "> filename.ext", context check handles exclusions
-            "pattern": r">\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
-            "message": "Use Write() tool instead of shell redirection for file operations",
-            "severity": ViolationSeverity.HIGH,
+            VIOLATION_PATTERN: r">\s*\S+\.(txt|json|yaml|yml|py|js|ts|md|csv|log)\b",
+            VIOLATION_MESSAGE: "Use Write() tool instead of shell redirection for file operations",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH,
             "requires_context_check": True  # Validate context separately
         }
     }
@@ -119,60 +122,60 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
     # Dangerous/destructive commands
     DANGEROUS_COMMAND_PATTERNS = {
         "rm_recursive": {
-            "pattern": r"\brm\s+(-[rf]+|--recursive|--force)\s+",
-            "message": "Recursive/force file deletion requires explicit user approval",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\brm\s+(-[rf]+|--recursive|--force)\s+",
+            VIOLATION_MESSAGE: "Recursive/force file deletion requires explicit user approval",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "rm_root_dirs": {
             # SECURITY FIX: Bounded quantifier to prevent ReDoS
-            "pattern": r"\brm\s+[^-]{0,200}(/|/\*|/home|/usr|/etc|/var|/bin|/sbin|/lib)",
-            "message": "Attempting to delete system directories",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\brm\s+[^-]{0,200}(/|/\*|/home|/usr|/etc|/var|/bin|/sbin|/lib)",
+            VIOLATION_MESSAGE: "Attempting to delete system directories",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "dd_command": {
-            "pattern": r"\bdd\s+",
-            "message": "Direct disk operations (dd) are forbidden for safety",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bdd\s+",
+            VIOLATION_MESSAGE: "Direct disk operations (dd) are forbidden for safety",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "mkfs_command": {
-            "pattern": r"\bmkfs\.",
-            "message": "Filesystem creation commands are forbidden",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bmkfs\.",
+            VIOLATION_MESSAGE: "Filesystem creation commands are forbidden",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "chmod_recursive": {
-            "pattern": r"\bchmod\s+-R\s+[0-9]+\s+/",
-            "message": "Recursive permission changes on root require approval",
-            "severity": ViolationSeverity.HIGH
+            VIOLATION_PATTERN: r"\bchmod\s+-R\s+[0-9]+\s+/",
+            VIOLATION_MESSAGE: "Recursive permission changes on root require approval",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH
         },
         "chown_root": {
-            "pattern": r"\bchown\s+(-R\s+)?root:",
-            "message": "Changing ownership to root requires approval",
-            "severity": ViolationSeverity.HIGH
+            VIOLATION_PATTERN: r"\bchown\s+(-R\s+)?root:",
+            VIOLATION_MESSAGE: "Changing ownership to root requires approval",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH
         },
         "curl_pipe_sh": {
-            "pattern": r"\bcurl\s+[^|]+\|\s*(bash|sh|zsh)",
-            "message": "Piping curl directly to shell is dangerous",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bcurl\s+[^|]+\|\s*(bash|sh|zsh)",
+            VIOLATION_MESSAGE: "Piping curl directly to shell is dangerous",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "wget_execute": {
-            "pattern": r"\bwget\s+[^|]+\|\s*(bash|sh|zsh)",
-            "message": "Piping wget directly to shell is dangerous",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r"\bwget\s+[^|]+\|\s*(bash|sh|zsh)",
+            VIOLATION_MESSAGE: "Piping wget directly to shell is dangerous",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "eval_command": {
-            "pattern": r"\beval\s+",
-            "message": "eval can execute arbitrary code - use with extreme caution",
-            "severity": ViolationSeverity.HIGH
+            VIOLATION_PATTERN: r"\beval\s+",
+            VIOLATION_MESSAGE: "eval can execute arbitrary code - use with extreme caution",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH
         },
         "fork_bomb": {
-            "pattern": r":\(\)\s*\{",
-            "message": "Potential fork bomb detected",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r":\(\)\s*\{",
+            VIOLATION_MESSAGE: "Potential fork bomb detected",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         },
         "dev_null_overwrite": {
-            "pattern": r">\s*/dev/sd[a-z]",
-            "message": "Attempting to write directly to disk device",
-            "severity": ViolationSeverity.CRITICAL
+            VIOLATION_PATTERN: r">\s*/dev/sd[a-z]",
+            VIOLATION_MESSAGE: "Attempting to write directly to disk device",
+            VIOLATION_SEVERITY: ViolationSeverity.CRITICAL
         }
     }
 
@@ -180,45 +183,45 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
     INJECTION_PATTERNS = {
         "semicolon_injection": {
             # SECURITY FIX: Bounded quantifier to prevent ReDoS
-            "pattern": r";.{0,500}(\brm\b|\bmv\b|\bchmod\b|\bwget\b|\bcurl\b)",
-            "message": "Potential command injection via semicolon",
-            "severity": ViolationSeverity.HIGH
+            VIOLATION_PATTERN: r";.{0,500}(\brm\b|\bmv\b|\bchmod\b|\bwget\b|\bcurl\b)",
+            VIOLATION_MESSAGE: "Potential command injection via semicolon",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH
         },
         "pipe_injection": {
-            "pattern": r"\|\s*\w+\s*>\s*",
-            "message": "Potential command injection via pipe and redirect",
-            "severity": ViolationSeverity.HIGH
+            VIOLATION_PATTERN: r"\|\s*\w+\s*>\s*",
+            VIOLATION_MESSAGE: "Potential command injection via pipe and redirect",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH
         },
         "backtick_execution": {
-            "pattern": r"`[^`]*(\brm\b|\bmv\b|\bcurl\b)`",
-            "message": "Potential command injection via backticks",
-            "severity": ViolationSeverity.HIGH
+            VIOLATION_PATTERN: r"`[^`]*(\brm\b|\bmv\b|\bcurl\b)`",
+            VIOLATION_MESSAGE: "Potential command injection via backticks",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH
         },
         "subshell_injection": {
-            "pattern": r"\$\([^)]*(\brm\b|\bmv\b|\bcurl\b)[^)]*\)",
-            "message": "Potential command injection via subshell",
-            "severity": ViolationSeverity.HIGH
+            VIOLATION_PATTERN: r"\$\([^)]*(\brm\b|\bmv\b|\bcurl\b)[^)]*\)",
+            VIOLATION_MESSAGE: "Potential command injection via subshell",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH
         }
     }
 
     # Security-sensitive operations
     SECURITY_SENSITIVE_PATTERNS = {
         "password_in_command": {
-            "pattern": r"(-p=|password=|passwd=|pwd=)['\"]?[a-zA-Z0-9]{3,}",
-            "message": "Password in command - use environment variables or config files",
-            "severity": ViolationSeverity.HIGH
+            VIOLATION_PATTERN: r"(-p=|password=|passwd=|pwd=)['\"]?[a-zA-Z0-9]{3,}",
+            VIOLATION_MESSAGE: "Password in command - use environment variables or config files",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH
         },
         "ssh_no_check": {
             # SECURITY FIX: Bounded quantifier to prevent ReDoS
-            "pattern": r"ssh\s+.{0,200}-o\s+StrictHostKeyChecking=no",
-            "message": "Disabling SSH host key checking is insecure",
-            "severity": ViolationSeverity.HIGH
+            VIOLATION_PATTERN: r"ssh\s+.{0,200}-o\s+StrictHostKeyChecking=no",
+            VIOLATION_MESSAGE: "Disabling SSH host key checking is insecure",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH
         },
         "sudo_no_password": {
             # SECURITY FIX: Bounded quantifier to prevent ReDoS
-            "pattern": r"sudo\s+.{0,200}NOPASSWD",
-            "message": "Passwordless sudo configuration detected",
-            "severity": ViolationSeverity.MEDIUM
+            VIOLATION_PATTERN: r"sudo\s+.{0,200}NOPASSWD",
+            VIOLATION_MESSAGE: "Passwordless sudo configuration detected",
+            VIOLATION_SEVERITY: ViolationSeverity.MEDIUM
         }
     }
 
@@ -429,8 +432,8 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
 
                 violation = SafetyViolation(
                     policy_name=self.name,
-                    severity=pattern_info["severity"],
-                    message=pattern_info["message"],
+                    severity=pattern_info[VIOLATION_SEVERITY],
+                    message=pattern_info[VIOLATION_MESSAGE],
                     action=command,
                     context=context,
                     remediation_hint=self._get_remediation_hint(pattern_info["category"]),

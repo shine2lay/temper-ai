@@ -45,9 +45,9 @@ agent:
     model: "{{ llm_model | default('llama3:8b') }}"
     base_url: http://localhost:11434
     temperature: 0.1
-    max_tokens: 2048
+    max_tokens: 4096
     top_p: 0.9
-    timeout_seconds: 600  # 10 minutes for LLM inference
+    timeout_seconds: 1800  # 30 minutes
     max_retries: 3
     retry_delay_seconds: 2
 

@@ -6,8 +6,10 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
+import os
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 from src.constants.durations import (
@@ -22,6 +24,32 @@ if TYPE_CHECKING:
     from src.tools.executor import ToolExecutor
 
 logger = logging.getLogger(__name__)
+
+
+def validate_workspace_path(file_path: str, workspace_root: Path) -> None:
+    """Validate that a file path is within the workspace boundary.
+
+    Args:
+        file_path: The path to validate.
+        workspace_root: The allowed workspace root directory.
+
+    Raises:
+        ValueError: If path escapes the workspace or contains dangerous patterns.
+    """
+    # Reject null bytes (path injection)
+    if "\x00" in file_path:
+        raise ValueError("Path contains null bytes")
+
+    resolved = Path(file_path).resolve()
+    workspace_resolved = workspace_root.resolve()
+
+    # Check path stays within workspace (catches symlink escapes too)
+    try:
+        resolved.relative_to(workspace_resolved)
+    except ValueError:
+        raise ValueError(
+            f"Access denied: path '{file_path}' is outside workspace '{workspace_root}'"
+        )
 
 
 def _log_rollback_event(**kwargs: Any) -> None:

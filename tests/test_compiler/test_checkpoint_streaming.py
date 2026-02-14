@@ -4,6 +4,7 @@ from unittest.mock import Mock
 import pytest
 
 from src.compiler.checkpoint import CheckpointManager
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.workflow_executor import WorkflowExecutor
 
 
@@ -33,7 +34,7 @@ def test_checkpoint_saved_after_each_stage(tmp_path):
     )
 
     # Verify all stages completed
-    assert result["stage_outputs"]["stage3"] == "result3"
+    assert result[StateKeys.STAGE_OUTPUTS]["stage3"] == "result3"
 
     # Verify checkpoint exists
     assert checkpoint_manager.has_checkpoint("wf-test-123")

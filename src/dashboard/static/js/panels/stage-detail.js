@@ -91,22 +91,68 @@ export class StageDetailPanel {
     }
 
     _onDataChange(detail) {
-        if (detail.changeType === 'selection' || detail.changeType === 'snapshot' || detail.changeType === 'event') {
-            this.render();
+        if (detail.changeType === 'stream') return;
+        if (detail.changeType === 'selection' || detail.changeType === 'snapshot') {
+            this._renderWithFetch();
+            return;
+        }
+        if (detail.changeType === 'event') {
+            // Fetch fresh data when the selected stage completes
+            const stageId = this.dataStore.selectedStageId;
+            if (!stageId) return;
+            const eventStageId = detail.data?.stage_id || detail.stage_id;
+            if (eventStageId === stageId &&
+                (detail.event_type === 'stage_end' || detail.event_type === 'stage_output')) {
+                this._renderWithFetch();
+            }
         }
     }
 
-    async render() {
+    async _renderWithFetch() {
         this.container.innerHTML = '';
         const stageId = this.dataStore.selectedStageId;
         if (!stageId) {
             this._renderEmptyState();
             return;
         }
+
+        // Show cached data immediately if available
         let stage = this.dataStore.stages.get(stageId);
-        if (!stage) {
-            stage = await this._fetchStage(stageId);
+        if (stage) {
+            this._renderStage(stage);
         }
+
+        // Fetch full data from API (has agents with llm_calls, output_data, etc.)
+        const fresh = await this._fetchStage(stageId);
+        if (!fresh) {
+            if (!stage) this._renderEmptyState('Stage not found');
+            return;
+        }
+
+        // Bail if selection changed during fetch
+        if (this.dataStore.selectedStageId !== stageId) return;
+
+        // Merge fresh data into Map
+        if (stage) {
+            Object.assign(stage, fresh);
+        } else {
+            stage = fresh;
+            this.dataStore.stages.set(stageId, stage);
+        }
+
+        // Re-render with full data
+        this.container.innerHTML = '';
+        this._renderStage(stage);
+    }
+
+    render() {
+        this.container.innerHTML = '';
+        const stageId = this.dataStore.selectedStageId;
+        if (!stageId) {
+            this._renderEmptyState();
+            return;
+        }
+        const stage = this.dataStore.stages.get(stageId);
         if (!stage) {
             this._renderEmptyState('Stage not found');
             return;
@@ -144,55 +190,66 @@ export class StageDetailPanel {
     _renderStage(stage) {
         const agents = stage.agents || [];
 
+        // Create scroll wrapper
+        const scrollWrapper = document.createElement('div');
+        scrollWrapper.style.cssText = 'overflow-y:auto;flex:1;min-height:0;';
+
         // Header
-        this.container.appendChild(this._buildHeader(stage));
+        scrollWrapper.appendChild(this._buildHeader(stage));
+
+        // Configuration section (description, inputs, outputs)
+        const config = stage.stage_config_snapshot;
+        if (config && (config.description || config.inputs || config.outputs)) {
+            scrollWrapper.appendChild(this._buildConfigSection(config));
+        }
 
         // Metrics row (aggregated from agents)
-        this.container.appendChild(this._buildMetrics(stage, agents));
+        scrollWrapper.appendChild(this._buildMetrics(stage, agents));
 
         // Agent success bar
         if (agents.length > 0) {
-            this.container.appendChild(this._buildAgentSuccessBar(agents));
+            scrollWrapper.appendChild(this._buildAgentSuccessBar(agents));
         }
 
         // Error message
         if (stage.status === 'failed' && (stage.error_message || stage.error)) {
-            this.container.appendChild(this._buildErrorMessage(stage.error_message || stage.error));
+            scrollWrapper.appendChild(this._buildErrorMessage(stage.error_message || stage.error));
         }
 
         // Input data (collapsible, collapsed)
         if (stage.input_data) {
-            this.container.appendChild(
+            scrollWrapper.appendChild(
                 this._buildCollapsible('Input Data', () => this._buildJsonViewer(stage.input_data), true)
             );
         }
 
-        // Output data (collapsible, expanded)
+        // Output data (collapsible, expanded) — render as markdown
         if (stage.output_data) {
-            const isText = typeof stage.output_data === 'string';
-            this.container.appendChild(
-                this._buildCollapsible('Output Data', () =>
-                    isText ? this._buildMarkdownDisplay(stage.output_data) : this._buildJsonViewer(stage.output_data), false)
+            scrollWrapper.appendChild(
+                this._buildCollapsible('Output Data', () => this._buildOutputDisplay(stage.output_data), false)
             );
         }
 
         // Collaboration events
         const collabEvents = stage.collaboration_events || [];
         if (collabEvents.length > 0) {
-            this.container.appendChild(
+            scrollWrapper.appendChild(
                 this._buildCollapsible('Collaboration Events', () => this._buildCollabList(collabEvents), false)
             );
         }
 
         // Agents list
         if (agents.length > 0) {
-            this.container.appendChild(this._buildAgentList(agents));
+            scrollWrapper.appendChild(this._buildAgentList(agents));
         }
+
+        // Add scroll wrapper to container
+        this.container.appendChild(scrollWrapper);
     }
 
     _buildHeader(stage) {
         const header = document.createElement('div');
-        header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;';
+        header.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;flex-shrink:0;';
 
         const name = document.createElement('span');
         name.style.cssText = 'font-size:16px;font-weight:600;';
@@ -215,10 +272,151 @@ export class StageDetailPanel {
         return header;
     }
 
+    _buildConfigSection(config) {
+        const wrapper = document.createElement('div');
+        wrapper.style.cssText = 'background:rgba(79,195,247,0.05);border:1px solid var(--border-color);border-radius:6px;padding:12px;margin-bottom:12px;flex-shrink:0;';
+
+        // Description
+        if (config.description) {
+            const descLabel = document.createElement('div');
+            descLabel.style.cssText = 'font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;';
+            descLabel.textContent = 'Description';
+            wrapper.appendChild(descLabel);
+
+            const descText = document.createElement('div');
+            descText.style.cssText = 'font-size:13px;color:var(--text-primary);line-height:1.5;margin-bottom:12px;';
+            descText.textContent = config.description;
+            wrapper.appendChild(descText);
+        }
+
+        // Key parameters grid
+        const params = [];
+        if (config.execution_mode) params.push({ label: 'Execution Mode', value: config.execution_mode });
+        if (config.strategy) params.push({ label: 'Strategy', value: config.strategy });
+        if (config.timeout_seconds != null) params.push({ label: 'Timeout', value: `${config.timeout_seconds}s` });
+        if (config.max_retries != null) params.push({ label: 'Max Retries', value: config.max_retries });
+        if (config.max_rounds != null) params.push({ label: 'Max Rounds', value: config.max_rounds });
+
+        if (params.length > 0) {
+            const paramsGrid = document.createElement('div');
+            paramsGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:12px;';
+
+            for (const p of params) {
+                const cell = document.createElement('div');
+                cell.style.cssText = 'background:rgba(0,0,0,0.1);padding:6px 8px;border-radius:4px;';
+
+                const label = document.createElement('div');
+                label.style.cssText = 'font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.3px;margin-bottom:2px;';
+                label.textContent = p.label;
+
+                const value = document.createElement('div');
+                value.style.cssText = 'font-size:13px;font-weight:600;color:var(--text-primary);font-family:var(--font-mono);';
+                value.textContent = p.value;
+
+                cell.appendChild(label);
+                cell.appendChild(value);
+                paramsGrid.appendChild(cell);
+            }
+            wrapper.appendChild(paramsGrid);
+        }
+
+        // Agents in this stage
+        if (config.agents && config.agents.length > 0) {
+            const agentsLabel = document.createElement('div');
+            agentsLabel.style.cssText = 'font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;';
+            agentsLabel.textContent = 'Configured Agents';
+            wrapper.appendChild(agentsLabel);
+
+            const agentsContainer = document.createElement('div');
+            agentsContainer.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px;';
+
+            for (const agent of config.agents) {
+                const agentName = typeof agent === 'string' ? agent : (agent.name || agent.agent_name || 'Unknown');
+                const tag = document.createElement('span');
+                tag.className = 'tag';
+                tag.style.cssText = 'background:rgba(79,195,247,0.15);color:var(--accent);font-size:11px;';
+                tag.textContent = agentName;
+                agentsContainer.appendChild(tag);
+            }
+
+            wrapper.appendChild(agentsContainer);
+        }
+
+        // Inputs schema
+        if (config.inputs) {
+            const inputLabel = document.createElement('div');
+            inputLabel.style.cssText = 'font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;';
+            inputLabel.textContent = 'Expected Inputs';
+            wrapper.appendChild(inputLabel);
+
+            const inputContent = this._buildSchemaDisplay(config.inputs);
+            wrapper.appendChild(inputContent);
+        }
+
+        // Outputs schema
+        if (config.outputs) {
+            const outputLabel = document.createElement('div');
+            outputLabel.style.cssText = 'font-size:13px;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px;';
+            outputLabel.textContent = 'Expected Outputs';
+            wrapper.appendChild(outputLabel);
+
+            const outputContent = this._buildSchemaDisplay(config.outputs);
+            wrapper.appendChild(outputContent);
+        }
+
+        return wrapper;
+    }
+
+    _buildSchemaDisplay(schema) {
+        const display = document.createElement('div');
+        display.style.cssText = 'font-size:12px;color:var(--text-muted);margin-bottom:12px;';
+
+        const allFields = [];
+
+        // Collect required fields
+        if (Array.isArray(schema.required) && schema.required.length > 0) {
+            for (const field of schema.required) {
+                allFields.push({ name: field, required: true });
+            }
+        }
+
+        // Collect optional fields
+        if (Array.isArray(schema.optional) && schema.optional.length > 0) {
+            for (const field of schema.optional) {
+                allFields.push({ name: field, required: false });
+            }
+        }
+
+        if (allFields.length > 0) {
+            const container = document.createElement('div');
+            container.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;';
+
+            for (const field of allFields) {
+                const tag = document.createElement('span');
+                tag.style.cssText = field.required
+                    ? 'font-family:var(--font-mono);font-size:11px;background:rgba(79,195,247,0.1);color:var(--accent);padding:2px 8px;border-radius:3px;'
+                    : 'font-family:var(--font-mono);font-size:11px;background:rgba(160,160,176,0.1);color:var(--text-muted);padding:2px 8px;border-radius:3px;';
+                tag.textContent = field.name;
+
+                if (field.required) {
+                    tag.title = 'Required';
+                } else {
+                    tag.title = 'Optional';
+                }
+
+                container.appendChild(tag);
+            }
+
+            display.appendChild(container);
+        }
+
+        return display;
+    }
+
     _buildMetrics(stage, agents) {
         const row = document.createElement('div');
         row.className = 'metrics-row';
-        row.style.marginBottom = '8px';
+        row.style.cssText = 'margin-bottom:8px;flex-shrink:0;';
 
         let succeeded = 0;
         let failed = 0;
@@ -368,6 +566,35 @@ export class StageDetailPanel {
         // formatJSON produces safe output from JSON.stringify — innerHTML is safe here
         viewer.innerHTML = formatJSON(data);
         return viewer;
+    }
+
+    _buildOutputDisplay(data) {
+        let text = null;
+        let parsed = data;
+        if (typeof parsed === 'string') {
+            try { parsed = JSON.parse(parsed); } catch { /* use as-is */ }
+        }
+        if (parsed && typeof parsed === 'object' && typeof parsed.output === 'string') {
+            text = parsed.output;
+        } else if (typeof data === 'string') {
+            text = data;
+        }
+
+        const display = document.createElement('div');
+        display.className = 'prompt-display';
+
+        if (text && typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+            const md = document.createElement('div');
+            md.className = 'markdown-content';
+            md.innerHTML = sanitizeAndParse(text);
+            display.appendChild(md);
+        } else {
+            const pre = document.createElement('div');
+            pre.className = 'prompt-text';
+            pre.textContent = typeof data === 'object' ? JSON.stringify(data, null, 2) : String(data);
+            display.appendChild(pre);
+        }
+        return display;
     }
 
     _buildMarkdownDisplay(text) {

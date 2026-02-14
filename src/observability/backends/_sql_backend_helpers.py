@@ -28,6 +28,7 @@ from src.database.models import (
     WorkflowExecution,
 )
 from src.observability.backend import DEFAULT_LIST_LIMIT
+from src.observability.constants import ObservabilityFields
 
 logger = logging.getLogger(__name__)
 
@@ -42,10 +43,10 @@ _KEY_SAFETY_VIOLATIONS = "safety_violations"
 _KEY_HAS_SAFETY_VIOLATIONS = "has_safety_violations"
 _KEY_SAFETY_VIOLATION_COUNT = "safety_violation_count"
 
-# Execution status values
-_STATUS_RUNNING = "running"
-_STATUS_COMPLETED = "completed"
-_STATUS_FAILED = "failed"
+# Execution status values — aliases from ObservabilityFields for local use
+_STATUS_RUNNING = ObservabilityFields.STATUS_RUNNING
+_STATUS_COMPLETED = ObservabilityFields.STATUS_COMPLETED
+_STATUS_FAILED = ObservabilityFields.STATUS_FAILED
 
 # Foreign key error detection patterns
 _FK_ERROR_PATTERNS = ("foreign key", "foreign_key", "violates foreign key constraint", "foreign key constraint failed")
@@ -278,16 +279,16 @@ def aggregate_workflow_metrics(workflow_id: str) -> Dict[str, Any]:
         result = session.exec(metrics_statement).first()
         if result:
             return {
-                'total_llm_calls': int(result[0] or 0),
-                'total_tool_calls': int(result[1] or 0),
-                'total_tokens': int(result[2] or 0),
-                'total_cost_usd': float(result[_TOTAL_COST_INDEX] or 0.0),
+                ObservabilityFields.TOTAL_LLM_CALLS: int(result[0] or 0),
+                ObservabilityFields.TOTAL_TOOL_CALLS: int(result[1] or 0),
+                ObservabilityFields.TOTAL_TOKENS: int(result[2] or 0),
+                ObservabilityFields.TOTAL_COST_USD: float(result[_TOTAL_COST_INDEX] or 0.0),
             }
         return {
-            'total_llm_calls': 0,
-            'total_tool_calls': 0,
-            'total_tokens': 0,
-            'total_cost_usd': 0.0,
+            ObservabilityFields.TOTAL_LLM_CALLS: 0,
+            ObservabilityFields.TOTAL_TOOL_CALLS: 0,
+            ObservabilityFields.TOTAL_TOKENS: 0,
+            ObservabilityFields.TOTAL_COST_USD: 0.0,
         }
 
 
@@ -322,20 +323,20 @@ def _workflow_to_dict(wf: Any, stages: Optional[List[Dict[str, Any]]] = None) ->
     return {
         "id": wf.id,
         "workflow_name": wf.workflow_name,
-        "workflow_version": wf.workflow_version,
-        "status": wf.status,
-        "start_time": wf.start_time.isoformat() if wf.start_time else None,
-        "end_time": wf.end_time.isoformat() if wf.end_time else None,
-        "duration_seconds": wf.duration_seconds,
+        ObservabilityFields.WORKFLOW_VERSION: wf.workflow_version,
+        ObservabilityFields.STATUS: wf.status,
+        ObservabilityFields.START_TIME: wf.start_time.isoformat() if wf.start_time else None,
+        ObservabilityFields.END_TIME: wf.end_time.isoformat() if wf.end_time else None,
+        ObservabilityFields.DURATION_SECONDS: wf.duration_seconds,
         "trigger_type": wf.trigger_type,
         "environment": wf.environment,
-        "total_tokens": wf.total_tokens,
-        "total_cost_usd": wf.total_cost_usd,
-        "total_llm_calls": wf.total_llm_calls,
-        "total_tool_calls": wf.total_tool_calls,
+        ObservabilityFields.TOTAL_TOKENS: wf.total_tokens,
+        ObservabilityFields.TOTAL_COST_USD: wf.total_cost_usd,
+        ObservabilityFields.TOTAL_LLM_CALLS: wf.total_llm_calls,
+        ObservabilityFields.TOTAL_TOOL_CALLS: wf.total_tool_calls,
         "tags": wf.tags,
-        "error_message": wf.error_message,
-        "workflow_config_snapshot": wf.workflow_config_snapshot,
+        ObservabilityFields.ERROR_MESSAGE: wf.error_message,
+        ObservabilityFields.WORKFLOW_CONFIG: wf.workflow_config_snapshot,
         "extra_metadata": wf.extra_metadata,
         "stages": stages or [],
     }
@@ -351,16 +352,17 @@ def _stage_to_dict(
         "id": stage.id,
         "workflow_execution_id": stage.workflow_execution_id,
         "stage_name": stage.stage_name,
-        "status": stage.status,
-        "start_time": stage.start_time.isoformat() if stage.start_time else None,
-        "end_time": stage.end_time.isoformat() if stage.end_time else None,
-        "duration_seconds": stage.duration_seconds,
-        "input_data": stage.input_data,
-        "output_data": stage.output_data,
+        "stage_config_snapshot": stage.stage_config_snapshot,
+        ObservabilityFields.STATUS: stage.status,
+        ObservabilityFields.START_TIME: stage.start_time.isoformat() if stage.start_time else None,
+        ObservabilityFields.END_TIME: stage.end_time.isoformat() if stage.end_time else None,
+        ObservabilityFields.DURATION_SECONDS: stage.duration_seconds,
+        ObservabilityFields.INPUT_DATA: stage.input_data,
+        ObservabilityFields.OUTPUT_DATA: stage.output_data,
         "num_agents_executed": stage.num_agents_executed,
         "num_agents_succeeded": stage.num_agents_succeeded,
         "num_agents_failed": stage.num_agents_failed,
-        "error_message": stage.error_message,
+        ObservabilityFields.ERROR_MESSAGE: stage.error_message,
         "agents": agents or [],
         "collaboration_events": collaboration_events or [],
     }
@@ -375,22 +377,23 @@ def _agent_to_dict(
     return {
         "id": agent.id,
         "stage_execution_id": agent.stage_execution_id,
-        "agent_name": agent.agent_name,
-        "status": agent.status,
-        "start_time": agent.start_time.isoformat() if agent.start_time else None,
-        "end_time": agent.end_time.isoformat() if agent.end_time else None,
-        "duration_seconds": agent.duration_seconds,
+        ObservabilityFields.AGENT_NAME: agent.agent_name,
+        "agent_config_snapshot": agent.agent_config_snapshot,
+        ObservabilityFields.STATUS: agent.status,
+        ObservabilityFields.START_TIME: agent.start_time.isoformat() if agent.start_time else None,
+        ObservabilityFields.END_TIME: agent.end_time.isoformat() if agent.end_time else None,
+        ObservabilityFields.DURATION_SECONDS: agent.duration_seconds,
         "reasoning": agent.reasoning,
         "confidence_score": agent.confidence_score,
-        "total_tokens": agent.total_tokens,
+        ObservabilityFields.TOTAL_TOKENS: agent.total_tokens,
         "prompt_tokens": agent.prompt_tokens,
         "completion_tokens": agent.completion_tokens,
         "estimated_cost_usd": agent.estimated_cost_usd,
-        "num_llm_calls": agent.num_llm_calls,
-        "num_tool_calls": agent.num_tool_calls,
-        "input_data": agent.input_data,
-        "output_data": agent.output_data,
-        "error_message": agent.error_message,
+        ObservabilityFields.TOTAL_LLM_CALLS: agent.num_llm_calls,
+        ObservabilityFields.TOTAL_TOOL_CALLS: agent.num_tool_calls,
+        ObservabilityFields.INPUT_DATA: agent.input_data,
+        ObservabilityFields.OUTPUT_DATA: agent.output_data,
+        ObservabilityFields.ERROR_MESSAGE: agent.error_message,
         "llm_calls": llm_calls or [],
         "tool_calls": tool_calls or [],
     }
@@ -407,15 +410,15 @@ def _llm_to_dict(llm: Any) -> Dict[str, Any]:
         "response": llm.response,
         "prompt_tokens": llm.prompt_tokens,
         "completion_tokens": llm.completion_tokens,
-        "total_tokens": llm.total_tokens,
+        ObservabilityFields.TOTAL_TOKENS: llm.total_tokens,
         "latency_ms": llm.latency_ms,
         "estimated_cost_usd": llm.estimated_cost_usd,
         "temperature": llm.temperature,
         "max_tokens": llm.max_tokens,
-        "status": llm.status,
-        "error_message": llm.error_message,
-        "start_time": llm.start_time.isoformat() if llm.start_time else None,
-        "end_time": llm.end_time.isoformat() if llm.end_time else None,
+        ObservabilityFields.STATUS: llm.status,
+        ObservabilityFields.ERROR_MESSAGE: llm.error_message,
+        ObservabilityFields.START_TIME: llm.start_time.isoformat() if llm.start_time else None,
+        ObservabilityFields.END_TIME: llm.end_time.isoformat() if llm.end_time else None,
     }
 
 
@@ -426,12 +429,12 @@ def _tool_to_dict(tool: Any) -> Dict[str, Any]:
         "agent_execution_id": tool.agent_execution_id,
         "tool_name": tool.tool_name,
         "input_params": tool.input_params,
-        "output_data": tool.output_data,
-        "start_time": tool.start_time.isoformat() if tool.start_time else None,
-        "end_time": tool.end_time.isoformat() if tool.end_time else None,
-        "duration_seconds": tool.duration_seconds,
-        "status": tool.status,
-        "error_message": tool.error_message,
+        ObservabilityFields.OUTPUT_DATA: tool.output_data,
+        ObservabilityFields.START_TIME: tool.start_time.isoformat() if tool.start_time else None,
+        ObservabilityFields.END_TIME: tool.end_time.isoformat() if tool.end_time else None,
+        ObservabilityFields.DURATION_SECONDS: tool.duration_seconds,
+        ObservabilityFields.STATUS: tool.status,
+        ObservabilityFields.ERROR_MESSAGE: tool.error_message,
         "safety_checks_applied": tool.safety_checks_applied,
         "approval_required": tool.approval_required,
     }
@@ -451,7 +454,7 @@ def _collab_to_dict(event: Any) -> Dict[str, Any]:
         "outcome": event.outcome,
         "confidence_score": event.confidence_score,
         "extra_metadata": event.extra_metadata,
-    }
+    }  # Collab fields are event-specific, not standard ObservabilityFields
 
 
 def read_get_workflow(workflow_id: str) -> Optional[Dict[str, Any]]:
@@ -647,8 +650,8 @@ def get_backend_stats() -> Dict[str, Any]:
             "total_workflows": total_workflows,
             "total_stages": total_stages,
             "total_agents": total_agents,
-            "total_llm_calls": total_llm_calls,
-            "total_tool_calls": total_tool_calls,
+            ObservabilityFields.TOTAL_LLM_CALLS: total_llm_calls,
+            ObservabilityFields.TOTAL_TOOL_CALLS: total_tool_calls,
             "oldest_record": oldest_wf.isoformat() if oldest_wf else None,
             "newest_record": newest_wf.isoformat() if newest_wf else None,
         }

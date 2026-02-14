@@ -306,10 +306,13 @@ class SecretRedactingFormatter(logging.Formatter):
         # Already covered by _SENSITIVE_PATTERNS above, but detect_secret_patterns
         # provides additional detection that may catch edge cases
         if SECRETS_AVAILABLE and detect_secret_patterns is not None:
-            is_secret, confidence = detect_secret_patterns(text)
-            if is_secret and confidence and float(confidence) > PROB_VERY_HIGH:
-                # High confidence secret detected - apply additional redaction
-                text = "***REDACTED***"
+            try:
+                is_secret, confidence = detect_secret_patterns(text)
+                if is_secret and confidence and float(confidence) > PROB_VERY_HIGH:
+                    # High confidence secret detected - apply additional redaction
+                    text = "***REDACTED***"
+            except ValueError:
+                pass  # Skip detection for oversized inputs
 
         return text
 

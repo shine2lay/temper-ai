@@ -31,6 +31,7 @@ from src.observability._tracker_helpers import (
 )
 from src.observability.backend import ObservabilityBackend
 from src.observability.collaboration_tracker import CollaborationEventTracker
+from src.observability.constants import ObservabilityFields
 from src.observability.decision_tracker import DecisionTracker
 from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 from src.observability.metric_aggregator import MetricAggregator
@@ -40,8 +41,8 @@ from src.utils.config_helpers import sanitize_config_for_display
 logger = logging.getLogger(__name__)
 
 # Execution status values
-_STATUS_COMPLETED = "completed"
-_STATUS_FAILED = "failed"
+_STATUS_COMPLETED = ObservabilityFields.STATUS_COMPLETED
+_STATUS_FAILED = ObservabilityFields.STATUS_FAILED
 
 # Event type identifiers for the observability event bus
 _EVENT_WORKFLOW_START = "workflow_start"
@@ -200,9 +201,9 @@ class ExecutionTracker(TrackerCollaborationMixin):
                 extra_metadata=extra_metadata if extra_metadata else None
             )
             self._emit_event(_EVENT_WORKFLOW_START, {
-                "workflow_id": workflow_id,
+                ObservabilityFields.WORKFLOW_ID: workflow_id,
                 "workflow_name": workflow_name,
-                "start_time": start_time.isoformat(),
+                ObservabilityFields.START_TIME: start_time.isoformat(),
                 "environment": environment,
                 "tags": tags,
             })
@@ -216,9 +217,9 @@ class ExecutionTracker(TrackerCollaborationMixin):
                     error_message=None, error_stack_trace=None
                 )
                 self._emit_event(_EVENT_WORKFLOW_END, {
-                    "workflow_id": workflow_id,
-                    "status": _STATUS_COMPLETED,
-                    "end_time": end_time.isoformat(),
+                    ObservabilityFields.WORKFLOW_ID: workflow_id,
+                    ObservabilityFields.STATUS: _STATUS_COMPLETED,
+                    ObservabilityFields.END_TIME: end_time.isoformat(),
                 })
 
                 aggregate_workflow_metrics_on_success(
@@ -234,10 +235,10 @@ class ExecutionTracker(TrackerCollaborationMixin):
                     error_message=str(e), error_stack_trace=self._get_stack_trace()
                 )
                 self._emit_event(_EVENT_WORKFLOW_END, {
-                    "workflow_id": workflow_id,
-                    "status": _STATUS_FAILED,
-                    "end_time": end_time.isoformat(),
-                    "error_message": str(e),
+                    ObservabilityFields.WORKFLOW_ID: workflow_id,
+                    ObservabilityFields.STATUS: _STATUS_FAILED,
+                    ObservabilityFields.END_TIME: end_time.isoformat(),
+                    ObservabilityFields.ERROR_MESSAGE: str(e),
                 })
                 raise
 
@@ -263,10 +264,10 @@ class ExecutionTracker(TrackerCollaborationMixin):
                 stage_config=sanitized_config, start_time=start_time, input_data=input_data
             )
             self._emit_event(_EVENT_STAGE_START, {
-                "stage_id": stage_id,
-                "workflow_id": workflow_id,
+                ObservabilityFields.STAGE_ID: stage_id,
+                ObservabilityFields.WORKFLOW_ID: workflow_id,
                 "stage_name": stage_name,
-                "start_time": start_time.isoformat(),
+                ObservabilityFields.START_TIME: start_time.isoformat(),
             })
             try:
                 yield stage_id
@@ -287,18 +288,18 @@ class ExecutionTracker(TrackerCollaborationMixin):
                     logger.warning(f"Failed to aggregate stage metrics for {stage_id}: {e}", exc_info=True)
                     self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED)
                 self._emit_event(_EVENT_STAGE_END, {
-                    "stage_id": stage_id,
-                    "status": _STATUS_COMPLETED,
-                    "end_time": end_time.isoformat(),
+                    ObservabilityFields.STAGE_ID: stage_id,
+                    ObservabilityFields.STATUS: _STATUS_COMPLETED,
+                    ObservabilityFields.END_TIME: end_time.isoformat(),
                 })
             except Exception as e:
                 end_time = utcnow()
                 self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(e))
                 self._emit_event(_EVENT_STAGE_END, {
-                    "stage_id": stage_id,
-                    "status": _STATUS_FAILED,
-                    "end_time": end_time.isoformat(),
-                    "error_message": str(e),
+                    ObservabilityFields.STAGE_ID: stage_id,
+                    ObservabilityFields.STATUS: _STATUS_FAILED,
+                    ObservabilityFields.END_TIME: end_time.isoformat(),
+                    ObservabilityFields.ERROR_MESSAGE: str(e),
                 })
                 raise
             finally:
@@ -311,28 +312,28 @@ class ExecutionTracker(TrackerCollaborationMixin):
                     stage_config=sanitized_config, start_time=start_time, input_data=input_data
                 )
                 self._emit_event(_EVENT_STAGE_START, {
-                    "stage_id": stage_id,
-                    "workflow_id": workflow_id,
+                    ObservabilityFields.STAGE_ID: stage_id,
+                    ObservabilityFields.WORKFLOW_ID: workflow_id,
                     "stage_name": stage_name,
-                    "start_time": start_time.isoformat(),
+                    ObservabilityFields.START_TIME: start_time.isoformat(),
                 })
                 try:
                     yield stage_id
                     end_time = utcnow()
                     self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_COMPLETED)
                     self._emit_event(_EVENT_STAGE_END, {
-                        "stage_id": stage_id,
-                        "status": _STATUS_COMPLETED,
-                        "end_time": end_time.isoformat(),
+                        ObservabilityFields.STAGE_ID: stage_id,
+                        ObservabilityFields.STATUS: _STATUS_COMPLETED,
+                        ObservabilityFields.END_TIME: end_time.isoformat(),
                     })
                 except Exception as e:
                     end_time = utcnow()
                     self.backend.track_stage_end(stage_id=stage_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(e))
                     self._emit_event(_EVENT_STAGE_END, {
-                        "stage_id": stage_id,
-                        "status": _STATUS_FAILED,
-                        "end_time": end_time.isoformat(),
-                        "error_message": str(e),
+                        ObservabilityFields.STAGE_ID: stage_id,
+                        ObservabilityFields.STATUS: _STATUS_FAILED,
+                        ObservabilityFields.END_TIME: end_time.isoformat(),
+                        ObservabilityFields.ERROR_MESSAGE: str(e),
                     })
                     raise
                 finally:
@@ -357,29 +358,29 @@ class ExecutionTracker(TrackerCollaborationMixin):
                 agent_config=sanitized_config, start_time=start_time, input_data=input_data
             )
             self._emit_event(_EVENT_AGENT_START, {
-                "agent_id": agent_id,
-                "stage_id": stage_id,
-                "agent_name": agent_name,
-                "start_time": start_time.isoformat(),
+                ObservabilityFields.AGENT_ID: agent_id,
+                ObservabilityFields.STAGE_ID: stage_id,
+                ObservabilityFields.AGENT_NAME: agent_name,
+                ObservabilityFields.START_TIME: start_time.isoformat(),
             })
             try:
                 yield agent_id
                 end_time = utcnow()
                 self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_COMPLETED)
                 self._emit_event(_EVENT_AGENT_END, {
-                    "agent_id": agent_id,
-                    "status": _STATUS_COMPLETED,
-                    "end_time": end_time.isoformat(),
+                    ObservabilityFields.AGENT_ID: agent_id,
+                    ObservabilityFields.STATUS: _STATUS_COMPLETED,
+                    ObservabilityFields.END_TIME: end_time.isoformat(),
                 })
                 self._collect_agent_metrics(agent_id)
             except Exception as e:
                 end_time = utcnow()
                 self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(e))
                 self._emit_event(_EVENT_AGENT_END, {
-                    "agent_id": agent_id,
-                    "status": _STATUS_FAILED,
-                    "end_time": end_time.isoformat(),
-                    "error_message": str(e),
+                    ObservabilityFields.AGENT_ID: agent_id,
+                    ObservabilityFields.STATUS: _STATUS_FAILED,
+                    ObservabilityFields.END_TIME: end_time.isoformat(),
+                    ObservabilityFields.ERROR_MESSAGE: str(e),
                 })
                 raise
             finally:
@@ -392,29 +393,29 @@ class ExecutionTracker(TrackerCollaborationMixin):
                     agent_config=sanitized_config, start_time=start_time, input_data=input_data
                 )
                 self._emit_event(_EVENT_AGENT_START, {
-                    "agent_id": agent_id,
-                    "stage_id": stage_id,
-                    "agent_name": agent_name,
-                    "start_time": start_time.isoformat(),
+                    ObservabilityFields.AGENT_ID: agent_id,
+                    ObservabilityFields.STAGE_ID: stage_id,
+                    ObservabilityFields.AGENT_NAME: agent_name,
+                    ObservabilityFields.START_TIME: start_time.isoformat(),
                 })
                 try:
                     yield agent_id
                     end_time = utcnow()
                     self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_COMPLETED)
                     self._emit_event(_EVENT_AGENT_END, {
-                        "agent_id": agent_id,
-                        "status": _STATUS_COMPLETED,
-                        "end_time": end_time.isoformat(),
+                        ObservabilityFields.AGENT_ID: agent_id,
+                        ObservabilityFields.STATUS: _STATUS_COMPLETED,
+                        ObservabilityFields.END_TIME: end_time.isoformat(),
                     })
                     self._collect_agent_metrics(agent_id)
                 except Exception as e:
                     end_time = utcnow()
                     self.backend.track_agent_end(agent_id=agent_id, end_time=end_time, status=_STATUS_FAILED, error_message=str(e))
                     self._emit_event(_EVENT_AGENT_END, {
-                        "agent_id": agent_id,
-                        "status": _STATUS_FAILED,
-                        "end_time": end_time.isoformat(),
-                        "error_message": str(e),
+                        ObservabilityFields.AGENT_ID: agent_id,
+                        ObservabilityFields.STATUS: _STATUS_FAILED,
+                        ObservabilityFields.END_TIME: end_time.isoformat(),
+                        ObservabilityFields.ERROR_MESSAGE: str(e),
                     })
                     raise
                 finally:
@@ -477,9 +478,9 @@ class ExecutionTracker(TrackerCollaborationMixin):
             num_tool_calls=num_tool_calls,
         )
         self._emit_event(_EVENT_AGENT_OUTPUT, {
-            "agent_id": agent_id,
+            ObservabilityFields.AGENT_ID: agent_id,
             "confidence_score": confidence_score,
-            "total_tokens": total_tokens,
+            ObservabilityFields.TOTAL_TOKENS: total_tokens,
             "estimated_cost_usd": estimated_cost_usd,
             "num_llm_calls": num_llm_calls,
             "num_tool_calls": num_tool_calls,
@@ -489,7 +490,7 @@ class ExecutionTracker(TrackerCollaborationMixin):
         """Set stage output data."""
         self._metric_aggregator.set_stage_output(stage_id=stage_id, output_data=output_data)
         self._emit_event(_EVENT_STAGE_OUTPUT, {
-            "stage_id": stage_id,
+            ObservabilityFields.STAGE_ID: stage_id,
         })
 
     def track_decision_outcome(

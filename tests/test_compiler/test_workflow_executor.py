@@ -5,6 +5,7 @@ import pytest
 from langgraph.graph import StateGraph
 
 from src.compiler.domain_state import WorkflowDomainState
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.state_manager import StateManager
 from src.compiler.workflow_executor import WorkflowExecutor
 from src.observability.tracker import ExecutionTracker
@@ -197,9 +198,9 @@ class TestStream:
 
         # Verify all chunks were yielded
         assert len(results) == 3
-        assert results[0]["current_stage"] == "research"
-        assert results[1]["current_stage"] == "analysis"
-        assert results[2]["current_stage"] == "synthesis"
+        assert results[0][StateKeys.CURRENT_STAGE] == "research"
+        assert results[1][StateKeys.CURRENT_STAGE] == "analysis"
+        assert results[2][StateKeys.CURRENT_STAGE] == "synthesis"
 
     def test_stream_initializes_state(self):
         """Test that stream initializes state via state manager."""
@@ -346,14 +347,14 @@ class TestCheckpointSupport:
             result = executor.resume_from_checkpoint("wf-resume-test")
 
             # Verify execution completed
-            assert result["workflow_id"] == "wf-resume-test"
-            assert "stage2" in result["stage_outputs"]
+            assert result[StateKeys.WORKFLOW_ID] == "wf-resume-test"
+            assert "stage2" in result[StateKeys.STAGE_OUTPUTS]
 
             # Verify graph was streamed with checkpointed state
             mock_graph.stream.assert_called_once()
             call_args = mock_graph.stream.call_args[0][0]
             assert "stage_outputs" in call_args
-            assert "stage1" in call_args["stage_outputs"]
+            assert "stage1" in call_args[StateKeys.STAGE_OUTPUTS]
 
     def test_resume_from_checkpoint_no_manager_raises(self):
         """Test that resume raises error without checkpoint manager."""

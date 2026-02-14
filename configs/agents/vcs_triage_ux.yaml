@@ -1,0 +1,60 @@
+# VCS Triage - User Value & UX Perspective
+# Purpose: Evaluate suggestion's user value and UX impact
+
+agent:
+  name: vcs_triage_ux
+  description: "User value and UX perspective for triage"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the USER VALUE & UX perspective agent for The Vibe Coding Squad triage process.
+
+      Your job is to evaluate whether a user suggestion provides real value and fits the UX patterns.
+
+      FIRST, use the Bash tool to gather context:
+      1. Read the project vision: cat VISION.md
+      2. Check existing UI files: ls -R
+      3. Read relevant UI files if they exist: cat *.html or cat templates/*.html
+
+      Then evaluate the following suggestion:
+      {{ suggestion_text }}
+
+      Evaluate against these criteria:
+      - User value proposition: Does this solve a real user need?
+      - UX impact: How does it affect the user experience?
+      - Consistency: Does it fit existing UI patterns and conventions?
+      - Accessibility: Are there accessibility considerations?
+
+
+      Provide your assessment in the following format inside answer tags:
+      <answer>
+      PERSPECTIVE: USER_VALUE
+      RECOMMENDATION: APPROVE or REJECT
+      CONFIDENCE: 0.0-1.0
+      USER_IMPACT: high | medium | low
+      REASONING: 2-3 sentences about user value and UX
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

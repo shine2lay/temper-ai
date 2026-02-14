@@ -1,16 +1,30 @@
 """Stage compiler for LangGraph workflow graphs.
 
 Handles compilation of stage configurations into executable LangGraph StateGraph.
-Separated from main compiler to isolate LangGraph-specific graph construction logic.
+Supports sequential, conditional, and loop-back stage execution patterns via
+LangGraph's native ``add_conditional_edges``.
 """
-from typing import Any, Dict, List
+import logging
+from typing import Any, Dict, List, Optional
 
 from langgraph.graph import END, START, StateGraph
 from langgraph.pregel import Pregel
 
+from src.compiler.condition_evaluator import ConditionEvaluator
+from src.compiler.dag_builder import build_stage_dag, compute_depths, has_dag_dependencies
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.langgraph_state import LangGraphWorkflowState
 from src.compiler.node_builder import NodeBuilder
+from src.compiler.routing_functions import (
+    _ref_attr,
+    create_conditional_router,
+    create_loop_router,
+)
 from src.compiler.state_manager import StateManager
+
+logger = logging.getLogger(__name__)
+
+LOOP_GATE_PREFIX = "_loop_gate_"
 
 
 class StageCompiler:
@@ -20,43 +34,40 @@ class StageCompiler:
     - Creating StateGraph instances
     - Adding initialization nodes
     - Adding stage execution nodes
-    - Connecting nodes with edges
+    - Connecting nodes with edges (sequential, conditional, loop)
     - Setting entry points
     - Compiling graphs
 
-    Separated from LangGraphCompiler to isolate graph construction concerns.
-
     Example:
-        >>> stage_compiler = StageCompiler(state_manager, node_builder)
+        >>> evaluator = ConditionEvaluator()
+        >>> stage_compiler = StageCompiler(state_manager, node_builder, evaluator)
         >>> graph = stage_compiler.compile_stages(stage_names, workflow_config)
     """
 
     def __init__(
         self,
         state_manager: StateManager,
-        node_builder: NodeBuilder
+        node_builder: NodeBuilder,
+        condition_evaluator: Optional[ConditionEvaluator] = None,
     ) -> None:
         """Initialize stage compiler.
 
         Args:
             state_manager: StateManager for creating initialization nodes
             node_builder: NodeBuilder for creating stage execution nodes
+            condition_evaluator: Evaluator for conditional/loop expressions
+                               (default: creates new ConditionEvaluator)
         """
         self.state_manager = state_manager
         self.node_builder = node_builder
+        self.condition_evaluator = condition_evaluator or ConditionEvaluator()
 
     def compile_stages(
         self,
         stage_names: List[str],
-        workflow_config: Dict[str, Any]
+        workflow_config: Dict[str, Any],
     ) -> Pregel[Any, Any]:
         """Compile stage names into executable LangGraph StateGraph.
-
-        Creates a sequential workflow graph with:
-        1. START -> init node
-        2. init -> first stage
-        3. stage[i] -> stage[i+1] (sequential)
-        4. last stage -> END
 
         Args:
             stage_names: List of stage names in execution order
@@ -67,21 +78,13 @@ class StageCompiler:
 
         Raises:
             ValueError: If stage_names is empty
-
-        Example:
-            >>> graph = compiler.compile_stages(
-            ...     ["research", "analysis", "synthesis"],
-            ...     workflow_config
-            ... )
-            >>> result = graph.invoke(initial_state)
         """
         if not stage_names:
             raise ValueError("Cannot compile workflow with no stages")
 
-        # Create state graph with LangGraph-compatible dataclass
         graph: StateGraph[Any] = StateGraph(LangGraphWorkflowState)
 
-        # Add initialization node for workflow state
+        # Add initialization node
         init_node = self.state_manager.create_init_node()
         graph.add_node("init", init_node)  # type: ignore
 
@@ -89,112 +92,530 @@ class StageCompiler:
         for stage_name in stage_names:
             stage_node = self.node_builder.create_stage_node(
                 stage_name,
-                workflow_config
+                workflow_config,
             )
             graph.add_node(stage_name, stage_node)  # type: ignore
 
-        # Add edges for sequential execution
-        self._add_sequential_edges(graph, stage_names)
+        # Add edges (conditional-aware), may add loop gate nodes
+        stage_refs = self._get_stage_refs(workflow_config)
+        self._add_edges(graph, stage_names, stage_refs)
 
-        # Set entry point
         graph.set_entry_point("init")
-
-        # Compile and return
         return graph.compile()
 
+    def _get_stage_refs(
+        self,
+        workflow_config: Dict[str, Any],
+    ) -> List[Any]:
+        """Extract WorkflowStageReference list from workflow config."""
+        workflow = workflow_config.get("workflow", workflow_config)
+        return workflow.get("stages", [])
+
+    def _add_edges(
+        self,
+        graph: StateGraph[Any],
+        stage_names: List[str],
+        stage_refs: List[Any],
+    ) -> None:
+        """Add edges to the graph, dispatching to DAG or sequential mode."""
+        if has_dag_dependencies(stage_refs):
+            self._add_dag_edges(graph, stage_names, stage_refs)
+        else:
+            self._add_sequential_edges_v2(graph, stage_names, stage_refs)
+
+    def _add_sequential_edges_v2(
+        self,
+        graph: StateGraph[Any],
+        stage_names: List[str],
+        stage_refs: List[Any],
+    ) -> None:
+        """Add edges sequentially (no depends_on). Original _add_edges logic."""
+        ref_lookup = self._build_ref_lookup(stage_refs)
+
+        # START -> init
+        graph.add_edge(START, "init")
+
+        # init -> first stage
+        self._add_init_edge(graph, stage_names, stage_refs, ref_lookup)
+
+        # Stage-to-stage edges
+        for i in range(len(stage_names)):
+            current_name = stage_names[i]
+            current_ref = ref_lookup.get(current_name)
+            next_name = stage_names[i + 1] if i + 1 < len(stage_names) else None
+            next_ref = ref_lookup.get(next_name) if next_name else None
+
+            if self._add_loop_edge(graph, current_name, current_ref, next_name):
+                continue
+            if self._add_conditional_edge(
+                graph, current_name, next_name, next_ref, i, stage_names, stage_refs
+            ):
+                continue
+
+            # Simple sequential edge
+            graph.add_edge(current_name, next_name or END)
+
+    def _add_dag_edges(
+        self,
+        graph: StateGraph[Any],
+        stage_names: List[str],
+        stage_refs: List[Any],
+    ) -> None:
+        """Add edges using DAG topology from depends_on declarations.
+
+        Stages with the same predecessors fan out in parallel; stages with
+        multiple predecessors fan in.  Barrier nodes are inserted to equalize
+        branch depths so LangGraph's Pregel model triggers fan-in correctly.
+        """
+        dag = build_stage_dag(stage_names, stage_refs)
+        ref_lookup = self._build_ref_lookup(stage_refs)
+        depths = compute_depths(dag)
+
+        # Insert barrier nodes for asymmetric fan-in
+        barrier_edges = _insert_fan_in_barriers(graph, dag, depths)
+
+        # START -> init
+        graph.add_edge(START, "init")
+
+        # init -> root stages (fan-out if multiple roots)
+        self._add_init_to_roots(graph, dag, ref_lookup, stage_refs)
+
+        # Traverse topo order, add successor edges for each stage
+        for stage in dag.topo_order:
+            stage_ref = ref_lookup.get(stage)
+            successors = dag.successors.get(stage, [])
+
+            # Loop-back stages get special treatment
+            if self._add_loop_edge_dag(
+                graph, stage, stage_ref, successors, dag,
+                barrier_edges=barrier_edges,
+            ):
+                continue
+
+            # Fan-out to successors (or END for terminals)
+            self._add_successor_edges(
+                graph, stage, successors, ref_lookup, dag, stage_refs,
+                barrier_edges=barrier_edges,
+            )
+
+    def _add_init_to_roots(
+        self,
+        graph: StateGraph[Any],
+        dag: Any,
+        ref_lookup: Dict[str, Any],
+        stage_refs: List[Any],
+    ) -> None:
+        """Add edges from init to DAG root stages.
+
+        If a root stage is conditional, uses conditional edges.
+        Multiple roots fan out in parallel from init.
+        """
+        for root in dag.roots:
+            root_ref = ref_lookup.get(root)
+            if root_ref and self._is_conditional(root_ref):
+                skip_target = self._resolve_skip_target(root, root_ref, dag)
+                router = create_conditional_router(
+                    root_ref, skip_target, 0, stage_refs,
+                    self.condition_evaluator,
+                )
+                graph.add_conditional_edges(
+                    "init", router, _build_path_map(root, skip_target),
+                )
+            else:
+                graph.add_edge("init", root)
+
+    def _add_successor_edges(
+        self,
+        graph: StateGraph[Any],
+        stage: str,
+        successors: List[str],
+        ref_lookup: Dict[str, Any],
+        dag: Any,
+        stage_refs: List[Any],
+        barrier_edges: Optional[Dict] = None,
+    ) -> None:
+        """Add fan-out edges from a stage to its DAG successors.
+
+        Skips edges that have been replaced by barrier chains (for
+        asymmetric fan-in equalization).  Terminal stages connect to END.
+        """
+        if not successors:
+            graph.add_edge(stage, END)
+            return
+
+        for succ in successors:
+            # Skip edges replaced by barrier chains
+            if barrier_edges and (stage, succ) in barrier_edges:
+                continue
+
+            succ_ref = ref_lookup.get(succ)
+            if succ_ref and self._is_conditional(succ_ref):
+                skip_target = self._resolve_skip_target(succ, succ_ref, dag)
+                router = create_conditional_router(
+                    succ_ref, skip_target, 0, stage_refs,
+                    self.condition_evaluator,
+                )
+                graph.add_conditional_edges(
+                    stage, router, _build_path_map(succ, skip_target),
+                )
+            else:
+                graph.add_edge(stage, succ)
+
+    def _add_loop_edge_dag(
+        self,
+        graph: StateGraph[Any],
+        stage: str,
+        stage_ref: Any,
+        successors: List[str],
+        dag: Any,
+        barrier_edges: Optional[Dict] = None,
+    ) -> bool:
+        """Add loop-back edge for a DAG stage with loops_back_to.
+
+        In DAG mode, when the loop exits it fans out to ALL DAG successors
+        (not just the first).  This ensures parallel branches downstream
+        of the loop stage all execute on exit.
+
+        When barrier nodes exist for fan-in equalization, exit targets are
+        remapped to route through the barrier chain instead of directly
+        to the successor.
+
+        Returns True if a loop edge was added.
+        """
+        loops_back_to = _ref_attr(stage_ref, "loops_back_to") if stage_ref else None
+        if not loops_back_to:
+            return False
+
+        gate_name = f"{LOOP_GATE_PREFIX}{stage}"
+        gate_node = _create_loop_gate_node(stage)
+        graph.add_node(gate_name, gate_node)  # type: ignore
+
+        graph.add_edge(stage, gate_name)
+
+        # Exit targets: ALL successors in DAG (fan-out), or END.
+        # Remap targets that have barrier chains to use the barrier
+        # entry point so fan-in depth equalization is preserved.
+        raw_targets = successors if successors else [None]
+        exit_targets: List[Optional[str]] = []
+        for target in raw_targets:
+            if target and barrier_edges and (stage, target) in barrier_edges:
+                # Route through barrier entry instead of direct target
+                barrier_entry = f"{BARRIER_PREFIX}{stage}_to_{target}_0"
+                exit_targets.append(barrier_entry)
+            else:
+                exit_targets.append(target)
+
+        router = create_loop_router(
+            stage_ref, exit_targets, self.condition_evaluator,
+        )
+        path_map = _build_loop_path_map_multi(loops_back_to, exit_targets)
+        graph.add_conditional_edges(gate_name, router, path_map)
+        return True
+
+    @staticmethod
+    def _resolve_skip_target(
+        stage: str,
+        stage_ref: Any,
+        dag: Any,
+    ) -> Optional[str]:
+        """Resolve skip target for a conditional stage in DAG context.
+
+        Uses explicit skip_to if set. Otherwise, skips to the conditional
+        stage's own successors so downstream stages still run.
+        Falls back to END for terminals.
+        """
+        skip_to = _ref_attr(stage_ref, "skip_to")
+        if skip_to == "end":
+            return None  # None maps to END in routing
+        if skip_to:
+            return skip_to
+        # Default: skip to first successor of the conditional stage
+        successors = dag.successors.get(stage, [])
+        return successors[0] if successors else None
+
+    def _add_init_edge(
+        self,
+        graph: StateGraph[Any],
+        stage_names: List[str],
+        stage_refs: List[Any],
+        ref_lookup: Dict[str, Any],
+    ) -> None:
+        """Add edge from init to first stage (may be conditional)."""
+        first_ref = ref_lookup.get(stage_names[0])
+        if first_ref and self._is_conditional(first_ref):
+            next_after = stage_names[1] if len(stage_names) > 1 else None
+            router = create_conditional_router(
+                first_ref, next_after, 0, stage_refs, self.condition_evaluator,
+            )
+            graph.add_conditional_edges(
+                "init", router, _build_path_map(stage_names[0], next_after),
+            )
+        else:
+            graph.add_edge("init", stage_names[0])
+
+    def _add_loop_edge(
+        self,
+        graph: StateGraph[Any],
+        current_name: str,
+        current_ref: Any,
+        next_name: Optional[str],
+    ) -> bool:
+        """Add loop-back edge if current stage has loops_back_to.
+
+        Inserts a loop gate node between the stage and the routing decision.
+        The gate node increments the loop counter (as a proper LangGraph node
+        returning state updates), then the routing function reads the counter.
+
+        Returns True if a loop edge was added.
+        """
+        loops_back_to = _ref_attr(current_ref, "loops_back_to") if current_ref else None
+        if not loops_back_to:
+            return False
+
+        # Add loop gate node that increments counter
+        gate_name = f"{LOOP_GATE_PREFIX}{current_name}"
+        gate_node = _create_loop_gate_node(current_name)
+        graph.add_node(gate_name, gate_node)  # type: ignore
+
+        # current_stage -> gate_node -> [loop_router] -> target/exit
+        graph.add_edge(current_name, gate_name)
+
+        router = create_loop_router(
+            current_ref, next_name, self.condition_evaluator,
+        )
+        path_map = _build_loop_path_map(loops_back_to, next_name)
+        graph.add_conditional_edges(gate_name, router, path_map)
+        return True
+
+    def _add_conditional_edge(
+        self,
+        graph: StateGraph[Any],
+        current_name: str,
+        next_name: Optional[str],
+        next_ref: Any,
+        i: int,
+        stage_names: List[str],
+        stage_refs: List[Any],
+    ) -> bool:
+        """Add conditional edge if next stage is conditional.
+
+        Returns True if a conditional edge was added.
+        """
+        if not (next_ref and self._is_conditional(next_ref)):
+            return False
+
+        next_index = i + 1
+        # Use skip_to if specified, otherwise default to stage after next
+        skip_to = _ref_attr(next_ref, "skip_to") if next_ref else None
+        if skip_to == "end":
+            after_next = None  # None maps to END in routing
+        else:
+            after_next = skip_to or (
+                stage_names[next_index + 1] if next_index + 1 < len(stage_names) else None
+            )
+        router = create_conditional_router(
+            next_ref, after_next, next_index, stage_refs, self.condition_evaluator,
+        )
+        graph.add_conditional_edges(
+            current_name, router, _build_path_map(next_name, after_next),
+        )
+        return True
+
+    def _build_ref_lookup(self, stage_refs: List[Any]) -> Dict[str, Any]:
+        """Build a lookup dict from stage name to stage reference."""
+        lookup: Dict[str, Any] = {}
+        for ref in stage_refs:
+            if isinstance(ref, str):
+                continue
+            name = ref.get("name") if isinstance(ref, dict) else getattr(ref, "name", None)
+            if name:
+                lookup[name] = ref
+        return lookup
+
+    @staticmethod
+    def _is_conditional(stage_ref: Any) -> bool:
+        """Check if a stage reference has conditional execution configured."""
+        if isinstance(stage_ref, dict):
+            return bool(
+                stage_ref.get("conditional")
+                or stage_ref.get("condition")
+                or stage_ref.get("skip_if")
+            )
+        return bool(
+            getattr(stage_ref, "conditional", False)
+            or getattr(stage_ref, "condition", None)
+            or getattr(stage_ref, "skip_if", None)
+        )
+
+    # Keep _add_sequential_edges for backward compat (used by tests)
     def _add_sequential_edges(
         self,
         graph: StateGraph[Any],
-        stage_names: List[str]
+        stage_names: List[str],
     ) -> None:
-        """Add sequential edges connecting stages.
-
-        Creates a linear execution flow:
-        START -> init -> stage[0] -> stage[1] -> ... -> stage[n] -> END
-
-        Args:
-            graph: StateGraph to add edges to
-            stage_names: Ordered list of stage names
-
-        Example:
-            For stages ["research", "analysis", "synthesis"]:
-            START -> init
-            init -> research
-            research -> analysis
-            analysis -> synthesis
-            synthesis -> END
-        """
-        # Connect START to init
+        """Add sequential edges connecting stages (legacy helper)."""
         graph.add_edge(START, "init")
-
-        # Connect init to first stage
         graph.add_edge("init", stage_names[0])
-
-        # Connect stages sequentially
         for i in range(len(stage_names) - 1):
             graph.add_edge(stage_names[i], stage_names[i + 1])
-
-        # Connect last stage to END
         graph.add_edge(stage_names[-1], END)
 
     def compile_parallel_stages(
         self,
         stage_names: List[str],
-        workflow_config: Dict[str, Any]
+        workflow_config: Dict[str, Any],
     ) -> Pregel[Any, Any]:
-        """Compile stages with parallel execution support (M3+ feature).
-
-        Future enhancement for parallel stage execution.
-        Currently delegates to sequential compilation.
-
-        Args:
-            stage_names: List of stage names
-            workflow_config: Full workflow configuration
-
-        Returns:
-            Compiled StateGraph
-
-        Note:
-            This is a placeholder for M3+ parallel stage execution.
-            Currently falls back to sequential compilation.
-        """
-        # Future Enhancement (M3+ milestone): Parallel stage execution with DAG-based scheduling
-        # Currently deferred to maintain simplicity and reliability of sequential execution.
-        # When implemented, will require:
-        # - Dependency analysis between stages
-        # - Thread-safe state synchronization
-        # - Thread pool executor with proper error handling
-        # Tracking: See docs/future_features.md#parallel-stages
+        """Compile stages with parallel execution support (M3+ feature)."""
         return self.compile_stages(stage_names, workflow_config)
 
     def compile_conditional_stages(
         self,
         stage_names: List[str],
         workflow_config: Dict[str, Any],
-        _conditions: Dict[str, Any]
+        _conditions: Dict[str, Any],
     ) -> Pregel[Any, Any]:
-        """Compile stages with conditional branching (M4+ feature).
+        """Compile stages with conditional branching.
 
-        Future enhancement for conditional stage execution based on
-        state values or quality gates.
-
-        Args:
-            stage_names: List of stage names
-            workflow_config: Full workflow configuration
-            _conditions: Conditional branching rules
-
-        Returns:
-            Compiled StateGraph
-
-        Note:
-            This is a placeholder for M4+ conditional execution.
-            Currently falls back to sequential compilation.
+        Now delegates to compile_stages which handles conditional edges natively.
         """
-        # Future Enhancement (M4+ milestone): Conditional stage execution with dynamic branching
-        # Currently deferred to maintain deterministic workflow execution.
-        # When implemented, will require:
-        # - Condition evaluator (jinja2-based or custom DSL)
-        # - Dynamic graph construction at runtime
-        # - Branch merge strategies for converging paths
-        # Tracking: See docs/future_features.md#conditional-branches
         return self.compile_stages(stage_names, workflow_config)
+
+
+def _create_loop_gate_node(stage_name: str) -> Any:
+    """Create a loop gate node that increments the loop counter.
+
+    LangGraph routing functions cannot mutate state. This node runs between
+    the loop stage and the routing decision, incrementing the counter as a
+    proper node that returns state updates.
+
+    Args:
+        stage_name: Name of the stage this gate tracks
+
+    Returns:
+        Callable node function for LangGraph
+    """
+    key = StateKeys.STAGE_LOOP_COUNTS
+
+    def _gate(state: Any) -> Dict[str, Any]:
+        if isinstance(state, dict):
+            counts = dict(state.get(key, {}))
+        elif hasattr(state, key):
+            counts = dict(getattr(state, key) or {})
+        else:
+            counts = {}
+        counts[stage_name] = counts.get(stage_name, 0) + 1
+        return {key: counts}
+
+    return _gate
+
+
+def _build_path_map(
+    stage_name: str,
+    skip_target: Optional[str],
+) -> Dict[str, str]:
+    """Build path map for conditional edges."""
+    path_map = {stage_name: stage_name}
+    target = skip_target or END
+    path_map[target] = target
+    return path_map
+
+
+def _build_loop_path_map(
+    loop_target: str,
+    exit_target: Optional[str],
+) -> Dict[str, str]:
+    """Build path map for loop-back edges (single exit target)."""
+    path_map = {loop_target: loop_target}
+    target = exit_target or END
+    path_map[target] = target
+    return path_map
+
+
+def _build_loop_path_map_multi(
+    loop_target: str,
+    exit_targets: List[Optional[str]],
+) -> Dict[str, str]:
+    """Build path map for loop-back edges with multiple exit targets.
+
+    When a loop gate has multiple DAG successors, the exit path
+    fans out to all of them.  The router returns a list of targets.
+
+    Args:
+        loop_target: Stage to loop back to
+        exit_targets: List of successor stages (or [None] for END)
+
+    Returns:
+        Path map covering loop target and all exit targets
+    """
+    path_map: Dict[str, str] = {loop_target: loop_target}
+    for target in exit_targets:
+        resolved = target or END
+        path_map[resolved] = resolved
+    # Key for the list-return case (LangGraph uses individual entries)
+    return path_map
+
+
+BARRIER_PREFIX = "_barrier_"
+
+
+def _passthrough_node(_state: Any) -> Dict[str, Any]:
+    """Barrier node that passes through without state modifications.
+
+    Used to equalize parallel branch depths for correct fan-in.
+    """
+    return {}
+
+
+def _insert_fan_in_barriers(
+    graph: Any,
+    dag: Any,
+    depths: Dict[str, int],
+) -> Dict:
+    """Insert pass-through barrier nodes for asymmetric fan-in.
+
+    LangGraph's Pregel model triggers a node when ANY incoming edge fires.
+    For fan-in nodes with predecessors at different depths, the node triggers
+    from the shallowest predecessor before deeper ones complete.
+
+    This function inserts barrier chains on shallow edges to equalize depths,
+    ensuring all predecessors complete in the same superstep.
+
+    Args:
+        graph: StateGraph being built
+        dag: StageDAG with predecessors
+        depths: Stage depth map from compute_depths()
+
+    Returns:
+        Dict mapping (pred, target) to True for edges replaced by barriers
+    """
+    barrier_edges: Dict = {}
+
+    for stage in dag.topo_order:
+        preds = dag.predecessors.get(stage, [])
+        if len(preds) < 2:
+            continue
+
+        max_pred_depth = max(depths[p] for p in preds)
+
+        for pred in preds:
+            depth_diff = max_pred_depth - depths[pred]
+            if depth_diff == 0:
+                continue
+
+            # Insert chain of barrier nodes on the short edge
+            prev = pred
+            for k in range(depth_diff):
+                barrier_name = f"{BARRIER_PREFIX}{pred}_to_{stage}_{k}"
+                graph.add_node(barrier_name, _passthrough_node)
+                graph.add_edge(prev, barrier_name)
+                prev = barrier_name
+
+            # Last barrier connects to the fan-in target
+            graph.add_edge(prev, stage)
+            barrier_edges[(pred, stage)] = True
+            logger.debug(
+                "Inserted %d barrier(s) on edge %s → %s",
+                depth_diff, pred, stage,
+            )
+
+    return barrier_edges

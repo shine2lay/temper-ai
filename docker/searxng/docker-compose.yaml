@@ -1,0 +1,25 @@
+# SearXNG Docker Compose Configuration
+# Purpose: Local SearXNG instance for privacy-preserving web search
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: maf-searxng
+    ports:
+      - "8888:8080"
+    volumes:
+      - ./settings.yaml:/etc/searxng/settings.yml:ro
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8888
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"

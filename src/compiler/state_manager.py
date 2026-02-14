@@ -24,6 +24,7 @@ RESERVED_STATE_KEYS = frozenset({
     "current_stage",
     "workflow_id",
     "workflow_inputs",
+    "stage_loop_counts",
     "tracker",
     "tool_registry",
     "config_loader",

@@ -30,6 +30,7 @@ def create_ws_endpoint(data_service: Any) -> Callable:
 
         def on_event(event: Any) -> None:
             """Callback from event bus (runs in sync emitting thread)."""
+            logger.info(f"[WebSocket] Received event: {event.event_type} for workflow {workflow_id}")
             event_dict = {
                 "type": "event",
                 "event_type": event.event_type,
@@ -82,7 +83,9 @@ def create_ws_endpoint(data_service: Any) -> Callable:
                 await websocket.send_json({"type": "snapshot", "workflow": snapshot})
 
             # Subscribe to events for this workflow
+            logger.info(f"[WebSocket] Subscribing to events for workflow {workflow_id}")
             subscription_id = data_service.subscribe_workflow(workflow_id, on_event)
+            logger.info(f"[WebSocket] Subscription ID: {subscription_id}")
 
             # Start chunk flusher
             flush_task = asyncio.create_task(flush_chunks())

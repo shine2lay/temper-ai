@@ -6,6 +6,11 @@ These are internal implementation details and should not be used directly.
 import re
 from typing import Any, Dict, Optional, Set
 
+from src.safety.constants import (
+    VIOLATION_MESSAGE,
+    VIOLATION_PATTERN,
+    VIOLATION_SEVERITY,
+)
 from src.safety.interfaces import ViolationSeverity
 
 # Pattern categories (used in compile_all_patterns and get_remediation_hint)
@@ -33,9 +38,9 @@ def compile_all_patterns(
     if check_file_writes:
         patterns.update({
             f"file_write_{name}": {
-                "regex": re.compile(info["pattern"], re.IGNORECASE),
-                "message": info["message"],
-                "severity": info["severity"],
+                "regex": re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
+                VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
+                VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
                 "category": CATEGORY_FILE_WRITE,
                 "requires_context_check": info.get("requires_context_check", False)
             }
@@ -45,9 +50,9 @@ def compile_all_patterns(
     if check_dangerous_commands:
         patterns.update({
             f"dangerous_{name}": {
-                "regex": re.compile(info["pattern"], re.IGNORECASE),
-                "message": info["message"],
-                "severity": info["severity"],
+                "regex": re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
+                VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
+                VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
                 "category": CATEGORY_DANGEROUS
             }
             for name, info in dangerous_command_patterns.items()
@@ -56,9 +61,9 @@ def compile_all_patterns(
     if check_injection_patterns:
         patterns.update({
             f"injection_{name}": {
-                "regex": re.compile(info["pattern"], re.IGNORECASE),
-                "message": info["message"],
-                "severity": info["severity"],
+                "regex": re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
+                VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
+                VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
                 "category": CATEGORY_INJECTION
             }
             for name, info in injection_patterns.items()
@@ -67,9 +72,9 @@ def compile_all_patterns(
     if check_security_sensitive:
         patterns.update({
             f"security_{name}": {
-                "regex": re.compile(info["pattern"], re.IGNORECASE),
-                "message": info["message"],
-                "severity": info["severity"],
+                "regex": re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
+                VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
+                VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
                 "category": CATEGORY_SECURITY
             }
             for name, info in security_sensitive_patterns.items()
@@ -79,8 +84,8 @@ def compile_all_patterns(
     for name, pattern_str in custom_forbidden_patterns.items():
         patterns[f"custom_{name}"] = {
             "regex": re.compile(pattern_str, re.IGNORECASE),
-            "message": f"Custom forbidden pattern: {name}",
-            "severity": ViolationSeverity.HIGH,
+            VIOLATION_MESSAGE: f"Custom forbidden pattern: {name}",
+            VIOLATION_SEVERITY: ViolationSeverity.HIGH,
             "category": CATEGORY_CUSTOM
         }
 

@@ -1,7 +1,9 @@
 """Anthropic LLM provider (Claude models)."""
 from typing import Any, Dict
 
-from src.agents.llm.base import BaseLLM, LLMProvider, LLMResponse
+import httpx
+
+from src.agents.llm.base import BaseLLM, LLMProvider, LLMResponse, StreamCallback
 
 
 class AnthropicLLM(BaseLLM):
@@ -45,3 +47,19 @@ class AnthropicLLM(BaseLLM):
             finish_reason=response.get("stop_reason"),
             raw_response=response,
         )
+
+    def _consume_stream(
+        self,
+        response: httpx.Response,
+        on_chunk: StreamCallback,
+    ) -> LLMResponse:
+        """Streaming not yet implemented for Anthropic provider."""
+        raise NotImplementedError("Streaming support not yet implemented for Anthropic provider")
+
+    async def _aconsume_stream(
+        self,
+        response: httpx.Response,
+        on_chunk: StreamCallback,
+    ) -> LLMResponse:
+        """Async streaming not yet implemented for Anthropic provider."""
+        raise NotImplementedError("Async streaming support not yet implemented for Anthropic provider")

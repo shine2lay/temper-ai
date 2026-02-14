@@ -12,6 +12,7 @@ from unittest.mock import Mock, patch
 
 from src.agents.base_agent import AgentResponse
 from src.compiler.executors import SequentialStageExecutor
+from src.compiler.executors.state_keys import StateKeys
 
 
 def _make_agent_response(output="test output", reasoning="test reasoning",
@@ -93,7 +94,7 @@ class TestSequentialOutputAccumulation:
             config_loader=_mock_config_loader(),
         )
 
-        stage_out = result["stage_outputs"]["research"]
+        stage_out = result[StateKeys.STAGE_OUTPUTS]["research"]
         assert isinstance(stage_out, dict)
         assert stage_out["output"] == "research result"
         assert "researcher" in stage_out["agent_outputs"]
@@ -121,7 +122,7 @@ class TestSequentialOutputAccumulation:
             config_loader=_mock_config_loader(),
         )
 
-        stage_out = result["stage_outputs"]["pipeline"]
+        stage_out = result[StateKeys.STAGE_OUTPUTS]["pipeline"]
 
         # All three agents are present
         assert len(stage_out["agent_outputs"]) == 3
@@ -134,8 +135,10 @@ class TestSequentialOutputAccumulation:
         assert stage_out["agent_outputs"]["analyzer"]["output"] == "analysis of findings"
         assert stage_out["agent_outputs"]["synthesizer"]["output"] == "final synthesis"
 
-        # Backward compat: "output" key is the last agent's output
-        assert stage_out["output"] == "final synthesis"
+        # "output" key concatenates all non-empty agent outputs
+        assert "findings from research" in stage_out["output"]
+        assert "analysis of findings" in stage_out["output"]
+        assert "final synthesis" in stage_out["output"]
 
         # All statuses recorded
         assert all(s == "success" for s in stage_out["agent_statuses"].values())
@@ -244,7 +247,7 @@ class TestAgentFailureHandling:
             halt_on_failure=False,  # Allow execution to continue after failure
         )
 
-        stage_out = result["stage_outputs"]["resilient"]
+        stage_out = result[StateKeys.STAGE_OUTPUTS]["resilient"]
 
         # Failed agent status includes error details
         assert isinstance(stage_out["agent_statuses"]["flaky_agent"], dict)
@@ -287,7 +290,7 @@ class TestAgentFailureHandling:
             halt_on_failure=True,  # Explicit, but this is the default
         )
 
-        stage_out = result["stage_outputs"]["halt_test"]
+        stage_out = result[StateKeys.STAGE_OUTPUTS]["halt_test"]
 
         # First agent failed
         assert stage_out["agent_statuses"]["failing"]["status"] == "failed"
@@ -327,7 +330,7 @@ class TestAgentFailureHandling:
             halt_on_failure=True,
         )
 
-        stage_out = result["stage_outputs"]["error_type_test"]
+        stage_out = result[StateKeys.STAGE_OUTPUTS]["error_type_test"]
         failed_status = stage_out["agent_statuses"]["failing"]
 
         # Error type should be the ErrorCode value from BaseError
@@ -355,7 +358,7 @@ class TestAgentFailureHandling:
             config_loader=_mock_config_loader(),
         )
 
-        stage_out = result["stage_outputs"]["sanitize_test"]
+        stage_out = result[StateKeys.STAGE_OUTPUTS]["sanitize_test"]
         failed_output = stage_out["agent_outputs"]["failing"]
 
         # Error message should be sanitized (API key redacted)
@@ -385,7 +388,7 @@ class TestMetricsTracking:
             config_loader=_mock_config_loader(),
         )
 
-        metrics = result["stage_outputs"]["timed"]["agent_metrics"]["agent1"]
+        metrics = result[StateKeys.STAGE_OUTPUTS]["timed"]["agent_metrics"]["agent1"]
         assert metrics["tokens"] == 500
         assert metrics["cost_usd"] == 0.005
         assert "duration_seconds" in metrics
@@ -410,6 +413,6 @@ class TestMetricsTracking:
             config_loader=_mock_config_loader(),
         )
 
-        output_data = result["stage_outputs"]["confident"]["agent_outputs"]["agent1"]
+        output_data = result[StateKeys.STAGE_OUTPUTS]["confident"]["agent_outputs"]["agent1"]
         assert output_data["confidence"] == 0.92
         assert output_data["reasoning"] == "test reasoning"

@@ -6,6 +6,7 @@ import pytest
 from src.compiler.checkpoint import CheckpointManager
 from src.compiler.checkpoint_backends import CheckpointNotFoundError
 from src.compiler.domain_state import WorkflowDomainState
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.workflow_executor import WorkflowExecutor
 
 
@@ -40,9 +41,9 @@ def test_resume_from_checkpoint_continues_execution(tmp_path):
     result = executor.resume_from_checkpoint("wf-resume-test")
 
     # Verify all stages present in final result
-    assert result["stage_outputs"]["stage1"] == "result1"
-    assert result["stage_outputs"]["stage2"] == "result2"
-    assert result["stage_outputs"]["stage3"] == "result3"
+    assert result[StateKeys.STAGE_OUTPUTS]["stage1"] == "result1"
+    assert result[StateKeys.STAGE_OUTPUTS]["stage2"] == "result2"
+    assert result[StateKeys.STAGE_OUTPUTS]["stage3"] == "result3"
 
     # Verify stream was called (for stage3 only)
     assert mock_graph.stream.called
@@ -165,9 +166,9 @@ def test_resume_already_complete_workflow(tmp_path):
     result = executor.resume_from_checkpoint("wf-complete")
 
     # Verify state was returned
-    assert result["stage_outputs"]["stage1"] == "r1"
-    assert result["stage_outputs"]["stage2"] == "r2"
-    assert result["stage_outputs"]["stage3"] == "r3"
+    assert result[StateKeys.STAGE_OUTPUTS]["stage1"] == "r1"
+    assert result[StateKeys.STAGE_OUTPUTS]["stage2"] == "r2"
+    assert result[StateKeys.STAGE_OUTPUTS]["stage3"] == "r3"
 
     # Verify tracker logged completion
     assert mock_tracker.log_event.called

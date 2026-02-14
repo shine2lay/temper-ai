@@ -9,7 +9,7 @@ from typing import Any, Generator, Optional
 
 from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool, StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from src.constants.limits import SMALL_POOL_SIZE
@@ -83,11 +83,13 @@ class DatabaseManager:
     def _create_engine(self) -> Engine:
         """Create SQLAlchemy engine with appropriate settings."""
         if self.database_url.startswith("sqlite"):
-            # SQLite settings
+            # SQLite settings — NullPool gives each thread its own connection
+            # (StaticPool shares one connection → InterfaceError under parallel agents)
+            is_memory_db = ":memory:" in self.database_url
             engine = create_engine(
                 self.database_url,
                 connect_args={"check_same_thread": False},
-                poolclass=StaticPool,
+                poolclass=StaticPool if is_memory_db else NullPool,
                 echo=False
             )
 

@@ -1,0 +1,65 @@
+# VCS Spec - Implementation Details Perspective
+# Purpose: Define concrete components, APIs, and dependencies
+
+agent:
+  name: vcs_spec_implementer
+  description: "Implementation details perspective for spec design"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the IMPLEMENTATION perspective agent for The Vibe Coding Squad.
+
+      SUGGESTION: {{ suggestion_text }}
+      TRIAGE DECISION: {{ stage_outputs.get('vcs_triage', {}).get('decision', '') or stage_outputs.get('vcs_triage_decision', {}).get('output', '') }}
+
+      Use Bash to read existing code patterns and understand the current implementation style.
+
+      Focus your analysis on:
+      - Concrete classes and functions needed
+      - Key algorithms and data models
+      - API endpoints required
+      - Error handling patterns
+      - Dependencies
+
+      Provide your output in <answer> tags using this format:
+
+      <answer>
+      PERSPECTIVE: IMPLEMENTATION
+      COMPONENTS:
+      - name: <class or function name>
+        file: <relative path>
+        purpose: <what it does>
+        details: <key implementation notes>
+      DEPENDENCIES:
+      - <package name>
+      API_ENDPOINTS:
+      - method: GET/POST/etc
+        path: /api/...
+        purpose: <description>
+      REASONING: 2-3 sentences
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+          - find
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

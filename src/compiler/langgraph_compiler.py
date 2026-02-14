@@ -24,6 +24,7 @@ from langgraph.graph import StateGraph
 
 logger = logging.getLogger(__name__)
 
+from src.compiler.condition_evaluator import ConditionEvaluator
 from src.compiler.config_loader import ConfigLoader
 from src.compiler.executors import (
     AdaptiveStageExecutor,
@@ -144,10 +145,14 @@ class LangGraphCompiler:
             tool_executor=self.tool_executor
         )
 
-        # Stage compiler (depends on state_manager, node_builder)
+        # Condition evaluator for conditional/loop stages
+        self.condition_evaluator = ConditionEvaluator()
+
+        # Stage compiler (depends on state_manager, node_builder, condition_evaluator)
         self.stage_compiler = StageCompiler(
             state_manager=self.state_manager,
-            node_builder=self.node_builder
+            node_builder=self.node_builder,
+            condition_evaluator=self.condition_evaluator,
         )
 
     def compile(self, workflow_config: Dict[str, Any]) -> StateGraph:

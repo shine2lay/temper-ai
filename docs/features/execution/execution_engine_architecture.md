@@ -157,7 +157,7 @@ Runtime capability detection for engine features.
 **Standard features:**
 - `sequential_stages`: Sequential stage execution
 - `parallel_stages`: Parallel stage execution
-- `conditional_routing`: Conditional transitions based on state
+- `conditional_routing`: Conditional transitions based on state (condition/skip_if/loops_back_to with Jinja2 evaluation)
 - `convergence_detection`: Detect and handle stage convergence (M5+)
 - `dynamic_stage_injection`: Add stages at runtime (M5+)
 - `nested_workflows`: Workflows that call other workflows

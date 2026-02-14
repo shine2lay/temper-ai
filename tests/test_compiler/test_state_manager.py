@@ -4,6 +4,7 @@ Verifies state initialization, validation, and utility methods.
 """
 import pytest
 
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.langgraph_state import LangGraphWorkflowState
 from src.compiler.state_manager import StateManager
 
@@ -19,8 +20,8 @@ class TestStateInitialization:
 
         assert isinstance(state, dict)
         assert state["workflow_inputs"]["input"] == "test data"
-        assert state["workflow_id"].startswith("wf-")
-        assert state["stage_outputs"] == {}
+        assert state[StateKeys.WORKFLOW_ID].startswith("wf-")
+        assert state[StateKeys.STAGE_OUTPUTS] == {}
 
     def test_initialize_state_with_workflow_id(self):
         """Test initialization with custom workflow ID."""
@@ -31,7 +32,7 @@ class TestStateInitialization:
             workflow_id="wf-custom-123"
         )
 
-        assert state["workflow_id"] == "wf-custom-123"
+        assert state[StateKeys.WORKFLOW_ID] == "wf-custom-123"
 
     def test_initialize_state_with_tracker(self):
         """Test initialization with tracker."""
@@ -87,7 +88,7 @@ class TestInitNode:
         result = init_node(state)
 
         assert "stage_outputs" in result
-        assert isinstance(result["stage_outputs"], dict)
+        assert isinstance(result[StateKeys.STAGE_OUTPUTS], dict)
 
     def test_init_node_initializes_workflow_id(self):
         """Test init node creates workflow_id if missing."""
@@ -101,7 +102,7 @@ class TestInitNode:
         result = init_node(state)
 
         assert "workflow_id" in result
-        assert result["workflow_id"].startswith("wf-")
+        assert result[StateKeys.WORKFLOW_ID].startswith("wf-")
 
     def test_init_node_preserves_existing_values(self):
         """Test init node doesn't overwrite existing values."""
@@ -180,18 +181,18 @@ class TestStageInput:
         """Test that previous stage outputs are included by default."""
         manager = StateManager()
         state = manager.initialize_state({"input": "test"})
-        state["stage_outputs"]["stage1"] = "output1"
+        state[StateKeys.STAGE_OUTPUTS]["stage1"] = "output1"
 
         stage_input = manager.prepare_stage_input(state)
 
         assert "stage_outputs" in stage_input
-        assert stage_input["stage_outputs"] == {"stage1": "output1"}
+        assert stage_input[StateKeys.STAGE_OUTPUTS] == {"stage1": "output1"}
 
     def test_prepare_stage_input_excludes_previous_outputs(self):
         """Test excluding previous stage outputs."""
         manager = StateManager()
         state = manager.initialize_state({"input": "test"})
-        state["stage_outputs"]["stage1"] = "output1"
+        state[StateKeys.STAGE_OUTPUTS]["stage1"] = "output1"
 
         stage_input = manager.prepare_stage_input(
             state,
@@ -215,8 +216,8 @@ class TestStageOutput:
             {"findings": ["finding1", "finding2"]}
         )
 
-        assert updated_state["stage_outputs"]["research"]["findings"] == ["finding1", "finding2"]
-        assert updated_state["current_stage"] == "research"
+        assert updated_state[StateKeys.STAGE_OUTPUTS]["research"]["findings"] == ["finding1", "finding2"]
+        assert updated_state[StateKeys.CURRENT_STAGE] == "research"
 
     def test_merge_multiple_stage_outputs(self):
         """Test merging multiple stage outputs."""
@@ -226,9 +227,9 @@ class TestStageOutput:
         state = manager.merge_stage_output(state, "stage1", "output1")
         state = manager.merge_stage_output(state, "stage2", "output2")
 
-        assert state["stage_outputs"]["stage1"] == "output1"
-        assert state["stage_outputs"]["stage2"] == "output2"
-        assert state["current_stage"] == "stage2"
+        assert state[StateKeys.STAGE_OUTPUTS]["stage1"] == "output1"
+        assert state[StateKeys.STAGE_OUTPUTS]["stage2"] == "output2"
+        assert state[StateKeys.CURRENT_STAGE] == "stage2"
 
 
 class TestStateSnapshot:
@@ -238,14 +239,14 @@ class TestStateSnapshot:
         """Test creating state snapshot."""
         manager = StateManager()
         state = manager.initialize_state({"input": "test", "topic": "research"})
-        state["stage_outputs"]["stage1"] = "output1"
+        state[StateKeys.STAGE_OUTPUTS]["stage1"] = "output1"
 
         snapshot = manager.get_state_snapshot(state)
 
         assert isinstance(snapshot, dict)
         assert snapshot["workflow_inputs"]["input"] == "test"
         assert snapshot["workflow_inputs"]["topic"] == "research"
-        assert snapshot["stage_outputs"] == {"stage1": "output1"}
+        assert snapshot[StateKeys.STAGE_OUTPUTS] == {"stage1": "output1"}
 
     def test_snapshot_excludes_none(self):
         """Test that snapshot excludes None values."""
@@ -290,8 +291,8 @@ class TestStateSnapshot:
         assert isinstance(state, dict)
         assert state["input"] == "test data"
         assert state["topic"] == "research"
-        assert state["workflow_id"] == "wf-snapshot-123"
-        assert state["stage_outputs"] == {"stage1": "output1"}
+        assert state[StateKeys.WORKFLOW_ID] == "wf-snapshot-123"
+        assert state[StateKeys.STAGE_OUTPUTS] == {"stage1": "output1"}
 
     def test_snapshot_roundtrip(self):
         """Test snapshot and restore roundtrip."""
@@ -301,7 +302,7 @@ class TestStateSnapshot:
         original_state = manager.initialize_state(
             {"input": "test", "topic": "research"}
         )
-        original_state["stage_outputs"]["stage1"] = "output1"
+        original_state[StateKeys.STAGE_OUTPUTS]["stage1"] = "output1"
 
         # Create snapshot and restore
         snapshot = manager.get_state_snapshot(original_state)
@@ -310,7 +311,7 @@ class TestStateSnapshot:
         # Values should match
         assert restored_state["workflow_inputs"]["input"] == original_state["workflow_inputs"]["input"]
         assert restored_state["workflow_inputs"]["topic"] == original_state["workflow_inputs"]["topic"]
-        assert restored_state["stage_outputs"] == original_state["stage_outputs"]
+        assert restored_state[StateKeys.STAGE_OUTPUTS] == original_state[StateKeys.STAGE_OUTPUTS]
 
 
 if __name__ == "__main__":

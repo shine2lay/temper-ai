@@ -17,11 +17,12 @@ from src.compiler.domain_state import (
     TrackerProtocol,
     VisualizerProtocol,
 )
+from src.compiler.executors.state_keys import StateKeys
 from src.constants.probabilities import PROB_MEDIUM
 from src.constants.sizes import UUID_HEX_SHORT_LENGTH
+from src.utils.config_helpers import sanitize_config_for_display
 
 logger = logging.getLogger(__name__)
-
 
 class WorkflowStateDict(TypedDict, total=False):
     """Canonical type hints for the workflow state dictionary.
@@ -57,6 +58,10 @@ class WorkflowStateDict(TypedDict, total=False):
     tool_registry: Optional[DomainToolRegistryProtocol]
     config_loader: Optional[ConfigLoaderProtocol]
     visualizer: Optional[VisualizerProtocol]
+
+    # Server / isolation
+    workspace_root: Optional[str]
+    run_id: Optional[str]
 
     # UI/display
     show_details: bool
@@ -213,6 +218,18 @@ class StageExecutor(ABC):
 
             strategy = get_strategy_from_config(stage_config)
 
+            # Check if strategy requires leader-based synthesis
+            if hasattr(strategy, 'requires_leader_synthesis') and strategy.requires_leader_synthesis:
+                return self._run_leader_synthesis(
+                    agent_outputs=agent_outputs,
+                    strategy=strategy,
+                    stage_config=stage_config,
+                    stage_name=stage_name,
+                    state=state,
+                    config_loader=config_loader,
+                    agents=agents,
+                )
+
             # Check if strategy requires multi-round dialogue
             if hasattr(strategy, 'requires_requery') and strategy.requires_requery:
                 if state is None or config_loader is None or agents is None:
@@ -302,11 +319,36 @@ class StageExecutor(ABC):
             dialogue_history.append({
                 "agent": output.agent_name,
                 "round": 0,
-                "output": output.decision,
-                "reasoning": output.reasoning,
-                "confidence": output.confidence
+                StateKeys.OUTPUT: output.decision,
+                StateKeys.REASONING: output.reasoning,
+                StateKeys.CONFIDENCE: output.confidence,
             })
-            total_cost += output.metadata.get("cost_usd", 0.0)
+            total_cost += output.metadata.get(StateKeys.COST_USD, 0.0)
+
+        # Track round 0 collaboration event
+        tracker = state.get(StateKeys.TRACKER)
+        if tracker and hasattr(tracker, 'track_collaboration_event'):
+            try:
+                agent_names = [o.agent_name for o in current_outputs]
+                tracker.track_collaboration_event(
+                    event_type=f"{strategy.mode}_round",
+                    stage_id=state.get(StateKeys.CURRENT_STAGE_ID),
+                    agents_involved=agent_names,
+                    round_number=0,
+                    outcome="initial",
+                    event_data={
+                        "agent_count": len(agent_names),
+                        "avg_confidence": (
+                            sum(o.confidence for o in current_outputs) / len(current_outputs)
+                            if current_outputs else 0.0
+                        ),
+                    },
+                )
+            except Exception:
+                logger.warning(
+                    "Failed to track round 0 collaboration event",
+                    exc_info=True,
+                )
 
         # Check budget after round 0
         if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
@@ -331,7 +373,7 @@ class StageExecutor(ABC):
             final_round = round_num
 
             # Re-invoke agents with dialogue history
-            current_outputs = self._reinvoke_agents_with_dialogue(
+            current_outputs, llm_providers = self._reinvoke_agents_with_dialogue(
                 agents=agents,
                 stage_name=stage_name,
                 state=state,
@@ -342,38 +384,88 @@ class StageExecutor(ABC):
                 strategy=strategy
             )
 
+            # Delegate stance extraction to the strategy (LLM-based)
+            agent_stances: Dict[str, str] = {}
+            if hasattr(strategy, 'extract_stances'):
+                agent_stances = strategy.extract_stances(
+                    current_outputs, llm_providers
+                )
+
             # Record this round
             for output in current_outputs:
-                dialogue_history.append({
+                entry: Dict[str, Any] = {
                     "agent": output.agent_name,
                     "round": round_num,
                     "output": output.decision,
                     "reasoning": output.reasoning,
-                    "confidence": output.confidence
-                })
-                total_cost += output.metadata.get("cost_usd", 0.0)
+                    "confidence": output.confidence,
+                }
+                stance = agent_stances.get(output.agent_name, "")
+                if stance:
+                    entry["stance"] = stance
+                dialogue_history.append(entry)
+                total_cost += output.metadata.get(StateKeys.COST_USD, 0.0)
 
             # Check convergence (after min_rounds)
+            conv_score = None
+            round_outcome = "in_progress"
             if round_num >= strategy.min_rounds:
-                convergence_score = strategy.calculate_convergence(
+                conv_score = strategy.calculate_convergence(
                     current_outputs,
                     previous_outputs
                 )
                 logger.info(
                     f"Dialogue round {round_num + 1} for stage '{stage_name}': "
-                    f"convergence {convergence_score:.1%} "
+                    f"convergence {conv_score:.1%} "
                     f"(threshold: {strategy.convergence_threshold:.1%})"
                 )
 
-                if convergence_score >= strategy.convergence_threshold:
+                if conv_score >= strategy.convergence_threshold:
                     converged = True
                     convergence_round = round_num
+                    round_outcome = "converged"
                     logger.info(
                         f"Dialogue converged at round {round_num + 1} for "
-                        f"stage '{stage_name}': {convergence_score:.1%} >= "
+                        f"stage '{stage_name}': {conv_score:.1%} >= "
                         f"{strategy.convergence_threshold:.1%}"
                     )
-                    break
+
+            # Track round N collaboration event (with stance distribution)
+            stance_dist: Dict[str, int] = {}
+            for s in agent_stances.values():
+                if s:
+                    stance_dist[s] = stance_dist.get(s, 0) + 1
+
+            tracker = state.get(StateKeys.TRACKER)
+            if tracker and hasattr(tracker, 'track_collaboration_event'):
+                try:
+                    agent_names = [o.agent_name for o in current_outputs]
+                    tracker.track_collaboration_event(
+                        event_type=f"{strategy.mode}_round",
+                        stage_id=state.get(StateKeys.CURRENT_STAGE_ID),
+                        agents_involved=agent_names,
+                        round_number=round_num,
+                        outcome=round_outcome,
+                        confidence_score=conv_score,
+                        event_data={
+                            "agent_count": len(agent_names),
+                            "avg_confidence": (
+                                sum(o.confidence for o in current_outputs) / len(current_outputs)
+                                if current_outputs else 0.0
+                            ),
+                            "stance_distribution": stance_dist,
+                            "agent_stances": agent_stances,
+                        },
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to track round %d collaboration event",
+                        round_num,
+                        exc_info=True,
+                    )
+
+            if converged:
+                break
 
             # Check budget
             if strategy.cost_budget_usd and total_cost >= strategy.cost_budget_usd:
@@ -411,6 +503,193 @@ class StageExecutor(ABC):
 
         return result
 
+    def _run_leader_synthesis(
+        self,
+        agent_outputs: list,
+        strategy: Any,
+        stage_config: Any,
+        stage_name: str,
+        state: Optional[Dict[str, Any]] = None,
+        config_loader: Optional[ConfigLoaderProtocol] = None,
+        agents: Optional[List] = None,
+    ) -> Any:
+        """Execute leader-based synthesis: re-invoke leader with team outputs.
+
+        The perspective agents have already run (their outputs are in
+        agent_outputs). This method:
+        1. Formats perspective outputs as structured text
+        2. Re-invokes the leader agent with ``team_outputs`` in its input
+        3. Calls strategy.synthesize() with all outputs (perspectives + leader)
+
+        Falls back to consensus on perspective outputs if leader invocation fails.
+
+        Args:
+            agent_outputs: Outputs from perspective agents (round 0)
+            strategy: LeaderCollaborationStrategy instance
+            stage_config: Stage configuration dict
+            stage_name: Name of the current stage
+            state: Workflow state
+            config_loader: Config loader for loading agent configs
+            agents: List of agent refs from stage config
+
+        Returns:
+            SynthesisResult from leader or consensus fallback
+        """
+        from src.strategies.base import AgentOutput, SynthesisResult
+
+        # Extract collaboration config (handles nested "stage.collaboration.config"
+        # and flat "collaboration.config" formats)
+        stage_dict = stage_config if isinstance(stage_config, dict) else {}
+        collab = stage_dict.get("collaboration")
+        if collab is None:
+            inner = stage_dict.get("stage", {})
+            if isinstance(inner, dict):
+                collab = inner.get("collaboration", {})
+            else:
+                collab = {}
+        collaboration_config = collab.get("config", {}) if isinstance(collab, dict) else {}
+        leader_name = strategy.get_leader_agent_name(collaboration_config)
+
+        if not leader_name:
+            logger.warning(
+                "Leader strategy for stage '%s' has no leader_agent configured; "
+                "falling back to consensus.",
+                stage_name,
+            )
+            return strategy.synthesize(agent_outputs, collaboration_config)
+
+        # Format perspective outputs for leader prompt injection
+        team_outputs_text = strategy.format_team_outputs(agent_outputs)
+
+        # Re-invoke the leader agent
+        try:
+            if state is None or config_loader is None:
+                raise ValueError("state and config_loader required for leader synthesis")
+
+            leader_output = self._invoke_leader_agent(
+                leader_name=leader_name,
+                team_outputs_text=team_outputs_text,
+                stage_name=stage_name,
+                state=state,
+                config_loader=config_loader,
+            )
+
+            # Combine perspective + leader outputs and synthesize
+            all_outputs = list(agent_outputs) + [leader_output]
+            return strategy.synthesize(all_outputs, collaboration_config)
+
+        except Exception as exc:
+            logger.warning(
+                "Leader agent '%s' failed for stage '%s': %s. "
+                "Falling back to consensus on perspective outputs.",
+                leader_name,
+                stage_name,
+                exc,
+            )
+            return strategy.synthesize(agent_outputs, collaboration_config)
+
+    def _invoke_leader_agent(
+        self,
+        leader_name: str,
+        team_outputs_text: str,
+        stage_name: str,
+        state: Dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+    ) -> Any:
+        """Invoke the leader agent with team outputs injected.
+
+        Args:
+            leader_name: Leader agent name
+            team_outputs_text: Formatted perspective outputs
+            stage_name: Stage name
+            state: Workflow state
+            config_loader: Config loader
+
+        Returns:
+            AgentOutput from the leader agent
+        """
+        from src.agents.agent_factory import AgentFactory
+        from src.compiler.schemas import AgentConfig
+        from src.core.context import ExecutionContext
+        from src.strategies.base import AgentOutput
+
+        agent_config_dict = config_loader.load_agent(leader_name)
+        agent_config = AgentConfig(**agent_config_dict)
+        agent = AgentFactory.create(agent_config)
+
+        # Inject team_outputs into agent input
+        input_data = {
+            **state,
+            "team_outputs": team_outputs_text,
+        }
+
+        tracker = state.get(StateKeys.TRACKER)
+        current_stage_id = state.get(StateKeys.CURRENT_STAGE_ID) or f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
+
+        if tracker:
+            agent_config_for_tracking = sanitize_config_for_display(
+                agent_config.model_dump() if hasattr(agent_config, 'model_dump') else dict(agent_config_dict)
+            )
+            with tracker.track_agent(
+                agent_name=leader_name,
+                agent_config=agent_config_for_tracking,
+                stage_id=current_stage_id,
+                input_data={"role": "leader", "team_outputs_length": len(team_outputs_text)},
+            ) as agent_id:
+                context = ExecutionContext(
+                    workflow_id=state.get(StateKeys.WORKFLOW_ID, "unknown"),
+                    stage_id=current_stage_id,
+                    agent_id=agent_id,
+                    metadata={
+                        "stage_name": stage_name,
+                        "agent_name": leader_name,
+                        "execution_mode": "leader",
+                    },
+                )
+                response = agent.execute(input_data, context)
+
+                try:
+                    tracker.set_agent_output(
+                        agent_id=agent_id,
+                        output_data={StateKeys.OUTPUT: response.output},
+                        reasoning=response.reasoning,
+                        total_tokens=response.tokens,
+                        estimated_cost_usd=response.estimated_cost_usd,
+                        num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
+                        num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
+                    )
+                except Exception:
+                    logger.warning(
+                        "Failed to set agent output tracking for leader agent %s",
+                        leader_name,
+                        exc_info=True,
+                    )
+        else:
+            input_data.pop(StateKeys.TRACKER, None)
+            context = ExecutionContext(
+                workflow_id=state.get(StateKeys.WORKFLOW_ID, "unknown"),
+                stage_id=current_stage_id,
+                agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
+                metadata={
+                    "stage_name": stage_name,
+                    "agent_name": leader_name,
+                    "execution_mode": "leader",
+                },
+            )
+            response = agent.execute(input_data, context)
+
+        return AgentOutput(
+            agent_name=leader_name,
+            decision=response.output,
+            reasoning=response.reasoning or "",
+            confidence=response.confidence or 0.0,
+            metadata={
+                StateKeys.TOKENS: response.tokens,
+                StateKeys.COST_USD: response.estimated_cost_usd,
+                "role": "leader",
+            },
+        )
+
     def _reinvoke_agents_with_dialogue(
         self,
         agents: list,
@@ -421,7 +700,7 @@ class StageExecutor(ABC):
         round_number: int,
         max_rounds: int,
         strategy: Any = None
-    ) -> list:
+    ) -> tuple:
         """Re-invoke agents with dialogue history as context.
 
         Args:
@@ -435,7 +714,8 @@ class StageExecutor(ABC):
             strategy: DialogueOrchestrator strategy (for context curation)
 
         Returns:
-            List of AgentOutput objects
+            Tuple of (agent_outputs, llm_providers) where llm_providers
+            maps agent_name -> LLM provider for stance extraction.
         """
         from src.agents.agent_factory import AgentFactory
         from src.compiler.schemas import AgentConfig
@@ -443,6 +723,7 @@ class StageExecutor(ABC):
         from src.strategies.base import AgentOutput
 
         agent_outputs = []
+        llm_providers: Dict[str, Any] = {}
 
         for agent_ref in agents:
             agent_name = self._extract_agent_name(agent_ref)
@@ -469,42 +750,91 @@ class StageExecutor(ABC):
                     agent_name=agent_name
                 )
 
+            # Get mode-specific context from strategy (e.g. MultiRoundStrategy)
+            mode_context: Dict[str, Any] = {}
+            if strategy and hasattr(strategy, 'get_round_context'):
+                mode_context = strategy.get_round_context(round_number, agent_name)
+
             # Enrich input with dialogue context
             input_data = {
                 **state,
                 "dialogue_history": curated_history,
                 "round_number": round_number,
                 "max_rounds": max_rounds,
-                "agent_role": agent_role
+                "agent_role": agent_role,
+                **mode_context,
             }
 
-            # Create execution context
-            context = ExecutionContext(
-                workflow_id=state.get("workflow_id", "unknown"),
-                stage_id=f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
-                agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
-                metadata={
-                    "stage_name": stage_name,
-                    "agent_name": agent_name,
-                    "execution_mode": "dialogue",
-                    "round": round_number
-                }
-            )
+            tracker = state.get(StateKeys.TRACKER)
+            current_stage_id = state.get(StateKeys.CURRENT_STAGE_ID) or f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
 
-            # Execute agent
-            response = agent.execute(input_data, context)
+            if tracker:
+                # Use tracker for proper agent_executions record so LLM calls
+                # can reference a valid agent_execution_id (avoids FK violations).
+                agent_config_for_tracking = sanitize_config_for_display(
+                    agent_config.model_dump() if hasattr(agent_config, 'model_dump') else dict(agent_config_dict)
+                )
+                with tracker.track_agent(
+                    agent_name=agent_name,
+                    agent_config=agent_config_for_tracking,
+                    stage_id=current_stage_id,
+                    input_data={"round": round_number, "max_rounds": max_rounds},
+                ) as agent_id:
+                    context = ExecutionContext(
+                        workflow_id=state.get(StateKeys.WORKFLOW_ID, "unknown"),
+                        stage_id=current_stage_id,
+                        agent_id=agent_id,
+                        metadata={
+                            "stage_name": stage_name,
+                            "agent_name": agent_name,
+                            "execution_mode": "dialogue",
+                            "round": round_number
+                        }
+                    )
+                    response = agent.execute(input_data, context)
 
-            # Create agent output
+                    try:
+                        tracker.set_agent_output(
+                            agent_id=agent_id,
+                            output_data={StateKeys.OUTPUT: response.output},
+                            reasoning=response.reasoning,
+                            total_tokens=response.tokens,
+                            estimated_cost_usd=response.estimated_cost_usd,
+                            num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
+                            num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
+                        )
+                    except Exception:
+                        logger.warning("Failed to set agent output tracking for dialogue agent %s", agent_name, exc_info=True)
+            else:
+                # No tracker — use synthetic IDs (no agent_executions row,
+                # so don't pass tracker to avoid FK violations on llm_calls).
+                input_data.pop(StateKeys.TRACKER, None)
+                context = ExecutionContext(
+                    workflow_id=state.get(StateKeys.WORKFLOW_ID, "unknown"),
+                    stage_id=current_stage_id,
+                    agent_id=f"agent-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
+                    metadata={
+                        "stage_name": stage_name,
+                        "agent_name": agent_name,
+                        "execution_mode": "dialogue",
+                        "round": round_number
+                    }
+                )
+                response = agent.execute(input_data, context)
+
+            # Create agent output (metadata must be JSON-serializable)
             agent_outputs.append(AgentOutput(
                 agent_name=agent_name,
                 decision=response.output,
                 reasoning=response.reasoning or "",
                 confidence=response.confidence or 0.0,
                 metadata={
-                    "tokens": response.tokens,
-                    "cost_usd": response.estimated_cost_usd,
-                    "round": round_number
+                    StateKeys.TOKENS: response.tokens,
+                    StateKeys.COST_USD: response.estimated_cost_usd,
+                    "round": round_number,
                 }
             ))
+            # Keep LLM provider reference for stance extraction (not serialized)
+            llm_providers[agent_name] = agent.llm
 
-        return agent_outputs
+        return agent_outputs, llm_providers

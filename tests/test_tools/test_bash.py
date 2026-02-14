@@ -16,6 +16,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.tools.bash import DANGEROUS_CHARS, DEFAULT_ALLOWED_COMMANDS, MAX_TIMEOUT_SECONDS, Bash
+from src.tools.field_names import ToolResultFields
 
 
 @pytest.fixture
@@ -64,12 +65,12 @@ class TestAllowlistEnforcement:
         result = bash_tool.execute(command="pwd", working_directory=str(workspace))
         assert result.success is True
         assert str(workspace) in result.result
-        assert result.metadata["exit_code"] == 0
+        assert result.metadata[ToolResultFields.EXIT_CODE] == 0
 
     def test_allowed_command_ls(self, bash_tool, workspace):
         result = bash_tool.execute(command="ls", working_directory=str(workspace))
         assert result.success is True
-        assert result.metadata["exit_code"] == 0
+        assert result.metadata[ToolResultFields.EXIT_CODE] == 0
 
     def test_allowed_command_mkdir(self, bash_tool, workspace):
         result = bash_tool.execute(
@@ -157,7 +158,7 @@ class TestSandboxEnforcement:
         result = bash_tool.execute(command="pwd", working_directory=str(workspace))
         assert result.success is True
         assert str(workspace) in result.result
-        assert result.metadata["exit_code"] == 0
+        assert result.metadata[ToolResultFields.EXIT_CODE] == 0
 
     def test_subdirectory_of_workspace(self, bash_tool, workspace):
         subdir = workspace / "subproject"
@@ -281,7 +282,7 @@ class TestTimeoutHandling:
             timeout=1,
         )
         assert result.success is True
-        assert result.metadata["timeout"] == 1
+        assert result.metadata[ToolResultFields.TIMEOUT] == 1
         assert str(workspace) in result.result
 
     @patch("src.tools._bash_helpers.subprocess.run")
@@ -314,7 +315,7 @@ class TestSuccessfulExecution:
     def test_exit_code_in_metadata(self, bash_tool, workspace):
         result = bash_tool.execute(command="pwd", working_directory=str(workspace))
         assert result.success is True
-        assert result.metadata["exit_code"] == 0
+        assert result.metadata[ToolResultFields.EXIT_CODE] == 0
 
     def test_stderr_on_failure(self, bash_tool, workspace):
         """Non-existent file should produce stderr."""
@@ -323,8 +324,8 @@ class TestSuccessfulExecution:
             working_directory=str(workspace),
         )
         assert result.success is False
-        assert result.metadata["exit_code"] != 0
-        assert result.metadata["stderr"] != ""
+        assert result.metadata[ToolResultFields.EXIT_CODE] != 0
+        assert result.metadata[ToolResultFields.STDERR] != ""
 
     def test_working_directory_in_metadata(self, bash_tool, workspace):
         result = bash_tool.execute(command="pwd", working_directory=str(workspace))
@@ -332,7 +333,7 @@ class TestSuccessfulExecution:
 
     def test_command_in_metadata(self, bash_tool, workspace):
         result = bash_tool.execute(command="pwd", working_directory=str(workspace))
-        assert result.metadata["command"] == "pwd"
+        assert result.metadata[ToolResultFields.COMMAND] == "pwd"
 
     def test_find_command(self, bash_tool, workspace):
         (workspace / "a.txt").write_text("a")
@@ -410,7 +411,7 @@ class TestEdgeCases:
             timeout="invalid",
         )
         assert result.success is True
-        assert result.metadata["timeout"] == bash_tool.default_timeout
+        assert result.metadata[ToolResultFields.TIMEOUT] == bash_tool.default_timeout
         assert str(workspace) in result.result
 
 
@@ -591,7 +592,7 @@ class TestSymlinkSandboxProtection:
             working_directory=str(workspace),
         )
         assert result.success is True
-        assert result.metadata["exit_code"] == 0
+        assert result.metadata[ToolResultFields.EXIT_CODE] == 0
 
 
 class TestShellModeCommandChaining:
@@ -615,7 +616,7 @@ class TestShellModeCommandChaining:
         """Single allowed command works in shell mode."""
         result = shell_tool.execute(command="ls", working_directory=str(workspace))
         assert result.success is True
-        assert result.metadata["exit_code"] == 0
+        assert result.metadata[ToolResultFields.EXIT_CODE] == 0
 
     def test_pipe_between_allowed_commands(self, shell_tool, workspace):
         """Pipe between two allowed commands works."""

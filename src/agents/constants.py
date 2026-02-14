@@ -75,3 +75,11 @@ TOKENS_PER_MILLION = 1_000_000
 MAX_REASONABLE_PRICE_PER_MILLION = 1000  # $1000 max per million tokens
 DEFAULT_INPUT_TOKEN_RATIO = 0.6
 DEFAULT_OUTPUT_TOKEN_RATIO = 0.4
+
+# ============================================================================
+# Pre-Command Execution
+# ============================================================================
+
+PRE_COMMAND_DEFAULT_TIMEOUT = 60
+PRE_COMMAND_MAX_TIMEOUT = 300
+PRE_COMMAND_MAX_OUTPUT_CHARS = 2000

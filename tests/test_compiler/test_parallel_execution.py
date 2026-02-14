@@ -20,6 +20,7 @@ from src.compiler.executors import (
     ParallelStageExecutor,
     SequentialStageExecutor,
 )
+from src.compiler.executors.state_keys import StateKeys
 from src.compiler.langgraph_compiler import LangGraphCompiler
 
 
@@ -168,8 +169,8 @@ class TestSequentialExecutor:
                 )
 
                 # Verify execution — sequential now returns structured dict
-                assert result["stage_outputs"]["research"]["output"] == "Sequential output"
-                assert result["current_stage"] == "research"
+                assert result[StateKeys.STAGE_OUTPUTS]["research"]["output"] == "Sequential output"
+                assert result[StateKeys.CURRENT_STAGE] == "research"
 
 
 class TestParallelExecutor:
@@ -249,8 +250,8 @@ class TestBackwardCompatibility:
                     )
 
                     # Verify sequential execution worked — sequential now returns structured dict
-                    assert result["stage_outputs"]["research"]["output"] == "Sequential output"
-                    assert result["current_stage"] == "research"
+                    assert result[StateKeys.STAGE_OUTPUTS]["research"]["output"] == "Sequential output"
+                    assert result[StateKeys.CURRENT_STAGE] == "research"
 
 
 if __name__ == "__main__":

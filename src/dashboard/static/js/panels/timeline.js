@@ -2,11 +2,13 @@
  * Timeline Panel — Plotly.js horizontal bar chart (Gantt-style).
  * Shows hierarchical view of workflow/stage/agent/LLM/tool call timings.
  */
+import { ensureUTCString } from '../data-store.js';
 
 // Color palette per entity type
 const COLORS = {
     workflow: '#42a5f5',  // blue
     stage:    '#66bb6a',  // green
+    round:    '#ab47bc',  // purple
     agent:    '#ffa726',  // orange
     llmCall:  '#ef5350',  // red
     toolCall: '#ffee58',  // yellow
@@ -16,6 +18,14 @@ const COLORS = {
 const INDENT = {
     workflow: '',
     stage:    '  ',
+    round:    '    ',
+    agent:    '      ',
+    llmCall:  '        ',
+    toolCall: '        ',
+};
+
+// Original indentation for non-round stages (no round grouping)
+const INDENT_FLAT = {
     agent:    '    ',
     llmCall:  '      ',
     toolCall: '      ',
@@ -23,7 +33,8 @@ const INDENT = {
 
 function toEpochSeconds(timeValue) {
     if (timeValue == null) return null;
-    const d = new Date(timeValue);
+    const normalized = typeof timeValue === 'string' ? ensureUTCString(timeValue) : timeValue;
+    const d = new Date(normalized);
     if (isNaN(d.getTime())) return null;
     return d.getTime() / 1000;
 }
@@ -85,8 +96,9 @@ export class TimelinePanel {
             Plotly.newPlot(this._plotDiv, [trace], layout, {
                 displayModeBar: false,
                 responsive: true,
+            }).then(() => {
+                this._plotDiv.on('plotly_click', (data) => this._handleClick(data));
             });
-            this._plotDiv.on('plotly_click', (data) => this._handleClick(data));
             this._initialized = true;
         } else {
             Plotly.react(this._plotDiv, [trace], layout);
@@ -156,48 +168,157 @@ export class TimelinePanel {
                 INDENT.stage
             );
 
-            // Agents within stage
+            // Agents within stage — check for round grouping
             const agents = stageData.agents || stage.agents || [];
-            for (const agent of agents) {
-                const agentData = this.dataStore.agents.get(agent.id) || agent;
-                addBar(
-                    agentData.agent_name || agentData.name || agent.id,
-                    'agent',
-                    agent.id,
-                    agentData.start_time,
-                    agentData.end_time,
-                    agentData.status,
-                    INDENT.agent
-                );
+            const hasRounds = agents.some(a => {
+                const ad = this.dataStore.agents.get(a.id) || a;
+                return ad.input_data && ad.input_data.round != null;
+            });
 
-                // LLM calls within agent
-                const llmCalls = agentData.llm_calls || agent.llm_calls || [];
-                for (const llm of llmCalls) {
-                    const llmData = this.dataStore.llmCalls.get(llm.id) || llm;
-                    addBar(
-                        llmData.model || llmData.name || llm.id,
-                        'llmCall',
-                        llm.id,
-                        llmData.start_time,
-                        llmData.end_time,
-                        llmData.status,
-                        INDENT.llmCall
-                    );
+            if (hasRounds) {
+                // Group agents by round
+                const roundGroups = new Map();
+                for (const agent of agents) {
+                    const agentData = this.dataStore.agents.get(agent.id) || agent;
+                    const round = (agentData.input_data && agentData.input_data.round != null)
+                        ? agentData.input_data.round : 0;
+                    if (!roundGroups.has(round)) roundGroups.set(round, []);
+                    roundGroups.get(round).push({ agent, agentData });
                 }
 
-                // Tool calls within agent
-                const toolCalls = agentData.tool_calls || agent.tool_calls || [];
-                for (const tool of toolCalls) {
-                    const toolData = this.dataStore.toolCalls.get(tool.id) || tool;
+                // Build round-to-collaboration-event map for hover info
+                const collabEvents = stageData.collaboration_events || [];
+                const roundEventMap = new Map();
+                for (const evt of collabEvents) {
+                    if (evt.round_number != null) {
+                        roundEventMap.set(evt.round_number, evt);
+                    }
+                }
+
+                const sortedRounds = [...roundGroups.keys()].sort((a, b) => a - b);
+                for (const roundNum of sortedRounds) {
+                    const group = roundGroups.get(roundNum);
+                    const collabEvt = roundEventMap.get(roundNum);
+
+                    // Compute round bar span from agent times
+                    let roundStart = null;
+                    let roundEnd = null;
+                    for (const { agentData } of group) {
+                        const s = toEpochSeconds(agentData.start_time);
+                        const e = toEpochSeconds(agentData.end_time);
+                        if (s != null && (roundStart == null || s < roundStart)) roundStart = s;
+                        if (e != null && (roundEnd == null || e > roundEnd)) roundEnd = e;
+                    }
+
+                    // Build hover text for round bar
+                    let roundHover = `Round ${roundNum + 1}`;
+                    if (collabEvt) {
+                        if (collabEvt.outcome) roundHover += `<br>Outcome: ${collabEvt.outcome}`;
+                        if (collabEvt.confidence_score != null) {
+                            roundHover += `<br>Convergence: ${(collabEvt.confidence_score * 100).toFixed(0)}%`;
+                        }
+                    }
+                    const duration = (roundStart != null && roundEnd != null)
+                        ? Math.max(roundEnd - roundStart, 0.01) : 0.01;
+                    roundHover += `<br>Duration: ${formatHoverDuration(duration)}`;
+
+                    // Add round bar
+                    if (roundStart != null) {
+                        const startOffset = roundStart - baseTime;
+                        labels.push(INDENT.round + `Round ${roundNum + 1}`);
+                        starts.push(startOffset);
+                        durations.push(duration);
+                        colors.push(COLORS.round);
+                        hoverTexts.push(roundHover);
+                        entities.push({ type: 'round', id: `round-${roundNum}` });
+                    }
+
+                    // Add agents in this round
+                    for (const { agent, agentData } of group) {
+                        addBar(
+                            agentData.agent_name || agentData.name || agent.id,
+                            'agent',
+                            agent.id,
+                            agentData.start_time,
+                            agentData.end_time,
+                            agentData.status,
+                            INDENT.agent
+                        );
+
+                        // LLM calls within agent
+                        const llmCalls = agentData.llm_calls || agent.llm_calls || [];
+                        for (const llm of llmCalls) {
+                            const llmData = this.dataStore.llmCalls.get(llm.id) || llm;
+                            addBar(
+                                llmData.model || llmData.name || llm.id,
+                                'llmCall',
+                                llm.id,
+                                llmData.start_time,
+                                llmData.end_time,
+                                llmData.status,
+                                INDENT.llmCall
+                            );
+                        }
+
+                        // Tool calls within agent
+                        const toolCalls = agentData.tool_calls || agent.tool_calls || [];
+                        for (const tool of toolCalls) {
+                            const toolData = this.dataStore.toolCalls.get(tool.id) || tool;
+                            addBar(
+                                toolData.tool_name || toolData.name || tool.id,
+                                'toolCall',
+                                tool.id,
+                                toolData.start_time,
+                                toolData.end_time,
+                                toolData.status,
+                                INDENT.toolCall
+                            );
+                        }
+                    }
+                }
+            } else {
+                // No rounds — render agents with flat indentation (existing behavior)
+                for (const agent of agents) {
+                    const agentData = this.dataStore.agents.get(agent.id) || agent;
                     addBar(
-                        toolData.tool_name || toolData.name || tool.id,
-                        'toolCall',
-                        tool.id,
-                        toolData.start_time,
-                        toolData.end_time,
-                        toolData.status,
-                        INDENT.toolCall
+                        agentData.agent_name || agentData.name || agent.id,
+                        'agent',
+                        agent.id,
+                        agentData.start_time,
+                        agentData.end_time,
+                        agentData.status,
+                        INDENT_FLAT.agent
                     );
+
+                    // LLM calls within agent
+                    const llmCalls = agentData.llm_calls || agent.llm_calls || [];
+                    for (const llm of llmCalls) {
+                        const llmData = this.dataStore.llmCalls.get(llm.id) || llm;
+                        addBar(
+                            llmData.model || llmData.name || llm.id,
+                            'llmCall',
+                            llm.id,
+                            llmData.start_time,
+                            llmData.end_time,
+                            llmData.status,
+                            INDENT_FLAT.llmCall
+                        );
+                    }
+
+                    // Tool calls within agent
+                    const toolCalls = agentData.tool_calls || agent.tool_calls || [];
+                    for (const tool of toolCalls) {
+                        const toolData = this.dataStore.toolCalls.get(tool.id) || tool;
+                        addBar(
+                            toolData.tool_name || toolData.name || tool.id,
+                            'toolCall',
+                            tool.id,
+                            toolData.start_time,
+                            toolData.end_time,
+                            toolData.status,
+                            INDENT_FLAT.toolCall
+                        );
+                    }
                 }
             }
         }
@@ -316,6 +437,13 @@ export class TimelinePanel {
 
         this._plotDiv = null;
         this._initialized = false;
+    }
+
+    refresh() {
+        this.render();
+        if (this._plotDiv && this._initialized && typeof Plotly !== 'undefined') {
+            Plotly.Plots.resize(this._plotDiv);
+        }
     }
 
     destroy() {

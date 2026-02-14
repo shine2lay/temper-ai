@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Literal, Optional
 from src.constants.durations import MILLISECONDS_PER_SECOND
 from src.constants.limits import THRESHOLD_MEDIUM_COUNT
 from src.database.datetime_utils import utcnow
+from src.observability.constants import ObservabilityFields
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +237,7 @@ def track_llm_call(
             timestamp=start_time,
             data={
                 "llm_call_id": llm_call_id,
-                "agent_id": agent_id,
+                ObservabilityFields.AGENT_ID: agent_id,
                 "provider": provider,
                 "model": model,
                 "prompt": prompt_result.sanitized_text,
@@ -247,8 +248,8 @@ def track_llm_call(
                 "estimated_cost_usd": estimated_cost_usd,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
-                "status": status,
-                "error_message": safe_error_message,
+                ObservabilityFields.STATUS: status,
+                ObservabilityFields.ERROR_MESSAGE: safe_error_message,
             },
             agent_id=agent_id,
         ))
@@ -260,7 +261,7 @@ def track_llm_call(
                 metric_type=_METRIC_LATENCY_P99,
                 value=latency_ms,
                 context={
-                    "agent_id": agent_id,
+                    ObservabilityFields.AGENT_ID: agent_id,
                     "provider": provider,
                     "model": model,
                     "llm_call_id": llm_call_id
@@ -272,7 +273,7 @@ def track_llm_call(
                 metric_type=_METRIC_COST_USD,
                 value=estimated_cost_usd,
                 context={
-                    "agent_id": agent_id,
+                    ObservabilityFields.AGENT_ID: agent_id,
                     "provider": provider,
                     "model": model,
                     "llm_call_id": llm_call_id
@@ -346,13 +347,13 @@ def track_tool_call(
             timestamp=start_time,
             data={
                 "tool_execution_id": tool_execution_id,
-                "agent_id": agent_id,
+                ObservabilityFields.AGENT_ID: agent_id,
                 "tool_name": tool_name,
                 "input_params": sanitized_input,
-                "output_data": sanitized_output,
-                "duration_seconds": duration_seconds,
-                "status": status,
-                "error_message": error_message,
+                ObservabilityFields.OUTPUT_DATA: sanitized_output,
+                ObservabilityFields.DURATION_SECONDS: duration_seconds,
+                ObservabilityFields.STATUS: status,
+                ObservabilityFields.ERROR_MESSAGE: error_message,
                 "safety_checks": safety_checks,
                 "approval_required": approval_required,
             },
@@ -366,10 +367,10 @@ def track_tool_call(
             metric_type=_METRIC_DURATION,
             value=duration_ms,
             context={
-                "agent_id": agent_id,
+                ObservabilityFields.AGENT_ID: agent_id,
                 "tool_name": tool_name,
                 "tool_execution_id": tool_execution_id,
-                "status": status
+                ObservabilityFields.STATUS: status
             }
         )
 
@@ -483,7 +484,7 @@ def update_agent_merit_score(
             f"Failed to update agent merit score: {e}",
             exc_info=True,
             extra={
-                "agent_name": agent_name,
+                ObservabilityFields.AGENT_NAME: agent_name,
                 "domain": domain,
                 "outcome": decision_outcome
             }
@@ -506,18 +507,18 @@ def aggregate_workflow_metrics_on_success(
         if hasattr(backend, 'aggregate_workflow_metrics'):
             metrics = backend.aggregate_workflow_metrics(workflow_id)
             if metrics:
-                total_cost = metrics.get('total_cost_usd', 0.0)
+                total_cost = metrics.get(ObservabilityFields.TOTAL_COST_USD, 0.0)
                 backend.update_workflow_metrics(
                     workflow_id=workflow_id,
-                    total_llm_calls=metrics.get('total_llm_calls', 0),
-                    total_tool_calls=metrics.get('total_tool_calls', 0),
-                    total_tokens=metrics.get('total_tokens', 0),
+                    total_llm_calls=metrics.get(ObservabilityFields.TOTAL_LLM_CALLS, 0),
+                    total_tool_calls=metrics.get(ObservabilityFields.TOTAL_TOOL_CALLS, 0),
+                    total_tokens=metrics.get(ObservabilityFields.TOTAL_TOKENS, 0),
                     total_cost_usd=total_cost
                 )
                 if alert_manager and total_cost > 0:
                     alert_manager.check_metric(
                         metric_type=_METRIC_COST_USD, value=total_cost,
-                        context={"workflow_id": workflow_id}
+                        context={ObservabilityFields.WORKFLOW_ID: workflow_id}
                     )
     except Exception as e:
         logger.warning(
@@ -552,7 +553,7 @@ def emit_llm_stream_chunk(
             event_type=_EVENT_LLM_STREAM_CHUNK,
             timestamp=utcnow(),
             data={
-                "agent_id": agent_id,
+                ObservabilityFields.AGENT_ID: agent_id,
                 "content": content,
                 "chunk_type": chunk_type,
                 "done": done,
@@ -638,7 +639,7 @@ class TrackerCollaborationMixin:
         )
         self._emit_event(_EVENT_COLLABORATION, {
             "event_type": event_type,
-            "stage_id": stage_id,
+            ObservabilityFields.STAGE_ID: stage_id,
             "agents_involved": agents_involved,
             "outcome": outcome,
             "confidence_score": confidence_score,

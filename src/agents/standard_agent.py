@@ -234,7 +234,11 @@ class StandardAgent(BaseAgent):
         registry: ToolRegistry,
         configured_tools: List[Any]
     ) -> None:
-        """Load specific tools from configuration."""
+        """Load specific tools from configuration.
+
+        Auto-discovers all tools to populate the registry, then filters
+        to keep ONLY the tools listed in the agent config.
+        """
         if len(registry.list_tools()) == 0:
             discovered_count = registry.auto_discover()
             if discovered_count == 0:
@@ -245,6 +249,8 @@ class StandardAgent(BaseAgent):
 
         available_tools = registry.list_tools()
 
+        # Resolve configured tool names and apply configs
+        configured_names: set[str] = set()
         for tool_spec in configured_tools:
             tool_name: str
             tool_config: Dict[str, Any]
@@ -263,6 +269,8 @@ class StandardAgent(BaseAgent):
                     f"To add a new tool, create a BaseTool subclass in src/tools/"
                 )
 
+            configured_names.add(tool_name)
+
             if tool_config:
                 logger.debug(f"Tool config provided for {tool_name}: {tool_config}")
                 if hasattr(tool_instance, 'config'):
@@ -270,6 +278,11 @@ class StandardAgent(BaseAgent):
                         tool_instance.config.update(tool_config)
                     else:
                         tool_instance.config = tool_config  # type: ignore[unreachable]
+
+        # Remove tools not in the configured list
+        unconfigured = set(registry.list_tools()) - configured_names
+        for name in unconfigured:
+            registry.unregister(name)
 
     def execute(
         self,
@@ -587,14 +600,40 @@ class StandardAgent(BaseAgent):
         else:
             raise ValueError("No prompt template or inline prompt configured")
 
-        # Auto-inject input context
+        # Keys injected by strategy.get_round_context() — exclude from string
+        # auto-inject to prevent double-injection (they're handled below).
+        _mode_context_keys = frozenset({
+            "interaction_mode", "mode_instruction", "debate_framing",
+        })
+
+        # Auto-inject input context (strings only, skip mode context keys)
         input_parts = []
         for key, value in filtered_input.items():
-            if value and isinstance(value, str):
+            if value and isinstance(value, str) and key not in _mode_context_keys:
                 label = key.replace('_', ' ').title()
                 input_parts.append(f"## {label}\n{value}")
         if input_parts:
             template += "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
+
+        # Auto-inject dialogue context for dialogue-aware agents
+        if getattr(self.config.agent, 'dialogue_aware', True):
+            from src.agents.dialogue_formatter import (
+                format_dialogue_history,
+                format_stage_agent_outputs,
+            )
+            max_chars = getattr(self.config.agent, 'max_dialogue_context_chars', 8000)
+
+            dialogue_history = filtered_input.get("dialogue_history")
+            if dialogue_history and isinstance(dialogue_history, list):
+                formatted = format_dialogue_history(dialogue_history, max_chars)
+                if formatted:
+                    template += "\n\n---\n\n" + formatted
+
+            stage_agents = filtered_input.get("current_stage_agents")
+            if stage_agents and isinstance(stage_agents, dict):
+                formatted = format_stage_agent_outputs(stage_agents, max_chars // 2)
+                if formatted:
+                    template += "\n\n---\n\n" + formatted
 
         if not _get_native_tool_definitions(self):
             tools_section = _get_cached_tool_schemas(self)

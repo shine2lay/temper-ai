@@ -17,6 +17,7 @@ from src.compiler.domain_state import (
     create_initial_domain_state,
     merge_domain_states,
 )
+from src.compiler.executors.state_keys import StateKeys
 
 
 class TestWorkflowDomainState:
@@ -112,10 +113,10 @@ class TestWorkflowDomainState:
         state_dict = state.to_dict()
 
         # All fields should be serializable
-        assert state_dict["workflow_id"] == "wf-test-123"
+        assert state_dict[StateKeys.WORKFLOW_ID] == "wf-test-123"
         assert state_dict["input"] == "test input"
         assert state_dict["topic"] == "test topic"
-        assert state_dict["stage_outputs"] == {"research": {"findings": ["item1"]}}
+        assert state_dict[StateKeys.STAGE_OUTPUTS] == {"research": {"findings": ["item1"]}}
         assert isinstance(state_dict["created_at"], str)  # datetime serialized
 
     def test_to_dict_exclude_none(self):

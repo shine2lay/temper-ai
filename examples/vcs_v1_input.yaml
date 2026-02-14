@@ -1,0 +1,19 @@
+# VCS v1 Suggestion - Health check + About page
+# Tests the multi-perspective pipeline with a small, achievable feature
+
+suggestion_text: |
+  Add two things for v1 readiness:
+
+  1. A GET /health endpoint that returns JSON with:
+     - status: "ok"
+     - version: "1.0"
+     - uptime_seconds: time since app started
+     - database: "connected" or "error" (actually test the DB connection)
+
+  2. A GET /about page that serves a simple HTML explainer page explaining:
+     - What The Vibe Coding Squad is (public suggestion board where AI agents build features)
+     - How it works (submit suggestion → AI triage → code generation)
+     - Links to "Submit a Suggestion" (/) and "View Board" (/)
+     - Keep it simple HTML/CSS, no frameworks, match the existing style
+
+workspace_path: /home/shinelay/vibe-coding-squad

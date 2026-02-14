@@ -21,6 +21,7 @@ from src.agents.llm import (
     OllamaLLM,
     OpenAILLM,
 )
+from src.agents.tool_keys import ToolKeys
 from src.agents.response_parser import (
     extract_final_answer,
     extract_reasoning,
@@ -77,11 +78,11 @@ def execute_tool_calls(
         except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
             logger.error(f"Tool execution failed in parallel mode: {e}")
             tool_results[index] = {
-                "name": tool_calls[index].get("name", "unknown"),
-                "parameters": tool_calls[index].get("parameters", {}),
-                "success": False,
-                "result": None,
-                "error": f"Parallel execution error: {str(e)}"
+                ToolKeys.NAME: tool_calls[index].get(ToolKeys.NAME, "unknown"),
+                ToolKeys.PARAMETERS: tool_calls[index].get(ToolKeys.PARAMETERS, {}),
+                ToolKeys.SUCCESS: False,
+                ToolKeys.RESULT: None,
+                ToolKeys.ERROR: f"Parallel execution error: {str(e)}"
             }
 
     return tool_results
@@ -92,11 +93,11 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
     if not isinstance(tool_call, dict):
         raise TypeError(f"tool_call must be a dictionary, got {type(tool_call).__name__}")
 
-    if "name" not in tool_call:
+    if ToolKeys.NAME not in tool_call:
         raise ValueError("tool_call must contain 'name' field")
 
-    tool_name = tool_call.get("name")
-    tool_params = tool_call.get("parameters", tool_call.get("arguments", {}))
+    tool_name = tool_call.get(ToolKeys.NAME)
+    tool_params = tool_call.get(ToolKeys.PARAMETERS, tool_call.get("arguments", {}))
 
     if not isinstance(tool_name, str):
         raise TypeError(f"tool_call 'name' must be a string, got {type(tool_name).__name__}")
@@ -109,11 +110,11 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
 
     if safety.mode == "require_approval":
         return {
-            "name": tool_name,
-            "parameters": tool_params,
-            "result": None,
-            "error": f"Tool '{tool_name}' blocked: safety mode is 'require_approval'",
-            "success": False
+            ToolKeys.NAME: tool_name,
+            ToolKeys.PARAMETERS: tool_params,
+            ToolKeys.RESULT: None,
+            ToolKeys.ERROR: f"Tool '{tool_name}' blocked: safety mode is 'require_approval'",
+            ToolKeys.SUCCESS: False
         }
 
     if tool_name in safety.require_approval_for_tools:
@@ -127,11 +128,11 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
 
     if safety.mode == "dry_run":
         return {
-            "name": tool_name,
-            "parameters": tool_params,
-            "result": f"[DRY RUN] Tool '{tool_name}' would be executed with parameters: {tool_params}",
-            "error": None,
-            "success": True
+            ToolKeys.NAME: tool_name,
+            ToolKeys.PARAMETERS: tool_params,
+            ToolKeys.RESULT: f"[DRY RUN] Tool '{tool_name}' would be executed with parameters: {tool_params}",
+            ToolKeys.ERROR: None,
+            ToolKeys.SUCCESS: True
         }
 
     # Route through ToolExecutor (safety-integrated execution)
@@ -145,14 +146,14 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
         agent.name, tool_name
     )
     return {
-        "name": tool_name,
-        "parameters": tool_params,
-        "result": None,
-        "error": (
+        ToolKeys.NAME: tool_name,
+        ToolKeys.PARAMETERS: tool_params,
+        ToolKeys.RESULT: None,
+        ToolKeys.ERROR: (
             f"Tool '{tool_name}' execution blocked: no tool_executor configured. "
             f"The safety stack is required for tool execution."
         ),
-        "success": False
+        ToolKeys.SUCCESS: False
     }
 
 
@@ -183,11 +184,11 @@ def execute_via_tool_executor(
         )
 
         return {
-            "name": tool_name,
-            "parameters": tool_params,
-            "result": result.result if result.success else None,
-            "error": result.error if not result.success else None,
-            "success": result.success
+            ToolKeys.NAME: tool_name,
+            ToolKeys.PARAMETERS: tool_params,
+            ToolKeys.RESULT: result.result if result.success else None,
+            ToolKeys.ERROR: result.error if not result.success else None,
+            ToolKeys.SUCCESS: result.success
         }
     except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
         duration_seconds = time.time() - tool_start_time
@@ -202,11 +203,11 @@ def execute_via_tool_executor(
         )
 
         return {
-            "name": tool_name,
-            "parameters": tool_params,
-            "result": None,
-            "error": f"Tool execution error: {str(e)}",
-            "success": False
+            ToolKeys.NAME: tool_name,
+            ToolKeys.PARAMETERS: tool_params,
+            ToolKeys.RESULT: None,
+            ToolKeys.ERROR: f"Tool execution error: {str(e)}",
+            ToolKeys.SUCCESS: False
         }
 
 
@@ -226,13 +227,22 @@ def get_cached_tool_schemas(agent: "StandardAgent") -> Optional[str]:
 
     tool_schemas = [
         {
-            "name": tool.name,
+            ToolKeys.NAME: tool.name,
             "description": tool.description,
-            "parameters": tool.get_parameters_schema()
+            ToolKeys.PARAMETERS: tool.get_parameters_schema()
         }
         for tool in tools_dict.values()
     ]
-    tools_section = "\n\nAvailable Tools:\n" + json.dumps(tool_schemas, indent=2)
+    tools_section = (
+        "\n\n## Available Tools\n"
+        "You can call tools by writing a tool_call block. "
+        "To call a tool, use EXACTLY this format:\n"
+        "<tool_call>\n"
+        '{"name": "<tool_name>", "parameters": {<parameters>}}\n'
+        "</tool_call>\n\n"
+        "You may call multiple tools. Wait for tool results before continuing.\n\n"
+        + json.dumps(tool_schemas, indent=2)
+    )
 
     agent._cached_tool_schemas = tools_section
     agent._tool_registry_version = current_version
@@ -268,9 +278,9 @@ def get_native_tool_definitions(agent: "StandardAgent") -> Optional[List[Dict[st
         schema = tool.get_parameters_schema()
 
         function_def = {
-            "name": tool.name,
+            ToolKeys.NAME: tool.name,
             "description": tool.description,
-            "parameters": schema,
+            ToolKeys.PARAMETERS: schema,
         }
 
         result_schema = tool.get_result_schema()
@@ -307,10 +317,10 @@ def inject_tool_results(
 
     results_parts = ["\n\nTool Results:\n"]
     for result in tool_results:
-        results_parts.append(f"\nTool: {result['name']}\n")
-        results_parts.append(f"Parameters: {json.dumps(result['parameters'])}\n")
-        if result['success']:
-            safe_result = sanitize_tool_output(str(result['result']))
+        results_parts.append(f"\nTool: {result[ToolKeys.NAME]}\n")
+        results_parts.append(f"Parameters: {json.dumps(result[ToolKeys.PARAMETERS])}\n")
+        if result[ToolKeys.SUCCESS]:
+            safe_result = sanitize_tool_output(str(result[ToolKeys.RESULT]))
 
             if len(safe_result) > max_tool_result_size:
                 original_size = len(safe_result)
@@ -319,7 +329,7 @@ def inject_tool_results(
 
             results_parts.append(f"Result: {safe_result}\n")
         else:
-            safe_error = sanitize_tool_output(str(result['error']))
+            safe_error = sanitize_tool_output(str(result[ToolKeys.ERROR]))
 
             if len(safe_error) > max_tool_result_size:
                 original_size = len(safe_error)
@@ -377,9 +387,12 @@ def inject_tool_results(
     if dropped_count > 0:
         truncation_marker = f"\n\n[...{dropped_count} earlier iteration(s) omitted for brevity...]\n"
 
-    # Re-sanitize the assembled turns
+    # NOTE: Do NOT re-sanitize assembled turns here. Tool results are already
+    # sanitized individually (lines ~314/323). Re-sanitizing the full history
+    # escapes the LLM's own <tool_call> tags (→ &lt;tool_call&gt;), causing
+    # the model to mimic the escaped format in subsequent responses, which
+    # breaks parse_tool_calls() and halts the tool-calling loop.
     assembled_turns = truncation_marker + ''.join(included_turns)
-    assembled_turns = sanitize_tool_output(assembled_turns)
 
     # M-48: Prune old turns to free memory
     if dropped_count > 0:
@@ -565,7 +578,7 @@ def process_llm_response(
     tool_calls = parse_tool_calls(llm_response.content)
 
     if tool_calls:
-        tool_names = ", ".join(tc.get("name", "?") for tc in tool_calls)
+        tool_names = ", ".join(tc.get(ToolKeys.NAME, "?") for tc in tool_calls)
         logger.info("[%s] Calling %d tool(s): %s", agent.name, len(tool_calls), tool_names)
 
     if not tool_calls:
@@ -631,8 +644,79 @@ def setup_execution(
     agent.tool_executor = _tool_executor  # type: ignore[attr-defined]
     agent.tracker = input_data.get('tracker', None)  # type: ignore[attr-defined]
     agent._observer = AgentObserver(agent.tracker, agent._execution_context)  # type: ignore[attr-defined]
-    agent._stream_callback = input_data.get('stream_callback', None)  # type: ignore[attr-defined]
+    # stream_callback may be a StreamDisplay instance (multi-agent) or a plain callable
+    _stream_cb = input_data.get('stream_callback', None)
+    if _stream_cb is not None and hasattr(_stream_cb, 'make_callback'):
+        # StreamDisplay: create per-agent callback so each agent gets its own panel
+        agent._stream_callback = _stream_cb.make_callback(agent.name)  # type: ignore[attr-defined]
+    else:
+        agent._stream_callback = _stream_cb  # type: ignore[attr-defined]
+
+    # Render Jinja2 templates in tool configs now that input_data is available.
+    # Tool configs may contain {{ workspace_path }} etc. that need resolving.
+    _resolve_tool_config_templates(agent, input_data)
+
     logger.info("[%s] Starting %sexecution", agent.name, "async " if async_mode else "")
+
+
+def _resolve_tool_config_templates(
+    agent: "StandardAgent",
+    input_data: Dict[str, Any],
+) -> None:
+    """Render Jinja2 template strings in tool config values using input_data.
+
+    Tool configs are loaded at agent init time (before input_data is available),
+    so any ``{{ variable }}`` references remain as literal strings. This function
+    resolves them at execution time when input_data provides the actual values.
+    """
+    registry = getattr(agent, "tool_registry", None)
+    if registry is None:
+        return
+
+    try:
+        tools_dict = registry.get_all_tools()
+    except (AttributeError, TypeError):
+        return
+    if not tools_dict:
+        return
+
+    for tool in tools_dict.values():
+        if not hasattr(tool, "config") or not isinstance(tool.config, dict):
+            continue
+
+        changed = False
+        for key, value in tool.config.items():
+            if isinstance(value, str) and "{{" in value:
+                rendered = _render_template_value(value, input_data)
+                if rendered != value:
+                    tool.config[key] = rendered
+                    changed = True
+            elif isinstance(value, list):
+                # Lists (e.g. allowed_commands) don't need template rendering
+                continue
+
+        if changed:
+            logger.debug(
+                "[%s] Resolved tool config templates for %s: %s",
+                agent.name,
+                getattr(tool, "name", type(tool).__name__),
+                {k: v for k, v in tool.config.items() if not k.startswith("_")},
+            )
+
+
+def _render_template_value(template: str, variables: Dict[str, Any]) -> str:
+    """Render a single Jinja2 template string with the given variables.
+
+    Uses a minimal approach: simple {{ var }} substitution without importing
+    the full Jinja2 engine, to keep this lightweight.
+    """
+    import re
+    result = template
+    for match in re.finditer(r"\{\{\s*(\w+)\s*\}\}", template):
+        var_name = match.group(1)
+        if var_name in variables:
+            result = result.replace(match.group(0), str(variables[var_name]))
+    return result
 
 
 def make_stream_callback(agent: "StandardAgent") -> Optional[Callable]:

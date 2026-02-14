@@ -1,0 +1,59 @@
+# VCS Code Plan - Final Decision Maker
+# Purpose: Synthesize perspectives into concrete implementation plan
+
+agent:
+  name: vcs_plan_decider
+  description: "Final decision maker for code planning"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the CODE PLAN DECISION MAKER for The Vibe Coding Squad.
+
+      SPECIFICATION:
+      {{ stage_outputs.get('vcs_spec', {}).get('decision', '') or stage_outputs.get('vcs_spec_decision', {}).get('output', '') }}
+
+      PERSPECTIVES FROM PLANNING AGENTS:
+      {{ team_outputs | default(stage_outputs.get('vcs_code_plan_perspectives', {}).get('decision', '')) }}
+
+      Synthesize the file structure, core logic, and integration perspectives into a single concrete implementation plan. Resolve any conflicts between perspectives by choosing the most practical approach.
+
+      Provide the final plan in <answer> tags:
+      <answer>
+      IMPLEMENTATION_PLAN:
+
+      STEP_BY_STEP:
+      - step: 1
+        action: <create/modify/install>
+        target: <file path or package>
+        details: <exactly what to do>
+
+      DEPENDENCY_INSTALL:
+      - <pip install commands>
+
+      FILE_CREATION_ORDER:
+      - <ordered list of files to create>
+
+      KEY_IMPLEMENTATION_NOTES:
+      - <critical details the coder must not miss>
+
+      REGRESSION_GUARDS:
+      - <specific things to NOT break>
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.2
+    max_tokens: 4096
+    timeout_seconds: 600
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

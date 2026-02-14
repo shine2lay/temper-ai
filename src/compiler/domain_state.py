@@ -173,6 +173,7 @@ class WorkflowDomainState:
     stage_outputs: Dict[str, Any] = field(default_factory=dict)
     current_stage: str = ""
     workflow_id: str = field(default_factory=lambda: f"wf-{uuid.uuid4().hex[:WORKFLOW_ID_HEX_LENGTH]}")
+    stage_loop_counts: Dict[str, int] = field(default_factory=dict)
 
     # Common workflow inputs (all optional)
     topic: Optional[str] = None
@@ -328,7 +329,7 @@ class WorkflowDomainState:
 
         # Filter to only known domain fields
         known_fields = {
-            "stage_outputs", "current_stage", "workflow_id",
+            "stage_outputs", "current_stage", "workflow_id", "stage_loop_counts",
             "topic", "depth", "focus_areas", "query", "input", "context", "data",
             "workflow_inputs", "version", "created_at", "metadata"
         }
@@ -397,6 +398,8 @@ class WorkflowDomainState:
             state_dict["metadata"] = copy_module.deepcopy(state_dict["metadata"])
         if "workflow_inputs" in state_dict:
             state_dict["workflow_inputs"] = copy_module.deepcopy(state_dict["workflow_inputs"])
+        if "stage_loop_counts" in state_dict:
+            state_dict["stage_loop_counts"] = copy_module.deepcopy(state_dict["stage_loop_counts"])
         if "focus_areas" in state_dict and state_dict["focus_areas"] is not None:
             state_dict["focus_areas"] = list(state_dict["focus_areas"])
         return WorkflowDomainState.from_dict(state_dict)

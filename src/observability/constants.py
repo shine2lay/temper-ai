@@ -73,3 +73,51 @@ DECISION_CONTEXT_MAX_LENGTH = 5000
 
 DEFAULT_QUERY_LIMIT = 1000
 DEFAULT_AGGREGATION_INTERVAL_SECONDS = 60
+
+
+# ============================================================================
+# Database Field Names
+# ============================================================================
+
+
+class ObservabilityFields:
+    """Standard field names for observability tracking and database operations."""
+
+    # Execution hierarchy IDs
+    WORKFLOW_ID = "workflow_id"
+    STAGE_ID = "stage_id"
+    AGENT_ID = "agent_id"
+    CHECKPOINT_ID = "checkpoint_id"
+
+    # Status tracking
+    STATUS = "status"
+    STATUS_RUNNING = "running"
+    STATUS_COMPLETED = "completed"
+    STATUS_FAILED = "failed"
+
+    # Timing fields
+    START_TIME = "start_time"
+    END_TIME = "end_time"
+    DURATION_SECONDS = "duration_seconds"
+
+    # Metrics aggregation
+    TOTAL_TOKENS = "total_tokens"
+    TOTAL_COST_USD = "total_cost_usd"
+    TOTAL_LLM_CALLS = "total_llm_calls"
+    TOTAL_TOOL_CALLS = "total_tool_calls"
+
+    # Agent/Stage data
+    AGENT_NAME = "agent_name"
+    STAGE_OUTPUTS = "stage_outputs"
+    INPUT_DATA = "input_data"
+    OUTPUT_DATA = "output_data"
+
+    # Error tracking
+    ERROR_MESSAGE = "error_message"
+    ERROR_STACK_TRACE = "error_stack_trace"
+
+    # Configuration
+    WORKFLOW_CONFIG = "workflow_config"
+    WORKFLOW_VERSION = "workflow_version"
+    OPTIMIZATION_TARGET = "optimization_target"
+    PRODUCT_TYPE = "product_type"

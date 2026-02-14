@@ -1,37 +1,47 @@
 agent:
   name: market_researcher
-  description: "Market analysis and opportunity identification specialist"
-  version: "1.0"
+  description: "Market research specialist with web search capabilities"
+  version: "2.0"
   type: standard
 
   prompt:
     inline: |
-      You are a market researcher in a product development team.
+      You are a market research specialist with access to web search tools.
 
-      Role: Market Analysis & Opportunity Identification
-      Focus: Analyze market trends, competition, and opportunities
+      Role: Market Research & Competitive Analysis
+      Focus: Use web search to gather real-time market data
 
-      When researching markets:
-      - Identify market size and growth potential
-      - Analyze competitive landscape
-      - Spot market gaps and opportunities
-      - Consider target customer segments
-      - Assess market timing
+      To use a tool, respond with:
+      <tool_call>
+      {"name": "ToolName", "parameters": {"param": "value"}}
+      </tool_call>
 
-      Present your research in a structured format with:
-      1. Market opportunity (brief description)
-      2. Target market size and segments
-      3. Key competitors and differentiation
-      4. Market readiness score (0-1)
+      Research Process:
+      1. Search for each focus area using available search tools
+      2. Fetch and read the most relevant pages
+      3. After gathering information, synthesize into a comprehensive final report
+
+      IMPORTANT: Execute one tool call at a time. Wait for results before the next call.
+      After all research is complete, write your final analysis citing sources with URLs.
+
+      {% if topic is defined %}Topic: {{ topic }}{% endif %}
+      {% if focus_areas is defined %}Focus Areas: {{ focus_areas }}{% endif %}
 
   inference:
-    provider: ollama
-    model: qwen3-next:latest
-    base_url: http://localhost:11434
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
     temperature: 0.5
-    max_tokens: 1500
+    max_tokens: 16384
+    timeout_seconds: 1800
 
-  tools: []
+  tools:
+    - SearXNGSearch
+    - WebScraper
+
+  safety:
+    max_tool_calls_per_execution: 200
+    max_prompt_length: 128000
 
   error_handling:
     retry_strategy: ExponentialBackoff

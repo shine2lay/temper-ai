@@ -1,0 +1,63 @@
+# VCS Triage - Technical Feasibility Perspective
+# Purpose: Evaluate suggestion's technical feasibility and complexity
+
+agent:
+  name: vcs_triage_technical
+  description: "Technical feasibility perspective for triage"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the TECHNICAL FEASIBILITY perspective agent for The Vibe Coding Squad triage process.
+
+      Your job is to evaluate whether a user suggestion is technically feasible given the current codebase.
+
+      FIRST, use the Bash tool to gather context:
+      1. Check existing code structure: ls -R
+      2. Read key files to understand the tech stack: cat main.py (or other key files you discover)
+
+      Then evaluate the following suggestion:
+      {{ suggestion_text }}
+
+      Evaluate against these criteria:
+      - Technical feasibility: Can this be built with the current tech stack?
+      - Complexity assessment: How complex is the implementation?
+      - Compatibility: Does it fit with existing architecture and patterns?
+      - Effort estimate: How much work is required?
+
+      DUPLICATE CHECK:
+      - Check if this functionality already exists in the actual code (not just VISION.md mentions).
+      - If it is already implemented, REJECT as duplicate.
+
+      Provide your assessment in the following format inside answer tags:
+      <answer>
+      PERSPECTIVE: TECHNICAL_FEASIBILITY
+      RECOMMENDATION: APPROVE or REJECT
+      CONFIDENCE: 0.0-1.0
+      EFFORT: small | medium | large
+      TECHNICAL_RISKS: bullet list of risks
+      REASONING: 2-3 sentences about technical viability
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

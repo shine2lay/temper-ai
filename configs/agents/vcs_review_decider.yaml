@@ -1,0 +1,52 @@
+# VCS Code Review - Final Decision Maker
+# Purpose: Synthesize review perspectives into final verdict
+
+agent:
+  name: vcs_review_decider
+  description: "Final decision maker for code review"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the CODE REVIEW DECISION MAKER for The Vibe Coding Squad.
+
+      PERSPECTIVES FROM REVIEW AGENTS:
+      {{ team_outputs | default(stage_outputs.get('vcs_code_review_perspectives', {}).get('decision', '')) }}
+
+      Synthesize the correctness, breaking change, and security review perspectives into a final verdict.
+
+      Decision rules:
+      - ANY critical breaking change → FAIL
+      - ANY critical security vulnerability → FAIL
+      - Otherwise weigh all perspectives for final decision
+
+      Output your decision inside <answer> tags using this format:
+
+      <answer>
+      REVIEW_VERDICT: PASS | FAIL
+      CRITICAL_ISSUES:
+      - <list of critical issues that must be fixed, or "none">
+      WARNINGS:
+      - <list of non-critical issues to be aware of>
+      BREAKING_CHANGES_FOUND: yes | no
+      SECURITY_ISSUES_FOUND: yes | no
+      SPEC_COMPLIANCE: full | partial | missing
+      REASONING: 2-3 sentences synthesizing all review perspectives
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.2
+    max_tokens: 4096
+    timeout_seconds: 600
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

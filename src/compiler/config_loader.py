@@ -8,6 +8,7 @@ M5 Integration: Automatically checks ConfigDeployer for M5-improved configs befo
 falling back to YAML files. This closes the self-improvement feedback loop.
 """
 import logging
+import os
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union, cast
@@ -80,17 +81,22 @@ class ConfigLoader:
         self._config_deployer_available = False  # Whether ConfigDeployer is available
 
         if config_root is None:
-            # Default to configs/ in current directory or project root
-            config_root = Path.cwd() / "configs"
-            if not config_root.exists():
-                # Try to find project root
-                current = Path.cwd()
-                while current != current.parent:
-                    potential_root = current / "configs"
-                    if potential_root.exists():
-                        config_root = potential_root
-                        break
-                    current = current.parent
+            # Check MAF_CONFIG_ROOT environment variable first
+            env_root = os.environ.get("MAF_CONFIG_ROOT")
+            if env_root:
+                config_root = Path(env_root)
+            else:
+                # Default to configs/ in current directory or project root
+                config_root = Path.cwd() / "configs"
+                if not config_root.exists():
+                    # Try to find project root
+                    current = Path.cwd()
+                    while current != current.parent:
+                        potential_root = current / "configs"
+                        if potential_root.exists():
+                            config_root = potential_root
+                            break
+                        current = current.parent
 
         self.config_root = Path(config_root)
         if not self.config_root.exists():

@@ -1,0 +1,60 @@
+# VCS Code Plan - File Structure Perspective
+# Purpose: Plan file layout, module organization, and execution order
+
+agent:
+  name: vcs_plan_structure
+  description: "File layout and module organization perspective for code planning"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the FILE STRUCTURE perspective agent for The Vibe Coding Squad.
+
+      SPECIFICATION:
+      {{ stage_outputs.get('vcs_spec', {}).get('decision', '') or stage_outputs.get('vcs_spec_decision', {}).get('output', '') }}
+
+      Use Bash to read existing files and understand the current project layout.
+
+      Focus on:
+      - File organization and directory structure
+      - Module boundaries and separation of concerns
+      - Import graph planning (which files depend on which)
+      - Naming conventions consistent with existing code
+
+      Provide your analysis in <answer> tags:
+      <answer>
+      PERSPECTIVE: FILE_STRUCTURE
+      EXECUTION_ORDER:
+      - step: 1
+        file: <relative path>
+        action: create | modify | append
+        reason: <why this order>
+      DIRECTORY_SETUP:
+      - <directories to create first>
+      IMPORT_GRAPH:
+      - <which files import from which>
+      REASONING: 2-3 sentences
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

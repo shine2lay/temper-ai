@@ -13,6 +13,7 @@ from typing import Dict, List, Optional, Set
 
 from src.tools.base import ToolResult
 from src.tools.constants import MAX_BASH_OUTPUT_LENGTH
+from src.tools.field_names import ToolResultFields
 
 logger = logging.getLogger(__name__)
 
@@ -338,12 +339,12 @@ def run_command(
             result=stdout if success else f"Command failed (exit {exit_code}):\n{stderr}\n{stdout}",
             error=stderr if not success and stderr else None,
             metadata={
-                "exit_code": exit_code,
-                "stdout": stdout,
-                "stderr": stderr,
-                "command": command,
+                ToolResultFields.EXIT_CODE: exit_code,
+                ToolResultFields.STDOUT: stdout,
+                ToolResultFields.STDERR: stderr,
+                ToolResultFields.COMMAND: command,
                 "working_directory": str(resolved_cwd),
-                "timeout": timeout,
+                ToolResultFields.TIMEOUT: timeout,
             },
         )
 
@@ -352,9 +353,9 @@ def run_command(
             success=False,
             error=f"Command timed out after {timeout} seconds",
             metadata={
-                "command": command,
+                ToolResultFields.COMMAND: command,
                 "working_directory": str(resolved_cwd),
-                "timeout": timeout,
+                ToolResultFields.TIMEOUT: timeout,
             },
         )
 
@@ -363,7 +364,7 @@ def run_command(
         return ToolResult(
             success=False,
             error=f"Command not found: {cmd_display}",
-            metadata={"command": command},
+            metadata={ToolResultFields.COMMAND: command},
         )
 
     except PermissionError:
@@ -371,7 +372,7 @@ def run_command(
         return ToolResult(
             success=False,
             error=f"Permission denied executing: {cmd_display}",
-            metadata={"command": command},
+            metadata={ToolResultFields.COMMAND: command},
         )
 
     except OSError as e:
@@ -379,7 +380,7 @@ def run_command(
         return ToolResult(
             success=False,
             error="OS error executing command",
-            metadata={"command": command},
+            metadata={ToolResultFields.COMMAND: command},
         )
 
 

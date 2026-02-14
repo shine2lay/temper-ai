@@ -1,52 +1,37 @@
-# LLM-Powered Debate Workflow - M3 Demo
+# LLM-Powered Debate Workflow
 # Purpose: Real LLM-powered multi-round debate with mind-changing
 # Features: Actual LLM calls, autonomous decision-making, convergence detection
-# Demo: examples/m3_llm_debate_demo.py
 
 workflow:
   name: llm_debate_demo
-  description: "Real LLM agents debating product launch timing"
-  version: "1.0"
+  description: "Real LLM agents debating with multi-round convergence"
+  version: "2.0"
+  product_type: data_product
 
-  # Workflow metadata
-  lifecycle_type: decision_making
-  product_type: data_product  # Decision outputs are data products
-
-  # Workflow stages
   stages:
     - name: llm_debate
-      stage_ref: configs/stages/llm_debate_stage.yaml
+      stage_ref: configs/stages/quick_debate.yaml
       inputs:
-        scenario: "{{ workflow.inputs.scenario }}"
-        initial_positions: "{{ workflow.inputs.initial_positions }}"
-        agent_personas: "{{ workflow.inputs.agent_personas }}"
+        topic: "{{ workflow.inputs.topic }}"
+        context: "{{ workflow.inputs.context }}"
 
       on_success:
         action: continue
-
       on_failure:
         action: escalate
 
-  # Error handling
   error_handling:
     on_stage_failure: retry
     max_stage_retries: 2
     escalation_policy: GracefulDegradation
     enable_rollback: false
 
-  # Workflow inputs
   inputs:
     required:
-      - scenario  # Debate scenario description
-      - initial_positions  # Starting positions for each agent
-      - agent_personas  # LLM persona for each agent
-
+      - topic
     optional:
-      - max_rounds  # Maximum debate rounds (default: 3)
-      - convergence_threshold  # Stop when % agents unchanged (default: 0.8)
-      - temperature  # LLM temperature (default: 0.7)
+      - context
 
-  # Workflow outputs
   outputs:
     - name: final_decision
       description: "Consensus decision after LLM debate"
@@ -58,72 +43,25 @@ workflow:
 
     - name: convergence_metrics
       description: "Convergence and performance metrics"
-      fields:
-        - converged
-        - rounds_to_convergence
-        - total_llm_calls
-        - total_tokens
-        - total_latency_ms
-        - final_distribution
+      source: llm_debate.convergence_info
 
-    - name: llm_traces
-      description: "Full LLM call traces (prompts, responses, metadata)"
-      source: llm_debate.llm_traces
-
-  # LLM provider configuration
-  llm_provider:
-    provider: ollama
-    base_url: http://localhost:11434
-    model: llama3.2:3b
-    temperature: 0.7
-    max_tokens: 512
-    timeout: 600  # 10 minutes
-
-  # Execution settings
   execution:
-    timeout_seconds: 3000  # 50 minutes max
-    parallel_execution: false  # Debate is sequential
-    allow_early_termination: true  # Stop on convergence
-    retry_on_failure: true
-    max_retries: 2
+    timeout_seconds: 3000
+    parallel_execution: false
+    allow_early_termination: true
 
-  # Observability
   observability:
     trace_all_decisions: true
-    trace_llm_calls: true  # Log full prompts/responses
     track_collaboration_events: true
-    track_convergence: true
-    track_token_usage: true
-    track_latency: true
     log_level: DEBUG
 
-  # Cost tracking
-  cost_tracking:
-    enabled: true
-    estimate_only: true  # For local models (free)
-    track_per_agent: true
-    track_per_round: true
-
-  # Metadata
   tags:
     - decision-making
     - debate
     - llm-powered
-    - real-agents
     - convergence
-    - milestone-3
 
   use_cases:
-    - "Product launch timing (Launch Now vs Wait vs Beta)"
+    - "Product launch timing decisions"
     - "Architecture decisions with real reasoning"
     - "Strategic planning with autonomous agents"
-    - "Any decision requiring deep multi-perspective analysis"
-
-  notes:
-    - "Uses actual LLM calls - agents genuinely reason and change minds"
-    - "Different result each run due to LLM temperature"
-    - "Requires Ollama installed and running"
-    - "See examples/m3_llm_debate_demo.py for implementation"
-
-  created_by: m3-llm-debate-demo
-  created_at: "2026-01-27"

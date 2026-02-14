@@ -71,10 +71,13 @@ tools:
 
 config:
   temperature: 0.7
-  max_tokens: 1200
+  max_tokens: 4096
+    timeout_seconds: 1800  # 30 minutes
+
+# Opt out of auto-injection: this agent handles dialogue_history in its own template
+dialogue_aware: false
 
 metadata:
   supports_dialogue: true
-  dialogue_aware: true
   role: "critic"
   role_description: "Challenges proposals and identifies flaws"

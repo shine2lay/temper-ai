@@ -124,7 +124,11 @@ class StrategyRegistry:
         try:
             from src.strategies.debate import DebateAndSynthesize
             self._strategies["debate"] = DebateAndSynthesize
+            self._strategies["debate_and_synthesize"] = DebateAndSynthesize
+            self._strategies["llm_debate_and_synthesize"] = DebateAndSynthesize
             self._default_strategies.add("debate")
+            self._default_strategies.add("debate_and_synthesize")
+            self._default_strategies.add("llm_debate_and_synthesize")
         except ImportError as exc:
             logger.warning("Could not import DebateAndSynthesize: %s", exc)
 
@@ -134,6 +138,20 @@ class StrategyRegistry:
             self._default_strategies.add("dialogue")
         except ImportError as exc:
             logger.warning("Could not import DialogueOrchestrator: %s", exc)
+
+        try:
+            from src.strategies.multi_round import MultiRoundStrategy
+            self._strategies["multi_round"] = MultiRoundStrategy
+            self._default_strategies.add("multi_round")
+        except ImportError as exc:
+            logger.warning("Could not import MultiRoundStrategy: %s", exc)
+
+        try:
+            from src.strategies.leader import LeaderCollaborationStrategy
+            self._strategies["leader"] = LeaderCollaborationStrategy
+            self._default_strategies.add("leader")
+        except ImportError as exc:
+            logger.warning("Could not import LeaderCollaborationStrategy: %s", exc)
 
         # Register default resolvers
         try:
@@ -527,8 +545,12 @@ def get_strategy_from_config(
 ) -> CollaborationStrategy:
     """Get collaboration strategy from stage configuration.
 
+    Handles both flat and nested stage config formats:
+    - Flat: {"collaboration": {"strategy": "debate", ...}}
+    - Nested: {"stage": {"collaboration": {"strategy": "debate", ...}}}
+
     Args:
-        stage_config: Stage configuration dict
+        stage_config: Stage configuration dict (flat or nested under "stage")
         registry: Optional registry instance (uses singleton if None)
 
     Returns:
@@ -536,11 +558,13 @@ def get_strategy_from_config(
 
     Example:
         stage_config = {
-            "collaboration": {
-                "strategy": "debate",
-                "config": {
-                    "max_rounds": 3,
-                    "convergence_threshold": 0.8
+            "stage": {
+                "collaboration": {
+                    "strategy": "debate",
+                    "config": {
+                        "max_rounds": 3,
+                        "convergence_threshold": 0.8
+                    }
                 }
             }
         }
@@ -550,7 +574,18 @@ def get_strategy_from_config(
     if registry is None:
         registry = StrategyRegistry()
 
-    collaboration = stage_config.get("collaboration", {})
+    # Try flat format: {"collaboration": {...}}
+    collaboration = stage_config.get("collaboration", None)
+
+    # Try nested format: {"stage": {"collaboration": {...}}}
+    if collaboration is None and isinstance(stage_config, dict):
+        stage = stage_config.get("stage", {})
+        if isinstance(stage, dict):
+            collaboration = stage.get("collaboration", None)
+
+    if collaboration is None:
+        collaboration = {}
+
     strategy_name = collaboration.get("strategy", "consensus")
     strategy_config = collaboration.get("config", {})
 
@@ -563,8 +598,10 @@ def get_resolver_from_config(
 ) -> ConflictResolutionStrategy:
     """Get conflict resolver from stage configuration.
 
+    Handles both flat and nested stage config formats.
+
     Args:
-        stage_config: Stage configuration dict
+        stage_config: Stage configuration dict (flat or nested under "stage")
         registry: Optional registry instance
 
     Returns:
@@ -572,9 +609,11 @@ def get_resolver_from_config(
 
     Example:
         stage_config = {
-            "conflict_resolution": {
-                "strategy": "merit_weighted",
-                "config": {}
+            "stage": {
+                "conflict_resolution": {
+                    "strategy": "merit_weighted",
+                    "config": {}
+                }
             }
         }
 
@@ -583,7 +622,18 @@ def get_resolver_from_config(
     if registry is None:
         registry = StrategyRegistry()
 
-    conflict_resolution = stage_config.get("conflict_resolution", {})
+    # Try flat format
+    conflict_resolution = stage_config.get("conflict_resolution", None)
+
+    # Try nested format: {"stage": {"conflict_resolution": {...}}}
+    if conflict_resolution is None and isinstance(stage_config, dict):
+        stage = stage_config.get("stage", {})
+        if isinstance(stage, dict):
+            conflict_resolution = stage.get("conflict_resolution", None)
+
+    if conflict_resolution is None:
+        conflict_resolution = {}
+
     resolver_name = conflict_resolution.get("strategy", "merit_weighted")
     resolver_config = conflict_resolution.get("config", {})
 

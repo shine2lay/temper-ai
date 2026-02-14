@@ -460,3 +460,264 @@ class TestMetricsCollector:
 
         assert metrics2.phase_failures[Phase.ANALYZE] == 1
         assert Phase.ANALYZE not in metrics2.phase_successes
+
+    def test_calculate_phase_success_rates_precision(self):
+        """Test phase success rate calculation with high precision."""
+        metrics = LoopMetrics(agent_name="test_agent")
+
+        # Test high precision division
+        metrics.phase_executions[Phase.DETECT] = 7
+        metrics.phase_successes[Phase.DETECT] = 5
+
+        rates = metrics._calculate_phase_success_rates()
+
+        # 5/7 = 0.714285...
+        assert abs(rates["detect"] - 0.7142857142857143) < 1e-10
+
+    def test_calculate_avg_durations_zero_values(self):
+        """Test average duration calculation with zero-duration phases."""
+        metrics = LoopMetrics(agent_name="test_agent")
+
+        # Phase with zero durations
+        metrics.phase_durations[Phase.DETECT] = [0.0, 0.0, 0.0]
+
+        avgs = metrics._calculate_avg_durations()
+
+        assert avgs["detect"] == 0.0
+
+    def test_record_phase_complete_concurrent_recording(self):
+        """Test concurrent phase completion recording."""
+        from threading import Thread
+
+        collector = MetricsCollector()
+
+        # Initialize
+        for i in range(10):
+            collector.record_phase_start(f"agent_{i}", Phase.DETECT)
+
+        # Complete phases concurrently
+        threads = []
+        for i in range(10):
+            thread = Thread(
+                target=collector.record_phase_complete,
+                args=(f"agent_{i}", Phase.DETECT)
+            )
+            threads.append(thread)
+            thread.start()
+
+        for thread in threads:
+            thread.join()
+
+        # All agents should have completed metrics
+        for i in range(10):
+            metrics = collector.get_metrics(f"agent_{i}")
+            assert metrics.phase_successes[Phase.DETECT] == 1
+
+    def test_to_dict_success_rate_edge_cases(self):
+        """Test to_dict success rate calculation edge cases."""
+        # Zero total iterations
+        metrics = LoopMetrics(
+            agent_name="test_agent",
+            total_iterations=0,
+            successful_iterations=0
+        )
+        result = metrics.to_dict()
+        assert result["success_rate"] == 0.0
+
+        # All successful
+        metrics = LoopMetrics(
+            agent_name="test_agent",
+            total_iterations=10,
+            successful_iterations=10
+        )
+        result = metrics.to_dict()
+        assert result["success_rate"] == 1.0
+
+        # None successful
+        metrics = LoopMetrics(
+            agent_name="test_agent",
+            total_iterations=10,
+            successful_iterations=0
+        )
+        result = metrics.to_dict()
+        assert result["success_rate"] == 0.0
+
+    def test_record_iteration_complete_duration_precision(self):
+        """Test iteration duration tracking with high precision."""
+        collector = MetricsCollector()
+        now = datetime.now(timezone.utc)
+
+        # Record iterations with precise durations
+        durations = [1.123456, 2.234567, 3.345678]
+
+        for i, duration in enumerate(durations):
+            result = IterationResult(
+                agent_name="test_agent",
+                iteration_number=i + 1,
+                phases_completed=[],
+                success=True,
+                duration_seconds=duration,
+                timestamp=now
+            )
+            collector.record_iteration_complete("test_agent", result)
+
+        metrics = collector.get_metrics("test_agent")
+
+        # Average should be precise
+        expected_avg = sum(durations) / len(durations)
+        assert abs(metrics.avg_iteration_duration - expected_avg) < 1e-6
+
+    def test_record_phase_error_multiple_same_phase(self):
+        """Test recording multiple errors for same phase."""
+        collector = MetricsCollector()
+
+        # Initialize
+        collector.record_phase_start("test_agent", Phase.DETECT)
+
+        # Record multiple errors
+        for i in range(5):
+            collector.record_phase_error("test_agent", Phase.DETECT, ValueError(f"Error {i}"))
+
+        metrics = collector.get_metrics("test_agent")
+
+        # Only first error should count (phase started once)
+        # But we can record multiple errors
+        assert metrics.phase_failures[Phase.DETECT] == 5
+
+    def test_get_all_metrics_empty(self):
+        """Test get_all_metrics with no metrics recorded."""
+        collector = MetricsCollector()
+
+        all_metrics = collector.get_all_metrics()
+
+        assert isinstance(all_metrics, dict)
+        assert len(all_metrics) == 0
+
+    def test_export_metrics_all_phases(self):
+        """Test exporting metrics with all phases."""
+        collector = MetricsCollector()
+
+        # Record data for all phases
+        for phase in Phase:
+            collector.record_phase_start("test_agent", phase)
+            collector.record_phase_complete("test_agent", phase, duration=10.0)
+
+        exported = collector.export_metrics("test_agent")
+
+        # All phases should be in exported data
+        for phase in Phase:
+            assert phase.value in exported["phase_executions"]
+            assert phase.value in exported["phase_successes"]
+            assert phase.value in exported["phase_avg_durations"]
+
+    def test_record_iteration_complete_no_experiment_no_deployment(self):
+        """Test iteration without experiment or deployment."""
+        collector = MetricsCollector()
+        now = datetime.now(timezone.utc)
+
+        result = IterationResult(
+            agent_name="test_agent",
+            iteration_number=1,
+            phases_completed=[Phase.DETECT],
+            success=True,
+            duration_seconds=60.0,
+            timestamp=now,
+            detection_result=None,
+            analysis_result=None,
+            strategy_result=None,
+            experiment_result=None,
+            deployment_result=None
+        )
+
+        collector.record_iteration_complete("test_agent", result)
+
+        metrics = collector.get_metrics("test_agent")
+
+        assert metrics.total_experiments == 0
+        assert metrics.successful_deployments == 0
+
+    def test_reset_metrics_multiple_times(self):
+        """Test resetting metrics multiple times."""
+        collector = MetricsCollector()
+
+        # Create and reset 3 times
+        for _ in range(3):
+            collector.record_phase_start("test_agent", Phase.DETECT)
+            assert "test_agent" in collector._metrics
+
+            collector.reset_metrics("test_agent")
+            assert "test_agent" not in collector._metrics
+
+    def test_phase_durations_accumulation(self):
+        """Test that phase durations accumulate correctly."""
+        collector = MetricsCollector()
+
+        # Record same phase multiple times
+        durations = [10.0, 20.0, 30.0, 40.0, 50.0]
+
+        for duration in durations:
+            collector.record_phase_start("test_agent", Phase.DETECT)
+            collector.record_phase_complete("test_agent", Phase.DETECT, duration=duration)
+
+        metrics = collector.get_metrics("test_agent")
+
+        assert len(metrics.phase_durations[Phase.DETECT]) == 5
+        assert metrics.phase_durations[Phase.DETECT] == durations
+
+    def test_to_dict_phase_success_rates_all_phases(self):
+        """Test that to_dict includes success rates for all phases."""
+        metrics = LoopMetrics(agent_name="test_agent")
+
+        # No executions for any phase
+        result = metrics.to_dict()
+
+        # All phases should have 0.0 success rate
+        for phase in Phase:
+            assert result["phase_success_rates"][phase.value] == 0.0
+
+    def test_calculate_avg_durations_single_value(self):
+        """Test average duration with single value."""
+        metrics = LoopMetrics(agent_name="test_agent")
+
+        metrics.phase_durations[Phase.DETECT] = [42.0]
+
+        avgs = metrics._calculate_avg_durations()
+
+        assert avgs["detect"] == 42.0
+
+    def test_record_rollback_multiple_times(self):
+        """Test recording multiple rollbacks."""
+        collector = MetricsCollector()
+
+        # Initialize
+        collector.record_phase_start("test_agent", Phase.DETECT)
+
+        # Record 5 rollbacks
+        for _ in range(5):
+            collector.record_rollback("test_agent")
+
+        metrics = collector.get_metrics("test_agent")
+
+        assert metrics.rollbacks == 5
+
+    def test_to_dict_with_null_last_iteration(self):
+        """Test to_dict when last_iteration_at is None."""
+        metrics = LoopMetrics(agent_name="test_agent")
+        metrics.last_iteration_at = None
+
+        result = metrics.to_dict()
+
+        assert result["last_iteration_at"] is None
+
+    def test_record_phase_start_updates_timestamp(self):
+        """Test that phase start records current timestamp."""
+        collector = MetricsCollector()
+
+        before = datetime.now(timezone.utc)
+        collector.record_phase_start("test_agent", Phase.DETECT)
+        after = datetime.now(timezone.utc)
+
+        # Phase start should be recorded
+        phase_start = collector._phase_starts["test_agent"][Phase.DETECT]
+
+        assert before <= phase_start <= after

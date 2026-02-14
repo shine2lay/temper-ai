@@ -1,0 +1,39 @@
+stage:
+  name: vcs_triage_decision
+  description: "Final triage decision based on perspectives"
+  version: "1.0"
+
+  agents:
+    - vcs_triage_decider
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 600
+
+  collaboration:
+    strategy: sequential
+    max_rounds: 1
+    convergence_threshold: 0.8
+
+  conflict_resolution:
+    strategy: highest_confidence
+
+  inputs:
+    suggestion_text:
+      type: string
+      required: true
+
+  outputs:
+    triage_output:
+      type: string
+      description: "Final triage decision"
+
+  safety:
+    mode: execute
+    risk_level: low
+    require_approval: false
+
+  tags:
+    - vcs
+    - triage
+    - decision

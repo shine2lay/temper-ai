@@ -1,0 +1,15 @@
+# VCS Suggestion Input
+# Usage: maf run configs/workflows/vcs_suggestion.yaml --input examples/vcs_suggestion_input.yaml --show-details
+#
+# Pre-requisite: VISION.md must exist in workspace_path/
+
+suggestion_text: |
+  Build the FastAPI backend with:
+  - POST /api/suggestions endpoint (accepts text and optional category)
+  - GET /api/suggestions endpoint (list all suggestions)
+  - GET /api/suggestions/:id endpoint (get single suggestion)
+  - SQLite database with Suggestion model (id, text, category, status, priority, created_at, updated_at)
+  - Use SQLModel for the ORM
+  - Include a GET /api/vision endpoint that serves the VISION.md file
+
+workspace_path: /home/shinelay/vibe-coding-squad

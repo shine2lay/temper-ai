@@ -57,7 +57,7 @@ agent:
     temperature: 0.2
     max_tokens: 4096
     top_p: 0.9
-    timeout_seconds: 600  # 10 minutes for LLM inference
+    timeout_seconds: 1800  # 30 minutes
     max_retries: 3
     retry_delay_seconds: 2
 

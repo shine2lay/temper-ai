@@ -1,0 +1,39 @@
+stage:
+  name: vcs_validate_decision
+  description: "Final validation decision merging review and validation results"
+  version: "1.0"
+
+  agents:
+    - vcs_validate_decider
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 600
+
+  collaboration:
+    strategy: sequential
+    max_rounds: 1
+    convergence_threshold: 0.8
+
+  conflict_resolution:
+    strategy: highest_confidence
+
+  inputs:
+    workspace_path:
+      type: string
+      required: true
+
+  outputs:
+    validator_output:
+      type: string
+      description: "Final validation verdict (PASS/FAIL)"
+
+  safety:
+    mode: execute
+    risk_level: low
+    require_approval: false
+
+  tags:
+    - vcs
+    - validate
+    - decision

@@ -353,3 +353,31 @@ class TestRegistryIsolation:
 
         assert "test_1" not in registry.list_strategy_names()
         assert "test_2" not in registry.list_strategy_names()
+
+
+class TestDebateAliases:
+    """Test debate strategy name aliases (Wave 0 fix)."""
+
+    def test_debate_and_synthesize_alias_registered(self):
+        """Verify 'debate_and_synthesize' resolves to DebateAndSynthesize."""
+        registry = StrategyRegistry()
+        strategy = registry.get_strategy("debate_and_synthesize")
+        assert strategy is not None
+        from src.strategies.debate import DebateAndSynthesize
+        assert isinstance(strategy, DebateAndSynthesize)
+
+    def test_llm_debate_and_synthesize_alias_registered(self):
+        """Verify 'llm_debate_and_synthesize' resolves to DebateAndSynthesize."""
+        registry = StrategyRegistry()
+        strategy = registry.get_strategy("llm_debate_and_synthesize")
+        assert strategy is not None
+        from src.strategies.debate import DebateAndSynthesize
+        assert isinstance(strategy, DebateAndSynthesize)
+
+    def test_aliases_are_default_strategies(self):
+        """Verify aliases are protected as default strategies."""
+        registry = StrategyRegistry()
+        with pytest.raises(ValueError, match="Cannot unregister"):
+            registry.unregister_strategy("debate_and_synthesize")
+        with pytest.raises(ValueError, match="Cannot unregister"):
+            registry.unregister_strategy("llm_debate_and_synthesize")

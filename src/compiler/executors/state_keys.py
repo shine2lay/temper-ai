@@ -1,0 +1,93 @@
+"""Constants for executor state dictionary keys.
+
+This module defines constants for all state dictionary keys used across
+executor implementations to eliminate magic strings and improve maintainability.
+"""
+
+
+class StateKeys:
+    """State dictionary keys used across executor implementations.
+
+    These constants replace magic strings for accessing state dictionaries
+    in sequential, parallel, and adaptive executors.
+    """
+
+    # Top-level state keys
+    STAGE_OUTPUTS = "stage_outputs"
+    CURRENT_STAGE = "current_stage"
+    WORKFLOW_ID = "workflow_id"
+    WORKFLOW_INPUTS = "workflow_inputs"
+    TRACKER = "tracker"
+    TOOL_REGISTRY = "tool_registry"
+    CONFIG_LOADER = "config_loader"
+    VISUALIZER = "visualizer"
+    SHOW_DETAILS = "show_details"
+    DETAIL_CONSOLE = "detail_console"
+    TOOL_EXECUTOR = "tool_executor"
+    STREAM_CALLBACK = "stream_callback"
+
+    # Agent result keys
+    AGENT_NAME = "agent_name"
+    OUTPUT_DATA = "output_data"
+    STATUS = "status"
+    METRICS = "metrics"
+
+    # Parallel execution state keys
+    AGENT_OUTPUTS = "agent_outputs"
+    AGENT_STATUSES = "agent_statuses"
+    AGENT_METRICS = "agent_metrics"
+    ERRORS = "errors"
+    STAGE_INPUT = "stage_input"
+
+    # Output data sub-keys
+    OUTPUT = "output"
+    ERROR = "error"
+    ERROR_TYPE = "error_type"
+    TRACEBACK = "traceback"
+    REASONING = "reasoning"
+    CONFIDENCE = "confidence"
+    TOKENS = "tokens"
+    COST_USD = "cost_usd"
+    TOOL_CALLS = "tool_calls"
+
+    # Metrics sub-keys
+    DURATION_SECONDS = "duration_seconds"
+    RETRIES = "retries"
+
+    # Stage output sub-keys
+    DECISION = "decision"
+    STAGE_STATUS = "stage_status"
+    SYNTHESIS = "synthesis"
+    AGGREGATE_METRICS = "aggregate_metrics"
+
+    # Retry tracking
+    STAGE_RETRY_COUNTS = "stage_retry_counts"
+
+    # Loop tracking (conditional stages)
+    STAGE_LOOP_COUNTS = "stage_loop_counts"
+
+    # Synthesis sub-keys
+    METHOD = "method"
+    VOTES = "votes"
+    CONFLICTS = "conflicts"
+
+    # Quality gate sub-keys
+    QUALITY_GATE_WARNING = "quality_gate_warning"
+    VIOLATIONS = "violations"
+
+    # Aggregate metrics sub-keys
+    TOTAL_TOKENS = "total_tokens"
+    TOTAL_COST_USD = "total_cost_usd"
+    TOTAL_DURATION_SECONDS = "total_duration_seconds"
+    AVG_CONFIDENCE = "avg_confidence"
+    NUM_AGENTS = "num_agents"
+    NUM_SUCCESSFUL = "num_successful"
+    NUM_FAILED = "num_failed"
+
+    # Special markers
+    AGGREGATE_METRICS_KEY = "__aggregate_metrics__"
+
+    # Stage-specific keys
+    CURRENT_STAGE_ID = "current_stage_id"
+    CURRENT_STAGE_AGENTS = "current_stage_agents"
+    MODE_SWITCH = "mode_switch"

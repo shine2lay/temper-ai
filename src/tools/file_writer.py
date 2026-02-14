@@ -4,10 +4,13 @@ FileWriter tool for safely writing content to files.
 Includes safety checks for path traversal and dangerous system paths.
 Uses centralized path_safety module for validation.
 """
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
+
+logger = logging.getLogger(__name__)
 from src.tools.constants import MAX_FILE_SIZE as _MAX_FILE_SIZE
 from src.utils.path_safety import PathSafetyError, PathSafetyValidator
 
@@ -52,10 +55,16 @@ class FileWriter(BaseTool):
         """Initialize FileWriter with path safety validator.
 
         Args:
-            config: Optional configuration dict (currently unused)
+            config: Optional configuration dict with keys:
+                - allowed_root: Root directory to constrain writes to.
+                    If set, all file paths must resolve within this directory.
+                    Supports workspace isolation for multi-agent workflows.
         """
         super().__init__(config)
-        self.path_validator = PathSafetyValidator()
+        self._configured_root: Optional[str] = (self.config or {}).get("allowed_root")
+        self.path_validator = PathSafetyValidator(
+            allowed_root=Path(self._configured_root) if self._configured_root else None
+        )
 
     def get_metadata(self) -> ToolMetadata:
         """Return file writer tool metadata."""
@@ -112,6 +121,19 @@ class FileWriter(BaseTool):
         content = kwargs.get("content")
         overwrite = kwargs.get("overwrite", False)
         create_dirs = kwargs.get("create_dirs", True)
+
+        # Sync allowed_root from config (may be updated after init by agent)
+        current_root = (self.config or {}).get("allowed_root")
+        if current_root != self._configured_root:
+            logger.warning(
+                "FileWriter allowed_root changed: %s -> %s",
+                self._configured_root,
+                current_root,
+            )
+            self._configured_root = current_root
+            self.path_validator = PathSafetyValidator(
+                allowed_root=Path(current_root) if current_root else None
+            )
 
         # Validate inputs
         if not file_path or not isinstance(file_path, str):

@@ -53,5 +53,3 @@ stage:
   tags:
     - erc721
     - scaffold
-  created_by: erc721-workflow
-  created_at: "2026-02-02"

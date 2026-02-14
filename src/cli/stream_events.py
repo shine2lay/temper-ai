@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict
 
 # ── Event type constants ──────────────────────────────────────────────
-LLM_TOKEN = "llm_token"        # content=token text, metadata["chunk_type"]="thinking"|"content"
+LLM_TOKEN = "llm_token"  # noqa: S105  # Event type identifier, not credential
 LLM_DONE = "llm_done"          # done=True, metadata has token counts
 TOOL_START = "tool_start"      # metadata["tool_name"], metadata["input_params"]
 TOOL_RESULT = "tool_result"    # metadata["tool_name"], metadata["success"], metadata["duration_s"]

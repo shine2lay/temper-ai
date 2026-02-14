@@ -13,6 +13,7 @@ import pytest
 
 from src.agents.base_agent import AgentResponse
 from src.compiler.executors.parallel import ParallelStageExecutor
+from src.compiler.executors.state_keys import StateKeys
 
 # ============================================================================
 # Test Fixtures
@@ -172,8 +173,8 @@ class TestParallelExecution:
             assert mock_agent.execute.call_count == num_agents
 
             # Verify stage outputs
-            assert "test_stage" in result_state["stage_outputs"]
-            stage_output = result_state["stage_outputs"]["test_stage"]
+            assert "test_stage" in result_state[StateKeys.STAGE_OUTPUTS]
+            stage_output = result_state[StateKeys.STAGE_OUTPUTS]["test_stage"]
 
             # Should have outputs from all agents
             assert len(stage_output["agent_outputs"]) == num_agents
@@ -204,7 +205,7 @@ class TestParallelExecution:
 
         def slow_execute(input_data, context):
             """Simulate agent execution with delay."""
-            agent_name = context.metadata["agent_name"]
+            agent_name = context.metadata[StateKeys.AGENT_NAME]
             execution_start_times[agent_name] = time.time()
             time.sleep(0.05)  # 50ms delay
 
@@ -312,7 +313,7 @@ class TestErrorHandling:
 
         def selective_execute(input_data, context):
             """Agent1 and agent2 succeed, agent3 fails."""
-            agent_name = context.metadata["agent_name"]
+            agent_name = context.metadata[StateKeys.AGENT_NAME]
             if agent_name == "agent3":
                 raise RuntimeError("Agent 3 failed")
 
@@ -342,7 +343,7 @@ class TestErrorHandling:
             )
 
             # Verify partial success
-            stage_output = result_state["stage_outputs"]["test_stage"]
+            stage_output = result_state[StateKeys.STAGE_OUTPUTS]["test_stage"]
             assert stage_output["agent_statuses"]["agent1"] == "success"
             assert stage_output["agent_statuses"]["agent2"] == "success"
             assert stage_output["agent_statuses"]["agent3"] == "failed"
@@ -368,7 +369,7 @@ class TestErrorHandling:
 
         def selective_execute(input_data, context):
             """Agent1 succeeds, agent2 fails."""
-            agent_name = context.metadata["agent_name"]
+            agent_name = context.metadata[StateKeys.AGENT_NAME]
             if agent_name == "agent2":
                 raise ValueError("Test error for agent2")
 
@@ -409,7 +410,7 @@ class TestErrorHandling:
 
             # Error should not be in final stage output (internal to parallel execution)
             # But we can verify agent statuses
-            stage_output = result_state["stage_outputs"]["test_stage"]
+            stage_output = result_state[StateKeys.STAGE_OUTPUTS]["test_stage"]
             assert stage_output["agent_statuses"]["agent2"] == "failed"
 
     def test_on_stage_failure_halt(
@@ -479,7 +480,7 @@ class TestErrorHandling:
                 config_loader=mock_config_loader
             )
 
-            assert result_state["stage_outputs"]["test_stage"] is None
+            assert result_state[StateKeys.STAGE_OUTPUTS]["test_stage"] is None
 
 
 # ============================================================================
@@ -521,7 +522,7 @@ class TestAggregateMetrics:
         }
 
         def get_agent_response(input_data, context):
-            agent_name = context.metadata["agent_name"]
+            agent_name = context.metadata[StateKeys.AGENT_NAME]
             return agent_responses[agent_name]
 
         with patch('src.compiler.executors.parallel.AgentFactory.create') as mock_factory, \
@@ -540,13 +541,13 @@ class TestAggregateMetrics:
             )
 
             # Verify aggregate metrics
-            metrics = result_state["stage_outputs"]["test_stage"]["aggregate_metrics"]
+            metrics = result_state[StateKeys.STAGE_OUTPUTS]["test_stage"]["aggregate_metrics"]
 
             # Total tokens: 100 + 200 + 150 = 450
-            assert metrics["total_tokens"] == 450
+            assert metrics[StateKeys.TOTAL_TOKENS] == 450
 
             # Total cost: 0.001 + 0.002 + 0.0015 = 0.0045
-            assert abs(metrics["total_cost_usd"] - 0.0045) < 0.0001
+            assert abs(metrics[StateKeys.TOTAL_COST_USD] - 0.0045) < 0.0001
 
             # Average confidence: (0.9 + 0.8 + 0.7) / 3 = 0.8
             assert abs(metrics["avg_confidence"] - 0.8) < 0.01
@@ -572,7 +573,7 @@ class TestAggregateMetrics:
         executor = ParallelStageExecutor()
 
         def selective_execute(input_data, context):
-            agent_name = context.metadata["agent_name"]
+            agent_name = context.metadata[StateKeys.AGENT_NAME]
             if agent_name == "agent3":
                 raise RuntimeError("Agent 3 failed")
 
@@ -601,11 +602,11 @@ class TestAggregateMetrics:
             )
 
             # Verify aggregate metrics
-            metrics = result_state["stage_outputs"]["test_stage"]["aggregate_metrics"]
+            metrics = result_state[StateKeys.STAGE_OUTPUTS]["test_stage"]["aggregate_metrics"]
 
             # Only 2 successful agents
-            assert metrics["total_tokens"] == 200  # 100 * 2
-            assert abs(metrics["total_cost_usd"] - 0.002) < 0.0001  # 0.001 * 2
+            assert metrics[StateKeys.TOTAL_TOKENS] == 200  # 100 * 2
+            assert abs(metrics[StateKeys.TOTAL_COST_USD] - 0.002) < 0.0001  # 0.001 * 2
             assert metrics["num_agents"] == 3
             assert metrics["num_successful"] == 2
             assert metrics["num_failed"] == 1
@@ -664,7 +665,7 @@ class TestSynthesisIntegration:
             assert len(call_args[1]["agent_outputs"]) == 2
 
             # Verify decision is from coordinator
-            assert result_state["stage_outputs"]["test_stage"]["decision"] == "coordinator_decision"
+            assert result_state[StateKeys.STAGE_OUTPUTS]["test_stage"][StateKeys.DECISION] == "coordinator_decision"
 
     def test_synthesis_without_coordinator_uses_registry(
         self,
@@ -722,7 +723,7 @@ class TestSynthesisIntegration:
             assert mock_strategy.synthesize.called
 
             # Verify decision is from strategy
-            assert result_state["stage_outputs"]["test_stage"]["decision"] == "registry_decision"
+            assert result_state[StateKeys.STAGE_OUTPUTS]["test_stage"][StateKeys.DECISION] == "registry_decision"
 
 
 # ============================================================================
@@ -764,7 +765,7 @@ class TestQualityGates:
                 config_loader=mock_config_loader
             )
 
-            assert "test_stage" in result_state["stage_outputs"]
+            assert "test_stage" in result_state[StateKeys.STAGE_OUTPUTS]
 
     @pytest.mark.xfail(reason="Flaky test due to test isolation issues - passes when run alone")
     def test_quality_gates_min_confidence_violation(
@@ -889,7 +890,7 @@ class TestQualityGates:
             assert synthesis_call_count[0] == 2
 
             # Should succeed
-            assert "test_stage" in result_state["stage_outputs"]
+            assert "test_stage" in result_state[StateKeys.STAGE_OUTPUTS]
 
     @pytest.mark.xfail(reason="Flaky test due to test isolation issues - passes when run alone")
     def test_quality_gates_max_retries_exhausted(

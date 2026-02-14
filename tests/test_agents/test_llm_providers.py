@@ -354,34 +354,107 @@ class TestVllmLLM:
     def test_init(self):
         """Test vLLM initialization."""
         llm = VllmLLM(
-            model="meta-llama/Llama-2-7b-hf",
+            model="qwen3-next",
             base_url="http://localhost:8000",
         )
 
-        assert llm.model == "meta-llama/Llama-2-7b-hf"
+        assert llm.model == "qwen3-next"
         assert llm.base_url == "http://localhost:8000"
 
     def test_get_endpoint(self):
-        """Test vLLM endpoint."""
+        """Test vLLM endpoint uses chat completions."""
         llm = VllmLLM(
-            model="meta-llama/Llama-2-7b-hf",
+            model="qwen3-next",
             base_url="http://localhost:8000",
         )
-        assert llm._get_endpoint() == "/v1/completions"
+        assert llm._get_endpoint() == "/v1/chat/completions"
 
-    def test_parse_response(self):
-        """Test vLLM response parsing."""
+    def test_get_headers_no_api_key(self):
+        """Test vLLM headers without API key (local deployment)."""
         llm = VllmLLM(
-            model="meta-llama/Llama-2-7b-hf",
+            model="qwen3-next",
+            base_url="http://localhost:8000",
+        )
+        headers = llm._get_headers()
+        assert headers["Content-Type"] == "application/json"
+        assert "Authorization" not in headers
+
+    def test_get_headers_with_api_key(self):
+        """Test vLLM headers with API key."""
+        llm = VllmLLM(
+            model="qwen3-next",
+            base_url="http://localhost:8000",
+            api_key="test-key",
+        )
+        headers = llm._get_headers()
+        assert headers["Authorization"] == "Bearer test-key"
+
+    def test_build_request_chat(self):
+        """Test vLLM request uses chat completions format."""
+        llm = VllmLLM(
+            model="qwen3-next",
+            base_url="http://localhost:8000",
+            temperature=0.5,
+            max_tokens=4096,
+        )
+
+        request = llm._build_request("Test prompt")
+
+        assert request["model"] == "qwen3-next"
+        assert request["messages"] == [{"role": "user", "content": "Test prompt"}]
+        assert request["temperature"] == 0.5
+        assert request["max_tokens"] == 4096
+        assert request["stream"] is False
+
+    def test_build_request_with_tools(self):
+        """Test vLLM request includes tools."""
+        llm = VllmLLM(
+            model="qwen3-next",
+            base_url="http://localhost:8000",
+        )
+        tools = [{"type": "function", "function": {"name": "test_tool"}}]
+
+        request = llm._build_request("Test prompt", tools=tools)
+
+        assert request["tools"] == tools
+        assert request["messages"] == [{"role": "user", "content": "Test prompt"}]
+
+    def test_build_request_stream_includes_usage(self):
+        """Test streaming request includes stream_options for usage stats."""
+        llm = VllmLLM(
+            model="qwen3-next",
+            base_url="http://localhost:8000",
+        )
+
+        request = llm._build_request("Test prompt", stream=True)
+
+        assert request["stream"] is True
+        assert request["stream_options"] == {"include_usage": True}
+
+    def test_build_request_repeat_penalty(self):
+        """Test repetition penalty is included when specified."""
+        llm = VllmLLM(
+            model="qwen3-next",
+            base_url="http://localhost:8000",
+        )
+
+        request = llm._build_request("Test prompt", repeat_penalty=1.1)
+
+        assert request["repetition_penalty"] == 1.1
+
+    def test_parse_response_chat(self):
+        """Test vLLM chat response parsing."""
+        llm = VllmLLM(
+            model="qwen3-next",
             base_url="http://localhost:8000",
         )
 
         mock_response = {
-            "model": "meta-llama/Llama-2-7b-hf",
+            "model": "qwen3-next",
             "choices": [
                 {
-                    "text": "Generated text from vLLM",
-                    "finish_reason": "length"
+                    "message": {"content": "Generated text from vLLM"},
+                    "finish_reason": "stop"
                 }
             ],
             "usage": {
@@ -395,7 +468,125 @@ class TestVllmLLM:
 
         assert result.content == "Generated text from vLLM"
         assert result.provider == LLMProvider.VLLM
+        assert result.prompt_tokens == 25
+        assert result.completion_tokens == 75
         assert result.total_tokens == 100
+        assert result.finish_reason == "stop"
+
+    def test_parse_response_with_tool_calls(self):
+        """Test vLLM response with tool calls."""
+        llm = VllmLLM(
+            model="qwen3-next",
+            base_url="http://localhost:8000",
+        )
+
+        mock_response = {
+            "model": "qwen3-next",
+            "choices": [
+                {
+                    "message": {
+                        "content": "I'll search for that.",
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "name": "web_search",
+                                    "arguments": {"query": "test"},
+                                }
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls"
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
+        }
+
+        result = llm._parse_response(mock_response, latency_ms=100)
+
+        assert "I'll search for that." in result.content
+        assert "<tool_call>" in result.content
+        assert "web_search" in result.content
+
+
+class TestVllmSSEParsing:
+    """Test vLLM SSE line parsing."""
+
+    def test_parse_sse_data_line(self):
+        """Test parsing a valid SSE data line."""
+        data = VllmLLM._parse_sse_line('data: {"choices": [{"delta": {"content": "hello"}}]}')
+        assert data is not None
+        assert data["choices"][0]["delta"]["content"] == "hello"
+
+    def test_parse_sse_done(self):
+        """Test parsing [DONE] signal."""
+        data = VllmLLM._parse_sse_line("data: [DONE]")
+        assert data == "[DONE]"
+
+    def test_parse_sse_empty_line(self):
+        """Test empty lines return None."""
+        assert VllmLLM._parse_sse_line("") is None
+        assert VllmLLM._parse_sse_line("   ") is None
+
+    def test_parse_sse_non_data_line(self):
+        """Test non-data SSE lines return None."""
+        assert VllmLLM._parse_sse_line("event: ping") is None
+        assert VllmLLM._parse_sse_line(": comment") is None
+
+    def test_parse_sse_invalid_json(self):
+        """Test invalid JSON returns None."""
+        assert VllmLLM._parse_sse_line("data: {invalid json}") is None
+
+
+class TestVllmChunkExtraction:
+    """Test vLLM streaming chunk field extraction."""
+
+    def test_extract_content_token(self):
+        """Test extracting a content token."""
+        data = {
+            "choices": [{"delta": {"content": "hello"}, "finish_reason": None}]
+        }
+        content, chunk_type, done = VllmLLM._extract_chunk_fields(data)
+        assert content == "hello"
+        assert chunk_type == "content"
+        assert done is False
+
+    def test_extract_reasoning_token(self):
+        """Test extracting a reasoning/thinking token."""
+        data = {
+            "choices": [{"delta": {"reasoning_content": "Let me think..."}, "finish_reason": None}]
+        }
+        content, chunk_type, done = VllmLLM._extract_chunk_fields(data)
+        assert content == "Let me think..."
+        assert chunk_type == "thinking"
+        assert done is False
+
+    def test_extract_done_signal(self):
+        """Test extracting done signal from finish_reason."""
+        data = {
+            "choices": [{"delta": {"content": ""}, "finish_reason": "stop"}]
+        }
+        content, chunk_type, done = VllmLLM._extract_chunk_fields(data)
+        assert done is True
+
+    def test_extract_empty_choices(self):
+        """Test empty choices returns defaults."""
+        data = {"choices": []}
+        content, chunk_type, done = VllmLLM._extract_chunk_fields(data)
+        assert content == ""
+        assert chunk_type == "content"
+        assert done is False
+
+    def test_extract_reasoning_over_content(self):
+        """Test reasoning_content takes precedence over content."""
+        data = {
+            "choices": [{
+                "delta": {"reasoning_content": "thinking", "content": "speaking"},
+                "finish_reason": None,
+            }]
+        }
+        content, chunk_type, done = VllmLLM._extract_chunk_fields(data)
+        assert content == "thinking"
+        assert chunk_type == "thinking"
 
 
 class TestErrorHandling:
@@ -1106,13 +1297,14 @@ class TestTokenLimitEnforcement:
     def test_vllm_max_tokens_in_request(self):
         """Test that vLLM includes max_tokens in request."""
         llm = VllmLLM(
-            model="mistral-7b",
+            model="qwen3-next",
             base_url="http://localhost:8000",
             max_tokens=512,
         )
 
         request = llm._build_request("Test prompt")
         assert request["max_tokens"] == 512
+        assert request["messages"] == [{"role": "user", "content": "Test prompt"}]
 
     def test_max_tokens_default_value(self):
         """Test that max_tokens has reasonable default."""

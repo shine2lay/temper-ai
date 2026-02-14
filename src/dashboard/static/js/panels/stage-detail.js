@@ -82,6 +82,7 @@ export class StageDetailPanel {
         this.dataStore = dataStore;
         this.eventBus = eventBus;
         this._allExecutionIds = [];
+        this._iterationTriggers = {};
         this._changeHandler = (e) => this._onDataChange(e.detail);
         this.dataStore.addEventListener('change', this._changeHandler);
         this.render();
@@ -123,8 +124,10 @@ export class StageDetailPanel {
         // Capture iteration context from flowchart click handler
         if (stage && stage._allExecutionIds) {
             this._allExecutionIds = stage._allExecutionIds;
+            this._iterationTriggers = stage._iterationTriggers || {};
         } else {
             this._allExecutionIds = [];
+            this._iterationTriggers = {};
         }
 
         if (stage) {
@@ -284,9 +287,13 @@ export class StageDetailPanel {
             const stageData = this.dataStore.stages.get(execId);
             const duration = stageData?.duration_seconds;
             const status = stageData?.status || 'pending';
+            const trigger = this._iterationTriggers[execId];
 
             const chip = document.createElement('button');
             chip.className = 'iteration-chip' + (isCurrent ? ' active' : '');
+
+            const topRow = document.createElement('div');
+            topRow.style.cssText = 'display:flex;align-items:center;gap:4px;';
 
             const num = document.createElement('span');
             num.textContent = `#${i + 1}`;
@@ -299,9 +306,19 @@ export class StageDetailPanel {
             dur.style.cssText = 'font-size:10px;color:var(--text-muted);';
             dur.textContent = duration != null ? formatDuration(duration) : '--';
 
-            chip.appendChild(num);
-            chip.appendChild(dot);
-            chip.appendChild(dur);
+            topRow.appendChild(num);
+            topRow.appendChild(dot);
+            topRow.appendChild(dur);
+            chip.appendChild(topRow);
+
+            // Show trigger source for re-executions (iteration 2+)
+            if (trigger) {
+                const trigRow = document.createElement('div');
+                trigRow.style.cssText = 'font-size:9px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%;';
+                trigRow.textContent = `\u2190 ${trigger}`;
+                trigRow.title = `Triggered by ${trigger}`;
+                chip.appendChild(trigRow);
+            }
 
             if (!isCurrent) {
                 chip.addEventListener('click', () => this._switchIteration(execId));

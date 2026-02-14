@@ -239,24 +239,24 @@ export class FlowchartPanel {
             this.dataStore.select('agent', e.target.id());
         });
 
-        // Click stage node → attach _allExecutionIds then select
+        // Click stage node → attach iteration context then select
         this._cy.on('tap', 'node[type="stage"]', (e) => {
             const stageId = e.target.id();
-            const nodeIds = e.target.data('_allExecutionIds');
             const stageData = this.dataStore.stages.get(stageId);
-            if (stageData && nodeIds) {
-                stageData._allExecutionIds = nodeIds;
+            if (stageData) {
+                stageData._allExecutionIds = e.target.data('_allExecutionIds') || [];
+                stageData._iterationTriggers = e.target.data('_iterationTriggers') || {};
             }
             this.dataStore.select('stage', stageId);
         });
 
-        // Click stage-header node → attach _allExecutionIds then select parent
+        // Click stage-header node → attach iteration context then select parent
         this._cy.on('tap', 'node[type="stage-header"]', (e) => {
             const parentId = e.target.data('parent');
-            const nodeIds = e.target.data('_allExecutionIds');
             const stageData = this.dataStore.stages.get(parentId);
-            if (stageData && nodeIds) {
-                stageData._allExecutionIds = nodeIds;
+            if (stageData) {
+                stageData._allExecutionIds = e.target.data('_allExecutionIds') || [];
+                stageData._iterationTriggers = e.target.data('_iterationTriggers') || {};
             }
             this.dataStore.select('stage', parentId);
         });
@@ -393,6 +393,8 @@ export class FlowchartPanel {
             colorIdx++;
         }
 
+        const iterationTriggers = this._computeIterationTriggers(stageGroups, dagInfo);
+
         for (const [name, executions] of stageGroups) {
             const latest = executions[executions.length - 1];
             if (!latest.id) continue;
@@ -402,9 +404,17 @@ export class FlowchartPanel {
             const iterationCount = executions.length;
             const aggregated = this._aggregateIterationMetrics(executions);
 
+            // Build trigger map for this stage's iterations
+            const triggerMap = {};
+            for (const eid of allExecutionIds) {
+                const t = iterationTriggers.get(eid);
+                if (t) triggerMap[eid] = t;
+            }
+
             this._addStageElements(elements, latest, pos, {
                 iterationCount,
                 _allExecutionIds: allExecutionIds,
+                _iterationTriggers: triggerMap,
                 stageColor: stageColors.get(name),
                 ...aggregated,
             });
@@ -572,6 +582,7 @@ export class FlowchartPanel {
                 status,
                 label: name,
                 _allExecutionIds: overrides._allExecutionIds || [stage.id],
+                _iterationTriggers: overrides._iterationTriggers || {},
             },
         });
 
@@ -644,6 +655,63 @@ export class FlowchartPanel {
             total += ad[field] || 0;
         }
         return total;
+    }
+
+    /**
+     * Infer who triggered each iteration of re-executed stages.
+     * Returns Map<execId, triggerStageName|null>.
+     * Iteration #1 → null (normal DAG flow), iteration #2+ → name of the
+     * loop-back source whose last execution started just before this one.
+     */
+    _computeIterationTriggers(stageGroups, dagInfo) {
+        const triggers = new Map();
+
+        // Reverse map: target name → [source names that loop back to it]
+        const loopSources = new Map();
+        for (const [srcName, targetName] of dagInfo.loopsBackTo) {
+            if (!loopSources.has(targetName)) loopSources.set(targetName, []);
+            loopSources.get(targetName).push(srcName);
+        }
+
+        // Global timeline: all executions sorted by start_time
+        const timeline = [];
+        for (const [name, execs] of stageGroups) {
+            for (const exec of execs) {
+                const sd = this.dataStore.stages.get(exec.id) || exec;
+                timeline.push({
+                    id: exec.id,
+                    name,
+                    startTime: sd.started_at || sd.start_time || '',
+                });
+            }
+        }
+        timeline.sort((a, b) => (a.startTime < b.startTime ? -1 : a.startTime > b.startTime ? 1 : 0));
+
+        for (const [name, execs] of stageGroups) {
+            if (execs.length <= 1) continue;
+            const sources = loopSources.get(name) || [];
+            if (sources.length === 0) continue;
+
+            // First iteration: normal flow, no trigger label
+            triggers.set(execs[0].id, null);
+
+            // Subsequent iterations: find most recent loop-back source before this exec
+            for (let i = 1; i < execs.length; i++) {
+                const sd = this.dataStore.stages.get(execs[i].id) || execs[i];
+                const myStart = sd.started_at || sd.start_time || '';
+                let triggerName = null;
+                for (let t = timeline.length - 1; t >= 0; t--) {
+                    if (timeline[t].startTime >= myStart) continue;
+                    if (sources.includes(timeline[t].name)) {
+                        triggerName = timeline[t].name;
+                        break;
+                    }
+                }
+                triggers.set(execs[i].id, triggerName || (sources.length === 1 ? sources[0] : 'loop'));
+            }
+        }
+
+        return triggers;
     }
 
     /** Add collaboration edges between consecutive agents within a stage. */

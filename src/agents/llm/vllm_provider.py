@@ -6,7 +6,7 @@ Requires vLLM served with --reasoning-parser for thinking/reasoning separation.
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import httpx
 
@@ -169,7 +169,10 @@ class VllmLLM(BaseLLM):
             request = client.build_request("POST", endpoint, json=request_data, headers=headers)
 
             response = await client.send(request, stream=True)
-            return await self._execute_streaming_async_impl(start_time, response, on_chunk, cache_key)
+            return cast(
+                LLMResponse,
+                await self._execute_streaming_async_impl(start_time, response, on_chunk, cache_key),
+            )
 
         result: LLMResponse = await self._circuit_breaker.async_call(_make_async_streaming_call)
         return result
@@ -215,10 +218,10 @@ class VllmLLM(BaseLLM):
             if is_done:
                 finish_reason = data["choices"][0].get("finish_reason")
 
-        return build_stream_result(
+        return cast(LLMResponse, build_stream_result(
             content_parts, self.model, LLMProvider.VLLM,
             prompt_tokens, completion_tokens, finish_reason
-        )
+        ))
 
     async def _aconsume_stream(
         self,
@@ -261,10 +264,10 @@ class VllmLLM(BaseLLM):
             if is_done:
                 finish_reason = data["choices"][0].get("finish_reason")
 
-        return build_stream_result(
+        return cast(LLMResponse, build_stream_result(
             content_parts, self.model, LLMProvider.VLLM,
             prompt_tokens, completion_tokens, finish_reason
-        )
+        ))
 
     @staticmethod
     def _parse_sse_line(line: str) -> Any:

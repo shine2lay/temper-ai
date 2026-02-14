@@ -319,6 +319,7 @@ class SearXNGSearch(BaseTool):
         error_result = self._validate_query(query)
         if error_result is not None:
             return error_result
+        assert isinstance(query, str)
 
         # Check rate limit
         error_result = self._check_rate_limit()
@@ -340,6 +341,8 @@ class SearXNGSearch(BaseTool):
         search_response, error_result = self._parse_results(response, query, max_results, elapsed_ms)
         if error_result is not None:
             return error_result
+        if search_response is None:
+            return ToolResult(success=False, error="Failed to parse search response")
 
         return ToolResult(
             success=True,

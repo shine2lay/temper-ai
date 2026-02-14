@@ -2,7 +2,7 @@
 import json
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Coroutine, Dict, Optional, Tuple, cast
 
 import httpx
 
@@ -33,6 +33,10 @@ class OllamaLLM(BaseLLM):
     falls back to /api/generate for simple completions.
     Supports streaming for real-time token visibility.
     """
+
+    _make_streaming_call_impl: Callable[..., Tuple[Optional[str], Optional[LLMResponse]]]
+    _execute_streaming_impl: Callable[..., LLMResponse]
+    _execute_streaming_async_impl: Callable[..., Coroutine[Any, Any, LLMResponse]]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -240,10 +244,10 @@ class OllamaLLM(BaseLLM):
                 )
                 break
 
-        return build_stream_result(
+        return cast(LLMResponse, build_stream_result(
             content_parts, self.model, LLMProvider.OLLAMA,
             prompt_tokens, completion_tokens, finish_reason
-        )
+        ))
 
     async def _aconsume_stream(
         self,
@@ -283,10 +287,10 @@ class OllamaLLM(BaseLLM):
                 )
                 break
 
-        return build_stream_result(
+        return cast(LLMResponse, build_stream_result(
             content_parts, self.model, LLMProvider.OLLAMA,
             prompt_tokens, completion_tokens, finish_reason
-        )
+        ))
 
     def _extract_chunk_fields(self, data: Dict[str, Any]) -> tuple[str, str, bool]:
         """Extract content, chunk_type, and done flag from an NDJSON chunk.

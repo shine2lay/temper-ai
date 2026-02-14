@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional
 
 from src.database.datetime_utils import utcnow
-from src.observability.backend import ObservabilityBackend
+from src.observability.backend import (
+    CollaborationEventData,
+    ObservabilityBackend,
+    SafetyViolationData,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -170,11 +174,9 @@ class CollaborationEventTracker:
 
     def _track_event_to_backend(self, params: CollaborationEventParams) -> str:
         """Track event to backend with error handling."""
+        assert params.stage_id is not None  # validated by _validate_collab_params
         try:
-            return self.backend.track_collaboration_event(
-                stage_id=params.stage_id,
-                event_type=params.event_type,
-                agents_involved=params.agents_involved,
+            data = CollaborationEventData(
                 event_data=params.event_data,
                 round_number=params.round_number,
                 resolution_strategy=params.resolution_strategy,
@@ -182,6 +184,12 @@ class CollaborationEventTracker:
                 confidence_score=params.confidence_score,
                 extra_metadata=params.extra_metadata,
                 timestamp=utcnow(),
+            )
+            return self.backend.track_collaboration_event(
+                stage_id=params.stage_id,
+                event_type=params.event_type,
+                agents_involved=params.agents_involved or [],
+                data=data,
             )
         except Exception as e:
             logger.error(
@@ -213,14 +221,17 @@ class CollaborationEventTracker:
         # SECURITY: Sanitize context to prevent sensitive data exposure
         sanitized_context = self._sanitize_dict(context) if context else None
 
-        self.backend.track_safety_violation(
+        data = SafetyViolationData(
             workflow_id=exec_context.workflow_id,
             stage_id=exec_context.stage_id,
             agent_id=exec_context.agent_id,
-            violation_severity=violation_severity,
-            violation_message=violation_message,
-            policy_name=policy_name,
             service_name=service_name,
             context=sanitized_context,
             timestamp=utcnow(),
+        )
+        self.backend.track_safety_violation(
+            violation_severity=violation_severity,
+            violation_message=violation_message,
+            policy_name=policy_name,
+            data=data,
         )

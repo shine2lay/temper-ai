@@ -194,7 +194,7 @@ class Calculator(BaseTool):
 
     def _eval_unaryop(self, node: ast.UnaryOp, depth: int) -> Any:
         """Evaluate a unary operation node."""
-        op_type = type(node.op)  # type: ignore[assignment]
+        op_type = type(node.op)
         if op_type not in SAFE_OPERATORS:
             raise ValueError(f"Unsupported unary operator: {op_type.__name__}")
 

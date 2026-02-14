@@ -309,6 +309,7 @@ class TavilySearch(BaseTool):
         error_result = self._validate_query(query)
         if error_result is not None:
             return error_result
+        assert isinstance(query, str)
 
         # Get API key
         try:
@@ -336,6 +337,8 @@ class TavilySearch(BaseTool):
         search_response, error_result = self._parse_response(response, query, elapsed_ms)
         if error_result is not None:
             return error_result
+        if search_response is None:
+            return ToolResult(success=False, error="Failed to parse search response")
 
         return ToolResult(
             success=True,

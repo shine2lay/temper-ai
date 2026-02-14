@@ -450,7 +450,7 @@ def make_streaming_call_impl(
             raise _LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
 
     # Cache check
-    cache_key, cached = instance._check_cache(prompt, context, **kwargs)
+    cache_key, cached = check_cache(instance, prompt, context, **kwargs)
     return cache_key, cached
 
 
@@ -479,7 +479,7 @@ def execute_streaming_impl(
     result.latency_ms = latency_ms
 
     # Cache the result
-    instance._cache_response(cache_key, result)
+    cache_response(instance, cache_key, result)
     return result
 
 
@@ -508,7 +508,7 @@ async def execute_streaming_async_impl(
     result.latency_ms = latency_ms
 
     # Cache the result
-    instance._cache_response(cache_key, result)
+    cache_response(instance, cache_key, result)
     return result
 
 

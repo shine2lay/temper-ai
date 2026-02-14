@@ -178,9 +178,11 @@ def _load_or_cache_agent(
 def _config_to_tracking_dict(agent_config: Any, agent_config_dict: Dict[str, Any]) -> Dict[str, Any]:
     """Convert agent config to a dict suitable for tracking."""
     if hasattr(agent_config, 'model_dump'):
-        return agent_config.model_dump()
+        result: Dict[str, Any] = agent_config.model_dump()
+        return result
     if hasattr(agent_config, 'dict'):
-        return agent_config.dict()
+        result2: Dict[str, Any] = agent_config.dict()
+        return result2
     return dict(agent_config_dict)
 
 

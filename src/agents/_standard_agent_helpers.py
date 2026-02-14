@@ -537,7 +537,7 @@ def _validate_action_with_policy(
     """Validate LLM call with policy engine. Returns violation message or None."""
     policy_context = _build_policy_context(agent, inf_config, prompt)
 
-    validation_result = agent.tool_executor.policy_engine.validate_action_sync(
+    validation_result = agent.tool_executor.policy_engine.validate_action_sync(  # type: ignore[attr-defined]
         action={"type": "llm_call", "model": inf_config.model, "prompt_length": len(prompt)},
         context=policy_context
     )
@@ -885,7 +885,7 @@ def make_stream_callback(agent: "StandardAgent") -> Optional[Callable]:
 def prepare_execution_prompt(agent: "StandardAgent", input_data: Dict[str, Any], context: Any) -> str:
     """Render prompt, set system prompt, and log preview. Returns the prompt."""
     prompt = agent._render_prompt(input_data, context)
-    agent._system_prompt = prompt
+    agent._system_prompt = prompt  # type: ignore[attr-defined]
     prompt_preview = prompt[-PROMPT_PREVIEW_LENGTH:].replace('\n', ' ').strip()
     logger.info("[%s] Prompt ready (%d chars) ...%s", agent.name, len(prompt), prompt_preview)
     return prompt

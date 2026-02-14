@@ -164,6 +164,15 @@ class BaseLLM(LLMContextManagerMixin, ABC):
     See _base_helpers.py for extracted internal logic.
     """
 
+    # Callable attributes bound dynamically by _bind_callable_attributes()
+    _build_bearer_auth_headers: Callable[[], Dict[str, str]]
+    _check_cache: Callable[..., Tuple[Optional[str], Optional["LLMResponse"]]]
+    _cache_response: Callable[[Optional[str], "LLMResponse"], None]
+    _execute_and_parse: Callable[[httpx.Response, float, Optional[str]], "LLMResponse"]
+    _make_streaming_call_impl: Callable[..., Tuple[Optional[str], Optional["LLMResponse"]]]
+    _execute_streaming_impl: Callable[..., "LLMResponse"]
+    _execute_streaming_async_impl: Callable[..., Any]
+
     _MAX_CIRCUIT_BREAKERS = DEFAULT_MAX_CIRCUIT_BREAKERS
     _circuit_breakers: collections.OrderedDict[Tuple[str, str, str], CircuitBreaker] = (
         collections.OrderedDict()

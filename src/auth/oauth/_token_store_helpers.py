@@ -222,7 +222,8 @@ def _decrypt_and_parse_token(encrypted: bytes, old_cipher: Fernet) -> Optional[d
     """
     try:
         decrypted = old_cipher.decrypt(encrypted)
-        return json.loads(decrypted.decode())
+        result: Optional[dict] = json.loads(decrypted.decode())
+        return result
     except (InvalidToken, json.JSONDecodeError):
         return None
 

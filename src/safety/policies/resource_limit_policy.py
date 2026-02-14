@@ -147,6 +147,15 @@ class ResourceLimitPolicy(BaseSafetyPolicy):
         "file_write", "write", "write_file", "save", "create"
     }
 
+    # Instance attributes set dynamically in __init__ via setattr
+    max_file_size_read: int
+    max_file_size_write: int
+    max_memory_per_operation: int
+    min_free_disk_space: int
+    track_memory: bool
+    track_cpu: bool
+    track_disk: bool
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize resource limit policy.
 

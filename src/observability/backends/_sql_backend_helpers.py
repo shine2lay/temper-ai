@@ -28,7 +28,11 @@ from src.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.backend import DEFAULT_LIST_LIMIT
+from src.observability.backend import (
+    DEFAULT_LIST_LIMIT,
+    CollaborationEventData as BackendCollaborationEventData,
+    SafetyViolationData as BackendSafetyViolationData,
+)
 from src.observability.constants import ObservabilityFields
 
 logger = logging.getLogger(__name__)
@@ -827,10 +831,9 @@ class SQLDelegatedMethodsMixin:
 
     def track_safety_violation(
         self, violation_severity: str, violation_message: str, policy_name: str,
-        data: Optional["SafetyViolationData"] = None
+        data: Optional[BackendSafetyViolationData] = None
     ) -> None:
         """Track safety violation."""
-        from src.observability.backend import SafetyViolationData  # noqa: F811
         violation_data = SafetyViolationData(
             workflow_id=data.workflow_id if data else None,
             stage_id=data.stage_id if data else None,
@@ -846,7 +849,7 @@ class SQLDelegatedMethodsMixin:
 
     def track_collaboration_event(
         self, stage_id: str, event_type: str, agents_involved: List[str],
-        data: Optional[Any] = None
+        data: Optional[BackendCollaborationEventData] = None
     ) -> str:
         """Track collaboration event."""
         collab_data = CollaborationEventParams(

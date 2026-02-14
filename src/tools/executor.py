@@ -176,6 +176,7 @@ class ToolExecutor:
         tool, error = validate_and_get_tool(self, tool_name, params)
         if error is not None:
             return error
+        assert tool is not None
 
         policy_error = validate_policy(self, tool_name, params, context)
         if policy_error is not None:

@@ -390,7 +390,7 @@ def _mine_and_log_patterns(
         logger.warning(f"Failed to mine patterns: {e}")
         patterns = []
 
-    return patterns
+    return list(patterns)
 
 
 def execute_strategy_phase(

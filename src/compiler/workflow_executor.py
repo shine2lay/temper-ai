@@ -324,6 +324,7 @@ class WorkflowExecutor:
         input_data: Optional[Dict[str, Any]] = None,
     ) -> tuple[Any, Dict[str, Any]]:
         """Load checkpoint, merge input, and return (domain_state, state_dict)."""
+        assert self.checkpoint_manager is not None
         domain_state = self.checkpoint_manager.load_checkpoint(workflow_id)
 
         if self.tracker:
@@ -358,13 +359,15 @@ class WorkflowExecutor:
         Updates state_holder[0] with the latest state for error recovery.
         Returns final state or None.
         """
+        assert self.checkpoint_manager is not None
         for chunk in self.graph.stream(state_dict):  # type: ignore[attr-defined]
             if chunk:
                 stage_name = list(chunk.keys())[0]
                 state_holder[0] = chunk[stage_name]
                 domain_state_updated = self._extract_domain_state(state_holder[0])
                 self.checkpoint_manager.save_checkpoint(domain_state_updated)
-        return state_holder[0]
+        result: Optional[Dict[str, Any]] = state_holder[0]
+        return result
 
     def resume_from_checkpoint(
         self,
@@ -411,7 +414,7 @@ class WorkflowExecutor:
 
             final_domain_state = self._extract_domain_state(final_state)
             self.checkpoint_manager.save_checkpoint(final_domain_state)
-            return cast(Dict[str, Any], final_state)
+            return final_state
 
         except Exception:
             if state_holder[0] is not None:

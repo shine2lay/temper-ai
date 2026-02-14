@@ -9,7 +9,7 @@ import inspect
 import logging
 import pkgutil
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type, cast
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type
 
 from src.tools.base import BaseTool
 from src.utils.exceptions import ToolRegistryError
@@ -317,7 +317,7 @@ def _load_tool_class(class_path: str) -> Type[BaseTool]:
         )
 
     try:
-        tool_class = getattr(module, class_name)
+        tool_class: Type[BaseTool] = getattr(module, class_name)
     except AttributeError:
         raise ToolRegistryError(
             f"Tool class not found in module '{module_name}': {class_name}"
@@ -365,7 +365,7 @@ def load_from_config(
     # Load and instantiate tool
     try:
         tool_class = _load_tool_class(class_path)
-        tool_instance = cast(Type[BaseTool], tool_class)()
+        tool_instance = tool_class()
         registry.register(tool_instance)
 
         logger.info(f"Loaded tool from config: {tool_name} ({config_name})")

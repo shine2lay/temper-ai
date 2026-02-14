@@ -23,16 +23,25 @@ from src.strategies._dialogue_helpers import (
 )
 from src.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
 from src.strategies.constants import (
+    CONFIG_KEY_CONVERGENCE_THRESHOLD,
+    CONFIG_KEY_DEBATE_FRAMING,
+    CONFIG_KEY_MAX_ROUNDS,
+    CONFIG_KEY_MIN_ROUNDS,
+    CONFIG_KEY_MODE_INSTRUCTION,
     DEFAULT_CONTEXT_WINDOW_SIZE,
     DEFAULT_MAX_ROUNDS,
     DEFAULT_MIN_ROUNDS,
+    MODE_VALUE_FULL,
+    STRATEGY_NAME_CONSENSUS,
+    STRATEGY_NAME_DEBATE,
+    STRATEGY_NAME_DIALOGUE,
 )
 
 logger = logging.getLogger(__name__)
 
 # Valid interaction modes
-VALID_MODES = frozenset({"dialogue", "debate", "consensus"})
-VALID_CONTEXT_STRATEGIES = frozenset({"full", "recent", "relevant"})
+VALID_MODES = frozenset({STRATEGY_NAME_DIALOGUE, STRATEGY_NAME_DEBATE, STRATEGY_NAME_CONSENSUS})
+VALID_CONTEXT_STRATEGIES = frozenset({MODE_VALUE_FULL, "recent", "relevant"})
 
 # --- Stance extraction ---
 VALID_STANCES = frozenset({"AGREE", "DISAGREE", "PARTIAL"})
@@ -108,20 +117,20 @@ def _extract_stance_via_llm(
 
 # Mode-specific defaults (applied when param is None)
 _MODE_DEFAULTS: Dict[str, Dict[str, Any]] = {
-    "dialogue": {
-        "convergence_threshold": 0.85,
-        "max_rounds": DEFAULT_MAX_ROUNDS,
-        "min_rounds": DEFAULT_MIN_ROUNDS,
+    STRATEGY_NAME_DIALOGUE: {
+        CONFIG_KEY_CONVERGENCE_THRESHOLD: 0.85,
+        CONFIG_KEY_MAX_ROUNDS: DEFAULT_MAX_ROUNDS,
+        CONFIG_KEY_MIN_ROUNDS: DEFAULT_MIN_ROUNDS,
     },
-    "debate": {
-        "convergence_threshold": 0.80,
-        "max_rounds": DEFAULT_MAX_ROUNDS,
-        "min_rounds": DEFAULT_MIN_ROUNDS,
+    STRATEGY_NAME_DEBATE: {
+        CONFIG_KEY_CONVERGENCE_THRESHOLD: 0.80,
+        CONFIG_KEY_MAX_ROUNDS: DEFAULT_MAX_ROUNDS,
+        CONFIG_KEY_MIN_ROUNDS: DEFAULT_MIN_ROUNDS,
     },
-    "consensus": {
-        "convergence_threshold": 1.0,
-        "max_rounds": 1,
-        "min_rounds": 1,
+    STRATEGY_NAME_CONSENSUS: {
+        CONFIG_KEY_CONVERGENCE_THRESHOLD: 1.0,
+        CONFIG_KEY_MAX_ROUNDS: 1,
+        CONFIG_KEY_MIN_ROUNDS: 1,
     },
 }
 
@@ -259,7 +268,7 @@ class MultiRoundStrategy(CollaborationStrategy):
     @property
     def requires_requery(self) -> bool:
         """Signal to executor: multi-round modes need agent re-invocation."""
-        return self.mode != "consensus"
+        return self.mode != STRATEGY_NAME_CONSENSUS
 
     def get_round_context(self, round_number: int, agent_name: Optional[str] = None) -> Dict[str, Any]:
         """Get mode-specific context injected into agent input_data.
@@ -279,35 +288,35 @@ class MultiRoundStrategy(CollaborationStrategy):
             "round_number": round_number,
         }
 
-        if self.mode == "debate":
-            context["mode_instruction"] = (
+        if self.mode == STRATEGY_NAME_DEBATE:
+            context[CONFIG_KEY_MODE_INSTRUCTION] = (
                 "You are in a structured DEBATE. Challenge other agents' positions, "
                 "defend your own stance with evidence, and identify weaknesses in "
                 "opposing arguments. Be adversarial but constructive."
             )
             if round_number == 0:
-                context["debate_framing"] = "State your initial position clearly with supporting arguments."
+                context[CONFIG_KEY_DEBATE_FRAMING] = "State your initial position clearly with supporting arguments."
             else:
-                context["debate_framing"] = (
+                context[CONFIG_KEY_DEBATE_FRAMING] = (
                     "Review other agents' arguments from previous rounds. "
                     "Rebut weak points, strengthen your position, or concede if convinced."
                 )
-        elif self.mode == "dialogue":
-            context["mode_instruction"] = (
+        elif self.mode == STRATEGY_NAME_DIALOGUE:
+            context[CONFIG_KEY_MODE_INSTRUCTION] = (
                 "You are in a collaborative DIALOGUE. Build on other agents' insights, "
                 "find common ground, and work toward a shared understanding. "
                 "Be constructive and integrative."
             )
             if round_number == 0:
-                context["debate_framing"] = "Share your initial perspective and key insights."
+                context[CONFIG_KEY_DEBATE_FRAMING] = "Share your initial perspective and key insights."
             else:
-                context["debate_framing"] = (
+                context[CONFIG_KEY_DEBATE_FRAMING] = (
                     "Consider what other agents have shared. "
                     "Build on their insights, identify areas of agreement, "
                     "and refine the collective understanding."
                 )
         else:  # consensus
-            context["mode_instruction"] = (
+            context[CONFIG_KEY_MODE_INSTRUCTION] = (
                 "Provide your independent assessment. This is a single-round vote."
             )
             context["debate_framing"] = "State your position clearly."
@@ -479,13 +488,13 @@ class MultiRoundStrategy(CollaborationStrategy):
     def get_capabilities(self) -> Dict[str, bool]:
         """Get strategy capabilities."""
         return {
-            "supports_debate": self.mode == "debate",
-            "supports_dialogue": self.mode == "dialogue",
-            "supports_convergence": self.mode != "consensus",
+            "supports_debate": self.mode == STRATEGY_NAME_DEBATE,
+            "supports_dialogue": self.mode == STRATEGY_NAME_DIALOGUE,
+            "supports_convergence": self.mode != STRATEGY_NAME_CONSENSUS,
             "supports_merit_weighting": self.use_merit_weighting,
             "supports_partial_participation": True,
             "supports_async": False,
-            "supports_multi_round": self.mode != "consensus",
+            "supports_multi_round": self.mode != STRATEGY_NAME_CONSENSUS,
         }
 
     def get_metadata(self) -> Dict[str, Any]:

@@ -44,6 +44,12 @@ except ImportError:
     KEYRING_AVAILABLE = False
     KeyringError = Exception
 
+from src.auth.constants import (
+    FIELD_ACTION,
+    FIELD_EXPIRES_AT,
+    FIELD_TIMESTAMP,
+    FIELD_USER_ID,
+)
 from src.auth.oauth._token_store_helpers import acquire_encryption_key, re_encrypt_tokens
 from src.constants.limits import THRESHOLD_MASSIVE_COUNT
 
@@ -182,7 +188,7 @@ class SecureTokenStore:
             token_with_metadata = {
                 **token_data,
                 "stored_at": datetime.now(timezone.utc).isoformat(),
-                "expires_at": (
+                FIELD_EXPIRES_AT: (
                     datetime.now(timezone.utc) + timedelta(seconds=expires_in)
                 ).isoformat()
                 if expires_in
@@ -198,9 +204,9 @@ class SecureTokenStore:
 
             # Audit log
             self._access_log.append({
-                "action": "store",
-                "user_id": user_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                FIELD_ACTION: "store",
+                FIELD_USER_ID: user_id,
+                FIELD_TIMESTAMP: datetime.now(timezone.utc).isoformat(),
                 "expires_in": expires_in,
             })
 
@@ -231,9 +237,9 @@ class SecureTokenStore:
                 return None
 
             # Check expiry
-            if token_data.get("expires_at"):
+            if token_data.get(FIELD_EXPIRES_AT):
                 try:
-                    expires_at = datetime.fromisoformat(token_data["expires_at"])
+                    expires_at = datetime.fromisoformat(token_data[FIELD_EXPIRES_AT])
                     if datetime.now(timezone.utc) > expires_at:
                         # Token expired - delete it
                         self.delete_token(user_id)
@@ -245,9 +251,9 @@ class SecureTokenStore:
 
             # Audit log
             self._access_log.append({
-                "action": "retrieve",
-                "user_id": user_id,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                FIELD_ACTION: "retrieve",
+                FIELD_USER_ID: user_id,
+                FIELD_TIMESTAMP: datetime.now(timezone.utc).isoformat(),
             })
 
             return token_data

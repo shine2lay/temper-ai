@@ -13,6 +13,7 @@ from typing import Any, ClassVar, Dict, FrozenSet, List, Literal, Optional, Unio
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.agents.constants import (
+    DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS,
     DEFAULT_MAX_TOKENS,
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_P,
@@ -260,7 +261,7 @@ class AgentConfigInner(BaseModel):
         description="Auto-inject dialogue context into prompt. Set to False for agents that handle dialogue in their own templates."
     )
     max_dialogue_context_chars: int = Field(
-        default=8000,
+        default=DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS,
         gt=0,
         description="Max chars for auto-injected dialogue context"
     )

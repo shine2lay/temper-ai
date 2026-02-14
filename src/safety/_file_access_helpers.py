@@ -11,6 +11,8 @@ import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Set
 
+from src.safety.constants import PATH_KEY, PATHS_KEY
+
 
 def extract_paths(action: Dict[str, Any]) -> List[str]:
     """Extract file paths from action.
@@ -24,12 +26,12 @@ def extract_paths(action: Dict[str, Any]) -> List[str]:
     paths = []
 
     # Single path
-    if "path" in action:
-        paths.append(str(action["path"]))
+    if PATH_KEY in action:
+        paths.append(str(action[PATH_KEY]))
 
     # Multiple paths
-    if "paths" in action and isinstance(action["paths"], list):
-        paths.extend([str(p) for p in action["paths"]])
+    if PATHS_KEY in action and isinstance(action[PATHS_KEY], list):
+        paths.extend([str(p) for p in action[PATHS_KEY]])
 
     # Source/destination paths (for copy/move operations)
     if "source" in action:

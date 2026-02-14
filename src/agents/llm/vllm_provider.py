@@ -10,6 +10,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
+from src.agents.constants import SSE_STREAM_DONE_MARKER
 from src.agents.llm.base import (
     BaseLLM,
     LLMProvider,
@@ -186,7 +187,7 @@ class VllmLLM(BaseLLM):
             if data is None:
                 continue
 
-            if data == "[DONE]":
+            if data == SSE_STREAM_DONE_MARKER:
                 on_chunk(LLMStreamChunk(
                     content="",
                     chunk_type="content",
@@ -253,7 +254,7 @@ class VllmLLM(BaseLLM):
             if data is None:
                 continue
 
-            if data == "[DONE]":
+            if data == SSE_STREAM_DONE_MARKER:
                 on_chunk(LLMStreamChunk(
                     content="",
                     chunk_type="content",
@@ -315,8 +316,8 @@ class VllmLLM(BaseLLM):
             return None
 
         payload = line[len("data:"):].strip()
-        if payload == "[DONE]":
-            return "[DONE]"
+        if payload == SSE_STREAM_DONE_MARKER:
+            return SSE_STREAM_DONE_MARKER
 
         try:
             return json.loads(payload)

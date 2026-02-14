@@ -27,8 +27,12 @@ from src.safety._file_access_helpers import (
 )
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
+    ERROR_CHARS_GOT,
+    ERROR_ITEMS_GOT,
     MAX_EXCLUDED_PATH_LENGTH,
     MAX_EXCLUDED_PATHS,
+    PATH_KEY,
+    VIOLATION_KEY,
 )
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.validation import ValidationMixin
@@ -120,11 +124,11 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             if not isinstance(path, str):
                 raise ValueError(f"allowed_paths items must be strings, got {type(path).__name__}")
             if len(path) > MAX_EXCLUDED_PATH_LENGTH:
-                raise ValueError(f"allowed_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(path)}")
+                raise ValueError(f"allowed_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH}{ERROR_CHARS_GOT}{len(path)}")
             self.allowed_paths.append(path)
 
         if len(self.allowed_paths) > MAX_EXCLUDED_PATHS:
-            raise ValueError(f"allowed_paths must have <= {MAX_EXCLUDED_PATHS} items, got {len(self.allowed_paths)}")
+            raise ValueError(f"allowed_paths must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(self.allowed_paths)}")
 
         denied_paths_raw = self.config.get("denied_paths", [])
         if not isinstance(denied_paths_raw, list):
@@ -137,11 +141,11 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             if not isinstance(path, str):
                 raise ValueError(f"denied_paths items must be strings, got {type(path).__name__}")
             if len(path) > MAX_EXCLUDED_PATH_LENGTH:
-                raise ValueError(f"denied_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(path)}")
+                raise ValueError(f"denied_paths items must be <= {MAX_EXCLUDED_PATH_LENGTH}{ERROR_CHARS_GOT}{len(path)}")
             self.denied_paths.append(path)
 
         if len(self.denied_paths) > MAX_EXCLUDED_PATHS:
-            raise ValueError(f"denied_paths must have <= {MAX_EXCLUDED_PATHS} items, got {len(self.denied_paths)}")
+            raise ValueError(f"denied_paths must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(self.denied_paths)}")
 
         # Validate security settings (booleans)
         self.allow_parent_traversal = self._validate_boolean(
@@ -173,14 +177,14 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             if not isinstance(ext, str):
                 raise ValueError(f"forbidden_extensions items must be strings, got {type(ext).__name__}")
             if len(ext) > MAX_EXTENSION_LENGTH:
-                raise ValueError(f"forbidden_extensions items must be <= {MAX_EXTENSION_LENGTH} characters, got {len(ext)}")
+                raise ValueError(f"forbidden_extensions items must be <= {MAX_EXTENSION_LENGTH}{ERROR_CHARS_GOT}{len(ext)}")
             if not ext.startswith('.'):
                 ext = '.' + ext
             forbidden_ext_validated.append(ext.lower())
 
         if len(forbidden_ext_validated) > MAX_FILENAME_ITEMS:
             raise ValueError(
-                f"forbidden_extensions must have <= {MAX_FILENAME_ITEMS} items, got {len(forbidden_ext_validated)}"
+                f"forbidden_extensions must have <= {MAX_FILENAME_ITEMS}{ERROR_ITEMS_GOT}{len(forbidden_ext_validated)}"
             )
 
         self.forbidden_extensions: Set[str] = set(forbidden_ext_validated) | self.DEFAULT_FORBIDDEN_EXTENSIONS
@@ -200,13 +204,13 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                 )
             if len(dir_path) > MAX_EXCLUDED_PATH_LENGTH:
                 raise ValueError(
-                    f"forbidden_directories items must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(dir_path)}"
+                    f"forbidden_directories items must be <= {MAX_EXCLUDED_PATH_LENGTH}{ERROR_CHARS_GOT}{len(dir_path)}"
                 )
             forbidden_dirs_validated.append(dir_path)
 
         if len(forbidden_dirs_validated) > MAX_EXCLUDED_PATHS:
             raise ValueError(
-                f"forbidden_directories must have <= {MAX_EXCLUDED_PATHS} items, got {len(forbidden_dirs_validated)}"
+                f"forbidden_directories must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(forbidden_dirs_validated)}"
             )
 
         self.forbidden_directories: Set[str] = set(forbidden_dirs_validated) | self.DEFAULT_FORBIDDEN_DIRS
@@ -223,12 +227,12 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
             if not isinstance(file_name, str):
                 raise ValueError(f"forbidden_files items must be strings, got {type(file_name).__name__}")
             if len(file_name) > MAX_SHORT_STRING_LENGTH:
-                raise ValueError(f"forbidden_files items must be <= {MAX_SHORT_STRING_LENGTH} characters, got {len(file_name)}")
+                raise ValueError(f"forbidden_files items must be <= {MAX_SHORT_STRING_LENGTH}{ERROR_CHARS_GOT}{len(file_name)}")
             forbidden_files_validated.append(file_name)
 
         if len(forbidden_files_validated) > MAX_EXCLUDED_PATHS:
             raise ValueError(
-                f"forbidden_files must have <= {MAX_EXCLUDED_PATHS} items, got {len(forbidden_files_validated)}"
+                f"forbidden_files must have <= {MAX_EXCLUDED_PATHS}{ERROR_ITEMS_GOT}{len(forbidden_files_validated)}"
             )
 
         self.forbidden_files: Set[str] = set(forbidden_files_validated) | self.DEFAULT_FORBIDDEN_FILES
@@ -280,7 +284,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=f"Path traversal detected: {path}",
                     action=str(action), context=context,
                     remediation_hint="Remove parent directory references (../)",
-                    metadata={"path": path, "violation": VIOLATION_PARENT_TRAVERSAL}
+                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_PARENT_TRAVERSAL}
                 ))
                 continue
 
@@ -290,7 +294,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=f"Absolute path not allowed: {path}",
                     action=str(action), context=context,
                     remediation_hint="Use relative paths only",
-                    metadata={"path": path, "violation": VIOLATION_ABSOLUTE_PATH}
+                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_ABSOLUTE_PATH}
                 ))
                 continue
 
@@ -300,7 +304,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=f"Access to forbidden file: {path}",
                     action=str(action), context=context,
                     remediation_hint="This file contains sensitive data and cannot be accessed",
-                    metadata={"path": path, "violation": VIOLATION_FORBIDDEN_FILE}
+                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_FORBIDDEN_FILE}
                 ))
                 continue
 
@@ -310,7 +314,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=f"Access to forbidden directory: {path}",
                     action=str(action), context=context,
                     remediation_hint="This directory is protected and cannot be accessed",
-                    metadata={"path": path, "violation": VIOLATION_FORBIDDEN_DIRECTORY}
+                    metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_FORBIDDEN_DIRECTORY}
                 ))
                 continue
 
@@ -332,7 +336,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                         message=f"Path not in allowlist: {path}",
                         action=str(action), context=context,
                         remediation_hint="Add path to allowed_paths or use an allowed directory",
-                        metadata={"path": path, "violation": VIOLATION_NOT_IN_ALLOWLIST}
+                        metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_NOT_IN_ALLOWLIST}
                     ))
             else:
                 if self._is_denied(normalized_path):
@@ -341,7 +345,7 @@ class FileAccessPolicy(BaseSafetyPolicy, ValidationMixin):
                         message=f"Path in denylist: {path}",
                         action=str(action), context=context,
                         remediation_hint="Use a different path not in denied_paths",
-                        metadata={"path": path, "violation": VIOLATION_IN_DENYLIST}
+                        metadata={PATH_KEY: path, VIOLATION_KEY:VIOLATION_IN_DENYLIST}
                     ))
 
         valid = not any(v.severity >= ViolationSeverity.HIGH for v in violations)

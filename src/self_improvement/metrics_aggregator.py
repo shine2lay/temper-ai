@@ -19,6 +19,11 @@ from sqlalchemy import and_, case
 from sqlmodel import Session, func, select
 
 from src.database.models import AgentExecution
+from src.self_improvement.constants import (
+    FIELD_TOTAL_EXECUTIONS,
+    METRIC_STAT_MEAN,
+    STATUS_COMPLETED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -93,14 +98,14 @@ class MetricsAggregator:
         ]
 
         if not include_failed:
-            filters.append(AgentExecution.status == "completed")
+            filters.append(AgentExecution.status == STATUS_COMPLETED)
 
         # Aggregate query
         statement = select(  # type: ignore[call-overload]
             func.count(AgentExecution.id).label("total"),  # type: ignore[arg-type]
             func.sum(
-                case((AgentExecution.status == "completed", 1), else_=0)  # type: ignore[arg-type]
-            ).label("completed"),
+                case((AgentExecution.status == STATUS_COMPLETED, 1), else_=0)  # type: ignore[arg-type]
+            ).label(STATUS_COMPLETED),
             func.avg(AgentExecution.duration_seconds).label("avg_duration"),
             func.avg(AgentExecution.estimated_cost_usd).label("avg_cost"),
             func.avg(AgentExecution.total_tokens).label("avg_tokens"),
@@ -109,28 +114,28 @@ class MetricsAggregator:
         result = self.session.exec(statement).first()
 
         if not result or result.total == 0:
-            return {"total_executions": 0}
+            return {FIELD_TOTAL_EXECUTIONS: 0}
 
         # Calculate success_rate
         success_rate = result.completed / result.total if result.total > 0 else 0.0
 
         # Build metrics dict
         metrics = {
-            "total_executions": result.total,
-            "success_rate": {"mean": success_rate}
+            FIELD_TOTAL_EXECUTIONS: result.total,
+            "success_rate": {METRIC_STAT_MEAN: success_rate}
         }
 
         # Add duration metrics (if available)
         if result.avg_duration is not None:
-            metrics["duration_seconds"] = {"mean": float(result.avg_duration)}
+            metrics["duration_seconds"] = {METRIC_STAT_MEAN: float(result.avg_duration)}
 
         # Add cost metrics (if available)
         if result.avg_cost is not None:
-            metrics["cost_usd"] = {"mean": float(result.avg_cost)}
+            metrics["cost_usd"] = {METRIC_STAT_MEAN: float(result.avg_cost)}
 
         # Add token metrics (if available)
         if result.avg_tokens is not None:
-            metrics["total_tokens"] = {"mean": float(result.avg_tokens)}
+            metrics["total_tokens"] = {METRIC_STAT_MEAN: float(result.avg_tokens)}
 
         logger.debug(
             f"Aggregated metrics: agent={agent_name}, "

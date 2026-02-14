@@ -33,6 +33,7 @@ from src.tools._registry_helpers import (
     validate_tool_interface as _validate_tool_interface,
 )
 from src.tools.base import BaseTool
+from src.tools.constants import TOOL_ERROR_PREFIX
 from src.utils.exceptions import ToolRegistryError
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ class ToolRegistry:
 
             if version in self._tools[tool.name] and not allow_override:
                 raise ToolRegistryError(
-                    f"Tool '{tool.name}' version '{version}' is already registered. "
+                    f"{TOOL_ERROR_PREFIX}{tool.name}' version '{version}' is already registered. "
                     f"Use allow_override=True to replace it."
                 )
 
@@ -96,13 +97,13 @@ class ToolRegistry:
         """Unregister a tool or specific tool version."""
         with self._lock:
             if tool_name not in self._tools:
-                raise ToolRegistryError(f"Tool '{tool_name}' not found")
+                raise ToolRegistryError(f"{TOOL_ERROR_PREFIX}{tool_name}' not found")
 
             if version is None:
                 del self._tools[tool_name]
             else:
                 if version not in self._tools[tool_name]:
-                    raise ToolRegistryError(f"Tool '{tool_name}' version '{version}' not found")
+                    raise ToolRegistryError(f"{TOOL_ERROR_PREFIX}{tool_name}' version '{version}' not found")
                 del self._tools[tool_name][version]
                 if not self._tools[tool_name]:
                     del self._tools[tool_name]

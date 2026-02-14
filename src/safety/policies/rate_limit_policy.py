@@ -26,7 +26,21 @@ from src.constants.limits import (
     VERY_LARGE_ITEM_LIMIT,
 )
 from src.safety.base import BaseSafetyPolicy
-from src.safety.constants import RATE_LIMIT_PRIORITY
+from src.safety.constants import (
+    ACTION_TYPE_API_CALL,
+    ACTION_TYPE_COMMIT,
+    ACTION_TYPE_DEPLOY,
+    ACTION_TYPE_LLM_CALL,
+    ACTION_TYPE_TOOL_CALL,
+    FILL_PERCENTAGE_KEY,
+    FORMAT_ONE_DECIMAL,
+    GLOBAL_LIMITS_KEY,
+    MAX_TOKENS_KEY,
+    RATE_LIMIT_PRIORITY,
+    RATE_LIMITS_KEY,
+    REFILL_RATE_KEY,
+    SCOPE_GLOBAL,
+)
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.token_bucket import RateLimit, TokenBucketManager
 
@@ -89,31 +103,31 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
 
     # Default rate limits (per agent)
     DEFAULT_LIMITS = {
-        "commit": RateLimit(
+        ACTION_TYPE_COMMIT: RateLimit(
             max_tokens=DEFAULT_COMMITS_PER_HOUR,
             refill_rate=DEFAULT_COMMITS_PER_HOUR / SECONDS_PER_HOUR,
             refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
             burst_size=DEFAULT_COMMITS_BURST
         ),
-        "deploy": RateLimit(
+        ACTION_TYPE_DEPLOY: RateLimit(
             max_tokens=DEFAULT_DEPLOYS_PER_HOUR,
             refill_rate=DEFAULT_DEPLOYS_PER_HOUR / SECONDS_PER_HOUR,
             refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
             burst_size=DEFAULT_DEPLOYS_BURST
         ),
-        "tool_call": RateLimit(
+        ACTION_TYPE_TOOL_CALL: RateLimit(
             max_tokens=DEFAULT_TOOL_CALLS_PER_HOUR,
             refill_rate=DEFAULT_TOOL_CALLS_PER_HOUR / SECONDS_PER_HOUR,
             refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
             burst_size=DEFAULT_TOOL_CALLS_BURST
         ),
-        "llm_call": RateLimit(
+        ACTION_TYPE_LLM_CALL: RateLimit(
             max_tokens=DEFAULT_LLM_CALLS_PER_HOUR,
             refill_rate=DEFAULT_LLM_CALLS_PER_HOUR / SECONDS_PER_HOUR,
             refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
             burst_size=DEFAULT_LLM_CALLS_BURST
         ),
-        "api_call": RateLimit(
+        ACTION_TYPE_API_CALL: RateLimit(
             max_tokens=DEFAULT_API_CALLS_PER_HOUR,
             refill_rate=DEFAULT_API_CALLS_PER_HOUR / SECONDS_PER_HOUR,
             refill_period=float(SMALL_ITEM_LIMIT // SMALL_ITEM_LIMIT),
@@ -133,15 +147,15 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
 
     # Map action types to rate limit types
     ACTION_TO_LIMIT_TYPE = {
-        "git_commit": "commit",
-        "commit": "commit",
-        "deploy": "deploy",
-        "deployment": "deploy",
-        "tool_call": "tool_call",
-        "tool_execution": "tool_call",
-        "llm_call": "llm_call",
-        "api_call": "api_call",
-        "api_request": "api_call",
+        "git_commit": ACTION_TYPE_COMMIT,
+        ACTION_TYPE_COMMIT: ACTION_TYPE_COMMIT,
+        ACTION_TYPE_DEPLOY: ACTION_TYPE_DEPLOY,
+        "deployment": ACTION_TYPE_DEPLOY,
+        ACTION_TYPE_TOOL_CALL: ACTION_TYPE_TOOL_CALL,
+        "tool_execution": ACTION_TYPE_TOOL_CALL,
+        ACTION_TYPE_LLM_CALL: ACTION_TYPE_LLM_CALL,
+        ACTION_TYPE_API_CALL: ACTION_TYPE_API_CALL,
+        "api_request": ACTION_TYPE_API_CALL,
     }
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -200,13 +214,13 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         limits = self.DEFAULT_LIMITS.copy()
 
         # Override with config
-        if "rate_limits" in config:
-            if not isinstance(config["rate_limits"], dict):
+        if RATE_LIMITS_KEY in config:
+            if not isinstance(config[RATE_LIMITS_KEY], dict):
                 raise ValueError(
-                    f"rate_limits must be a dictionary, got {type(config['rate_limits']).__name__}"
+                    f"{RATE_LIMITS_KEY} must be a dictionary, got {type(config[RATE_LIMITS_KEY]).__name__}"
                 )
 
-            for limit_type, limit_config in config["rate_limits"].items():
+            for limit_type, limit_config in config[RATE_LIMITS_KEY].items():
                 # Validate limit_type is a string
                 if not isinstance(limit_type, str):
                     raise ValueError(
@@ -215,7 +229,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
 
                 if isinstance(limit_config, dict):
                     # Validate all required fields are present
-                    required_fields = ["max_tokens", "refill_rate"]
+                    required_fields = [MAX_TOKENS_KEY, REFILL_RATE_KEY]
                     for field in required_fields:
                         if field not in limit_config:
                             raise ValueError(
@@ -255,13 +269,13 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         limits = self.DEFAULT_GLOBAL_LIMITS.copy()
 
         # Override with config
-        if "global_limits" in config:
-            if not isinstance(config["global_limits"], dict):
+        if GLOBAL_LIMITS_KEY in config:
+            if not isinstance(config[GLOBAL_LIMITS_KEY], dict):
                 raise ValueError(
-                    f"global_limits must be a dictionary, got {type(config['global_limits']).__name__}"
+                    f"{GLOBAL_LIMITS_KEY} must be a dictionary, got {type(config[GLOBAL_LIMITS_KEY]).__name__}"
                 )
 
-            for limit_type, limit_config in config["global_limits"].items():
+            for limit_type, limit_config in config[GLOBAL_LIMITS_KEY].items():
                 # Validate limit_type is a string
                 if not isinstance(limit_type, str):
                     raise ValueError(
@@ -270,7 +284,7 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
 
                 if isinstance(limit_config, dict):
                     # Validate all required fields are present
-                    required_fields = ["max_tokens", "refill_rate"]
+                    required_fields = [MAX_TOKENS_KEY, REFILL_RATE_KEY]
                     for field in required_fields:
                         if field not in limit_config:
                             raise ValueError(
@@ -354,8 +368,8 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
             scope = "per-agent"
         else:
             # All agents share the same rate limit buckets
-            entity_id = "global"
-            scope = "global"
+            entity_id = SCOPE_GLOBAL
+            scope = SCOPE_GLOBAL
 
         # Check rate limits
         agent_limited, agent_violation = self._check_limit(
@@ -461,12 +475,12 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
             metadata={
                 "limit_type": limit_type,
                 "scope": scope,
-                "entity_id": entity_id if scope == "per-agent" else "global",
+                "entity_id": entity_id if scope == "per-agent" else SCOPE_GLOBAL,
                 "wait_time": round(wait_time, 2),
                 "current_tokens": round(current_tokens, 2),
-                "max_tokens": bucket_info.get("max_tokens", 0),
-                "refill_rate": bucket_info.get("refill_rate", 0),
-                "fill_percentage": bucket_info.get("fill_percentage", 0)
+                MAX_TOKENS_KEY: bucket_info.get(MAX_TOKENS_KEY, 0),
+                REFILL_RATE_KEY: bucket_info.get(REFILL_RATE_KEY, 0),
+                FILL_PERCENTAGE_KEY: bucket_info.get(FILL_PERCENTAGE_KEY, 0)
             }
         )
 
@@ -483,12 +497,12 @@ class TokenBucketRateLimitPolicy(BaseSafetyPolicy):
         """
         if seconds >= RATE_LIMIT_HOUR_THRESHOLD_SECONDS:
             hours = seconds / RATE_LIMIT_HOUR_THRESHOLD_SECONDS
-            return f"{hours:.1f} hour{'s' if hours >= RATE_LIMIT_PLURAL_THRESHOLD else ''}"
+            return f"{hours:{FORMAT_ONE_DECIMAL}} hour{'s' if hours >= RATE_LIMIT_PLURAL_THRESHOLD else ''}"
         elif seconds >= RATE_LIMIT_MINUTE_THRESHOLD_SECONDS:
             minutes = seconds / RATE_LIMIT_MINUTE_THRESHOLD_SECONDS
-            return f"{minutes:.1f} minute{'s' if minutes >= RATE_LIMIT_PLURAL_THRESHOLD else ''}"
+            return f"{minutes:{FORMAT_ONE_DECIMAL}} minute{'s' if minutes >= RATE_LIMIT_PLURAL_THRESHOLD else ''}"
         else:
-            return f"{seconds:.1f} second{'s' if seconds >= RATE_LIMIT_PLURAL_THRESHOLD else ''}"
+            return f"{seconds:{FORMAT_ONE_DECIMAL}} second{'s' if seconds >= RATE_LIMIT_PLURAL_THRESHOLD else ''}"
 
     def get_status(self, agent_id: str) -> Dict[str, Any]:
         """Get rate limit status for an agent.

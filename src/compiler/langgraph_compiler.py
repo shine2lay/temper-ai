@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 from src.compiler.condition_evaluator import ConditionEvaluator
 from src.compiler.config_loader import ConfigLoader
+from src.compiler.constants import (
+    ERROR_MSG_AGENT_PREFIX,
+    ERROR_MSG_STAGE_PREFIX,
+)
 from src.compiler.executors import (
     AdaptiveStageExecutor,
     ParallelStageExecutor,
@@ -346,7 +350,7 @@ class LangGraphCompiler:
             try:
                 stage_config = self.node_builder._load_stage_config(stage_name, workflow_config)
             except Exception as e:
-                errors.append(f"Stage '{stage_name}': Failed to load config - {e}")
+                errors.append(f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Failed to load config - {e}")
                 continue
 
             # Validate stage config against Pydantic schema if it's a dict
@@ -356,9 +360,9 @@ class LangGraphCompiler:
                 try:
                     StageConfig(**stage_config)
                 except ValidationError as e:
-                    logger.warning(f"Stage '{stage_name}': Config schema warnings - {e}")
+                    logger.warning(f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Config schema warnings - {e}")
                 except Exception as e:
-                    logger.debug(f"Stage '{stage_name}': Config validation skipped - {e}")
+                    logger.debug(f"{ERROR_MSG_STAGE_PREFIX}{stage_name}': Config validation skipped - {e}")
 
             # Get agents from stage config
             if hasattr(stage_config, 'stage'):
@@ -374,7 +378,7 @@ class LangGraphCompiler:
                 try:
                     agent_config = self.config_loader.load_agent(agent_name)
                 except Exception as e:
-                    errors.append(f"Agent '{agent_name}' in stage '{stage_name}': Failed to load config - {e}")
+                    errors.append(f"{ERROR_MSG_AGENT_PREFIX}{agent_name}' in stage '{stage_name}': Failed to load config - {e}")
                     continue
 
                 # Validate agent config against Pydantic schema if it's a dict
@@ -383,9 +387,9 @@ class LangGraphCompiler:
                     try:
                         AgentConfig(**agent_config)
                     except ValidationError as e:
-                        logger.warning(f"Agent '{agent_name}' in stage '{stage_name}': Config schema warnings - {e}")
+                        logger.warning(f"{ERROR_MSG_AGENT_PREFIX}{agent_name}' in stage '{stage_name}': Config schema warnings - {e}")
                     except Exception as e:
-                        logger.debug(f"Agent '{agent_name}': Config validation skipped - {e}")
+                        logger.debug(f"{ERROR_MSG_AGENT_PREFIX}{agent_name}': Config validation skipped - {e}")
 
         # If any errors, fail fast with all details
         if errors:

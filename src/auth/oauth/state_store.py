@@ -18,6 +18,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from src.auth.constants import ERROR_REDIS_NOT_AVAILABLE, FIELD_EXPIRES_AT
 from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_SHORT
 from src.constants.limits import PERCENT_20, PERCENT_80, THRESHOLD_MASSIVE_COUNT
 
@@ -130,7 +131,7 @@ class InMemoryStateStore(StateStore):
 
             data_with_expiry = {
                 **data,
-                'expires_at': (
+                FIELD_EXPIRES_AT: (
                     datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
                 ).isoformat()
             }
@@ -151,13 +152,13 @@ class InMemoryStateStore(StateStore):
             return None
 
         # Check expiration
-        expires_at = datetime.fromisoformat(data['expires_at'])
+        expires_at = datetime.fromisoformat(data[FIELD_EXPIRES_AT])
         if datetime.now(timezone.utc) > expires_at:
             return None
 
         # Remove expires_at before returning
         data_copy = data.copy()
-        del data_copy['expires_at']
+        del data_copy[FIELD_EXPIRES_AT]
 
         return data_copy
 
@@ -178,7 +179,7 @@ class InMemoryStateStore(StateStore):
         now = datetime.now(timezone.utc)
         expired_keys = [
             state for state, data in self._store.items()
-            if now > datetime.fromisoformat(data['expires_at'])
+            if now > datetime.fromisoformat(data[FIELD_EXPIRES_AT])
         ]
 
         for key in expired_keys:
@@ -204,7 +205,7 @@ class InMemoryStateStore(StateStore):
         # Sort by expires_at to remove the oldest entries first
         sorted_keys = sorted(
             self._store.keys(),
-            key=lambda k: self._store[k].get('expires_at', ''),
+            key=lambda k: self._store[k].get(FIELD_EXPIRES_AT, ''),
         )
         for key in sorted_keys[:to_remove]:
             del self._store[key]
@@ -322,7 +323,7 @@ class RedisStateStore(StateStore):
         await self.connect()
 
         if not self._redis:
-            raise RuntimeError("Redis connection not available")
+            raise RuntimeError(ERROR_REDIS_NOT_AVAILABLE)
 
         key = self._make_key(state)
         value = json.dumps(data, default=str)
@@ -349,7 +350,7 @@ class RedisStateStore(StateStore):
         await self.connect()
 
         if not self._redis:
-            raise RuntimeError("Redis connection not available")
+            raise RuntimeError(ERROR_REDIS_NOT_AVAILABLE)
 
         key = self._make_key(state)
 
@@ -392,7 +393,7 @@ class RedisStateStore(StateStore):
         await self.connect()
 
         if not self._redis:
-            raise RuntimeError("Redis connection not available")
+            raise RuntimeError(ERROR_REDIS_NOT_AVAILABLE)
 
         key = self._make_key(state)
         deleted: int = await self._redis.delete(key)

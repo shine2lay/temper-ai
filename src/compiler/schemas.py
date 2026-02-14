@@ -12,6 +12,10 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.compiler.constants import (
+    DEFAULT_VERSION,
+    ERROR_MSG_STAGE_PREFIX,
+)
 from src.constants.durations import (
     SECONDS_PER_5_MINUTES,
     SECONDS_PER_30_MINUTES,
@@ -121,7 +125,7 @@ class ToolConfigInner(BaseModel):
     """Inner tool configuration fields."""
     name: str
     description: str
-    version: str = "1.0"
+    version: str = DEFAULT_VERSION
     category: Optional[str] = None
     implementation: str  # Python class path
     default_config: Dict[str, Any] = Field(default_factory=dict)
@@ -309,7 +313,7 @@ class StageConfigInner(BaseModel):
     """Inner stage configuration fields."""
     name: str
     description: str
-    version: str = "1.0"
+    version: str = DEFAULT_VERSION
     agents: List[str]
     inputs: Dict[str, Any] = Field(default_factory=dict)
     outputs: Dict[str, Any] = Field(default_factory=dict)
@@ -387,12 +391,12 @@ class WorkflowStageReference(BaseModel):
         """
         if self.condition and self.skip_if:
             raise ValueError(
-                f"Stage '{self.name}': 'condition' and 'skip_if' are mutually "
+                f"{ERROR_MSG_STAGE_PREFIX}{self.name}': 'condition' and 'skip_if' are mutually "
                 "exclusive — use one or the other"
             )
         if self.loops_back_to is not None and not self.loops_back_to.strip():
             raise ValueError(
-                f"Stage '{self.name}': 'loops_back_to' must be a non-empty string"
+                f"{ERROR_MSG_STAGE_PREFIX}{self.name}': 'loops_back_to' must be a non-empty string"
             )
         return self
 
@@ -452,7 +456,7 @@ class WorkflowConfigInner(BaseModel):
     """Inner workflow configuration fields."""
     name: str
     description: str
-    version: str = "1.0"
+    version: str = DEFAULT_VERSION
     product_type: Optional[Literal["web_app", "mobile_app", "api", "data_product"]] = None
     stages: List[WorkflowStageReference]
     config: WorkflowConfigOptions = Field(default_factory=WorkflowConfigOptions)
@@ -478,7 +482,7 @@ class WorkflowConfigInner(BaseModel):
             for dep in stage.depends_on:
                 if dep not in stage_names:
                     raise ValueError(
-                        f"Stage '{stage.name}' depends_on unknown stage '{dep}'"
+                        f"{ERROR_MSG_STAGE_PREFIX}{stage.name}' depends_on unknown stage '{dep}'"
                     )
         return self
 

@@ -11,6 +11,7 @@ from sqlalchemy import JSON, Index
 from sqlmodel import Column, Field, SQLModel
 
 from src.database.datetime_utils import utcnow
+from src.self_improvement.constants import FIELD_COLLECTED_AT
 
 
 class CustomMetric(SQLModel, table=True):
@@ -106,18 +107,18 @@ class CustomMetric(SQLModel, table=True):
         Index(
             'ix_custom_metrics_execution_collected',
             'execution_id',
-            'collected_at'
+            FIELD_COLLECTED_AT
         ),
         # Composite index for aggregation queries by metric and time
         Index(
             'ix_custom_metrics_metric_collected',
             'metric_name',
-            'collected_at'
+            FIELD_COLLECTED_AT
         ),
         # Composite index for type-based filtering
         Index(
             'ix_custom_metrics_type_collected',
             'metric_type',
-            'collected_at'
+            FIELD_COLLECTED_AT
         ),
     )

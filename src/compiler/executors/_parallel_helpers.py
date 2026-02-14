@@ -11,6 +11,7 @@ import time
 import uuid
 from typing import Any, Callable, Dict, Optional, cast
 
+from src.compiler.constants import ERROR_MSG_QUALITY_GATE_FAILED
 from src.compiler.executors.state_keys import StateKeys
 from src.constants.limits import DEFAULT_MIN_ITEMS, SMALL_ITEM_LIMIT
 from src.constants.probabilities import PROB_HIGH
@@ -504,11 +505,11 @@ def handle_quality_gate_failure(
 
     if on_failure == "escalate":
         raise RuntimeError(
-            f"Quality gates failed for stage '{stage_name}': {'; '.join(violations)}"
+            f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}': {'; '.join(violations)}"
         )
     elif on_failure == "proceed_with_warning":
         logger.warning(
-            f"Quality gates failed for stage '{stage_name}' but proceeding: {'; '.join(violations)}"
+            f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}' but proceeding: {'; '.join(violations)}"
         )
         if not hasattr(synthesis_result, "metadata") or synthesis_result.metadata is None:
             synthesis_result.metadata = {}
@@ -524,7 +525,7 @@ def handle_quality_gate_failure(
 
         if retry_count >= max_retries:
             raise RuntimeError(
-                f"Quality gates failed for stage '{stage_name}' after {retry_count} retries "
+                f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}' after {retry_count} retries "
                 f"(max: {max_retries}). Final violations: {'; '.join(violations)}"
             )
 
@@ -555,7 +556,7 @@ def handle_quality_gate_failure(
             )
 
         logger.warning(
-            f"Quality gates failed for stage '{stage_name}', retrying "
+            f"{ERROR_MSG_QUALITY_GATE_FAILED}{stage_name}', retrying "
             f"(attempt {retry_count + 2}/{max_retries + 1}, "
             f"elapsed {elapsed:.1f}s/{wall_clock_timeout:.0f}s). "
             f"Violations: {'; '.join(violations)}"

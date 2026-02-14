@@ -8,6 +8,11 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from src.self_improvement.constants import (
+    FIELD_AGENT_NAME,
+    FIELD_ITERATION_NUMBER,
+)
+
 
 class Phase(Enum):
     """M5 improvement cycle phases."""
@@ -53,10 +58,10 @@ class LoopState:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for database storage."""
         return {
-            "agent_name": self.agent_name,
+            FIELD_AGENT_NAME: self.agent_name,
             "current_phase": self.current_phase.value,
             "status": self.status.value,
-            "iteration_number": self.iteration_number,
+            FIELD_ITERATION_NUMBER: self.iteration_number,
             "phase_data": self.phase_data,
             "last_error": self.last_error,
             "started_at": self.started_at.isoformat(),
@@ -67,10 +72,10 @@ class LoopState:
     def from_dict(cls, data: Dict[str, Any]) -> "LoopState":
         """Load from dictionary (from database)."""
         return cls(
-            agent_name=data["agent_name"],
+            agent_name=data[FIELD_AGENT_NAME],
             current_phase=Phase(data["current_phase"]),
             status=LoopStatus(data["status"]),
-            iteration_number=data["iteration_number"],
+            iteration_number=data[FIELD_ITERATION_NUMBER],
             phase_data=data.get("phase_data", {}),
             last_error=data.get("last_error"),
             started_at=datetime.fromisoformat(data["started_at"]),

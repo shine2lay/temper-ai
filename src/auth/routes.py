@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from urllib.parse import quote
 
+from src.auth.constants import HEADER_SET_COOKIE, LOG_IP_SEPARATOR, ROUTE_DASHBOARD
 from src.auth.models import User
 from src.auth.oauth.config import OAuthConfig
 from src.auth.oauth.rate_limiter import RateLimitExceeded
@@ -32,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 # M-14: Default redirect allowlist, configurable via OAUTH_ALLOWED_REDIRECTS env var
 # Format: comma-separated list of relative URLs (e.g., "/,/dashboard,/profile")
-DEFAULT_ALLOWED_REDIRECTS = ["/", "/dashboard"]
+DEFAULT_ALLOWED_REDIRECTS = ["/", ROUTE_DASHBOARD]
 
 
 def _get_allowed_redirects(explicit: Optional[List[str]] = None) -> List[str]:
@@ -239,11 +240,11 @@ class OAuthRouteHandlers:
         # Validate redirect URL
         if redirect_after and not self._validate_redirect_url(redirect_after):
             logger.warning(
-                f"Invalid redirect URL rejected: {redirect_after}, IP={client_ip}"
+                f"Invalid redirect URL rejected: {redirect_after}{LOG_IP_SEPARATOR}{client_ip}"
             )
             redirect_after = None
 
-        redirect_after = redirect_after or "/dashboard"
+        redirect_after = redirect_after or ROUTE_DASHBOARD
 
         # Generate authorization URL (includes CSRF state and PKCE)
         try:
@@ -261,20 +262,20 @@ class OAuthRouteHandlers:
             headers = self._get_security_headers()
 
             # Store redirect URL in cookie (short TTL: 10 minutes)
-            headers["Set-Cookie"] = self._create_secure_cookie(
+            headers[HEADER_SET_COOKIE] = self._create_secure_cookie(
                 name="oauth_redirect",
                 value=redirect_after,
                 max_age=SECONDS_PER_10_MINUTES,  # 10 minutes
             )
 
             logger.info(
-                f"OAuth flow initiated: provider={provider}, IP={client_ip}"
+                f"OAuth flow initiated: provider={provider}{LOG_IP_SEPARATOR}{client_ip}"
             )
 
             return auth_url, headers
 
         except RateLimitExceeded:
-            logger.warning(f"Rate limit exceeded on login: IP={client_ip}")
+            logger.warning(f"Rate limit exceeded on login{LOG_IP_SEPARATOR}{client_ip}")
             raise
 
         except OAuthError as e:

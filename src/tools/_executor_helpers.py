@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import concurrent.futures
 import logging
-import os
 import threading
 import time
 from pathlib import Path
@@ -18,6 +17,7 @@ from src.constants.durations import (
     TIMEOUT_VERY_SHORT,
 )
 from src.tools.base import BaseTool, ToolResult
+from src.tools.constants import CONTEXT_KEY_AGENT_ID, ROLLBACK_TRIGGER_AUTO
 from src.utils.exceptions import RateLimitError
 
 if TYPE_CHECKING:
@@ -245,8 +245,8 @@ def handle_auto_rollback(executor: ToolExecutor, snapshot: Any, tool_name: str, 
 
         _log_rollback_event(
             result=rollback_result,
-            trigger="auto",
-            operator=context.get("agent_id")
+            trigger=ROLLBACK_TRIGGER_AUTO,
+            operator=context.get(CONTEXT_KEY_AGENT_ID)
         )
     except (TypeError, ValueError, OSError, AttributeError) as e:
         logger.error(f"Auto-rollback failed: {e}")

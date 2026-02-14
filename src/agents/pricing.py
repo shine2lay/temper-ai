@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
+from src.agents.constants import PRICING_DEFAULT_KEY
 from src.constants.limits import MULTIPLIER_VERY_LARGE, THRESHOLD_MIN_COUNT
 from src.constants.sizes import SIZE_1MB
 
@@ -222,7 +223,7 @@ class PricingManager:
 
             # Cache pricing data
             self.pricing = config.models.copy()
-            self.pricing['_default'] = config.default
+            self.pricing[PRICING_DEFAULT_KEY] = config.default
             self._config_mtime = self.config_path.stat().st_mtime
 
             logger.info(f"Loaded pricing for {len(self.pricing) - THRESHOLD_MIN_COUNT} models")
@@ -249,7 +250,7 @@ class PricingManager:
         """
         logger.warning("Using emergency fallback pricing")
         return {
-            '_default': ModelPricing(
+            PRICING_DEFAULT_KEY: ModelPricing(
                 input_price=DEFAULT_FALLBACK_INPUT_PRICE,
                 output_price=DEFAULT_FALLBACK_OUTPUT_PRICE,
                 effective_date=date(FALLBACK_PRICING_YEAR, 1, 1),
@@ -309,7 +310,7 @@ class PricingManager:
                 f"Model '{model}' not in pricing config. Using default pricing. "
                 f"Add to {self.config_path} for accurate costs."
             )
-            pricing = self.pricing['_default']
+            pricing = self.pricing[PRICING_DEFAULT_KEY]
 
         # Calculate cost
         input_cost = (input_tokens / TOKENS_PER_MILLION) * pricing.input_price
@@ -344,7 +345,7 @@ class PricingManager:
         Returns:
             List of model names (excludes '_default')
         """
-        return [m for m in self.pricing.keys() if m != '_default']
+        return [m for m in self.pricing.keys() if m != PRICING_DEFAULT_KEY]
 
     def health_check(self) -> Dict[str, Any]:
         """Health check for monitoring systems.

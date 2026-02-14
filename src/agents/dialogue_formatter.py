@@ -4,10 +4,19 @@ These functions convert structured dialogue data (lists/dicts) into
 human-readable markdown that can be appended to any agent prompt.
 """
 
+# Max characters for dialogue history formatting
+DIALOGUE_HISTORY_MAX_CHARS = 8000
+
+# Buffer size reserved for truncation message
+TRUNCATION_MESSAGE_BUFFER_CHARS = 30
+
+# Max characters for stage agent outputs formatting
+STAGE_AGENT_OUTPUTS_MAX_CHARS = 4000
+
 
 def format_dialogue_history(
     history: list,
-    max_chars: int = 8000,
+    max_chars: int = DIALOGUE_HISTORY_MAX_CHARS,
 ) -> str:
     """Format dialogue history as markdown for prompt injection.
 
@@ -64,7 +73,7 @@ def format_dialogue_history(
         if total_chars + len(round_text) > max_chars:
             if not parts:
                 # Always include at least one round, truncated
-                truncated = round_text[:max_chars - total_chars - 30]
+                truncated = round_text[:max_chars - total_chars - TRUNCATION_MESSAGE_BUFFER_CHARS]
                 parts.append(truncated + "\n*[truncated]*\n")
             else:
                 parts.insert(0, "*[Earlier rounds truncated for context limits]*\n")
@@ -80,7 +89,7 @@ def format_dialogue_history(
 
 def format_stage_agent_outputs(
     agents: dict,
-    max_chars: int = 4000,
+    max_chars: int = STAGE_AGENT_OUTPUTS_MAX_CHARS,
 ) -> str:
     """Format current stage agent outputs as markdown.
 

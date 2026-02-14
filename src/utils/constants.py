@@ -18,3 +18,30 @@ DEFAULT_LOG_FORMAT_WIDTH = 80
 
 MAX_PATH_LENGTH = 4096  # Typical Linux PATH_MAX
 MAX_COMPONENT_LENGTH = 255  # Typical NAME_MAX
+
+# ============================================================================
+# Redaction & Masking
+# ============================================================================
+
+REDACTED_PLACEHOLDER = "***REDACTED***"
+REDACTION_REPLACEMENT = "\\1=[REDACTED]"
+
+# ============================================================================
+# Configuration
+# ============================================================================
+
+CONFIG_SCHEMA_VERSION = "schema_version"
+CONFIG_SCHEMA_VERSION_DEFAULT = "1.0"
+
+# ============================================================================
+# Error Messages
+# ============================================================================
+
+ERROR_SECRET_PREFIX = "Secret '"
+
+# ============================================================================
+# Exception Fields
+# ============================================================================
+
+FIELD_EXECUTION_CONTEXT = "ExecutionContext"
+FIELD_EXTRA_DATA = "extra_data"

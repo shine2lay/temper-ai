@@ -9,11 +9,16 @@ from __future__ import annotations
 import logging
 import os
 import re
+import shlex
 import subprocess  # noqa: S404 -- commands from trusted YAML config
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from src.agents.constants import PRE_COMMAND_MAX_OUTPUT_CHARS
+from src.agents.constants import (
+    ENV_VAR_PATH,
+    ENV_VAR_VIRTUAL_ENV,
+    PRE_COMMAND_MAX_OUTPUT_CHARS,
+)
 from src.cli.stream_events import PROGRESS, TOOL_RESULT, TOOL_START, StreamEvent
 from src.tools.field_names import ToolResultFields
 
@@ -24,12 +29,15 @@ logger = logging.getLogger(__name__)
 
 # Environment variable whitelist for subprocess execution
 _SAFE_ENV_KEYS = frozenset({
-    "PATH", "HOME", "USER", "LANG", "LC_ALL", "LC_CTYPE",
-    "VIRTUAL_ENV", "PYTHONPATH", "PYTHONDONTWRITEBYTECODE",
+    ENV_VAR_PATH, "HOME", "USER", "LANG", "LC_ALL", "LC_CTYPE",
+    ENV_VAR_VIRTUAL_ENV, "PYTHONPATH", "PYTHONDONTWRITEBYTECODE",
     "TERM", "SHELL", "TMPDIR", "TMP", "TEMP",
 })
 
 _TEMPLATE_VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+
+# Max characters of stderr to include in error message metadata
+MAX_STDERR_ERROR_CHARS = 200
 
 
 def _detect_project_venv() -> Optional[str]:
@@ -41,7 +49,7 @@ def _detect_project_venv() -> Optional[str]:
     3. ``venv/`` directory relative to the project root
     """
     # 1. Explicit env var
-    venv = os.environ.get("VIRTUAL_ENV")
+    venv = os.environ.get(ENV_VAR_VIRTUAL_ENV)
     if venv and os.path.isdir(venv):
         return venv
 
@@ -75,10 +83,10 @@ def _build_safe_env() -> Dict[str, str]:
     venv = _detect_project_venv()
     if venv:
         venv_bin = os.path.join(venv, "bin")
-        current_path = env.get("PATH", "")
+        current_path = env.get(ENV_VAR_PATH, "")
         if venv_bin not in current_path.split(os.pathsep):
-            env["PATH"] = venv_bin + os.pathsep + current_path
-        env["VIRTUAL_ENV"] = venv
+            env[ENV_VAR_PATH] = venv_bin + os.pathsep + current_path
+        env[ENV_VAR_VIRTUAL_ENV] = venv
 
     return env
 
@@ -89,11 +97,15 @@ def _render_command(command: str, variables: Dict[str, Any]) -> str:
     Only replaces variables that exist in *variables*; unresolved
     placeholders are left as-is (they will likely cause a shell error
     which is the desired fail-loud behaviour).
+
+    Security: Values are shell-escaped using shlex.quote() to prevent
+    command injection via malicious variable values.
     """
     def _replacer(match: re.Match[str]) -> str:
         key = match.group(1)
         if key in variables:
-            return str(variables[key])
+            # Shell-escape the value to prevent command injection
+            return shlex.quote(str(variables[key]))
         return match.group(0)
 
     return _TEMPLATE_VAR_RE.sub(_replacer, command)
@@ -131,6 +143,126 @@ def _emit_stream_event(agent: BaseAgent, event: StreamEvent) -> None:
         stream_cb(event)
 
 
+def _execute_single_pre_command(
+    rendered_command: str,
+    timeout: int,
+    safe_env: Dict[str, str],
+) -> Dict[str, Any]:
+    """Execute a single pre-command and return result dict.
+
+    Args:
+        rendered_command: The fully rendered command string
+        timeout: Timeout in seconds
+        safe_env: Safe environment variables
+
+    Returns:
+        Dict with exit_code, stdout, stderr, error, and duration_seconds
+    """
+    start = time.time()
+    result: Dict[str, Any] = {
+        ToolResultFields.EXIT_CODE: -1,
+        ToolResultFields.STDOUT: "",
+        ToolResultFields.STDERR: "",
+        ToolResultFields.ERROR: None,
+        ToolResultFields.DURATION_SECONDS: 0.0,
+    }
+
+    try:
+        # shell=True required for compound commands (pipelines, conditionals);
+        # mitigated by: restricted env (_build_safe_env), timeout enforcement,
+        # shlex.quote on template variables (_render_command)
+        proc = subprocess.run(
+            rendered_command,
+            shell=True,  # nosec B602
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            env=safe_env,
+        )
+        result[ToolResultFields.EXIT_CODE] = proc.returncode
+        result[ToolResultFields.STDOUT] = _truncate(proc.stdout)
+        result[ToolResultFields.STDERR] = _truncate(proc.stderr)
+    except subprocess.TimeoutExpired:
+        result[ToolResultFields.EXIT_CODE] = -1
+        result[ToolResultFields.ERROR] = f"Timed out after {timeout}s"
+    except OSError as exc:
+        result[ToolResultFields.EXIT_CODE] = -1
+        result[ToolResultFields.ERROR] = str(exc)
+
+    result[ToolResultFields.DURATION_SECONDS] = round(time.time() - start, 2)
+    return result
+
+
+def _emit_pre_command_events(
+    agent: BaseAgent,
+    tool_label: str,
+    rendered_command: str,
+    result: Dict[str, Any],
+) -> None:
+    """Emit StreamEvents for pre-command execution (TOOL_START, PROGRESS, TOOL_RESULT).
+
+    Args:
+        agent: The agent instance
+        tool_label: Label for the tool (e.g., "pre_command:setup")
+        rendered_command: The rendered command string
+        result: Result dict from _execute_single_pre_command
+    """
+    # TOOL_START was emitted before execution, so we skip it here
+
+    # Emit stdout/stderr as PROGRESS
+    if result[ToolResultFields.STDOUT]:
+        _emit_stream_event(agent, StreamEvent(
+            source=agent.name, event_type=PROGRESS, content=result[ToolResultFields.STDOUT],
+        ))
+    if result[ToolResultFields.STDERR]:
+        _emit_stream_event(agent, StreamEvent(
+            source=agent.name, event_type=PROGRESS, content=f"[stderr] {result[ToolResultFields.STDERR]}",
+        ))
+
+    # Emit TOOL_RESULT with success/fail status
+    _emit_stream_event(agent, StreamEvent(
+        source=agent.name,
+        event_type=TOOL_RESULT,
+        metadata={
+            "tool_name": tool_label,
+            "success": result[ToolResultFields.EXIT_CODE] == 0,
+            "duration_s": result[ToolResultFields.DURATION_SECONDS],
+            ToolResultFields.ERROR: result.get(ToolResultFields.ERROR) or (
+                result[ToolResultFields.STDERR][:MAX_STDERR_ERROR_CHARS] if result[ToolResultFields.EXIT_CODE] != 0 else None
+            ),
+        },
+    ))
+
+
+def _track_pre_command_observability(
+    agent: BaseAgent,
+    tool_label: str,
+    rendered_command: str,
+    result: Dict[str, Any],
+) -> None:
+    """Track pre-command execution via observability backend.
+
+    Args:
+        agent: The agent instance
+        tool_label: Label for the tool
+        rendered_command: The rendered command string
+        result: Result dict from _execute_single_pre_command
+    """
+    observer = getattr(agent, "_observer", None)
+    if observer is not None:
+        observer.track_tool_call(
+            tool_name=tool_label,
+            input_params={ToolResultFields.COMMAND: rendered_command},
+            output_data={
+                ToolResultFields.EXIT_CODE: result[ToolResultFields.EXIT_CODE],
+                "stdout_len": len(result[ToolResultFields.STDOUT])
+            },
+            duration_seconds=result[ToolResultFields.DURATION_SECONDS],
+            status="success" if result[ToolResultFields.EXIT_CODE] == 0 else "failed",
+            error_message=result.get(ToolResultFields.ERROR),
+        )
+
+
 def execute_pre_commands(
     agent: BaseAgent,
     input_data: Dict[str, Any],
@@ -149,11 +281,9 @@ def execute_pre_commands(
 
     for cmd_spec in pre_commands:
         name = cmd_spec.name
-        raw_command = cmd_spec.command
-        timeout = cmd_spec.timeout_seconds
-
-        rendered = _render_command(raw_command, input_data)
+        rendered = _render_command(cmd_spec.command, input_data)
         tool_label = f"pre_command:{name}"
+
         logger.info("[%s] pre_command '%s': %s", agent.name, name, rendered)
 
         # Emit TOOL_START for real-time CLI display
@@ -163,81 +293,24 @@ def execute_pre_commands(
             metadata={"tool_name": tool_label, "input_params": {ToolResultFields.COMMAND: rendered}},
         ))
 
-        start = time.time()
-        result: Dict[str, Any] = {
-            "name": name,
-            ToolResultFields.COMMAND: rendered,
-            ToolResultFields.EXIT_CODE: -1,
-            ToolResultFields.STDOUT: "",
-            ToolResultFields.STDERR: "",
-            ToolResultFields.ERROR: None,
-            ToolResultFields.DURATION_SECONDS: 0.0,
-        }
-
-        try:
-            proc = subprocess.run(  # noqa: S602 -- trusted YAML config
-                rendered,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                env=safe_env,
-            )
-            result[ToolResultFields.EXIT_CODE] = proc.returncode
-            result[ToolResultFields.STDOUT] = _truncate(proc.stdout)
-            result[ToolResultFields.STDERR] = _truncate(proc.stderr)
-        except subprocess.TimeoutExpired:
-            result[ToolResultFields.EXIT_CODE] = -1
-            result[ToolResultFields.ERROR] = f"Timed out after {timeout}s"
-            logger.warning("[%s] pre_command '%s' timed out after %ds", agent.name, name, timeout)
-        except OSError as exc:
-            result[ToolResultFields.EXIT_CODE] = -1
-            result[ToolResultFields.ERROR] = str(exc)
-            logger.warning("[%s] pre_command '%s' OS error: %s", agent.name, name, exc)
-
-        result[ToolResultFields.DURATION_SECONDS] = round(time.time() - start, 2)
+        # Execute command
+        result = _execute_single_pre_command(rendered, cmd_spec.timeout_seconds, safe_env)
+        result["name"] = name
+        result[ToolResultFields.COMMAND] = rendered
         results.append(result)
 
-        # Emit stdout/stderr as PROGRESS for real-time streaming panel
-        if result[ToolResultFields.STDOUT]:
-            _emit_stream_event(agent, StreamEvent(
-                source=agent.name, event_type=PROGRESS, content=result[ToolResultFields.STDOUT],
-            ))
-        if result[ToolResultFields.STDERR]:
-            _emit_stream_event(agent, StreamEvent(
-                source=agent.name, event_type=PROGRESS, content=f"[stderr] {result[ToolResultFields.STDERR]}",
-            ))
+        # Emit events and track observability
+        _emit_pre_command_events(agent, tool_label, rendered, result)
+        _track_pre_command_observability(agent, tool_label, rendered, result)
 
-        # Emit TOOL_RESULT with success/fail status and duration
-        _emit_stream_event(agent, StreamEvent(
-            source=agent.name,
-            event_type=TOOL_RESULT,
-            metadata={
-                "tool_name": tool_label,
-                "success": result[ToolResultFields.EXIT_CODE] == 0,
-                "duration_s": result[ToolResultFields.DURATION_SECONDS],
-                ToolResultFields.ERROR: result.get(ToolResultFields.ERROR) or (
-                    result[ToolResultFields.STDERR][:200] if result[ToolResultFields.EXIT_CODE] != 0 else None
-                ),
-            },
-        ))
-
-        # Track via observability backend
-        observer = getattr(agent, "_observer", None)
-        if observer is not None:
-            observer.track_tool_call(
-                tool_name=tool_label,
-                input_params={ToolResultFields.COMMAND: rendered},
-                output_data={ToolResultFields.EXIT_CODE: result[ToolResultFields.EXIT_CODE], "stdout_len": len(result[ToolResultFields.STDOUT])},
-                duration_seconds=result[ToolResultFields.DURATION_SECONDS],
-                status="success" if result[ToolResultFields.EXIT_CODE] == 0 else "failed",
-                error_message=result.get(ToolResultFields.ERROR),
-            )
-
-        status_label = "PASS" if result[ToolResultFields.EXIT_CODE] == 0 else "FAIL"
-        logger.info(
-            "[%s] pre_command '%s' %s (exit=%d, %.1fs)",
-            agent.name, name, status_label, result[ToolResultFields.EXIT_CODE], result[ToolResultFields.DURATION_SECONDS],
-        )
+        # Log final status
+        exit_code = result[ToolResultFields.EXIT_CODE]
+        status_label = "PASS" if exit_code == 0 else "FAIL"
+        if result.get(ToolResultFields.ERROR):
+            logger.warning("[%s] pre_command '%s' error: %s", agent.name, name, result[ToolResultFields.ERROR])
+        elif exit_code != 0:
+            logger.warning("[%s] pre_command '%s' %s (exit=%d, %.1fs)", agent.name, name, status_label, exit_code, result[ToolResultFields.DURATION_SECONDS])
+        else:
+            logger.info("[%s] pre_command '%s' %s (exit=%d, %.1fs)", agent.name, name, status_label, exit_code, result[ToolResultFields.DURATION_SECONDS])
 
     return format_pre_command_results(results)

@@ -1067,14 +1067,14 @@ class TestMagicValues:
 
     def test_repeated_string_detected(self, tmp_path):
         fi = _make_file(tmp_path, "src/mod/strings.py", """\
-            a = "hello_world"
-            b = "hello_world"
-            c = "hello_world"
+            a = "Hello World message"
+            b = "Hello World message"
+            c = "Hello World message"
         """)
         result = scanner.scan_magic_values(tmp_path / "src", [fi])
         assert result["summary"]["total_repeated_strings"] >= 1
         values = [s["value"] for s in result["repeated_strings"]]
-        assert "hello_world" in values
+        assert "Hello World message" in values
 
     def test_docstring_not_flagged(self, tmp_path):
         fi = _make_file(tmp_path, "src/mod/docs.py", """\

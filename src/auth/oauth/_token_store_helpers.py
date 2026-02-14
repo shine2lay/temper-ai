@@ -10,6 +10,8 @@ from typing import Dict, Optional
 
 from cryptography.fernet import Fernet, InvalidToken
 
+from src.auth.constants import FIELD_EXPIRES_AT, FIELD_STORED_AT
+
 logger = logging.getLogger(__name__)
 
 # Optional keyring import
@@ -207,20 +209,20 @@ def re_encrypt_tokens(
         except (InvalidToken, json.JSONDecodeError):
             continue
 
-        if token_data.get("expires_at"):
+        if token_data.get(FIELD_EXPIRES_AT):
             try:
-                expires_at = datetime.fromisoformat(token_data["expires_at"])
+                expires_at = datetime.fromisoformat(token_data[FIELD_EXPIRES_AT])
                 expires_in = int((expires_at - datetime.now(timezone.utc)).total_seconds())
                 if expires_in > 0:
                     clean_token = {
                         k: v
                         for k, v in token_data.items()
-                        if k not in ["stored_at", "expires_at"]
+                        if k not in [FIELD_STORED_AT, FIELD_EXPIRES_AT]
                     }
                     token_with_metadata = {
                         **clean_token,
-                        "stored_at": datetime.now(timezone.utc).isoformat(),
-                        "expires_at": (
+                        FIELD_STORED_AT: datetime.now(timezone.utc).isoformat(),
+                        FIELD_EXPIRES_AT: (
                             datetime.now(timezone.utc) + timedelta(seconds=expires_in)
                         ).isoformat(),
                     }
@@ -232,11 +234,11 @@ def re_encrypt_tokens(
             try:
                 clean_token = {
                     k: v for k, v in token_data.items()
-                    if k not in ["stored_at"]
+                    if k not in [FIELD_STORED_AT]
                 }
                 token_with_metadata = {
                     **clean_token,
-                    "stored_at": datetime.now(timezone.utc).isoformat(),
+                    FIELD_STORED_AT: datetime.now(timezone.utc).isoformat(),
                 }
                 token_json = json.dumps(token_with_metadata)
                 re_encrypted[user_id] = new_cipher.encrypt(token_json.encode())

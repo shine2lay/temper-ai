@@ -7,6 +7,11 @@ import re
 from typing import Any, Dict, Optional, Set
 
 from src.safety.constants import (
+    ARGS_KEY,
+    BASH_KEY,
+    CATEGORY_KEY,
+    COMMAND_KEY,
+    REGEX_KEY,
     VIOLATION_MESSAGE,
     VIOLATION_PATTERN,
     VIOLATION_SEVERITY,
@@ -38,10 +43,10 @@ def compile_all_patterns(
     if check_file_writes:
         patterns.update({
             f"file_write_{name}": {
-                "regex": re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
+                REGEX_KEY: re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
                 VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
                 VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
-                "category": CATEGORY_FILE_WRITE,
+                CATEGORY_KEY: CATEGORY_FILE_WRITE,
                 "requires_context_check": info.get("requires_context_check", False)
             }
             for name, info in file_write_patterns.items()
@@ -50,10 +55,10 @@ def compile_all_patterns(
     if check_dangerous_commands:
         patterns.update({
             f"dangerous_{name}": {
-                "regex": re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
+                REGEX_KEY: re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
                 VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
                 VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
-                "category": CATEGORY_DANGEROUS
+                CATEGORY_KEY: CATEGORY_DANGEROUS
             }
             for name, info in dangerous_command_patterns.items()
         })
@@ -61,10 +66,10 @@ def compile_all_patterns(
     if check_injection_patterns:
         patterns.update({
             f"injection_{name}": {
-                "regex": re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
+                REGEX_KEY: re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
                 VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
                 VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
-                "category": CATEGORY_INJECTION
+                CATEGORY_KEY: CATEGORY_INJECTION
             }
             for name, info in injection_patterns.items()
         })
@@ -72,10 +77,10 @@ def compile_all_patterns(
     if check_security_sensitive:
         patterns.update({
             f"security_{name}": {
-                "regex": re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
+                REGEX_KEY: re.compile(info[VIOLATION_PATTERN], re.IGNORECASE),
                 VIOLATION_MESSAGE: info[VIOLATION_MESSAGE],
                 VIOLATION_SEVERITY: info[VIOLATION_SEVERITY],
-                "category": CATEGORY_SECURITY
+                CATEGORY_KEY: CATEGORY_SECURITY
             }
             for name, info in security_sensitive_patterns.items()
         })
@@ -101,19 +106,19 @@ def extract_command(action: Dict[str, Any]) -> Optional[str]:
     - {"tool": "bash", "args": {"command": "..."}}
     - {"content": "..."}  (for code content)
     """
-    if "command" in action:
-        cmd = action["command"]
+    if COMMAND_KEY in action:
+        cmd = action[COMMAND_KEY]
         return str(cmd) if cmd is not None else None
 
-    if "bash" in action:
-        bash = action["bash"]
+    if BASH_KEY in action:
+        bash = action[BASH_KEY]
         return str(bash) if bash is not None else None
 
-    if action.get("tool") == "bash" and "args" in action:
-        if isinstance(action["args"], dict):
-            return action["args"].get("command")
-        elif isinstance(action["args"], str):
-            return action["args"]
+    if action.get("tool") == BASH_KEY and ARGS_KEY in action:
+        if isinstance(action[ARGS_KEY], dict):
+            return action[ARGS_KEY].get(COMMAND_KEY)
+        elif isinstance(action[ARGS_KEY], str):
+            return action[ARGS_KEY]
 
     if "content" in action:
         content = action["content"]

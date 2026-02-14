@@ -14,20 +14,23 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 if TYPE_CHECKING:
     from src.agents.standard_agent import StandardAgent
 
-from src.agents.constants import OUTPUT_PREVIEW_LENGTH
+from src.agents.constants import (
+    FALLBACK_UNKNOWN_VALUE,
+    OUTPUT_PREVIEW_LENGTH,
+)
 from src.agents.cost_estimator import estimate_cost
 from src.agents.llm import (
     AnthropicLLM,
     OllamaLLM,
     OpenAILLM,
 )
-from src.agents.tool_keys import ToolKeys
 from src.agents.response_parser import (
     extract_final_answer,
     extract_reasoning,
     parse_tool_calls,
     sanitize_tool_output,
 )
+from src.agents.tool_keys import ToolKeys
 from src.utils.exceptions import (
     ConfigValidationError,
     ToolExecutionError,
@@ -78,7 +81,7 @@ def execute_tool_calls(
         except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
             logger.error(f"Tool execution failed in parallel mode: {e}")
             tool_results[index] = {
-                ToolKeys.NAME: tool_calls[index].get(ToolKeys.NAME, "unknown"),
+                ToolKeys.NAME: tool_calls[index].get(ToolKeys.NAME, FALLBACK_UNKNOWN_VALUE),
                 ToolKeys.PARAMETERS: tool_calls[index].get(ToolKeys.PARAMETERS, {}),
                 ToolKeys.SUCCESS: False,
                 ToolKeys.RESULT: None,
@@ -157,6 +160,23 @@ def execute_single_tool(agent: "StandardAgent", tool_call: Dict[str, Any]) -> Di
     }
 
 
+def _build_tool_result_dict(
+    tool_name: str,
+    tool_params: Dict[str, Any],
+    success: bool,
+    result: Any = None,
+    error: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build standardized tool result dictionary."""
+    return {
+        ToolKeys.NAME: tool_name,
+        ToolKeys.PARAMETERS: tool_params,
+        ToolKeys.RESULT: result if success else None,
+        ToolKeys.ERROR: error if not success else None,
+        ToolKeys.SUCCESS: success
+    }
+
+
 def execute_via_tool_executor(
     agent: "StandardAgent",
     tool_name: str,
@@ -173,7 +193,6 @@ def execute_via_tool_executor(
             "succeeded" if result.success else "failed",
             duration_seconds,
         )
-
         agent._observer.track_tool_call(  # type: ignore[attr-defined]
             tool_name=tool_name,
             input_params=tool_params,
@@ -182,33 +201,19 @@ def execute_via_tool_executor(
             status="success" if result.success else "failed",
             error_message=result.error if not result.success else None
         )
-
-        return {
-            ToolKeys.NAME: tool_name,
-            ToolKeys.PARAMETERS: tool_params,
-            ToolKeys.RESULT: result.result if result.success else None,
-            ToolKeys.ERROR: result.error if not result.success else None,
-            ToolKeys.SUCCESS: result.success
-        }
+        return _build_tool_result_dict(tool_name, tool_params, result.success, result.result, result.error)
     except (ToolExecutionError, ToolNotFoundError, TimeoutError, RuntimeError) as e:
         duration_seconds = time.time() - tool_start_time
-
+        error_msg = f"Tool execution error: {str(e)}"
         agent._observer.track_tool_call(  # type: ignore[attr-defined]
             tool_name=tool_name,
             input_params=tool_params,
             output_data={},
             duration_seconds=duration_seconds,
             status="failed",
-            error_message=f"Tool execution error: {str(e)}"
+            error_message=error_msg
         )
-
-        return {
-            ToolKeys.NAME: tool_name,
-            ToolKeys.PARAMETERS: tool_params,
-            ToolKeys.RESULT: None,
-            ToolKeys.ERROR: f"Tool execution error: {str(e)}",
-            ToolKeys.SUCCESS: False
-        }
+        return _build_tool_result_dict(tool_name, tool_params, False, None, error_msg)
 
 
 # ---------------------------------------------------------------------------
@@ -301,41 +306,39 @@ def get_native_tool_definitions(agent: "StandardAgent") -> Optional[List[Dict[st
     return result
 
 
-def inject_tool_results(
-    agent: "StandardAgent",
-    original_prompt: str,
-    llm_response: str,
+def _format_tool_results_text(
     tool_results: List[Dict[str, Any]],
+    max_tool_result_size: int,
     remaining_tool_calls: Optional[int] = None,
 ) -> str:
-    """Inject tool results into prompt for next iteration.
+    """Format tool results into text for prompt injection.
 
-    Uses a sliding-window approach (C-01) to prevent unbounded prompt growth.
+    Args:
+        tool_results: List of tool result dicts with NAME, PARAMETERS, SUCCESS, RESULT/ERROR
+        max_tool_result_size: Maximum chars per tool result (truncate if exceeded)
+        remaining_tool_calls: Optional remaining budget to display
+
+    Returns:
+        Formatted tool results text
     """
-    max_tool_result_size = agent.config.agent.safety.max_tool_result_size
-    max_prompt_length = agent.config.agent.safety.max_prompt_length
-
     results_parts = ["\n\nTool Results:\n"]
     for result in tool_results:
         results_parts.append(f"\nTool: {result[ToolKeys.NAME]}\n")
         results_parts.append(f"Parameters: {json.dumps(result[ToolKeys.PARAMETERS])}\n")
+
         if result[ToolKeys.SUCCESS]:
             safe_result = sanitize_tool_output(str(result[ToolKeys.RESULT]))
-
             if len(safe_result) > max_tool_result_size:
                 original_size = len(safe_result)
                 safe_result = safe_result[:max_tool_result_size]
                 safe_result += f"\n[truncated — {original_size:,} total chars, showing first {max_tool_result_size:,}]"
-
             results_parts.append(f"Result: {safe_result}\n")
         else:
             safe_error = sanitize_tool_output(str(result[ToolKeys.ERROR]))
-
             if len(safe_error) > max_tool_result_size:
                 original_size = len(safe_error)
                 safe_error = safe_error[:max_tool_result_size]
                 safe_error += f"\n[truncated — {original_size:,} total chars, showing first {max_tool_result_size:,}]"
-
             results_parts.append(f"Error: {safe_error}\n")
 
     if remaining_tool_calls is not None:
@@ -348,20 +351,24 @@ def inject_tool_results(
                 "\n[System Info: This is your last tool call. Budget exhausted after this iteration.]\n"
             )
 
-    results_text = ''.join(results_parts)
+    return ''.join(results_parts)
 
-    # Build this iteration's turn text
-    turn_text = "\n\nAssistant: " + llm_response + results_text
 
-    # Append to conversation history
-    if not hasattr(agent, '_conversation_turns'):
-        agent._conversation_turns = []
-    agent._conversation_turns.append(turn_text)
+def _apply_sliding_window(
+    agent: "StandardAgent",
+    system_prompt: str,
+    max_prompt_length: int,
+) -> str:
+    """Apply sliding window to conversation turns to fit within max_prompt_length.
 
-    # Use the pinned system prompt (set in execute())
-    system_prompt = getattr(agent, '_system_prompt', original_prompt)
+    Args:
+        agent: Agent instance with _conversation_turns attribute
+        system_prompt: System prompt to prepend
+        max_prompt_length: Maximum total prompt length
 
-    # Build full prompt with sliding window
+    Returns:
+        Full prompt with system_prompt + included turns + suffix
+    """
     suffix = "\n\nPlease continue:"
     budget = max_prompt_length - len(system_prompt) - len(suffix)
 
@@ -381,17 +388,15 @@ def inject_tool_results(
 
     included_turns.reverse()
 
-    # If we dropped any turns, add a truncation marker and count
+    # Add truncation marker if we dropped turns
     dropped_count = len(agent._conversation_turns) - len(included_turns)
     truncation_marker = ""
     if dropped_count > 0:
         truncation_marker = f"\n\n[...{dropped_count} earlier iteration(s) omitted for brevity...]\n"
 
-    # NOTE: Do NOT re-sanitize assembled turns here. Tool results are already
-    # sanitized individually (lines ~314/323). Re-sanitizing the full history
-    # escapes the LLM's own <tool_call> tags (→ &lt;tool_call&gt;), causing
-    # the model to mimic the escaped format in subsequent responses, which
-    # breaks parse_tool_calls() and halts the tool-calling loop.
+    # NOTE: Do NOT re-sanitize assembled turns. Tool results are already
+    # sanitized individually. Re-sanitizing escapes the LLM's own <tool_call> tags
+    # (→ &lt;tool_call&gt;), breaking parse_tool_calls() and halting the tool-calling loop.
     assembled_turns = truncation_marker + ''.join(included_turns)
 
     # M-48: Prune old turns to free memory
@@ -399,6 +404,38 @@ def inject_tool_results(
         agent._conversation_turns = included_turns
 
     return system_prompt + assembled_turns + suffix
+
+
+def inject_tool_results(
+    agent: "StandardAgent",
+    original_prompt: str,
+    llm_response: str,
+    tool_results: List[Dict[str, Any]],
+    remaining_tool_calls: Optional[int] = None,
+) -> str:
+    """Inject tool results into prompt for next iteration.
+
+    Uses a sliding-window approach (C-01) to prevent unbounded prompt growth.
+    """
+    max_tool_result_size = agent.config.agent.safety.max_tool_result_size
+    max_prompt_length = agent.config.agent.safety.max_prompt_length
+
+    # Format tool results
+    results_text = _format_tool_results_text(tool_results, max_tool_result_size, remaining_tool_calls)
+
+    # Build this iteration's turn text
+    turn_text = "\n\nAssistant: " + llm_response + results_text
+
+    # Append to conversation history
+    if not hasattr(agent, '_conversation_turns'):
+        agent._conversation_turns = []
+    agent._conversation_turns.append(turn_text)
+
+    # Use the pinned system prompt (set in execute())
+    system_prompt = getattr(agent, '_system_prompt', original_prompt)
+
+    # Apply sliding window and return full prompt
+    return _apply_sliding_window(agent, system_prompt, max_prompt_length)
 
 
 # ---------------------------------------------------------------------------
@@ -458,8 +495,8 @@ def validate_safety_for_llm_call(
 
                 ctx = getattr(agent, '_execution_context', None)
                 agent_id = ctx.agent_id if ctx and ctx.agent_id else agent.config.agent.name
-                workflow_id = ctx.workflow_id if ctx and ctx.workflow_id else "unknown"
-                stage_id = ctx.stage_id if ctx and ctx.stage_id else "unknown"
+                workflow_id = ctx.workflow_id if ctx and ctx.workflow_id else FALLBACK_UNKNOWN_VALUE
+                stage_id = ctx.stage_id if ctx and ctx.stage_id else FALLBACK_UNKNOWN_VALUE
 
                 validation_result = agent.tool_executor.policy_engine.validate_action_sync(
                     action={"type": "llm_call", "model": inf_config.model, "prompt_length": len(prompt)},
@@ -757,4 +794,4 @@ def make_stream_callback(agent: "StandardAgent") -> Optional[Callable]:
 
 def estimate_cost_for_response(agent: "StandardAgent", llm_response: Any) -> float:
     """Estimate cost for an LLM response."""
-    return estimate_cost(llm_response, fallback_model=getattr(agent.llm, 'model', 'unknown'))
+    return estimate_cost(llm_response, fallback_model=getattr(agent.llm, 'model', FALLBACK_UNKNOWN_VALUE))

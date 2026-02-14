@@ -12,6 +12,7 @@ import threading
 from typing import TYPE_CHECKING, Dict, Type
 
 from src.agents.base_agent import BaseAgent
+from src.agents.constants import AGENT_TYPE_STANDARD
 from src.agents.standard_agent import StandardAgent
 from src.agents.static_checker_agent import StaticCheckerAgent
 
@@ -34,7 +35,7 @@ class AgentFactory:
 
     # Map of agent type strings to implementation classes
     _agent_types: Dict[str, Type[BaseAgent]] = {
-        "standard": StandardAgent,
+        AGENT_TYPE_STANDARD: StandardAgent,
         "static_checker": StaticCheckerAgent,
     }
 
@@ -57,7 +58,7 @@ class AgentFactory:
             >>> response = agent.execute({"query": "..."})
         """
         # Get agent type from config (defaults to "standard")
-        agent_type = getattr(config.agent, "type", "standard")
+        agent_type = getattr(config.agent, "type", AGENT_TYPE_STANDARD)
 
         with cls._lock:
             if agent_type not in cls._agent_types:
@@ -112,6 +113,6 @@ class AgentFactory:
         """Reset agent types to defaults for testing."""
         with cls._lock:
             cls._agent_types = {
-                "standard": StandardAgent,
+                AGENT_TYPE_STANDARD: StandardAgent,
                 "static_checker": StaticCheckerAgent,
             }

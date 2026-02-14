@@ -28,6 +28,7 @@ from src.safety._forbidden_ops_helpers import (
 )
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
+    CATEGORY_KEY,
     MAX_EXCLUDED_PATH_LENGTH,
     MAX_EXCLUDED_PATHS,
     VIOLATION_MESSAGE,
@@ -292,11 +293,11 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                 )
             if not isinstance(pattern, str):
                 raise ValueError(
-                    f"custom_forbidden_patterns['{name}'] must be a string, got {type(pattern).__name__}"
+                    f"CUSTOM_FORBIDDEN_PATTERNS_PREFIX{name}'] must be a string, got {type(pattern).__name__}"
                 )
             if len(pattern) > MAX_EXCLUDED_PATH_LENGTH:
                 raise ValueError(
-                    f"custom_forbidden_patterns['{name}'] must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(pattern)}"
+                    f"CUSTOM_FORBIDDEN_PATTERNS_PREFIX{name}'] must be <= {MAX_EXCLUDED_PATH_LENGTH} characters, got {len(pattern)}"
                 )
 
             # SECURITY: Validate regex pattern doesn't have ReDoS vulnerability
@@ -304,13 +305,13 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
             try:
                 self._validate_regex_pattern(
                     pattern,
-                    f"custom_forbidden_patterns['{name}']",
+                    f"CUSTOM_FORBIDDEN_PATTERNS_PREFIX{name}']",
                     max_length=MAX_EXCLUDED_PATH_LENGTH,
                     test_timeout=PROB_VERY_LOW
                 )
                 self.custom_forbidden_patterns[name] = pattern
             except ValueError as e:
-                raise ValueError(f"Invalid regex in custom_forbidden_patterns['{name}']: {e}")
+                raise ValueError(f"Invalid regex in CUSTOM_FORBIDDEN_PATTERNS_PREFIX{name}']: {e}")
 
         if len(self.custom_forbidden_patterns) > MAX_CUSTOM_PATTERNS:
             raise ValueError(
@@ -436,10 +437,10 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
                     message=pattern_info[VIOLATION_MESSAGE],
                     action=command,
                     context=context,
-                    remediation_hint=self._get_remediation_hint(pattern_info["category"]),
+                    remediation_hint=self._get_remediation_hint(pattern_info[CATEGORY_KEY]),
                     metadata={
                         "pattern_name": pattern_name,
-                        "category": pattern_info["category"],
+                        "category": pattern_info[CATEGORY_KEY],
                         "matched_text": match.group(0),
                         "match_position": match.start()
                     }
@@ -467,7 +468,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         Returns:
             Set of category names
         """
-        return {info["category"] for info in self.compiled_patterns.values()}
+        return {info[CATEGORY_KEY] for info in self.compiled_patterns.values()}
 
     def get_patterns_by_category(self, category: str) -> List[str]:
         """Get all pattern names for a specific category.
@@ -480,7 +481,7 @@ class ForbiddenOperationsPolicy(BaseSafetyPolicy, ValidationMixin):
         """
         return [
             name for name, info in self.compiled_patterns.items()
-            if info["category"] == category
+            if info[CATEGORY_KEY] == category
         ]
 
     def __repr__(self) -> str:

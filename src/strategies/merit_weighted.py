@@ -20,6 +20,7 @@ from src.strategies.conflict_resolution import (
     calculate_merit_weighted_votes,
     get_highest_weighted_decision,
 )
+from src.strategies.constants import MODE_VALUE_UNKNOWN
 
 # Merit weight constants (must sum to 1.0)
 DEFAULT_DOMAIN_MERIT_WEIGHT = 0.4  # Weight for domain-specific expertise (40%)
@@ -240,15 +241,15 @@ class MeritWeightedResolver(ConflictResolver):
                 domain_merit=output.confidence,
                 overall_merit=output.confidence,
                 recent_performance=output.confidence,
-                expertise_level="unknown"
+                expertise_level=MODE_VALUE_UNKNOWN
             )
             agent_output_dict[output.agent_name] = output
 
         context = ResolutionContext(
             agent_merits=agent_merits,
             agent_outputs=agent_output_dict,
-            stage_name="unknown",
-            workflow_name="unknown",
+            stage_name=MODE_VALUE_UNKNOWN,
+            workflow_name=MODE_VALUE_UNKNOWN,
             workflow_config=config,
             previous_resolutions=[]
         )
@@ -359,8 +360,8 @@ class HumanEscalationResolver(ConflictResolver):
         context = ResolutionContext(
             agent_merits={},
             agent_outputs={},
-            stage_name="unknown",
-            workflow_name="unknown",
+            stage_name=MODE_VALUE_UNKNOWN,
+            workflow_name=MODE_VALUE_UNKNOWN,
             workflow_config=config,
             previous_resolutions=[]
         )

@@ -60,3 +60,32 @@ DEFAULT_PRIOR_MEAN = 0.0
 DEFAULT_PRIOR_STD = 1.0
 NUM_POSTERIOR_SAMPLES = 10000
 ROPE_MARGIN = 0.01  # Region of Practical Equivalence
+
+# ============================================================================
+# Field Names (Dictionary Keys)
+# ============================================================================
+
+FIELD_CREATED_BY = "created_by"
+FIELD_NAME = "name"
+FIELD_CONFIDENCE = "confidence"
+FIELD_RECOMMENDATION = "recommendation"
+FIELD_LLR = "llr"
+FIELD_SAMPLES = "samples"
+
+# ============================================================================
+# Status Values
+# ============================================================================
+
+STATUS_FAILED = "failed"
+
+# ============================================================================
+# Error Messages
+# ============================================================================
+
+ERROR_EXPERIMENT_NOT_FOUND = "Experiment not found: "
+
+# ============================================================================
+# Model Relationships
+# ============================================================================
+
+RELATIONSHIP_EXPERIMENT = "experiment"

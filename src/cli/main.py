@@ -23,6 +23,20 @@ import yaml
 from rich.console import Console
 from rich.table import Table
 
+from src.cli.constants import (
+    CLI_OPTION_CONFIG_ROOT,
+    CLI_OPTION_DB,
+    COLUMN_DESCRIPTION,
+    COLUMN_NAME,
+    DEFAULT_CONFIG_ROOT,
+    DEFAULT_SERVER_HOST,
+    ENV_VAR_CONFIG_ROOT,
+    ERROR_DIR_NOT_FOUND,
+    HELP_CONFIG_ROOT,
+    SQLITE_URL_PREFIX,
+    YAML_FILE_EXTENSION,
+    YAML_GLOB_PATTERN,
+)
 from src.constants.durations import HOURS_PER_WEEK
 from src.utils.exceptions import WorkflowStageError
 
@@ -33,6 +47,8 @@ logger = logging.getLogger(__name__)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB_PATH = ".meta-autonomous/observability.db"
 DEFAULT_DASHBOARD_PORT = 8420
+DEFAULT_HOST = "127.0.0.1"  # Secure default: localhost only
+DEFAULT_MAX_WORKERS = 4
 
 # Exit codes
 EXIT_CODE_KEYBOARD_INTERRUPT = 130  # POSIX standard exit code for SIGINT (Ctrl+C)
@@ -190,7 +206,7 @@ def _start_dashboard_server(backend: Any, event_bus: Any, port: int) -> Any:
         from src.dashboard.app import create_app
 
         app = create_app(backend=backend, event_bus=event_bus)
-        config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning")  # noqa: S104  # nosec B104
+        config = uvicorn.Config(app, host=DEFAULT_SERVER_HOST, port=port, log_level="warning")  # nosec B104
         dashboard_server = uvicorn.Server(config)
         thread = threading.Thread(target=dashboard_server.run, daemon=True)
         thread.start()
@@ -235,7 +251,7 @@ def _initialize_infrastructure(
     # Init database
     try:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        ExecutionTracker.ensure_database(f"sqlite:///{db_path}")
+        ExecutionTracker.ensure_database(f"{SQLITE_URL_PREFIX}{db_path}")
     except (OSError, PermissionError) as e:
         console.print(f"[red]Database initialization error:[/red] {e}")
         if verbose:
@@ -265,6 +281,56 @@ def _initialize_infrastructure(
     return config_loader, tool_registry, tracker, event_bus, dashboard_server
 
 
+def _build_workflow_state(
+    inputs: Any,
+    tracker: Any,
+    config_loader: Any,
+    tool_registry: Any,
+    workflow_id: str,
+    show_details: bool,
+    workspace: Optional[str] = None,
+    run_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Build workflow state dict with optional stream display.
+
+    Args:
+        inputs: Input values dict
+        tracker: ExecutionTracker instance
+        config_loader: ConfigLoader instance
+        tool_registry: ToolRegistry instance
+        workflow_id: Unique workflow execution ID
+        show_details: Enable detailed output
+        workspace: Optional workspace root path
+        run_id: Optional run identifier
+
+    Returns:
+        State dict for workflow execution
+    """
+    stream_display = None
+    if show_details:
+        try:
+            from src.cli.stream_display import StreamDisplay
+            stream_display = StreamDisplay(console)
+        except ImportError:
+            pass  # stream_display not available, skip
+
+    state: dict[str, Any] = {
+        "workflow_inputs": inputs,
+        "tracker": tracker,
+        "config_loader": config_loader,
+        "tool_registry": tool_registry,
+        "workflow_id": workflow_id,
+        "show_details": show_details,
+        "detail_console": console if show_details else None,
+        "stream_callback": stream_display,
+    }
+    if workspace is not None:
+        state["workspace_root"] = workspace
+    if run_id is not None:
+        state["run_id"] = run_id
+    return state
+
+
 def _execute_workflow(
     compiled: Any,
     workflow_config: Any,
@@ -292,6 +358,8 @@ def _execute_workflow(
         show_details: Enable detailed output
         engine: Workflow engine instance
         verbose: Enable verbose output
+        workspace: Optional workspace root path
+        run_id: Optional run identifier
 
     Returns:
         Workflow execution result dict
@@ -300,34 +368,13 @@ def _execute_workflow(
         SystemExit: On execution failure or interruption
     """
     try:
-        # Set up streaming display for real-time LLM token visibility
-        stream_display = None
-        if show_details:
-            try:
-                from src.cli.stream_display import StreamDisplay
-                stream_display = StreamDisplay(console)
-            except ImportError:
-                pass  # stream_display not available, skip
-
-        state: dict[str, Any] = {
-            "workflow_inputs": inputs,
-            "tracker": tracker,
-            "config_loader": config_loader,
-            "tool_registry": tool_registry,
-            "workflow_id": workflow_id,
-            "show_details": show_details,
-            "detail_console": console if show_details else None,
-            "stream_callback": stream_display,
-        }
-        if workspace is not None:
-            state["workspace_root"] = workspace
-        if run_id is not None:
-            state["run_id"] = run_id
+        state = _build_workflow_state(
+            inputs, tracker, config_loader, tool_registry,
+            workflow_id, show_details, workspace, run_id
+        )
         return compiled.invoke(state)
     except WorkflowStageError as e:
-        console.print(
-            f"[red]Stage failure:[/red] {e.stage_name} — {e}"
-        )
+        console.print(f"[red]Stage failure:[/red] {e.stage_name} — {e}")
         if verbose:
             logger.exception("Stage failure halted workflow")
         _cleanup_tool_executor(engine)
@@ -455,13 +502,13 @@ def _handle_dashboard_keepalive(
 @click.option(
     "--output", "-o", type=click.Path(), help="Save results to JSON file"
 )
-@click.option("--db", type=click.Path(), help="Database path override")
+@click.option(CLI_OPTION_DB, type=click.Path(), help="Database path override")
 @click.option(
-    "--config-root",
-    default="configs",
+    CLI_OPTION_CONFIG_ROOT,
+    default=DEFAULT_CONFIG_ROOT,
     show_default=True,
-    envvar="MAF_CONFIG_ROOT",
-    help="Config directory root",
+    envvar=ENV_VAR_CONFIG_ROOT,
+    help=HELP_CONFIG_ROOT,
 )
 @click.option(
     "--show-details",
@@ -628,9 +675,10 @@ def _print_run_summary(
 
 
 @main.command()
+@click.option("--host", default=DEFAULT_HOST, show_default=True, envvar="MAF_HOST", help="Bind address")
 @click.option("--port", default=DEFAULT_DASHBOARD_PORT, show_default=True, help="Dashboard port")
 @click.option("--db", default=None, help="Database path")
-def dashboard(port: int, db: Optional[str]) -> None:
+def dashboard(host: str, port: int, db: Optional[str]) -> None:
     """Launch dashboard to browse past workflow executions."""
     try:
         import uvicorn
@@ -651,7 +699,7 @@ def dashboard(port: int, db: Optional[str]) -> None:
     db_path = db or DEFAULT_DB_PATH
     try:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        ExecutionTracker.ensure_database(f"sqlite:///{db_path}")
+        ExecutionTracker.ensure_database(f"{SQLITE_URL_PREFIX}{db_path}")
     except (OSError, PermissionError) as e:
         console.print(f"[red]Database error:[/red] {e}")
         raise SystemExit(1)
@@ -660,11 +708,14 @@ def dashboard(port: int, db: Optional[str]) -> None:
     event_bus = ObservabilityEventBus()
     app = create_app(backend=backend, event_bus=event_bus)
 
-    console.print(f"\n[cyan]MAF Dashboard[/cyan] running at http://localhost:{port}")
+    if host == DEFAULT_SERVER_HOST:  # nosec B104
+        console.print("[yellow]Warning:[/yellow] Binding to 0.0.0.0 exposes service on all network interfaces")
+
+    console.print(f"\n[cyan]MAF Dashboard[/cyan] running at http://{host}:{port}")
     console.print("Press Ctrl+C to stop\n")
 
     try:
-        uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")  # noqa: S104  # nosec B104
+        uvicorn.run(app, host=host, port=port, log_level="info")
     except KeyboardInterrupt:
         console.print("\n[yellow]Dashboard stopped[/yellow]")
 
@@ -673,17 +724,17 @@ def dashboard(port: int, db: Optional[str]) -> None:
 
 
 @main.command()
-@click.option("--host", default="0.0.0.0", show_default=True, envvar="MAF_HOST", help="Bind address")  # noqa: S104
-@click.option("--port", default=8420, show_default=True, envvar="MAF_PORT", help="Listen port")
+@click.option("--host", default=DEFAULT_HOST, show_default=True, envvar="MAF_HOST", help="Bind address")
+@click.option("--port", default=DEFAULT_DASHBOARD_PORT, show_default=True, envvar="MAF_PORT", help="Listen port")
 @click.option(
-    "--config-root",
-    default="configs",
+    CLI_OPTION_CONFIG_ROOT,
+    default=DEFAULT_CONFIG_ROOT,
     show_default=True,
-    envvar="MAF_CONFIG_ROOT",
-    help="Config directory root",
+    envvar=ENV_VAR_CONFIG_ROOT,
+    help=HELP_CONFIG_ROOT,
 )
 @click.option("--db", default=None, envvar="MAF_DB_PATH", help="Database path")
-@click.option("--workers", default=4, show_default=True, envvar="MAF_MAX_WORKERS", help="Max concurrent workflows")
+@click.option("--workers", default=DEFAULT_MAX_WORKERS, show_default=True, envvar="MAF_MAX_WORKERS", help="Max concurrent workflows")
 @click.option("--reload", "dev_reload", is_flag=True, help="Auto-reload on code changes (dev mode)")
 def serve(host: str, port: int, config_root: str, db: Optional[str], workers: int, dev_reload: bool) -> None:
     """Start MAF HTTP API server for programmatic workflow execution."""
@@ -706,7 +757,7 @@ def serve(host: str, port: int, config_root: str, db: Optional[str], workers: in
     db_path = db or DEFAULT_DB_PATH
     try:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        ExecutionTracker.ensure_database(f"sqlite:///{db_path}")
+        ExecutionTracker.ensure_database(f"{SQLITE_URL_PREFIX}{db_path}")
     except (OSError, PermissionError) as e:
         console.print(f"[red]Database error:[/red] {e}")
         raise SystemExit(1)
@@ -721,11 +772,14 @@ def serve(host: str, port: int, config_root: str, db: Optional[str], workers: in
         max_workers=workers,
     )
 
+    if host == DEFAULT_SERVER_HOST:  # nosec B104
+        console.print("[yellow]Warning:[/yellow] Binding to 0.0.0.0 exposes service on all network interfaces")
+
     console.print(f"\n[cyan]MAF Server[/cyan] listening on http://{host}:{port}")
     console.print("Press Ctrl+C to stop\n")
 
     try:
-        uvicorn.run(app, host=host, port=port, log_level="info")  # noqa: S104  # nosec B104
+        uvicorn.run(app, host=host, port=port, log_level="info")
     except KeyboardInterrupt:
         console.print("\n[yellow]Server stopped[/yellow]")
 
@@ -736,11 +790,11 @@ def serve(host: str, port: int, config_root: str, db: Optional[str], workers: in
 @main.command()
 @click.argument("workflow", type=click.Path(exists=True))
 @click.option(
-    "--config-root",
-    default="configs",
+    CLI_OPTION_CONFIG_ROOT,
+    default=DEFAULT_CONFIG_ROOT,
     show_default=True,
-    envvar="MAF_CONFIG_ROOT",
-    help="Config directory root",
+    envvar=ENV_VAR_CONFIG_ROOT,
+    help=HELP_CONFIG_ROOT,
 )
 @click.option(
     "--format",
@@ -805,7 +859,7 @@ def validate(workflow: str, config_root: str, output_format: str, check_refs: bo
                 continue
             if not agent_name:
                 continue
-            agent_path = Path(config_root) / "agents" / f"{agent_name}.yaml"
+            agent_path = Path(config_root) / "agents" / f"{agent_name}{YAML_FILE_EXTENSION}"
             if not agent_path.exists():
                 errors.append(f"Agent config not found: {agent_path}")
 
@@ -836,11 +890,11 @@ def config_group() -> None:
 
 @config_group.command("check")
 @click.option(
-    "--config-root",
-    default="configs",
+    CLI_OPTION_CONFIG_ROOT,
+    default=DEFAULT_CONFIG_ROOT,
     show_default=True,
-    envvar="MAF_CONFIG_ROOT",
-    help="Config directory root",
+    envvar=ENV_VAR_CONFIG_ROOT,
+    help=HELP_CONFIG_ROOT,
 )
 @click.option("--fail-on-warning", is_flag=True, help="Exit 1 on warnings too")
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output")
@@ -854,7 +908,7 @@ def config_check(config_root: str, fail_on_warning: bool, verbose: bool) -> None
         console.print(f"[red]Workflows directory not found:[/red] {workflows_dir}")
         raise SystemExit(1)
 
-    for wf_path in sorted(workflows_dir.glob("*.yaml")):
+    for wf_path in sorted(workflows_dir.glob(YAML_GLOB_PATTERN)):
         try:
             with open(wf_path) as f:
                 wf_config = yaml.safe_load(f)
@@ -912,7 +966,7 @@ def config_check(config_root: str, fail_on_warning: bool, verbose: bool) -> None
                 if not agent_name:
                     continue
 
-                agent_path = Path(config_root) / "agents" / f"{agent_name}.yaml"
+                agent_path = Path(config_root) / "agents" / f"{agent_name}{YAML_FILE_EXTENSION}"
                 if not agent_path.exists():
                     errors.append(f"{stage_ref}: agent not found — {agent_name}")
                     continue
@@ -927,7 +981,7 @@ def config_check(config_root: str, fail_on_warning: bool, verbose: bool) -> None
                             for tool_entry in agent_tools:
                                 tool_name = tool_entry if isinstance(tool_entry, str) else tool_entry.get("name", "")
                                 if tool_name:
-                                    tool_path = Path(config_root) / "tools" / f"{tool_name}.yaml"
+                                    tool_path = Path(config_root) / "tools" / f"{tool_name}{YAML_FILE_EXTENSION}"
                                     if not tool_path.exists():
                                         warnings.append(f"{agent_name}: tool config not found — {tool_name}")
                     except Exception as exc:  # noqa: BLE001
@@ -963,20 +1017,20 @@ def list_group() -> None:
 
 
 @list_group.command("workflows")
-@click.option("--config-root", default="configs", show_default=True, envvar="MAF_CONFIG_ROOT")
+@click.option(CLI_OPTION_CONFIG_ROOT, default=DEFAULT_CONFIG_ROOT, show_default=True, envvar=ENV_VAR_CONFIG_ROOT)
 def list_workflows(config_root: str) -> None:
     """List available workflow configs."""
     workflows_dir = Path(config_root) / "workflows"
     if not workflows_dir.exists():
-        console.print(f"[red]Directory not found:[/red] {workflows_dir}")
+        console.print(f"{ERROR_DIR_NOT_FOUND}{workflows_dir}")
         raise SystemExit(1)
 
     table = Table(title="Available Workflows")
-    table.add_column("Name", style="cyan")
-    table.add_column("Description")
+    table.add_column(COLUMN_NAME, style="cyan")
+    table.add_column(COLUMN_DESCRIPTION)
     table.add_column("Stages", style="yellow")
 
-    for path in sorted(workflows_dir.glob("*.yaml")):
+    for path in sorted(workflows_dir.glob(YAML_GLOB_PATTERN)):
         with open(path) as f:
             config = yaml.safe_load(f)
         if not config:
@@ -993,20 +1047,20 @@ def list_workflows(config_root: str) -> None:
 
 
 @list_group.command("agents")
-@click.option("--config-root", default="configs", show_default=True, envvar="MAF_CONFIG_ROOT")
+@click.option(CLI_OPTION_CONFIG_ROOT, default=DEFAULT_CONFIG_ROOT, show_default=True, envvar=ENV_VAR_CONFIG_ROOT)
 def list_agents(config_root: str) -> None:
     """List available agent configs."""
     agents_dir = Path(config_root) / "agents"
     if not agents_dir.exists():
-        console.print(f"[red]Directory not found:[/red] {agents_dir}")
+        console.print(f"{ERROR_DIR_NOT_FOUND}{agents_dir}")
         raise SystemExit(1)
 
     table = Table(title="Available Agents")
-    table.add_column("Name", style="cyan")
-    table.add_column("Description")
+    table.add_column(COLUMN_NAME, style="cyan")
+    table.add_column(COLUMN_DESCRIPTION)
     table.add_column("Type", style="yellow")
 
-    for path in sorted(agents_dir.glob("*.yaml")):
+    for path in sorted(agents_dir.glob(YAML_GLOB_PATTERN)):
         with open(path) as f:
             config = yaml.safe_load(f)
         if not config:
@@ -1022,20 +1076,20 @@ def list_agents(config_root: str) -> None:
 
 
 @list_group.command("stages")
-@click.option("--config-root", default="configs", show_default=True, envvar="MAF_CONFIG_ROOT")
+@click.option(CLI_OPTION_CONFIG_ROOT, default=DEFAULT_CONFIG_ROOT, show_default=True, envvar=ENV_VAR_CONFIG_ROOT)
 def list_stages(config_root: str) -> None:
     """List available stage configs."""
     stages_dir = Path(config_root) / "stages"
     if not stages_dir.exists():
-        console.print(f"[red]Directory not found:[/red] {stages_dir}")
+        console.print(f"{ERROR_DIR_NOT_FOUND}{stages_dir}")
         raise SystemExit(1)
 
     table = Table(title="Available Stages")
-    table.add_column("Name", style="cyan")
-    table.add_column("Description")
+    table.add_column(COLUMN_NAME, style="cyan")
+    table.add_column(COLUMN_DESCRIPTION)
     table.add_column("Agents", style="yellow")
 
-    for path in sorted(stages_dir.glob("*.yaml")):
+    for path in sorted(stages_dir.glob(YAML_GLOB_PATTERN)):
         with open(path) as f:
             config = yaml.safe_load(f)
         if not config:

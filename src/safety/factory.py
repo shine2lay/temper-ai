@@ -25,6 +25,7 @@ from src.safety.policies.rate_limit_policy import TokenBucketRateLimitPolicy
 from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
 from src.safety.policy_registry import PolicyRegistry
 from src.safety.rate_limiter import WindowRateLimitPolicy
+from src.safety.constants import ENV_DEVELOPMENT, ENV_KEY
 from src.safety.rollback import RollbackManager
 from src.safety.secret_detection import SecretDetectionPolicy
 from src.safety.stub_policies import ApprovalWorkflowPolicy, CircuitBreakerPolicy
@@ -131,8 +132,8 @@ def load_safety_config(config_path: Optional[str] = None, environment: str = "de
         return _get_default_config()
 
     # Apply environment overrides
-    if 'environments' in loaded_config and environment in loaded_config['environments']:
-        env_config = loaded_config['environments'][environment]
+    if ENV_KEY in loaded_config and environment in loaded_config[ENV_KEY]:
+        env_config = loaded_config[ENV_KEY][environment]
         if isinstance(env_config, dict):
             loaded_config = _merge_configs(loaded_config, env_config)
 
@@ -307,7 +308,7 @@ def create_safety_stack(
             )
         else:
             logger.info("Created NoOpApprover approval workflow (auto-approve for dev)")
-    elif environment == "development":
+    elif environment == ENV_DEVELOPMENT:
         # Development default: auto-approve
         approval_workflow = NoOpApprover()
         logger.info("Created NoOpApprover approval workflow (auto-approve for dev)")

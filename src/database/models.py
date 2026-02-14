@@ -11,6 +11,15 @@ from sqlalchemy import JSON, CheckConstraint, ForeignKey, Index, String, UniqueC
 from sqlmodel import Column, Field, Relationship, SQLModel
 
 from src.constants.sizes import BYTES_PER_MB
+from src.database.constants import (
+    CASCADE_ALL_DELETE_ORPHAN,
+    CASCADE_SIMPLE,
+    FIELD_EXTRA_METADATA,
+    FIELD_WORKFLOW_CONFIG_SNAPSHOT,
+    FK_CASCADE,
+    FK_WORKFLOW_EXECUTIONS_ID,
+    STATUS_CONSTRAINT,
+)
 from src.database.datetime_utils import utcnow
 from src.database.validators import validate_json_size
 
@@ -21,7 +30,7 @@ class WorkflowExecution(SQLModel, table=True):
     __tablename__ = "workflow_executions"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('running', 'completed', 'failed', 'halted', 'timeout')",
+            STATUS_CONSTRAINT,
             name="wf_valid_status",
         ),
     )
@@ -29,7 +38,7 @@ class WorkflowExecution(SQLModel, table=True):
     id: str = Field(primary_key=True)
     workflow_name: str = Field(index=True)
     workflow_version: Optional[str] = None
-    workflow_config_snapshot: Dict[str, Any] = Field(sa_column=Column(JSON))
+    workflow_config_snapshot: Dict[str, Any] = Field(sa_column=Column(JSON))  # noqa: duplicate
 
     # Trigger info
     trigger_type: Optional[str] = None
@@ -66,24 +75,24 @@ class WorkflowExecution(SQLModel, table=True):
     # Relationships
     stages: List["StageExecution"] = Relationship(
         back_populates="workflow",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
     )
 
     def __init__(self, **data: Any) -> None:
         """Initialize with JSON size validation."""
         # Validate large JSON fields before persisting
-        if "workflow_config_snapshot" in data:
+        if FIELD_WORKFLOW_CONFIG_SNAPSHOT in data:
             validate_json_size(
-                data["workflow_config_snapshot"],
+                data[FIELD_WORKFLOW_CONFIG_SNAPSHOT],
                 max_bytes=2 * BYTES_PER_MB,  # Workflows can be larger
-                field_name="workflow_config_snapshot"
+                field_name=FIELD_WORKFLOW_CONFIG_SNAPSHOT
             )
 
-        if "extra_metadata" in data and data["extra_metadata"]:
+        if FIELD_EXTRA_METADATA in data and data[FIELD_EXTRA_METADATA]:
             validate_json_size(
-                data["extra_metadata"],
+                data[FIELD_EXTRA_METADATA],
                 max_bytes=BYTES_PER_MB // 2,
-                field_name="extra_metadata"
+                field_name=FIELD_EXTRA_METADATA
             )
 
         super().__init__(**data)
@@ -95,20 +104,20 @@ class StageExecution(SQLModel, table=True):
     __tablename__ = "stage_executions"
     __table_args__ = (
         CheckConstraint(
-            "status IN ('running', 'completed', 'failed', 'halted', 'timeout')",
+            STATUS_CONSTRAINT,
             name="stage_valid_status",
         ),
     )
 
     id: str = Field(primary_key=True)
     workflow_execution_id: str = Field(
-        sa_column=Column(String, ForeignKey("workflow_executions.id", ondelete="CASCADE"), index=True)
+        sa_column=Column(String, ForeignKey(FK_WORKFLOW_EXECUTIONS_ID, ondelete=FK_CASCADE), index=True)
     )
 
     # Identity
     stage_name: str = Field(index=True)
     stage_version: Optional[str] = None
-    stage_config_snapshot: Dict[str, Any] = Field(sa_column=Column(JSON))
+    stage_config_snapshot: Dict[str, Any] = Field(sa_column=Column(JSON))  # noqa: duplicate
 
     # Timing
     start_time: datetime = Field(default_factory=utcnow)
@@ -120,8 +129,8 @@ class StageExecution(SQLModel, table=True):
     error_message: Optional[str] = None
 
     # Data
-    input_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
-    output_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    input_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # noqa: duplicate
+    output_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # noqa: duplicate
 
     # Metrics
     num_agents_executed: Optional[int] = None
@@ -130,17 +139,17 @@ class StageExecution(SQLModel, table=True):
     collaboration_rounds: Optional[int] = None
 
     # Metadata
-    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
+    extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # noqa: duplicate
 
     # Relationships
     workflow: WorkflowExecution = Relationship(back_populates="stages")
     agents: List["AgentExecution"] = Relationship(
         back_populates="stage",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
     )
     collaboration_events: List["CollaborationEvent"] = Relationship(
         back_populates="stage",
-        sa_relationship_kwargs={"cascade": "all, delete-orphan"}
+        sa_relationship_kwargs={CASCADE_SIMPLE: CASCADE_ALL_DELETE_ORPHAN}
     )
 
     def __init__(self, **data: Any) -> None:

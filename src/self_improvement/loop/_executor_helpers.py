@@ -7,6 +7,12 @@ import uuid
 from typing import Any
 
 from src.constants.probabilities import PROB_VERY_HIGH
+from src.self_improvement.constants import (
+    FIELD_AGENT_NAME,
+    FIELD_CONTROL_CONFIG,
+    FIELD_EXPERIMENT_ID,
+    MODULE_SELF_IMPROVEMENT,
+)
 from src.self_improvement.data_models import StrategyOutcome
 
 from .models import ExperimentPhaseResult, StrategyResult
@@ -36,9 +42,9 @@ def track_winner_experiment_outcome(
         tracker.track_decision_outcome(
             decision_type="experiment_selection",
             decision_data={
-                "agent_name": agent_name,
-                "experiment_id": experiment_id,
-                "control_config": strategy_result.control_config.model_dump() if hasattr(strategy_result.control_config, 'model_dump') else dict(strategy_result.control_config),
+                FIELD_AGENT_NAME: agent_name,
+                FIELD_EXPERIMENT_ID: experiment_id,
+                FIELD_CONTROL_CONFIG: strategy_result.control_config.model_dump() if hasattr(strategy_result.control_config, 'model_dump') else dict(strategy_result.control_config),
                 "winner_variant_id": winner.variant_id,
                 "winner_config": winner.winning_config.model_dump() if hasattr(winner.winning_config, 'model_dump') else dict(winner.winning_config),
                 "strategy": strategy_result.strategy_name,
@@ -54,7 +60,7 @@ def track_winner_experiment_outcome(
             },
             lessons_learned=f"Variant {winner.variant_id} outperformed control with {winner.quality_improvement:.1f}% quality improvement",
             should_repeat=winner.is_statistically_significant,
-            tags=["self_improvement", "experiment", strategy_result.strategy_name],
+            tags=[MODULE_SELF_IMPROVEMENT, "experiment", strategy_result.strategy_name],
             validation_method="statistical_analysis",
         )
     except Exception as e:

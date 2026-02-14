@@ -7,6 +7,7 @@ short-circuit evaluation on critical violations.
 from typing import Any, Dict, List
 
 from src.constants.limits import MAX_TEXT_LENGTH, THRESHOLD_LARGE_COUNT, THRESHOLD_VERY_LARGE_COUNT
+from src.safety.constants import SHORT_CIRCUIT_KEY
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 
@@ -189,7 +190,7 @@ class BaseSafetyPolicy(SafetyPolicy):
             metadata[f"child_{child.name}_{key}"] = value
 
         if child_result.has_critical_violations():
-            metadata["short_circuit"] = True
+            metadata[SHORT_CIRCUIT_KEY] = True
             metadata["short_circuit_policy"] = child.name
             return True
         return False
@@ -262,7 +263,7 @@ class BaseSafetyPolicy(SafetyPolicy):
             if self._merge_child_result(child, child_result, violations, metadata):
                 break
 
-        if not metadata.get("short_circuit", False):
+        if not metadata.get(SHORT_CIRCUIT_KEY, False):
             own_result = self._validate_impl(action, context)
             self._merge_own_result(own_result, violations, metadata)
 
@@ -336,7 +337,7 @@ class BaseSafetyPolicy(SafetyPolicy):
             if self._merge_child_result(child, child_result, violations, metadata):
                 break
 
-        if not metadata.get("short_circuit", False):
+        if not metadata.get(SHORT_CIRCUIT_KEY, False):
             own_result = await self._validate_async_impl(action, context)
             self._merge_own_result(own_result, violations, metadata)
 

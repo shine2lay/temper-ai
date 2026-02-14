@@ -54,7 +54,57 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 DEFAULT_SEARCH_TIMEOUT = 30  # seconds
 MAX_SEARCH_RESULTS = 20
+DEFAULT_SEARCH_MAX_RESULTS = 5  # Default results returned
+MAX_SEARCH_QUERY_LENGTH = 2000  # SearXNG max query length
+TAVILY_MAX_QUERY_LENGTH = 400  # Tavily API max query length
 TAVILY_RATE_LIMIT = 5  # requests per minute
 SEARXNG_RATE_LIMIT = 10  # requests per minute
 TAVILY_DEFAULT_BASE_URL = "https://api.tavily.com"
 SEARXNG_DEFAULT_BASE_URL = "http://localhost:8888"
+
+# ============================================================================
+# HTTP Status Codes (for API client error handling)
+# ============================================================================
+
+HTTP_STATUS_UNAUTHORIZED = 401
+HTTP_STATUS_TOO_MANY_REQUESTS = 429
+
+# ============================================================================
+# Error Formatting
+# ============================================================================
+
+ERROR_RESPONSE_TEXT_MAX_LENGTH = 200  # Max chars of error response text to include
+
+# ============================================================================
+# Tool Execution & Rollback
+# ============================================================================
+
+ROLLBACK_TRIGGER_AUTO = "auto"
+CONTEXT_KEY_AGENT_ID = "agent_id"
+
+# ============================================================================
+# Tool Registry
+# ============================================================================
+
+TOOL_ERROR_PREFIX = "Tool '"
+
+# ============================================================================
+# JSON Schema Field Names (for tool parameter definitions)
+# ============================================================================
+
+SCHEMA_FIELD_TYPE = "type"
+SCHEMA_FIELD_DESCRIPTION = "description"
+SCHEMA_FIELD_DEFAULT = "default"
+SCHEMA_TYPE_STRING = "string"
+
+# ============================================================================
+# File Operations
+# ============================================================================
+
+FILE_ENCODING_UTF8 = "utf-8"
+
+# ============================================================================
+# SSRF Protection
+# ============================================================================
+
+SSRF_ERROR_SUFFIX = " is forbidden (SSRF protection)"

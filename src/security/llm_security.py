@@ -28,6 +28,12 @@ from src.constants.limits import (
     MAX_SHORT_STRING_LENGTH,
     SMALL_ITEM_LIMIT,
 )
+from src.security.constants import (
+    DETECTION_PREFIX,
+    SEVERITY_HIGH,
+    SEVERITY_MEDIUM,
+    ThreatTypes,
+)
 from src.constants.sizes import SIZE_10KB, SIZE_100KB
 
 # Entropy threshold for detecting obfuscated attacks
@@ -168,50 +174,50 @@ class PromptInjectionDetector:
         # Multiple patterns per attack type to maintain detection coverage
         self.injection_patterns = [
             # Direct command injection - whitespace separators (most common)
-            (r"ignore\s+all\s+previous\s+(?:instructions|steps|context|prompts)", "command injection"),
-            (r"ignore\s+previous\s+(?:\w+\s+)?(?:instructions|steps|context|prompts)", "command injection"),
-            (r"disregard\s+all\s+(?:previous|prior)\s+(?:instructions|prompts|context|steps)", "command injection"),
-            (r"disregard\s+(?:previous|prior)\s+(?:\w+\s+)?(?:instructions|prompts|context|steps)", "command injection"),
-            (r"forget\s+all\s+(?:previous|prior)\s+(?:instructions|context|steps)", "command injection"),
-            (r"forget\s+(?:previous|prior)\s+(?:\w+\s+)?(?:instructions|context|steps)", "command injection"),
-            (r"override\s+your\s+(?:training|instructions|rules|programming)", "command injection"),
-            (r"override\s+(?:training|instructions|rules|programming)", "command injection"),
+            (r"ignore\s+all\s+previous\s+(?:instructions|steps|context|prompts)", ThreatTypes.COMMAND_INJECTION),
+            (r"ignore\s+previous\s+(?:\w+\s+)?(?:instructions|steps|context|prompts)", ThreatTypes.COMMAND_INJECTION),
+            (r"disregard\s+all\s+(?:previous|prior)\s+(?:instructions|prompts|context|steps)", ThreatTypes.COMMAND_INJECTION),
+            (r"disregard\s+(?:previous|prior)\s+(?:\w+\s+)?(?:instructions|prompts|context|steps)", ThreatTypes.COMMAND_INJECTION),
+            (r"forget\s+all\s+(?:previous|prior)\s+(?:instructions|context|steps)", ThreatTypes.COMMAND_INJECTION),
+            (r"forget\s+(?:previous|prior)\s+(?:\w+\s+)?(?:instructions|context|steps)", ThreatTypes.COMMAND_INJECTION),
+            (r"override\s+your\s+(?:training|instructions|rules|programming)", ThreatTypes.COMMAND_INJECTION),
+            (r"override\s+(?:training|instructions|rules|programming)", ThreatTypes.COMMAND_INJECTION),
 
             # Direct command injection - alternative separators (tokenization exploits)
             # Limited character class [._-] without nested quantifiers
-            (r"ignore[._-]+all[._-]+previous[._-]+instructions", "command injection"),
-            (r"ignore[._-]+previous[._-]+instructions", "command injection"),
-            (r"disregard[._-]+all[._-]+(?:previous|prior)[._-]+instructions", "command injection"),
-            (r"disregard[._-]+(?:previous|prior)[._-]+instructions", "command injection"),
+            (r"ignore[._-]+all[._-]+previous[._-]+instructions", ThreatTypes.COMMAND_INJECTION),
+            (r"ignore[._-]+previous[._-]+instructions", ThreatTypes.COMMAND_INJECTION),
+            (r"disregard[._-]+all[._-]+(?:previous|prior)[._-]+instructions", ThreatTypes.COMMAND_INJECTION),
+            (r"disregard[._-]+(?:previous|prior)[._-]+instructions", ThreatTypes.COMMAND_INJECTION),
 
             # Role manipulation
-            (r"you\s+are\s+now\s+(?:a|an)\s+", "role manipulation"),
-            (r"act\s+as\s+(?:a|an)\s+", "role manipulation"),
-            (r"pretend\s+(?:you\s+are|to\s+be)\s+", "role manipulation"),
-            (r"new\s+(?:role|persona|character)\s*:", "role manipulation"),
+            (r"you\s+are\s+now\s+(?:a|an)\s+", ThreatTypes.ROLE_MANIPULATION),
+            (r"act\s+as\s+(?:a|an)\s+", ThreatTypes.ROLE_MANIPULATION),
+            (r"pretend\s+(?:you\s+are|to\s+be)\s+", ThreatTypes.ROLE_MANIPULATION),
+            (r"new\s+(?:role|persona|character)\s*:", ThreatTypes.ROLE_MANIPULATION),
 
             # System prompt extraction
-            (r"(?:show|reveal|display|print)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?(?:prompt|instructions)", "system prompt leakage"),
-            (r"what\s+(?:is|are)\s+your\s+(?:system\s+)?(?:prompt|instructions)", "system prompt leakage"),
-            (r"repeat\s+(?:your\s+)?(?:instructions|prompt|everything\s+above)", "system prompt leakage"),
-            (r"(?:translate|summarize)\s+(?:your\s+)?(?:instructions|prompt|what\s+you\s+were\s+told)", "system prompt leakage"),
-            (r"what\s+(?:are\s+)?(?:the\s+)?rules\s+you", "system prompt leakage"),
-            (r"output\s+your\s+(?:initialization|initial)\s+message", "system prompt leakage"),
+            (r"(?:show|reveal|display|print)\s+(?:me\s+)?(?:your\s+)?(?:system\s+)?(?:prompt|instructions)", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
+            (r"what\s+(?:is|are)\s+your\s+(?:system\s+)?(?:prompt|instructions)", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
+            (r"repeat\s+(?:your\s+)?(?:instructions|prompt|everything\s+above)", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
+            (r"(?:translate|summarize)\s+(?:your\s+)?(?:instructions|prompt|what\s+you\s+were\s+told)", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
+            (r"what\s+(?:are\s+)?(?:the\s+)?rules\s+you", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
+            (r"output\s+your\s+(?:initialization|initial)\s+message", ThreatTypes.SYSTEM_PROMPT_LEAKAGE),
 
             # Delimiter injection
-            (r"</?\s*(?:system|user|assistant|instructions?)\s*>", "delimiter injection"),
-            (r"\[/?\s*(?:SYSTEM|USER|ASSISTANT|INSTRUCTIONS?)\s*\]", "delimiter injection"),
-            (r"(?:System|User|Assistant)\s*:", "delimiter injection"),
+            (r"</?\s*(?:system|user|assistant|instructions?)\s*>", ThreatTypes.DELIMITER_INJECTION),
+            (r"\[/?\s*(?:SYSTEM|USER|ASSISTANT|INSTRUCTIONS?)\s*\]", ThreatTypes.DELIMITER_INJECTION),
+            (r"(?:System|User|Assistant)\s*:", ThreatTypes.DELIMITER_INJECTION),
 
             # Encoding bypass attempts - length-limited to prevent ReDoS
-            (r"(?:decode|execute|run)\s+(?:and\s+)?(?:execute|run)?\s*:\s*[a-zA-Z0-9+/=]{20,200}", "encoding bypass"),
-            (r"base64|hex\s+encoded|rot13", "encoding bypass"),
-            (r"\\x[0-9a-f]{2}", "encoding bypass"),  # hex encoding detection
+            (r"(?:decode|execute|run)\s+(?:and\s+)?(?:execute|run)?\s*:\s*[a-zA-Z0-9+/=]{20,200}", ThreatTypes.ENCODING_BYPASS),
+            (r"base64|hex\s+encoded|rot13", ThreatTypes.ENCODING_BYPASS),
+            (r"\\x[0-9a-f]{2}", ThreatTypes.ENCODING_BYPASS),  # hex encoding detection
 
             # DAN/Jailbreak patterns
-            (r"(?:do\s+anything\s+now|DAN\s+mode)", "jailbreak attempt"),
-            (r"developer\s+mode", "jailbreak attempt"),
-            (r"evil\s+mode", "jailbreak attempt"),
+            (r"(?:do\s+anything\s+now|DAN\s+mode)", ThreatTypes.JAILBREAK_ATTEMPT),
+            (r"developer\s+mode", ThreatTypes.JAILBREAK_ATTEMPT),
+            (r"evil\s+mode", ThreatTypes.JAILBREAK_ATTEMPT),
         ]
 
         # Compile patterns for performance
@@ -242,7 +248,7 @@ class PromptInjectionDetector:
         if len(prompt) > self.MAX_INPUT_LENGTH:
             violation = SecurityViolation(
                 violation_type="oversized_input",
-                severity="high",
+                severity=SEVERITY_HIGH,
                 description=f"Input exceeds maximum length ({self.MAX_INPUT_LENGTH} chars)",
                 evidence=f"Length: {len(prompt)}"
             )
@@ -264,8 +270,8 @@ class PromptInjectionDetector:
 
                 violation = SecurityViolation(
                     violation_type="prompt_injection",
-                    severity="high",
-                    description=f"Detected {attack_type}",
+                    severity=SEVERITY_HIGH,
+                    description=f"{DETECTION_PREFIX}{attack_type}",
                     evidence=evidence
                 )
                 violations.append(violation)
@@ -276,7 +282,7 @@ class PromptInjectionDetector:
         if detected_keywords:
             violation = SecurityViolation(
                 violation_type="high_risk_keywords",
-                severity="medium",
+                severity=SEVERITY_MEDIUM,
                 description="High-risk keywords detected",
                 evidence=", ".join(detected_keywords[:SMALL_ITEM_LIMIT])
             )

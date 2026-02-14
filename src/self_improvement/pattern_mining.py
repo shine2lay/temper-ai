@@ -14,6 +14,10 @@ from src.constants.durations import DAYS_90
 from src.constants.limits import THRESHOLD_MEDIUM_COUNT
 from src.constants.probabilities import PROB_MEDIUM_HIGH, PROB_VERY_HIGH
 from src.self_improvement.constants import (
+    FIELD_AGENT_NAMES,
+    FIELD_PROBLEM_TYPE,
+    FIELD_STRATEGY_NAME,
+    FIELD_WIN_RATE,
     MIN_PATTERN_FREQUENCY,
     PROMPT_IMPROVEMENT_THRESHOLD,
 )
@@ -158,12 +162,12 @@ class PatternMiner:
                 support=candidate.sample_count,
                 confidence=confidence,
                 evidence={
-                    "strategy_name": candidate.strategy_name,
-                    "problem_type": candidate.problem_type,
-                    "win_rate": candidate.win_rate,
+                    FIELD_STRATEGY_NAME: candidate.strategy_name,
+                    FIELD_PROBLEM_TYPE: candidate.problem_type,
+                    FIELD_WIN_RATE: candidate.win_rate,
                     "avg_improvement": candidate.avg_improvement,
                     "sample_count": candidate.sample_count,
-                    "agent_names": candidate.agent_names,
+                    FIELD_AGENT_NAMES: candidate.agent_names,
                 }
             )
 
@@ -217,13 +221,13 @@ class PatternMiner:
         rows = self.learning_store.db.query(query, tuple(params))
 
         for row in rows:
-            agent_names = row["agent_names"].split(",") if row["agent_names"] else []
+            agent_names = row[FIELD_AGENT_NAMES].split(",") if row[FIELD_AGENT_NAMES] else []
 
             candidates.append(PatternCandidate(
-                strategy_name=row["strategy_name"],
-                problem_type=row["problem_type"],
+                strategy_name=row[FIELD_STRATEGY_NAME],
+                problem_type=row[FIELD_PROBLEM_TYPE],
                 sample_count=row["sample_count"],
-                win_rate=row["win_rate"],
+                win_rate=row[FIELD_WIN_RATE],
                 avg_improvement=row["avg_improvement"],
                 agent_names=agent_names,
             ))

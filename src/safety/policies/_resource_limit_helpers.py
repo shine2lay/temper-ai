@@ -13,6 +13,7 @@ from src.constants.durations import SLEEP_VERY_SHORT
 from src.constants.limits import PERCENT_20
 from src.constants.probabilities import FRACTION_QUARTER
 from src.constants.sizes import BYTES_PER_KB
+from src.safety.constants import PERCENT_KEY
 from src.safety.interfaces import SafetyViolation, ViolationSeverity
 
 # Constants (duplicated from resource_limit_policy to avoid circular import)
@@ -333,7 +334,7 @@ def get_current_usage() -> Dict[str, Any]:
             "system_total": system_memory.total,
             "system_available": system_memory.available,
             "system_used": system_memory.used,
-            "percent": system_memory.percent
+            PERCENT_KEY: system_memory.percent
         }
     except (psutil.Error, OSError):
         usage["memory"] = None
@@ -344,7 +345,7 @@ def get_current_usage() -> Dict[str, Any]:
             "total": disk_usage.total,
             "used": disk_usage.used,
             "free": disk_usage.free,
-            "percent": disk_usage.percent
+            PERCENT_KEY: disk_usage.percent
         }
     except (psutil.Error, OSError):
         usage["disk"] = None
@@ -352,7 +353,7 @@ def get_current_usage() -> Dict[str, Any]:
     try:
         cpu_percent = psutil.cpu_percent(interval=CPU_SAMPLE_INTERVAL_SECONDS)
         usage["cpu"] = {
-            "percent": cpu_percent,
+            PERCENT_KEY: cpu_percent,
             "count": psutil.cpu_count()
         }
     except (psutil.Error, OSError):

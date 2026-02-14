@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from src.constants.probabilities import PROB_MEDIUM, PROB_VERY_HIGH_PLUS
 from src.strategies.base import AgentOutput, Conflict, SynthesisResult
+from src.strategies.constants import FORMAT_FLOAT_3_DECIMAL
 
 logger = logging.getLogger(__name__)
 
@@ -57,13 +58,13 @@ def get_merit_weights(
                     weights[agent_name] = merit_score.expertise_score
                     logger.debug(
                         f"Merit weight for {agent_name} in {domain}: "
-                        f"{merit_score.expertise_score:.3f}"
+                        f"{merit_score.expertise_score:{FORMAT_FLOAT_3_DECIMAL}}"
                     )
                 elif merit_score and merit_score.success_rate is not None:
                     weights[agent_name] = merit_score.success_rate
                     logger.debug(
                         f"Merit weight for {agent_name} (success_rate): "
-                        f"{merit_score.success_rate:.3f}"
+                        f"{merit_score.success_rate:{FORMAT_FLOAT_3_DECIMAL}}"
                     )
                 else:
                     weights[agent_name] = PROB_MEDIUM
@@ -356,7 +357,7 @@ def calculate_semantic_similarity(
         if similarity >= PROB_VERY_HIGH_PLUS:
             similar_count += 1
             logger.debug(
-                f"Agent {agent} semantically similar: {similarity:.3f} "
+                f"Agent {agent} semantically similar: {similarity:{FORMAT_FLOAT_3_DECIMAL}} "
                 f"(prev: '{prev_text[:MAX_TEXT_PREVIEW_LENGTH]}...', curr: '{curr_text[:MAX_TEXT_PREVIEW_LENGTH]}...')"
             )
 

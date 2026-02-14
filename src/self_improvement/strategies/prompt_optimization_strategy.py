@@ -8,6 +8,13 @@ import copy
 from typing import Dict, List
 
 from src.constants.limits import MULTIPLIER_SMALL, SMALL_ITEM_LIMIT
+from src.self_improvement.constants import (
+    PROMPT_LOCATION_INLINE,
+    PROMPT_LOCATION_SYSTEM,
+    STRATEGY_CHANGE,
+    STRATEGY_TYPE,
+    VARIANT_TYPE,
+)
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
     LearnedPattern,
@@ -98,27 +105,27 @@ Structure your response as follows:
             List of 2-4 configuration variants
         """
         variants = []
-        current_system = current_config.prompt.get("system", "")
-        current_inline = current_config.prompt.get("inline", "")
+        current_system = current_config.prompt.get(PROMPT_LOCATION_SYSTEM, "")
+        current_inline = current_config.prompt.get(PROMPT_LOCATION_INLINE, "")
 
         # Variant 1: Add chain-of-thought reasoning guide
         if self.COT_GUIDE not in current_inline:
             variant_cot = copy.deepcopy(current_config)
-            variant_cot.prompt["inline"] = current_inline + "\n\n" + self.COT_GUIDE
-            variant_cot.extra_metadata["strategy"] = self.name
-            variant_cot.extra_metadata["variant_type"] = "chain_of_thought"
-            variant_cot.extra_metadata["change"] = "Added chain-of-thought reasoning guide"
+            variant_cot.prompt[PROMPT_LOCATION_INLINE] = current_inline + "\n\n" + self.COT_GUIDE
+            variant_cot.extra_metadata[STRATEGY_TYPE] = self.name
+            variant_cot.extra_metadata[VARIANT_TYPE] = "chain_of_thought"
+            variant_cot.extra_metadata[STRATEGY_CHANGE] = "Added chain-of-thought reasoning guide"
             variants.append(variant_cot)
 
         # Variant 2: Enhance system prompt with specificity guide
         if self.SPECIFICITY_GUIDE not in current_system:
             variant_specificity = copy.deepcopy(current_config)
-            variant_specificity.prompt["system"] = (
+            variant_specificity.prompt[PROMPT_LOCATION_SYSTEM] = (
                 current_system + "\n\n" + self.SPECIFICITY_GUIDE
             )
-            variant_specificity.extra_metadata["strategy"] = self.name
-            variant_specificity.extra_metadata["variant_type"] = "specificity"
-            variant_specificity.extra_metadata["change"] = (
+            variant_specificity.extra_metadata[STRATEGY_TYPE] = self.name
+            variant_specificity.extra_metadata[VARIANT_TYPE] = "specificity"
+            variant_specificity.extra_metadata[STRATEGY_CHANGE] = (
                 "Enhanced system prompt with specificity guide"
             )
             variants.append(variant_specificity)
@@ -126,10 +133,10 @@ Structure your response as follows:
         # Variant 3: Add structured output format guide
         if self.FORMAT_GUIDE not in current_inline:
             variant_format = copy.deepcopy(current_config)
-            variant_format.prompt["inline"] = current_inline + "\n\n" + self.FORMAT_GUIDE
-            variant_format.extra_metadata["strategy"] = self.name
-            variant_format.extra_metadata["variant_type"] = "output_format"
-            variant_format.extra_metadata["change"] = "Added structured output format guide"
+            variant_format.prompt[PROMPT_LOCATION_INLINE] = current_inline + "\n\n" + self.FORMAT_GUIDE
+            variant_format.extra_metadata[STRATEGY_TYPE] = self.name
+            variant_format.extra_metadata[VARIANT_TYPE] = "output_format"
+            variant_format.extra_metadata[STRATEGY_CHANGE] = "Added structured output format guide"
             variants.append(variant_format)
 
         # Variant 4: Combined approach (specificity + format)
@@ -140,15 +147,15 @@ Structure your response as follows:
             and self.FORMAT_GUIDE not in current_inline
         ):
             variant_combined = copy.deepcopy(current_config)
-            variant_combined.prompt["system"] = (
+            variant_combined.prompt[PROMPT_LOCATION_SYSTEM] = (
                 current_system + "\n\n" + self.SPECIFICITY_GUIDE
             )
-            variant_combined.prompt["inline"] = (
+            variant_combined.prompt[PROMPT_LOCATION_INLINE] = (
                 current_inline + "\n\n" + self.FORMAT_GUIDE
             )
-            variant_combined.extra_metadata["strategy"] = self.name
-            variant_combined.extra_metadata["variant_type"] = "combined"
-            variant_combined.extra_metadata["change"] = (
+            variant_combined.extra_metadata[STRATEGY_TYPE] = self.name
+            variant_combined.extra_metadata[VARIANT_TYPE] = "combined"
+            variant_combined.extra_metadata[STRATEGY_CHANGE] = (
                 "Enhanced system prompt and added output format guide"
             )
             variants.append(variant_combined)

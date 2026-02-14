@@ -1,5 +1,16 @@
 """Secret Detection Safety Policy.
 
+From src.safety.constants imports for config keys.
+"""
+
+from src.safety.constants import (
+    ALLOW_TEST_SECRETS_KEY,
+    ENTROPY_THRESHOLD_GENERIC_KEY,
+    ENTROPY_THRESHOLD_KEY,
+)
+
+"""Original docstring:
+
 Detects secrets (API keys, passwords, tokens) in code, configurations, and data
 to prevent accidental exposure. Uses pattern matching and entropy analysis to
 identify potential secrets.
@@ -167,7 +178,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
         # Validate entropy thresholds (float, 0.0 to 8.0)
         # Shannon entropy for bytes is max 8.0 bits per character
         self.entropy_threshold = self._validate_float_range(
-            self.config.get("entropy_threshold", DEFAULT_ENTROPY_THRESHOLD),
+            self.config.get(ENTROPY_THRESHOLD_KEY,DEFAULT_ENTROPY_THRESHOLD),
             "entropy_threshold",
             min_value=MIN_ENTROPY_VALUE,
             max_value=MAX_SHANNON_ENTROPY
@@ -175,7 +186,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
         # SECURITY: Minimum entropy for generic patterns to reduce false positives
         self.entropy_threshold_generic = self._validate_float_range(
-            self.config.get("entropy_threshold_generic", DEFAULT_ENTROPY_THRESHOLD_GENERIC),
+            self.config.get(ENTROPY_THRESHOLD_GENERIC_KEY,DEFAULT_ENTROPY_THRESHOLD_GENERIC),
             "entropy_threshold_generic",
             min_value=MIN_ENTROPY_VALUE,
             max_value=MAX_SHANNON_ENTROPY
@@ -201,7 +212,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
         # Validate allow_test_secrets (boolean)
         self.allow_test_secrets = self._validate_boolean(
-            self.config.get("allow_test_secrets", True),
+            self.config.get(ALLOW_TEST_SECRETS_KEY,True),
             "allow_test_secrets",
             default=True
         )

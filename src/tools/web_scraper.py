@@ -50,6 +50,7 @@ from src.tools.constants import (
 from src.tools.constants import (
     USER_AGENT_MAX_LENGTH as _USER_AGENT_MAX_LENGTH,
 )
+from src.tools.constants import SSRF_ERROR_SUFFIX
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +235,7 @@ def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optiona
 
     # Block known dangerous hostnames (defense-in-depth: catch before DNS)
     if hostname.lower() in [h.lower() for h in BLOCKED_HOSTS]:
-        return False, f"Access to {hostname} is forbidden (SSRF protection)"
+        return False, f"Access to {hostname}{SSRF_ERROR_SUFFIX}"
 
     # Check if hostname is already an IP address
     try:
@@ -243,7 +244,7 @@ def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optiona
         # Check against blocked networks
         for network in BLOCKED_NETWORKS:
             if ip in network:
-                return False, f"Access to private network {network} is forbidden (SSRF protection)"
+                return False, f"Access to private network {network}{SSRF_ERROR_SUFFIX}"
 
         return True, None
 
@@ -281,7 +282,7 @@ def validate_url_safety(url: str, use_cache: bool = True) -> Tuple[bool, Optiona
                 for network in BLOCKED_NETWORKS:
                     if ip in network:
                         # Don't cache invalid resolutions
-                        return False, f"Access to private network {network} is forbidden (SSRF protection)"
+                        return False, f"Access to private network {network}{SSRF_ERROR_SUFFIX}"
 
             except ValueError as e:
                 return False, f"Invalid IP address: {e}"

@@ -8,6 +8,11 @@ import copy
 from typing import Any, List
 
 from src.constants.limits import SMALL_ITEM_LIMIT
+from src.self_improvement.constants import (
+    MODEL_FLAG_COST_HIGH,
+    MODEL_FLAG_QUALITY_LOW,
+    MODEL_FLAG_SPEED_LOW,
+)
 from src.self_improvement.model_registry import ModelMetadata, ModelRegistry
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
@@ -127,9 +132,9 @@ class OllamaModelSelectionStrategy(ImprovementStrategy):
             True if strategy can help with this problem type
         """
         applicable_types = {
-            "quality_low",
-            "cost_high",
-            "speed_low",
+            MODEL_FLAG_QUALITY_LOW,
+            MODEL_FLAG_COST_HIGH,
+            MODEL_FLAG_SPEED_LOW,
             "error_rate_high",
         }
         return problem_type in applicable_types

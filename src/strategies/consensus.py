@@ -40,6 +40,12 @@ from src.strategies.base import (
     calculate_consensus_confidence,
     calculate_vote_distribution,
 )
+from src.strategies.constants import (
+    CONFIG_KEY_CONFIDENCE,
+    CONFIG_KEY_MIN_CONSENSUS,
+    FORMAT_PERCENT_1_DECIMAL,
+    MODE_VALUE_FIRST,
+)
 
 # Constants
 WEAK_CONSENSUS_CONFIDENCE_PENALTY = 0.7  # Reduce confidence by 30% for weak consensus
@@ -113,15 +119,15 @@ class ConsensusStrategy(CollaborationStrategy):
 
         # Get config
         min_agents = config.get("min_agents", 1)
-        min_consensus = config.get("min_consensus", PROB_MEDIUM + PERCENT_TO_FRACTION)  # >50% (0.51)
-        tie_breaker = config.get("tie_breaker", "confidence")
+        min_consensus = config.get(CONFIG_KEY_MIN_CONSENSUS, PROB_MEDIUM + PERCENT_TO_FRACTION)  # >50% (0.51)
+        tie_breaker = config.get("tie_breaker", CONFIG_KEY_CONFIDENCE)
 
         # Validate config
         if not 0 <= min_consensus <= 1:
             raise ValueError(
                 f"min_consensus must be between 0 and 1, got {min_consensus}"
             )
-        if tie_breaker not in ["confidence", "first"]:
+        if tie_breaker not in [CONFIG_KEY_CONFIDENCE, MODE_VALUE_FIRST]:
             raise ValueError(
                 f"tie_breaker must be 'confidence' or 'first', got '{tie_breaker}'"
             )
@@ -170,7 +176,7 @@ class ConsensusStrategy(CollaborationStrategy):
                 conflicts=conflicts,
                 reasoning=(
                     f"No clear majority. Decision '{decision}' had {decision_support:.1%} "
-                    f"support, below {min_consensus:.1%} threshold. "
+                    f"support, below {min_consensus:{FORMAT_PERCENT_1_DECIMAL}} threshold. "
                     f"Consider conflict resolution."
                 ),
                 metadata={
@@ -240,7 +246,7 @@ class ConsensusStrategy(CollaborationStrategy):
             >>> strategy._break_tie(["Option A", "Option B"], outputs, "confidence")
             'Option A'
         """
-        if method == "first":
+        if method == MODE_VALUE_FIRST:
             # Return first decision in vote order
             return tied_decisions[0]
 

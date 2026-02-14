@@ -45,3 +45,63 @@ TOKEN_REFRESH_BUFFER_SECONDS = 300  # Refresh 5 min before expiry
 OAUTH_STATE_TTL_SECONDS = 600  # 10 minutes
 MAX_PENDING_STATES = 100
 STATE_CLEANUP_INTERVAL = 60  # seconds
+
+# ============================================================================
+# OAuth Field Names (Dictionary Keys)
+# ============================================================================
+
+FIELD_USER_ID = "user_id"
+FIELD_EMAIL = "email"
+FIELD_NAME = "name"
+FIELD_PICTURE = "picture"
+FIELD_EXPIRES_AT = "expires_at"
+FIELD_ACCESS_TOKEN = "access_token"
+FIELD_REFRESH_TOKEN = "refresh_token"
+FIELD_CLIENT_ID = "client_id"
+FIELD_CLIENT_SECRET = "client_secret"
+FIELD_CODE_VERIFIER = "code_verifier"
+FIELD_PROVIDER = "provider"
+FIELD_STORED_AT = "stored_at"
+FIELD_ACTION = "action"
+FIELD_TIMESTAMP = "timestamp"
+
+# ============================================================================
+# OAuth Providers
+# ============================================================================
+
+PROVIDER_GOOGLE = "google"
+
+# ============================================================================
+# Error Messages
+# ============================================================================
+
+ERROR_PROVIDER_NOT_CONFIGURED = "' not configured"
+ERROR_PROVIDER_PREFIX = "Provider '"
+ERROR_REDIS_NOT_AVAILABLE = "Redis connection not available"
+
+# ============================================================================
+# HTTP Headers
+# ============================================================================
+
+HEADER_ACCEPT = "Accept"
+HEADER_SET_COOKIE = "Set-Cookie"
+HEADER_CONTENT_TYPE_JSON = "application/json"
+
+# ============================================================================
+# Logging Format Strings
+# ============================================================================
+
+LOG_USER_SEPARATOR = ", user="
+LOG_IP_SEPARATOR = ", IP="
+
+# ============================================================================
+# Route Paths
+# ============================================================================
+
+ROUTE_DASHBOARD = "/dashboard"
+
+# ============================================================================
+# Display Strings
+# ============================================================================
+
+DISPLAY_ELLIPSIS = "..."

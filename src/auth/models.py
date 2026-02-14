@@ -6,6 +6,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Optional
 
+from src.auth.constants import (
+    FIELD_EMAIL,
+    FIELD_EXPIRES_AT,
+    FIELD_NAME,
+    FIELD_PICTURE,
+    FIELD_USER_ID,
+    PROVIDER_GOOGLE,
+)
+
 
 @dataclass
 class User:
@@ -22,7 +31,7 @@ class User:
     picture: Optional[str] = None  # Profile picture URL
 
     # OAuth provider data
-    oauth_provider: str = "google"  # Provider name
+    oauth_provider: str = PROVIDER_GOOGLE  # Provider name
     oauth_subject: str = ""  # Provider's user ID
 
     # Timestamps
@@ -37,10 +46,10 @@ class User:
     def to_dict(self) -> dict:
         """Convert to dictionary for storage."""
         return {
-            "user_id": self.user_id,
-            "email": self.email,
-            "name": self.name,
-            "picture": self.picture,
+            FIELD_USER_ID: self.user_id,
+            FIELD_EMAIL: self.email,
+            FIELD_NAME: self.name,
+            FIELD_PICTURE: self.picture,
             "oauth_provider": self.oauth_provider,
             "oauth_subject": self.oauth_subject,
             "created_at": self.created_at.isoformat(),
@@ -54,11 +63,11 @@ class User:
     def from_dict(cls, data: dict) -> "User":
         """Load from dictionary."""
         return cls(
-            user_id=data["user_id"],
-            email=data["email"],
-            name=data["name"],
-            picture=data.get("picture"),
-            oauth_provider=data.get("oauth_provider", "google"),
+            user_id=data[FIELD_USER_ID],
+            email=data[FIELD_EMAIL],
+            name=data[FIELD_NAME],
+            picture=data.get(FIELD_PICTURE),
+            oauth_provider=data.get("oauth_provider", PROVIDER_GOOGLE),
             oauth_subject=data.get("oauth_subject", ""),
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
@@ -86,7 +95,7 @@ class Session:
     picture: Optional[str] = None
 
     # Authentication metadata
-    provider: str = "google"
+    provider: str = PROVIDER_GOOGLE
     authenticated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     expires_at: Optional[datetime] = None
 
@@ -98,13 +107,13 @@ class Session:
         """Convert to dictionary for storage."""
         return {
             "session_id": self.session_id,
-            "user_id": self.user_id,
-            "email": self.email,
-            "name": self.name,
-            "picture": self.picture,
+            FIELD_USER_ID: self.user_id,
+            FIELD_EMAIL: self.email,
+            FIELD_NAME: self.name,
+            FIELD_PICTURE: self.picture,
             "provider": self.provider,
             "authenticated_at": self.authenticated_at.isoformat(),
-            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            FIELD_EXPIRES_AT: self.expires_at.isoformat() if self.expires_at else None,
             "ip_address": self.ip_address,
             "user_agent": self.user_agent,
         }
@@ -114,13 +123,13 @@ class Session:
         """Load from dictionary."""
         return cls(
             session_id=data["session_id"],
-            user_id=data["user_id"],
-            email=data["email"],
-            name=data["name"],
-            picture=data.get("picture"),
-            provider=data.get("provider", "google"),
+            user_id=data[FIELD_USER_ID],
+            email=data[FIELD_EMAIL],
+            name=data[FIELD_NAME],
+            picture=data.get(FIELD_PICTURE),
+            provider=data.get("provider", PROVIDER_GOOGLE),
             authenticated_at=datetime.fromisoformat(data["authenticated_at"]),
-            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
+            expires_at=datetime.fromisoformat(data[FIELD_EXPIRES_AT]) if data.get(FIELD_EXPIRES_AT) else None,
             ip_address=data.get("ip_address"),
             user_agent=data.get("user_agent"),
         )

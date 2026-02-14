@@ -16,6 +16,19 @@ from src.constants.retries import (
     MIN_BACKOFF_SECONDS,
 )
 from src.database.datetime_utils import utcnow
+from src.self_improvement.constants import (
+    FIELD_AGENT_NAME,
+    FIELD_COMPLETED_AT,
+    FIELD_CREATED_AT,
+    FIELD_EXPERIMENT_ID,
+    FIELD_EXTRA_METADATA,
+    FIELD_METRICS,
+    FIELD_RECORDED_AT,
+    FIELD_ROLLBACK_AT,
+    FIELD_TOTAL_EXECUTIONS,
+    FIELD_WINDOW_END,
+    FIELD_WINDOW_START,
+)
 
 # Configuration constants
 ZERO_EXAMPLES = 0
@@ -89,13 +102,13 @@ class AgentPerformanceProfile:
         """Convert to dictionary for database storage."""
         return {
             "profile_id": self.profile_id,
-            "agent_name": self.agent_name,
-            "window_start": self.window_start.isoformat(),
-            "window_end": self.window_end.isoformat(),
-            "total_executions": self.total_executions,
-            "metrics": self.metrics,
-            "created_at": self.created_at.isoformat(),
-            "extra_metadata": self.extra_metadata,
+            FIELD_AGENT_NAME: self.agent_name,
+            FIELD_WINDOW_START: self.window_start.isoformat(),
+            FIELD_WINDOW_END: self.window_end.isoformat(),
+            FIELD_TOTAL_EXECUTIONS: self.total_executions,
+            FIELD_METRICS: self.metrics,
+            FIELD_CREATED_AT: self.created_at.isoformat(),
+            FIELD_EXTRA_METADATA: self.extra_metadata,
         }
 
     @classmethod
@@ -103,13 +116,13 @@ class AgentPerformanceProfile:
         """Load from dictionary (e.g., from database)."""
         return cls(
             profile_id=data.get("profile_id"),
-            agent_name=data["agent_name"],
-            window_start=datetime.fromisoformat(data["window_start"]),
-            window_end=datetime.fromisoformat(data["window_end"]),
-            total_executions=data["total_executions"],
-            metrics=data.get("metrics", {}),
-            created_at=datetime.fromisoformat(data.get("created_at", utcnow().isoformat())),
-            extra_metadata=data.get("extra_metadata", {}),
+            agent_name=data[FIELD_AGENT_NAME],
+            window_start=datetime.fromisoformat(data[FIELD_WINDOW_START]),
+            window_end=datetime.fromisoformat(data[FIELD_WINDOW_END]),
+            total_executions=data[FIELD_TOTAL_EXECUTIONS],
+            metrics=data.get(FIELD_METRICS, {}),
+            created_at=datetime.fromisoformat(data.get(FIELD_CREATED_AT, utcnow().isoformat())),
+            extra_metadata=data.get(FIELD_EXTRA_METADATA, {}),
         )
 
 
@@ -194,28 +207,28 @@ class SIOptimizationConfig:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for database storage."""
         return {
-            "agent_name": self.agent_name,
+            FIELD_AGENT_NAME: self.agent_name,
             "agent_version": self.agent_version,
             "inference": self.inference,
             "prompt": self.prompt,
             "tools": self.tools,
             "caching": self.caching,
             "retry": self.retry,
-            "extra_metadata": self.extra_metadata,
+            FIELD_EXTRA_METADATA: self.extra_metadata,
         }
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SIOptimizationConfig":
         """Load from dictionary (e.g., from database)."""
         return cls(
-            agent_name=data["agent_name"],
+            agent_name=data[FIELD_AGENT_NAME],
             agent_version=data.get("agent_version", "1.0.0"),
             inference=data.get("inference", {}),
             prompt=data.get("prompt", {}),
             tools=data.get("tools", {}),
             caching=data.get("caching", {}),
             retry=data.get("retry", {}),
-            extra_metadata=data.get("extra_metadata", {}),
+            extra_metadata=data.get(FIELD_EXTRA_METADATA, {}),
         )
 
 
@@ -284,14 +297,14 @@ class SelfImprovementExperiment:
         """Convert to dictionary for database storage."""
         return {
             "id": self.id,
-            "agent_name": self.agent_name,
-            "status": self.status,
+            FIELD_AGENT_NAME: self.agent_name,
+            FIELD_STATUS: self.status,
             "control_config": self.control_config.to_dict(),
             "variant_configs": [v.to_dict() for v in self.variant_configs],
             "proposal_id": self.proposal_id,
-            "created_at": self.created_at.isoformat(),
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
-            "extra_metadata": self.extra_metadata,
+            FIELD_CREATED_AT: self.created_at.isoformat(),
+            FIELD_COMPLETED_AT: self.completed_at.isoformat() if self.completed_at else None,
+            FIELD_EXTRA_METADATA: self.extra_metadata,
         }
 
     @classmethod
@@ -299,14 +312,14 @@ class SelfImprovementExperiment:
         """Load from dictionary (e.g., from database)."""
         return cls(
             id=data["id"],
-            agent_name=data["agent_name"],
-            status=data["status"],
+            agent_name=data[FIELD_AGENT_NAME],
+            status=data[FIELD_STATUS],
             control_config=SIOptimizationConfig.from_dict(data["control_config"]),
             variant_configs=[SIOptimizationConfig.from_dict(v) for v in data.get("variant_configs", [])],
             proposal_id=data.get("proposal_id"),
-            created_at=datetime.fromisoformat(data["created_at"]),
-            completed_at=datetime.fromisoformat(data["completed_at"]) if data.get("completed_at") else None,
-            extra_metadata=data.get("extra_metadata", {}),
+            created_at=datetime.fromisoformat(data[FIELD_CREATED_AT]),
+            completed_at=datetime.fromisoformat(data[FIELD_COMPLETED_AT]) if data.get(FIELD_COMPLETED_AT) else None,
+            extra_metadata=data.get(FIELD_EXTRA_METADATA, {}),
         )
 
 
@@ -343,14 +356,14 @@ class ExecutionResult:
         """Convert to dictionary for database storage."""
         return {
             "id": self.id,
-            "experiment_id": self.experiment_id,
+            FIELD_EXPERIMENT_ID: self.experiment_id,
             "variant_id": self.variant_id,
             "execution_id": self.execution_id,
             "quality_score": self.quality_score,
             "speed_seconds": self.speed_seconds,
             "cost_usd": self.cost_usd,
             "success": self.success,
-            "recorded_at": self.recorded_at.isoformat(),
+            FIELD_RECORDED_AT: self.recorded_at.isoformat(),
             "extra_metrics": self.extra_metrics,
         }
 
@@ -359,14 +372,14 @@ class ExecutionResult:
         """Load from dictionary (e.g., from database)."""
         return cls(
             id=data["id"],
-            experiment_id=data["experiment_id"],
+            experiment_id=data[FIELD_EXPERIMENT_ID],
             variant_id=data["variant_id"],
             execution_id=data["execution_id"],
             quality_score=data.get("quality_score"),
             speed_seconds=data.get("speed_seconds"),
             cost_usd=data.get("cost_usd"),
             success=data.get("success"),
-            recorded_at=datetime.fromisoformat(data["recorded_at"]),
+            recorded_at=datetime.fromisoformat(data[FIELD_RECORDED_AT]),
             extra_metrics=data.get("extra_metrics", {}),
         )
 
@@ -409,13 +422,13 @@ class ConfigDeployment:
         """Convert to dictionary for database storage."""
         return {
             "id": self.id,
-            "agent_name": self.agent_name,
+            FIELD_AGENT_NAME: self.agent_name,
             "previous_config": self.previous_config.to_dict(),
             "new_config": self.new_config.to_dict(),
-            "experiment_id": self.experiment_id,
+            FIELD_EXPERIMENT_ID: self.experiment_id,
             "deployed_at": self.deployed_at.isoformat(),
             "deployed_by": self.deployed_by,
-            "rollback_at": self.rollback_at.isoformat() if self.rollback_at else None,
+            FIELD_ROLLBACK_AT: self.rollback_at.isoformat() if self.rollback_at else None,
             "rollback_reason": self.rollback_reason,
         }
 
@@ -424,13 +437,13 @@ class ConfigDeployment:
         """Load from dictionary (e.g., from database)."""
         return cls(
             id=data["id"],
-            agent_name=data["agent_name"],
+            agent_name=data[FIELD_AGENT_NAME],
             previous_config=SIOptimizationConfig.from_dict(data["previous_config"]),
             new_config=SIOptimizationConfig.from_dict(data["new_config"]),
-            experiment_id=data.get("experiment_id"),
+            experiment_id=data.get(FIELD_EXPERIMENT_ID),
             deployed_at=datetime.fromisoformat(data["deployed_at"]),
             deployed_by=data.get("deployed_by", "m5_system"),
-            rollback_at=datetime.fromisoformat(data["rollback_at"]) if data.get("rollback_at") else None,
+            rollback_at=datetime.fromisoformat(data[FIELD_ROLLBACK_AT]) if data.get(FIELD_ROLLBACK_AT) else None,
             rollback_reason=data.get("rollback_reason"),
         )
 
@@ -491,8 +504,8 @@ class StrategyOutcome:
             "id": self.id,
             "strategy_name": self.strategy_name,
             "problem_type": self.problem_type,
-            "agent_name": self.agent_name,
-            "experiment_id": self.experiment_id,
+            FIELD_AGENT_NAME: self.agent_name,
+            FIELD_EXPERIMENT_ID: self.experiment_id,
             "was_winner": self.was_winner,
             "actual_quality_improvement": self.actual_quality_improvement,
             "actual_speed_improvement": self.actual_speed_improvement,
@@ -500,7 +513,7 @@ class StrategyOutcome:
             "composite_score": self.composite_score,
             "confidence": self.confidence,
             "sample_size": self.sample_size,
-            "recorded_at": self.recorded_at.isoformat(),
+            FIELD_RECORDED_AT: self.recorded_at.isoformat(),
             "context": self.context,
         }
 
@@ -511,8 +524,8 @@ class StrategyOutcome:
             id=data["id"],
             strategy_name=data["strategy_name"],
             problem_type=data["problem_type"],
-            agent_name=data["agent_name"],
-            experiment_id=data["experiment_id"],
+            agent_name=data[FIELD_AGENT_NAME],
+            experiment_id=data[FIELD_EXPERIMENT_ID],
             was_winner=data["was_winner"],
             actual_quality_improvement=data["actual_quality_improvement"],
             actual_speed_improvement=data["actual_speed_improvement"],
@@ -520,6 +533,6 @@ class StrategyOutcome:
             composite_score=data["composite_score"],
             confidence=data["confidence"],
             sample_size=data["sample_size"],
-            recorded_at=datetime.fromisoformat(data["recorded_at"]),
+            recorded_at=datetime.fromisoformat(data[FIELD_RECORDED_AT]),
             context=data.get("context", {}),
         )

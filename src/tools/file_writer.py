@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Set
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 
 logger = logging.getLogger(__name__)
-from src.tools.constants import MAX_FILE_SIZE as _MAX_FILE_SIZE
+from src.tools.constants import FILE_ENCODING_UTF8, MAX_FILE_SIZE as _MAX_FILE_SIZE
 from src.utils.path_safety import PathSafetyError, PathSafetyValidator
 
 # Dangerous file extensions
@@ -149,7 +149,7 @@ class FileWriter(BaseTool):
             )
 
         # Check content size
-        if len(content.encode('utf-8')) > self.MAX_FILE_SIZE:
+        if len(content.encode(FILE_ENCODING_UTF8)) > self.MAX_FILE_SIZE:
             return ToolResult(
                 success=False,
                 error=f"Content exceeds maximum size of {self.MAX_FILE_SIZE} bytes"
@@ -196,7 +196,7 @@ class FileWriter(BaseTool):
             existed = path.exists()
 
             # Write file
-            with open(path, 'w', encoding='utf-8') as f:
+            with open(path, 'w', encoding=FILE_ENCODING_UTF8) as f:
                 f.write(content)
 
             return ToolResult(
@@ -204,7 +204,7 @@ class FileWriter(BaseTool):
                 result=str(path),
                 metadata={
                     "file_path": str(path),
-                    "size_bytes": len(content.encode('utf-8')),
+                    "size_bytes": len(content.encode(FILE_ENCODING_UTF8)),
                     "overwritten": existed
                 }
             )

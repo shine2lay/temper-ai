@@ -41,6 +41,13 @@ from src.safety._action_policy_helpers import (
     get_cached_result,
     get_policy_snapshot,
 )
+from src.safety.constants import (
+    CACHE_HITS_KEY,
+    FAIL_OPEN_KEY,
+    MODE_KEY,
+    NO_POLICIES_REGISTERED_KEY,
+    REASON_KEY,
+)
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 from src.safety.policy_registry import PolicyRegistry
 
@@ -217,7 +224,7 @@ class ActionPolicyEngine:
                     violations=[],
                     policies_executed=[],
                     execution_time_ms=0.0,
-                    metadata={'reason': 'no_policies_registered', 'mode': 'fail_open'},
+                    metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: FAIL_OPEN_KEY},
                     cache_hit=False
                 )
             # SECURITY: Fail-closed — deny action when no policies can validate it
@@ -231,7 +238,7 @@ class ActionPolicyEngine:
                 violations=[],
                 policies_executed=[],
                 execution_time_ms=0.0,
-                metadata={'reason': 'no_policies_registered', 'mode': 'fail_closed'},
+                metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: 'fail_closed'},
                 cache_hit=False
             )
 
@@ -316,7 +323,7 @@ class ActionPolicyEngine:
                 'critical_violations': len([v for v in all_violations if v.severity == ViolationSeverity.CRITICAL]),
                 'high_violations': len([v for v in all_violations if v.severity == ViolationSeverity.HIGH]),
                 'medium_violations': len([v for v in all_violations if v.severity == ViolationSeverity.MEDIUM]),
-                'cache_hits': cache_hits,
+                CACHE_HITS_KEY: cache_hits,
                 'short_circuited': self.short_circuit_critical and any(
                     v.severity == ViolationSeverity.CRITICAL for v in all_violations
                 )
@@ -345,7 +352,7 @@ class ActionPolicyEngine:
                 return EnforcementResult(
                     allowed=True, violations=[], policies_executed=[],
                     execution_time_ms=0.0,
-                    metadata={'reason': 'no_policies_registered', 'mode': 'fail_open'},
+                    metadata={REASON_KEY: NO_POLICIES_REGISTERED_KEY, MODE_KEY: FAIL_OPEN_KEY},
                     cache_hit=False,
                 )
             logger.warning(
@@ -427,7 +434,7 @@ class ActionPolicyEngine:
                 'critical_violations': len([v for v in all_violations if v.severity == ViolationSeverity.CRITICAL]),
                 'high_violations': len([v for v in all_violations if v.severity == ViolationSeverity.HIGH]),
                 'medium_violations': len([v for v in all_violations if v.severity == ViolationSeverity.MEDIUM]),
-                'cache_hits': cache_hits,
+                CACHE_HITS_KEY: cache_hits,
                 'short_circuited': self.short_circuit_critical and any(
                     v.severity == ViolationSeverity.CRITICAL for v in all_violations
                 )

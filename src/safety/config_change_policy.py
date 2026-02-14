@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, List
 
 from src.safety.base import BaseSafetyPolicy
+from src.safety.constants import FIELD_KEY, MODEL_KEY, NEW_MODEL_KEY, OLD_MODEL_KEY
 from src.safety.interfaces import SafetyViolation, ValidationResult, ViolationSeverity
 
 logger = logging.getLogger(__name__)
@@ -243,8 +244,8 @@ class ConfigChangePolicy(BaseSafetyPolicy):
                 action=str(action),
                 context=context,
                 metadata={
-                    "field": change.field_path,
-                    "new_model": new_model,
+                    FIELD_KEY:change.field_path,
+                    NEW_MODEL_KEY:new_model,
                     "allowed_models": self.allowed_models
                 }
             ))
@@ -258,9 +259,9 @@ class ConfigChangePolicy(BaseSafetyPolicy):
                 action=str(action),
                 context=context,
                 metadata={
-                    "field": change.field_path,
-                    "old_model": change.old_value,
-                    "new_model": new_model
+                    FIELD_KEY:change.field_path,
+                    OLD_MODEL_KEY:change.old_value,
+                    NEW_MODEL_KEY:new_model
                 }
             ))
 
@@ -297,7 +298,7 @@ class ConfigChangePolicy(BaseSafetyPolicy):
                 action=str(action),
                 context=context,
                 metadata={
-                    "field": change.field_path,
+                    FIELD_KEY:change.field_path,
                     "new_temperature": new_temp,
                     "min_allowed": self.min_temperature,
                     "max_allowed": self.max_temperature
@@ -339,7 +340,7 @@ class ConfigChangePolicy(BaseSafetyPolicy):
                     action=str(action),
                     context=context,
                     metadata={
-                        "field": change.field_path,
+                        FIELD_KEY:change.field_path,
                         "old_mode": old_mode,
                         "new_mode": new_mode
                     }
@@ -376,7 +377,7 @@ class ConfigChangePolicy(BaseSafetyPolicy):
             action=str(action),
             context=context,
             metadata={
-                "field": change.field_path,
+                FIELD_KEY:change.field_path,
                 "old_value": change.old_value,
                 "new_value": change.new_value
             }
@@ -407,8 +408,8 @@ class ConfigChangePolicy(BaseSafetyPolicy):
         violations = []
 
         # Simple heuristic: check if switching to more expensive model
-        old_model = old_config.get("inference", {}).get("model", "")
-        new_model = new_config.get("inference", {}).get("model", "")
+        old_model = old_config.get("inference", {}).get(MODEL_KEY, "")
+        new_model = new_config.get("inference", {}).get(MODEL_KEY, "")
 
         # Map model sizes to relative costs (rough estimates)
         model_costs = {
@@ -431,11 +432,11 @@ class ConfigChangePolicy(BaseSafetyPolicy):
                     policy_name=self.name,
                     severity=ViolationSeverity.HIGH,
                     message=f"Estimated cost increase of {cost_increase_pct:.0f}% exceeds threshold for {agent_name}",
-                    action=str({"old_model": old_model, "new_model": new_model}),
+                    action=str({OLD_MODEL_KEY:old_model, NEW_MODEL_KEY:new_model}),
                     context=context,
                     metadata={
-                        "old_model": old_model,
-                        "new_model": new_model,
+                        OLD_MODEL_KEY:old_model,
+                        NEW_MODEL_KEY:new_model,
                         "cost_increase_pct": cost_increase_pct,
                         "max_allowed_pct": self.max_cost_increase_pct
                     }

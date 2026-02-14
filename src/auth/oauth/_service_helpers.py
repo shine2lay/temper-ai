@@ -21,6 +21,18 @@ from src.auth.oauth.config import (
     OAuthConfig,
     get_provider_endpoints,
 )
+from src.auth.constants import (
+    ERROR_PROVIDER_NOT_CONFIGURED,
+    ERROR_PROVIDER_PREFIX,
+    FIELD_ACCESS_TOKEN,
+    FIELD_CLIENT_ID,
+    FIELD_CLIENT_SECRET,
+    FIELD_CODE_VERIFIER,
+    FIELD_PROVIDER,
+    HEADER_ACCEPT,
+    HEADER_CONTENT_TYPE_JSON,
+    LOG_USER_SEPARATOR,
+)
 from src.auth.oauth.rate_limiter import RateLimitExceeded
 from src.auth.oauth.token_store import SecureTokenStore
 from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_NETWORK_CONNECT
@@ -85,7 +97,7 @@ async def build_authorization_url(
             rate_limiter.check_oauth_init(ip_address, user_id)
         except RateLimitExceeded:
             logger.warning(
-                f"Rate limit exceeded for OAuth init: ip={ip_address}, user={user_id}"
+                f"Rate limit exceeded for OAuth init: ip={ip_address}{LOG_USER_SEPARATOR}{user_id}"
             )
             raise
 
@@ -93,7 +105,7 @@ async def build_authorization_url(
     provider_config = config.get_provider_config(provider)
     if not provider_config:
         raise OAuthError(
-            f"Provider '{provider}' not configured",
+            f"{ERROR_PROVIDER_PREFIX}{provider}{ERROR_PROVIDER_NOT_CONFIGURED}",
             provider=provider
         )
 
@@ -110,8 +122,8 @@ async def build_authorization_url(
         state=state,
         data={
             'user_id': user_id,
-            'provider': provider,
-            'code_verifier': code_verifier,
+            FIELD_PROVIDER: provider,
+            FIELD_CODE_VERIFIER: code_verifier,
             'created_at': datetime.now(timezone.utc).isoformat()
         },
         ttl_seconds=SECONDS_PER_10_MINUTES
@@ -139,7 +151,7 @@ async def build_authorization_url(
     auth_url = f"{endpoints[ENDPOINT_AUTHORIZATION]}?{urlencode(params)}"
 
     logger.info(
-        f"Generated OAuth authorization URL for provider={provider}, user={user_id}"
+        f"Generated OAuth authorization URL for provider={provider}{LOG_USER_SEPARATOR}{user_id}"
     )
 
     return auth_url, state
@@ -173,10 +185,10 @@ async def validate_state(
             provider=expected_provider
         )
 
-    if state_data['provider'] != expected_provider:
+    if state_data[FIELD_PROVIDER] != expected_provider:
         raise OAuthStateError(
             f"State provider mismatch: expected {expected_provider}, "
-            f"got {state_data['provider']}",
+            f"got {state_data[FIELD_PROVIDER]}",
             provider=expected_provider
         )
 
@@ -232,7 +244,7 @@ async def exchange_code(
     # Validate state (CSRF protection)
     state_data = await validate_state(state, provider, state_store)
     user_id = state_data['user_id']
-    code_verifier = state_data['code_verifier']
+    code_verifier = state_data[FIELD_CODE_VERIFIER]
 
     # Get provider config
     provider_config = config.get_provider_config(provider)
@@ -247,19 +259,19 @@ async def exchange_code(
 
     # Prepare token exchange request
     token_data = {
-        'client_id': provider_config.client_id,
-        'client_secret': provider_config.client_secret,
+        FIELD_CLIENT_ID: provider_config.client_id,
+        FIELD_CLIENT_SECRET: provider_config.client_secret,
         'code': code,
         'redirect_uri': redirect_uri or provider_config.redirect_uri,
         'grant_type': 'authorization_code',
-        'code_verifier': code_verifier,
+        FIELD_CODE_VERIFIER: code_verifier,
     }
 
     try:
         response = await http_client.post(
             token_endpoint,
             data=token_data,
-            headers={"Accept": "application/json"}
+            headers={HEADER_ACCEPT: HEADER_CONTENT_TYPE_JSON}
         )
 
         if response.status_code != HTTP_OK:
@@ -271,7 +283,7 @@ async def exchange_code(
 
         tokens: Dict[str, Any] = response.json()
 
-        if 'access_token' not in tokens:
+        if FIELD_ACCESS_TOKEN not in tokens:
             raise OAuthProviderError(
                 "Token response missing access_token",
                 provider=provider
@@ -286,7 +298,7 @@ async def exchange_code(
         )
 
         logger.info(
-            f"Successfully exchanged OAuth code for tokens: provider={provider}, user={user_id}"
+            f"Successfully exchanged OAuth code for tokens: provider={provider}{LOG_USER_SEPARATOR}{user_id}"
         )
 
         tokens['_flow_user_id'] = user_id

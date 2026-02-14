@@ -31,6 +31,8 @@ from typing import Any, Dict, Iterator, List, Optional, runtime_checkable
 
 from typing_extensions import Protocol
 
+from src.compiler.constants import DEFAULT_VERSION, WORKFLOW_ID_PREFIX
+
 # Workflow ID format constants
 WORKFLOW_ID_HEX_LENGTH = 12  # Length of hex portion in workflow IDs (wf-<12 hex chars>)
 
@@ -172,7 +174,7 @@ class WorkflowDomainState:
     # Core workflow state (required fields with defaults)
     stage_outputs: Dict[str, Any] = field(default_factory=dict)
     current_stage: str = ""
-    workflow_id: str = field(default_factory=lambda: f"wf-{uuid.uuid4().hex[:WORKFLOW_ID_HEX_LENGTH]}")
+    workflow_id: str = field(default_factory=lambda: f"{WORKFLOW_ID_PREFIX}{uuid.uuid4().hex[:WORKFLOW_ID_HEX_LENGTH]}")
     stage_loop_counts: Dict[str, int] = field(default_factory=dict)
 
     # Common workflow inputs (all optional)
@@ -188,7 +190,7 @@ class WorkflowDomainState:
     workflow_inputs: Dict[str, Any] = field(default_factory=dict)
 
     # Metadata and versioning
-    version: str = "1.0"
+    version: str = DEFAULT_VERSION
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -199,8 +201,8 @@ class WorkflowDomainState:
             self.focus_areas = [self.focus_areas]  # type: ignore
 
         # Validate workflow_id format
-        if not self.workflow_id.startswith("wf-"):
-            self.workflow_id = f"wf-{self.workflow_id}"
+        if not self.workflow_id.startswith(WORKFLOW_ID_PREFIX):
+            self.workflow_id = f"{WORKFLOW_ID_PREFIX}{self.workflow_id}"
 
         # Ensure stage_outputs is a dict
         if not isinstance(self.stage_outputs, dict):

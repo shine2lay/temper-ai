@@ -95,3 +95,117 @@ ROLLBACK_COOLDOWN_SECONDS = 60
 VIOLATION_MESSAGE = "message"
 VIOLATION_SEVERITY = "severity"
 VIOLATION_PATTERN = "pattern"
+
+# ============================================================================
+# Context/Action Dictionary Keys
+# ============================================================================
+
+ACTION_TYPE_KEY = "action_type"
+AGENT_ID_KEY = "agent_id"
+WORKFLOW_ID_KEY = "workflow_id"
+STAGE_ID_KEY = "stage_id"
+POLICY_KEY = "policy"
+
+# ============================================================================
+# Policy Execution Keys
+# ============================================================================
+
+MODE_KEY = "mode"
+REASON_KEY = "reason"
+FAIL_OPEN_KEY = "fail_open"
+NO_POLICIES_REGISTERED_KEY = "no_policies_registered"
+CACHE_HITS_KEY = "cache_hits"
+POLICIES_CHECKED_KEY = "policies_checked"
+SHORT_CIRCUIT_KEY = "short_circuit"
+
+# ============================================================================
+# Configuration Keys
+# ============================================================================
+
+# Rate limiting config keys
+MAX_PER_SECOND_KEY = "max_per_second"
+MAX_PER_MINUTE_KEY = "max_per_minute"
+MAX_PER_HOUR_KEY = "max_per_hour"
+MAX_TOKENS_KEY = "max_tokens"
+REFILL_RATE_KEY = "refill_rate"
+RATE_LIMITS_KEY = "rate_limits"
+GLOBAL_LIMITS_KEY = "global_limits"
+FILL_PERCENTAGE_KEY = "fill_percentage"
+
+# Action type keys for rate limiting
+ACTION_TYPE_COMMIT = "commit"
+ACTION_TYPE_DEPLOY = "deploy"
+ACTION_TYPE_TOOL_CALL = "tool_call"
+ACTION_TYPE_LLM_CALL = "llm_call"
+ACTION_TYPE_API_CALL = "api_call"
+
+# Scope keys
+SCOPE_GLOBAL = "global"
+
+# Secret detection config keys
+ENTROPY_THRESHOLD_KEY = "entropy_threshold"
+ENTROPY_THRESHOLD_GENERIC_KEY = "entropy_threshold_generic"
+ALLOW_TEST_SECRETS_KEY = "allow_test_secrets"
+
+# File access config keys
+PATHS_KEY = "paths"
+
+# Forbidden operations config keys
+CATEGORY_KEY = "category"
+REGEX_KEY = "regex"
+COMMAND_KEY = "command"
+ARGS_KEY = "args"
+BASH_KEY = "bash"
+
+# Config change policy keys
+MODEL_KEY = "model"
+OLD_MODEL_KEY = "old_model"
+NEW_MODEL_KEY = "new_model"
+FIELD_KEY = "field"
+
+# Resource limit keys
+PERCENT_KEY = "percent"
+
+# Rollback keys
+ERROR_KEY = "error"
+STRATEGY_PREFIX = "strategy_"
+EXISTED_SUFFIX = "_existed"
+
+# ============================================================================
+# Error Message Fragments
+# ============================================================================
+
+# Validation error fragments
+ERROR_MUST_BE_NUMBER = " must be a number, got "
+ERROR_MUST_BE_GTE = " must be >= "
+ERROR_MUST_BE_LTE = " must be <= "
+ERROR_CANNOT_BE_EMPTY = " cannot be empty"
+ERROR_GOT_PREFIX = ", got "
+ERROR_CHARS_GOT = " characters, got "
+ERROR_ITEMS_GOT = " items, got "
+
+# File/path error fragments
+PATH_KEY = "path"
+VIOLATION_KEY = "violation"
+
+# Blast radius separator
+BLAST_RADIUS_SEPARATOR = " > "
+
+# ============================================================================
+# Format Strings
+# ============================================================================
+
+FORMAT_ONE_DECIMAL = ".1f"
+
+# ============================================================================
+# Environment/Mode Values
+# ============================================================================
+
+ENV_DEVELOPMENT = "development"
+ENV_KEY = "environments"
+
+# ============================================================================
+# Pattern Keys
+# ============================================================================
+
+CUSTOM_FORBIDDEN_PATTERNS_PREFIX = "custom_forbidden_patterns['"

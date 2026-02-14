@@ -33,6 +33,8 @@ from src.self_improvement._experiment_helpers import (
 )
 from src.self_improvement.constants import (
     DEFAULT_ALPHA,
+    EXPERIMENT_GROUP_CONTROL,
+    EXPERIMENT_VARIANT_PREFIX,
     MAX_CONCURRENT_EXPERIMENTS,
 )
 from src.self_improvement.data_models import (
@@ -334,9 +336,9 @@ class ExperimentOrchestrator:
         self._validate_variant_id(variant_id)
         experiment = self.get_experiment(experiment_id)
 
-        if variant_id == "control":
+        if variant_id == EXPERIMENT_GROUP_CONTROL:
             return experiment.control_config
-        elif variant_id.startswith("variant_"):
+        elif variant_id.startswith(EXPERIMENT_VARIANT_PREFIX):
             try:
                 variant_index = int(variant_id.split("_")[1])
                 return experiment.variant_configs[variant_index]

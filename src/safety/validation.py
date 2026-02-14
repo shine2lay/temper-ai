@@ -16,6 +16,12 @@ from src.safety.constants import (
     DEFAULT_MAX_ITEM_LENGTH,
     DEFAULT_MAX_ITEMS,
     DEFAULT_MAX_STRING_LENGTH,
+    ERROR_CANNOT_BE_EMPTY,
+    ERROR_GOT_PREFIX,
+    ERROR_MUST_BE_GTE,
+    ERROR_MUST_BE_LTE,
+    ERROR_MUST_BE_NUMBER,
+    FORMAT_ONE_DECIMAL,
     MAX_VALIDATION_TIME_SECONDS,
 )
 
@@ -79,7 +85,7 @@ class ValidationMixin:
         # Type check
         if not isinstance(value, (int, float)):
             raise ValueError(
-                f"{param_name} must be a number, got {type(value).__name__}"
+                f"{param_name}{ERROR_MUST_BE_NUMBER}{type(value).__name__}"
             )
 
         # Convert to int (handles float inputs)
@@ -93,12 +99,12 @@ class ValidationMixin:
         # Range check
         if int_value < min_value:
             raise ValueError(
-                f"{param_name} must be >= {min_value}, got {int_value}"
+                f"{param_name}{ERROR_MUST_BE_GTE}{min_value}{ERROR_GOT_PREFIX}{int_value}"
             )
 
         if max_value is not None and int_value > max_value:
             raise ValueError(
-                f"{param_name} must be <= {max_value}, got {int_value}"
+                f"{param_name}{ERROR_MUST_BE_LTE}{max_value}{ERROR_GOT_PREFIX}{int_value}"
             )
 
         return int_value
@@ -133,7 +139,7 @@ class ValidationMixin:
         # Type check
         if not isinstance(value, (int, float)):
             raise ValueError(
-                f"{param_name} must be a number, got {type(value).__name__}"
+                f"{param_name}{ERROR_MUST_BE_NUMBER}{type(value).__name__}"
             )
 
         # Convert to float
@@ -189,7 +195,7 @@ class ValidationMixin:
         # Type check
         if not isinstance(value, (int, float)):
             raise ValueError(
-                f"{param_name} must be a number, got {type(value).__name__}"
+                f"{param_name}{ERROR_MUST_BE_NUMBER}{type(value).__name__}"
             )
 
         # Convert to int
@@ -240,7 +246,7 @@ class ValidationMixin:
         # Type check
         if not isinstance(value, (int, float)):
             raise ValueError(
-                f"{param_name} must be a number, got {type(value).__name__}"
+                f"{param_name}{ERROR_MUST_BE_NUMBER}{type(value).__name__}"
             )
 
         float_value = float(value)
@@ -341,7 +347,7 @@ class ValidationMixin:
 
         # Empty check
         if not values and not allow_empty:
-            raise ValueError(f"{param_name} cannot be empty")
+            raise ValueError(f"{param_name}{ERROR_CANNOT_BE_EMPTY}")
 
         # Size check
         if len(values) > max_items:
@@ -409,7 +415,7 @@ class ValidationMixin:
 
         # Empty check
         if not pattern:
-            raise ValueError(f"{param_name} cannot be empty")
+            raise ValueError(f"{param_name}{ERROR_CANNOT_BE_EMPTY}")
 
         # Length check
         if len(pattern) > max_length:
@@ -483,7 +489,7 @@ class ValidationMixin:
             )
 
         if not value and not allow_empty:
-            raise ValueError(f"{param_name} cannot be empty")
+            raise ValueError(f"{param_name}{ERROR_CANNOT_BE_EMPTY}")
 
         return value
 
@@ -506,8 +512,8 @@ class ValidationMixin:
         if bytes_value < BYTES_PER_KB:
             return f"{bytes_value} bytes"
         elif bytes_value < BYTES_PER_MB:
-            return f"{bytes_value / BYTES_PER_KB:.1f}KB"
+            return f"{bytes_value / BYTES_PER_KB:{FORMAT_ONE_DECIMAL}}KB"
         elif bytes_value < BYTES_PER_GB:
-            return f"{bytes_value / BYTES_PER_MB:.1f}MB"
+            return f"{bytes_value / BYTES_PER_MB:{FORMAT_ONE_DECIMAL}}MB"
         else:
-            return f"{bytes_value / BYTES_PER_GB:.1f}GB"
+            return f"{bytes_value / BYTES_PER_GB:{FORMAT_ONE_DECIMAL}}GB"

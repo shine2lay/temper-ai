@@ -18,7 +18,14 @@ from src.database import get_session
 from src.experimentation.analyzer import StatisticalAnalyzer
 from src.experimentation.assignment import VariantAssigner
 from src.experimentation.config_manager import ConfigManager
-from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
+from src.experimentation.constants import (
+    DEFAULT_CREDIBLE_LEVEL,
+    ERROR_EXPERIMENT_NOT_FOUND,
+    FIELD_CONFIDENCE,
+    FIELD_CREATED_BY,
+    FIELD_NAME,
+    FIELD_RECOMMENDATION,
+)
 from src.experimentation.experiment_crud import ExperimentCRUD
 from src.experimentation.models import (
     AssignmentStrategyType,
@@ -146,7 +153,7 @@ class ExperimentService(Service):
                     "security_event": "INPUT_VALIDATION_FAILED",
                     "input_name": name[:100],
                     "input_length": len(name),
-                    "user": kwargs.get("created_by"),
+                    "user": kwargs.get(FIELD_CREATED_BY),
                     "error": str(e)
                 }
             )
@@ -185,7 +192,7 @@ class ExperimentService(Service):
             confidence_level=confidence_level,
             min_sample_size_per_variant=min_sample_size_per_variant,
             tags=kwargs.get("tags", []),
-            created_by=kwargs.get("created_by"),
+            created_by=kwargs.get(FIELD_CREATED_BY),
             extra_metadata=kwargs.get("extra_metadata"),
             created_at=utcnow(),
             updated_at=utcnow(),
@@ -198,12 +205,12 @@ class ExperimentService(Service):
             variant = Variant(
                 id=variant_id,
                 experiment_id=experiment_id,
-                name=variant_config["name"],
+                name=variant_config[FIELD_NAME],
                 description=variant_config.get("description", ""),
                 is_control=variant_config.get("is_control", False),
                 config_type=variant_config.get("config_type", "agent"),
                 config_overrides=variant_config.get("config", {}),
-                allocated_traffic=traffic_allocation[variant_config["name"]],
+                allocated_traffic=traffic_allocation[variant_config[FIELD_NAME]],
                 extra_metadata=variant_config.get("extra_metadata"),
                 created_at=utcnow(),
             )
@@ -223,7 +230,7 @@ class ExperimentService(Service):
                 extra={
                     "security_event": "DATABASE_CONSTRAINT_VIOLATION",
                     "experiment_name": name,
-                    "user": kwargs.get("created_by"),
+                    "user": kwargs.get(FIELD_CREATED_BY),
                     "error_type": type(e).__name__
                 }
             )
@@ -259,7 +266,7 @@ class ExperimentService(Service):
         with get_session() as session:
             experiment = session.get(Experiment, experiment_id)
             if not experiment:
-                raise ValueError(f"Experiment not found: {experiment_id}")
+                raise ValueError(f"{ERROR_EXPERIMENT_NOT_FOUND}{experiment_id}")
 
             if experiment.status != ExperimentStatus.DRAFT:
                 raise ValueError(f"Cannot start experiment in status: {experiment.status}")
@@ -279,7 +286,7 @@ class ExperimentService(Service):
         with get_session() as session:
             experiment = session.get(Experiment, experiment_id)
             if not experiment:
-                raise ValueError(f"Experiment not found: {experiment_id}")
+                raise ValueError(f"{ERROR_EXPERIMENT_NOT_FOUND}{experiment_id}")
 
             experiment.status = ExperimentStatus.PAUSED
             experiment.updated_at = utcnow()
@@ -299,7 +306,7 @@ class ExperimentService(Service):
         with get_session() as session:
             experiment = session.get(Experiment, experiment_id)
             if not experiment:
-                raise ValueError(f"Experiment not found: {experiment_id}")
+                raise ValueError(f"{ERROR_EXPERIMENT_NOT_FOUND}{experiment_id}")
 
             experiment.status = ExperimentStatus.STOPPED
             experiment.stopped_at = utcnow()
@@ -339,7 +346,7 @@ class ExperimentService(Service):
         with get_session() as session:
             experiment = session.get(Experiment, experiment_id)
             if not experiment:
-                raise ValueError(f"Experiment not found: {experiment_id}")
+                raise ValueError(f"{ERROR_EXPERIMENT_NOT_FOUND}{experiment_id}")
 
             if experiment.status != ExperimentStatus.RUNNING:
                 raise ValueError(f"Experiment not running: {experiment.status}")
@@ -459,7 +466,7 @@ class ExperimentService(Service):
             # Load experiment
             experiment = session.get(Experiment, experiment_id)
             if not experiment:
-                raise ValueError(f"Experiment not found: {experiment_id}")
+                raise ValueError(f"{ERROR_EXPERIMENT_NOT_FOUND}{experiment_id}")
 
             # Load variants
             statement = select(Variant).where(Variant.experiment_id == experiment_id)
@@ -488,9 +495,9 @@ class ExperimentService(Service):
                 variant_metrics=analysis_results["variant_metrics"],
                 statistical_tests=analysis_results["statistical_tests"],
                 guardrail_violations=analysis_results["guardrail_violations"],
-                recommendation=analysis_results["recommendation"],
+                recommendation=analysis_results[FIELD_RECOMMENDATION],
                 recommended_winner=analysis_results.get("recommended_winner"),
-                confidence=analysis_results["confidence"],
+                confidence=analysis_results[FIELD_CONFIDENCE],
             )
 
             session.add(result)
@@ -502,14 +509,14 @@ class ExperimentService(Service):
         """Check if experiment should stop early."""
         results = self.get_experiment_results(experiment_id)
 
-        should_stop = results["recommendation"] in [
+        should_stop = results[FIELD_RECOMMENDATION] in [
             RecommendationType.STOP_WINNER,
             RecommendationType.STOP_GUARDRAIL_VIOLATION,
         ]
 
         return {
             "should_stop": should_stop,
-            "reason": results["recommendation"].value,
+            "reason": results[FIELD_RECOMMENDATION].value,
             "winner": results.get("recommended_winner"),
-            "confidence": results["confidence"],
+            "confidence": results[FIELD_CONFIDENCE],
         }

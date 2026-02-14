@@ -20,8 +20,7 @@ class ToolSchemaFormatter:
         schemas: List[Dict[str, Any]],
         format_style: str = "json"
     ) -> str:
-        """
-        Format tool schemas for inclusion in prompts.
+        """Format tool schemas for inclusion in prompts.
 
         Args:
             schemas: List of tool schema dictionaries
@@ -32,37 +31,20 @@ class ToolSchemaFormatter:
 
         Raises:
             ValueError: If format_style is unknown
-
-        Examples:
-            >>> formatter = ToolSchemaFormatter()
-            >>> tools = [{"name": "calc", "description": "Calculator"}]
-            >>> formatter.format_tool_schemas(tools, "list")
-            '- calc: Calculator'
         """
         if not schemas:
             return "No tools available"
 
         if format_style == "json":
-            # Pretty JSON format
             return json.dumps(schemas, indent=MULTIPLIER_SMALL)
 
-        elif format_style == "list":
-            # Simple list format: "- name: description"
-            lines = []
-            for schema in schemas:
-                name = schema.get("name", "Unknown")
-                desc = schema.get("description", "No description")
-                lines.append(f"- {name}: {desc}")
+        if format_style == "list":
+            lines = [f"- {s.get('name', 'Unknown')}: {s.get('description', 'No description')}" for s in schemas]
             return "\n".join(lines)
 
-        elif format_style == "markdown":
-            # Markdown table format
+        if format_style == "markdown":
             lines = ["| Tool | Description |", "|------|-------------|"]
-            for schema in schemas:
-                name = schema.get("name", "Unknown")
-                desc = schema.get("description", "No description")
-                lines.append(f"| {name} | {desc} |")
+            lines.extend(f"| {s.get('name', 'Unknown')} | {s.get('description', 'No description')} |" for s in schemas)
             return "\n".join(lines)
 
-        else:
-            raise ValueError(f"Unknown format_style: {format_style}")
+        raise ValueError(f"Unknown format_style: {format_style}")

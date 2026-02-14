@@ -40,6 +40,7 @@ MAX_TOOL_CALLS_PER_EXECUTION = 20
 MAX_EXECUTION_TIME_SECONDS = 300  # 5 minutes
 MAX_PROMPT_LENGTH = 32_000  # Maximum prompt length in characters
 DEFAULT_CACHE_TTL_SECONDS = 3600  # 1 hour
+DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS = 8000  # Max chars for auto-injected dialogue context
 
 # ============================================================================
 # Confidence Scoring
@@ -83,3 +84,36 @@ DEFAULT_OUTPUT_TOKEN_RATIO = 0.4
 PRE_COMMAND_DEFAULT_TIMEOUT = 60
 PRE_COMMAND_MAX_TIMEOUT = 300
 PRE_COMMAND_MAX_OUTPUT_CHARS = 2000
+
+# ============================================================================
+# Environment Variables
+# ============================================================================
+
+ENV_VAR_PATH = "PATH"
+ENV_VAR_VIRTUAL_ENV = "VIRTUAL_ENV"
+
+# ============================================================================
+# Agent Types
+# ============================================================================
+
+AGENT_TYPE_STANDARD = "standard"
+
+# ============================================================================
+# Error Messages
+# ============================================================================
+
+ERROR_MSG_RATE_LIMIT_EXCEEDED = "LLM rate limit exceeded"
+ERROR_MSG_VALID_PROVIDERS_SUFFIX = "'. Valid providers: "
+
+# ============================================================================
+# Streaming & API Sentinels
+# ============================================================================
+
+SSE_STREAM_DONE_MARKER = "[DONE]"
+
+# ============================================================================
+# Pricing & Fallbacks
+# ============================================================================
+
+PRICING_DEFAULT_KEY = "_default"
+FALLBACK_UNKNOWN_VALUE = "unknown"

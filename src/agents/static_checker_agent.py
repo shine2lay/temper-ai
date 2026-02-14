@@ -17,7 +17,11 @@ if TYPE_CHECKING:
 from src.agents._pre_command_helpers import execute_pre_commands
 from src.agents._standard_agent_helpers import (
     build_final_response as _build_final_response,
+)
+from src.agents._standard_agent_helpers import (
     make_stream_callback as _make_stream_callback,
+)
+from src.agents._standard_agent_helpers import (
     setup_execution as _setup_execution,
 )
 from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
@@ -104,11 +108,60 @@ class StaticCheckerAgent(BaseAgent):
     # Sync execution
     # ------------------------------------------------------------------
 
+    def _execute_llm_call_and_extract(
+        self,
+        prompt: str,
+        input_data: Dict[str, Any],
+    ) -> tuple[str, Optional[str], int, float]:
+        """Execute single LLM call and extract output/reasoning with token/cost tracking.
+
+        Args:
+            prompt: Rendered prompt string
+            input_data: Input data dict (may contain command_results)
+
+        Returns:
+            Tuple of (output, reasoning, total_tokens, total_cost)
+        """
+        # Single LLM call — no tool-calling loop
+        combined_cb = _make_stream_callback(self)
+        if combined_cb:
+            llm_response = self.llm.stream(prompt, on_chunk=combined_cb)
+        else:
+            llm_response = self.llm.complete(prompt)
+
+        total_tokens = llm_response.total_tokens or 0
+        cost = estimate_cost(llm_response, fallback_model=getattr(self.llm, "model", "unknown"))
+
+        output = extract_final_answer(llm_response.content)
+        reasoning = extract_reasoning(llm_response.content)
+
+        # Prepend raw command results so downstream agents see
+        # actual error details, not just the LLM's summary.
+        raw_results = input_data.get("command_results", "")
+        if raw_results and output:
+            output = f"{raw_results}\n---\n{output}"
+        elif raw_results:
+            output = raw_results
+
+        return output, reasoning, total_tokens, cost
+
     def execute(
         self,
         input_data: Dict[str, Any],
         context: Optional[ExecutionContext] = None,
     ) -> AgentResponse:
+        """Execute agent synchronously with input data.
+
+        Runs pre_commands, renders prompt with their output, calls LLM once,
+        and returns structured response.
+
+        Args:
+            input_data: Dictionary of input variables to pass to the prompt.
+            context: Optional execution context for streaming and state tracking.
+
+        Returns:
+            AgentResponse with output, reasoning, tokens, cost, and error details.
+        """
         if input_data is None:
             raise ValueError("input_data cannot be None")
         if not isinstance(input_data, dict):
@@ -128,29 +181,8 @@ class StaticCheckerAgent(BaseAgent):
 
             prompt = self._render_prompt(input_data, context)
 
-            # Single LLM call — no tool-calling loop
-            combined_cb = _make_stream_callback(self)
-            if combined_cb:
-                llm_response = self.llm.stream(prompt, on_chunk=combined_cb)
-            else:
-                llm_response = self.llm.complete(prompt)
-
-            if llm_response.total_tokens:
-                total_tokens += llm_response.total_tokens
-
-            cost = estimate_cost(llm_response, fallback_model=getattr(self.llm, "model", "unknown"))
-            total_cost += cost
-
-            output = extract_final_answer(llm_response.content)
-            reasoning = extract_reasoning(llm_response.content)
-
-            # Prepend raw command results so downstream agents see
-            # actual error details, not just the LLM's summary.
-            raw_results = input_data.get("command_results", "")
-            if raw_results and output:
-                output = f"{raw_results}\n---\n{output}"
-            elif raw_results:
-                output = raw_results
+            # Execute LLM call and extract output/reasoning
+            output, reasoning, total_tokens, total_cost = self._execute_llm_call_and_extract(prompt, input_data)
 
             return _build_final_response(  # type: ignore[return-value]
                 self,
@@ -180,11 +212,59 @@ class StaticCheckerAgent(BaseAgent):
     # Async execution
     # ------------------------------------------------------------------
 
+    async def _aexecute_llm_call_and_extract(
+        self,
+        prompt: str,
+        input_data: Dict[str, Any],
+    ) -> tuple[str, Optional[str], int, float]:
+        """Execute single async LLM call and extract output/reasoning with token/cost tracking.
+
+        Args:
+            prompt: Rendered prompt string
+            input_data: Input data dict (may contain command_results)
+
+        Returns:
+            Tuple of (output, reasoning, total_tokens, total_cost)
+        """
+        combined_cb = _make_stream_callback(self)
+        if combined_cb:
+            llm_response = await self.llm.astream(prompt, on_chunk=combined_cb)
+        else:
+            llm_response = await self.llm.acomplete(prompt)
+
+        total_tokens = llm_response.total_tokens or 0
+        cost = estimate_cost(llm_response, fallback_model=getattr(self.llm, "model", "unknown"))
+
+        output = extract_final_answer(llm_response.content)
+        reasoning = extract_reasoning(llm_response.content)
+
+        # Prepend raw command results so downstream agents see
+        # actual error details, not just the LLM's summary.
+        raw_results = input_data.get("command_results", "")
+        if raw_results and output:
+            output = f"{raw_results}\n---\n{output}"
+        elif raw_results:
+            output = raw_results
+
+        return output, reasoning, total_tokens, cost
+
     async def aexecute(
         self,
         input_data: Dict[str, Any],
         context: Optional[ExecutionContext] = None,
     ) -> AgentResponse:
+        """Execute agent asynchronously with input data.
+
+        Runs pre_commands in thread pool, renders prompt with their output,
+        calls LLM once asynchronously, and returns structured response.
+
+        Args:
+            input_data: Dictionary of input variables to pass to the prompt.
+            context: Optional execution context for streaming and state tracking.
+
+        Returns:
+            AgentResponse with output, reasoning, tokens, cost, and error details.
+        """
         if input_data is None:
             raise ValueError("input_data cannot be None")
         if not isinstance(input_data, dict):
@@ -204,28 +284,8 @@ class StaticCheckerAgent(BaseAgent):
 
             prompt = self._render_prompt(input_data, context)
 
-            combined_cb = _make_stream_callback(self)
-            if combined_cb:
-                llm_response = await self.llm.astream(prompt, on_chunk=combined_cb)
-            else:
-                llm_response = await self.llm.acomplete(prompt)
-
-            if llm_response.total_tokens:
-                total_tokens += llm_response.total_tokens
-
-            cost = estimate_cost(llm_response, fallback_model=getattr(self.llm, "model", "unknown"))
-            total_cost += cost
-
-            output = extract_final_answer(llm_response.content)
-            reasoning = extract_reasoning(llm_response.content)
-
-            # Prepend raw command results so downstream agents see
-            # actual error details, not just the LLM's summary.
-            raw_results = input_data.get("command_results", "")
-            if raw_results and output:
-                output = f"{raw_results}\n---\n{output}"
-            elif raw_results:
-                output = raw_results
+            # Execute async LLM call and extract output/reasoning
+            output, reasoning, total_tokens, total_cost = await self._aexecute_llm_call_and_extract(prompt, input_data)
 
             return _build_final_response(  # type: ignore[return-value]
                 self,
@@ -256,6 +316,12 @@ class StaticCheckerAgent(BaseAgent):
     # ------------------------------------------------------------------
 
     def get_capabilities(self) -> Dict[str, Any]:
+        """Get agent capabilities and configuration.
+
+        Returns:
+            Dictionary with agent name, description, version, type, LLM provider/model,
+            pre_commands list, and capability flags (streaming, multimodal).
+        """
         pre_commands = getattr(self.config.agent, "pre_commands", []) or []
         return {
             "name": self.name,

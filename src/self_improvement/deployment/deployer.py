@@ -18,6 +18,13 @@ from src.constants.durations import MINUTES_PER_HOUR
 # Import M4 safety stack
 from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 from src.safety.approval import ApprovalWorkflow
+from src.self_improvement.constants import (
+    FIELD_AGENT_NAME,
+    FIELD_DEPLOYED_AT,
+    FIELD_DEPLOYED_BY,
+    FIELD_EXPERIMENT_ID,
+    FIELD_NEW_CONFIG,
+)
 from src.self_improvement.data_models import (
     ConfigDeployment,
     SIOptimizationConfig,
@@ -223,7 +230,7 @@ class ConfigDeployer:
         )
 
         if rows:
-            config_dict = json.loads(rows[0]["new_config"])
+            config_dict = json.loads(rows[0][FIELD_NEW_CONFIG])
             return SIOptimizationConfig.from_dict(config_dict)
 
         # Return default config if no deployments
@@ -256,16 +263,16 @@ class ConfigDeployer:
         row = rows[0]
         return ConfigDeployment(
             id=row["id"],
-            agent_name=row["agent_name"],
+            agent_name=row[FIELD_AGENT_NAME],
             previous_config=SIOptimizationConfig.from_dict(json.loads(row["previous_config"])),
-            new_config=SIOptimizationConfig.from_dict(json.loads(row["new_config"])),
-            experiment_id=row["experiment_id"],
+            new_config=SIOptimizationConfig.from_dict(json.loads(row[FIELD_NEW_CONFIG])),
+            experiment_id=row[FIELD_EXPERIMENT_ID],
             deployed_at=(
-                datetime.fromisoformat(row["deployed_at"])
-                if isinstance(row["deployed_at"], str)
-                else row["deployed_at"]
+                datetime.fromisoformat(row[FIELD_DEPLOYED_AT])
+                if isinstance(row[FIELD_DEPLOYED_AT], str)
+                else row[FIELD_DEPLOYED_AT]
             ),
-            deployed_by=row["deployed_by"],
+            deployed_by=row[FIELD_DEPLOYED_BY],
             rollback_at=(
                 datetime.fromisoformat(row["rollback_at"])
                 if isinstance(row["rollback_at"], str)

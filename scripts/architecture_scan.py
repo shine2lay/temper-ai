@@ -262,6 +262,33 @@ MAGIC_NUMBER_WHITELIST = {
 MAGIC_STRING_MIN_OCCURRENCES = 3
 MAGIC_STRING_MIN_LENGTH = 3
 
+# Strings that are never magic — format specifiers, common framework identifiers, etc.
+_FORMAT_SPEC_RE = re.compile(r"^\.\d+[fde%]$")
+_IMPORT_PATH_RE = re.compile(r"^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*){2,}$")
+_RICH_MARKUP_RE = re.compile(r"\[/?[a-z]")  # Rich console markup like [bold], [/], [dim]
+# Identifier-like strings: lowercase with underscores, 3-20 chars — these are
+# dict keys, config values, or structural identifiers, not magic strings.
+_IDENTIFIER_LIKE_RE = re.compile(r"^[a-z][a-z0-9]*(_[a-z0-9]+)*$")
+_IDENTIFIER_LIKE_MAX_LEN = 20
+_MAGIC_STRING_SKIP_VALUES = frozenset({
+    # SQL keywords
+    "CASCADE",
+    # Common format/encoding
+    "utf-8", "string",
+    # Display literals
+    "N/A", "***REDACTED***", "...",
+    # Version strings
+    "1.0",
+})
+# Strings that are formatting fragments, not extractable constants.
+# Matches: whitespace-only, log/error prefixes ending with punctuation,
+# short interpolation fragments like ", got ", " -> ", etc.
+_LOG_FRAGMENT_RE = re.compile(
+    r"^[\s,;:><=\-\.\(\)\[\]/'\"]+$"  # Pure punctuation/whitespace
+    r"|^\s+.{0,6}$"  # Whitespace-prefixed short fragments
+    r"|^.{0,6}\s+$"  # Short fragments ending with whitespace
+)
+
 
 # ---------------------------------------------------------------------------
 # File Scanning
@@ -1933,11 +1960,34 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
                 continue
             if node.lineno in docstring_lines:
                 continue
+            if node.lineno in suppressed_magic_lines:
+                continue
             if node.value in ("__name__", "__main__"):
                 continue
-            # Skip type annotations
+
+            # Skip well-known non-magic values (SQL keywords, display literals)
+            if node.value in _MAGIC_STRING_SKIP_VALUES:
+                continue
+            # Skip identifier-like strings (dict keys, config values, status names)
+            val = node.value
+            if len(val) <= _IDENTIFIER_LIKE_MAX_LEN and _IDENTIFIER_LIKE_RE.match(val):
+                continue
+            # Skip format specifiers (.1f, .3f, .1%, etc.)
+            if _FORMAT_SPEC_RE.match(val):
+                continue
+            # Skip formatting/log fragments (whitespace, punctuation, short prefixes)
+            if len(val) <= 8 and _LOG_FRAGMENT_RE.match(val):
+                continue
+            # Skip Python import/module paths (src.module.sub)
+            if _IMPORT_PATH_RE.match(val):
+                continue
+            # Skip Rich console markup fragments ([bold], [/dim], etc.)
+            if _RICH_MARKUP_RE.search(val):
+                continue
+
             parent = getattr(node, "_parent", None)
             if parent is not None:
+                # Skip type annotations
                 if isinstance(parent, ast.AnnAssign) and node is not parent.value:
                     continue
                 if isinstance(parent, ast.arg):
@@ -1945,6 +1995,25 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
                 if isinstance(parent, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     if node is parent.returns:
                         continue
+
+                # Skip strings used as dict keys: {"key": val}
+                if isinstance(parent, ast.Dict) and node in parent.keys:
+                    continue
+                # Skip strings used as subscript keys: d["key"]
+                if isinstance(parent, ast.Subscript) and node is parent.slice:
+                    continue
+                # Skip strings in .get("key") / .pop("key") / .setdefault("key")
+                if isinstance(parent, ast.Call):
+                    func = parent.func
+                    if (isinstance(func, ast.Attribute)
+                            and func.attr in ("get", "pop", "setdefault")
+                            and parent.args
+                            and node is parent.args[0]):
+                        continue
+
+            # Skip strings in UPPERCASE constant assignments
+            if is_in_constant_assignment(node):
+                continue
 
             string_occurrences[node.value].append(node.lineno)
 

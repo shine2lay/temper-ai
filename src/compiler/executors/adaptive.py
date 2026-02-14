@@ -4,6 +4,14 @@ Starts with parallel execution, switches to sequential if disagreement is high.
 """
 from typing import Any, Dict, Optional, cast
 
+from src.compiler.constants import (
+    ADAPTIVE_META_DISAGREEMENT_RATE,
+    ADAPTIVE_META_STARTED_WITH,
+    ADAPTIVE_META_SWITCHED_TO,
+    COLLAB_EVENT_MODE_SWITCH,
+    EXECUTION_MODE_PARALLEL,
+    EXECUTION_MODE_SEQUENTIAL,
+)
 from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.compiler.executors.base import StageExecutor
 from src.compiler.executors.parallel import ParallelStageExecutor
@@ -78,9 +86,9 @@ class AdaptiveStageExecutor(StageExecutor):
 
         # Track mode switch metadata
         mode_switch_metadata = {
-            "started_with": "parallel",
-            "switched_to": None,
-            "disagreement_rate": None,
+            ADAPTIVE_META_STARTED_WITH: EXECUTION_MODE_PARALLEL,
+            ADAPTIVE_META_SWITCHED_TO: None,
+            ADAPTIVE_META_DISAGREEMENT_RATE: None,
             "disagreement_threshold": disagreement_threshold
         }
 
@@ -108,11 +116,11 @@ class AdaptiveStageExecutor(StageExecutor):
             synthesis_result = MinimalSynthesisResult(votes=synthesis_info.get("votes", {}))
             disagreement_rate = self._calculate_disagreement_rate(synthesis_result)
 
-            mode_switch_metadata["disagreement_rate"] = disagreement_rate
+            mode_switch_metadata[ADAPTIVE_META_DISAGREEMENT_RATE] = disagreement_rate
 
             # Check if we need to switch to sequential
             if disagreement_rate > disagreement_threshold:
-                mode_switch_metadata["switched_to"] = "sequential"
+                mode_switch_metadata[ADAPTIVE_META_SWITCHED_TO] = EXECUTION_MODE_SEQUENTIAL
 
                 # Track mode switch in observability
                 if tracker and hasattr(tracker, 'track_collaboration_event'):
@@ -124,10 +132,10 @@ class AdaptiveStageExecutor(StageExecutor):
                         confidence=None,
                         metadata={
                             "reason": "disagreement_threshold_exceeded",
-                            "disagreement_rate": disagreement_rate,
+                            ADAPTIVE_META_DISAGREEMENT_RATE: disagreement_rate,
                             "threshold": disagreement_threshold,
-                            "switching_from": "parallel",
-                            "switching_to": "sequential"
+                            "switching_from": EXECUTION_MODE_PARALLEL,
+                            "switching_to": EXECUTION_MODE_SEQUENTIAL
                         }
                     )
 
@@ -146,24 +154,24 @@ class AdaptiveStageExecutor(StageExecutor):
 
                 # Add mode switch metadata to final output
                 if isinstance(sequential_state["stage_outputs"].get(stage_name), dict):
-                    sequential_state["stage_outputs"][stage_name]["mode_switch"] = mode_switch_metadata
+                    sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = mode_switch_metadata
 
                 return sequential_state
             else:
                 # Disagreement is acceptable, keep parallel result
-                mode_switch_metadata["switched_to"] = None  # No switch needed
+                mode_switch_metadata[ADAPTIVE_META_SWITCHED_TO] = None  # No switch needed
 
                 # Add mode switch metadata to output (no switch occurred)
                 if isinstance(stage_output, dict):
-                    stage_output["mode_switch"] = mode_switch_metadata
+                    stage_output[COLLAB_EVENT_MODE_SWITCH] = mode_switch_metadata
                     parallel_state["stage_outputs"][stage_name] = stage_output
 
                 return parallel_state
 
         except (KeyError, TypeError, AttributeError, ValueError, RuntimeError) as e:
             # Parallel execution failed, fall back to sequential
-            mode_switch_metadata["switched_to"] = "sequential"
-            mode_switch_metadata["disagreement_rate"] = None
+            mode_switch_metadata[ADAPTIVE_META_SWITCHED_TO] = EXECUTION_MODE_SEQUENTIAL
+            mode_switch_metadata[ADAPTIVE_META_DISAGREEMENT_RATE] = None
             mode_switch_metadata["error"] = str(e)
 
             # Track mode switch due to error
@@ -177,8 +185,8 @@ class AdaptiveStageExecutor(StageExecutor):
                     metadata={
                         "reason": "parallel_execution_failed",
                         "error": str(e),
-                        "switching_from": "parallel",
-                        "switching_to": "sequential"
+                        "switching_from": EXECUTION_MODE_PARALLEL,
+                        "switching_to": EXECUTION_MODE_SEQUENTIAL
                     }
                 )
 
@@ -194,7 +202,7 @@ class AdaptiveStageExecutor(StageExecutor):
 
             # Add mode switch metadata
             if isinstance(sequential_state["stage_outputs"].get(stage_name), dict):
-                sequential_state["stage_outputs"][stage_name]["mode_switch"] = mode_switch_metadata
+                sequential_state["stage_outputs"][stage_name][COLLAB_EVENT_MODE_SWITCH] = mode_switch_metadata
 
             return sequential_state
 

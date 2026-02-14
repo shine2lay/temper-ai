@@ -19,7 +19,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, Optional, Pattern, Tuple
 
-from src.compiler.constants import MAX_ENV_VAR_SIZE
+from src.compiler.constants import ERROR_MSG_ENV_VAR_PREFIX, MAX_ENV_VAR_SIZE
 
 # Path validation constants
 MIN_DRIVE_LETTER_PATH_LENGTH = 3  # Minimum length for Windows absolute paths (C:\, D:\, etc.)
@@ -345,14 +345,14 @@ class EnvVarValidator:
             is_safe, error_msg = self._validate_path_traversal(value, base_dir=os.getcwd())
             if not is_safe:
                 return False, (
-                    f"Environment variable '{var_name}' failed path validation: "
+                    f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' failed path validation: "
                     f"{error_msg}"
                 )
         elif level == ValidationLevel.EXECUTABLE:
             for pattern_regex, description in self.DANGEROUS_EXECUTABLE_PATTERNS:
                 if re.search(pattern_regex, value):
                     return False, (
-                        f"Environment variable '{var_name}' contains dangerous "
+                        f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' contains dangerous "
                         f"pattern in executable context: {description}"
                     )
         elif level == ValidationLevel.IDENTIFIER:
@@ -361,7 +361,7 @@ class EnvVarValidator:
                 for pattern, description in self.SQL_INJECTION_PATTERNS:
                     if pattern.upper() in value.upper():
                         return False, (
-                            f"Environment variable '{var_name}' contains SQL "
+                            f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' contains SQL "
                             f"injection pattern: {description}"
                         )
         return True, None
@@ -380,12 +380,12 @@ class EnvVarValidator:
         """
         if len(value) > max_length:
             return False, (
-                f"Environment variable '{var_name}' value too long: "
+                f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' value too long: "
                 f"{len(value)} bytes (max: {max_length})"
             )
 
         if '\x00' in value:
-            return False, f"Environment variable '{var_name}' contains null bytes"
+            return False, f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' contains null bytes"
 
         validation_level = context or self.detect_context(var_name)
         rule = self.VALIDATION_RULES[validation_level]
@@ -396,7 +396,7 @@ class EnvVarValidator:
 
         if not rule.pattern.match(value):
             return False, (
-                f"Environment variable '{var_name}' failed validation for "
+                f"{ERROR_MSG_ENV_VAR_PREFIX}{var_name}' failed validation for "
                 f"{validation_level.value} context: {rule.message}"
             )
 

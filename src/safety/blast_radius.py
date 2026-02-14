@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from src.constants.probabilities import PROB_VERY_LOW
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
+    BLAST_RADIUS_SEPARATOR,
     DEFAULT_MAX_ENTITIES,
     DEFAULT_MAX_FILES,
     DEFAULT_MAX_LINES_PER_FILE,
@@ -187,7 +188,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
             violations.append(SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.HIGH,
-                message=f"Too many files affected: {len(files)} > {self.max_files}",
+                message=f"Too many files affected: {len(files)}{BLAST_RADIUS_SEPARATOR}{self.max_files}",
                 action=str(action),
                 context=context,
                 remediation_hint=f"Reduce file count to {self.max_files} or less"
@@ -201,7 +202,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
                     violations.append(SafetyViolation(
                         policy_name=self.name,
                         severity=ViolationSeverity.HIGH,
-                        message=f"Too many lines changed in {file_path}: {line_count} > {self.max_lines_per_file}",
+                        message=f"Too many lines changed in {file_path}: {line_count}{BLAST_RADIUS_SEPARATOR}{self.max_lines_per_file}",
                         action=str(action),
                         context=context,
                         remediation_hint="Split changes across multiple operations"
@@ -213,7 +214,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
             violations.append(SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.HIGH,
-                message=f"Too many total lines changed: {total_lines} > {self.max_total_lines}",
+                message=f"Too many total lines changed: {total_lines}{BLAST_RADIUS_SEPARATOR}{self.max_total_lines}",
                 action=str(action),
                 context=context,
                 remediation_hint="Break operation into smaller batches"
@@ -225,7 +226,7 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
             violations.append(SafetyViolation(
                 policy_name=self.name,
                 severity=ViolationSeverity.CRITICAL,
-                message=f"Too many entities affected: {len(entities)} > {self.max_entities}",
+                message=f"Too many entities affected: {len(entities)}{BLAST_RADIUS_SEPARATOR}{self.max_entities}",
                 action=str(action),
                 context=context,
                 remediation_hint=f"Limit operation scope to {self.max_entities} entities"

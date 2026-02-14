@@ -8,6 +8,7 @@ import threading
 from typing import Any, Dict, List, Optional
 
 from src.safety import SafetyPolicy, ValidationResult
+from src.safety.constants import POLICIES_CHECKED_KEY
 from src.utils.logging import get_logger
 
 # Module logger
@@ -154,7 +155,7 @@ class SafetyServiceMixin:
         from src.safety import SafetyViolation, ValidationResult
 
         violations: List[SafetyViolation] = []
-        metadata: Dict[str, Any] = {"policies_checked": []}
+        metadata: Dict[str, Any] = {POLICIES_CHECKED_KEY: []}
 
         for policy in self._policies:
             result = policy.validate(action, context)
@@ -198,7 +199,7 @@ class SafetyServiceMixin:
         from src.safety import SafetyViolation, ValidationResult, ViolationSeverity
 
         violations: List[SafetyViolation] = []
-        metadata: Dict[str, Any] = {"policies_checked": []}
+        metadata: Dict[str, Any] = {POLICIES_CHECKED_KEY: []}
 
         for policy in self._policies:
             result = await policy.validate_async(action, context)

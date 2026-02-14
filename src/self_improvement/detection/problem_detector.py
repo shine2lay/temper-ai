@@ -8,6 +8,13 @@ using configurable threshold-based rules.
 import logging
 from typing import List, Optional
 
+from src.self_improvement.constants import (
+    FIELD_ABSOLUTE,
+    FIELD_BASELINE_EXECUTIONS,
+    FIELD_CURRENT_EXECUTIONS,
+    FIELD_METRIC_CHANGE,
+    FIELD_RELATIVE,
+)
 from src.self_improvement.performance_comparison import PerformanceComparison
 
 from .problem_config import ProblemDetectionConfig
@@ -226,12 +233,12 @@ class ProblemDetector:
                 degradation_pct=-degradation_pct,  # Negative for degradation
                 threshold_used=self.config.quality_relative_threshold,
                 evidence={
-                    "metric_change": {
-                        "absolute": change.absolute_change,
-                        "relative": change.relative_change,
+                    FIELD_METRIC_CHANGE: {
+                        FIELD_ABSOLUTE: change.absolute_change,
+                        FIELD_RELATIVE: change.relative_change,
                     },
-                    "baseline_executions": comparison.baseline_executions,
-                    "current_executions": comparison.current_executions,
+                    FIELD_BASELINE_EXECUTIONS: comparison.baseline_executions,
+                    FIELD_CURRENT_EXECUTIONS: comparison.current_executions,
                 }
             )
             problems.append(problem)
@@ -305,12 +312,12 @@ class ProblemDetector:
                 degradation_pct=increase_pct,  # Positive for cost increase
                 threshold_used=self.config.cost_relative_threshold,
                 evidence={
-                    "metric_change": {
-                        "absolute": change.absolute_change,
-                        "relative": change.relative_change,
+                    FIELD_METRIC_CHANGE: {
+                        FIELD_ABSOLUTE: change.absolute_change,
+                        FIELD_RELATIVE: change.relative_change,
                     },
-                    "baseline_executions": comparison.baseline_executions,
-                    "current_executions": comparison.current_executions,
+                    FIELD_BASELINE_EXECUTIONS: comparison.baseline_executions,
+                    FIELD_CURRENT_EXECUTIONS: comparison.current_executions,
                 }
             )
             problems.append(problem)
@@ -394,12 +401,12 @@ class ProblemDetector:
                 degradation_pct=increase_pct,  # Positive for speed increase
                 threshold_used=self.config.speed_relative_threshold,
                 evidence={
-                    "metric_change": {
-                        "absolute": change.absolute_change,
-                        "relative": change.relative_change,
+                    FIELD_METRIC_CHANGE: {
+                        FIELD_ABSOLUTE: change.absolute_change,
+                        FIELD_RELATIVE: change.relative_change,
                     },
-                    "baseline_executions": comparison.baseline_executions,
-                    "current_executions": comparison.current_executions,
+                    FIELD_BASELINE_EXECUTIONS: comparison.baseline_executions,
+                    FIELD_CURRENT_EXECUTIONS: comparison.current_executions,
                 }
             )
             problems.append(problem)

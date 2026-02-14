@@ -12,6 +12,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from src.auth.constants import DISPLAY_ELLIPSIS, FIELD_EXPIRES_AT
 from src.auth.models import Session, User
 from src.constants.durations import (
     CLEANUP_INTERVAL_FREQUENT,
@@ -189,7 +190,7 @@ class InMemorySessionStore(SessionStoreProtocol):
             if session.is_expired():
                 # Clean up expired session inline (already holding lock)
                 del self._sessions[session_id]
-                logger.info(f"Expired session removed: {session_id[:SESSION_ID_LOG_LENGTH]}...")
+                logger.info(f"Expired session removed: {session_id[:SESSION_ID_LOG_LENGTH]}{DISPLAY_ELLIPSIS}")
                 return None
 
             # M-09: Touch session for LRU tracking (move to most recent)
@@ -209,7 +210,7 @@ class InMemorySessionStore(SessionStoreProtocol):
         async with self._lock:
             if session_id in self._sessions:
                 del self._sessions[session_id]
-                logger.info(f"Session deleted: {session_id[:SESSION_ID_LOG_LENGTH]}...")
+                logger.info(f"Session deleted: {session_id[:SESSION_ID_LOG_LENGTH]}{DISPLAY_ELLIPSIS}")
                 return True
             return False
 
@@ -403,7 +404,7 @@ class RedisSessionStore(SessionStoreProtocol):
             "picture": session.picture,
             "provider": session.provider,
             "authenticated_at": session.authenticated_at.isoformat(),
-            "expires_at": session.expires_at.isoformat() if session.expires_at else None,
+            FIELD_EXPIRES_AT: session.expires_at.isoformat() if session.expires_at else None,
             "ip_address": session.ip_address,
             "user_agent": session.user_agent,
         }
@@ -418,7 +419,7 @@ class RedisSessionStore(SessionStoreProtocol):
             picture=data.get("picture"),
             provider=provider if provider is not None else "",
             authenticated_at=datetime.fromisoformat(data["authenticated_at"]),
-            expires_at=datetime.fromisoformat(data["expires_at"]) if data.get("expires_at") else None,
+            expires_at=datetime.fromisoformat(data[FIELD_EXPIRES_AT]) if data.get(FIELD_EXPIRES_AT) else None,
             ip_address=data.get("ip_address"),
             user_agent=data.get("user_agent"),
         )

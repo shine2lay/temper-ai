@@ -15,6 +15,7 @@ from pydantic import BaseModel, ValidationError
 
 from src.compiler.config_loader import ConfigLoader
 from src.compiler.schemas import StageConfig, ToolConfig, WorkflowConfig
+from src.dashboard.constants import DEFAULT_ENCODING, ERROR_CONFIG_NOT_FOUND
 from src.schemas.agent_config import AgentConfig
 
 logger = logging.getLogger(__name__)
@@ -207,9 +208,9 @@ class StudioService:
 
         file_path = self._get_config_path(config_type, name)
         if not file_path.exists():
-            raise FileNotFoundError(f"Config not found: {config_type}/{name}")
+            raise FileNotFoundError(f"{ERROR_CONFIG_NOT_FOUND}{config_type}/{name}")
 
-        return file_path.read_text(encoding="utf-8")
+        return file_path.read_text(encoding=DEFAULT_ENCODING)
 
     def create_config(self, config_type: str, name: str, data: dict) -> dict:
         """Create a new config file.
@@ -268,7 +269,7 @@ class StudioService:
 
         file_path = self._get_config_path(config_type, name)
         if not file_path.exists():
-            raise FileNotFoundError(f"Config not found: {config_type}/{name}")
+            raise FileNotFoundError(f"{ERROR_CONFIG_NOT_FOUND}{config_type}/{name}")
 
         # Validate before writing
         validation = self.validate_config(config_type, data)
@@ -302,7 +303,7 @@ class StudioService:
 
         file_path = self._get_config_path(config_type, name)
         if not file_path.exists():
-            raise FileNotFoundError(f"Config not found: {config_type}/{name}")
+            raise FileNotFoundError(f"{ERROR_CONFIG_NOT_FOUND}{config_type}/{name}")
 
         file_path.unlink()
         self._loader.clear_cache()
@@ -369,9 +370,9 @@ class StudioService:
         """
         file_path = self._get_config_path(config_type, name)
         if not file_path.exists():
-            raise FileNotFoundError(f"Config not found: {config_type}/{name}")
+            raise FileNotFoundError(f"{ERROR_CONFIG_NOT_FOUND}{config_type}/{name}")
 
-        text = file_path.read_text(encoding="utf-8")
+        text = file_path.read_text(encoding=DEFAULT_ENCODING)
         parsed = yaml.safe_load(text)
         if not isinstance(parsed, dict):
             raise ValueError(f"Config file is not a valid YAML mapping: {config_type}/{name}")
@@ -387,4 +388,4 @@ class StudioService:
         """
         file_path.parent.mkdir(parents=True, exist_ok=True)
         yaml_text = yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
-        file_path.write_text(yaml_text, encoding="utf-8")
+        file_path.write_text(yaml_text, encoding=DEFAULT_ENCODING)

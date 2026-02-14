@@ -10,6 +10,13 @@ import time
 from collections import OrderedDict
 from typing import Any, Dict, List, Optional
 
+from src.safety.constants import (
+    ACTION_TYPE_KEY,
+    AGENT_ID_KEY,
+    POLICY_KEY,
+    STAGE_ID_KEY,
+    WORKFLOW_ID_KEY,
+)
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult
 
 logger = logging.getLogger(__name__)
@@ -83,13 +90,13 @@ def get_cache_key(
         SHA-256 hex digest of canonical representation
     """
     data = {
-        'policy': policy.name,
+        POLICY_KEY: policy.name,
         'policy_version': policy.version,
         'action': action,
-        'agent_id': agent_id,
-        'action_type': action_type,
-        'workflow_id': workflow_id,
-        'stage_id': stage_id,
+        AGENT_ID_KEY: agent_id,
+        ACTION_TYPE_KEY: action_type,
+        WORKFLOW_ID_KEY: workflow_id,
+        STAGE_ID_KEY: stage_id,
     }
 
     json_str = canonical_json(data)
@@ -141,10 +148,10 @@ def get_policy_snapshot(registry: Any) -> str:
 def context_to_dict(context: Any) -> Dict[str, Any]:
     """Convert PolicyExecutionContext to dict for policy validation."""
     return {
-        'agent_id': context.agent_id,
-        'workflow_id': context.workflow_id,
-        'stage_id': context.stage_id,
-        'action_type': context.action_type,
+        AGENT_ID_KEY: context.agent_id,
+        WORKFLOW_ID_KEY: context.workflow_id,
+        STAGE_ID_KEY: context.stage_id,
+        ACTION_TYPE_KEY: context.action_type,
         'action_data': context.action_data,
         'metadata': context.metadata
     }
@@ -169,12 +176,12 @@ async def log_violations(
             f"Safety violation: [{violation.severity.name}] "
             f"{violation.policy_name}: {safe_message}",
             extra={
-                'agent_id': context.agent_id,
-                'workflow_id': context.workflow_id,
-                'stage_id': context.stage_id,
-                'policy': violation.policy_name,
+                AGENT_ID_KEY: context.agent_id,
+                WORKFLOW_ID_KEY: context.workflow_id,
+                STAGE_ID_KEY: context.stage_id,
+                POLICY_KEY: violation.policy_name,
                 'severity': violation.severity.name,
-                'action_type': context.action_type
+                ACTION_TYPE_KEY: context.action_type
             }
         )
 
@@ -192,11 +199,11 @@ def log_violations_sync(
             f"Safety violation: [{violation.severity.name}] "
             f"{violation.policy_name}: {safe_message}",
             extra={
-                'agent_id': context.agent_id,
-                'workflow_id': context.workflow_id,
-                'stage_id': context.stage_id,
-                'policy': violation.policy_name,
+                AGENT_ID_KEY: context.agent_id,
+                WORKFLOW_ID_KEY: context.workflow_id,
+                STAGE_ID_KEY: context.stage_id,
+                POLICY_KEY: violation.policy_name,
                 'severity': violation.severity.name,
-                'action_type': context.action_type
+                ACTION_TYPE_KEY: context.action_type
             }
         )

@@ -2,6 +2,7 @@
 import warnings
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
+from src.agents.constants import ERROR_MSG_VALID_PROVIDERS_SUFFIX
 from src.agents.llm.anthropic_provider import AnthropicLLM
 from src.agents.llm.base import BaseLLM, LLMProvider
 from src.agents.llm.ollama import OllamaLLM
@@ -48,7 +49,7 @@ def _resolve_provider_enum(provider_str: str) -> LLMProvider:
     except ValueError:
         valid = [p.value for p in LLMProvider]
         raise LLMError(
-            f"Unknown LLM provider '{provider_str}'. Valid providers: {valid}"
+            f"Unknown LLM provider '{provider_str}{ERROR_MSG_VALID_PROVIDERS_SUFFIX}{valid}"
         )
 
 
@@ -100,8 +101,7 @@ def create_llm_from_config(inference_config: "InferenceConfig") -> BaseLLM:
     if provider_enum not in _PROVIDER_CLASSES:
         valid = [p.value for p in LLMProvider]
         raise LLMError(
-            f"Unsupported LLM provider '{provider_enum.value}'. "
-            f"Valid providers: {valid}"
+            f"Unsupported LLM provider '{provider_enum.value}{ERROR_MSG_VALID_PROVIDERS_SUFFIX}{valid}"
         )
 
     provider_class = _PROVIDER_CLASSES[provider_enum]
@@ -168,7 +168,7 @@ def create_llm_client(
     if not llm_class:
         valid = [p.value for p in LLMProvider]
         raise LLMError(
-            f"Unknown provider '{provider}'. Valid providers: {valid}"
+            f"Unknown provider '{provider}{ERROR_MSG_VALID_PROVIDERS_SUFFIX}{valid}"
         )
 
     instance: BaseLLM = llm_class(

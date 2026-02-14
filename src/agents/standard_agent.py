@@ -108,6 +108,9 @@ _MIN_PYTHON_CANCEL_FUTURES = (3, 9)
 # Default port numbers for LLM providers (kept for backward compatibility)
 OLLAMA_DEFAULT_PORT = 11434
 
+# Dialogue context limits
+DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS = 8000
+
 # Shared thread pool for parallel tool execution (M-28).
 # H-16: Lazy initialization with lifecycle management to avoid resource leaks.
 # M-18: Pool size configurable via AGENT_TOOL_WORKERS env var.
@@ -621,7 +624,7 @@ class StandardAgent(BaseAgent):
                 format_dialogue_history,
                 format_stage_agent_outputs,
             )
-            max_chars = getattr(self.config.agent, 'max_dialogue_context_chars', 8000)
+            max_chars = getattr(self.config.agent, 'max_dialogue_context_chars', DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS)
 
             dialogue_history = filtered_input.get("dialogue_history")
             if dialogue_history and isinstance(dialogue_history, list):

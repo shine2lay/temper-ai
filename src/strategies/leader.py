@@ -27,11 +27,14 @@ from src.strategies.base import (
     calculate_vote_distribution,
     extract_majority_decision,
 )
+from src.strategies.constants import CONFIG_KEY_LEADER_AGENT
 
 logger = logging.getLogger(__name__)
 
+SEPARATOR_WIDTH = 40
+
 # Separator for formatting team outputs
-TEAM_OUTPUT_SEPARATOR = "-" * 40
+TEAM_OUTPUT_SEPARATOR = "-" * SEPARATOR_WIDTH
 
 
 class LeaderCollaborationStrategy(CollaborationStrategy):
@@ -78,7 +81,7 @@ class LeaderCollaborationStrategy(CollaborationStrategy):
         Returns:
             Leader agent name, or None if not configured
         """
-        return config.get("leader_agent", self._leader_agent)
+        return config.get(CONFIG_KEY_LEADER_AGENT, self._leader_agent)
 
     def format_team_outputs(
         self, agent_outputs: List[AgentOutput]

@@ -18,6 +18,10 @@ from typing import Any, Dict, List, Optional, Set, Type
 
 from src.strategies.base import CollaborationStrategy
 from src.strategies.conflict_resolution import ConflictResolutionStrategy
+from src.strategies.constants import (
+    STRATEGY_NAME_CONSENSUS,
+    STRATEGY_NAME_MERIT_WEIGHTED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,8 +120,8 @@ class StrategyRegistry:
         # Import here to avoid circular dependencies
         try:
             from src.strategies.consensus import ConsensusStrategy
-            self._strategies["consensus"] = ConsensusStrategy
-            self._default_strategies.add("consensus")
+            self._strategies[STRATEGY_NAME_CONSENSUS] = ConsensusStrategy
+            self._default_strategies.add(STRATEGY_NAME_CONSENSUS)
         except ImportError as exc:
             logger.warning("Could not import ConsensusStrategy: %s", exc)
 
@@ -160,13 +164,13 @@ class StrategyRegistry:
                 RandomTiebreakerResolver,
             )
             from src.strategies.merit_weighted import HumanEscalationResolver, MeritWeightedResolver
-            self._resolvers["merit_weighted"] = MeritWeightedResolver
+            self._resolvers[STRATEGY_NAME_MERIT_WEIGHTED] = MeritWeightedResolver
             self._resolvers["highest_confidence"] = HighestConfidenceResolver
             self._resolvers["random_tiebreaker"] = RandomTiebreakerResolver
             self._resolvers["human_escalation"] = HumanEscalationResolver
 
             self._default_resolvers.update([
-                "merit_weighted",
+                STRATEGY_NAME_MERIT_WEIGHTED,
                 "highest_confidence",
                 "random_tiebreaker",
                 "human_escalation"
@@ -634,7 +638,7 @@ def get_resolver_from_config(
     if conflict_resolution is None:
         conflict_resolution = {}
 
-    resolver_name = conflict_resolution.get("strategy", "merit_weighted")
+    resolver_name = conflict_resolution.get("strategy", STRATEGY_NAME_MERIT_WEIGHTED)
     resolver_config = conflict_resolution.get("config", {})
 
     return registry.get_resolver(resolver_name, **resolver_config)

@@ -23,6 +23,7 @@ except ImportError:
 from src.agents.constants import (
     DEFAULT_MAX_CIRCUIT_BREAKERS,
     DEFAULT_MAX_HTTP_CLIENTS,
+    ERROR_MSG_RATE_LIMIT_EXCEEDED,
 )
 
 # Helper functions extracted to reduce class size
@@ -348,7 +349,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             entity_id = (context.agent_id if context and hasattr(context, 'agent_id') else self.model)
             allowed, reason = self._rate_limiter.check_and_record_rate_limit(entity_id)
             if not allowed:
-                raise LLMRateLimitError(reason or "LLM rate limit exceeded")
+                raise LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
 
         # Cache check
         cache_key, cached = self._check_cache(prompt, context, **kwargs)
@@ -467,7 +468,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             entity_id = (context.agent_id if context and hasattr(context, 'agent_id') else self.model)
             allowed, reason = self._rate_limiter.check_and_record_rate_limit(entity_id)
             if not allowed:
-                raise LLMRateLimitError(reason or "LLM rate limit exceeded")
+                raise LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
 
         cache_key, cached = self._check_cache(prompt, context, **kwargs)
         if cached is not None:
@@ -521,7 +522,7 @@ class BaseLLM(LLMContextManagerMixin, ABC):
             entity_id = (context.agent_id if context and hasattr(context, 'agent_id') else self.model)
             allowed, reason = self._rate_limiter.check_and_record_rate_limit(entity_id)
             if not allowed:
-                raise LLMRateLimitError(reason or "LLM rate limit exceeded")
+                raise LLMRateLimitError(reason or ERROR_MSG_RATE_LIMIT_EXCEEDED)
 
         cache_key, cached = self._check_cache(prompt, context, **kwargs)
         if cached is not None:

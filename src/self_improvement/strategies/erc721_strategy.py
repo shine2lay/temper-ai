@@ -10,6 +10,12 @@ import copy
 from typing import Dict, List
 
 from src.constants.probabilities import FRACTION_HALF, PROB_MINIMAL
+from src.self_improvement.constants import (
+    PROMPT_LOCATION_INLINE,
+    STRATEGY_CHANGE,
+    STRATEGY_TYPE,
+    VARIANT_TYPE,
+)
 from src.self_improvement.strategies.strategy import (
     ImprovementStrategy,
     LearnedPattern,
@@ -110,9 +116,9 @@ contract MyNFT is ERC721, Ownable {
         # Reduce by 50%, minimum 0.05
         new_temp = max(PROB_MINIMAL, current_temp * FRACTION_HALF)
         variant_temp.inference["temperature"] = round(new_temp, 2)
-        variant_temp.extra_metadata["strategy"] = self.name
-        variant_temp.extra_metadata["variant_type"] = "lower_temperature"
-        variant_temp.extra_metadata["change"] = f"temperature: {current_temp} -> {new_temp:.2f}"
+        variant_temp.extra_metadata[STRATEGY_TYPE] = self.name
+        variant_temp.extra_metadata[VARIANT_TYPE] = "lower_temperature"
+        variant_temp.extra_metadata[STRATEGY_CHANGE] = f"temperature: {current_temp} -> {new_temp:.2f}"
         variants.append(variant_temp)
 
         # Variant 2: Code-specialized model
@@ -126,20 +132,20 @@ contract MyNFT is ERC721, Ownable {
         if code_model:
             variant_model = copy.deepcopy(current_config)
             variant_model.inference["model"] = code_model
-            variant_model.extra_metadata["strategy"] = self.name
-            variant_model.extra_metadata["variant_type"] = "code_model"
-            variant_model.extra_metadata["change"] = f"model: {current_model} -> {code_model}"
+            variant_model.extra_metadata[STRATEGY_TYPE] = self.name
+            variant_model.extra_metadata[VARIANT_TYPE] = "code_model"
+            variant_model.extra_metadata[STRATEGY_CHANGE] = f"model: {current_model} -> {code_model}"
             variants.append(variant_model)
 
         # Variant 3: Enhanced prompt with inline Solidity examples
         variant_prompt = copy.deepcopy(current_config)
-        current_prompt = variant_prompt.prompt.get("inline", "")
+        current_prompt = variant_prompt.prompt.get(PROMPT_LOCATION_INLINE, "")
         if self.SOLIDITY_EXAMPLE not in current_prompt:
             enhanced = current_prompt + "\n\nREFERENCE EXAMPLE:\n" + self.SOLIDITY_EXAMPLE
-            variant_prompt.prompt["inline"] = enhanced
-        variant_prompt.extra_metadata["strategy"] = self.name
-        variant_prompt.extra_metadata["variant_type"] = "enhanced_prompt"
-        variant_prompt.extra_metadata["change"] = "Added inline Solidity reference example"
+            variant_prompt.prompt[PROMPT_LOCATION_INLINE] = enhanced
+        variant_prompt.extra_metadata[STRATEGY_TYPE] = self.name
+        variant_prompt.extra_metadata[VARIANT_TYPE] = "enhanced_prompt"
+        variant_prompt.extra_metadata[STRATEGY_CHANGE] = "Added inline Solidity reference example"
         variants.append(variant_prompt)
 
         return variants

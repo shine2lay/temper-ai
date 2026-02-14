@@ -18,6 +18,9 @@ from src.core.context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
+# Default Ollama sampling parameters
+DEFAULT_REPEAT_PENALTY = 1.1
+
 
 class OllamaLLM(BaseLLM):
     """Ollama LLM provider (local models).
@@ -49,7 +52,7 @@ class OllamaLLM(BaseLLM):
             "temperature": kwargs.get("temperature", self.temperature),
             "top_p": kwargs.get("top_p", self.top_p),
             "num_predict": kwargs.get("max_tokens", self.max_tokens),
-            "repeat_penalty": kwargs.get("repeat_penalty", 1.1),
+            "repeat_penalty": kwargs.get("repeat_penalty", DEFAULT_REPEAT_PENALTY),
         }
 
         if tools:

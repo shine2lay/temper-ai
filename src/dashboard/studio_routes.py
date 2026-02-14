@@ -2,15 +2,16 @@
 import logging
 from typing import Any, Dict
 
-from fastapi import APIRouter, Body, HTTPException, Path as PathParam
+from fastapi import APIRouter, Body, HTTPException
 from starlette.responses import PlainTextResponse
 from starlette.status import (
+    HTTP_201_CREATED,
     HTTP_400_BAD_REQUEST,
     HTTP_404_NOT_FOUND,
     HTTP_409_CONFLICT,
-    HTTP_201_CREATED,
 )
 
+from src.dashboard.constants import API_CONFIG_ENDPOINT
 from src.dashboard.studio_service import VALID_CONFIG_TYPES, StudioService
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ def create_studio_router(studio_service: StudioService) -> APIRouter:
         except ValueError as exc:
             raise HTTPException(status_code=HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    @router.get("/configs/{config_type}/{name}")
+    @router.get(API_CONFIG_ENDPOINT)
     def get_config(config_type: str, name: str) -> Dict[str, Any]:
         """Get a config as parsed JSON."""
         _validate_config_type_param(config_type)
@@ -76,7 +77,7 @@ def create_studio_router(studio_service: StudioService) -> APIRouter:
         except FileNotFoundError as exc:
             raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    @router.post("/configs/{config_type}/{name}", status_code=HTTP_201_CREATED)
+    @router.post(API_CONFIG_ENDPOINT, status_code=HTTP_201_CREATED)
     def create_config(
         config_type: str,
         name: str,
@@ -91,7 +92,7 @@ def create_studio_router(studio_service: StudioService) -> APIRouter:
         except FileExistsError as exc:
             raise HTTPException(status_code=HTTP_409_CONFLICT, detail=str(exc)) from exc
 
-    @router.put("/configs/{config_type}/{name}")
+    @router.put(API_CONFIG_ENDPOINT)
     def update_config(
         config_type: str,
         name: str,
@@ -106,7 +107,7 @@ def create_studio_router(studio_service: StudioService) -> APIRouter:
         except FileNotFoundError as exc:
             raise HTTPException(status_code=HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    @router.delete("/configs/{config_type}/{name}")
+    @router.delete(API_CONFIG_ENDPOINT)
     def delete_config(config_type: str, name: str) -> Dict[str, Any]:
         """Delete a config file."""
         _validate_config_type_param(config_type)

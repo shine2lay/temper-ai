@@ -10,6 +10,15 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from src.self_improvement.constants import (
+    FIELD_AGENT_NAME,
+    FIELD_BASELINE_PROFILE,
+    FIELD_CURRENT_PROFILE,
+    FIELD_METRICS,
+    FIELD_TOTAL_EXECUTIONS,
+    FIELD_WINDOW_END,
+    FIELD_WINDOW_START,
+)
 from src.self_improvement.data_models import AgentPerformanceProfile
 from src.self_improvement.detection.problem_models import PerformanceProblem
 
@@ -122,23 +131,23 @@ class ImprovementProposal:
         """
         return {
             "proposal_id": self.proposal_id,
-            "agent_name": self.agent_name,
+            FIELD_AGENT_NAME: self.agent_name,
             "problem": self.problem.to_dict(),
             "strategy_name": self.strategy_name,
             "estimated_impact": self.estimated_impact,
-            "baseline_profile": {
-                "agent_name": self.baseline_profile.agent_name,
-                "window_start": self.baseline_profile.window_start.isoformat(),
-                "window_end": self.baseline_profile.window_end.isoformat(),
-                "total_executions": self.baseline_profile.total_executions,
-                "metrics": self.baseline_profile.metrics,
+            FIELD_BASELINE_PROFILE: {
+                FIELD_AGENT_NAME: self.baseline_profile.agent_name,
+                FIELD_WINDOW_START: self.baseline_profile.window_start.isoformat(),
+                FIELD_WINDOW_END: self.baseline_profile.window_end.isoformat(),
+                FIELD_TOTAL_EXECUTIONS: self.baseline_profile.total_executions,
+                FIELD_METRICS: self.baseline_profile.metrics,
             },
-            "current_profile": {
-                "agent_name": self.current_profile.agent_name,
-                "window_start": self.current_profile.window_start.isoformat(),
-                "window_end": self.current_profile.window_end.isoformat(),
-                "total_executions": self.current_profile.total_executions,
-                "metrics": self.current_profile.metrics,
+            FIELD_CURRENT_PROFILE: {
+                FIELD_AGENT_NAME: self.current_profile.agent_name,
+                FIELD_WINDOW_START: self.current_profile.window_start.isoformat(),
+                FIELD_WINDOW_END: self.current_profile.window_end.isoformat(),
+                FIELD_TOTAL_EXECUTIONS: self.current_profile.total_executions,
+                FIELD_METRICS: self.current_profile.metrics,
             },
             "created_at": self.created_at.isoformat(),
             "priority": self.priority,
@@ -163,24 +172,24 @@ class ImprovementProposal:
 
         # Reconstruct performance profiles
         baseline_profile = AgentPerformanceProfile(
-            agent_name=data["baseline_profile"]["agent_name"],
-            window_start=datetime.fromisoformat(data["baseline_profile"]["window_start"]),
-            window_end=datetime.fromisoformat(data["baseline_profile"]["window_end"]),
-            total_executions=data["baseline_profile"]["total_executions"],
-            metrics=data["baseline_profile"]["metrics"],
+            agent_name=data[FIELD_BASELINE_PROFILE][FIELD_AGENT_NAME],
+            window_start=datetime.fromisoformat(data[FIELD_BASELINE_PROFILE][FIELD_WINDOW_START]),
+            window_end=datetime.fromisoformat(data[FIELD_BASELINE_PROFILE][FIELD_WINDOW_END]),
+            total_executions=data[FIELD_BASELINE_PROFILE][FIELD_TOTAL_EXECUTIONS],
+            metrics=data[FIELD_BASELINE_PROFILE][FIELD_METRICS],
         )
 
         current_profile = AgentPerformanceProfile(
-            agent_name=data["current_profile"]["agent_name"],
-            window_start=datetime.fromisoformat(data["current_profile"]["window_start"]),
-            window_end=datetime.fromisoformat(data["current_profile"]["window_end"]),
-            total_executions=data["current_profile"]["total_executions"],
-            metrics=data["current_profile"]["metrics"],
+            agent_name=data[FIELD_CURRENT_PROFILE][FIELD_AGENT_NAME],
+            window_start=datetime.fromisoformat(data[FIELD_CURRENT_PROFILE][FIELD_WINDOW_START]),
+            window_end=datetime.fromisoformat(data[FIELD_CURRENT_PROFILE][FIELD_WINDOW_END]),
+            total_executions=data[FIELD_CURRENT_PROFILE][FIELD_TOTAL_EXECUTIONS],
+            metrics=data[FIELD_CURRENT_PROFILE][FIELD_METRICS],
         )
 
         return cls(
             proposal_id=data["proposal_id"],
-            agent_name=data["agent_name"],
+            agent_name=data[FIELD_AGENT_NAME],
             problem=PerformanceProblem.from_dict(data["problem"]),
             strategy_name=data["strategy_name"],
             estimated_impact=data["estimated_impact"],

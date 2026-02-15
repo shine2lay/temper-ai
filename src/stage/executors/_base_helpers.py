@@ -9,11 +9,11 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from src.workflow.constants import (
+from src.shared.constants.execution import (
     AGENT_ROLE_LEADER,
     STATUS_UNKNOWN,
 )
-from src.workflow.domain_state import ConfigLoaderProtocol
+from src.shared.core.protocols import ConfigLoaderProtocol
 from src.stage.executors.state_keys import StateKeys
 from src.shared.constants.sizes import UUID_HEX_SHORT_LENGTH
 from src.shared.utils.config_helpers import sanitize_config_for_display
@@ -557,7 +557,7 @@ def check_dialogue_convergence(
     Returns:
         Tuple of (conv_score, converged, round_outcome)
     """
-    from src.workflow.constants import ERROR_MSG_FOR_STAGE_SUFFIX
+    from src.shared.constants.execution import ERROR_MSG_FOR_STAGE_SUFFIX
 
     conv_score = strategy.calculate_convergence(current_outputs, previous_outputs)
     logger.info(

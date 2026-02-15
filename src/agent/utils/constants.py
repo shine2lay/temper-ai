@@ -5,20 +5,21 @@ pre-command execution, and agent type constants.
 
 LLM-specific constants (HTTP, model defaults, streaming, cost, pricing)
 live in ``src.llm.constants``.
+
+Cross-layer constants (used by storage schemas) are canonical in
+``src.shared.constants`` and re-exported here for backward compatibility.
 """
 
 from src.shared.constants.limits import DEFAULT_MAX_TOKENS as DEFAULT_MAX_TOKENS  # noqa: F401
 from src.shared.constants.limits import DEFAULT_TEMPERATURE as DEFAULT_TEMPERATURE  # noqa: F401
-
-# ============================================================================
-# Agent Execution
-# ============================================================================
-
-MAX_TOOL_CALLS_PER_EXECUTION = 20
-MAX_EXECUTION_TIME_SECONDS = 300  # 5 minutes
-MAX_PROMPT_LENGTH = 32_000  # Maximum prompt length in characters
-DEFAULT_CACHE_TTL_SECONDS = 3600  # 1 hour
-DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS = 8000  # Max chars for auto-injected dialogue context
+from src.shared.constants.agent_defaults import (  # noqa: F401
+    DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS,
+    MAX_EXECUTION_TIME_SECONDS,
+    MAX_PROMPT_LENGTH,
+    MAX_TOOL_CALLS_PER_EXECUTION,
+    PRE_COMMAND_DEFAULT_TIMEOUT,
+    PRE_COMMAND_MAX_TIMEOUT,
+)
 
 # ============================================================================
 # Confidence Scoring
@@ -39,11 +40,9 @@ PROMPT_PREVIEW_LENGTH = 200
 OUTPUT_PREVIEW_LENGTH = 150
 
 # ============================================================================
-# Pre-Command Execution
+# Pre-Command Execution (additional constants)
 # ============================================================================
 
-PRE_COMMAND_DEFAULT_TIMEOUT = 60
-PRE_COMMAND_MAX_TIMEOUT = 300
 PRE_COMMAND_MAX_OUTPUT_CHARS = 2000
 
 # ============================================================================

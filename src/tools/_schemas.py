@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from src.workflow.constants import DEFAULT_VERSION
+from src.shared.constants.execution import DEFAULT_VERSION
 from src.shared.constants.durations import SECONDS_PER_MINUTE
 from src.shared.constants.limits import (
     DEFAULT_QUEUE_SIZE,

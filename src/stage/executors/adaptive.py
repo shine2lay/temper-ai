@@ -5,7 +5,7 @@ Starts with parallel execution, switches to sequential if disagreement is high.
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, cast
 
-from src.workflow.constants import (
+from src.shared.constants.execution import (
     ADAPTIVE_META_DISAGREEMENT_RATE,
     ADAPTIVE_META_STARTED_WITH,
     ADAPTIVE_META_SWITCHED_TO,
@@ -13,7 +13,7 @@ from src.workflow.constants import (
     EXECUTION_MODE_PARALLEL,
     EXECUTION_MODE_SEQUENTIAL,
 )
-from src.workflow.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
+from src.shared.core.protocols import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.stage.executors.base import StageExecutor
 from src.stage.executors.parallel import ParallelStageExecutor
 from src.stage.executors.sequential import SequentialStageExecutor

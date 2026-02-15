@@ -429,9 +429,13 @@ class WorkflowExecutor:
         """Execute a stage with loop-back support.
 
         Runs the stage, then checks the loop condition. If met and under
-        max_loops, re-runs the loop target stage.
+        max_loops, re-runs the loop target stage and any intermediate
+        stages between the target and this stage.
         """
         loop_cfg = self._build_loop_config(stage_ref, stage_name)
+        intermediate = self._find_intermediate_stages(
+            loop_cfg["target"], stage_name, stage_refs, stage_nodes,
+        )
         loop_count = 0
 
         while True:
@@ -456,7 +460,35 @@ class WorkflowExecutor:
                     loop_cfg["target"], stage_nodes, state, workflow_config,
                 )
 
+            for mid_name in intermediate:
+                logger.info(
+                    "Re-running intermediate stage '%s' in loop", mid_name,
+                )
+                state = self._execute_with_negotiation(
+                    mid_name, stage_nodes, state, workflow_config,
+                )
+
         return state
+
+    @staticmethod
+    def _find_intermediate_stages(
+        target: str, source: str,
+        stage_refs: List[Any], stage_nodes: Dict[str, Callable],
+    ) -> list[str]:
+        """Find stages between loop target and source in DAG order.
+
+        Returns stage names that sit between the loop target and the
+        looping stage, so they can be re-executed during loop iterations.
+        """
+        names = [_ref_attr(ref, "name") for ref in stage_refs]
+        try:
+            t_idx = names.index(target)
+            s_idx = names.index(source)
+        except ValueError:
+            return []
+        if t_idx >= s_idx:
+            return []
+        return [n for n in names[t_idx + 1:s_idx] if n in stage_nodes]
 
     @staticmethod
     def _build_loop_config(stage_ref: Any, stage_name: str) -> Dict[str, Any]:

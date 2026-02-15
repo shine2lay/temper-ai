@@ -65,6 +65,14 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
     DEFAULT_MAX_ENTITIES = DEFAULT_MAX_ENTITIES
     DEFAULT_MAX_OPS_PER_MINUTE = DEFAULT_MAX_OPS_PER_MINUTE
 
+    # Instance attributes set by _init_limits() / _init_forbidden_patterns()
+    max_files: int
+    max_lines_per_file: int
+    max_total_lines: int
+    max_entities: int
+    max_ops_per_minute: int
+    forbidden_patterns: list
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize blast radius policy with validated configuration.
 

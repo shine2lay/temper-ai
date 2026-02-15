@@ -12,7 +12,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, cast
 
-from src.workflow.constants import ERROR_MSG_QUALITY_GATE_FAILED
+from src.shared.constants.execution import ERROR_MSG_QUALITY_GATE_FAILED
 from src.stage.executors._base_helpers import _truncate_tracking_data
 from src.stage.executors.state_keys import StateKeys
 from src.shared.constants.limits import DEFAULT_MIN_ITEMS, SMALL_ITEM_LIMIT

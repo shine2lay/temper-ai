@@ -24,104 +24,25 @@ Example:
     >>> context = ExecutionContext(...) # Recreate infrastructure
 """
 import uuid
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any, Dict, Iterator, List, Optional, runtime_checkable
+from typing import Any, Dict, List, Optional
 
-from typing_extensions import Protocol
-
-from src.workflow.constants import DEFAULT_VERSION, WORKFLOW_ID_PREFIX
+from src.shared.constants.execution import DEFAULT_VERSION, WORKFLOW_ID_PREFIX
+from src.shared.core.protocols import (  # noqa: F401
+    ConfigLoaderProtocol,
+    DomainToolRegistryProtocol,
+    TrackerProtocol,
+    VisualizerProtocol,
+)
 
 # Workflow ID format constants
 WORKFLOW_ID_HEX_LENGTH = 12  # Length of hex portion in workflow IDs (wf-<12 hex chars>)
 
 # ---------------------------------------------------------------------------
 # Protocol definitions for InfrastructureContext field types
+# (canonical in src.shared.core.protocols, re-exported above for compat)
 # ---------------------------------------------------------------------------
-
-@runtime_checkable
-class TrackerProtocol(Protocol):
-    """Minimal interface for an execution tracker."""
-
-    @contextmanager
-    def track_stage(
-        self,
-        stage_name: str,
-        stage_config: Dict[str, Any],
-        workflow_id: str,
-        input_data: Dict[str, Any],
-    ) -> Iterator[str]:
-        """Track stage execution."""
-        ...
-
-    @contextmanager
-    def track_agent(
-        self,
-        agent_name: str,
-        agent_config: Dict[str, Any],
-        stage_id: str,
-        input_data: Dict[str, Any],
-    ) -> Iterator[str]:
-        """Track agent execution."""
-        ...
-
-    def set_agent_output(
-        self,
-        agent_id: str,
-        output_data: Dict[str, Any],
-        reasoning: Optional[str] = None,
-        total_tokens: Optional[int] = None,
-        estimated_cost_usd: Optional[float] = None,
-        num_llm_calls: int = 0,
-        num_tool_calls: int = 0,
-    ) -> None:
-        """Set agent output."""
-        ...
-
-    def track_collaboration_event(
-        self,
-        event_type: str,
-        stage_name: str,
-        agents: List[str],
-        decision: Optional[str],
-        confidence: float,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Track collaboration event."""
-        ...
-
-
-@runtime_checkable
-class DomainToolRegistryProtocol(Protocol):
-    """Minimal interface for a tool registry in domain state context."""
-
-    def get(self, name: str, version: Optional[str] = None) -> Any:
-        """Get tool by name and optional version."""
-        ...
-
-
-@runtime_checkable
-class ConfigLoaderProtocol(Protocol):
-    """Minimal interface for a configuration loader."""
-
-    def load_agent(self, agent_name: str) -> Dict[str, Any]:
-        """Load agent configuration by name."""
-        ...
-
-    def load_stage(self, stage_name: str) -> Dict[str, Any]:
-        """Load stage configuration by name."""
-        ...
-
-
-@runtime_checkable
-class VisualizerProtocol(Protocol):
-    """Minimal interface for a workflow visualizer."""
-
-    def update(self, state: Dict[str, Any]) -> None:
-        """Update visualizer with workflow state."""
-        ...
-
 
 @dataclass
 class WorkflowDomainState:

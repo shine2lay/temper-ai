@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from src.workflow.constants import DEFAULT_VERSION
+from src.shared.constants.execution import DEFAULT_VERSION
 from src.shared.constants.durations import SECONDS_PER_30_MINUTES
 from src.shared.constants.limits import DEFAULT_MIN_ITEMS, SMALL_ITEM_LIMIT
 from src.shared.constants.probabilities import (

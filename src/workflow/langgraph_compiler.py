@@ -36,7 +36,7 @@ from src.stage.executors import (
     SequentialStageExecutor,
 )
 from src.workflow.node_builder import NodeBuilder
-from src.stage.stage_compiler import StageCompiler
+from src.workflow.stage_compiler import StageCompiler
 from src.workflow.state_manager import StateManager
 from src.workflow.workflow_executor import CompiledGraphRunner
 from src.safety.factory import create_safety_stack

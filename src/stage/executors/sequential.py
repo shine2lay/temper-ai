@@ -31,7 +31,7 @@ class StageOutputData:
 
 
 from src.agent.utils.agent_factory import AgentFactory
-from src.workflow.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
+from src.shared.core.protocols import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.stage.executors._sequential_helpers import (
     AgentExecutionContext,
     execute_agent,
@@ -271,7 +271,6 @@ class SequentialStageExecutor(StageExecutor):
     ) -> Dict[str, Any]:
         """Execute stage with sequential agent execution. Returns updated state."""
         tracker = state.get(StateKeys.TRACKER)
-        workflow_id = state.get(StateKeys.WORKFLOW_ID, "unknown")
 
         agents, error_handling = self._parse_stage_config(stage_config, halt_on_failure)
 

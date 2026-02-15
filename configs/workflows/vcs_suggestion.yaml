@@ -30,7 +30,7 @@ workflow:
       description: "Architecture + implementation + safety perspectives + decider produce unified design"
       depends_on:
         - vcs_triage
-      # conditional: true  # TEMP BYPASS for Fix 2 testing
+      # conditional: true  # TEMP BYPASS for Fix 3 testing
       # condition: "{{ 'DECISION: APPROVE' in (stage_outputs.vcs_triage.decision | default('')) }}"
       # skip_to: end
 

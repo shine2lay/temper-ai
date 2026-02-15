@@ -14,8 +14,8 @@ from typing_extensions import TypedDict
 if TYPE_CHECKING:
     from src.stage.executors._base_helpers import DialogueReinvocationParams
 
-from src.workflow.constants import ERROR_MSG_FOR_STAGE_SUFFIX
-from src.workflow.domain_state import (
+from src.shared.constants.execution import ERROR_MSG_FOR_STAGE_SUFFIX
+from src.shared.core.protocols import (
     ConfigLoaderProtocol,
     DomainToolRegistryProtocol,
     TrackerProtocol,

@@ -8,7 +8,7 @@ import uuid
 from typing import Any, Callable, Dict, Optional
 
 from src.agent.utils.agent_factory import AgentFactory
-from src.workflow.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
+from src.shared.core.protocols import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.stage.executors._parallel_helpers import (
     AgentNodeParams,
     QualityGateFailureParams,

@@ -42,19 +42,21 @@ class AgentObserver:
 
     def track_llm_call(self, **kwargs: Any) -> None:
         """Track an LLM call. No-op if tracker unavailable."""
-        if not self.active:
+        agent_id = self._agent_id
+        if not self.active or agent_id is None:
             return
         try:
-            self._tracker.track_llm_call(agent_id=self._agent_id, **kwargs)
+            self._tracker.track_llm_call(agent_id=agent_id, **kwargs)
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:
             logger.warning(f"Failed to track LLM call: {e}")
 
     def track_tool_call(self, **kwargs: Any) -> None:
         """Track a tool call. No-op if tracker unavailable."""
-        if not self.active:
+        agent_id = self._agent_id
+        if not self.active or agent_id is None:
             return
         try:
-            self._tracker.track_tool_call(agent_id=self._agent_id, **kwargs)
+            self._tracker.track_tool_call(agent_id=agent_id, **kwargs)
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:
             logger.warning(f"Failed to track tool call: {e}")
 

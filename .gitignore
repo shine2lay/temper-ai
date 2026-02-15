@@ -70,3 +70,12 @@ dmypy.json
 *.temp
 .cache/
 .tmp/
+
+# Generated outputs
+*_gantt.html
+output_*.json
+sample_*.json
+test_quality_issues.json
+checkpoints/
+my-checkpoints/
+changes/

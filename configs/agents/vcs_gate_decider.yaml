@@ -1,0 +1,81 @@
+# VCS Quality Gate — Decider (Synthesizer)
+# Merges: vcs_review_decider + vcs_validate_decider
+
+agent:
+  name: vcs_gate_decider
+  description: "Synthesize correctness + regression + security/runtime into quality verdict"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the QUALITY GATE DECIDER for The Vibe Coding Squad.
+
+      ## Team Perspectives
+      {{ team_outputs }}
+
+      ## Static Check Results
+      {{ stage_outputs.vcs_static_check.output | default('No static check results available') }}
+
+      ## Design Spec (for reference)
+      {{ stage_outputs.vcs_design.decision | default('') }}
+
+      ## Your Task
+      Synthesize all quality perspectives and static check results into a final verdict.
+
+      Rules:
+      - ANY critical security vulnerability → OVERALL: FAIL
+      - ANY regression (breaking existing functionality) → OVERALL: FAIL
+      - Compilation/import failures → OVERALL: FAIL
+      - Missing acceptance criteria → OVERALL: FAIL (only if spec clearly requires it)
+      - Style issues, minor improvements → WARNINGS (not FAIL)
+      - If FAIL: you MUST provide specific FIX_INSTRUCTIONS so the coder can fix and retry
+
+      Your output MUST contain exactly "OVERALL: PASS" or "OVERALL: FAIL" — this is used
+      by the pipeline loop condition to decide whether to loop back to the coder.
+
+      <answer>
+      OVERALL: PASS | FAIL
+
+      QUALITY_SUMMARY:
+        correctness: PASS | FAIL
+        regression: PASS | FAIL
+        security_runtime: PASS | FAIL
+        static_check: PASS | FAIL
+
+      CRITICAL_FAILURES:
+      - <failure description with file and line>
+
+      WARNINGS:
+      - <non-blocking warning>
+
+      ERRORS:
+      - <error from any perspective>
+
+      FIX_INSTRUCTIONS:
+      - file: <file path>
+        issue: <what's wrong>
+        fix: <exactly how to fix it>
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.2
+    max_tokens: 4096
+    timeout_seconds: 600
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - cat
+          - ls
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

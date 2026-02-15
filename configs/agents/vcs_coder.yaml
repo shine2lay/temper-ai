@@ -18,11 +18,8 @@ agent:
       All files MUST be written under: {{ workspace_path }}
       You MUST use full absolute paths starting with {{ workspace_path }} for every file.
 
-      ## Implementation Spec
-      {{ stage_outputs.get('vcs_spec', {}).get('decision', '') or stage_outputs.get('vcs_spec_decision', {}).get('output', '') }}
-
-      ## Implementation Plan
-      {{ stage_outputs.get('vcs_code_plan', {}).get('decision', '') or stage_outputs.get('vcs_code_plan_decision', {}).get('output', '') }}
+      ## Unified Design (Spec + Plan)
+      {{ stage_outputs.get('vcs_design', {}).get('decision', '') or stage_outputs.get('vcs_design_decision', {}).get('output', '') }}
 
       ## Detailed Task Specs (FOLLOW THESE EXACTLY)
       The task planners have produced exact file-level specifications below.
@@ -40,7 +37,7 @@ agent:
       {{ static_output }}
       {% endif %}
 
-      {% set validate_output = stage_outputs.get('vcs_validate', {}).get('decision', '') or stage_outputs.get('vcs_validate_decision', {}).get('output', '') %}
+      {% set validate_output = stage_outputs.get('vcs_quality_gate', {}).get('decision', '') or stage_outputs.get('vcs_quality_gate_decision', {}).get('output', '') %}
       {% if validate_output %}
       ## Validation Feedback (FIX THESE ISSUES)
       The previous code was validated and FAILED. You MUST fix the issues below.

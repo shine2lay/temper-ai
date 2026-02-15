@@ -33,7 +33,8 @@ class NodeBuilder:
         config_loader: ConfigLoader,
         tool_registry: ToolRegistry,
         executors: Dict[str, Any],
-        tool_executor: Optional[Any] = None
+        tool_executor: Optional[Any] = None,
+        context_provider: Optional[Any] = None,
     ) -> None:
         """Initialize node builder.
 
@@ -42,11 +43,17 @@ class NodeBuilder:
             tool_registry: ToolRegistry for agent tool access
             executors: Dictionary of stage executors (sequential, parallel, adaptive)
             tool_executor: ToolExecutor with safety stack (optional)
+            context_provider: Optional ContextProvider for selective input resolution
         """
         self.config_loader = config_loader
         self.tool_registry = tool_registry
         self.executors = executors
         self.tool_executor = tool_executor
+
+        # Inject context_provider into all executors
+        if context_provider is not None:
+            for executor in executors.values():
+                executor.context_provider = context_provider
 
     def create_stage_node(
         self,
@@ -70,11 +77,11 @@ class NodeBuilder:
             >>> node = builder.create_stage_node("research", workflow_config)
             >>> graph.add_node("research", node)
         """
-        def stage_node(state: LangGraphWorkflowState) -> Dict[str, Any]:
+        def stage_node(state: Any) -> Dict[str, Any]:
             """Execute stage with configured agent mode.
 
             Args:
-                state: Current workflow state (LangGraphWorkflowState dataclass from LangGraph)
+                state: Current workflow state (LangGraphWorkflowState dataclass or dict)
 
             Returns:
                 Dict with updates to apply to state
@@ -82,8 +89,11 @@ class NodeBuilder:
             Raises:
                 ValueError: If stage config cannot be loaded
             """
-            # Convert to dict for executor
-            state_dict = state.to_typed_dict()
+            # Convert to dict for executor (handle both dataclass and plain dict)
+            if isinstance(state, dict):
+                state_dict = dict(state)
+            else:
+                state_dict = state.to_typed_dict()
 
             # Add tool_executor to state if available (for safety-integrated tool execution)
             if self.tool_executor is not None:

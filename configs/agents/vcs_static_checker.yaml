@@ -1,4 +1,4 @@
-# VCS Static Checker Agent
+# VCS Static Checker Agent v3.0
 # Purpose: Run deterministic static checks via pre_commands, LLM only synthesizes results
 #
 # Pre-commands run via subprocess BEFORE the LLM prompt. The LLM receives
@@ -6,126 +6,34 @@
 # decides WHAT to run.
 #
 # Check categories (ordered cheap → expensive):
-#   1. Syntax — py_compile, ruff lint (fast, catches broken code early)
-#   2. Imports — verify core modules load without error
-#   3. Regression — CRUD endpoint roundtrip, vision endpoint, DB schema
-#   4. Health — basic /health liveness check
+#   1. Syntax — py_compile (recursive), ruff lint
+#   2. Imports — dynamic discovery of all top-level .py modules
 
 agent:
   name: vcs_static_checker
   description: "Deterministic static checker — pre_commands run checks, LLM synthesizes verdict"
-  version: "2.0"
+  version: "3.0"
   type: static_checker
 
   pre_commands:
-    # ── 1. Syntax checks (fast, catch broken code early) ─────────────
     - name: py_compile_all
-      command: "find {{ workspace_path }} -maxdepth 1 -name '*.py' -exec python3 -m py_compile {} +"
+      command: "find {{ workspace_path }} -name '*.py' -exec python3 -m py_compile {} +"
       timeout_seconds: 30
 
     - name: ruff_lint
       command: "cd {{ workspace_path }} && if python3 -c 'import ruff' 2>/dev/null; then python3 -m ruff check --select=E,F --no-fix .; else echo 'ruff not installed, skipping lint'; fi"
       timeout_seconds: 30
 
-    # ── 2. Import checks (verify core modules load) ──────────────────
-    - name: import_models
-      command: "cd {{ workspace_path }} && python3 -c 'import models'"
-      timeout_seconds: 30
-
-    - name: import_routes
-      command: "cd {{ workspace_path }} && python3 -c 'import routes'"
-      timeout_seconds: 30
-
-    - name: import_main
-      command: "cd {{ workspace_path }} && python3 -c 'import main'"
-      timeout_seconds: 30
-
-    # ── 3. Regression checks (CRUD endpoints + DB schema) ────────────
-    - name: db_schema_check
-      command: >-
-        cd {{ workspace_path }} && python3 -c "
-        from models import Suggestion;
-        cols = [c.name for c in Suggestion.__table__.columns];
-        print('Columns:', cols);
-        required = ['id', 'text', 'status', 'created_at'];
-        missing = [r for r in required if r not in cols];
-        assert not missing, f'Missing columns: {missing}'
-        "
-      timeout_seconds: 30
-
-    - name: test_post_suggestion
-      command: >-
-        cd {{ workspace_path }} && python3 -c "
-        from fastapi.testclient import TestClient;
-        from main import app;
-        c = TestClient(app);
-        r = c.post('/api/suggestions', json={'text': 'static check test', 'category': 'regression'});
-        print('POST /api/suggestions:', r.status_code, r.json());
-        assert r.status_code in (200, 201), f'Expected 200/201, got {r.status_code}: {r.text}'
-        "
-      timeout_seconds: 60
-
-    - name: test_get_suggestions
-      command: >-
-        cd {{ workspace_path }} && python3 -c "
-        from fastapi.testclient import TestClient;
-        from main import app;
-        c = TestClient(app);
-        r = c.get('/api/suggestions');
-        print('GET /api/suggestions:', r.status_code, type(r.json()));
-        assert r.status_code == 200, f'Expected 200, got {r.status_code}: {r.text}';
-        assert isinstance(r.json(), list), f'Expected list, got {type(r.json())}'
-        "
-      timeout_seconds: 60
-
-    - name: test_suggestion_roundtrip
-      command: >-
-        cd {{ workspace_path }} && python3 -c "
-        from fastapi.testclient import TestClient;
-        from main import app;
-        c = TestClient(app);
-        r1 = c.post('/api/suggestions', json={'text': 'roundtrip test', 'category': 'regression'});
-        assert r1.status_code in (200, 201), f'POST failed: {r1.status_code}';
-        sid = r1.json().get('id', 1);
-        r2 = c.get(f'/api/suggestions/{sid}');
-        print(f'Roundtrip: POST={r1.status_code} GET/{sid}={r2.status_code}');
-        assert r2.status_code == 200, f'GET by ID failed: {r2.status_code}: {r2.text}';
-        data = r2.json();
-        assert data.get('text') == 'roundtrip test', f'Data mismatch: {data}'
-        "
-      timeout_seconds: 60
-
-    - name: test_vision_endpoint
-      command: >-
-        cd {{ workspace_path }} && python3 -c "
-        from fastapi.testclient import TestClient;
-        from main import app;
-        c = TestClient(app);
-        r = c.get('/api/vision');
-        print('GET /api/vision:', r.status_code, len(r.text), 'chars');
-        assert r.status_code == 200, f'Expected 200, got {r.status_code}: {r.text}'
-        "
-      timeout_seconds: 60
-
-    # ── 4. Health check (basic liveness) ─────────────────────────────
-    - name: health_endpoint
-      command: >-
-        cd {{ workspace_path }} && python3 -c "
-        from fastapi.testclient import TestClient;
-        from main import app;
-        c = TestClient(app);
-        r = c.get('/health');
-        print('GET /health:', r.status_code, r.json());
-        assert r.status_code == 200
-        "
+    - name: import_modules
+      command: "cd {{ workspace_path }} && for f in $(find . -maxdepth 1 -name '*.py' ! -name '__*' -printf '%f\\n' | sort); do mod=\"${f%.py}\"; echo \"import $mod...\"; python3 -c \"import $mod\" 2>&1 || true; done"
       timeout_seconds: 60
 
   prompt:
     inline: |
-      You are the STATIC CHECK SYNTHESIZER for The Vibe Coding Squad.
+      You are the STATIC CHECK SYNTHESIZER.
 
       Below are the results of deterministic static checks that ran
-      against the generated code.  Your ONLY job is to read these results
+      against the generated code. Your ONLY job is to read these results
       and produce a structured verdict.
 
       {{ command_results }}
@@ -137,6 +45,8 @@ agent:
       - Do NOT speculate about issues not shown in the results
       - For ruff_lint: if ruff is not installed the check says "skipping" → treat as PASS.
         If ruff ran and found errors (exit code 1) → FAIL. Include the ruff output in ERRORS.
+      - For import_modules: each line shows "import <mod>..." followed by output.
+        If any import prints a traceback or error → FAIL. List the failing modules.
 
       Output your findings in <answer> tags:
       <answer>

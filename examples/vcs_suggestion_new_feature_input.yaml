@@ -1,0 +1,12 @@
+# VCS Suggestion Input — completely new feature
+# Usage: maf run configs/workflows/vcs_suggestion.yaml --input examples/vcs_suggestion_new_feature_input.yaml --show-details
+
+suggestion_text: |
+  Add a health check endpoint and uptime tracking:
+  - GET /api/health returns JSON with status, version, uptime_seconds, and database connectivity check
+  - Track server start time in a module-level variable
+  - Return HTTP 200 when healthy, HTTP 503 when database is unreachable
+  - Include the current Python version in the response
+  - This helps with deployment monitoring and load balancer configuration
+
+workspace_path: /home/shinelay/vibe-coding-squad

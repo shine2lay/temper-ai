@@ -1,0 +1,32 @@
+# Demo: Classification stage for dynamic forward routing demo
+
+stage:
+  name: demo_forward_classify
+  description: "Classifies question and routes to specialist via dynamic edge"
+  version: "1.0"
+
+  agents:
+    - demo_forward_classifier
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 600
+
+  inputs:
+    question:
+      source: workflow.question
+      required: true
+
+  outputs:
+    classification:
+      type: string
+      description: "Question category (CODE or DESIGN)"
+    _next_stage:
+      type: dict
+      description: "Dynamic routing signal to specialist stage"
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 1
+    retry_failed_agents: true
+    max_agent_retries: 2

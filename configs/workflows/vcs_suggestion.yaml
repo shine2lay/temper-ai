@@ -17,6 +17,7 @@ workflow:
   name: vcs_suggestion
   description: "Multi-perspective triage, design, code, and quality-gate pipeline for The Vibe Coding Squad"
   version: "5.0"
+  engine: native
   product_type: api
 
   stages:

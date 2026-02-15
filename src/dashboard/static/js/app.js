@@ -51,6 +51,39 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     wsClient.connect();
 
+    // --- Sidebar drawer toggle ---
+    const sidebar = document.getElementById('sidebar');
+    const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+    const sidebarToggle = document.getElementById('sidebar-toggle');
+    const sidebarClose = document.getElementById('sidebar-close');
+
+    function openSidebar() {
+        sidebar.classList.add('visible');
+        sidebarBackdrop.classList.add('visible');
+    }
+
+    function closeSidebar() {
+        sidebar.classList.remove('visible');
+        sidebarBackdrop.classList.remove('visible');
+    }
+
+    sidebarToggle.addEventListener('click', () => {
+        if (sidebar.classList.contains('visible')) {
+            closeSidebar();
+        } else {
+            openSidebar();
+        }
+    });
+
+    sidebarClose.addEventListener('click', closeSidebar);
+    sidebarBackdrop.addEventListener('click', closeSidebar);
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sidebar.classList.contains('visible')) {
+            closeSidebar();
+        }
+    });
+
     // --- View tab switching ---
     document.querySelectorAll('.viz-tab').forEach(tab => {
         tab.addEventListener('click', () => {
@@ -81,6 +114,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         const { WorkflowOverviewPanel } = await import('./panels/workflow-overview.js');
         registry.register(WorkflowOverviewPanel, 'panel-workflow-overview');
     } catch (e) { console.debug('WorkflowOverviewPanel not yet available'); }
+
+    try {
+        const { ContextStorePanel } = await import('./panels/context-store.js');
+        registry.register(ContextStorePanel, 'panel-context-store');
+    } catch (e) { console.debug('ContextStorePanel not yet available'); }
 
     try {
         const { TimelinePanel } = await import('./panels/timeline.js');

@@ -1,0 +1,16 @@
+# Context management test input — API server 503 errors scenario
+input_text: |
+  Our production API server has been returning 503 errors intermittently
+  for the past 3 hours. The error rate is approximately 15% of all requests.
+
+  Observations:
+  - Database connection pool is at 95% capacity
+  - Memory usage on API servers is at 87%
+  - Response times have increased from 200ms average to 2.5s
+  - The issue started after deploying version 2.4.1
+  - Rolling back to 2.4.0 temporarily resolved the issue but it recurred
+  - Load balancer health checks are passing but with increased latency
+  - Error logs show "connection pool exhaustion" and "timeout waiting for connection"
+
+  Infrastructure: 4x API servers behind an ALB, PostgreSQL RDS (db.r5.2xlarge),
+  Redis cluster for caching, deployed on ECS Fargate.

@@ -1,0 +1,2 @@
+usage: architecture_scan.py [-h] [--output OUTPUT] [src_dir]
+architecture_scan.py: error: unrecognized arguments: --json

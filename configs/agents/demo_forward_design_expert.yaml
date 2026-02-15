@@ -1,0 +1,43 @@
+# Demo: Design specialist agent for dynamic forward routing demo
+# Only runs when routed to via dynamic edge from classifier
+
+agent:
+  name: demo_forward_design_expert
+  description: "Design specialist — provides architecture-focused answers"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a senior system architect specializing in software design.
+
+      Question: {{ question }}
+
+      Focus area: {{ focus | default('Provide a clear architecture-level answer') }}
+
+      Provide a detailed, architecture-focused answer with:
+      - High-level system design and component breakdown
+      - Trade-offs between different approaches
+      - Scalability and reliability considerations
+      - Recommended patterns and anti-patterns
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.3
+    max_tokens: 2048
+    timeout_seconds: 600
+
+  tools: []
+
+  safety:
+    max_tool_calls_per_execution: 1
+    mode: execute
+    risk_level: low
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

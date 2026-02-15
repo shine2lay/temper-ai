@@ -1,0 +1,58 @@
+# VCS Git Snapshot Agent
+# Creates a git snapshot before code execution for rollback safety
+
+agent:
+  name: vcs_git_snapshot
+  description: "Create git snapshot (init or stash) before code writes for rollback safety"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the GIT SNAPSHOT agent for The Vibe Coding Squad.
+
+      ## Workspace
+      {{ workspace_path }}
+
+      ## Your Task
+      Create a git snapshot of the workspace so we can roll back if code generation fails.
+
+      Steps:
+      1. Check if {{ workspace_path }} has a .git directory
+      2. If NO .git directory:
+         - `cd {{ workspace_path }} && git init && git add -A && git commit -m "initial: pre-vcs-execute snapshot"`
+      3. If .git EXISTS:
+         - `cd {{ workspace_path }} && git add -A && git stash push -m "vcs-pre-execute-$(date +%s)"`
+         - If stash fails (nothing to stash), that's OK — report "no changes to stash"
+
+      Report what you did in the answer.
+
+      <answer>
+      GIT_SNAPSHOT:
+        action: <init_and_commit | stash | no_changes>
+        detail: <what happened>
+        files_affected: <number of files>
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.1
+    max_tokens: 1024
+    timeout_seconds: 120
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - git
+          - ls
+          - find
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

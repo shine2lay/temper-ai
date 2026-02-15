@@ -60,6 +60,9 @@ class EngineRegistry:
                 "Ensure langgraph dependencies are installed."
             ) from e
 
+        from src.compiler.engines.native_engine import NativeExecutionEngine
+        self._engines["native"] = NativeExecutionEngine
+
     def register_engine(
         self,
         name: str,

@@ -1,0 +1,37 @@
+# Context Test — Synthesize Stage
+# Stage 3: Synthesizes original input, recommendation, and severity into final report.
+
+stage:
+  name: ctx_synthesize
+  description: "Synthesize analysis and evaluation into final report"
+  version: "1.0"
+
+  agents:
+    - ctx_synthesizer
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 900
+
+  inputs:
+    input_text:
+      source: workflow.input_text
+      required: true
+    recommendation:
+      source: ctx_evaluate.output
+      required: true
+    severity:
+      source: ctx_analyze.structured.severity
+      required: false
+      default: "unknown"
+
+  outputs:
+    final_report:
+      type: string
+      description: "Complete synthesized report"
+
+  error_handling:
+    on_agent_failure: halt_stage
+    min_successful_agents: 1
+    retry_failed_agents: true
+    max_agent_retries: 1

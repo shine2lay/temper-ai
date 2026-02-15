@@ -21,11 +21,8 @@ agent:
       foundation specs below, so you know every class name, field, type,
       and function signature available.
 
-      ## Specification
-      {{ stage_outputs.get('vcs_spec', {}).get('decision', '') or stage_outputs.get('vcs_spec_decision', {}).get('output', '') }}
-
-      ## Implementation Plan
-      {{ stage_outputs.get('vcs_code_plan', {}).get('decision', '') or stage_outputs.get('vcs_code_plan_decision', {}).get('output', '') }}
+      ## Unified Design (Spec + Plan)
+      {{ stage_outputs.get('vcs_design', {}).get('decision', '') or stage_outputs.get('vcs_design_decision', {}).get('output', '') }}
 
       ## Foundation File Specs (ALREADY DECIDED — use these exact names/types)
       {{ current_stage_agents.vcs_task_plan_foundation.output | default('') }}

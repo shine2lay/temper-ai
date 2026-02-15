@@ -1,0 +1,70 @@
+# Dynamic Edge Routing Demo — demonstrates _next_stage mechanism
+#
+# Usage:
+#   maf run configs/workflows/dynamic_retry_demo.yaml --input examples/dynamic_retry_demo_input.yaml --show-details
+#
+# Flow:
+#   1. analyze stage → produces brief analysis (intentionally vague)
+#   2. evaluate stage → detects insufficient detail → emits _next_stage signal
+#   3. analyze stage → re-runs via dynamic edge with feedback → produces detailed analysis
+#
+# The evaluate stage can route back to analyze via _next_stage with feedback inputs.
+
+workflow:
+  name: dynamic_retry_demo
+  description: "Demo of dynamic edge routing — evaluator routes back to analyzer with feedback"
+  version: "2.0"
+  engine: native
+
+  stages:
+    - name: analyze
+      stage_ref: configs/stages/analyze.yaml
+      description: "Produces technical analysis (brief initially, detailed after feedback)"
+
+    - name: evaluate
+      stage_ref: configs/stages/evaluate.yaml
+      description: "Evaluates analysis quality — routes back to analyzer via dynamic edge if vague"
+      depends_on:
+        - analyze
+
+  context_management:
+    extraction:
+      enabled: true
+      provider: vllm
+      model: qwen3-next
+      base_url: http://localhost:8000
+      timeout_seconds: 30
+
+  inputs:
+    required:
+      - question
+    optional: []
+
+  outputs:
+    - name: analysis
+      description: "Final technical analysis"
+      source: analyze.analysis
+    - name: evaluation
+      description: "Quality evaluation result"
+      source: evaluate.evaluation
+
+  error_handling:
+    on_stage_failure: halt
+    max_stage_retries: 2
+    escalation_policy: GracefulDegradation
+    enable_rollback: false
+
+  execution:
+    timeout_seconds: 3600
+    max_stages: 8
+    parallel_execution: false
+
+  observability:
+    trace_all_decisions: true
+    log_level: INFO
+    metrics_enabled: true
+
+  tags:
+    - demo
+    - dynamic-edge
+    - native-engine

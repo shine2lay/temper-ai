@@ -1,0 +1,44 @@
+# Context Test — Analyzer Agent
+# Analyzes input text and produces findings + severity assessment.
+
+agent:
+  name: ctx_analyzer
+  description: "Analyzes input text to identify key findings and severity"
+  version: "1.0"
+  type: standard
+
+  tools: []
+
+  prompt:
+    inline: |
+      You are a technical analyst. Analyze the following input and identify
+      key findings and their severity.
+
+      INPUT:
+      {{ input_text }}
+
+      Provide your analysis in this format:
+
+      FINDINGS:
+      - <finding 1>
+      - <finding 2>
+      ...
+
+      SEVERITY: <low | medium | high | critical>
+
+      SUMMARY:
+      <brief summary of findings>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.6
+    max_tokens: 4096
+    timeout_seconds: 600
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

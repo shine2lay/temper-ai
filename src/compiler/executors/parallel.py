@@ -7,7 +7,7 @@ import time
 import uuid
 from typing import Any, Callable, Dict, Optional
 
-from src.agents.agent_factory import AgentFactory
+from src.agents.utils.agent_factory import AgentFactory
 from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.compiler.executors._parallel_helpers import (
     AgentNodeParams,
@@ -146,7 +146,11 @@ class ParallelStageExecutor(StageExecutor):
         # Filter out leader agent from parallel batch (leader runs in synthesis phase)
         parallel_agents = self._filter_leader_from_agents(agents, stage_config)
 
-        init_parallel = build_init_parallel_node(state)
+        init_parallel = build_init_parallel_node(
+            state,
+            context_provider=self.context_provider,
+            stage_config=stage_config,
+        )
         collect_outputs = build_collect_outputs_node(parallel_agents, stage_config)
         agent_nodes = self._build_agent_nodes(
             parallel_agents, stage_name, state, config_loader,
@@ -271,10 +275,13 @@ class ParallelStageExecutor(StageExecutor):
                 action = handle_quality_gate_failure(failure_params)
                 if action == "continue":
                     continue
+                structured = self._extract_structured_fields(
+                    stage_config, synth.decision, stage_name,
+                )
                 update_state_with_results(
                     state=state, stage_name=stage_name, synthesis_result=synth,
                     agent_outputs_dict=ao_dict, parallel_result=pr,
-                    aggregate_metrics=agg,
+                    aggregate_metrics=agg, structured=structured,
                 )
                 _persist_stage_output(tracker, stage_id, state, stage_name)
                 return state

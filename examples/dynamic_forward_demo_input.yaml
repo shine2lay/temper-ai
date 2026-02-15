@@ -1,0 +1,6 @@
+# Input for dynamic forward routing demo
+# Try different questions to see different routing:
+#   CODE question → routes to code_expert
+#   DESIGN question → routes to design_expert
+
+question: "How should we design a multi-tenant SaaS architecture that supports both shared and dedicated database instances?"

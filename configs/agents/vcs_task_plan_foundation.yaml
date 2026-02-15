@@ -19,11 +19,8 @@ agent:
       specifications for foundation files — files that have NO dependencies on
       other generated files.
 
-      ## Specification
-      {{ stage_outputs.get('vcs_spec', {}).get('decision', '') or stage_outputs.get('vcs_spec_decision', {}).get('output', '') }}
-
-      ## Implementation Plan
-      {{ stage_outputs.get('vcs_code_plan', {}).get('decision', '') or stage_outputs.get('vcs_code_plan_decision', {}).get('output', '') }}
+      ## Unified Design (Spec + Plan)
+      {{ stage_outputs.get('vcs_design', {}).get('decision', '') or stage_outputs.get('vcs_design_decision', {}).get('output', '') }}
 
       ## Workspace
       {{ workspace_path }}

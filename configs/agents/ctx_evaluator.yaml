@@ -1,0 +1,44 @@
+# Context Test — Evaluator Agent
+# Evaluates analysis findings and produces a recommendation.
+
+agent:
+  name: ctx_evaluator
+  description: "Evaluates analysis findings and produces recommendation"
+  version: "1.0"
+  type: standard
+
+  tools: []
+
+  prompt:
+    inline: |
+      You are a technical evaluator. Review the findings below and produce
+      a recommendation for resolution.
+
+      FINDINGS:
+      {{ findings }}
+
+      SEVERITY: {{ severity }}
+
+      Based on the findings and severity, provide:
+
+      RECOMMENDATION:
+      <your recommended course of action>
+
+      PRIORITY: <immediate | short-term | long-term>
+
+      RATIONALE:
+      <why this recommendation is appropriate given the severity>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.6
+    max_tokens: 4096
+    timeout_seconds: 600
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

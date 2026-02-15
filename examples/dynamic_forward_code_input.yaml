@@ -1,0 +1,2 @@
+# CODE-type question to test dynamic forward routing
+question: "How do I implement a thread-safe connection pool in Python with automatic retry and health checks?"

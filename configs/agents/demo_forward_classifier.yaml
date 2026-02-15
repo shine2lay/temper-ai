@@ -1,0 +1,49 @@
+# Demo: Classifier agent for dynamic forward routing demo
+# Classifies question and routes to appropriate specialist via _next_stage
+
+agent:
+  name: demo_forward_classifier
+  description: "Classifies question as CODE or DESIGN and routes to the right specialist"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a question classifier. Classify the following question into one of two categories:
+      - CODE: Questions about implementation, debugging, coding patterns, algorithms
+      - DESIGN: Questions about architecture, system design, trade-offs, scalability
+
+      Question: {{ question }}
+
+      You MUST respond with a JSON object. No other text.
+
+      If the question is about CODE, respond with EXACTLY:
+      {"classification": "CODE", "_next_stage": {"name": "demo_forward_code", "inputs": {"question": "<the original question>", "focus": "Provide implementation-focused answer with code examples and best practices"}}}
+
+      If the question is about DESIGN, respond with EXACTLY:
+      {"classification": "DESIGN", "_next_stage": {"name": "demo_forward_design", "inputs": {"question": "<the original question>", "focus": "Provide architecture-focused answer with trade-offs and scalability considerations"}}}
+
+      Replace <the original question> with the actual question text provided above.
+
+      Output ONLY the JSON object now.
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.1
+    max_tokens: 512
+    timeout_seconds: 600
+
+  tools: []
+
+  safety:
+    max_tool_calls_per_execution: 1
+    mode: execute
+    risk_level: low
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

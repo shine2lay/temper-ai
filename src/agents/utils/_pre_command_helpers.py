@@ -61,7 +61,7 @@ def _detect_project_venv() -> Optional[str]:
     # 3. Project-root venv/ directory (handles system-Python entry points)
     try:
         from pathlib import Path
-        project_root = Path(__file__).resolve().parents[2]  # src/agents/→ src/→ project
+        project_root = Path(__file__).resolve().parents[3]  # utils/→ agents/→ src/→ project
         candidate = project_root / "venv"
         if candidate.is_dir() and (candidate / "bin" / "python3").is_file():
             return str(candidate)

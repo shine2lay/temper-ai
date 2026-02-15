@@ -50,7 +50,7 @@ class AgentObserver:
             data = LLMCallTrackingData(agent_id=agent_id, **kwargs)
             self._tracker.track_llm_call(data)
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:
-            logger.warning(f"Failed to track LLM call: {e}")
+            logger.warning("Failed to track LLM call: %s", e)
 
     def track_tool_call(self, **kwargs: Any) -> None:
         """Track a tool call. No-op if tracker unavailable."""
@@ -62,7 +62,7 @@ class AgentObserver:
             data = ToolCallTrackingData(agent_id=agent_id, **kwargs)
             self._tracker.track_tool_call(data)
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:
-            logger.warning(f"Failed to track tool call: {e}")
+            logger.warning("Failed to track tool call: %s", e)
 
     def emit_stream_chunk(
         self,

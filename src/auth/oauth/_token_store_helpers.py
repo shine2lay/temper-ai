@@ -124,27 +124,29 @@ def _try_env_acquisition() -> Optional[str]:
         Key string or None if not found
     """
     key = os.getenv("OAUTH_TOKEN_ENCRYPTION_KEY")
-    if key:
+    if not key:
+        return None
+
+    logger.warning(
+        "SECURITY: Using environment variable for encryption key. "
+        "For production, use OS keyring (install 'keyring' package)."
+    )
+    env_name = (
+        os.getenv("ENVIRONMENT")
+        or os.getenv("ENV")
+        or os.getenv("APP_ENV")
+        or ""
+    ).lower()
+    if env_name in ("production", "prod"):
         logger.warning(
-            "SECURITY: Using environment variable for encryption key. "
-            "For production, use OS keyring (install 'keyring' package)."
+            "PRODUCTION SECURITY WARNING: Encryption key loaded from "
+            "environment variable OAUTH_TOKEN_ENCRYPTION_KEY in a "
+            "production environment (%s). Environment variables are "
+            "visible in /proc/<pid>/environ, process listings, and "
+            "may leak into logs or crash dumps. Migrate to OS keyring "
+            "for compliance (PCI DSS, SOC 2).",
+            env_name,
         )
-        env_name = (
-            os.getenv("ENVIRONMENT")
-            or os.getenv("ENV")
-            or os.getenv("APP_ENV")
-            or ""
-        ).lower()
-        if env_name in ("production", "prod"):
-            logger.warning(
-                "PRODUCTION SECURITY WARNING: Encryption key loaded from "
-                "environment variable OAUTH_TOKEN_ENCRYPTION_KEY in a "
-                "production environment (%s). Environment variables are "
-                "visible in /proc/<pid>/environ, process listings, and "
-                "may leak into logs or crash dumps. Migrate to OS keyring "
-                "for compliance (PCI DSS, SOC 2).",
-                env_name,
-            )
     return key
 
 
@@ -162,52 +164,29 @@ def acquire_encryption_key(
     2. OS Keyring (most secure)
     3. Environment variable (fallback)
     4. Fail (no insecure defaults)
-
-    Args:
-        encryption_key: Explicit Fernet key
-        use_keyring: Whether to try keyring
-        keyring_service: Keyring service name
-        keyring_key_name: Keyring key identifier
-        require_keyring: Fail if keyring not available
-
-    Returns:
-        Tuple of (key_string, using_keyring_bool)
-
-    Raises:
-        ValueError: If no encryption key available
-        SecurityError: If keyring required but not available
     """
-    key = None
-    using_keyring = False
-
-    # Try explicit key
     if encryption_key:
-        key = encryption_key
         logger.warning("Using explicit encryption key. For production, use OS keyring.")
+        return encryption_key, False
 
-    # Try keyring
-    elif use_keyring:
+    if use_keyring:
         key = _try_keyring_acquisition(keyring_service, keyring_key_name, require_keyring)
-        if key:
-            using_keyring = True
+        if key is not None:
+            return key, True
 
-    # Try environment variable
-    if key is None:
-        key = _try_env_acquisition()
+    env_key = _try_env_acquisition()
+    if env_key:
+        return env_key, False
 
-    # Fail if no key found
-    if not key:
-        raise ValueError(
-            "No encryption key available. Options:\n"
-            "1. Install keyring: pip install keyring (RECOMMENDED for production)\n"
-            "2. Set OAUTH_TOKEN_ENCRYPTION_KEY environment variable (development only)\n"
-            "3. Pass encryption_key parameter (testing only)\n"
-            "\n"
-            "Generate key: python -c 'from cryptography.fernet import Fernet; "
-            "print(Fernet.generate_key().decode())'"
-        )
-
-    return key, using_keyring
+    raise ValueError(
+        "No encryption key available. Options:\n"
+        "1. Install keyring: pip install keyring (RECOMMENDED for production)\n"
+        "2. Set OAUTH_TOKEN_ENCRYPTION_KEY environment variable (development only)\n"
+        "3. Pass encryption_key parameter (testing only)\n"
+        "\n"
+        "Generate key: python -c 'from cryptography.fernet import Fernet; "
+        "print(Fernet.generate_key().decode())'"
+    )
 
 
 def _decrypt_and_parse_token(encrypted: bytes, old_cipher: Fernet) -> Optional[dict]:
@@ -282,16 +261,7 @@ def re_encrypt_tokens(
     old_cipher: Fernet,
     new_cipher: Fernet,
 ) -> Dict[str, bytes]:
-    """Re-encrypt all tokens with a new cipher.
-
-    Args:
-        tokens: Dict of user_id -> encrypted bytes
-        old_cipher: Fernet cipher with old key
-        new_cipher: Fernet cipher with new key
-
-    Returns:
-        Dict of user_id -> re-encrypted bytes
-    """
+    """Re-encrypt all tokens with a new cipher."""
     re_encrypted = {}
 
     for user_id in list(tokens.keys()):

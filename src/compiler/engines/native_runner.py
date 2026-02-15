@@ -19,9 +19,18 @@ DEFAULT_MAX_WORKERS = 8
 
 
 def _merge_dicts(left: Dict[str, Any], right: Dict[str, Any]) -> Dict[str, Any]:
-    """Merge two dicts; right wins on conflict."""
+    """Recursively merge two dicts; right wins on conflict for non-dict values.
+
+    Matches LangGraph's Annotated[Dict, _merge_dicts] reducer semantics:
+    when both sides have a dict value for the same key, merge recursively
+    instead of replacing. This preserves all parallel agent outputs.
+    """
     merged = left.copy()
-    merged.update(right)
+    for key, value in right.items():
+        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
+            merged[key] = _merge_dicts(merged[key], value)
+        else:
+            merged[key] = value
     return merged
 
 

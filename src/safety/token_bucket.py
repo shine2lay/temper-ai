@@ -28,6 +28,43 @@ MAX_TOKENS_SAFETY_LIMIT = 1_000_000
 MAX_REFILL_RATE_SAFETY_LIMIT = 1_000_000
 
 
+def _validate_int_field(name: str, value: Any, min_val: int, max_val: int) -> None:
+    """SECURITY: Validate integer field is bounded and positive."""
+    if not isinstance(value, int):
+        raise ValueError(f"{name} must be an integer, got {type(value).__name__}")
+    if value <= 0:
+        raise ValueError(f"{name} must be positive, got {value}")
+    if value > max_val:
+        raise ValueError(f"{name} must be <= {max_val} (safety limit), got {value}")
+
+
+def _validate_float_field(name: str, value: Any, upper: float,
+                          upper_label: Optional[str] = None) -> None:
+    """SECURITY: Validate numeric field is finite, positive, and bounded."""
+    if not isinstance(value, (int, float)):
+        raise ValueError(f"{name} must be numeric, got {type(value).__name__}")
+    if math.isnan(value) or math.isinf(value):
+        raise ValueError(f"{name} must be a finite number, got {value}")
+    if value <= 0:
+        raise ValueError(f"{name} must be positive, got {value}")
+    label = upper_label or f"{upper} (safety limit)"
+    if value > upper:
+        raise ValueError(f"{name} must be <= {label}, got {value}")
+
+
+def _validate_burst_size(burst_size: Optional[int], max_tokens: int) -> int:
+    """SECURITY: Validate burst_size or default to max_tokens."""
+    if burst_size is None:
+        return max_tokens
+    if not isinstance(burst_size, int):
+        raise ValueError(f"burst_size must be an integer, got {type(burst_size).__name__}")
+    if burst_size <= 0:
+        raise ValueError(f"burst_size must be positive, got {burst_size}")
+    if burst_size > max_tokens:
+        raise ValueError(f"burst_size ({burst_size}) cannot exceed max_tokens ({max_tokens})")
+    return burst_size
+
+
 def requires_lock(method: Callable[..., Any]) -> Callable[..., Any]:
     """Decorator to enforce that a method is called with the instance lock held.
 
@@ -90,102 +127,13 @@ class RateLimit:
     refill_period: float = 1.0
     burst_size: Optional[int] = None
 
-    def _validate_max_tokens(self) -> None:
-        """Validate max_tokens field.
-
-        Raises:
-            ValueError: If max_tokens is invalid
-        """
-        if not isinstance(self.max_tokens, int):
-            raise ValueError(
-                f"max_tokens must be an integer, got {type(self.max_tokens).__name__}"
-            )
-        if self.max_tokens <= 0:
-            raise ValueError(
-                f"max_tokens must be positive, got {self.max_tokens}"
-            )
-        if self.max_tokens > MAX_TOKENS_SAFETY_LIMIT:
-            raise ValueError(
-                f"max_tokens must be <= {MAX_TOKENS_SAFETY_LIMIT} (safety limit), got {self.max_tokens}"
-            )
-
-    def _validate_refill_rate(self) -> None:
-        """Validate refill_rate field.
-
-        Raises:
-            ValueError: If refill_rate is invalid
-        """
-        if not isinstance(self.refill_rate, (int, float)):
-            raise ValueError(
-                f"refill_rate must be numeric, got {type(self.refill_rate).__name__}"
-            )
-        # SECURITY: Check for NaN/Inf to prevent bypass
-        if math.isnan(self.refill_rate) or math.isinf(self.refill_rate):
-            raise ValueError(
-                f"refill_rate must be a finite number, got {self.refill_rate}"
-            )
-        if self.refill_rate <= 0:
-            raise ValueError(
-                f"refill_rate must be positive, got {self.refill_rate}"
-            )
-        if self.refill_rate > MAX_REFILL_RATE_SAFETY_LIMIT:
-            raise ValueError(
-                f"refill_rate must be <= {MAX_REFILL_RATE_SAFETY_LIMIT} (safety limit), got {self.refill_rate}"
-            )
-
-    def _validate_refill_period(self) -> None:
-        """Validate refill_period field.
-
-        Raises:
-            ValueError: If refill_period is invalid
-        """
-        if not isinstance(self.refill_period, (int, float)):
-            raise ValueError(
-                f"refill_period must be numeric, got {type(self.refill_period).__name__}"
-            )
-        # SECURITY: Check for NaN/Inf to prevent bypass
-        if math.isnan(self.refill_period) or math.isinf(self.refill_period):
-            raise ValueError(
-                f"refill_period must be a finite number, got {self.refill_period}"
-            )
-        if self.refill_period <= 0:
-            raise ValueError(
-                f"refill_period must be positive, got {self.refill_period}"
-            )
-        if self.refill_period > SECONDS_PER_DAY:
-            raise ValueError(
-                f"refill_period must be <= {SECONDS_PER_DAY}s (24h), got {self.refill_period}"
-            )
-
-    def _validate_burst_size(self) -> None:
-        """Validate and initialize burst_size field.
-
-        Raises:
-            ValueError: If burst_size is invalid
-        """
-        if self.burst_size is None:
-            self.burst_size = self.max_tokens
-            return
-
-        if not isinstance(self.burst_size, int):
-            raise ValueError(
-                f"burst_size must be an integer, got {type(self.burst_size).__name__}"
-            )
-        if self.burst_size <= 0:
-            raise ValueError(
-                f"burst_size must be positive, got {self.burst_size}"
-            )
-        if self.burst_size > self.max_tokens:
-            raise ValueError(
-                f"burst_size ({self.burst_size}) cannot exceed max_tokens ({self.max_tokens})"
-            )
-
     def __post_init__(self) -> None:
         """Validate configuration with safety bounds."""
-        self._validate_max_tokens()
-        self._validate_refill_rate()
-        self._validate_refill_period()
-        self._validate_burst_size()
+        _validate_int_field("max_tokens", self.max_tokens, 1, MAX_TOKENS_SAFETY_LIMIT)
+        _validate_float_field("refill_rate", self.refill_rate, MAX_REFILL_RATE_SAFETY_LIMIT)
+        _validate_float_field("refill_period", self.refill_period, SECONDS_PER_DAY,
+                              upper_label=f"{SECONDS_PER_DAY}s (24h)")
+        self.burst_size = _validate_burst_size(self.burst_size, self.max_tokens)
 
 
 class TokenBucket:

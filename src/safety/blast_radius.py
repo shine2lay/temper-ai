@@ -83,64 +83,32 @@ class BlastRadiusPolicy(BaseSafetyPolicy, ValidationMixin):
             - forbidden_patterns: Must be valid regex patterns list
         """
         super().__init__(config or {})
+        self._init_limits()
+        self._init_forbidden_patterns()
 
-        # Validate and extract limits from config with defaults
-        self.max_files = self._validate_positive_int(
-            self.config.get("max_files_per_operation", self.DEFAULT_MAX_FILES),
-            "max_files_per_operation",
-            min_value=1,
-            max_value=MAX_FILES_UPPER_BOUND
-        )
+    def _init_limits(self) -> None:
+        """Validate and set numeric limit config values."""
+        limit_defs = [
+            ("max_files", "max_files_per_operation", self.DEFAULT_MAX_FILES, MAX_FILES_UPPER_BOUND),
+            ("max_lines_per_file", "max_lines_per_file", self.DEFAULT_MAX_LINES_PER_FILE, MAX_LINES_UPPER_BOUND),
+            ("max_total_lines", "max_total_lines", self.DEFAULT_MAX_TOTAL_LINES, MAX_TOTAL_LINES_UPPER_BOUND),
+            ("max_entities", "max_entities_affected", self.DEFAULT_MAX_ENTITIES, MAX_ENTITIES_UPPER_BOUND),
+            ("max_ops_per_minute", "max_operations_per_minute", self.DEFAULT_MAX_OPS_PER_MINUTE, MAX_OPS_UPPER_BOUND),
+        ]
+        for attr, key, default, upper in limit_defs:
+            setattr(self, attr, self._validate_positive_int(
+                self.config.get(key, default), key, min_value=1, max_value=upper))
 
-        self.max_lines_per_file = self._validate_positive_int(
-            self.config.get("max_lines_per_file", self.DEFAULT_MAX_LINES_PER_FILE),
-            "max_lines_per_file",
-            min_value=1,
-            max_value=MAX_LINES_UPPER_BOUND
-        )
-
-        self.max_total_lines = self._validate_positive_int(
-            self.config.get("max_total_lines", self.DEFAULT_MAX_TOTAL_LINES),
-            "max_total_lines",
-            min_value=1,
-            max_value=MAX_TOTAL_LINES_UPPER_BOUND
-        )
-
-        self.max_entities = self._validate_positive_int(
-            self.config.get("max_entities_affected", self.DEFAULT_MAX_ENTITIES),
-            "max_entities_affected",
-            min_value=1,
-            max_value=MAX_ENTITIES_UPPER_BOUND
-        )
-
-        self.max_ops_per_minute = self._validate_positive_int(
-            self.config.get("max_operations_per_minute", self.DEFAULT_MAX_OPS_PER_MINUTE),
-            "max_operations_per_minute",
-            min_value=1,
-            max_value=MAX_OPS_UPPER_BOUND
-        )
-
-        # Validate forbidden patterns
-        forbidden_patterns_raw = self.config.get("forbidden_patterns", [])
-        forbidden_patterns_validated = self._validate_string_list(
-            forbidden_patterns_raw,
-            "forbidden_patterns",
-            allow_empty=True,
-            max_items=1000,
-            max_item_length=1000
-        )
-
-        # Compile and test each pattern for ReDoS
-        self.forbidden_patterns = []
-        for pattern_str in forbidden_patterns_validated:
-            # Validate regex pattern (compiles and tests for ReDoS)
-            compiled_pattern = self._validate_regex_pattern(
-                pattern_str,
-                f"forbidden_patterns['{pattern_str}']",
-                max_length=1000,
-                test_timeout=PROB_VERY_LOW
-            )
-            self.forbidden_patterns.append(compiled_pattern)
+    def _init_forbidden_patterns(self) -> None:
+        """Validate and compile forbidden regex patterns."""
+        raw = self.config.get("forbidden_patterns", [])
+        validated = self._validate_string_list(
+            raw, "forbidden_patterns", allow_empty=True, max_items=1000, max_item_length=1000)
+        self.forbidden_patterns = [
+            self._validate_regex_pattern(
+                p, f"forbidden_patterns['{p}']", max_length=1000, test_timeout=PROB_VERY_LOW)
+            for p in validated
+        ]
 
     @property
     def name(self) -> str:

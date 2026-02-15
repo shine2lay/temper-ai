@@ -1,0 +1,63 @@
+# VCS Quality Gate Stage (replaces vcs_code_review + vcs_validate)
+# Leader strategy: 3 perspectives + 1 decider
+
+stage:
+  name: vcs_quality_gate
+  description: "Quality gate — correctness + regression + security/runtime perspectives synthesized by decider"
+  version: "1.0"
+
+  agents:
+    - vcs_gate_correctness
+    - vcs_gate_regression
+    - vcs_gate_security_runtime
+    - vcs_gate_decider
+
+  execution:
+    agent_mode: parallel
+    timeout_seconds: 600
+    max_concurrent: 3
+
+  collaboration:
+    strategy: leader
+    config:
+      leader_agent: vcs_gate_decider
+      fallback_to_consensus: true
+
+  inputs:
+    workspace_path:
+      source: workflow.workspace_path
+      required: true
+    suggestion_text:
+      source: workflow.suggestion_text
+      required: true
+    coder_output:
+      source: vcs_code_execute.output
+      required: true
+    static_check_verdict:
+      source: vcs_static_check.output
+      required: false
+      default: ""
+    design_decision:
+      source: vcs_design.decision
+      required: false
+      default: ""
+
+  outputs:
+    gate_output:
+      type: string
+      description: "Quality gate verdict"
+    verdict:
+      type: string
+      description: "PASS or FAIL"
+    correctness_issues:
+      type: string
+      description: "Correctness findings"
+    security_issues:
+      type: string
+      description: "Security findings"
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 2
+    retry_failed_agents: true
+    max_agent_retries: 1

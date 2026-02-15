@@ -33,16 +33,28 @@ stage:
 
   inputs:
     suggestion_text:
-      type: string
+      source: workflow.suggestion_text
       required: true
     workspace_path:
-      type: string
+      source: workflow.workspace_path
       required: true
 
   outputs:
     triage_output:
       type: string
       description: "Final triage decision"
+    decision:
+      type: string
+      description: "APPROVE or REJECT"
+    category:
+      type: string
+      description: "Feature category"
+    priority:
+      type: string
+      description: "Priority level (P0-P3)"
+    effort_estimate:
+      type: string
+      description: "Effort estimate"
 
   safety:
     mode: execute

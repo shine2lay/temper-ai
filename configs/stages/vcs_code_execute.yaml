@@ -16,13 +16,29 @@ stage:
 
   inputs:
     workspace_path:
-      type: string
+      source: workflow.workspace_path
       required: true
+    task_specs:
+      source: vcs_task_planning.output
+      required: true
+    design_decision:
+      source: vcs_design.decision
+      required: false
+      default: ""
 
   outputs:
     coder_output:
       type: string
       description: "Summary of files created and dependencies installed"
+    files_created:
+      type: string
+      description: "List of files created"
+    files_modified:
+      type: string
+      description: "List of files modified"
+    dependencies_installed:
+      type: string
+      description: "Dependencies installed"
 
   collaboration:
     strategy: "sequential"

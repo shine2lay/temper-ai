@@ -1,88 +1,73 @@
-# VCS Suggestion Pipeline v4 - Leader Strategy Pattern
-# Purpose: Triage, design spec, plan, task-decompose, generate code, review, validate
+# VCS Suggestion Pipeline v5 — P0+P1 Optimized
+# Purpose: Triage, design, task-plan, git-snapshot, code, static-check, quality-gate
 #
 # Usage:
 #   maf run configs/workflows/vcs_suggestion.yaml --input examples/vcs_suggestion_input.yaml --show-details
 #
-# Pipeline (8 stages, down from 13 via leader strategy):
-#   vcs_triage (leader: perspectives + decider in one stage)
-#   → vcs_spec (leader)                                  [conditional: APPROVE only]
-#   → vcs_code_plan (leader)
-#   → vcs_task_planning (sequential: foundation specs → integration specs)
+# Pipeline (7 stages, 18 agents — down from 8/25 via merge):
+#   vcs_triage (leader: 4 perspectives + 1 decider)
+#   → vcs_design (leader: arch + impl + safety + decider)       [conditional: APPROVE only]
+#   → vcs_task_planning (sequential: foundation → integration)
+#   → vcs_git_snapshot (snapshot before code writes)
 #   → vcs_code_execute
-#   → vcs_static_check (deterministic: syntax, lint, imports, CRUD regression, health)
-#   → vcs_code_review (leader) ─┐ (parallel branches)
-#   → vcs_validate (leader) ────┘ → loops back to vcs_code_execute on FAIL
+#   → vcs_static_check (generic: syntax, lint, imports — loops to code_execute)
+#   → vcs_quality_gate (leader: correctness + regression + security_runtime + decider — loops to code_execute)
 
 workflow:
   name: vcs_suggestion
-  description: "Multi-perspective triage, spec, plan, code, review, and validate pipeline for The Vibe Coding Squad"
-  version: "4.0"
+  description: "Multi-perspective triage, design, code, and quality-gate pipeline for The Vibe Coding Squad"
+  version: "5.0"
   product_type: api
 
   stages:
-    # --- Triage (leader: 4 perspectives + 1 decider) ---
     - name: vcs_triage
       stage_ref: configs/stages/vcs_triage.yaml
       description: "4 perspectives + decider evaluate suggestion"
 
-    # --- Spec (leader: 3 perspectives + 1 decider, conditional on APPROVE) ---
-    - name: vcs_spec
-      stage_ref: configs/stages/vcs_spec.yaml
-      description: "3 perspectives + decider design implementation spec"
+    - name: vcs_design
+      stage_ref: configs/stages/vcs_design.yaml
+      description: "Architecture + implementation + safety perspectives + decider produce unified design"
       depends_on:
         - vcs_triage
       conditional: true
       condition: "{{ 'DECISION: APPROVE' in (stage_outputs.vcs_triage.decision | default('')) }}"
       skip_to: end
 
-    # --- Code Planning (leader: 3 perspectives + 1 decider) ---
-    - name: vcs_code_plan
-      stage_ref: configs/stages/vcs_code_plan.yaml
-      description: "3 perspectives + decider plan implementation"
-      depends_on:
-        - vcs_spec
-
-    # --- Task Planning (file-by-file specs before coding) ---
     - name: vcs_task_planning
       stage_ref: configs/stages/vcs_task_planning.yaml
-      description: "Sequential task decomposition: foundation specs → integration specs"
+      description: "Sequential task decomposition: foundation specs then integration specs"
       depends_on:
-        - vcs_code_plan
+        - vcs_design
 
-    # --- Code Execute ---
+    - name: vcs_git_snapshot
+      stage_ref: configs/stages/vcs_git_snapshot.yaml
+      description: "Create git snapshot for rollback safety"
+      depends_on:
+        - vcs_task_planning
+
     - name: vcs_code_execute
       stage_ref: configs/stages/vcs_code_execute.yaml
       description: "Coder writes files following exact task specs"
       depends_on:
-        - vcs_task_planning
+        - vcs_git_snapshot
 
-    # --- Static Check (deterministic, loops back on failure) ---
     - name: vcs_static_check
       stage_ref: configs/stages/vcs_static_check.yaml
-      description: "Deterministic static checks (syntax, lint, imports, CRUD regression, health)"
+      description: "Deterministic static checks (syntax, lint, imports)"
       depends_on:
         - vcs_code_execute
       loops_back_to: vcs_code_execute
       max_loops: 2
       loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_static_check.decision | default('')) }}"
 
-    # --- PARALLEL BRANCH: Code Review + Validation (both using leader strategy) ---
-    - name: vcs_code_review
-      stage_ref: configs/stages/vcs_code_review.yaml
-      description: "3 perspectives + decider review code"
+    - name: vcs_quality_gate
+      stage_ref: configs/stages/vcs_quality_gate.yaml
+      description: "Correctness + regression + security/runtime perspectives + decider"
       depends_on:
         - vcs_static_check
-
-    - name: vcs_validate
-      stage_ref: configs/stages/vcs_validate.yaml
-      description: "3 perspectives + decider validate, merges review results"
-      depends_on:
-        - vcs_static_check
-        - vcs_code_review
       loops_back_to: vcs_code_execute
       max_loops: 3
-      loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_validate.decision | default('')) }}"
+      loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_quality_gate.decision | default('')) }}"
 
   inputs:
     required:
@@ -94,18 +79,15 @@ workflow:
     - name: triage_output
       description: "Triage decision"
       source: vcs_triage.triage_output
-    - name: spec_output
-      description: "Implementation spec"
-      source: vcs_spec.spec_output
+    - name: design_output
+      description: "Unified design (spec + plan)"
+      source: vcs_design.design_output
     - name: coder_output
       description: "Files created"
       source: vcs_code_execute.coder_output
-    - name: review_output
-      description: "Code review verdict"
-      source: vcs_code_review.review_output
-    - name: validator_output
-      description: "Validation results"
-      source: vcs_validate.validator_output
+    - name: gate_output
+      description: "Quality gate verdict"
+      source: vcs_quality_gate.gate_output
 
   error_handling:
     on_stage_failure: halt
@@ -117,6 +99,13 @@ workflow:
     timeout_seconds: 14400
     max_stages: 16
     parallel_execution: true
+
+  context_management:
+    extraction:
+      enabled: true
+      provider: vllm
+      model: qwen3-next
+      timeout_seconds: 30
 
   observability:
     trace_all_decisions: true

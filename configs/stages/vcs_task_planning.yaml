@@ -20,10 +20,30 @@ stage:
     agent_mode: sequential
     timeout_seconds: 1200
 
+  inputs:
+    suggestion_text:
+      source: workflow.suggestion_text
+      required: true
+    workspace_path:
+      source: workflow.workspace_path
+      required: true
+    design_decision:
+      source: vcs_design.decision
+      required: true
+
   outputs:
     task_specs:
       type: string
       description: "Concrete file-level task specifications"
+    task_count:
+      type: string
+      description: "Number of tasks planned"
+    foundation_files:
+      type: string
+      description: "Foundation file list"
+    integration_files:
+      type: string
+      description: "Integration file list"
 
   conflict_resolution:
     strategy: highest_confidence

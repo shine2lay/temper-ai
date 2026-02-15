@@ -16,6 +16,28 @@ stage:
     agent_mode: sequential
     timeout_seconds: 900
 
+  inputs:
+    workspace_path:
+      source: workflow.workspace_path
+      required: true
+    coder_output:
+      source: vcs_code_execute.output
+      required: true
+
+  outputs:
+    check_verdict:
+      type: string
+      description: "PASS or FAIL with details"
+    verdict:
+      type: string
+      description: "PASS or FAIL"
+    errors_found:
+      type: string
+      description: "Error details"
+    warnings_found:
+      type: string
+      description: "Warning details"
+
   error_handling:
     on_agent_failure: halt_stage
     min_successful_agents: 1

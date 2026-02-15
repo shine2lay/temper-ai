@@ -79,3 +79,4 @@ test_quality_issues.json
 checkpoints/
 my-checkpoints/
 changes/
+.benchmarks/

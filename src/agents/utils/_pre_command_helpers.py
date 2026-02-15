@@ -39,6 +39,9 @@ _TEMPLATE_VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 # Max characters of stderr to include in error message metadata
 MAX_STDERR_ERROR_CHARS = 200
 
+# Depth from this file to project root: _pre_command_helpers.py → utils/ → agents/ → src/ → project
+_PROJECT_ROOT_DEPTH = 3
+
 
 def _detect_project_venv() -> Optional[str]:
     """Detect the project virtualenv from multiple sources.
@@ -61,7 +64,7 @@ def _detect_project_venv() -> Optional[str]:
     # 3. Project-root venv/ directory (handles system-Python entry points)
     try:
         from pathlib import Path
-        project_root = Path(__file__).resolve().parents[3]  # utils/→ agents/→ src/→ project
+        project_root = Path(__file__).resolve().parents[_PROJECT_ROOT_DEPTH]
         candidate = project_root / "venv"
         if candidate.is_dir() and (candidate / "bin" / "python3").is_file():
             return str(candidate)

@@ -11,7 +11,7 @@ StandardAgent is the default agent type that executes a multi-turn loop:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, Optional
 
 if TYPE_CHECKING:
     from src.schemas import AgentConfig

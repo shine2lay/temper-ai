@@ -90,7 +90,7 @@ class BaseAgent(ABC):
             input_data = self._on_before_run(input_data, context)
             result = self._run(input_data, context, start_time)
             return self._on_after_run(result)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- template method catch-all routes to _on_error hook
             custom = self._on_error(e, start_time)
             if custom is not None:
                 return custom
@@ -132,7 +132,7 @@ class BaseAgent(ABC):
             input_data = self._on_before_run(input_data, context)
             result = await self._arun(input_data, context, start_time)
             return self._on_after_run(result)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- template method catch-all routes to _on_error hook
             custom = self._on_error(e, start_time)
             if custom is not None:
                 return custom
@@ -328,6 +328,7 @@ class BaseAgent(ABC):
             return None
 
         def combined_callback(chunk: Any) -> None:
+            """Forward stream chunk to user callback and observability."""
             if user_cb is not None:
                 try:
                     user_cb(chunk)

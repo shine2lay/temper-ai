@@ -56,6 +56,37 @@ class LLMRunResult:
 
 
 # ---------------------------------------------------------------------------
+# Internal loop state
+# ---------------------------------------------------------------------------
+
+@dataclass
+class _RunState:
+    """Mutable state for an LLM iteration loop."""
+
+    # Configuration (set once during init)
+    tools: Optional[List[Any]] = None
+    tool_executor: Any = None
+    observer: Any = None
+    safety_config: Any = None
+    agent_name: str = "unknown"
+    stream_callback: Optional[Any] = None
+    resolved_max_iterations: int = _DEFAULT_MAX_ITERATIONS
+    max_tool_result_size: int = 10000  # scanner: skip-magic
+    max_prompt_length: int = 32000  # scanner: skip-magic
+    effective_start: float = 0.0
+    effective_timeout: float = field(default_factory=lambda: float("inf"))
+    native_tool_defs: Optional[List[Dict[str, Any]]] = None
+    # Mutable state (changes per iteration)
+    tool_calls_made: List[Dict[str, Any]] = field(default_factory=list)
+    total_tokens: int = 0
+    total_cost: float = 0.0
+    conversation_turns: List[str] = field(default_factory=list)
+    system_prompt: str = ""
+    prompt: str = ""
+    llm_response: Any = None
+
+
+# ---------------------------------------------------------------------------
 # LLMService
 # ---------------------------------------------------------------------------
 
@@ -107,141 +138,31 @@ class LLMService:
         If *tools* is None or empty, performs a single LLM call.
         If *tools* is a list of BaseTool instances, enters the tool-calling loop.
         """
-        resolved_max_iterations = self._resolve_max_iterations(max_iterations, safety_config)
-        max_tool_result_size = self._resolve_max_tool_result_size(safety_config)
-        max_prompt_length = self._resolve_max_prompt_length(safety_config)
-
-        effective_start = start_time if start_time is not None else time.time()
-        effective_timeout = max_execution_time or float("inf")
-
-        # Build tool schemas if tools are provided
-        native_tool_defs = self._build_native_tool_defs(tools) if tools else None
-        text_tool_schemas = None
-        if tools and not native_tool_defs:
-            text_tool_schemas = self._build_text_schemas(tools)
-
-        # Local state
-        tool_calls_made: List[Dict[str, Any]] = []
-        total_tokens = 0
-        total_cost = 0.0
-        conversation_turns: List[str] = []
-        system_prompt = prompt
-        llm_response = None
-
-        # Prepend text-based tool schemas to prompt if needed
-        if text_tool_schemas:
-            prompt = prompt + text_tool_schemas
-
-        for iteration in range(resolved_max_iterations):
-            # Timeout check
-            if time.time() - effective_start >= effective_timeout:
-                return LLMRunResult(
-                    output="",
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration,
-                    error=f"Execution time limit exceeded ({effective_timeout}s)",
-                )
-
-            # Pre-call hooks
-            blocked = self._run_pre_call_hooks(prompt)
-            if blocked is not None:
-                return LLMRunResult(
-                    output="",
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration,
-                    error=f"LLM call blocked by pre-call hook: {blocked}",
-                )
-
-            # Safety validation via policy engine
-            safety_error = validate_safety(
-                tool_executor, self.inference_config, prompt,
-            )
-            if safety_error is not None:
-                return LLMRunResult(
-                    output="",
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration,
-                    error=safety_error,
-                )
-
-            # Call LLM with retry
-            llm_response, last_error = self._call_with_retry_sync(
-                prompt, stream_callback, native_tool_defs, observer,
-            )
-
-            # Handle LLM failure
-            if llm_response is None:
-                max_attempts = self.inference_config.max_retries + 1
-                error_msg = f"LLM call failed after {max_attempts} attempts"
-                if last_error:
-                    error_msg += f": {sanitize_error_message(str(last_error))}"
-                return LLMRunResult(
-                    output="",
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration + 1,
-                    error=error_msg,
-                )
-
-            # Track tokens and cost
-            logger.info("[%s] LLM responded (%s tokens)", agent_name, llm_response.total_tokens or "?")
-            if llm_response.total_tokens:
-                total_tokens += llm_response.total_tokens
-            cost = self._estimate_cost(llm_response)
-            total_cost += cost
-            self._track_call(observer, prompt, llm_response, cost)
-
-            # Parse tool calls
-            parsed_calls = parse_tool_calls(llm_response.content) if tools else []
-
-            if not parsed_calls:
-                # No tool calls — return final result
-                return LLMRunResult(
-                    output=extract_final_answer(llm_response.content),
-                    reasoning=extract_reasoning(llm_response.content),
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration + 1,
-                    raw_response=llm_response,
-                )
-
-            # Execute tool calls
-            tool_names = ", ".join(tc.get(ToolKeys.NAME, "?") for tc in parsed_calls)
-            logger.info("[%s] Calling %d tool(s): %s", agent_name, len(parsed_calls), tool_names)
-
-            tool_results = self._execute_tools(
-                parsed_calls, tool_executor, observer, safety_config,
-            )
-            tool_calls_made.extend(tool_results)
-
-            # Inject results into prompt via sliding window
-            remaining_budget = None
-            if resolved_max_iterations is not None:
-                remaining_budget = resolved_max_iterations - len(tool_calls_made)
-
-            prompt = inject_results(
-                system_prompt, llm_response.content, tool_results,
-                conversation_turns, max_tool_result_size, max_prompt_length,
-                remaining_budget,
-            )
-
-        # Max iterations reached
-        raise MaxIterationsError(
-            iterations=resolved_max_iterations or 0,
-            tool_calls=tool_calls_made,
-            tokens=total_tokens,
-            cost=total_cost,
-            last_output=llm_response.content if llm_response else "",
-            last_reasoning=extract_reasoning(llm_response.content) if llm_response else None,
+        s = _RunState(
+            tools=tools, tool_executor=tool_executor, observer=observer,
+            stream_callback=stream_callback, safety_config=safety_config,
+            agent_name=agent_name,
         )
+        self._prepare_run_state(s, prompt, max_iterations, max_execution_time, start_time)
+
+        for iteration in range(s.resolved_max_iterations):
+            guard = self._check_iteration_guards(s, iteration)
+            if guard is not None:
+                return guard
+
+            s.llm_response, last_error = self._call_with_retry_sync(
+                s.prompt, s.stream_callback, s.native_tool_defs, s.observer,
+            )
+            if s.llm_response is None:
+                return self._handle_llm_failure(last_error, s, iteration)
+
+            parsed_calls = self._track_and_parse(s)
+            if not parsed_calls:
+                return self._build_final_result(s, iteration)
+
+            self._execute_and_inject(s, parsed_calls)
+
+        self._raise_max_iterations(s)
 
     async def arun(
         self,
@@ -261,126 +182,148 @@ class LLMService:
 
         Async counterpart to run(). Same interface and behavior.
         """
-        resolved_max_iterations = self._resolve_max_iterations(max_iterations, safety_config)
-        max_tool_result_size = self._resolve_max_tool_result_size(safety_config)
-        max_prompt_length = self._resolve_max_prompt_length(safety_config)
+        s = _RunState(
+            tools=tools, tool_executor=tool_executor, observer=observer,
+            stream_callback=stream_callback, safety_config=safety_config,
+            agent_name=agent_name,
+        )
+        self._prepare_run_state(s, prompt, max_iterations, max_execution_time, start_time)
 
-        effective_start = start_time if start_time is not None else time.time()
-        effective_timeout = max_execution_time or float("inf")
+        for iteration in range(s.resolved_max_iterations):
+            guard = self._check_iteration_guards(s, iteration)
+            if guard is not None:
+                return guard
 
-        native_tool_defs = self._build_native_tool_defs(tools) if tools else None
-        text_tool_schemas = None
-        if tools and not native_tool_defs:
-            text_tool_schemas = self._build_text_schemas(tools)
-
-        tool_calls_made: List[Dict[str, Any]] = []
-        total_tokens = 0
-        total_cost = 0.0
-        conversation_turns: List[str] = []
-        system_prompt = prompt
-        llm_response = None
-
-        if text_tool_schemas:
-            prompt = prompt + text_tool_schemas
-
-        for iteration in range(resolved_max_iterations):
-            if time.time() - effective_start >= effective_timeout:
-                return LLMRunResult(
-                    output="",
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration,
-                    error=f"Execution time limit exceeded ({effective_timeout}s)",
-                )
-
-            blocked = self._run_pre_call_hooks(prompt)
-            if blocked is not None:
-                return LLMRunResult(
-                    output="",
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration,
-                    error=f"LLM call blocked by pre-call hook: {blocked}",
-                )
-
-            safety_error = validate_safety(
-                tool_executor, self.inference_config, prompt,
+            s.llm_response, last_error = await self._call_with_retry_async(
+                s.prompt, s.stream_callback, s.native_tool_defs, s.observer,
             )
-            if safety_error is not None:
-                return LLMRunResult(
-                    output="",
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration,
-                    error=safety_error,
-                )
+            if s.llm_response is None:
+                return self._handle_llm_failure(last_error, s, iteration)
 
-            llm_response, last_error = await self._call_with_retry_async(
-                prompt, stream_callback, native_tool_defs, observer,
-            )
-
-            if llm_response is None:
-                max_attempts = self.inference_config.max_retries + 1
-                error_msg = f"LLM call failed after {max_attempts} attempts"
-                if last_error:
-                    error_msg += f": {sanitize_error_message(str(last_error))}"
-                return LLMRunResult(
-                    output="",
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration + 1,
-                    error=error_msg,
-                )
-
-            logger.info("[%s] LLM responded (%s tokens)", agent_name, llm_response.total_tokens or "?")
-            if llm_response.total_tokens:
-                total_tokens += llm_response.total_tokens
-            cost = self._estimate_cost(llm_response)
-            total_cost += cost
-            self._track_call(observer, prompt, llm_response, cost)
-
-            parsed_calls = parse_tool_calls(llm_response.content) if tools else []
-
+            parsed_calls = self._track_and_parse(s)
             if not parsed_calls:
-                return LLMRunResult(
-                    output=extract_final_answer(llm_response.content),
-                    reasoning=extract_reasoning(llm_response.content),
-                    tool_calls=tool_calls_made,
-                    tokens=total_tokens,
-                    cost=total_cost,
-                    iterations=iteration + 1,
-                    raw_response=llm_response,
-                )
+                return self._build_final_result(s, iteration)
 
-            tool_names = ", ".join(tc.get(ToolKeys.NAME, "?") for tc in parsed_calls)
-            logger.info("[%s] Calling %d tool(s): %s", agent_name, len(parsed_calls), tool_names)
+            self._execute_and_inject(s, parsed_calls)
 
-            tool_results = self._execute_tools(
-                parsed_calls, tool_executor, observer, safety_config,
+        self._raise_max_iterations(s)
+
+    # ------------------------------------------------------------------
+    # Loop helpers (shared by run/arun)
+    # ------------------------------------------------------------------
+
+    def _prepare_run_state(
+        self,
+        s: _RunState,
+        prompt: str,
+        max_iterations: Optional[int],
+        max_execution_time: Optional[float],
+        start_time: Optional[float],
+    ) -> None:
+        """Resolve settings, build tool schemas, and initialize loop state."""
+        s.resolved_max_iterations = self._resolve_max_iterations(max_iterations, s.safety_config)
+        s.max_tool_result_size = self._resolve_max_tool_result_size(s.safety_config)
+        s.max_prompt_length = self._resolve_max_prompt_length(s.safety_config)
+        s.effective_start = start_time if start_time is not None else time.time()
+        s.effective_timeout = max_execution_time or float("inf")
+
+        s.native_tool_defs = self._build_native_tool_defs(s.tools) if s.tools else None
+        text_schemas = None
+        if s.tools and not s.native_tool_defs:
+            text_schemas = self._build_text_schemas(s.tools)
+
+        s.system_prompt = prompt
+        s.prompt = prompt + text_schemas if text_schemas else prompt
+
+    def _check_iteration_guards(
+        self, s: _RunState, iteration: int,
+    ) -> Optional[LLMRunResult]:
+        """Check timeout, pre-call hooks, and safety. Returns result if blocked."""
+        if time.time() - s.effective_start >= s.effective_timeout:
+            return LLMRunResult(
+                output="", tool_calls=s.tool_calls_made, tokens=s.total_tokens,
+                cost=s.total_cost, iterations=iteration,
+                error=f"Execution time limit exceeded ({s.effective_timeout}s)",
             )
-            tool_calls_made.extend(tool_results)
 
-            remaining_budget = None
-            if resolved_max_iterations is not None:
-                remaining_budget = resolved_max_iterations - len(tool_calls_made)
-
-            prompt = inject_results(
-                system_prompt, llm_response.content, tool_results,
-                conversation_turns, max_tool_result_size, max_prompt_length,
-                remaining_budget,
+        blocked = self._run_pre_call_hooks(s.prompt)
+        if blocked is not None:
+            return LLMRunResult(
+                output="", tool_calls=s.tool_calls_made, tokens=s.total_tokens,
+                cost=s.total_cost, iterations=iteration,
+                error=f"LLM call blocked by pre-call hook: {blocked}",
             )
 
+        safety_error = validate_safety(s.tool_executor, self.inference_config, s.prompt)
+        if safety_error is not None:
+            return LLMRunResult(
+                output="", tool_calls=s.tool_calls_made, tokens=s.total_tokens,
+                cost=s.total_cost, iterations=iteration, error=safety_error,
+            )
+        return None
+
+    def _handle_llm_failure(
+        self, last_error: Optional[Exception], s: _RunState, iteration: int,
+    ) -> LLMRunResult:
+        """Build error result when LLM call fails after retries."""
+        max_attempts = self.inference_config.max_retries + 1
+        error_msg = f"LLM call failed after {max_attempts} attempts"
+        if last_error:
+            error_msg += f": {sanitize_error_message(str(last_error))}"
+        return LLMRunResult(
+            output="", tool_calls=s.tool_calls_made, tokens=s.total_tokens,
+            cost=s.total_cost, iterations=iteration + 1, error=error_msg,
+        )
+
+    def _track_and_parse(self, s: _RunState) -> List[Dict[str, Any]]:
+        """Track response metrics and return parsed tool calls."""
+        resp = s.llm_response
+        logger.info("[%s] LLM responded (%s tokens)", s.agent_name, resp.total_tokens or "?")
+        if resp.total_tokens:
+            s.total_tokens += resp.total_tokens
+        cost = self._estimate_cost(resp)
+        s.total_cost += cost
+        self._track_call(s.observer, s.prompt, resp, cost)
+        return parse_tool_calls(resp.content) if s.tools else []
+
+    def _build_final_result(self, s: _RunState, iteration: int) -> LLMRunResult:
+        """Build final result when no tool calls are needed."""
+        return LLMRunResult(
+            output=extract_final_answer(s.llm_response.content),
+            reasoning=extract_reasoning(s.llm_response.content),
+            tool_calls=s.tool_calls_made, tokens=s.total_tokens,
+            cost=s.total_cost, iterations=iteration + 1,
+            raw_response=s.llm_response,
+        )
+
+    def _execute_and_inject(self, s: _RunState, parsed_calls: List[Dict[str, Any]]) -> None:
+        """Execute tool calls and inject results into prompt."""
+        tool_names = ", ".join(tc.get(ToolKeys.NAME, "?") for tc in parsed_calls)
+        logger.info("[%s] Calling %d tool(s): %s", s.agent_name, len(parsed_calls), tool_names)
+
+        tool_results = self._execute_tools(
+            parsed_calls, s.tool_executor, s.observer, s.safety_config,
+        )
+        s.tool_calls_made.extend(tool_results)
+
+        remaining_budget = None
+        if s.resolved_max_iterations is not None:
+            remaining_budget = s.resolved_max_iterations - len(s.tool_calls_made)
+
+        s.prompt = inject_results(
+            s.system_prompt, s.llm_response.content, tool_results,
+            s.conversation_turns, s.max_tool_result_size, s.max_prompt_length,
+            remaining_budget,
+        )
+
+    def _raise_max_iterations(self, s: _RunState) -> None:
+        """Raise MaxIterationsError when iteration limit is reached."""
         raise MaxIterationsError(
-            iterations=resolved_max_iterations or 0,
-            tool_calls=tool_calls_made,
-            tokens=total_tokens,
-            cost=total_cost,
-            last_output=llm_response.content if llm_response else "",
-            last_reasoning=extract_reasoning(llm_response.content) if llm_response else None,
+            iterations=s.resolved_max_iterations or 0,
+            tool_calls=s.tool_calls_made,
+            tokens=s.total_tokens, cost=s.total_cost,
+            last_output=s.llm_response.content if s.llm_response else "",
+            last_reasoning=extract_reasoning(s.llm_response.content) if s.llm_response else None,
         )
 
     # ------------------------------------------------------------------

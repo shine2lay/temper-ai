@@ -279,4 +279,5 @@ class TestValidateInput:
         """_validate_input accepts valid dict + context."""
         agent = RecordingAgent(_make_config())
         ctx = ExecutionContext(workflow_id="wf-1")
-        agent._validate_input({"query": "test"}, ctx)  # should not raise
+        result = agent._validate_input({"query": "test"}, ctx)
+        assert result is None

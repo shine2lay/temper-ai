@@ -202,6 +202,27 @@ def _load_or_cache_agent(
     return agent, agent_config, agent_config_dict
 
 
+def _build_legacy_input(
+    ctx: AgentExecutionContext,
+    prior_agent_outputs: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Build input from full state with workflow_inputs unwrapped (legacy path)."""
+    if hasattr(ctx.state, 'to_dict'):
+        state_dict = ctx.state.to_dict(exclude_internal=True)
+    else:
+        state_dict = dict(ctx.state) if hasattr(ctx.state, '__iter__') else ctx.state
+
+    wi = {k: v for k, v in state_dict.get(StateKeys.WORKFLOW_INPUTS, {}).items()
+          if k not in _RESERVED_UNWRAP_KEYS}
+
+    return {
+        **state_dict,
+        **wi,
+        StateKeys.STAGE_OUTPUTS: state_dict.get(StateKeys.STAGE_OUTPUTS, {}),
+        StateKeys.CURRENT_STAGE_AGENTS: dict(prior_agent_outputs),
+    }
+
+
 def _prepare_sequential_input(
     ctx: AgentExecutionContext,
     prior_agent_outputs: Dict[str, Any],
@@ -230,7 +251,6 @@ def _prepare_sequential_input(
     if context_provider is not None and stage_config is not None:
         try:
             resolved = context_provider.resolve(stage_config, ctx.state)
-            # Propagate context metadata to state for stage output tracking
             if "_context_meta" in resolved:
                 ctx.state["_context_meta"] = resolved["_context_meta"]
             resolved[StateKeys.CURRENT_STAGE_AGENTS] = dict(prior_agent_outputs)
@@ -243,22 +263,7 @@ def _prepare_sequential_input(
                 exc_info=True,
             )
 
-    # Legacy: full state with workflow_inputs unwrapped
-    if hasattr(ctx.state, 'to_dict'):
-        state_dict = ctx.state.to_dict(exclude_internal=True)
-    else:
-        state_dict = dict(ctx.state) if hasattr(ctx.state, '__iter__') else ctx.state
-
-    # Unwrap workflow_inputs to top level
-    wi = {k: v for k, v in state_dict.get(StateKeys.WORKFLOW_INPUTS, {}).items()
-          if k not in _RESERVED_UNWRAP_KEYS}
-
-    return {
-        **state_dict,
-        **wi,
-        StateKeys.STAGE_OUTPUTS: state_dict.get(StateKeys.STAGE_OUTPUTS, {}),
-        StateKeys.CURRENT_STAGE_AGENTS: dict(prior_agent_outputs),
-    }
+    return _build_legacy_input(ctx, prior_agent_outputs)
 
 
 def _execute_with_tracker(

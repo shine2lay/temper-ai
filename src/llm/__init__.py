@@ -7,9 +7,10 @@ Imports are lazy to avoid circular dependency:
   src.llm -> src.llm.service -> src.agents.utils.constants
   -> src.agents.__init__ -> src.agents.standard_agent -> src.llm.service (circular)
 """
+from typing import Any
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name in ("LLMService", "LLMRunResult"):
         from src.llm.service import LLMRunResult, LLMService  # noqa: F811
 

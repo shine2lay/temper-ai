@@ -45,6 +45,28 @@ def apply_tool_config(tool_instance: Any, tool_name: str, tool_config: Dict[str,
             tool_instance.config = tool_config
 
 
+def _resolve_single_tool_templates(
+    tool: Any, input_data: Dict[str, Any], agent_name: str,
+) -> None:
+    """Render Jinja2 template strings in a single tool's config."""
+    if not hasattr(tool, "config") or not isinstance(tool.config, dict):
+        return
+    changed = False
+    for key, value in tool.config.items():
+        if isinstance(value, str) and "{{" in value:
+            rendered = _render_template_value(value, input_data)
+            if rendered != value:
+                tool.config[key] = rendered
+                changed = True
+    if changed:
+        logger.debug(
+            "[%s] Resolved tool config templates for %s: %s",
+            agent_name,
+            getattr(tool, "name", type(tool).__name__),
+            {k: v for k, v in tool.config.items() if not k.startswith("_")},
+        )
+
+
 def resolve_tool_config_templates(
     registry: Any,
     input_data: Dict[str, Any],
@@ -61,22 +83,7 @@ def resolve_tool_config_templates(
         return
 
     for tool in tools_dict.values():
-        if not hasattr(tool, "config") or not isinstance(tool.config, dict):
-            continue
-        changed = False
-        for key, value in tool.config.items():
-            if isinstance(value, str) and "{{" in value:
-                rendered = _render_template_value(value, input_data)
-                if rendered != value:
-                    tool.config[key] = rendered
-                    changed = True
-        if changed:
-            logger.debug(
-                "[%s] Resolved tool config templates for %s: %s",
-                agent_name,
-                getattr(tool, "name", type(tool).__name__),
-                {k: v for k, v in tool.config.items() if not k.startswith("_")},
-            )
+        _resolve_single_tool_templates(tool, input_data, agent_name)
 
 
 def _render_template_value(template: str, variables: Dict[str, Any]) -> str:

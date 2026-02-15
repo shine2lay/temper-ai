@@ -1,11 +1,4 @@
-"""Constants for tool dictionary keys."""
+"""Re-export shim — canonical definition moved to src.llm.tool_keys."""
+from src.llm.tool_keys import ToolKeys  # noqa: F401
 
-
-class ToolKeys:
-    """Tool dictionary keys used in agent implementations."""
-
-    NAME = "name"
-    PARAMETERS = "parameters"
-    SUCCESS = "success"
-    RESULT = "result"
-    ERROR = "error"
+__all__ = ["ToolKeys"]

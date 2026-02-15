@@ -85,7 +85,7 @@ class StandardAgent(BaseAgent):
     def _prepare_prompt(self, input_data: Dict[str, Any], context: Optional[ExecutionContext]) -> str:
         """Render prompt, store as system prompt, and log preview."""
         prompt = self._build_prompt(input_data, context)
-        self._system_prompt = prompt  # type: ignore[attr-defined]
+        self._system_prompt = prompt
         preview = prompt[-PROMPT_PREVIEW_LENGTH:].replace('\n', ' ').strip()
         logger.info("[%s] Prompt ready (%d chars) ...%s", self.name, len(prompt), preview)
         return prompt
@@ -111,7 +111,7 @@ class StandardAgent(BaseAgent):
     ) -> Optional[AgentResponse]:
         """Handle expected execution errors with accumulated metrics."""
         if isinstance(error, MaxIterationsError):
-            return self._build_response(
+            response = self._build_response(
                 output=error.last_output,
                 reasoning=error.last_reasoning,
                 tool_calls=error.tool_calls,
@@ -119,8 +119,9 @@ class StandardAgent(BaseAgent):
                 cost=error.cost,
                 start_time=start_time,
                 error=str(error),
-                metadata={"iterations": error.iterations},
             )
+            response.metadata = {"iterations": error.iterations}
+            return response
         if isinstance(error, (LLMError, ToolExecutionError, PromptRenderError,
                               ConfigValidationError, RuntimeError, ValueError,
                               TimeoutError)):

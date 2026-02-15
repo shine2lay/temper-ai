@@ -38,13 +38,14 @@ from src.compiler.executors import (
 from src.compiler.node_builder import NodeBuilder
 from src.compiler.stage_compiler import StageCompiler
 from src.compiler.state_manager import StateManager
-from src.compiler.workflow_executor import WorkflowExecutor
+from src.compiler.workflow_executor import CompiledGraphRunner
 from src.safety.factory import create_safety_stack
 from src.tools.executor import ToolExecutor
 from src.tools.registry import ToolRegistry
 
-# Re-export WorkflowExecutor for backward compatibility
-__all__ = ['LangGraphCompiler', 'WorkflowExecutor']
+# Re-export for backward compatibility
+WorkflowExecutor = CompiledGraphRunner  # noqa: duplicate
+__all__ = ['LangGraphCompiler', 'CompiledGraphRunner', 'WorkflowExecutor']
 
 
 def _extract_agents_from_stage(stage_config: Any) -> list:
@@ -153,12 +154,17 @@ class LangGraphCompiler:
             'adaptive': AdaptiveStageExecutor(),
         }
 
+        # Context provider for selective stage input resolution
+        from src.compiler.context_provider import SourceResolver
+        self.context_provider = SourceResolver()
+
         # Node builder (depends on config_loader, tool_registry, executors, tool_executor)
         self.node_builder = NodeBuilder(
             config_loader=self.config_loader,
             tool_registry=self.tool_registry,
             executors=self.executors,
-            tool_executor=self.tool_executor
+            tool_executor=self.tool_executor,
+            context_provider=self.context_provider,
         )
 
         # Condition evaluator for conditional/loop stages
@@ -199,6 +205,12 @@ class LangGraphCompiler:
             >>> graph = compiler.compile(config)
             >>> result = graph.invoke({"topic": "quantum computing"})
         """
+        # Step 0: Create output extractor and inject into all executors
+        from src.compiler.output_extractor import get_extractor
+        extractor = get_extractor(workflow_config)
+        for executor in self.executors.values():
+            executor.output_extractor = extractor
+
         # Step 1: Parse workflow configuration
         workflow = self._parse_workflow(workflow_config)
         stages = workflow.get("stages", [])

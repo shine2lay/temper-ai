@@ -317,9 +317,9 @@ class NativeExecutionEngine(ExecutionEngine):
                     "Cannot use execute(mode=ASYNC) from an async context. "
                     "Use 'await engine.async_execute(compiled, data)' instead."
                 )
-            return asyncio.run(compiled_workflow.ainvoke(state))
+            return asyncio.run(compiled_workflow.ainvoke(state))  # type: ignore[arg-type]
 
-        return compiled_workflow.invoke(state)
+        return compiled_workflow.invoke(state)  # type: ignore[arg-type]
 
     async def async_execute(
         self,
@@ -350,10 +350,10 @@ class NativeExecutionEngine(ExecutionEngine):
 
         if mode == ExecutionMode.SYNC:
             return await asyncio.to_thread(
-                compiled_workflow.invoke, state,
+                compiled_workflow.invoke, state,  # type: ignore[arg-type]
             )
 
-        return await compiled_workflow.ainvoke(state)
+        return await compiled_workflow.ainvoke(state)  # type: ignore[arg-type]
 
     def supports_feature(self, feature: str) -> bool:
         """Check if engine supports specific feature.

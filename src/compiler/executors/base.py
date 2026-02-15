@@ -245,7 +245,40 @@ class StageExecutor(ABC):
 
     Provides shared methods for synthesis, dialogue, and agent name
     extraction used by all concrete executors.
+
+    Attributes:
+        context_provider: Optional context provider for selective input
+            resolution. When set, stages with declared inputs receive
+            only resolved context instead of the full workflow state.
     """
+
+    context_provider: Optional[Any] = None
+    output_extractor: Optional[Any] = None
+
+    def _extract_structured_fields(
+        self, stage_config: Any, raw_output: str, stage_name: str,
+    ) -> Dict[str, Any]:
+        """Extract structured fields from raw output using output declarations.
+
+        Args:
+            stage_config: Stage configuration (dict or Pydantic model)
+            raw_output: Raw text output from stage execution
+            stage_name: Name of the stage (for logging)
+
+        Returns:
+            Dict of extracted structured fields, or empty dict if
+            no extractor or no output declarations.
+        """
+        if not self.output_extractor or not raw_output:
+            return {}
+        from src.compiler.context_schemas import parse_stage_outputs
+        from src.utils.config_helpers import get_nested_value
+        outputs_raw = get_nested_value(stage_config, 'stage.outputs') or {}
+        output_decls = parse_stage_outputs(outputs_raw)
+        if not output_decls:
+            return {}
+        result: Dict[str, Any] = self.output_extractor.extract(str(raw_output), output_decls, stage_name)
+        return result
 
     @abstractmethod
     def execute_stage(

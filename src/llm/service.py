@@ -22,7 +22,7 @@ from src.llm.response_parser import (
     extract_reasoning,
     parse_tool_calls,
 )
-from src.tools.tool_keys import ToolKeys
+from src.llm.tool_keys import ToolKeys
 from src.llm._prompt import inject_results
 from src.llm._retry import call_with_retry_async, call_with_retry_sync
 from src.llm._schemas import build_native_tool_defs, build_text_schemas
@@ -87,6 +87,36 @@ class _RunState:
 
 
 # ---------------------------------------------------------------------------
+# Limit resolution helpers (module-level, consumed by LLMService)
+# ---------------------------------------------------------------------------
+
+def resolve_max_iterations(
+    explicit: Optional[int],
+    safety_config: Any,
+) -> int:
+    """Resolve max iterations from explicit param or safety config."""
+    if explicit is not None:
+        return explicit
+    if safety_config is not None:
+        return getattr(safety_config, 'max_tool_calls_per_execution', _DEFAULT_MAX_ITERATIONS)
+    return _DEFAULT_MAX_ITERATIONS
+
+
+def resolve_max_tool_result_size(safety_config: Any) -> int:
+    """Resolve max tool result size from safety config."""
+    if safety_config is not None:
+        return getattr(safety_config, 'max_tool_result_size', 10000)  # scanner: skip-magic
+    return 10000  # scanner: skip-magic
+
+
+def resolve_max_prompt_length(safety_config: Any) -> int:
+    """Resolve max prompt length from safety config."""
+    if safety_config is not None:
+        return getattr(safety_config, 'max_prompt_length', 32000)  # scanner: skip-magic
+    return 32000  # scanner: skip-magic
+
+
+# ---------------------------------------------------------------------------
 # LLMService
 # ---------------------------------------------------------------------------
 
@@ -119,7 +149,7 @@ class LLMService:
     # Public API
     # ------------------------------------------------------------------
 
-    def run(
+    def run(  # noqa: params
         self,
         prompt: str,
         *,
@@ -163,8 +193,9 @@ class LLMService:
             self._execute_and_inject(s, parsed_calls)
 
         self._raise_max_iterations(s)
+        raise AssertionError("unreachable")  # help mypy see NoReturn
 
-    async def arun(
+    async def arun(  # noqa: params
         self,
         prompt: str,
         *,
@@ -207,6 +238,7 @@ class LLMService:
             self._execute_and_inject(s, parsed_calls)
 
         self._raise_max_iterations(s)
+        raise AssertionError("unreachable")  # help mypy see NoReturn
 
     # ------------------------------------------------------------------
     # Loop helpers (shared by run/arun)
@@ -221,9 +253,9 @@ class LLMService:
         start_time: Optional[float],
     ) -> None:
         """Resolve settings, build tool schemas, and initialize loop state."""
-        s.resolved_max_iterations = self._resolve_max_iterations(max_iterations, s.safety_config)
-        s.max_tool_result_size = self._resolve_max_tool_result_size(s.safety_config)
-        s.max_prompt_length = self._resolve_max_prompt_length(s.safety_config)
+        s.resolved_max_iterations = resolve_max_iterations(max_iterations, s.safety_config)
+        s.max_tool_result_size = resolve_max_tool_result_size(s.safety_config)
+        s.max_prompt_length = resolve_max_prompt_length(s.safety_config)
         s.effective_start = start_time if start_time is not None else time.time()
         s.effective_timeout = max_execution_time or float("inf")
 
@@ -371,33 +403,6 @@ class LLMService:
             execute_single_tool,
         )
 
-    @staticmethod
-    def _execute_single_tool(
-        tool_call: Dict[str, Any],
-        tool_executor: Any,
-        observer: Any,
-        safety_config: Any,
-    ) -> Dict[str, Any]:
-        """Execute a single tool call. Delegates to _tool_execution module."""
-        return execute_single_tool(tool_call, tool_executor, observer, safety_config)
-
-    @staticmethod
-    def _inject_results(
-        system_prompt: str,
-        llm_response_content: str,
-        tool_results: List[Dict[str, Any]],
-        conversation_turns: List[str],
-        max_tool_result_size: int,
-        max_prompt_length: int,
-        remaining_tool_calls: Optional[int] = None,
-    ) -> str:
-        """Inject tool results into prompt. Delegates to _prompt module."""
-        return inject_results(
-            system_prompt, llm_response_content, tool_results,
-            conversation_turns, max_tool_result_size, max_prompt_length,
-            remaining_tool_calls,
-        )
-
     def _build_text_schemas(self, tools: Optional[List[Any]]) -> Optional[str]:
         """Build text-based tool schemas. Delegates to _schemas module."""
         schemas, version = build_text_schemas(
@@ -461,31 +466,5 @@ class LLMService:
         return None
 
     # ------------------------------------------------------------------
-    # Limit resolution helpers
+    # Limit resolution helpers (delegated to module-level functions)
     # ------------------------------------------------------------------
-
-    @staticmethod
-    def _resolve_max_iterations(
-        explicit: Optional[int],
-        safety_config: Any,
-    ) -> int:
-        """Resolve max iterations from explicit param or safety config."""
-        if explicit is not None:
-            return explicit
-        if safety_config is not None:
-            return getattr(safety_config, 'max_tool_calls_per_execution', _DEFAULT_MAX_ITERATIONS)
-        return _DEFAULT_MAX_ITERATIONS
-
-    @staticmethod
-    def _resolve_max_tool_result_size(safety_config: Any) -> int:
-        """Resolve max tool result size from safety config."""
-        if safety_config is not None:
-            return getattr(safety_config, 'max_tool_result_size', 10000)  # scanner: skip-magic
-        return 10000  # scanner: skip-magic
-
-    @staticmethod
-    def _resolve_max_prompt_length(safety_config: Any) -> int:
-        """Resolve max prompt length from safety config."""
-        if safety_config is not None:
-            return getattr(safety_config, 'max_prompt_length', 32000)  # scanner: skip-magic
-        return 32000  # scanner: skip-magic

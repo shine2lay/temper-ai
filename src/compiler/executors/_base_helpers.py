@@ -135,6 +135,41 @@ def _create_execution_context(
     )
 
 
+MAX_TRACKING_INPUT_BYTES = 400 * 1024  # scanner: skip-magic — 400KB, safely under 0.5MB DB limit
+
+
+def _truncate_tracking_data(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Truncate tracking input data to fit within DB size limits.
+
+    Stage outputs accumulate across pipeline stages and can exceed the
+    0.5MB input_data limit in the SQL backend. This truncates large
+    stage_outputs values to keep the tracking data within bounds.
+    """
+    import json
+    try:
+        serialized = json.dumps(data, separators=(',', ':'), default=str)
+    except (TypeError, ValueError):
+        return data
+
+    if len(serialized.encode('utf-8')) <= MAX_TRACKING_INPUT_BYTES:
+        return data
+
+    # Truncate stage_outputs values (largest contributor)
+    truncated = dict(data)
+    stage_outputs = truncated.get(StateKeys.STAGE_OUTPUTS)
+    if isinstance(stage_outputs, dict):
+        truncated_outputs: Dict[str, Any] = {}
+        for stage_name, output in stage_outputs.items():
+            output_str = json.dumps(output, separators=(',', ':'), default=str)
+            if len(output_str) > 1024:  # noqa  # scanner: skip-magic
+                truncated_outputs[stage_name] = f"[truncated: {len(output_str)} bytes]"
+            else:
+                truncated_outputs[stage_name] = output
+        truncated[StateKeys.STAGE_OUTPUTS] = truncated_outputs
+
+    return truncated
+
+
 def _record_agent_tracking(
     tracker: Any,
     agent_id: str,
@@ -144,7 +179,8 @@ def _record_agent_tracking(
 ) -> None:
     """Record agent output in tracker, logging on failure."""
     try:
-        tracker.set_agent_output(
+        from src.observability.metric_aggregator import AgentOutputParams
+        tracker.set_agent_output(AgentOutputParams(
             agent_id=agent_id,
             output_data={StateKeys.OUTPUT: response.output},
             reasoning=response.reasoning,
@@ -152,7 +188,7 @@ def _record_agent_tracking(
             estimated_cost_usd=response.estimated_cost_usd,
             num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
             num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
-        )
+        ))
     except Exception:
         logger.warning(
             "Failed to set agent output tracking for %s agent %s",
@@ -243,7 +279,7 @@ def invoke_leader_agent(
     Returns:
         AgentOutput from the leader agent
     """
-    from src.agents.agent_factory import AgentFactory
+    from src.agents.utils.agent_factory import AgentFactory
     from src.compiler.schemas import AgentConfig
 
     agent_config_dict = config_loader.load_agent(leader_name)
@@ -333,7 +369,7 @@ def _invoke_single_dialogue_agent(params: SingleDialogueAgentParams) -> Tuple[An
     Returns:
         Tuple of (AgentOutput, llm_provider)
     """
-    from src.agents.agent_factory import AgentFactory
+    from src.agents.utils.agent_factory import AgentFactory
     from src.compiler.schemas import AgentConfig
 
     agent_config_dict = params.config_loader.load_agent(params.agent_name)
@@ -375,7 +411,7 @@ def _invoke_single_dialogue_agent(params: SingleDialogueAgentParams) -> Tuple[An
         params.agent_name, response, role="dialogue",
         extra_metadata={"round": params.round_number},
     )
-    return output, agent.llm  # type: ignore[attr-defined]
+    return output, agent.llm
 
 
 def reinvoke_agents_with_dialogue(

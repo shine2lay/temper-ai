@@ -503,6 +503,7 @@ def build_init_parallel_node(
                 resolved_input_dyn[key] = state[key]
 
         def init_parallel_dynamic(s: Dict[str, Any]) -> Dict[str, Any]:
+            """Initialize parallel stage state with resolved dynamic inputs."""
             return {
                 StateKeys.AGENT_OUTPUTS: {},
                 StateKeys.AGENT_STATUSES: {},

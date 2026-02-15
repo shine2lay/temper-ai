@@ -30,7 +30,7 @@ class StageOutputData:
     agents: list
 
 
-from src.agents.agent_factory import AgentFactory
+from src.agents.utils.agent_factory import AgentFactory
 from src.compiler.domain_state import ConfigLoaderProtocol, DomainToolRegistryProtocol
 from src.compiler.executors._sequential_helpers import (
     AgentExecutionContext,
@@ -104,9 +104,11 @@ class SequentialStageExecutor(StageExecutor):
     def _run_agents_tracked(
         self, agents: list, stage_name: str, state: Dict[str, Any],
         config_loader: ConfigLoaderProtocol, error_handling: Any,
-        tracker: Any, workflow_id: str,
+        stage_config: Any = None,
     ) -> tuple:
         """Run all agents with optional tracker context."""
+        tracker = state.get(StateKeys.TRACKER)
+        workflow_id: str = state.get(StateKeys.WORKFLOW_ID, "unknown")
         if tracker:
             stage_config_dict = state.get("_stage_config_dict", {})
             with tracker.track_stage(
@@ -119,6 +121,8 @@ class SequentialStageExecutor(StageExecutor):
                     executor=self, stage_id=stage_id, stage_name=stage_name,
                     workflow_id=workflow_id, state=state, tracker=tracker,
                     config_loader=config_loader, agent_factory_cls=AgentFactory,
+                    context_provider=self.context_provider,
+                    stage_config=stage_config,
                 )
                 return run_all_agents(
                     ctx=ctx, agents=agents, error_handling=error_handling,
@@ -128,6 +132,8 @@ class SequentialStageExecutor(StageExecutor):
             executor=self, stage_id=stage_id, stage_name=stage_name,
             workflow_id=workflow_id, state=state, tracker=None,
             config_loader=config_loader, agent_factory_cls=AgentFactory,
+            context_provider=self.context_provider,
+            stage_config=stage_config,
         )
         return run_all_agents(
             ctx=ctx, agents=agents, error_handling=error_handling,
@@ -191,25 +197,36 @@ class SequentialStageExecutor(StageExecutor):
         state: Dict[str, Any],
         stage_name: str,
         data: StageOutputData,
+        structured: Optional[Dict[str, Any]] = None,
     ) -> None:
-        """Build and store stage output in state.
+        """Build and store stage output in two-compartment format.
+
+        The output is stored as::
+
+            stage_outputs[stage_name] = {
+                "structured": { ... },      # extracted structured fields
+                "raw": { output, agents },  # full execution data
+                **raw_dict,                 # top-level compat aliases
+            }
 
         Args:
             state: Current workflow state
             stage_name: Name of the stage
-            data: Bundle of stage output data (final_output, synthesis_result, agent results, etc.)
+            data: Bundle of stage output data
+            structured: Extracted structured fields (from OutputExtractor)
         """
         if not isinstance(state.get(StateKeys.STAGE_OUTPUTS), dict):
             state[StateKeys.STAGE_OUTPUTS] = {}
 
-        stage_output: Dict[str, Any] = {
+        # Build the raw dict (full execution data)
+        raw_dict: Dict[str, Any] = {
             StateKeys.OUTPUT: data.final_output,
             StateKeys.AGENT_OUTPUTS: data.agent_outputs,
             StateKeys.AGENT_STATUSES: data.agent_statuses,
             StateKeys.AGENT_METRICS: data.agent_metrics,
         }
         if data.synthesis_result:
-            stage_output["synthesis_result"] = {
+            raw_dict["synthesis_result"] = {
                 StateKeys.METHOD: data.synthesis_result.method,
                 StateKeys.CONFIDENCE: data.synthesis_result.confidence,
                 StateKeys.VOTES: getattr(data.synthesis_result, "votes", {}),
@@ -222,13 +239,25 @@ class SequentialStageExecutor(StageExecutor):
         )
         total_count = len(data.agents)
         if failed_count == total_count and total_count > 0:
-            stage_output[StateKeys.STAGE_STATUS] = "failed"
+            raw_dict[StateKeys.STAGE_STATUS] = "failed"
         elif failed_count > 0:
-            stage_output[StateKeys.STAGE_STATUS] = "degraded"
+            raw_dict[StateKeys.STAGE_STATUS] = "degraded"
         else:
-            stage_output[StateKeys.STAGE_STATUS] = "completed"
+            raw_dict[StateKeys.STAGE_STATUS] = "completed"
 
-        state[StateKeys.STAGE_OUTPUTS][stage_name] = stage_output
+        # Two-compartment format with top-level compat aliases
+        stage_entry: Dict[str, Any] = {
+            "structured": structured or {},
+            "raw": dict(raw_dict),
+            **raw_dict,  # Top-level compat for condition expressions
+        }
+
+        # Propagate context metadata from stage input if available
+        context_meta = state.get("_context_meta")
+        if context_meta is not None:
+            stage_entry["_context_meta"] = context_meta
+
+        state[StateKeys.STAGE_OUTPUTS][stage_name] = stage_entry
         state[StateKeys.CURRENT_STAGE] = stage_name
 
     def execute_stage(
@@ -250,7 +279,8 @@ class SequentialStageExecutor(StageExecutor):
             stage_config.model_dump() if hasattr(stage_config, 'model_dump') else stage_config
         )
         agent_outputs, agent_statuses, agent_metrics = self._run_agents_tracked(
-            agents, stage_name, state, config_loader, error_handling, tracker, workflow_id,
+            agents, stage_name, state, config_loader, error_handling,
+            stage_config=stage_config,
         )
         state.pop("_stage_config_dict", None)
 
@@ -266,7 +296,10 @@ class SequentialStageExecutor(StageExecutor):
             agent_metrics=agent_metrics,
             agents=agents,
         )
-        self._store_stage_output(state, stage_name, output_data)
+        structured = self._extract_structured_fields(
+            stage_config, final_output, stage_name,
+        )
+        self._store_stage_output(state, stage_name, output_data, structured=structured)
 
         # Persist stage output to DB for dashboard visibility
         stage_id = state.get(StateKeys.CURRENT_STAGE_ID)

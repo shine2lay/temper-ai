@@ -844,6 +844,130 @@ def _check_stage_references(
                 errors.append(f"Agent config not found: {agent_path}")
 
 
+def _compute_transitive_predecessors(
+    predecessors: dict[str, list[str]],
+) -> dict[str, set[str]]:
+    """Compute transitive predecessors for each stage via BFS.
+
+    Args:
+        predecessors: Direct predecessors from DAG.
+
+    Returns:
+        Dict mapping stage name to set of all transitive predecessors.
+    """
+    from collections import deque
+
+    result: dict[str, set[str]] = {name: set() for name in predecessors}
+    for stage in predecessors:
+        visited: set[str] = set()
+        queue: deque[str] = deque(predecessors[stage])
+        while queue:
+            pred = queue.popleft()
+            if pred in visited:
+                continue
+            visited.add(pred)
+            queue.extend(predecessors.get(pred, []))
+        result[stage] = visited
+    return result
+
+
+def _load_stage_inputs(
+    stage_ref: str, workflow_dir: Path, config_root: str,
+) -> Optional[dict]:
+    """Load and parse stage input declarations. Returns None on failure."""
+    from src.compiler.context_schemas import parse_stage_inputs
+
+    stage_path = _resolve_stage_path(stage_ref, workflow_dir, config_root)
+    if stage_path is None:
+        return None
+
+    try:
+        with open(stage_path) as f:
+            stage_config = yaml.safe_load(f)
+    except (OSError, yaml.YAMLError):
+        return None
+
+    if not stage_config:
+        return None
+
+    raw_inputs = stage_config.get("stage", {}).get("inputs")
+    return parse_stage_inputs(raw_inputs)
+
+
+def _validate_stage_sources(
+    stage: dict,
+    stage_names: list[str],
+    trans_preds: dict,
+    config_root: str,
+    workflow_dir: Path,
+    errors: list[str],
+) -> None:
+    """Validate source references for a single stage."""
+    stage_name = stage.get("name", "")
+    stage_ref = stage.get("stage_ref", "")
+    if not stage_name or not stage_ref:
+        return
+
+    parsed = _load_stage_inputs(stage_ref, workflow_dir, config_root)
+    if parsed is None:
+        return
+
+    stage_name_set = set(stage_names)
+    preds = trans_preds.get(stage_name, set())
+    for input_name, decl in parsed.items():
+        source_prefix = decl.source.split(".")[0]
+
+        if source_prefix == "workflow":
+            continue  # workflow.* always valid
+
+        if source_prefix not in stage_name_set:
+            errors.append(
+                f"Stage '{stage_name}' input '{input_name}': "
+                f"source stage '{source_prefix}' not found in workflow"
+            )
+            continue
+
+        if source_prefix not in preds:
+            errors.append(
+                f"Stage '{stage_name}' input '{input_name}': "
+                f"source '{decl.source}' references stage '{source_prefix}' "
+                f"which is not a predecessor"
+            )
+
+
+def _validate_source_references(
+    stages: list,
+    config_root: str,
+    workflow_dir: Path,
+    errors: list[str],
+    warnings: list[str],
+) -> None:
+    """Validate source references in stage input declarations.
+
+    Checks that:
+    1. Source stage exists in the workflow
+    2. Source stage is a DAG predecessor (transitive) — no forward refs
+    3. workflow.* sources are always valid
+    """
+    from src.compiler.dag_builder import build_stage_dag
+
+    stage_names = [s.get("name", "") for s in stages if s.get("name")]
+    if not stage_names:
+        return
+
+    try:
+        dag = build_stage_dag(stage_names, stages)
+        trans_preds = _compute_transitive_predecessors(dag.predecessors)
+    except (ValueError, KeyError):
+        return
+
+    for stage in stages:
+        _validate_stage_sources(
+            stage, stage_names, trans_preds,
+            config_root, workflow_dir, errors,
+        )
+
+
 @main.command()
 @click.argument("workflow", type=click.Path(exists=True))
 @click.option(
@@ -883,6 +1007,11 @@ def validate(workflow: str, config_root: str, output_format: str, check_refs: bo
         wf.get("stages", []), Path(workflow).parent, config_root, check_refs, errors,
     )
 
+    # Validate source references in stage input declarations
+    _validate_source_references(
+        wf.get("stages", []), config_root, Path(workflow).parent, errors, warnings,
+    )
+
     is_valid = len(errors) == 0
 
     if output_format == "json":
@@ -894,6 +1023,10 @@ def validate(workflow: str, config_root: str, output_format: str, check_refs: bo
                 console.print(f"  - {err}")
         else:
             console.print("[green]All references valid[/green]")
+        if warnings:
+            console.print("[yellow]Warnings:[/yellow]")
+            for w in warnings:
+                console.print(f"  - {w}")
 
     if not is_valid:
         raise SystemExit(1)

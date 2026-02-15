@@ -34,6 +34,32 @@ from src.tools.registry import ToolRegistry
 logger = logging.getLogger(__name__)
 
 
+def load_tools_from_config(
+    registry: Any,
+    configured_tools: List[Any],
+) -> None:
+    """Load specific tools from configuration into *registry*."""
+    ensure_tools_discovered(registry)
+    available_tools = registry.list_tools()
+
+    configured_names: set[str] = set()
+    for tool_spec in configured_tools:
+        tool_name, tool_config = resolve_tool_spec(tool_spec)
+        tool_instance = registry.get(tool_name)
+
+        if tool_instance is None:
+            raise ValueError(
+                f"Unknown tool '{tool_name}'. Available tools: {available_tools}\n"
+                f"To add a new tool, create a BaseTool subclass in src/tools/"
+            )
+
+        configured_names.add(tool_name)
+        apply_tool_config(tool_instance, tool_name, tool_config)
+
+    for name in set(registry.list_tools()) - configured_names:
+        registry.unregister(name)
+
+
 class BaseAgent(ABC):
     """Abstract base class for all agents with template method pattern.
 
@@ -265,7 +291,6 @@ class BaseAgent(ABC):
         cost: float,
         start_time: float,
         error: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
     ) -> AgentResponse:
         """Build final AgentResponse with logging."""
         duration = time.time() - start_time
@@ -286,7 +311,6 @@ class BaseAgent(ABC):
             estimated_cost_usd=cost,
             latency_seconds=time.time() - start_time,
             error=error,
-            metadata=metadata or {},
         )
 
     def _build_error_response(
@@ -419,33 +443,7 @@ class BaseAgent(ABC):
         if configured_tools is None:
             registry.auto_discover()
         elif configured_tools:
-            self._load_tools_from_config(registry, configured_tools)
+            load_tools_from_config(registry, configured_tools)
 
         return registry
-
-    def _load_tools_from_config(
-        self,
-        registry: Any,
-        configured_tools: List[Any],
-    ) -> None:
-        """Load specific tools from configuration."""
-        ensure_tools_discovered(registry)
-        available_tools = registry.list_tools()
-
-        configured_names: set[str] = set()
-        for tool_spec in configured_tools:
-            tool_name, tool_config = resolve_tool_spec(tool_spec)
-            tool_instance = registry.get(tool_name)
-
-            if tool_instance is None:
-                raise ValueError(
-                    f"Unknown tool '{tool_name}'. Available tools: {available_tools}\n"
-                    f"To add a new tool, create a BaseTool subclass in src/tools/"
-                )
-
-            configured_names.add(tool_name)
-            apply_tool_config(tool_instance, tool_name, tool_config)
-
-        for name in set(registry.list_tools()) - configured_names:
-            registry.unregister(name)
 

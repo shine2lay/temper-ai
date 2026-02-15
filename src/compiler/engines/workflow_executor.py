@@ -11,6 +11,7 @@ Supports:
 - Stage-to-stage negotiation (re-run producer on ContextResolutionError)
 - Dynamic edge routing (stage declares next stage via _next_stage signal)
 """
+import json
 import logging
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -80,6 +81,149 @@ def _group_by_depth(
 
 
 _NEXT_STAGE_KEY = "_next_stage"
+
+
+def _run_stage_node(
+    stage_name: str,
+    node_fn: Callable,
+    state: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Run a stage node callable and return its result dict."""
+    logger.info("Executing stage '%s'", stage_name)
+    result: Dict[str, Any] = node_fn(state)
+    return result
+
+
+def _merge_stage_result(
+    state: Dict[str, Any],
+    result: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Merge stage execution result into workflow state."""
+    result_outputs = result.get(StateKeys.STAGE_OUTPUTS, {})
+    state_outputs = state.get(StateKeys.STAGE_OUTPUTS, {})
+    state_outputs.update(result_outputs)
+    state[StateKeys.STAGE_OUTPUTS] = state_outputs
+
+    current_stage = result.get(StateKeys.CURRENT_STAGE)
+    if current_stage:
+        state[StateKeys.CURRENT_STAGE] = current_stage
+
+    return state
+
+
+def _extract_next_stage_signal(
+    stage_name: str,
+    state: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    """Extract _next_stage signal from a stage's output.
+
+    Checks three sources in priority order:
+    1. Top-level ``_next_stage`` dict in stage output
+    2. ``structured`` compartment
+    3. Raw ``output`` text parsed as JSON (fallback when extraction fails)
+
+    Returns:
+        Dict with ``name`` (str) and ``inputs`` (dict), or None.
+    """
+    stage_data = state.get(StateKeys.STAGE_OUTPUTS, {}).get(
+        stage_name, {},
+    )
+    if not isinstance(stage_data, dict):
+        return None
+
+    signal = stage_data.get(_NEXT_STAGE_KEY)
+    if isinstance(signal, dict) and signal.get("name"):
+        return {"name": signal["name"], "inputs": signal.get("inputs", {})}
+
+    structured = stage_data.get("structured", {})
+    if isinstance(structured, dict):
+        signal = structured.get(_NEXT_STAGE_KEY)
+        if isinstance(signal, dict) and signal.get("name"):
+            return {"name": signal["name"], "inputs": signal.get("inputs", {})}
+
+    # Fallback: parse raw output text as JSON
+    raw_output = stage_data.get("output")
+    if isinstance(raw_output, str):
+        signal = _parse_next_stage_from_text(raw_output)
+        if signal is not None:
+            return signal
+
+    return None
+
+
+def _parse_next_stage_from_text(text: str) -> Optional[Dict[str, Any]]:
+    """Try to extract _next_stage from raw output text.
+
+    Handles two cases:
+    1. Entire output is a JSON object containing ``_next_stage``
+    2. Output contains an embedded JSON object with ``_next_stage``
+
+    Returns:
+        Dict with ``name`` and ``inputs``, or None.
+    """
+    # Try parsing the full text as JSON
+    parsed = _try_parse_json(text.strip())
+    if parsed is not None:
+        signal = parsed.get(_NEXT_STAGE_KEY)
+        if isinstance(signal, dict) and signal.get("name"):
+            return {"name": signal["name"], "inputs": signal.get("inputs", {})}
+
+    # Try extracting embedded JSON: find first '{' and last '}'
+    first_brace = text.find("{")
+    last_brace = text.rfind("}")
+    if first_brace >= 0 and last_brace > first_brace:
+        substring = text[first_brace:last_brace + 1]
+        parsed = _try_parse_json(substring)
+        if parsed is not None:
+            signal = parsed.get(_NEXT_STAGE_KEY)
+            if isinstance(signal, dict) and signal.get("name"):
+                return {"name": signal["name"], "inputs": signal.get("inputs", {})}
+
+    return None
+
+
+def _try_parse_json(text: str) -> Optional[Dict[str, Any]]:
+    """Attempt to parse text as JSON dict. Returns None on failure."""
+    try:
+        result = json.loads(text)
+        if isinstance(result, dict):
+            return result
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pass
+    return None
+
+
+def _run_parallel_stage_batch(
+    runnable: List[str],
+    stage_nodes: Dict[str, Callable],
+    state: Dict[str, Any],
+) -> Dict[str, Dict[str, Any]]:
+    """Execute stages in parallel using ThreadPoolExecutor."""
+    max_workers = min(DEFAULT_MAX_STAGE_PARALLEL_WORKERS, len(runnable))
+    results: Dict[str, Dict[str, Any]] = {}
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_name = {
+            executor.submit(
+                _run_stage_node, name, stage_nodes[name], state,
+            ): name
+            for name in runnable
+        }
+
+        for future in as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                results[name] = future.result()
+            except Exception:
+                logger.exception("Stage '%s' failed in parallel execution", name)
+                results[name] = {
+                    "stage_outputs": {
+                        name: {"stage_status": "failed", "error": "execution_error"}
+                    },
+                    "current_stage": name,
+                }
+
+    return results
 
 
 class WorkflowExecutor:
@@ -258,11 +402,11 @@ class WorkflowExecutor:
                 runnable[0], stage_nodes, state, workflow_config,
             )
 
-        results = self._run_parallel_stage_batch(runnable, stage_nodes, state)
+        results = _run_parallel_stage_batch(runnable, stage_nodes, state)
 
         for name in runnable:
             if name in results:
-                state = self._merge_stage_result(state, results[name])
+                state = _merge_stage_result(state, results[name])
 
         # Process dynamic edges from each parallel stage sequentially
         for name in runnable:
@@ -375,10 +519,10 @@ class WorkflowExecutor:
         last_error: Optional[ContextResolutionError] = None
         for attempt in range(max_rounds + 1):
             try:
-                result = self._run_stage_node(
+                result = _run_stage_node(
                     stage_name, stage_nodes[stage_name], state,
                 )
-                return self._merge_stage_result(state, result)
+                return _merge_stage_result(state, result)
             except ContextResolutionError as exc:
                 if not negotiation_enabled or attempt >= max_rounds:
                     raise
@@ -419,10 +563,10 @@ class WorkflowExecutor:
             "consumer_output": state.get(StateKeys.STAGE_OUTPUTS, {}).get(stage_name),
         }
         state["_negotiation_feedback"] = feedback
-        producer_result = self._run_stage_node(
+        producer_result = _run_stage_node(
             producer, stage_nodes[producer], state,
         )
-        state = self._merge_stage_result(state, producer_result)
+        state = _merge_stage_result(state, producer_result)
         state.pop("_negotiation_feedback", None)
         return state
 
@@ -461,40 +605,6 @@ class WorkflowExecutor:
 
         return False
 
-    @staticmethod
-    def _extract_next_stage_signal(
-        stage_name: str,
-        state: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-        """Extract _next_stage signal from a stage's output.
-
-        Checks two sources in priority order:
-        1. Top-level ``_next_stage`` dict in stage output
-        2. ``structured`` compartment
-
-        Returns:
-            Dict with ``name`` (str) and ``inputs`` (dict), or None.
-        """
-        stage_data = state.get(StateKeys.STAGE_OUTPUTS, {}).get(
-            stage_name, {},
-        )
-        if not isinstance(stage_data, dict):
-            return None
-
-        # 1. Top-level dict signal
-        signal = stage_data.get(_NEXT_STAGE_KEY)
-        if isinstance(signal, dict) and signal.get("name"):
-            return {"name": signal["name"], "inputs": signal.get("inputs", {})}
-
-        # 2. Structured compartment
-        structured = stage_data.get("structured", {})
-        if isinstance(structured, dict):
-            signal = structured.get(_NEXT_STAGE_KEY)
-            if isinstance(signal, dict) and signal.get("name"):
-                return {"name": signal["name"], "inputs": signal.get("inputs", {})}
-
-        return None
-
     def _follow_dynamic_edges(
         self,
         stage_name: str,
@@ -511,7 +621,7 @@ class WorkflowExecutor:
         current_stage = stage_name
 
         for hop in range(DEFAULT_MAX_DYNAMIC_HOPS):
-            signal = self._extract_next_stage_signal(current_stage, state)
+            signal = _extract_next_stage_signal(current_stage, state)
             if signal is None:
                 break
 
@@ -549,70 +659,5 @@ class WorkflowExecutor:
 
         return state
 
-    def _run_parallel_stage_batch(
-        self,
-        runnable: List[str],
-        stage_nodes: Dict[str, Callable],
-        state: Dict[str, Any],
-    ) -> Dict[str, Dict[str, Any]]:
-        """Execute stages in parallel using ThreadPoolExecutor."""
-        max_workers = min(DEFAULT_MAX_STAGE_PARALLEL_WORKERS, len(runnable))
-        results: Dict[str, Dict[str, Any]] = {}
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_name = {
-                executor.submit(
-                    self._run_stage_node, name, stage_nodes[name], state,
-                ): name
-                for name in runnable
-            }
 
-            for future in as_completed(future_to_name):
-                name = future_to_name[future]
-                try:
-                    results[name] = future.result()
-                except Exception:
-                    logger.exception("Stage '%s' failed in parallel execution", name)
-                    results[name] = {
-                        "stage_outputs": {
-                            name: {"stage_status": "failed", "error": "execution_error"}
-                        },
-                        "current_stage": name,
-                    }
-
-        return results
-
-    @staticmethod
-    def _run_stage_node(
-        stage_name: str,
-        node_fn: Callable,
-        state: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Run a stage node callable and return its result dict.
-
-        The node callable expects state and returns a dict update with
-        stage_outputs and current_stage keys.
-        """
-        logger.info("Executing stage '%s'", stage_name)
-        result: Dict[str, Any] = node_fn(state)
-        return result
-
-    @staticmethod
-    def _merge_stage_result(
-        state: Dict[str, Any],
-        result: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Merge stage execution result into workflow state.
-
-        The result contains stage_outputs (dict to merge) and current_stage.
-        """
-        result_outputs = result.get(StateKeys.STAGE_OUTPUTS, {})
-        state_outputs = state.get(StateKeys.STAGE_OUTPUTS, {})
-        state_outputs.update(result_outputs)
-        state[StateKeys.STAGE_OUTPUTS] = state_outputs
-
-        current_stage = result.get(StateKeys.CURRENT_STAGE)
-        if current_stage:
-            state[StateKeys.CURRENT_STAGE] = current_stage
-
-        return state

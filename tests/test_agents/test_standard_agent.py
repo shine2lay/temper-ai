@@ -420,38 +420,38 @@ class TestInputValidation:
         assert "must be a dictionary" in str(exc_info.value)
 
     def test_execute_single_tool_rejects_non_dict(self, minimal_agent_config):
-        """Test that LLMService._execute_single_tool rejects non-dict input."""
-        service = LLMService(Mock(), Mock())
+        """Test that execute_single_tool rejects non-dict input."""
+        from src.llm._tool_execution import execute_single_tool
 
         with pytest.raises(TypeError) as exc_info:
-            service._execute_single_tool("not a dict", None, None, None)  # type: ignore
+            execute_single_tool("not a dict", None, None, None)  # type: ignore
 
         assert "tool_call must be a dictionary" in str(exc_info.value)
 
     def test_execute_single_tool_rejects_missing_name(self, minimal_agent_config):
-        """Test that LLMService._execute_single_tool rejects missing 'name' field."""
-        service = LLMService(Mock(), Mock())
+        """Test that execute_single_tool rejects missing 'name' field."""
+        from src.llm._tool_execution import execute_single_tool
 
         with pytest.raises(ValueError) as exc_info:
-            service._execute_single_tool({"parameters": {}}, None, None, None)
+            execute_single_tool({"parameters": {}}, None, None, None)
 
         assert "tool_call must contain 'name' field" in str(exc_info.value)
 
     def test_execute_single_tool_rejects_non_string_name(self, minimal_agent_config):
-        """Test that LLMService._execute_single_tool rejects non-string 'name'."""
-        service = LLMService(Mock(), Mock())
+        """Test that execute_single_tool rejects non-string 'name'."""
+        from src.llm._tool_execution import execute_single_tool
 
         with pytest.raises(TypeError) as exc_info:
-            service._execute_single_tool({"name": 123, "parameters": {}}, None, None, None)
+            execute_single_tool({"name": 123, "parameters": {}}, None, None, None)
 
         assert "tool_call 'name' must be a string" in str(exc_info.value)
 
     def test_execute_single_tool_rejects_non_dict_parameters(self, minimal_agent_config):
-        """Test that LLMService._execute_single_tool rejects non-dict 'parameters'."""
-        service = LLMService(Mock(), Mock())
+        """Test that execute_single_tool rejects non-dict 'parameters'."""
+        from src.llm._tool_execution import execute_single_tool
 
         with pytest.raises(TypeError) as exc_info:
-            service._execute_single_tool({"name": "test_tool", "parameters": "not a dict"}, None, None, None)
+            execute_single_tool({"name": "test_tool", "parameters": "not a dict"}, None, None, None)
 
         assert "tool_call 'parameters' must be a dictionary" in str(exc_info.value)
 
@@ -476,11 +476,11 @@ class TestInputValidation:
             assert isinstance(response, AgentResponse)
 
     def test_execute_single_tool_accepts_valid_input(self, minimal_agent_config):
-        """Test that LLMService._execute_single_tool accepts valid input."""
-        service = LLMService(Mock(), Mock())
+        """Test that execute_single_tool accepts valid input."""
+        from src.llm._tool_execution import execute_single_tool
 
         # Valid tool call with no executor should return security error
-        result = service._execute_single_tool({"name": "unknown_tool", "parameters": {}}, None, None, None)
+        result = execute_single_tool({"name": "unknown_tool", "parameters": {}}, None, None, None)
         assert "error" in result
         assert result["success"] is False
 
@@ -585,7 +585,8 @@ def test_tool_loading_with_custom_config():
 
         # Manually load tool with config using the method
         # (simulating what would happen if tools list had ToolReference objects)
-        agent._load_tools_from_config(agent.tool_registry, [tool_ref])
+        from src.agents.base_agent import load_tools_from_config
+        load_tools_from_config(agent.tool_registry, [tool_ref])
 
         # Verify Calculator was loaded with custom config
         calc = agent.tool_registry.get("Calculator")

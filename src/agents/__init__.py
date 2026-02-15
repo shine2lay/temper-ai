@@ -10,6 +10,7 @@ Imports are lazy to avoid circular dependency:
   -> src.agents.__init__ -> src.agents.base_agent
   -> src.llm.providers.factory -> src.llm.providers.base (circular)
 """
+from typing import Any
 
 _LAZY_IMPORTS = {
     "AgentFactory": "src.agents.utils.agent_factory",
@@ -23,7 +24,7 @@ _LAZY_IMPORTS = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     module_path = _LAZY_IMPORTS.get(name)
     if module_path is not None:
         import importlib

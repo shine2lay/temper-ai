@@ -8,7 +8,7 @@ to prevent Rich markup injection. Only framework labels use
 Text.from_markup().
 """
 import json
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from rich.console import Console, Group
 from rich.panel import Panel
@@ -206,10 +206,45 @@ def _render_synthesis_section(synthesis: dict) -> List[Any]:
     return renderables
 
 
-def _render_stage_input_context(prior_stages: List[str]) -> Text:
-    if prior_stages:
-        return Text.from_markup(f"[bold]Input:[/bold] {', '.join(prior_stages)}")
-    return Text.from_markup("[bold]Input:[/bold] (workflow inputs)")
+def _render_stage_input_context(
+    prior_stages: List[str], stage_data: Optional[dict] = None,
+) -> List[Any]:
+    """Render input context section for a stage.
+
+    Shows source-resolved refs when context metadata is available,
+    otherwise falls back to passthrough or legacy display.
+    """
+    renderables: list[Any] = []
+    context_meta = None
+    if isinstance(stage_data, dict):
+        context_meta = stage_data.get("_context_meta")
+
+    if context_meta is not None and context_meta.get("mode") == "source-resolved":
+        sources = context_meta.get("sources", {})
+        defaults_used = context_meta.get("defaults_used", [])
+        renderables.append(Text.from_markup(
+            f"[bold]Context:[/bold] source-resolved ({len(sources)} inputs)"
+        ))
+        for input_name, source_ref in sources.items():
+            suffix = ""
+            if input_name in defaults_used:
+                suffix = "  [default used]"
+            line = Text(f"  {input_name:<20} <- {source_ref}{suffix}")
+            renderables.append(line)
+    elif context_meta is not None and context_meta.get("mode") == "passthrough":
+        renderables.append(Text.from_markup(
+            "[bold]Context:[/bold] passthrough (all prior outputs)"
+        ))
+    elif prior_stages:
+        renderables.append(Text.from_markup(
+            f"[bold]Input:[/bold] {', '.join(prior_stages)}"
+        ))
+    else:
+        renderables.append(Text.from_markup(
+            "[bold]Input:[/bold] (workflow inputs)"
+        ))
+
+    return renderables
 
 
 def _render_stage_agents(stage_data: dict) -> List[Any]:
@@ -247,6 +282,28 @@ def _render_stage_output(stage_data: dict) -> List[Any]:
     return renderables
 
 
+def _render_structured_outputs(stage_data: dict) -> List[Any]:
+    """Render structured compartment when non-empty."""
+    renderables: list[Any] = []
+    structured = stage_data.get("structured")
+    if not structured or not isinstance(structured, dict):
+        return renderables
+
+    renderables.append(Text(""))
+    renderables.append(Text.from_markup("[bold]Structured Outputs:[/bold]"))
+    for field_name, value in structured.items():
+        value_str = str(value)
+        preview = (
+            value_str[:MAX_MEDIUM_STRING_LENGTH] + "..."
+            if len(value_str) > MAX_MEDIUM_STRING_LENGTH
+            else value_str
+        )
+        line = Text(f"  {field_name}:  {preview}")
+        renderables.append(line)
+
+    return renderables
+
+
 def _render_stage_panel(
     stage_name: str, stage_data: Any, prior_stages: List[str]
 ) -> Optional[Panel]:
@@ -254,18 +311,75 @@ def _render_stage_panel(
     if not isinstance(stage_data, dict):
         return None
 
-    renderables: list[Any] = [
-        _render_stage_input_context(prior_stages),
-        Text(""),
-    ]
+    renderables: list[Any] = _render_stage_input_context(prior_stages, stage_data)
+    renderables.append(Text(""))
     renderables.extend(_render_stage_agents(stage_data))
     renderables.extend(_render_stage_output(stage_data))
+    renderables.extend(_render_structured_outputs(stage_data))
 
     return Panel(
         Group(*renderables),
         title=f"[bold]Stage: {stage_name}[/bold]",
         border_style="cyan",
         expand=True,
+    )
+
+
+_STATUS_STYLES: Dict[str, str] = {
+    "completed": "green",
+    "degraded": "yellow",
+    "failed": "red",
+}
+
+
+def _render_store_entry(
+    stage_name: str, stage_data: dict, is_current: bool,
+) -> List[Any]:
+    """Render a single store entry as compact lines."""
+    renderables: list[Any] = []
+
+    marker = " *" if is_current else ""
+    status = stage_data.get("stage_status", "")
+    status_style = _STATUS_STYLES.get(status, "dim")
+
+    header = Text("  ")
+    header.append(f"{stage_name}{marker}", style="bold" if is_current else "")
+    if status:
+        header.append(f"  [{status}]", style=status_style)
+    renderables.append(header)
+
+    output = stage_data.get("output") or stage_data.get("decision", "")
+    if output:
+        renderables.append(Text(f"    output: {len(str(output)):,} chars", style="dim"))
+
+    structured = stage_data.get("structured", {})
+    if structured and isinstance(structured, dict):
+        renderables.append(Text(f"    structured: {{{', '.join(structured.keys())}}}", style="dim"))
+
+    return renderables
+
+
+def _render_store_snapshot(
+    stage_outputs: dict, current_idx: int,
+) -> Panel:
+    """Render a compact snapshot of the global store after the current stage."""
+    stage_names = list(stage_outputs.keys())
+    entries_to_show = stage_names[: current_idx + 1]
+
+    renderables: list[Any] = []
+    for sname in entries_to_show:
+        sdata = stage_outputs[sname]
+        if not isinstance(sdata, dict):
+            continue
+        is_current = (sname == stage_names[current_idx])
+        renderables.extend(_render_store_entry(sname, sdata, is_current))
+
+    return Panel(
+        Group(*renderables),
+        title=f"[dim]Store ({len(entries_to_show)} entries)[/dim]",
+        border_style="dim",
+        expand=True,
+        padding=(0, 1),
     )
 
 
@@ -285,3 +399,4 @@ def print_detailed_report(result: dict, console: Console) -> None:
         )
         if panel is not None:
             console.print(panel)
+        console.print(_render_store_snapshot(stage_outputs, idx))

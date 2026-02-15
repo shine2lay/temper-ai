@@ -72,8 +72,8 @@ class TestTrackFailedLLMCall:
         service = _make_llm_service()
         error = Exception("test")
 
-        # Should not raise
-        service._track_failed_call(None, "prompt", error, 1, 1)
+        result = service._track_failed_call(None, "prompt", error, 1, 1)
+        assert result is None
 
 
 class TestStandardAgentFailedLLMTracking:

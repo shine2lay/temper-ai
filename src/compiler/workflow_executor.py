@@ -89,14 +89,14 @@ def _save_checkpoint_on_error(
             )
 
 
-class WorkflowExecutor:
+class CompiledGraphRunner:
     """Executes compiled workflows with observability.
 
     Wraps the compiled StateGraph and provides convenience methods
     for execution with state initialization and tracking.
 
     Example:
-        >>> executor = WorkflowExecutor(compiled_graph, tracker=tracker)
+        >>> executor = CompiledGraphRunner(compiled_graph, tracker=tracker)
         >>> result = executor.execute({"input": "data"})
     """
 
@@ -258,7 +258,7 @@ class WorkflowExecutor:
 
         Example:
             >>> # Enable checkpoints and execute
-            >>> executor = WorkflowExecutor(graph, enable_checkpoints=True)
+            >>> executor = CompiledGraphRunner(graph, enable_checkpoints=True)
             >>> result = executor.execute_with_checkpoints(
             ...     {"topic": "AI safety"},
             ...     workflow_id="wf-123"
@@ -396,7 +396,7 @@ class WorkflowExecutor:
 
         Example:
             >>> # Resume interrupted workflow
-            >>> executor = WorkflowExecutor(graph, enable_checkpoints=True)
+            >>> executor = CompiledGraphRunner(graph, enable_checkpoints=True)
             >>> result = executor.resume_from_checkpoint("wf-123")
         """
         if self.checkpoint_manager is None:
@@ -454,3 +454,7 @@ class WorkflowExecutor:
         }
 
         return WorkflowDomainState.from_dict(domain_dict)
+
+
+# Backward-compat alias (renamed to avoid naming collision with engines/workflow_executor.py)
+WorkflowExecutor = CompiledGraphRunner

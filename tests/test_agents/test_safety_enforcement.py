@@ -82,15 +82,13 @@ def _make_llm_service_and_execute_single(
     safety: SafetyConfig,
     tool_call: dict,
 ) -> dict:
-    """Create LLMService and execute a single tool call with given safety config."""
-    mock_llm = MagicMock()
-    mock_inf_config = MagicMock()
-    service = LLMService(mock_llm, mock_inf_config)
+    """Execute a single tool call with given safety config via module-level function."""
+    from src.llm._tool_execution import execute_single_tool
 
     mock_executor = MagicMock()
     mock_executor.execute.return_value = ToolResult(success=True, result="tool output")
 
-    return service._execute_single_tool(
+    return execute_single_tool(
         tool_call, mock_executor, None, safety,
     )
 
@@ -121,12 +119,10 @@ class TestRequireApprovalMode:
 
     def test_require_approval_does_not_execute(self):
         """Tool.execute() is never called in require_approval mode."""
-        mock_llm = MagicMock()
-        mock_inf_config = MagicMock()
-        service = LLMService(mock_llm, mock_inf_config)
+        from src.llm._tool_execution import execute_single_tool
 
         mock_executor = MagicMock()
-        service._execute_single_tool(
+        execute_single_tool(
             {"name": "bash", "parameters": {"command": "rm -rf /"}},
             mock_executor, None, SafetyConfig(mode="require_approval"),
         )
@@ -149,12 +145,10 @@ class TestDryRunMode:
 
     def test_dry_run_does_not_execute(self):
         """Tool.execute() is never called in dry_run mode."""
-        mock_llm = MagicMock()
-        mock_inf_config = MagicMock()
-        service = LLMService(mock_llm, mock_inf_config)
+        from src.llm._tool_execution import execute_single_tool
 
         mock_executor = MagicMock()
-        service._execute_single_tool(
+        execute_single_tool(
             {"name": "bash", "parameters": {"command": "rm -rf /"}},
             mock_executor, None, SafetyConfig(mode="dry_run"),
         )
@@ -192,12 +186,10 @@ class TestRequireApprovalForTools:
 
     def test_approval_list_checked_in_execute_mode(self):
         """Tool-specific approval is checked even in normal execute mode."""
-        mock_llm = MagicMock()
-        mock_inf_config = MagicMock()
-        service = LLMService(mock_llm, mock_inf_config)
+        from src.llm._tool_execution import execute_single_tool
 
         mock_executor = MagicMock()
-        result = service._execute_single_tool(
+        result = execute_single_tool(
             {"name": "bash", "parameters": {}},
             mock_executor, None,
             SafetyConfig(mode="execute", require_approval_for_tools=["bash", "calculator"]),
@@ -207,12 +199,10 @@ class TestRequireApprovalForTools:
 
     def test_approval_list_does_not_execute_tool(self):
         """Blocked tools are not executed."""
-        mock_llm = MagicMock()
-        mock_inf_config = MagicMock()
-        service = LLMService(mock_llm, mock_inf_config)
+        from src.llm._tool_execution import execute_single_tool
 
         mock_executor = MagicMock()
-        service._execute_single_tool(
+        execute_single_tool(
             {"name": "bash", "parameters": {}},
             mock_executor, None,
             SafetyConfig(mode="execute", require_approval_for_tools=["bash"]),

@@ -13,9 +13,12 @@ from src.compiler.engines.workflow_executor import (
     DEFAULT_MAX_DYNAMIC_HOPS,
     WorkflowExecutor,
     _build_ref_lookup,
+    _extract_next_stage_signal,
     _group_by_depth,
     _is_conditional,
+    _parse_next_stage_from_text,
     _ref_attr,
+    _try_parse_json,
 )
 from src.compiler.state_manager import StateManager
 
@@ -317,7 +320,8 @@ class TestWorkflowExecutor:
             "current_stage": "new_stage",
         }
 
-        merged = WorkflowExecutor._merge_stage_result(state, result)
+        from src.compiler.engines.workflow_executor import _merge_stage_result
+        merged = _merge_stage_result(state, result)
         assert "existing" in merged["stage_outputs"]
         assert "new_stage" in merged["stage_outputs"]
         assert merged["current_stage"] == "new_stage"
@@ -474,7 +478,7 @@ class TestWorkflowExecutor:
 
 
 class TestExtractNextStageSignal:
-    """Test WorkflowExecutor._extract_next_stage_signal static method."""
+    """Test _extract_next_stage_signal static method."""
 
     def test_top_level_signal(self):
         """Test extraction from top-level _next_stage dict."""
@@ -482,7 +486,7 @@ class TestExtractNextStageSignal:
             "stage_status": "completed",
             "_next_stage": {"name": "stage_b", "inputs": {"key": "val"}},
         }}}
-        result = WorkflowExecutor._extract_next_stage_signal("stage_a", state)
+        result = _extract_next_stage_signal("stage_a", state)
         assert result == {"name": "stage_b", "inputs": {"key": "val"}}
 
     def test_structured_signal(self):
@@ -493,7 +497,7 @@ class TestExtractNextStageSignal:
                 "_next_stage": {"name": "stage_c", "inputs": {"x": 1}},
             },
         }}}
-        result = WorkflowExecutor._extract_next_stage_signal("stage_a", state)
+        result = _extract_next_stage_signal("stage_a", state)
         assert result == {"name": "stage_c", "inputs": {"x": 1}}
 
     def test_no_signal(self):
@@ -502,21 +506,21 @@ class TestExtractNextStageSignal:
             "stage_status": "completed",
             "output": "hello",
         }}}
-        assert WorkflowExecutor._extract_next_stage_signal("stage_a", state) is None
+        assert _extract_next_stage_signal("stage_a", state) is None
 
     def test_missing_name(self):
         """Test returns None when _next_stage has no name."""
         state = {"stage_outputs": {"stage_a": {
             "_next_stage": {"inputs": {"key": "val"}},
         }}}
-        assert WorkflowExecutor._extract_next_stage_signal("stage_a", state) is None
+        assert _extract_next_stage_signal("stage_a", state) is None
 
     def test_inputs_default_empty(self):
         """Test inputs defaults to empty dict when not provided."""
         state = {"stage_outputs": {"stage_a": {
             "_next_stage": {"name": "stage_b"},
         }}}
-        result = WorkflowExecutor._extract_next_stage_signal("stage_a", state)
+        result = _extract_next_stage_signal("stage_a", state)
         assert result == {"name": "stage_b", "inputs": {}}
 
 
@@ -850,3 +854,115 @@ class TestDynamicEdgeRouting:
         result = executor.run(["analyze", "fix"], {}, state)
 
         assert "_dynamic_inputs" not in result
+
+
+class TestTryParseJson:
+    """Test _try_parse_json helper."""
+
+    def test_valid_dict(self):
+        assert _try_parse_json('{"a": 1}') == {"a": 1}
+
+    def test_valid_nested(self):
+        result = _try_parse_json('{"x": {"y": [1, 2]}}')
+        assert result == {"x": {"y": [1, 2]}}
+
+    def test_not_dict(self):
+        assert _try_parse_json("[1, 2, 3]") is None
+
+    def test_invalid_json(self):
+        assert _try_parse_json("not json") is None
+
+    def test_empty_string(self):
+        assert _try_parse_json("") is None
+
+
+class TestParseNextStageFromText:
+    """Test _parse_next_stage_from_text helper."""
+
+    def test_full_json_with_next_stage(self):
+        text = '{"evaluation": "FAIL", "_next_stage": {"name": "analyze", "inputs": {"feedback": "too brief"}}}'
+        result = _parse_next_stage_from_text(text)
+        assert result == {"name": "analyze", "inputs": {"feedback": "too brief"}}
+
+    def test_json_without_next_stage(self):
+        text = '{"evaluation": "PASS", "reasoning": "looks good"}'
+        assert _parse_next_stage_from_text(text) is None
+
+    def test_embedded_json_in_text(self):
+        text = 'Here is my evaluation:\n{"evaluation": "FAIL", "_next_stage": {"name": "retry", "inputs": {}}}\nDone.'
+        result = _parse_next_stage_from_text(text)
+        assert result == {"name": "retry", "inputs": {}}
+
+    def test_plain_text_no_json(self):
+        assert _parse_next_stage_from_text("just plain text") is None
+
+    def test_next_stage_without_name(self):
+        text = '{"_next_stage": {"inputs": {"x": 1}}}'
+        assert _parse_next_stage_from_text(text) is None
+
+    def test_whitespace_around_json(self):
+        text = '  \n  {"_next_stage": {"name": "fix"}}  \n  '
+        result = _parse_next_stage_from_text(text)
+        assert result == {"name": "fix", "inputs": {}}
+
+    def test_next_stage_inputs_default_empty(self):
+        text = '{"_next_stage": {"name": "stage_b"}}'
+        result = _parse_next_stage_from_text(text)
+        assert result == {"name": "stage_b", "inputs": {}}
+
+
+class TestExtractNextStageSignalFromOutput:
+    """Test _extract_next_stage_signal fallback to raw output text."""
+
+    def test_signal_from_output_text(self):
+        """Test extraction from raw output text when structured is empty."""
+        state = {"stage_outputs": {"eval": {
+            "stage_status": "completed",
+            "structured": {},
+            "output": '{"evaluation": "FAIL", "_next_stage": {"name": "analyze", "inputs": {"feedback": "needs detail"}}}',
+        }}}
+        result = _extract_next_stage_signal("eval", state)
+        assert result == {"name": "analyze", "inputs": {"feedback": "needs detail"}}
+
+    def test_top_level_takes_priority_over_output_text(self):
+        """Test that top-level signal is preferred over output text."""
+        state = {"stage_outputs": {"eval": {
+            "_next_stage": {"name": "from_top"},
+            "output": '{"_next_stage": {"name": "from_text"}}',
+        }}}
+        result = _extract_next_stage_signal("eval", state)
+        assert result["name"] == "from_top"
+
+    def test_structured_takes_priority_over_output_text(self):
+        """Test that structured signal is preferred over output text."""
+        state = {"stage_outputs": {"eval": {
+            "structured": {"_next_stage": {"name": "from_structured"}},
+            "output": '{"_next_stage": {"name": "from_text"}}',
+        }}}
+        result = _extract_next_stage_signal("eval", state)
+        assert result["name"] == "from_structured"
+
+    def test_output_text_with_surrounding_prose(self):
+        """Test extraction from output with surrounding non-JSON text."""
+        state = {"stage_outputs": {"eval": {
+            "structured": {},
+            "output": 'The analysis was weak.\n{"_next_stage": {"name": "redo", "inputs": {"reason": "vague"}}}\nEnd.',
+        }}}
+        result = _extract_next_stage_signal("eval", state)
+        assert result == {"name": "redo", "inputs": {"reason": "vague"}}
+
+    def test_output_text_no_signal(self):
+        """Test no false positive from output text without _next_stage."""
+        state = {"stage_outputs": {"eval": {
+            "structured": {},
+            "output": '{"evaluation": "PASS", "score": 95}',
+        }}}
+        assert _extract_next_stage_signal("eval", state) is None
+
+    def test_output_text_not_json(self):
+        """Test graceful handling of non-JSON output text."""
+        state = {"stage_outputs": {"eval": {
+            "structured": {},
+            "output": "The analysis looks great. No issues found.",
+        }}}
+        assert _extract_next_stage_signal("eval", state) is None

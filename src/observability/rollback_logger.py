@@ -18,12 +18,12 @@ from datetime import UTC, datetime
 from typing import Optional
 from uuid import uuid4
 
-from src.constants.limits import VERY_LARGE_ITEM_LIMIT
-from src.database import DatabaseManager, get_database
-from src.database.models import RollbackEvent, RollbackSnapshotDB
+from src.shared.constants.limits import VERY_LARGE_ITEM_LIMIT
+from src.storage.database import DatabaseManager, get_database
+from src.storage.database.models import RollbackEvent, RollbackSnapshotDB
 from src.observability.rollback_types import RollbackResult
 from src.observability.rollback_types import RollbackSnapshot as SnapshotData
-from src.utils.logging import get_logger
+from src.shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

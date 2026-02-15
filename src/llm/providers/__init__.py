@@ -20,7 +20,7 @@ from src.llm.providers.openai_provider import OpenAILLM
 from src.llm.providers.vllm_provider import VllmLLM
 
 # Re-export exceptions for convenience
-from src.utils.exceptions import (
+from src.shared.utils.exceptions import (
     LLMAuthenticationError,
     LLMError,
     LLMRateLimitError,

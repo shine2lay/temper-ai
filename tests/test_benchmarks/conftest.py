@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from src.agents.llm_providers import BaseLLM, LLMResponse
-from src.compiler.schemas import (
+from src.agent.llm_providers import BaseLLM, LLMResponse
+from src.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,

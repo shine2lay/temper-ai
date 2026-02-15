@@ -5,8 +5,8 @@ These are internal implementation details and should not be used directly.
 """
 from typing import Any, Dict, Optional
 
-from src.constants.durations import SECONDS_PER_HOUR, SECONDS_PER_MINUTE
-from src.constants.limits import SMALL_ITEM_LIMIT
+from src.shared.constants.durations import SECONDS_PER_HOUR, SECONDS_PER_MINUTE
+from src.shared.constants.limits import SMALL_ITEM_LIMIT
 from src.safety.constants import (
     FILL_PERCENTAGE_KEY,
     FORMAT_ONE_DECIMAL,

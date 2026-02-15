@@ -11,7 +11,7 @@ Tests cover:
 
 import pytest
 
-from src.core.service import Service
+from src.shared.core.service import Service
 from src.safety import (
     BaseSafetyPolicy,
     SafetyPolicy,

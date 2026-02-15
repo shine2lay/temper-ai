@@ -100,7 +100,7 @@ class DecisionTracker:
         safe_impact_metrics = self._sanitize(params.impact_metrics, 0) if params.impact_metrics else None
 
         try:
-            from src.database.models import DecisionOutcome
+            from src.storage.database.models import DecisionOutcome
         except ImportError as e:
             logger.error(
                 f"Failed to import DecisionOutcome model: {e}",

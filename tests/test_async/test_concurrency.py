@@ -10,9 +10,9 @@ from unittest.mock import Mock, patch
 import pytest
 
 from src.llm.providers import LLMResponse
-from src.agents.standard_agent import StandardAgent
-from src.compiler.langgraph_engine import LangGraphExecutionEngine
-from src.compiler.schemas import (
+from src.agent.standard_agent import StandardAgent
+from src.workflow.langgraph_engine import LangGraphExecutionEngine
+from src.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
@@ -80,7 +80,7 @@ def workflow_config():
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.compiler.langgraph_compiler.ConfigLoader')
+@patch('src.workflow.langgraph_compiler.ConfigLoader')
 async def test_async_workflow_execution(mock_config_loader, workflow_config):
     """Test end-to-end async workflow execution.
 
@@ -121,7 +121,7 @@ async def test_async_workflow_execution(mock_config_loader, workflow_config):
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.compiler.langgraph_compiler.ConfigLoader')
+@patch('src.workflow.langgraph_compiler.ConfigLoader')
 async def test_concurrent_workflow_execution(mock_config_loader, workflow_config):
     """Test 10+ parallel workflow executions.
 
@@ -174,7 +174,7 @@ async def test_concurrent_workflow_execution(mock_config_loader, workflow_config
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.agents.base_agent.ToolRegistry')
+@patch('src.agent.base_agent.ToolRegistry')
 async def test_async_llm_streaming(mock_tool_registry, minimal_agent_config):
     """Test streaming LLM responses asynchronously.
 
@@ -207,7 +207,7 @@ async def test_async_llm_streaming(mock_tool_registry, minimal_agent_config):
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.agents.base_agent.ToolRegistry')
+@patch('src.agent.base_agent.ToolRegistry')
 async def test_parallel_agent_execution(mock_tool_registry, minimal_agent_config):
     """Test multiple agents executing in parallel.
 

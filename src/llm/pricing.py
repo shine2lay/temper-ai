@@ -13,14 +13,14 @@ import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from src.llm.constants import PRICING_DEFAULT_KEY
-from src.constants.limits import MULTIPLIER_VERY_LARGE, THRESHOLD_MIN_COUNT
-from src.constants.sizes import SIZE_1MB
+from src.shared.constants.limits import MULTIPLIER_VERY_LARGE, THRESHOLD_MIN_COUNT
+from src.shared.constants.sizes import SIZE_1MB
 
 logger = logging.getLogger(__name__)
 
 
 # Consolidated: canonical definition in src/utils/exceptions.py
-from src.utils.exceptions import ConfigurationError, ErrorCode, SecurityError  # noqa: F401
+from src.shared.utils.exceptions import ConfigurationError, ErrorCode, SecurityError  # noqa: F401
 
 # Pricing constants
 TOKENS_PER_MILLION = MULTIPLIER_VERY_LARGE * MULTIPLIER_VERY_LARGE  # 1,000,000

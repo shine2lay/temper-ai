@@ -440,7 +440,7 @@ class TestMainCLI:
             mock_session_ctx.__enter__ = Mock(return_value=mock_session_obj)
             mock_session_ctx.__exit__ = Mock(return_value=None)
 
-            with patch('src.database.get_session', return_value=mock_session_ctx):
+            with patch('src.storage.database.get_session', return_value=mock_session_ctx):
                 from src.observability.visualize_trace import main
 
                 result = main()

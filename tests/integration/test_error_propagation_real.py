@@ -18,7 +18,7 @@ qa-engineer specialist's test strategy.
 """
 import uuid
 
-from src.utils.exceptions import (
+from src.shared.utils.exceptions import (
     AgentError,
     ErrorCode,
     ExecutionContext,

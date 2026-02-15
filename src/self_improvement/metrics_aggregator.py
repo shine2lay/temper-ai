@@ -18,7 +18,7 @@ from typing import Any, Dict, List
 from sqlalchemy import and_, case
 from sqlmodel import Session, func, select
 
-from src.database.models import AgentExecution
+from src.storage.database.models import AgentExecution
 from src.self_improvement.constants import (
     FIELD_TOTAL_EXECUTIONS,
     METRIC_STAT_MEAN,

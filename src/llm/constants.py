@@ -5,8 +5,8 @@ pricing, error messages, and pool sizing constants used by LLM providers
 and the LLM service layer.
 """
 
-from src.constants.limits import DEFAULT_MAX_TOKENS as DEFAULT_MAX_TOKENS  # noqa: F401
-from src.constants.limits import DEFAULT_TEMPERATURE as DEFAULT_TEMPERATURE  # noqa: F401
+from src.shared.constants.limits import DEFAULT_MAX_TOKENS as DEFAULT_MAX_TOKENS  # noqa: F401
+from src.shared.constants.limits import DEFAULT_TEMPERATURE as DEFAULT_TEMPERATURE  # noqa: F401
 
 # ============================================================================
 # HTTP Pool & Connection Limits

@@ -10,9 +10,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from src.constants.durations import DAYS_90
-from src.constants.limits import THRESHOLD_MEDIUM_COUNT
-from src.constants.probabilities import PROB_MEDIUM_HIGH, PROB_VERY_HIGH
+from src.shared.constants.durations import DAYS_90
+from src.shared.constants.limits import THRESHOLD_MEDIUM_COUNT
+from src.shared.constants.probabilities import PROB_MEDIUM_HIGH, PROB_VERY_HIGH
 from src.self_improvement.constants import (
     FIELD_AGENT_NAMES,
     FIELD_PROBLEM_TYPE,

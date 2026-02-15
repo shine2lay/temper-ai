@@ -23,7 +23,7 @@ def test_database_import_raises_deprecation_warning():
         # Verify the warning message
         warning_msg = str(deprecation_warnings[0].message)
         assert "src.observability.database is deprecated" in warning_msg
-        assert "src.database" in warning_msg
+        assert "src.storage.database" in warning_msg
 
 
 def test_database_re_exports_work():
@@ -58,7 +58,7 @@ def test_database_new_import_location():
         warnings.simplefilter("always")
 
         # Import from the new location
-        from src.database.manager import DatabaseManager
+        from src.storage.database.manager import DatabaseManager
 
         # Verify no deprecation warnings were raised
         deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning)]

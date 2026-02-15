@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, Generator, List, Optional
 
-from src.database.datetime_utils import utcnow
+from src.storage.database.datetime_utils import utcnow
 from src.observability.constants import (
     DEFAULT_CLEANUP_INTERVAL,
     DEFAULT_SLOW_THRESHOLD_MS,

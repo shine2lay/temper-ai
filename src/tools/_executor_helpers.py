@@ -11,14 +11,14 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
-from src.constants.durations import (
+from src.shared.constants.durations import (
     POLL_INTERVAL_FAST,
     SECONDS_PER_HOUR,
     TIMEOUT_VERY_SHORT,
 )
 from src.tools.base import BaseTool, ToolResult
 from src.tools.constants import CONTEXT_KEY_AGENT_ID, ROLLBACK_TRIGGER_AUTO
-from src.utils.exceptions import RateLimitError
+from src.shared.utils.exceptions import RateLimitError
 
 if TYPE_CHECKING:
     from src.tools.executor import ToolExecutor

@@ -8,8 +8,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from src.constants.durations import DAYS_90
-from src.constants.probabilities import PROB_VERY_HIGH
+from src.shared.constants.durations import DAYS_90
+from src.shared.constants.probabilities import PROB_VERY_HIGH
 from src.self_improvement.constants import SQL_FILTER_PROBLEM_TYPE, SQL_FILTER_RECORDED_AT
 from src.self_improvement.data_models import StrategyOutcome
 

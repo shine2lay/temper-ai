@@ -24,9 +24,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from src.constants.durations import HOURS_PER_WEEK
-from src.constants.limits import THRESHOLD_MEDIUM_COUNT
-from src.database import get_database, get_session, init_database
+from src.shared.constants.durations import HOURS_PER_WEEK
+from src.shared.constants.limits import THRESHOLD_MEDIUM_COUNT
+from src.storage.database import get_database, get_session, init_database
 from src.self_improvement.loop import LoopConfig, M5SelfImprovementLoop
 from src.self_improvement.performance_analyzer import PerformanceAnalyzer
 

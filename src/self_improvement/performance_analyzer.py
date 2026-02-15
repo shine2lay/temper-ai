@@ -23,8 +23,8 @@ from typing import List, Optional
 
 from sqlmodel import Session
 
-from src.constants.durations import HOURS_PER_WEEK
-from src.constants.limits import DEFAULT_BATCH_SIZE, THRESHOLD_MEDIUM_COUNT
+from src.shared.constants.durations import HOURS_PER_WEEK
+from src.shared.constants.limits import DEFAULT_BATCH_SIZE, THRESHOLD_MEDIUM_COUNT
 from src.self_improvement.baseline_storage import BaselineStorage
 from src.self_improvement.data_models import AgentPerformanceProfile
 from src.self_improvement.metrics_aggregator import MetricsAggregator
@@ -62,7 +62,7 @@ class PerformanceAnalyzer:
     Public API remains unchanged for backward compatibility.
 
     Example:
-        >>> from src.database import get_session
+        >>> from src.storage.database import get_session
         >>> with get_session() as session:
         ...     analyzer = PerformanceAnalyzer(session)
         ...     profile = analyzer.analyze_agent_performance("code_review_agent")

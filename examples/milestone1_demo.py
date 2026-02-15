@@ -17,8 +17,8 @@ from pathlib import Path
 from sqlmodel import select
 
 from examples.demo_utils import print_section, print_warning
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.schemas import WorkflowConfig
+from src.workflow.config_loader import ConfigLoader
+from src.workflow._schemas import WorkflowConfig
 from src.observability.console import WorkflowVisualizer
 
 # Import M1 components

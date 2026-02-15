@@ -20,7 +20,7 @@ import time
 
 import pytest
 
-from src.agents.llm_providers import LLMResponse, OllamaLLM
+from src.agent.llm_providers import LLMResponse, OllamaLLM
 
 # ============================================================================
 # CATEGORY 3: LLM Provider Performance (8 benchmarks)
@@ -160,7 +160,7 @@ def test_llm_cache_hit(benchmark):
     Measures: Cache lookup speed
     """
     try:
-        from src.cache.llm_cache import LLMCache
+        from src.llm.cache.llm_cache import LLMCache
         cache = LLMCache()
 
         # Pre-populate cache
@@ -179,7 +179,7 @@ def test_llm_cache_miss(benchmark):
     Measures: Cache miss overhead
     """
     try:
-        from src.cache.llm_cache import LLMCache
+        from src.llm.cache.llm_cache import LLMCache
         cache = LLMCache()
 
         result = benchmark(cache.get, "nonexistent_key")

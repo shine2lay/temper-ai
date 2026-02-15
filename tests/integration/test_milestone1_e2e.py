@@ -14,8 +14,10 @@ from pathlib import Path
 import pytest
 from sqlmodel import delete, select
 
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.schemas import AgentConfig, ToolConfig, WorkflowConfig
+from src.workflow.config_loader import ConfigLoader
+from src.storage.schemas.agent_config import AgentConfig
+from src.tools._schemas import ToolConfig
+from src.workflow._schemas import WorkflowConfig
 from src.observability.console import WorkflowVisualizer
 from src.observability.database import get_session, init_database
 from src.observability.models import (

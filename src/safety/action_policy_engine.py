@@ -28,9 +28,9 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.constants.durations import MILLISECONDS_PER_SECOND, TTL_LONG
-from src.constants.limits import THRESHOLD_MEDIUM_COUNT
-from src.core.circuit_breaker import CircuitBreakerError
+from src.shared.constants.durations import MILLISECONDS_PER_SECOND, TTL_LONG
+from src.shared.constants.limits import THRESHOLD_MEDIUM_COUNT
+from src.shared.core.circuit_breaker import CircuitBreakerError
 from src.safety._action_policy_helpers import (
     cache_result as _cache_result_helper,
 )

@@ -18,10 +18,10 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from src.constants.durations import (
+from src.shared.constants.durations import (
     SECONDS_PER_DAY,
 )
-from src.constants.limits import PERCENT_100, THRESHOLD_MASSIVE_COUNT
+from src.shared.constants.limits import PERCENT_100, THRESHOLD_MASSIVE_COUNT
 
 # Token bucket safety limits
 MAX_TOKENS_SAFETY_LIMIT = 1_000_000

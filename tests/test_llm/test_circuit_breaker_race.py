@@ -13,7 +13,7 @@ import time
 import httpx
 import pytest
 
-from src.llm.circuit_breaker import (
+from src.shared.core.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitBreakerError,

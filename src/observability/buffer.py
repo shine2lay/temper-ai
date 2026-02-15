@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Union
 
-from src.constants.durations import SECONDS_PER_5_MINUTES, TIMEOUT_VERY_SHORT
+from src.shared.constants.durations import SECONDS_PER_5_MINUTES, TIMEOUT_VERY_SHORT
 from src.observability._buffer_helpers import (
     execute_flush,
     handle_flush_failure,

@@ -20,8 +20,8 @@ from pathlib import Path
 
 import pytest
 
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.langgraph_compiler import LangGraphCompiler
+from src.workflow.config_loader import ConfigLoader
+from src.workflow.langgraph_compiler import LangGraphCompiler
 from src.observability.database import DatabaseManager, get_session
 from src.observability.models import (
     AgentExecution,

@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.core.context import ExecutionContext
+from src.shared.core.context import ExecutionContext
 from src.observability.collaboration_tracker import CollaborationEventTracker
 
 

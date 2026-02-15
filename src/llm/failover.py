@@ -13,14 +13,14 @@ from typing import Any, List, Optional
 import httpx
 
 from src.llm.providers import BaseLLM, LLMError, LLMResponse  # M-04: Import from new location
-from src.constants.limits import (
+from src.shared.constants.limits import (
     HTTP_CLIENT_ERROR_MAX,
     HTTP_CLIENT_ERROR_MIN,
     HTTP_SERVER_ERROR_MAX,
     HTTP_SERVER_ERROR_MIN,
 )
-from src.constants.retries import DEFAULT_MAX_RETRIES
-from src.utils.exceptions import LLMAuthenticationError, LLMRateLimitError, LLMTimeoutError
+from src.shared.constants.retries import DEFAULT_MAX_RETRIES
+from src.shared.utils.exceptions import LLMAuthenticationError, LLMRateLimitError, LLMTimeoutError
 
 logger = logging.getLogger(__name__)
 

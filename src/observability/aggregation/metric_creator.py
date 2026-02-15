@@ -270,7 +270,7 @@ class MetricRecordCreator:
         Returns:
             Created metric ID (format: "metric-{12-char-hex}")
         """
-        from src.database.models import SystemMetric
+        from src.storage.database.models import SystemMetric
 
         metric_id = f"metric-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 

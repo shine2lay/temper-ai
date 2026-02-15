@@ -145,7 +145,7 @@ class TestCircuitBreaker:
 
         # Mock time.time to advance past timeout (no flaky sleep)
         original_time = breaker._last_failure_time
-        with patch('src.core.circuit_breaker.time') as mock_time:
+        with patch('src.shared.core.circuit_breaker.time') as mock_time:
             mock_time.time.return_value = original_time + 1.1
             # Check state (should transition to HALF_OPEN)
             assert breaker.state == CircuitBreakerState.HALF_OPEN
@@ -165,7 +165,7 @@ class TestCircuitBreaker:
 
         # Mock time.time to advance past timeout (no flaky sleep)
         original_time = breaker._last_failure_time
-        with patch('src.core.circuit_breaker.time') as mock_time:
+        with patch('src.shared.core.circuit_breaker.time') as mock_time:
             mock_time.time.return_value = original_time + 1.1
             # Now in HALF_OPEN
             assert breaker.state == CircuitBreakerState.HALF_OPEN
@@ -191,7 +191,7 @@ class TestCircuitBreaker:
 
         # Mock time.time to advance past timeout (no flaky sleep)
         original_time = breaker._last_failure_time
-        with patch('src.core.circuit_breaker.time') as mock_time:
+        with patch('src.shared.core.circuit_breaker.time') as mock_time:
             mock_time.time.return_value = original_time + 1.1
             # Now in HALF_OPEN
             assert breaker.state == CircuitBreakerState.HALF_OPEN

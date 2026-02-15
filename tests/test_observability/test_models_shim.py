@@ -18,7 +18,7 @@ def test_models_import_raises_deprecation_warning():
     source = inspect.getsource(models_module)
     assert "DeprecationWarning" in source
     assert "src.observability.models is deprecated" in source
-    assert "src.database.models" in source
+    assert "src.storage.database.models" in source
 
 
 def test_models_re_exports_work():
@@ -40,7 +40,7 @@ def test_models_new_import_location():
         warnings.simplefilter("always")
 
         # Import from the new location
-        from src.database.models import WorkflowExecution
+        from src.storage.database.models import WorkflowExecution
 
         # Verify no deprecation warnings were raised
         deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning)]

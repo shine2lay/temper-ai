@@ -48,13 +48,13 @@ from src.auth.oauth.config import OAuthConfig
 from src.auth.oauth.rate_limiter import OAuthRateLimiter
 from src.auth.oauth.state_store import StateStore, create_state_store
 from src.auth.oauth.token_store import SecureTokenStore
-from src.constants.durations import (
+from src.shared.constants.durations import (
     TIMEOUT_MEDIUM,
     TIMEOUT_NETWORK_CONNECT,
     TIMEOUT_SHORT,
 )
-from src.constants.limits import VERY_LARGE_ITEM_LIMIT
-from src.utils.exceptions import FrameworkException
+from src.shared.constants.limits import VERY_LARGE_ITEM_LIMIT
+from src.shared.utils.exceptions import FrameworkException
 
 logger = logging.getLogger(__name__)
 

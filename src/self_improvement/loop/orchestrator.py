@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlmodel import Session
 
-from src.constants.limits import DEFAULT_MAX_ITEMS
+from src.shared.constants.limits import DEFAULT_MAX_ITEMS
 
 from .config import LoopConfig
 from .continuous_executor import ContinuousExecutor
@@ -39,7 +39,7 @@ class M5SelfImprovementLoop:
     continuous, and scheduled execution modes.
 
     Example:
-        >>> from src.database import get_session
+        >>> from src.storage.database import get_session
         >>> with get_session() as obs_session:
         ...     loop = M5SelfImprovementLoop(coord_db, obs_session)
         ...     result = loop.run_iteration("my_agent")

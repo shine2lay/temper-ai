@@ -15,8 +15,8 @@ from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional
 if TYPE_CHECKING:
     from src.observability.metric_aggregator import AgentOutputParams
 
-from src.core.context import ExecutionContext
-from src.database.datetime_utils import utcnow
+from src.shared.core.context import ExecutionContext
+from src.storage.database.datetime_utils import utcnow
 from src.observability._tracker_helpers import (
     DecisionTrackingData,
     LLMCallTrackingData,
@@ -65,7 +65,7 @@ from src.observability.decision_tracker import DecisionTracker
 from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 from src.observability.metric_aggregator import MetricAggregator
 from src.observability.sanitization import DataSanitizer, SanitizationConfig
-from src.utils.config_helpers import sanitize_config_for_display
+from src.shared.utils.config_helpers import sanitize_config_for_display
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ class ExecutionTracker(TrackerCollaborationMixin):
     @staticmethod
     def ensure_database(db_url: str) -> None:
         """Ensure observability database is initialized."""
-        from src.database import get_database, init_database
+        from src.storage.database import get_database, init_database
         try:
             get_database()
         except RuntimeError:

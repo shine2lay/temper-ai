@@ -16,8 +16,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.agents.standard_agent import StandardAgent
-from src.compiler.langgraph_compiler import LangGraphCompiler
+from src.agent.standard_agent import StandardAgent
+from src.workflow.langgraph_compiler import LangGraphCompiler
 
 # ============================================================================
 # Benchmark Tests: Compilation and Execution
@@ -28,7 +28,7 @@ def test_workflow_compilation_time(simple_workflow_config, benchmark):
 
     Target: <1s for simple workflows
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         # Setup
         compiler = LangGraphCompiler()
 
@@ -56,7 +56,7 @@ def test_agent_execution_overhead(mock_llm_provider, minimal_agent_config, bench
 
     Target: <100ms overhead (agent logic only, not LLM call)
     """
-    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agent.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup mock registry
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -64,7 +64,7 @@ def test_agent_execution_overhead(mock_llm_provider, minimal_agent_config, bench
         agent = StandardAgent(minimal_agent_config)
 
         # Mock LLM response
-        from src.agents.llm_providers import LLMResponse
+        from src.agent.llm_providers import LLMResponse
         mock_llm_response = LLMResponse(
             content="<answer>4</answer>",
             model="mock-model",
@@ -139,7 +139,7 @@ def test_large_workflow_compilation(complex_workflow_config, benchmark):
 
     Tests scalability of workflow compilation.
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         # Setup
         compiler = LangGraphCompiler()
 
@@ -166,7 +166,7 @@ def test_concurrent_workflow_throughput(simple_workflow_config, benchmark):
 
     Tests parallel workflow handling.
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         # Setup
         mock_loader_instance = Mock()
         mock_stage_config = Mock()
@@ -200,7 +200,7 @@ def test_memory_usage_under_load(mock_llm_provider, minimal_agent_config, benchm
 
     Detects memory leaks by running operations multiple times.
     """
-    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agent.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup mock registry
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -208,7 +208,7 @@ def test_memory_usage_under_load(mock_llm_provider, minimal_agent_config, benchm
         agent = StandardAgent(minimal_agent_config)
 
         # Mock LLM response
-        from src.agents.llm_providers import LLMResponse
+        from src.agent.llm_providers import LLMResponse
         mock_llm_response = LLMResponse(
             content="<answer>test response</answer>",
             model="mock-model",

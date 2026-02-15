@@ -14,7 +14,7 @@ Key Features:
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from src.core.circuit_breaker import CircuitBreakerError
+from src.shared.core.circuit_breaker import CircuitBreakerError
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 

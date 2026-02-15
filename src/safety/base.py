@@ -6,7 +6,7 @@ short-circuit evaluation on critical violations.
 """
 from typing import Any, Dict, List
 
-from src.constants.limits import MAX_TEXT_LENGTH, THRESHOLD_LARGE_COUNT, THRESHOLD_VERY_LARGE_COUNT
+from src.shared.constants.limits import MAX_TEXT_LENGTH, THRESHOLD_LARGE_COUNT, THRESHOLD_VERY_LARGE_COUNT
 from src.safety.constants import SHORT_CIRCUIT_KEY
 from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 

@@ -7,7 +7,7 @@ the detected performance problem (quality, cost, speed).
 import copy
 from typing import Any, List
 
-from src.constants.limits import SMALL_ITEM_LIMIT
+from src.shared.constants.limits import SMALL_ITEM_LIMIT
 from src.self_improvement.constants import (
     MODEL_FLAG_COST_HIGH,
     MODEL_FLAG_QUALITY_LOW,

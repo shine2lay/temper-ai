@@ -7,8 +7,8 @@ See _forbidden_ops_helpers.py for extracted logic.
 import re
 from typing import Any, Dict, List, Optional, Set
 
-from src.constants.limits import PERCENT_100
-from src.constants.probabilities import PROB_VERY_LOW
+from src.shared.constants.limits import PERCENT_100
+from src.shared.constants.probabilities import PROB_VERY_LOW
 
 # Helper functions and pattern data extracted to reduce class size
 from src.safety._forbidden_ops_helpers import (

@@ -28,7 +28,7 @@ from typing import Any, Dict, Optional
 
 # Check dependencies
 try:
-    from src.compiler.engine_registry import EngineRegistry  # m2.5-03
+    from src.workflow.engine_registry import EngineRegistry  # m2.5-03
     COMPONENTS_READY = True
 except ImportError as e:
     COMPONENTS_READY = False
@@ -39,7 +39,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from src.compiler.config_loader import ConfigLoader
+from src.workflow.config_loader import ConfigLoader
 from src.observability.console import StreamingVisualizer
 from src.observability.database import get_session, init_database
 from src.observability.models import WorkflowExecution

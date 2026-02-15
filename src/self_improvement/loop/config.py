@@ -6,12 +6,12 @@ Provides sensible defaults while allowing customization of all loop parameters.
 from dataclasses import dataclass
 from typing import Optional
 
-from src.constants.durations import (
+from src.shared.constants.durations import (
     HOURS_PER_WEEK,
     MINUTES_PER_HOUR,
     SECONDS_PER_MINUTE,
 )
-from src.constants.limits import (
+from src.shared.constants.limits import (
     DEFAULT_BATCH_SIZE,
     PERCENT_10,
     PERCENT_20,
@@ -19,7 +19,7 @@ from src.constants.limits import (
     THRESHOLD_MEDIUM_COUNT,
     THRESHOLD_SMALL_COUNT,
 )
-from src.constants.retries import (
+from src.shared.constants.retries import (
     DEFAULT_BACKOFF_MULTIPLIER,
     DEFAULT_MAX_RETRIES,
     MEDIUM_BACKOFF_SECONDS,

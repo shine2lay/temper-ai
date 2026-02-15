@@ -30,10 +30,10 @@ from examples.demo_utils import (
     console,
 )
 from examples.demo_utils import print_rich_section as print_section
-from src.agents.agent_factory import AgentFactory
-from src.agents.base_agent import ExecutionContext
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.schemas import AgentConfig
+from src.agent.agent_factory import AgentFactory
+from src.agent.base_agent import ExecutionContext
+from src.workflow.config_loader import ConfigLoader
+from src.storage.schemas.agent_config import AgentConfig
 from src.observability.database import init_database
 from src.tools.calculator import Calculator
 from src.tools.file_writer import FileWriter

@@ -28,22 +28,20 @@ agent:
 
       {{ stage_outputs.vcs_task_planning.output | default('') }}
 
-      {% set static_output = (stage_outputs.vcs_static_check | default({})).get('output', '') %}
-      {% if static_output and 'OVERALL: FAIL' in static_output %}
-      ## Static Check Failures (FIX THESE FIRST)
-      The previous code FAILED deterministic static checks. Fix every error below
-      before writing any new code. Use Bash (cat) to read existing files first.
-
-      {{ static_output }}
-      {% endif %}
-
       {% set validate_output = stage_outputs.get('vcs_quality_gate', {}).get('decision', '') or stage_outputs.get('vcs_quality_gate_decision', {}).get('output', '') %}
+      {% set static_output = (stage_outputs.vcs_static_check | default({})).get('output', '') %}
       {% if validate_output %}
       ## Validation Feedback (FIX THESE ISSUES)
       The previous code was validated and FAILED. You MUST fix the issues below.
       Use Bash (cat, ls) to read existing files first, then rewrite ONLY the files that need fixing.
 
       {{ validate_output }}
+      {% elif static_output and 'OVERALL: FAIL' in static_output %}
+      ## Static Check Failures (FIX THESE FIRST)
+      The previous code FAILED deterministic static checks. Fix every error below
+      before writing any new code. Use Bash (cat) to read existing files first.
+
+      {{ static_output }}
       {% endif %}
 
       ## REGRESSION SAFETY RULES

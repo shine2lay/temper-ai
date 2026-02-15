@@ -11,9 +11,9 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import update
 from sqlmodel import select
 
-from src.constants.limits import THRESHOLD_LARGE_COUNT
-from src.core.service import Service
-from src.database import get_session
+from src.shared.constants.limits import THRESHOLD_LARGE_COUNT
+from src.shared.core.service import Service
+from src.storage.database import get_session
 from src.experimentation.analyzer import StatisticalAnalyzer
 from src.experimentation.assignment import VariantAssigner
 from src.experimentation.config_manager import ConfigManager
@@ -34,7 +34,7 @@ from src.experimentation.models import (
     VariantAssignment,
     utcnow,
 )
-from src.utils.logging import get_logger
+from src.shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

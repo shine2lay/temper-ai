@@ -31,7 +31,7 @@ from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
-from src.constants.durations import SECONDS_PER_MINUTE
+from src.shared.constants.durations import SECONDS_PER_MINUTE
 from src.safety.constants import DEFAULT_APPROVAL_TIMEOUT_SECONDS
 from src.safety.interfaces import SafetyViolation
 

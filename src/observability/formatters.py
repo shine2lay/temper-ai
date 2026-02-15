@@ -2,8 +2,8 @@
 from datetime import datetime
 from typing import Optional
 
-from src.constants.durations import MILLISECONDS_PER_SECOND, SECONDS_PER_MINUTE
-from src.constants.sizes import BYTES_PER_KB
+from src.shared.constants.durations import MILLISECONDS_PER_SECOND, SECONDS_PER_MINUTE
+from src.shared.constants.sizes import BYTES_PER_KB
 
 # Text truncation default max length
 DEFAULT_TRUNCATE_MAX_LENGTH = 50

@@ -10,13 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from src.compiler.schemas import (
-    PromptConfig,
-)
+from src.storage.schemas.agent_config import PromptConfig
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.executor import ToolExecutor
 from src.tools.registry import ToolRegistry
-from src.utils.exceptions import (
+from src.shared.utils.exceptions import (
     ValidationError,
 )
 

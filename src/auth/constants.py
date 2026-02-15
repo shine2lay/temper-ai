@@ -4,7 +4,7 @@ Centralized constants for session management, rate limiting,
 token configuration, and OAuth settings.
 """
 
-from src.constants.durations import (
+from src.shared.constants.durations import (
     SECONDS_PER_DAY,
     SECONDS_PER_HOUR,
     TTL_LONG,

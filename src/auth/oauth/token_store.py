@@ -51,13 +51,13 @@ from src.auth.constants import (
     FIELD_USER_ID,
 )
 from src.auth.oauth._token_store_helpers import acquire_encryption_key, re_encrypt_tokens
-from src.constants.limits import THRESHOLD_MASSIVE_COUNT
+from src.shared.constants.limits import THRESHOLD_MASSIVE_COUNT
 
 logger = logging.getLogger(__name__)
 
 
 # Consolidated: canonical definition in src/utils/exceptions.py
-from src.utils.exceptions import SecurityError  # noqa: F401
+from src.shared.utils.exceptions import SecurityError  # noqa: F401
 
 
 class SecureTokenStore:

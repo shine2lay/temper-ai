@@ -436,7 +436,7 @@ class TestStreamingVisualizer:
         assert visualizer.verbosity == "standard"
         assert visualizer.poll_interval == 0.25
 
-    @patch("src.database.get_session")
+    @patch("src.storage.database.get_session")
     def test_start_workflow_not_found(self, mock_session):
         """Test start method when workflow not found."""
         # Mock session to return None
@@ -507,7 +507,7 @@ class TestStreamingVisualizer:
 
                 mock_stop.assert_called_once()
 
-    @patch("src.database.get_session")
+    @patch("src.storage.database.get_session")
     @patch("src.observability.console.Thread")
     def test_start_creates_update_thread(self, mock_thread, mock_session):
         """Test start method creates update thread."""

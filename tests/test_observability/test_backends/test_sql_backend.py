@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 from sqlmodel import Session, select
 
-from src.database.models import AgentExecution, LLMCall, StageExecution, ToolExecution, WorkflowExecution
+from src.storage.database.models import AgentExecution, LLMCall, StageExecution, ToolExecution, WorkflowExecution
 from src.observability.backends.sql_backend import SQLObservabilityBackend
 
 

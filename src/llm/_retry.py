@@ -10,8 +10,8 @@ import random
 import threading
 from typing import Any, Callable, Dict, List, Optional
 
-from src.constants.retries import DEFAULT_BACKOFF_MULTIPLIER, RETRY_JITTER_MIN
-from src.utils.exceptions import LLMError, sanitize_error_message
+from src.shared.constants.retries import DEFAULT_BACKOFF_MULTIPLIER, RETRY_JITTER_MIN
+from src.shared.utils.exceptions import LLMError, sanitize_error_message
 
 logger = logging.getLogger(__name__)
 

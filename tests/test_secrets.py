@@ -13,10 +13,10 @@ import warnings
 
 import pytest
 
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.schemas import InferenceConfig
-from src.utils.config_helpers import sanitize_config_for_display
-from src.utils.secrets import (
+from src.workflow.config_loader import ConfigLoader
+from src.storage.schemas.agent_config import InferenceConfig
+from src.shared.utils.config_helpers import sanitize_config_for_display
+from src.shared.utils.secrets import (
     ObfuscatedCredential,
     SecretReference,
     SecureCredential,  # Deprecated alias
@@ -73,7 +73,7 @@ class TestSecretReference:
         # Python doesn't allow null bytes in environment variables at the OS level,
         # so we can't actually test this. The validation exists for defense in depth.
         # Just verify the validation function exists
-        from src.utils.secrets import SecretReference
+        from src.shared.utils.secrets import SecretReference
         try:
             SecretReference._validate_secret_value("test", "value\x00bad")
             assert False, "Should have raised ValueError"

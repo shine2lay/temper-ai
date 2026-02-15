@@ -1,7 +1,7 @@
 """Safety service mixin for framework services.
 
 Provides convenience methods for safety policy registration,
-validation, and violation handling. Moved from src.core.service
+validation, and violation handling. Moved from src.shared.core.service
 to maintain proper layer separation (core should not import safety).
 """
 import threading
@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from src.safety import SafetyPolicy, ValidationResult
 from src.safety.constants import POLICIES_CHECKED_KEY
-from src.utils.logging import get_logger
+from src.shared.utils.logging import get_logger
 
 # Module logger
 logger = get_logger(__name__)
@@ -95,7 +95,7 @@ class SafetyServiceMixin:
     validation, and violation handling.
 
     Example:
-        >>> from src.core.service import Service
+        >>> from src.shared.core.service import Service
         >>> class MyService(Service, SafetyServiceMixin):
         ...     def __init__(self):
         ...         self._policies = []

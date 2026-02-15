@@ -920,7 +920,7 @@ class TestRegistryEdgeCases:
 
     def test_unregister_specific_version_not_found(self):
         """Test unregistering a version that doesn't exist."""
-        from src.utils.exceptions import ToolRegistryError
+        from src.shared.utils.exceptions import ToolRegistryError
         registry = ToolRegistry()
         calc = MockCalculator()
         registry.register(calc)

@@ -91,7 +91,7 @@ Documentation = "https://github.com/yourusername/meta-autonomous-framework/docs"
 Repository = "https://github.com/yourusername/meta-autonomous-framework"
 
 [project.scripts]
-maf = "src.cli.main:main"
+maf = "src.interfaces.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

@@ -9,13 +9,13 @@ import uuid
 from datetime import timedelta
 from typing import Any, Optional
 
-from src.constants.durations import DAYS_90
-from src.constants.probabilities import (
+from src.shared.constants.durations import DAYS_90
+from src.shared.constants.probabilities import (
     PROB_MEDIUM,
     WEIGHT_MINIMAL,
     WEIGHT_VERY_LARGE,
 )
-from src.database.datetime_utils import utcnow
+from src.storage.database.datetime_utils import utcnow
 from src.observability.constants import DEFAULT_MERIT_WINDOW_DAYS
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ class MeritScoreService:
         """Get existing merit score or create new one."""
         from sqlmodel import select
 
-        from src.database.models import AgentMeritScore
+        from src.storage.database.models import AgentMeritScore
 
         statement = select(AgentMeritScore).where(
             AgentMeritScore.agent_name == agent_name,
@@ -160,7 +160,7 @@ class MeritScoreService:
             from sqlalchemy import String, cast, func
             from sqlmodel import select
 
-            from src.database.models import DecisionOutcome
+            from src.storage.database.models import DecisionOutcome
 
             thirty_days_ago = utcnow() - timedelta(days=DEFAULT_MERIT_WINDOW_DAYS)
             ninety_days_ago = utcnow() - timedelta(days=DAYS_90)

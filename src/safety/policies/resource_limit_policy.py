@@ -24,8 +24,8 @@ from typing import Any, Dict, List, Optional
 
 import psutil
 
-from src.constants.durations import SECONDS_PER_HOUR, SLEEP_VERY_SHORT, TIMEOUT_MEDIUM
-from src.constants.limits import (
+from src.shared.constants.durations import SECONDS_PER_HOUR, SLEEP_VERY_SHORT, TIMEOUT_MEDIUM
+from src.shared.constants.limits import (
     DEFAULT_MAX_WORKERS,
     MAX_WORKERS,
     MIN_POSITIVE_VALUE,
@@ -35,8 +35,8 @@ from src.constants.limits import (
     PERCENT_20,
     PERCENT_80,
 )
-from src.constants.probabilities import FRACTION_QUARTER, PROB_MINIMAL
-from src.constants.sizes import (
+from src.shared.constants.probabilities import FRACTION_QUARTER, PROB_MINIMAL
+from src.shared.constants.sizes import (
     BYTES_PER_GB,
     BYTES_PER_KB,
     BYTES_PER_MB,

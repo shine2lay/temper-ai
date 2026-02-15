@@ -21,7 +21,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
-from src.database import (
+from src.storage.database import (
     AgentExecution,
     LLMCall,
     StageExecution,
@@ -30,7 +30,7 @@ from src.database import (
     get_session,
     init_database,
 )
-from src.database.datetime_utils import utcnow
+from src.storage.database.datetime_utils import utcnow
 from src.observability.backends.sql_backend import SQLObservabilityBackend
 
 

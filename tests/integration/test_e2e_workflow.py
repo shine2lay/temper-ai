@@ -81,8 +81,8 @@ class TestFullWorkflowExecution:
 
     def test_full_workflow_cli_to_results(self, workflow_config, mock_agent_execution):
         """Complete workflow should execute from CLI to final results."""
-        from src.compiler.config_loader import ConfigLoader
-        from src.compiler.executors.sequential import SequentialExecutor
+        from src.workflow.config_loader import ConfigLoader
+        from src.stage.executors.sequential import SequentialExecutor
         from src.observability.tracker import ExecutionTracker
         from src.observability.database import init_database
 
@@ -164,7 +164,7 @@ class TestFullWorkflowExecution:
 
     def test_workflow_context_propagation(self, workflow_config):
         """Context should propagate through entire workflow."""
-        from src.core.context import ExecutionContext
+        from src.shared.core.context import ExecutionContext
         from src.observability.tracker import ExecutionTracker
         from src.observability.database import init_database
 
@@ -207,7 +207,7 @@ class TestMultiStageWorkflows:
 
     def test_parallel_stage_execution(self):
         """Parallel stages should execute concurrently."""
-        from src.compiler.executors.parallel import ParallelExecutor
+        from src.stage.executors.parallel import ParallelExecutor
         from src.observability.tracker import ExecutionTracker
         from src.observability.database import init_database
 

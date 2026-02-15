@@ -43,7 +43,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
-from src.constants.limits import MAX_MEDIUM_STRING_LENGTH, THRESHOLD_LARGE_COUNT
+from src.shared.constants.limits import MAX_MEDIUM_STRING_LENGTH, THRESHOLD_LARGE_COUNT
 
 # Import rollback data types from observability (canonical location)
 from src.observability.rollback_types import (
@@ -52,7 +52,7 @@ from src.observability.rollback_types import (
     RollbackStatus,
 )
 from src.safety.constants import EXISTED_SUFFIX, STRATEGY_PREFIX
-from src.utils.exceptions import SecurityError
+from src.shared.utils.exceptions import SecurityError
 
 logger = logging.getLogger(__name__)
 

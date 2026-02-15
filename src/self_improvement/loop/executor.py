@@ -8,9 +8,9 @@ from typing import Any, Optional
 
 from sqlmodel import Session
 
-from src.constants.durations import DAYS_90
-from src.constants.limits import THRESHOLD_SMALL_COUNT
-from src.constants.probabilities import PROB_HIGH, PROB_MEDIUM
+from src.shared.constants.durations import DAYS_90
+from src.shared.constants.limits import THRESHOLD_SMALL_COUNT
+from src.shared.constants.probabilities import PROB_HIGH, PROB_MEDIUM
 from src.self_improvement.deployment.deployer import ConfigDeployer
 from src.self_improvement.deployment.rollback_monitor import (
     RegressionThresholds,

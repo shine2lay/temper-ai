@@ -10,7 +10,7 @@ from typing import Any, Dict, Optional
 from sqlalchemy import JSON, Index
 from sqlmodel import Column, Field, SQLModel
 
-from src.database.datetime_utils import utcnow
+from src.storage.database.datetime_utils import utcnow
 from src.self_improvement.constants import FIELD_COLLECTED_AT
 
 

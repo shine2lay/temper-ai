@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from sqlmodel import Session, create_engine, SQLModel, select, func
 
 from src.observability.aggregation.query_builder import AggregationQueryBuilder
-from src.database.models import WorkflowExecution, AgentExecution, LLMCall
+from src.storage.database.models import WorkflowExecution, AgentExecution, LLMCall
 
 
 @pytest.fixture

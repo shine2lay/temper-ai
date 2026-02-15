@@ -9,8 +9,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
-from src.constants.durations import HOURS_PER_DAY
-from src.constants.limits import PERCENT_10, PERCENT_20, PERCENT_30
+from src.shared.constants.durations import HOURS_PER_DAY
+from src.shared.constants.limits import PERCENT_10, PERCENT_20, PERCENT_30
 from src.self_improvement.data_models import (
     AgentPerformanceProfile,
     ConfigDeployment,

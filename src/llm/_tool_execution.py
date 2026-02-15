@@ -16,8 +16,8 @@ from typing import Any, Callable, Dict, List, Optional
 
 from src.llm.constants import ERROR_MSG_TOOL_PREFIX, FALLBACK_UNKNOWN_VALUE
 from src.llm.tool_keys import ToolKeys
-from src.constants.limits import DEFAULT_POOL_SIZE as _POOL_SIZE_LIMIT
-from src.utils.exceptions import ToolExecutionError, ToolNotFoundError
+from src.shared.constants.limits import DEFAULT_POOL_SIZE as _POOL_SIZE_LIMIT
+from src.shared.utils.exceptions import ToolExecutionError, ToolNotFoundError
 
 logger = logging.getLogger(__name__)
 

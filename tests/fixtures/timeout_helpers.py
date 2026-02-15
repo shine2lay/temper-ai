@@ -10,8 +10,8 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from src.agents.base_agent import AgentResponse
-from src.compiler.schemas import (
+from src.agent.base_agent import AgentResponse
+from src.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,

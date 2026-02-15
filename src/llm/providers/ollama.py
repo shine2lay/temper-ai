@@ -17,8 +17,8 @@ from src.llm.providers.base import (
     LLMResponse,
     StreamCallback,
 )
-from src.constants.sizes import SIZE_4KB
-from src.core.context import ExecutionContext
+from src.shared.constants.sizes import SIZE_4KB
+from src.shared.core.context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 

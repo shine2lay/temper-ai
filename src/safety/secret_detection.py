@@ -49,10 +49,10 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
     # Import patterns from centralized registry (single source of truth)
     # SECURITY: All patterns use bounded quantifiers to prevent ReDoS attacks
-    from src.utils.secret_patterns import (
+    from src.shared.utils.secret_patterns import (
         GENERIC_SECRET_PATTERNS as _GENERIC_SECRET_PATTERNS,
     )
-    from src.utils.secret_patterns import (
+    from src.shared.utils.secret_patterns import (
         SECRET_PATTERNS as _SECRET_PATTERNS,
     )
     SECRET_PATTERNS = {**_SECRET_PATTERNS, **_GENERIC_SECRET_PATTERNS}
@@ -170,7 +170,7 @@ class SecretDetectionPolicy(BaseSafetyPolicy, ValidationMixin):
 
     def _sanitize_context(self, context: Dict[str, Any]) -> Dict[str, Any]:
         """Sanitize execution context to prevent re-exposure of detected secrets."""
-        from src.utils.config_helpers import sanitize_config_for_display
+        from src.shared.utils.config_helpers import sanitize_config_for_display
 
         return sanitize_config_for_display(context)
 

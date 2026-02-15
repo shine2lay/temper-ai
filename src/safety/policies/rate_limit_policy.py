@@ -6,8 +6,8 @@ for smooth rate limiting with burst support.
 """
 from typing import Any, Dict, List, Optional
 
-from src.constants.durations import SECONDS_PER_HOUR
-from src.constants.limits import (
+from src.shared.constants.durations import SECONDS_PER_HOUR
+from src.shared.constants.limits import (
     LARGE_ITEM_LIMIT,
     MULTIPLIER_LARGE,
     SMALL_ITEM_LIMIT,

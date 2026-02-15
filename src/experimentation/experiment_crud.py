@@ -15,8 +15,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import selectinload
 from sqlmodel import select
 
-from src.constants.limits import THRESHOLD_LARGE_COUNT
-from src.database import get_session
+from src.shared.constants.limits import THRESHOLD_LARGE_COUNT
+from src.storage.database import get_session
 from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.models import (
     AssignmentStrategyType,
@@ -29,7 +29,7 @@ from src.experimentation.validators import (
     validate_experiment_name,
     validate_variant_list,
 )
-from src.utils.logging import get_logger
+from src.shared.utils.logging import get_logger
 
 logger = get_logger(__name__)
 

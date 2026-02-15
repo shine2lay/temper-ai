@@ -8,7 +8,7 @@ and makes tests more representative of actual usage.
 import copy
 from typing import Any, Dict, List, Optional
 
-from src.compiler.schemas import (
+from src.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,

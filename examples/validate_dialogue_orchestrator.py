@@ -24,8 +24,8 @@ from typing import Any, Dict, List
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.strategies.base import AgentOutput
-from src.strategies.dialogue import DialogueOrchestrator
+from src.agent.strategies.base import AgentOutput
+from src.agent.strategies.dialogue import DialogueOrchestrator
 
 
 class MockAgent:

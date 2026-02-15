@@ -14,7 +14,7 @@ from unittest.mock import Mock, MagicMock, patch
 
 from src.observability.aggregation.aggregator import AggregationOrchestrator
 from src.observability.aggregation.period import AggregationPeriod
-from src.database.models import WorkflowExecution, AgentExecution, LLMCall, SystemMetric
+from src.storage.database.models import WorkflowExecution, AgentExecution, LLMCall, SystemMetric
 
 
 @pytest.fixture

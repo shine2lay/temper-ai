@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from src.constants.durations import TIMEOUT_VERY_LONG
+from src.shared.constants.durations import TIMEOUT_VERY_LONG
 from src.self_improvement.constants import (
     ERC721_CONTRACTS_PATH,
     ERC721_FILE_EXT_SOL,

@@ -8,7 +8,7 @@ tracker) remain eager.
 from typing import Any
 
 # Lightweight / frequently-used — keep eager
-from src.core.context import ExecutionContext
+from src.shared.core.context import ExecutionContext
 
 from .backend import ObservabilityBackend
 from .hooks import (

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
-from src.constants.durations import HOURS_PER_DAY, SECONDS_PER_5_MINUTES
+from src.shared.constants.durations import HOURS_PER_DAY, SECONDS_PER_5_MINUTES
 from src.observability.constants import DEFAULT_ERROR_RATE_ALERT_THRESHOLD
 
 logger = logging.getLogger(__name__)

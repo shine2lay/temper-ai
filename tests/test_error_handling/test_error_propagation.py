@@ -561,7 +561,7 @@ class TestErrorSanitizationIntegration:
 
     def test_api_key_redacted_in_agent_error(self):
         """Test API keys are redacted in AgentError messages."""
-        from src.utils.exceptions import AgentError, ErrorCode, ExecutionContext
+        from src.shared.utils.exceptions import AgentError, ErrorCode, ExecutionContext
 
         api_key = "sk-test-1234567890abcdef"
 
@@ -580,7 +580,7 @@ class TestErrorSanitizationIntegration:
 
     def test_aws_key_redacted_in_llm_error(self):
         """Test AWS keys are redacted in LLMError messages."""
-        from src.utils.exceptions import ErrorCode, LLMError
+        from src.shared.utils.exceptions import ErrorCode, LLMError
 
         aws_key = "AKIAIOSFODNN7EXAMPLE"
 
@@ -598,7 +598,7 @@ class TestErrorSanitizationIntegration:
 
     def test_password_redacted_in_config_error(self):
         """Test passwords are redacted in ConfigurationError messages."""
-        from src.utils.exceptions import ConfigurationError, ErrorCode
+        from src.shared.utils.exceptions import ConfigurationError, ErrorCode
 
         password = "SuperSecret123!"
 
@@ -615,7 +615,7 @@ class TestErrorSanitizationIntegration:
 
     def test_bearer_token_redacted_in_tool_error(self):
         """Test Bearer tokens are redacted in ToolError messages."""
-        from src.utils.exceptions import ErrorCode, ToolError
+        from src.shared.utils.exceptions import ErrorCode, ToolError
 
         token = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.payload.signature"
 
@@ -633,7 +633,7 @@ class TestErrorSanitizationIntegration:
 
     def test_jwt_token_redacted_in_workflow_error(self):
         """Test JWT tokens are redacted in WorkflowError messages."""
-        from src.utils.exceptions import ErrorCode, WorkflowError
+        from src.shared.utils.exceptions import ErrorCode, WorkflowError
 
         jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9"
 
@@ -650,7 +650,7 @@ class TestErrorSanitizationIntegration:
 
     def test_connection_string_redacted_in_safety_error(self):
         """Test database connection strings are redacted in SafetyError."""
-        from src.utils.exceptions import ErrorCode, SafetyError
+        from src.shared.utils.exceptions import ErrorCode, SafetyError
 
         conn_str = "postgresql://admin:secret123@localhost:5432/mydb"
 
@@ -667,7 +667,7 @@ class TestErrorSanitizationIntegration:
 
     def test_multiple_secrets_redacted_in_validation_error(self):
         """Test multiple secrets in same error are all redacted."""
-        from src.utils.exceptions import ErrorCode, FrameworkValidationError
+        from src.shared.utils.exceptions import ErrorCode, FrameworkValidationError
 
         api_key = "sk-prod-key-xyz"
         password = "MyP@ssw0rd!"
@@ -688,7 +688,7 @@ class TestErrorSanitizationIntegration:
 
     def test_secrets_redacted_in_repr(self):
         """Test secrets are redacted in error repr()."""
-        from src.utils.exceptions import ErrorCode, LLMError
+        from src.shared.utils.exceptions import ErrorCode, LLMError
 
         api_key = "sk-test-secret-key"
 
@@ -705,7 +705,7 @@ class TestErrorSanitizationIntegration:
 
     def test_secrets_redacted_in_to_dict(self):
         """Test secrets are redacted in error.to_dict()."""
-        from src.utils.exceptions import AgentError, ErrorCode
+        from src.shared.utils.exceptions import AgentError, ErrorCode
 
         password = "admin123"
 
@@ -722,7 +722,7 @@ class TestErrorSanitizationIntegration:
 
     def test_secrets_redacted_in_cause(self):
         """Test secrets are redacted when error wraps another exception."""
-        from src.utils.exceptions import ErrorCode, ToolError
+        from src.shared.utils.exceptions import ErrorCode, ToolError
 
         api_key = "api-key-1234567890"
 
@@ -745,7 +745,7 @@ class TestErrorSanitizationIntegration:
     def test_secrets_redacted_in_traceback(self):
         """Test secrets are redacted in error traceback."""
 
-        from src.utils.exceptions import ErrorCode, WorkflowError
+        from src.shared.utils.exceptions import ErrorCode, WorkflowError
 
         password = "p@ssw0rd!"
 
@@ -770,7 +770,7 @@ class TestErrorSanitizationIntegration:
 
     def test_api_key_formats_all_redacted(self):
         """Test various API key formats are all redacted."""
-        from src.utils.exceptions import ErrorCode, LLMError
+        from src.shared.utils.exceptions import ErrorCode, LLMError
 
         test_keys = [
             ("sk-test-key", "sk- prefix"),
@@ -799,7 +799,7 @@ class TestErrorSanitizationIntegration:
 
     def test_password_formats_all_redacted(self):
         """Test various password formats are all redacted."""
-        from src.utils.exceptions import ConfigurationError, ErrorCode
+        from src.shared.utils.exceptions import ConfigurationError, ErrorCode
 
         test_passwords = [
             ("password=secret", "equals format"),
@@ -823,7 +823,7 @@ class TestErrorSanitizationIntegration:
         """Test that error sanitization has minimal performance overhead."""
         import time
 
-        from src.utils.exceptions import AgentError, ErrorCode
+        from src.shared.utils.exceptions import AgentError, ErrorCode
 
         # Test with message containing secrets
         message_with_secrets = (
@@ -847,7 +847,7 @@ class TestErrorSanitizationIntegration:
 
     def test_no_false_positives(self):
         """Test that sanitization doesn't redact non-secret data."""
-        from src.utils.exceptions import ErrorCode, ToolError
+        from src.shared.utils.exceptions import ErrorCode, ToolError
 
         # Message with words that contain trigger patterns but aren't secrets
         message = (
@@ -870,7 +870,7 @@ class TestErrorSanitizationIntegration:
 
     def test_edge_case_empty_message(self):
         """Test sanitization handles empty messages gracefully."""
-        from src.utils.exceptions import BaseError, ErrorCode
+        from src.shared.utils.exceptions import BaseError, ErrorCode
 
         error = BaseError(
             message="",
@@ -885,7 +885,7 @@ class TestErrorSanitizationIntegration:
 
     def test_edge_case_none_message(self):
         """Test sanitization handles None in cause gracefully."""
-        from src.utils.exceptions import AgentError, ErrorCode
+        from src.shared.utils.exceptions import AgentError, ErrorCode
 
         error = AgentError(
             message="Test error",

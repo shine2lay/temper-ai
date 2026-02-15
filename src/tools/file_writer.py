@@ -13,7 +13,7 @@ from src.tools.base import BaseTool, ToolMetadata, ToolResult
 logger = logging.getLogger(__name__)
 from src.tools.constants import FILE_ENCODING_UTF8
 from src.tools.constants import MAX_FILE_SIZE as _MAX_FILE_SIZE
-from src.utils.path_safety import PathSafetyError, PathSafetyValidator
+from src.shared.utils.path_safety import PathSafetyError, PathSafetyValidator
 
 # Dangerous file extensions
 FORBIDDEN_EXTENSIONS: Set[str] = {

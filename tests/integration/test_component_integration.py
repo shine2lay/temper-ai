@@ -9,11 +9,11 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.agents.llm_providers import LLMResponse
-from src.agents.standard_agent import StandardAgent
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.langgraph_engine import LangGraphExecutionEngine
-from src.compiler.schemas import (
+from src.agent.llm_providers import LLMResponse
+from src.agent.standard_agent import StandardAgent
+from src.workflow.config_loader import ConfigLoader
+from src.workflow.langgraph_engine import LangGraphExecutionEngine
+from src.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
@@ -93,7 +93,7 @@ def minimal_agent_config():
 # Integration Test 1: Multi-Agent Workflow
 # ============================================================================
 
-@patch('src.agents.base_agent.ToolRegistry')
+@patch('src.agent.base_agent.ToolRegistry')
 def test_multi_agent_workflow(mock_tool_registry, minimal_agent_config, execution_tracker):
     """Test workflow with multiple agents collaborating.
 
@@ -169,7 +169,7 @@ def test_multi_agent_workflow(mock_tool_registry, minimal_agent_config, executio
 # Integration Test 2: Tool Chaining Workflow
 # ============================================================================
 
-@patch('src.agents.base_agent.ToolRegistry')
+@patch('src.agent.base_agent.ToolRegistry')
 def test_tool_chaining_workflow(mock_tool_registry, minimal_agent_config, tool_registry, execution_tracker):
     """Test workflow where tool outputs feed into subsequent tool inputs.
 
@@ -240,7 +240,7 @@ def test_tool_chaining_workflow(mock_tool_registry, minimal_agent_config, tool_r
 # Integration Test 3: Error Propagation Across Stages
 # ============================================================================
 
-@patch('src.agents.base_agent.ToolRegistry')
+@patch('src.agent.base_agent.ToolRegistry')
 def test_error_propagation_across_stages(mock_tool_registry, minimal_agent_config, execution_tracker):
     """Test that errors in one stage properly propagate to subsequent stages.
 
@@ -312,7 +312,7 @@ def test_error_propagation_across_stages(mock_tool_registry, minimal_agent_confi
 # Integration Test 4: Config to Execution Pipeline
 # ============================================================================
 
-@patch('src.compiler.langgraph_compiler.ConfigLoader')
+@patch('src.workflow.langgraph_compiler.ConfigLoader')
 def test_config_to_execution_pipeline(mock_config_loader):
     """Test complete pipeline from YAML config to execution.
 
@@ -371,7 +371,7 @@ def test_config_to_execution_pipeline(mock_config_loader):
 # Integration Test 5: Database Integration Full Workflow
 # ============================================================================
 
-@patch('src.agents.base_agent.ToolRegistry')
+@patch('src.agent.base_agent.ToolRegistry')
 def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_config, db_fixture):
     """Test full workflow execution with database trace persistence.
 
@@ -432,7 +432,7 @@ def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_co
 # Integration Test 6: Streaming Execution
 # ============================================================================
 
-@patch('src.agents.base_agent.ToolRegistry')
+@patch('src.agent.base_agent.ToolRegistry')
 def test_streaming_execution(mock_tool_registry, minimal_agent_config):
     """Test real-time streaming of execution events.
 
@@ -492,10 +492,10 @@ def test_llm_provider_switching(minimal_agent_config):
     Simulates workflow that switches from Ollama -> OpenAI -> Anthropic
     based on availability or requirements.
     """
-    from src.agents.llm_providers import LLMError
+    from src.agent.llm_providers import LLMError
 
     # Create agent
-    with patch('src.agents.base_agent.ToolRegistry') as mock_registry:
+    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
         mock_registry.return_value.get_all_tools.return_value = {}
         agent = StandardAgent(minimal_agent_config)

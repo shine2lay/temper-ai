@@ -11,10 +11,10 @@ import pytest
 
 from src.safety.action_policy_engine import ActionPolicyEngine
 from src.safety.rollback import RollbackManager
-from src.strategies.base import AgentOutput
-from src.strategies.conflict_resolution import MeritWeightedResolver
-from src.strategies.consensus import ConsensusStrategy
-from src.strategies.debate import DebateAndSynthesize
+from src.agent.strategies.base import AgentOutput
+from src.agent.strategies.conflict_resolution import MeritWeightedResolver
+from src.agent.strategies.consensus import ConsensusStrategy
+from src.agent.strategies.debate import DebateAndSynthesize
 from src.tools.calculator import Calculator
 from src.tools.executor import ToolExecutor
 
@@ -121,7 +121,7 @@ def test_strategy_conflict_resolution(benchmark):
     Target: <100ms
     Measures: Conflict detection and resolution overhead
     """
-    from src.strategies.conflict_resolution import MeritWeightedConflictResolution
+    from src.agent.strategies.conflict_resolution import MeritWeightedConflictResolution
 
     resolver = MeritWeightedConflictResolution()
 
@@ -152,7 +152,7 @@ def test_strategy_quality_gate_validation(benchmark):
     Target: <50ms
     Measures: Quality check overhead
     """
-    from src.strategies.base import SynthesisResult
+    from src.agent.strategies.base import SynthesisResult
 
     synthesis_result = SynthesisResult(
         final_decision="test result",

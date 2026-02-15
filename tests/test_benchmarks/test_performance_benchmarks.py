@@ -19,17 +19,12 @@ from unittest.mock import Mock, patch
 import pytest
 from sqlalchemy import text
 
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.compiler.node_builder import NodeBuilder
-from src.compiler.schemas import (
-    AgentConfig,
-    AgentConfigInner,
-    InferenceConfig,
-    PromptConfig,
-)
-from src.compiler.stage_compiler import StageCompiler
-from src.compiler.state_manager import StateManager
+from src.workflow.config_loader import ConfigLoader
+from src.workflow.langgraph_compiler import LangGraphCompiler
+from src.workflow.node_builder import NodeBuilder
+from src.storage.schemas.agent_config import AgentConfig, AgentConfigInner, InferenceConfig, PromptConfig
+from src.stage.stage_compiler import StageCompiler
+from src.workflow.state_manager import StateManager
 from src.observability.buffer import ObservabilityBuffer
 from src.observability.database import DatabaseManager, IsolationLevel
 from src.observability.performance import PerformanceTracker
@@ -145,7 +140,7 @@ def test_compiler_simple_workflow(simple_workflow_config, benchmark):
     Target: <1s
     Measures: Graph construction, node creation, state initialization
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -166,7 +161,7 @@ def test_compiler_medium_workflow(medium_workflow_config, benchmark):
     Target: <3s
     Measures: Scalability of compilation with moderate complexity
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -186,7 +181,7 @@ def test_compiler_large_workflow(large_workflow_config, benchmark):
     Target: <5s
     Measures: Scalability of compilation with large workflows
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -207,7 +202,7 @@ def test_compiler_complex_workflow(complex_workflow_config, benchmark):
     Target: <15s
     Measures: Maximum scalability of compilation
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -302,7 +297,7 @@ def test_compiler_node_builder_creation(benchmark):
     tool_registry = ToolRegistry()
 
     def create_node_builder():
-        from src.compiler.executors import (
+        from src.stage.executors import (
             AdaptiveStageExecutor,
             ParallelStageExecutor,
             SequentialStageExecutor,
@@ -343,7 +338,7 @@ def test_compiler_sequential_stage(simple_workflow_config, benchmark):
     Target: <50ms
     Measures: Sequential executor overhead
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -362,7 +357,7 @@ def test_compiler_parallel_stage(simple_workflow_config, benchmark):
     Target: <100ms
     Measures: Parallel executor and subgraph overhead
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()

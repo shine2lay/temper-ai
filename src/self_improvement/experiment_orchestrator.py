@@ -20,7 +20,7 @@ from typing import Any, Callable, Dict, Generator, List, Optional
 from sqlalchemy.orm import Session
 from sqlmodel import select
 
-from src.constants.limits import DEFAULT_BATCH_SIZE
+from src.shared.constants.limits import DEFAULT_BATCH_SIZE
 from src.self_improvement._experiment_helpers import (
     EXPERIMENT_ID_UUID_LENGTH,
     ExperimentCreationData,
@@ -53,7 +53,7 @@ from src.self_improvement.storage.experiment_models import (
     M5ExecutionResult,
     M5Experiment,
 )
-from src.utils.exceptions import FrameworkException
+from src.shared.utils.exceptions import FrameworkException
 
 logger = logging.getLogger(__name__)
 

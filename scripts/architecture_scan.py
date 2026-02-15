@@ -84,21 +84,19 @@ _ensure_venv()
 # Layer mapping: module name -> architectural layer
 # Dependency direction: presentation -> orchestration -> business -> cross_cutting -> infrastructure
 LAYER_MAP: dict[str, str] = {
-    "cli": "presentation",
-    "compiler": "orchestration",
-    "agents": "business",
-    "strategies": "business",
+    "interfaces": "presentation",
+    "workflow": "orchestration",
+    "stage": "orchestration",
+    "agent": "business",
     "tools": "business",
     "experimentation": "business",
     "self_improvement": "business",
     "safety": "cross_cutting",
     "observability": "cross_cutting",
-    "security": "cross_cutting",
-    "core": "infrastructure",
-    "cache": "infrastructure",
-    "auth": "infrastructure",
+    "shared": "infrastructure",
     "llm": "infrastructure",
-    "utils": "infrastructure",
+    "storage": "infrastructure",
+    "auth": "infrastructure",
 }
 
 # Lower number = higher layer. Upward deps (high->low number) are violations.

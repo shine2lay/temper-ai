@@ -35,8 +35,8 @@ from src.auth.oauth.config import (
 )
 from src.auth.oauth.rate_limiter import RateLimitExceeded
 from src.auth.oauth.token_store import SecureTokenStore
-from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_NETWORK_CONNECT
-from src.constants.sizes import TOKEN_BYTES_NONCE, TOKEN_BYTES_STATE
+from src.shared.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_NETWORK_CONNECT
+from src.shared.constants.sizes import TOKEN_BYTES_NONCE, TOKEN_BYTES_STATE
 
 logger = logging.getLogger(__name__)
 

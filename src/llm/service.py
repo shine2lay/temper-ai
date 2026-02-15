@@ -28,7 +28,7 @@ from src.llm._retry import call_with_retry_async, call_with_retry_sync
 from src.llm._schemas import build_native_tool_defs, build_text_schemas
 from src.llm._tool_execution import execute_single_tool, execute_tools
 from src.llm._tracking import track_call, track_failed_call, validate_safety
-from src.utils.exceptions import MaxIterationsError, sanitize_error_message
+from src.shared.utils.exceptions import MaxIterationsError, sanitize_error_message
 
 logger = logging.getLogger(__name__)
 

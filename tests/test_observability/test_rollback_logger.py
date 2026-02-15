@@ -5,8 +5,8 @@ from uuid import uuid4
 
 import pytest
 
-from src.database import DatabaseManager
-from src.database.models import RollbackEvent, RollbackSnapshotDB
+from src.storage.database import DatabaseManager
+from src.storage.database.models import RollbackEvent, RollbackSnapshotDB
 from src.observability.rollback_logger import (
     get_rollback_events,
     get_rollback_snapshots,
@@ -384,7 +384,7 @@ class TestGetRollbackEvents:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.database.models import RollbackEvent
+            from src.storage.database.models import RollbackEvent
             events_query = session.query(RollbackEvent).filter_by(
                 snapshot_id=rollback_result.snapshot_id
             ).all()
@@ -405,7 +405,7 @@ class TestGetRollbackEvents:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.database.models import RollbackEvent
+            from src.storage.database.models import RollbackEvent
             events_query = session.query(RollbackEvent).filter_by(
                 trigger="manual"
             ).all()
@@ -441,7 +441,7 @@ class TestGetRollbackEvents:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.database.models import RollbackEvent
+            from src.storage.database.models import RollbackEvent
             events_query = session.query(RollbackEvent).order_by(
                 RollbackEvent.executed_at.desc()
             ).all()
@@ -502,7 +502,7 @@ class TestGetRollbackSnapshots:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.database.models import RollbackSnapshotDB
+            from src.storage.database.models import RollbackSnapshotDB
             snapshots_query = session.query(RollbackSnapshotDB).filter_by(
                 workflow_execution_id=workflow_id
             ).all()
@@ -530,7 +530,7 @@ class TestGetRollbackSnapshots:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.database.models import RollbackSnapshotDB
+            from src.storage.database.models import RollbackSnapshotDB
             snapshots_query = session.query(RollbackSnapshotDB).order_by(
                 RollbackSnapshotDB.created_at.desc()
             ).all()
@@ -575,7 +575,7 @@ class TestIntegration:
 
         # Query both within session context
         with db_manager.session() as session:
-            from src.database.models import RollbackEvent, RollbackSnapshotDB
+            from src.storage.database.models import RollbackEvent, RollbackSnapshotDB
 
             snapshots_query = session.query(RollbackSnapshotDB).filter_by(
                 workflow_execution_id="wf-123"

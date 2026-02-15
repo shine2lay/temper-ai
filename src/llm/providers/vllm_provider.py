@@ -22,7 +22,7 @@ from src.llm.providers.base import (
     LLMResponse,
     StreamCallback,
 )
-from src.core.context import ExecutionContext
+from src.shared.core.context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 

@@ -11,8 +11,8 @@ from typing import Optional
 
 from sqlalchemy import text
 
-from src.constants.limits import DEFAULT_MIN_ITEMS
-from src.utils.exceptions import SecurityError
+from src.shared.constants.limits import DEFAULT_MIN_ITEMS
+from src.shared.utils.exceptions import SecurityError
 
 from .database import DatabaseManager, get_database
 

@@ -12,10 +12,10 @@ from typing import Any, Callable, Dict, Optional
 from sqlalchemy import JSON, DateTime
 from sqlmodel import Column, Field, SQLModel, select
 
-from src.database import get_session
-from src.database.datetime_utils import utcnow
+from src.storage.database import get_session
+from src.storage.database.datetime_utils import utcnow
 from src.self_improvement.constants import ERROR_MSG_NO_STATE_FOUND
-from src.utils.exceptions import ErrorCode, WorkflowError
+from src.shared.utils.exceptions import ErrorCode, WorkflowError
 
 from .models import LoopState, LoopStatus, Phase
 

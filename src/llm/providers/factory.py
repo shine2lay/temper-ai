@@ -8,10 +8,10 @@ from src.llm.providers.base import BaseLLM, LLMProvider
 from src.llm.providers.ollama import OllamaLLM
 from src.llm.providers.openai_provider import OpenAILLM
 from src.llm.providers.vllm_provider import VllmLLM
-from src.utils.exceptions import LLMError
+from src.shared.utils.exceptions import LLMError
 
 if TYPE_CHECKING:
-    from src.schemas.agent_config import InferenceConfig
+    from src.storage.schemas.agent_config import InferenceConfig
 
 # Default port numbers for LLM providers
 OLLAMA_DEFAULT_PORT = 11434

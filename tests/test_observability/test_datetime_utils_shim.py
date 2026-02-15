@@ -23,7 +23,7 @@ def test_datetime_utils_import_raises_deprecation_warning():
         # Verify the warning message
         warning_msg = str(deprecation_warnings[0].message)
         assert "src.observability.datetime_utils is deprecated" in warning_msg
-        assert "src.database.datetime_utils" in warning_msg
+        assert "src.storage.database.datetime_utils" in warning_msg
 
 
 def test_datetime_utils_re_exports_work():
@@ -48,7 +48,7 @@ def test_datetime_utils_new_import_location():
         warnings.simplefilter("always")
 
         # Import from the new location
-        from src.database.datetime_utils import utcnow
+        from src.storage.database.datetime_utils import utcnow
 
         # Verify no deprecation warnings were raised
         deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning)]

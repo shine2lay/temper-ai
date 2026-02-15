@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 import pytest
 import yaml
 
-from src.compiler.config_loader import ConfigLoader
+from src.workflow.config_loader import ConfigLoader
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.registry import ToolRegistry, ToolRegistryError
 
@@ -164,7 +164,7 @@ def test_load_from_config_creates_config_loader(tool_config, config_root):
     registry = ToolRegistry()
 
     # Patch ConfigLoader at import location
-    with patch('src.compiler.config_loader.ConfigLoader') as mock_config_loader_class:
+    with patch('src.workflow.config_loader.ConfigLoader') as mock_config_loader_class:
         mock_loader = Mock()
         mock_config_loader_class.return_value = mock_loader
 
@@ -437,7 +437,7 @@ def test_load_all_from_configs_creates_loader():
     registry = ToolRegistry()
 
     # Patch ConfigLoader at import location
-    with patch('src.compiler.config_loader.ConfigLoader') as mock_config_loader_class:
+    with patch('src.workflow.config_loader.ConfigLoader') as mock_config_loader_class:
         mock_loader = Mock()
         mock_config_loader_class.return_value = mock_loader
         mock_loader.list_configs.return_value = []

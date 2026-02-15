@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from src.constants.durations import DEFAULT_TIMEOUT_SECONDS, RATE_LIMIT_WINDOW_SECOND
-from src.constants.limits import MIN_WORKERS
+from src.shared.constants.durations import DEFAULT_TIMEOUT_SECONDS, RATE_LIMIT_WINDOW_SECOND
+from src.shared.constants.limits import MIN_WORKERS
 
 if TYPE_CHECKING:
     from src.safety.action_policy_engine import ActionPolicyEngine

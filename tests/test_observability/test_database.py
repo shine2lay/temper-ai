@@ -128,7 +128,7 @@ def test_session_rollback_on_error():
 def test_init_database():
     """Test init_database function."""
     # Reset global state (use actual module location after package extraction)
-    import src.database.manager as db_module
+    import src.storage.database.manager as db_module
     db_module._db_manager = None
 
     manager = init_database("sqlite:///:memory:")

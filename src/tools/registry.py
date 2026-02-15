@@ -34,7 +34,7 @@ from src.tools._registry_helpers import (
 )
 from src.tools.base import BaseTool
 from src.tools.constants import TOOL_ERROR_PREFIX
-from src.utils.exceptions import ToolRegistryError
+from src.shared.utils.exceptions import ToolRegistryError
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
-from src.constants.limits import MAX_SHORT_STRING_LENGTH
+from src.shared.constants.limits import MAX_SHORT_STRING_LENGTH
 from src.safety._file_access_helpers import (
     extract_paths,
     has_forbidden_extension,

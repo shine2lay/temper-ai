@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Literal, Optional
 
-from src.database.datetime_utils import utcnow
+from src.storage.database.datetime_utils import utcnow
 from src.observability.backend import (
     CollaborationEventData,
     ObservabilityBackend,

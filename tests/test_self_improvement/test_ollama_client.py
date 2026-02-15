@@ -11,7 +11,7 @@ import pytest
 
 from src.llm.providers import LLMProvider, LLMResponse
 from src.self_improvement.ollama_client import OllamaClient
-from src.utils.exceptions import LLMError, LLMTimeoutError
+from src.shared.utils.exceptions import LLMError, LLMTimeoutError
 
 
 class TestOllamaClientInit:

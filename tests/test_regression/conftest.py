@@ -1,7 +1,7 @@
 """Fixtures for regression tests."""
 import pytest
 
-from src.compiler.schemas import (
+from src.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,

@@ -22,7 +22,7 @@ import pytest
 from cryptography.fernet import Fernet, InvalidToken
 
 from src.auth.oauth.token_store import SecureTokenStore
-from src.utils.exceptions import SecurityError
+from src.shared.utils.exceptions import SecurityError
 
 
 @pytest.fixture

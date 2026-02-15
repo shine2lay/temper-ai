@@ -23,7 +23,7 @@ import sys
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.constants.limits import (
+from src.shared.constants.limits import (
     LARGE_ITEM_LIMIT,
 )
 
@@ -500,8 +500,8 @@ def _load_trace_data(args: Any) -> Optional[Dict[str, Any]]:
             from sqlmodel import select
 
             from examples.export_waterfall import export_waterfall_trace
-            from src.database import get_session
-            from src.database.models import WorkflowExecution
+            from src.storage.database import get_session
+            from src.storage.database.models import WorkflowExecution
         except ImportError as e:
             print(f"ERROR: Cannot import observability modules: {e}")
             print("Use --file to load from JSON instead")

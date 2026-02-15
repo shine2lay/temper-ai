@@ -307,7 +307,7 @@ def test_oauth_config_callback_url_validation_with_env():
 
 def test_oauth_config_token_expiry_bounds():
     """Test token expiry seconds validation."""
-    from src.constants.durations import SECONDS_PER_MINUTE, SECONDS_PER_DAY
+    from src.shared.constants.durations import SECONDS_PER_MINUTE, SECONDS_PER_DAY
 
     base_config = {
         "providers": [

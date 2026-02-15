@@ -5,7 +5,7 @@ deployment configuration, detection parameters, and loop configuration.
 Domain bridge pattern: imports from src/constants/ for cross-cutting values.
 """
 
-from src.constants.durations import (
+from src.shared.constants.durations import (
     DAYS_PER_WEEK,
     HOURS_PER_DAY,
 )

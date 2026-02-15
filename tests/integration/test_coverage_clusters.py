@@ -204,7 +204,7 @@ class TestCLISystemsIntegration:
     def test_cli_loads_all_systems(self):
         """CLI should initialize all system components."""
         # Test that CLI module can be imported
-        from src.cli import main
+        from src.interfaces.cli import main
 
         # Verify main function exists
         assert hasattr(main, 'main')
@@ -212,7 +212,7 @@ class TestCLISystemsIntegration:
 
     def test_cli_config_validation(self, tmp_path):
         """CLI should validate configuration before execution."""
-        from src.compiler.config_loader import ConfigLoader
+        from src.workflow.config_loader import ConfigLoader
 
         # Create invalid config
         invalid_config = tmp_path / "invalid.yaml"
@@ -225,13 +225,13 @@ class TestCLISystemsIntegration:
 
     def test_cli_observability_integration(self):
         """CLI execution should be tracked in observability system."""
-        from src.database import init_database
+        from src.storage.database import init_database
 
         # Initialize observability database
         init_database("sqlite:///:memory:")
 
         # Verify database initialized
-        from src.database import get_session
+        from src.storage.database import get_session
         with get_session() as session:
             assert session is not None
 
@@ -258,7 +258,7 @@ class TestCrossModuleDataFlow:
 
     def test_workflow_to_observability_flow(self):
         """Workflow execution data should flow to observability system."""
-        from src.database import init_database, get_session
+        from src.storage.database import init_database, get_session
 
         init_database("sqlite:///:memory:")
 

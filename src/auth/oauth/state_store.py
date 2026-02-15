@@ -19,8 +19,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 from src.auth.constants import ERROR_REDIS_NOT_AVAILABLE, FIELD_EXPIRES_AT
-from src.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_SHORT
-from src.constants.limits import PERCENT_20, PERCENT_80, THRESHOLD_MASSIVE_COUNT
+from src.shared.constants.durations import SECONDS_PER_10_MINUTES, TIMEOUT_SHORT
+from src.shared.constants.limits import PERCENT_20, PERCENT_80, THRESHOLD_MASSIVE_COUNT
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +286,7 @@ class RedisStateStore(StateStore):
                 )
                 # Test connection
                 await self._redis.ping()
-                from src.utils.secrets import mask_url_password
+                from src.shared.utils.secrets import mask_url_password
                 logger.info(f"Connected to Redis: {mask_url_password(self.redis_url)}")
             except (OSError, ConnectionError, TimeoutError, AttributeError) as e:
                 logger.error(f"Failed to connect to Redis: {e}")

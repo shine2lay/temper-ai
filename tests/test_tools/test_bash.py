@@ -205,7 +205,7 @@ class TestSandboxEnforcement:
 class TestInjectionPrevention:
     """Test shell metacharacter injection prevention."""
 
-    @pytest.mark.parametrize("char", list(DANGEROUS_CHARS))
+    @pytest.mark.parametrize("char", sorted(DANGEROUS_CHARS))
     def test_dangerous_char_rejected(self, bash_tool, workspace, char):
         """Each dangerous character should be rejected."""
         if char in ("\n", "\r"):

@@ -16,7 +16,7 @@ import time
 from collections import defaultdict
 from typing import Any, Dict, List, Optional
 
-from src.constants.durations import (
+from src.shared.constants.durations import (
     RATE_LIMIT_WINDOW_DAY,
     RATE_LIMIT_WINDOW_HOUR,
     RATE_LIMIT_WINDOW_MINUTE,

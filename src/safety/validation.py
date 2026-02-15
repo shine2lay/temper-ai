@@ -9,9 +9,9 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Pattern
 
-from src.constants.limits import LARGE_ITEM_LIMIT
-from src.constants.probabilities import PROB_VERY_LOW
-from src.constants.sizes import BYTES_PER_GB, BYTES_PER_KB, BYTES_PER_MB
+from src.shared.constants.limits import LARGE_ITEM_LIMIT
+from src.shared.constants.probabilities import PROB_VERY_LOW
+from src.shared.constants.sizes import BYTES_PER_GB, BYTES_PER_KB, BYTES_PER_MB
 from src.safety.constants import (
     DEFAULT_MAX_ITEM_LENGTH,
     DEFAULT_MAX_ITEMS,

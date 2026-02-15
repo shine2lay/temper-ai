@@ -17,7 +17,7 @@ from src.tools.registry import (
     ToolRegistry,
     ToolRegistryError,
 )
-from src.utils.exceptions import ToolExecutionError
+from src.shared.utils.exceptions import ToolExecutionError
 
 __all__ = [
     # Base classes

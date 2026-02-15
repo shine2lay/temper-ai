@@ -10,10 +10,10 @@ from typing import Any, Dict, Optional, Set
 
 import psutil
 
-from src.constants.durations import SLEEP_VERY_SHORT
-from src.constants.limits import PERCENT_20
-from src.constants.probabilities import FRACTION_QUARTER
-from src.constants.sizes import BYTES_PER_KB
+from src.shared.constants.durations import SLEEP_VERY_SHORT
+from src.shared.constants.limits import PERCENT_20
+from src.shared.constants.probabilities import FRACTION_QUARTER
+from src.shared.constants.sizes import BYTES_PER_KB
 from src.safety.constants import PERCENT_KEY
 from src.safety.interfaces import SafetyViolation, ViolationSeverity
 

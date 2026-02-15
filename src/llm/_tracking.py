@@ -9,7 +9,7 @@ import logging
 from typing import Any, Optional
 
 from src.llm.constants import FALLBACK_UNKNOWN_VALUE
-from src.utils.exceptions import ConfigValidationError, sanitize_error_message
+from src.shared.utils.exceptions import ConfigValidationError, sanitize_error_message
 
 logger = logging.getLogger(__name__)
 

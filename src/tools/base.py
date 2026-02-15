@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional, Tuple, Type, Union
 
 from pydantic import BaseModel, Field, ValidationError
 
-from src.constants.limits import MAX_LONG_STRING_LENGTH, MAX_TEXT_LENGTH
+from src.shared.constants.limits import MAX_LONG_STRING_LENGTH, MAX_TEXT_LENGTH
 
 logger = logging.getLogger(__name__)
 
@@ -397,7 +397,7 @@ class BaseTool(ABC):
 
 
 # Consolidated: canonical definition in src/utils/exceptions.py
-from src.utils.exceptions import SecurityError  # noqa: F401
+from src.shared.utils.exceptions import SecurityError  # noqa: F401
 
 
 class ParameterSanitizer:

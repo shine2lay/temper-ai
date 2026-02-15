@@ -36,10 +36,10 @@ _SHIM_EXPORTS = {
     # Factory
     "create_llm_client": "src.llm.providers.factory",
     # Exceptions (re-exported from utils.exceptions)
-    "LLMError": "src.utils.exceptions",
-    "LLMTimeoutError": "src.utils.exceptions",
-    "LLMRateLimitError": "src.utils.exceptions",
-    "LLMAuthenticationError": "src.utils.exceptions",
+    "LLMError": "src.shared.utils.exceptions",
+    "LLMTimeoutError": "src.shared.utils.exceptions",
+    "LLMRateLimitError": "src.shared.utils.exceptions",
+    "LLMAuthenticationError": "src.shared.utils.exceptions",
 }
 
 __all__ = list(_SHIM_EXPORTS.keys())

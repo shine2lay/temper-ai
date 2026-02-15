@@ -23,9 +23,9 @@ except ImportError:
     pytest.skip("psutil not installed (optional for memory leak tests)", allow_module_level=True)
 
 from src.llm.providers import LLMResponse
-from src.agents.standard_agent import StandardAgent
-from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.compiler.schemas import (
+from src.agent.standard_agent import StandardAgent
+from src.workflow.langgraph_compiler import LangGraphCompiler
+from src.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
@@ -188,7 +188,7 @@ def test_agent_execution_no_memory_leak(minimal_agent_config, mock_llm_response)
     - Memory growth <10MB per 100 executions
     - Memory usage stabilizes after warmup
     """
-    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agent.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -235,7 +235,7 @@ def test_workflow_compilation_no_memory_leak(simple_workflow_config):
     - Memory growth <10MB per 100 compilations
     - Compiled workflows are properly garbage collected
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         # Setup
         mock_loader_instance = Mock()
         mock_stage_config = Mock()
@@ -285,7 +285,7 @@ def test_llm_provider_no_memory_leak(minimal_agent_config):
     - Memory growth <10MB per 100 calls
     - Connection pooling doesn't accumulate
     """
-    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agent.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -401,7 +401,7 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
     - Memory growth <50MB over 500 executions
     - No continuous memory increase trend
     """
-    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agent.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -546,7 +546,7 @@ async def test_concurrent_workflows_no_memory_leak(simple_workflow_config):
     - Memory growth <20MB per 100 concurrent workflow executions
     - Concurrent resources properly cleaned up
     """
-    with patch('src.compiler.langgraph_compiler.ConfigLoader'):
+    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
         # Setup
         mock_loader_instance = Mock()
         mock_stage_config = Mock()

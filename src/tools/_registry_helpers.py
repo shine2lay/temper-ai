@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type
 
 from src.tools.base import BaseTool
-from src.utils.exceptions import ToolRegistryError
+from src.shared.utils.exceptions import ToolRegistryError
 
 if TYPE_CHECKING:
     from src.tools.registry import ToolRegistry
@@ -338,7 +338,7 @@ def load_from_config(
 ) -> BaseTool:
     """Load and register a tool from configuration file."""
     if config_loader is None:
-        from src.compiler.config_loader import ConfigLoader
+        from src.workflow.config_loader import ConfigLoader
         config_loader = ConfigLoader()
 
     # Load configuration
@@ -383,7 +383,7 @@ def load_all_from_configs(
 ) -> int:
     """Load and register all tools from configuration files."""
     if config_loader is None:
-        from src.compiler.config_loader import ConfigLoader
+        from src.workflow.config_loader import ConfigLoader
         config_loader = ConfigLoader()
 
     try:

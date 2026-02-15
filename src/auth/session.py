@@ -14,13 +14,13 @@ from typing import Any, Dict, Optional
 
 from src.auth.constants import DISPLAY_ELLIPSIS, FIELD_EXPIRES_AT
 from src.auth.models import Session, User
-from src.constants.durations import (
+from src.shared.constants.durations import (
     CLEANUP_INTERVAL_FREQUENT,
     TIMEOUT_VERY_SHORT,
 )
-from src.constants.limits import THRESHOLD_MASSIVE_COUNT
-from src.constants.sizes import TOKEN_BYTES_SESSION
-from src.constants.timeouts import DEFAULT_SESSION_TTL_SECONDS
+from src.shared.constants.limits import THRESHOLD_MASSIVE_COUNT
+from src.shared.constants.sizes import TOKEN_BYTES_SESSION
+from src.shared.constants.timeouts import DEFAULT_SESSION_TTL_SECONDS
 
 logger = logging.getLogger(__name__)
 

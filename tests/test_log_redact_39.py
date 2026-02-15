@@ -9,7 +9,7 @@ Verifies that log_function_call decorator:
 
 import logging
 
-from src.utils.logging import log_function_call
+from src.shared.utils.logging import log_function_call
 
 
 class TestLogFunctionCallRedaction:

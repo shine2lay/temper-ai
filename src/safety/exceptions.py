@@ -22,7 +22,7 @@ All exceptions support:
 from typing import Any, Dict, Optional
 
 from src.safety.interfaces import SafetyViolation, ViolationSeverity
-from src.utils.exceptions import FrameworkException
+from src.shared.utils.exceptions import FrameworkException
 
 
 class SafetyViolationException(FrameworkException):  # noqa: N818 — public API, many subclasses

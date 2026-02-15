@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING, Any, Dict, Optional, Type
 
 import yaml
 
-from src.constants.durations import RATE_LIMIT_WINDOW_MINUTE
-from src.constants.limits import THRESHOLD_VERY_LARGE_COUNT
+from src.shared.constants.durations import RATE_LIMIT_WINDOW_MINUTE
+from src.shared.constants.limits import THRESHOLD_VERY_LARGE_COUNT
 from src.safety.action_policy_engine import ActionPolicyEngine
 from src.safety.approval import ApprovalWorkflow, NoOpApprover
 from src.safety.base import BaseSafetyPolicy

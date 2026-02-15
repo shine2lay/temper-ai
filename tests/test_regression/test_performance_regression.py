@@ -8,8 +8,8 @@ import gc
 import time
 from unittest.mock import patch
 
-from src.agents.utils.agent_factory import AgentFactory
-from src.agents.standard_agent import StandardAgent
+from src.agent.utils.agent_factory import AgentFactory
+from src.agent.standard_agent import StandardAgent
 from src.tools.calculator import Calculator
 from src.tools.executor import ToolExecutor
 from src.tools.registry import ToolRegistry
@@ -29,7 +29,7 @@ class TestAgentCreationPerformance:
         Fixed: Optimized tool registry lookup
         Baseline: <100ms for standard agent
         """
-        with patch('src.agents.base_agent.ToolRegistry'):
+        with patch('src.agent.base_agent.ToolRegistry'):
             start = time.time()
             agent = AgentFactory.create(minimal_agent_config)
             elapsed = time.time() - start
@@ -49,7 +49,7 @@ class TestAgentCreationPerformance:
         Fixed: Removed quadratic registry lookup
         Baseline: <1s for 100 agents
         """
-        with patch('src.agents.base_agent.ToolRegistry'):
+        with patch('src.agent.base_agent.ToolRegistry'):
             start = time.time()
 
             for i in range(100):
@@ -131,7 +131,7 @@ class TestMemory:
         Fixed: Proper cleanup of tool registry references
         """
 
-        with patch('src.agents.base_agent.ToolRegistry'):
+        with patch('src.agent.base_agent.ToolRegistry'):
             # Create many agents
             agents = []
             for i in range(100):

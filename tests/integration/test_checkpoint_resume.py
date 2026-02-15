@@ -12,8 +12,8 @@ from datetime import UTC, datetime
 
 import pytest
 
-from src.compiler.checkpoint import CheckpointManager, FileCheckpointBackend
-from src.compiler.domain_state import WorkflowDomainState
+from src.workflow.checkpoint import CheckpointManager, FileCheckpointBackend
+from src.workflow.domain_state import WorkflowDomainState
 from src.observability.database import get_session, init_database
 from src.observability.models import StageExecution, WorkflowExecution
 from src.observability.tracker import ExecutionTracker

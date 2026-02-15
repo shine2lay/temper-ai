@@ -4,7 +4,7 @@ from typing import Any
 
 from sqlalchemy import Select
 
-from src.constants.probabilities import PROB_NEAR_CERTAIN
+from src.shared.constants.probabilities import PROB_NEAR_CERTAIN
 
 # Percentiles for latency metrics
 PERCENTILE_P99 = 0.99
@@ -42,7 +42,7 @@ class AggregationQueryBuilder:
         from sqlalchemy import case
         from sqlmodel import func, select
 
-        from src.database.models import WorkflowExecution
+        from src.storage.database.models import WorkflowExecution
 
         # SQLAlchemy/mypy complex expression typing issue - using Any return type
         return select(  # type: ignore
@@ -82,7 +82,7 @@ class AggregationQueryBuilder:
         from sqlalchemy import case
         from sqlmodel import func, select
 
-        from src.database.models import AgentExecution
+        from src.storage.database.models import AgentExecution
 
         # SQLAlchemy/mypy complex expression typing issue - using Any return type
         return select(  # type: ignore
@@ -122,7 +122,7 @@ class AggregationQueryBuilder:
         from sqlalchemy import case
         from sqlmodel import func, select
 
-        from src.database.models import LLMCall
+        from src.storage.database.models import LLMCall
 
         # SQLAlchemy/mypy complex expression typing issue - using Any return type
         return select(  # type: ignore

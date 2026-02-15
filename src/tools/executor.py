@@ -12,7 +12,7 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Dict, Optional, Union
 
-from src.constants.limits import MIN_WORKERS
+from src.shared.constants.limits import MIN_WORKERS
 from src.tools._executor_config import ToolExecutorConfig
 from src.tools._executor_helpers import (
     acquire_concurrent_slot,
@@ -42,13 +42,13 @@ from src.tools._executor_helpers import (
 )
 from src.tools.base import ToolResult
 from src.tools.registry import ToolRegistry
-from src.utils.exceptions import RateLimitError
-from src.utils.logging import get_logger
+from src.shared.utils.exceptions import RateLimitError
+from src.shared.utils.logging import get_logger
 
 # Module logger
 logger = get_logger(__name__)
 
-# Note: RateLimitError now imported from src.utils.exceptions
+# Note: RateLimitError now imported from src.shared.utils.exceptions
 # (unified base class for all rate limit exceptions)
 
 

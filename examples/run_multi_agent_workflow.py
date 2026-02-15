@@ -28,8 +28,8 @@ from rich.table import Table
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.compiler.config_loader import ConfigLoader
-from src.compiler.langgraph_compiler import LangGraphCompiler
+from src.workflow.config_loader import ConfigLoader
+from src.workflow.langgraph_compiler import LangGraphCompiler
 from src.observability.database import init_database
 from src.observability.tracker import ExecutionTracker
 from src.observability.visualize_trace import create_hierarchical_gantt as create_gantt_chart

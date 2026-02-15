@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.database import init_database
+from src.storage.database import init_database
 from src.observability.constants import ObservabilityFields
-from src.database.models import (
+from src.storage.database.models import (
     AgentExecution,
     CollaborationEvent,
     LLMCall,
@@ -19,8 +19,8 @@ from src.observability.backends.sql_backend import SQLObservabilityBackend
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
-    import src.database.manager as db_module
-    from src.database.manager import _db_lock
+    import src.storage.database.manager as db_module
+    from src.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None

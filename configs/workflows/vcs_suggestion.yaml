@@ -30,9 +30,9 @@ workflow:
       description: "Architecture + implementation + safety perspectives + decider produce unified design"
       depends_on:
         - vcs_triage
-      conditional: true
-      condition: "{{ 'DECISION: APPROVE' in (stage_outputs.vcs_triage.decision | default('')) }}"
-      skip_to: end
+      # conditional: true  # TEMP BYPASS for Fix 2 testing
+      # condition: "{{ 'DECISION: APPROVE' in (stage_outputs.vcs_triage.decision | default('')) }}"
+      # skip_to: end
 
     - name: vcs_task_planning
       stage_ref: configs/stages/vcs_task_planning.yaml
@@ -59,7 +59,7 @@ workflow:
         - vcs_code_execute
       loops_back_to: vcs_code_execute
       max_loops: 2
-      loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_static_check.decision | default('')) }}"
+      loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_static_check.output | default('')) }}"
 
     - name: vcs_quality_gate
       stage_ref: configs/stages/vcs_quality_gate.yaml

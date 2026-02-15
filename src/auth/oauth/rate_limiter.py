@@ -15,8 +15,8 @@ from collections import defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional, Tuple
 
-from src.constants.durations import DURATION_INSTANT, SECONDS_PER_HOUR, SECONDS_PER_MINUTE
-from src.utils.exceptions import RateLimitError
+from src.shared.constants.durations import DURATION_INSTANT, SECONDS_PER_HOUR, SECONDS_PER_MINUTE
+from src.shared.utils.exceptions import RateLimitError
 
 logger = logging.getLogger(__name__)
 

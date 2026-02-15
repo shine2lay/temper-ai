@@ -27,7 +27,7 @@ from src.auth.oauth.config import OAuthConfig
 from src.auth.oauth.rate_limiter import RateLimitExceeded
 from src.auth.oauth.service import OAuthError, OAuthProviderError, OAuthService, OAuthStateError
 from src.auth.session import SessionStore, SessionStoreProtocol, UserStore
-from src.constants.durations import SECONDS_PER_10_MINUTES, SECONDS_PER_HOUR, SECONDS_PER_YEAR
+from src.shared.constants.durations import SECONDS_PER_10_MINUTES, SECONDS_PER_HOUR, SECONDS_PER_YEAR
 
 logger = logging.getLogger(__name__)
 

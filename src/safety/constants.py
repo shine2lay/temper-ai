@@ -3,7 +3,7 @@
 Shared constants used across safety components to ensure consistency.
 """
 
-from src.constants.durations import SECONDS_PER_DAY
+from src.shared.constants.durations import SECONDS_PER_DAY
 
 # ============================================================================
 # Policy Priorities (higher = runs first)

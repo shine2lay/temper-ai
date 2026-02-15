@@ -10,8 +10,8 @@ import threading
 
 import pytest
 
-from src.agents.utils.agent_factory import AgentFactory
-from src.agents.base_agent import BaseAgent
+from src.agent.utils.agent_factory import AgentFactory
+from src.agent.base_agent import BaseAgent
 from src.llm.pricing import PricingManager, get_pricing_manager
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.registry import (

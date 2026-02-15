@@ -4,7 +4,7 @@ Configuration for problem detection thresholds.
 
 from dataclasses import dataclass
 
-from src.constants.limits import DEFAULT_BATCH_SIZE
+from src.shared.constants.limits import DEFAULT_BATCH_SIZE
 
 # Default detection thresholds (relative percentage changes)
 DEFAULT_QUALITY_RELATIVE_THRESHOLD = 0.10  # 10% quality degradation triggers detection

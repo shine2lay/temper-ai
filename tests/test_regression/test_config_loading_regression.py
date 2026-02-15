@@ -10,7 +10,7 @@ Each test documents:
 - How it was fixed
 - What systems were affected
 """
-from src.compiler.schemas import (
+from src.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,

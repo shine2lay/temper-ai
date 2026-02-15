@@ -14,7 +14,7 @@ import httpx
 
 # Optional caching support
 try:
-    from src.cache.llm_cache import LLMCache
+    from src.llm.cache.llm_cache import LLMCache
     CACHE_AVAILABLE = True
 except ImportError:
     CACHE_AVAILABLE = False
@@ -60,15 +60,15 @@ from src.llm.providers._base_helpers import (
 from src.llm.providers._base_helpers import (
     validate_base_url as _validate_base_url,
 )
-from src.constants.durations import SLEEP_VERY_SHORT, TIMEOUT_HTTP_DEFAULT
-from src.constants.retries import (
+from src.shared.constants.durations import SLEEP_VERY_SHORT, TIMEOUT_HTTP_DEFAULT
+from src.shared.constants.retries import (
     DEFAULT_BACKOFF_MULTIPLIER,
     DEFAULT_MAX_RETRIES,
     RETRY_JITTER_MIN,
 )
-from src.core.circuit_breaker import CircuitBreaker
-from src.core.context import ExecutionContext
-from src.utils.exceptions import (
+from src.shared.core.circuit_breaker import CircuitBreaker
+from src.shared.core.context import ExecutionContext
+from src.shared.utils.exceptions import (
     LLMAuthenticationError,
     LLMError,
     LLMRateLimitError,

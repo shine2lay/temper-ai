@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from src.compiler.config_loader import ConfigLoader
+from src.workflow.config_loader import ConfigLoader
 from src.observability.database import get_session, init_database
 from src.observability.models import (
     AgentExecution,

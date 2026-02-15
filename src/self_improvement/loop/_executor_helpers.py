@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, List, Optional
 
-from src.constants.probabilities import PROB_VERY_HIGH
+from src.shared.constants.probabilities import PROB_VERY_HIGH
 from src.self_improvement.constants import (
     FIELD_AGENT_NAME,
     FIELD_CONTROL_CONFIG,

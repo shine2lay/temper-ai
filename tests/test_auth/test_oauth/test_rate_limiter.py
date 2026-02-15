@@ -20,7 +20,7 @@ from src.auth.oauth.rate_limiter import (
     SlidingWindowRateLimiter,
     OAuthRateLimiter,
 )
-from src.constants.durations import SECONDS_PER_MINUTE, SECONDS_PER_HOUR
+from src.shared.constants.durations import SECONDS_PER_MINUTE, SECONDS_PER_HOUR
 
 
 # ==================== FIXTURES ====================

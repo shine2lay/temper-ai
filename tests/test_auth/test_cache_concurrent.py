@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from unittest.mock import patch
 
 
-from src.cache.llm_cache import (
+from src.llm.cache.llm_cache import (
     InMemoryCache,
     LLMCache,
 )

@@ -29,8 +29,8 @@ import jinja2
 PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.agents.standard_agent import StandardAgent
-from src.compiler.schemas import AgentConfig as SchemaAgentConfig
+from src.agent.standard_agent import StandardAgent
+from src.storage.schemas.agent_config import AgentConfig as SchemaAgentConfig
 from src.self_improvement.metrics.erc721_quality import score_erc721_workflow
 
 logging.basicConfig(

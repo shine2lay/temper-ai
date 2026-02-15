@@ -12,7 +12,7 @@ or malicious action could affect many resources.
 """
 from typing import Any, Dict, List, Optional
 
-from src.constants.probabilities import PROB_VERY_LOW
+from src.shared.constants.probabilities import PROB_VERY_LOW
 from src.safety.base import BaseSafetyPolicy
 from src.safety.constants import (
     BLAST_RADIUS_SEPARATOR,

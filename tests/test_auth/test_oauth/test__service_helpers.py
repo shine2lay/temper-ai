@@ -33,7 +33,7 @@ from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig
 from src.auth.oauth.rate_limiter import RateLimitExceeded, OAuthRateLimiter
 from src.auth.oauth.service import OAuthError, OAuthProviderError, OAuthStateError
 from src.auth.oauth.token_store import SecureTokenStore
-from src.constants.durations import SECONDS_PER_10_MINUTES
+from src.shared.constants.durations import SECONDS_PER_10_MINUTES
 
 
 # ==================== FIXTURES ====================

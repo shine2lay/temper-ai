@@ -29,8 +29,8 @@ from rich.table import Table
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.agents.llm_providers import OllamaLLM
-from src.strategies.base import AgentOutput, SynthesisResult
+from src.agent.llm_providers import OllamaLLM
+from src.agent.strategies.base import AgentOutput, SynthesisResult
 
 console = Console()
 
@@ -340,7 +340,7 @@ Your response (JSON only):"""
 
         # For this demo, we'll use consensus strategy
         # In production, this would dispatch to the correct strategy
-        from src.strategies.consensus import ConsensusStrategy
+        from src.agent.strategies.consensus import ConsensusStrategy
 
         strategy = ConsensusStrategy()
         synthesis_result = strategy.synthesize(agent_outputs, strategy_config)

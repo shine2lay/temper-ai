@@ -10,8 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 from scipy import stats  # type: ignore[import-untyped]
 
-from src.constants.limits import PERCENT_50, PERCENT_95, PERCENT_99
-from src.constants.probabilities import TOLERANCE_TIGHT
+from src.shared.constants.limits import PERCENT_50, PERCENT_95, PERCENT_99
+from src.shared.constants.probabilities import TOLERANCE_TIGHT
 from src.experimentation.constants import DEFAULT_CREDIBLE_LEVEL
 from src.experimentation.models import (
     ExecutionStatus,

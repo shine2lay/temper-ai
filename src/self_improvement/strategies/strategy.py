@@ -35,9 +35,9 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from src.constants.durations import DAYS_90
-from src.constants.limits import DEFAULT_MAX_ITEMS
-from src.constants.probabilities import PROB_VERY_HIGH
+from src.shared.constants.durations import DAYS_90
+from src.shared.constants.limits import DEFAULT_MAX_ITEMS
+from src.shared.constants.probabilities import PROB_VERY_HIGH
 from src.self_improvement.data_models import SIOptimizationConfig
 
 # Default impact estimate for strategies without historical data

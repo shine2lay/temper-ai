@@ -405,7 +405,7 @@ class TestToolRegistryIntegration:
 
     def test_duplicate_tool_registration_error(self):
         """Test that duplicate tool registration raises error."""
-        from src.utils.exceptions import ToolRegistryError
+        from src.shared.utils.exceptions import ToolRegistryError
 
         registry = ToolRegistry()
 

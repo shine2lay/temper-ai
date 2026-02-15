@@ -13,7 +13,7 @@ import secrets
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from src.constants.limits import MAX_QUEUE_SIZE
+from src.shared.constants.limits import MAX_QUEUE_SIZE
 from src.experimentation.models import AssignmentStrategyType, Experiment, Variant
 
 # Hash normalization constants

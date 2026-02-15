@@ -23,7 +23,7 @@ except ImportError:
     KEYRING_AVAILABLE = False
     KeyringError = Exception
 
-from src.utils.exceptions import SecurityError
+from src.shared.utils.exceptions import SecurityError
 
 
 def get_or_create_keyring_key(

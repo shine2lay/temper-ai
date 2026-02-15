@@ -6,7 +6,7 @@ Implements intelligent retry logic, backoff, and recovery actions.
 import logging
 import time
 
-from src.constants.durations import SECONDS_PER_5_MINUTES
+from src.shared.constants.durations import SECONDS_PER_5_MINUTES
 
 from .config import LoopConfig
 from .models import Phase, RecoveryAction

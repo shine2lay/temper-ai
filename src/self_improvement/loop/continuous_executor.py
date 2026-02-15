@@ -11,8 +11,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
-from src.constants.durations import SECONDS_PER_HOUR, SECONDS_PER_MINUTE
-from src.constants.limits import THRESHOLD_SMALL_COUNT
+from src.shared.constants.durations import SECONDS_PER_HOUR, SECONDS_PER_MINUTE
+from src.shared.constants.limits import THRESHOLD_SMALL_COUNT
 
 from .config import LoopConfig
 from .models import IterationResult

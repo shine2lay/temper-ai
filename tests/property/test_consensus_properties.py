@@ -10,8 +10,8 @@ pytest.importorskip("hypothesis")
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from src.strategies.base import AgentOutput
-from src.strategies.consensus import ConsensusStrategy
+from src.agent.strategies.base import AgentOutput
+from src.agent.strategies.consensus import ConsensusStrategy
 
 
 # Custom strategies for generating test data

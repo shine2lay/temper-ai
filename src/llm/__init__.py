@@ -4,8 +4,8 @@ Provides LLMService (tool-calling loop, retry, tracking, cost estimation)
 independent of any specific agent implementation.
 
 Imports are lazy to avoid circular dependency:
-  src.llm -> src.llm.service -> src.agents.utils.constants
-  -> src.agents.__init__ -> src.agents.standard_agent -> src.llm.service (circular)
+  src.llm -> src.llm.service -> src.agent.utils.constants
+  -> src.agent.__init__ -> src.agent.standard_agent -> src.llm.service (circular)
 """
 from typing import Any
 

@@ -23,8 +23,8 @@ from src.llm.constants import (
     DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
     MAX_ERROR_MESSAGE_LENGTH,
 )
-from src.core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
-from src.utils.exceptions import (
+from src.shared.core.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+from src.shared.utils.exceptions import (
     LLMAuthenticationError,
     LLMError,
     LLMRateLimitError,
@@ -33,7 +33,7 @@ from src.utils.exceptions import (
 
 if TYPE_CHECKING:
     from src.llm.providers.base import BaseLLM, LLMResponse
-    from src.core.context import ExecutionContext
+    from src.shared.core.context import ExecutionContext
 
 logger = logging.getLogger(__name__)
 
@@ -440,7 +440,7 @@ def make_streaming_call_impl(
         Tuple of (cache_key, cached_response_or_none)
     """
     from src.llm.constants import ERROR_MSG_RATE_LIMIT_EXCEEDED
-    from src.utils.exceptions import LLMRateLimitError as _LLMRateLimitError
+    from src.shared.utils.exceptions import LLMRateLimitError as _LLMRateLimitError
 
     # Rate limiter check
     if instance._rate_limiter is not None:

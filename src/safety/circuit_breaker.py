@@ -1,12 +1,12 @@
 """Circuit breakers and safety gates for preventing cascading failures.
 
 This module provides SafetyGate and CircuitBreakerManager which build on
-top of the unified CircuitBreaker from ``src.core.circuit_breaker``.
+top of the unified CircuitBreaker from ``src.shared.core.circuit_breaker``.
 
 .. deprecated::
     The core circuit breaker classes (CircuitBreaker, CircuitBreakerError,
     CircuitBreakerMetrics, CircuitState) re-exported here are deprecated.
-    Import them directly from ``src.core.circuit_breaker`` instead.
+    Import them directly from ``src.shared.core.circuit_breaker`` instead.
 
 Key Features:
 - Circuit breaker pattern (CLOSED/OPEN/HALF_OPEN states)
@@ -32,23 +32,23 @@ import warnings
 from contextlib import contextmanager
 from typing import Any, Dict, Generator, List, Optional
 
-from src.constants.durations import TIMEOUT_LONG
-from src.constants.limits import MAX_SHORT_STRING_LENGTH, MULTIPLIER_SMALL, THRESHOLD_SMALL_COUNT
+from src.shared.constants.durations import TIMEOUT_LONG
+from src.shared.constants.limits import MAX_SHORT_STRING_LENGTH, MULTIPLIER_SMALL, THRESHOLD_SMALL_COUNT
 
-# Re-export map for deprecated names from src.core.circuit_breaker
+# Re-export map for deprecated names from src.shared.core.circuit_breaker
 _SHIM_EXPORTS = {
-    "CircuitBreaker": "src.core.circuit_breaker",
-    "CircuitBreakerError": "src.core.circuit_breaker",
-    "CircuitBreakerMetrics": "src.core.circuit_breaker",
-    "CircuitState": "src.core.circuit_breaker",
+    "CircuitBreaker": "src.shared.core.circuit_breaker",
+    "CircuitBreakerError": "src.shared.core.circuit_breaker",
+    "CircuitBreakerMetrics": "src.shared.core.circuit_breaker",
+    "CircuitState": "src.shared.core.circuit_breaker",
     # Backward-compatible aliases
-    "CircuitBreakerState": ("src.core.circuit_breaker", "CircuitState"),
-    "CircuitBreakerOpen": ("src.core.circuit_breaker", "CircuitBreakerError"),
+    "CircuitBreakerState": ("src.shared.core.circuit_breaker", "CircuitState"),
+    "CircuitBreakerOpen": ("src.shared.core.circuit_breaker", "CircuitBreakerError"),
 }
 
 # Eagerly import for use by local classes (SafetyGate, CircuitBreakerManager)
 # These don't trigger deprecation warnings because they're internal usage.
-from src.core.circuit_breaker import (  # noqa: E402
+from src.shared.core.circuit_breaker import (  # noqa: E402
     CircuitBreaker as _CircuitBreaker,
 )
 
@@ -63,7 +63,7 @@ def __getattr__(name: str) -> Any:
             attr_name = name
         warnings.warn(
             f"Importing {name} from src.safety.circuit_breaker is deprecated. "
-            f"Import {attr_name} from src.core.circuit_breaker instead.",
+            f"Import {attr_name} from src.shared.core.circuit_breaker instead.",
             DeprecationWarning,
             stacklevel=2,
         )

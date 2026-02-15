@@ -36,13 +36,13 @@ class ExecutionContext:
     pass
 
 # Mock modules
-sys.modules['src.cache.llm_cache'] = MagicMock()
+sys.modules['src.llm.cache.llm_cache'] = MagicMock()
 
 # Mock error_handling module
 error_handling_mock = MagicMock()
 error_handling_mock.retry_with_backoff = lambda func: func
 error_handling_mock.RetryStrategy = MagicMock()
-sys.modules['src.utils.error_handling'] = error_handling_mock
+sys.modules['src.shared.utils.error_handling'] = error_handling_mock
 
 # Mock exceptions module with real exception classes
 exceptions_mock = MagicMock()
@@ -51,7 +51,7 @@ exceptions_mock.LLMTimeoutError = LLMTimeoutError
 exceptions_mock.LLMRateLimitError = LLMRateLimitError
 exceptions_mock.LLMAuthenticationError = LLMAuthenticationError
 exceptions_mock.ExecutionContext = ExecutionContext
-sys.modules['src.utils.exceptions'] = exceptions_mock
+sys.modules['src.shared.utils.exceptions'] = exceptions_mock
 
 # Mock circuit breaker
 class CircuitBreaker:

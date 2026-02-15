@@ -14,6 +14,7 @@ Future enhancement: Add explicit agent states (idle, executing, tool_call,
 waiting, completed, failed, retry) for better observability and control.
 """
 from typing import Any, Dict, Optional
+from unittest.mock import patch
 
 from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
 from src.compiler.schemas import AgentConfig
@@ -54,10 +55,11 @@ def create_mock_config(name: str = "test_agent", **kwargs) -> AgentConfig:
 class MockAgent(BaseAgent):
     """Mock agent for testing."""
 
-    def execute(
+    def _run(
         self,
         input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None
+        context: Optional[ExecutionContext] = None,
+        start_time: float = 0.0,
     ) -> AgentResponse:
         """Execute agent logic."""
         return AgentResponse(
@@ -75,6 +77,12 @@ class MockAgent(BaseAgent):
         }
 
 
+def _make_mock_agent(config):
+    """Create MockAgent with LLM creation patched out."""
+    with patch("src.agents.base_agent.create_llm_from_config"):
+        return MockAgent(config)
+
+
 class TestAgentInitialization:
     """Test agent initialization state."""
 
@@ -82,7 +90,7 @@ class TestAgentInitialization:
         """Test creating agent instance."""
         config = create_mock_config(name="test_agent")
 
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         assert agent.config == config
         assert agent.name == "test_agent"
@@ -95,7 +103,7 @@ class TestAgentInitialization:
             tools=[{"name": "search"}, {"name": "calculator"}]
         )
 
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         assert hasattr(agent.config.agent, "tools")
         if agent.config.agent.tools:
@@ -105,7 +113,7 @@ class TestAgentInitialization:
         """Test agent initialization without tools."""
         config = create_mock_config(name="test_agent")
 
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         # Tools configuration might not exist or be empty
         assert agent.name == "test_agent"
@@ -117,7 +125,7 @@ class TestAgentExecutionFlow:
     def test_agent_execution_success(self):
         """Test successful agent execution."""
         config = create_mock_config(name="test_agent")
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         input_data = {"query": "test query"}
         result = agent.execute(input_data)
@@ -129,7 +137,7 @@ class TestAgentExecutionFlow:
     def test_agent_execution_with_context(self):
         """Test agent execution with previous context."""
         config = create_mock_config(name="test_agent")
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         input_data = {
             "query": "follow-up",
@@ -149,7 +157,7 @@ class TestAgentExecutionFlow:
     def test_agent_multiple_executions(self):
         """Test agent can execute multiple times."""
         config = create_mock_config(name="test_agent")
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         # Execute multiple times
         result1 = agent.execute({"query": "first"})
@@ -167,7 +175,7 @@ class TestAgentErrorHandling:
     def test_agent_handles_empty_input(self):
         """Test agent handles empty input."""
         config = create_mock_config(name="test_agent")
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         # Execute with empty input
         result = agent.execute({})
@@ -183,7 +191,7 @@ class TestAgentStateConsistency:
     def test_agent_config_preserved_during_execution(self):
         """Test agent config is preserved during execution."""
         config = create_mock_config(name="test_agent")
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         original_name = agent.name
         original_version = agent.version
@@ -198,7 +206,7 @@ class TestAgentStateConsistency:
     def test_agent_name_persistence(self):
         """Test agent name persists across executions."""
         config = create_mock_config(name="persistent_agent")
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         assert agent.name == "persistent_agent"
 
@@ -226,7 +234,7 @@ class TestAgentToolCalls:
             ]
         )
 
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         assert agent.name == "tool_agent"
 
@@ -237,7 +245,7 @@ class TestAgentToolCalls:
             tools=[{"name": "search"}]
         )
 
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         # Simulate execution that would call tools
         input_data = {
@@ -257,7 +265,7 @@ class TestAgentResourceManagement:
     def test_agent_cleanup(self):
         """Test agent cleanup after execution."""
         config = create_mock_config(name="test_agent")
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         agent.execute({"query": "test"})
 
@@ -270,7 +278,7 @@ class TestAgentResourceManagement:
         valid_config = create_mock_config(name="valid_agent")
 
         # Should not raise
-        agent = MockAgent(valid_config)
+        agent = _make_mock_agent(valid_config)
         assert agent.name == "valid_agent"
         assert agent.validate_config() is True
 
@@ -281,7 +289,7 @@ class TestAgentEdgeCases:
     def test_agent_with_complex_input(self):
         """Test agent with complex nested input."""
         config = create_mock_config(name="test_agent")
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         complex_input = {
             "query": "test",
@@ -302,8 +310,8 @@ class TestAgentEdgeCases:
 
     def test_agent_execution_order(self):
         """Test multiple agents can execute in sequence."""
-        agent1 = MockAgent(create_mock_config(name="agent1"))
-        agent2 = MockAgent(create_mock_config(name="agent2"))
+        agent1 = _make_mock_agent(create_mock_config(name="agent1"))
+        agent2 = _make_mock_agent(create_mock_config(name="agent2"))
 
         result1 = agent1.execute({"query": "first"})
         # Pass result1 to agent2
@@ -315,7 +323,7 @@ class TestAgentEdgeCases:
     def test_agent_large_input(self):
         """Test agent with large input data."""
         config = create_mock_config(name="test_agent")
-        agent = MockAgent(config)
+        agent = _make_mock_agent(config)
 
         # Create large input
         large_input = {
@@ -337,8 +345,8 @@ class TestAgentConcurrentExecution:
 
     def test_multiple_agents_independent(self):
         """Test multiple agent instances are independent."""
-        agent1 = MockAgent(create_mock_config(name="agent1"))
-        agent2 = MockAgent(create_mock_config(name="agent2"))
+        agent1 = _make_mock_agent(create_mock_config(name="agent1"))
+        agent2 = _make_mock_agent(create_mock_config(name="agent2"))
 
         result1 = agent1.execute({"query": "query1"})
         result2 = agent2.execute({"query": "query2"})
@@ -351,7 +359,7 @@ class TestAgentConcurrentExecution:
 
     def test_same_agent_sequential_execution(self):
         """Test same agent instance can execute sequentially."""
-        agent = MockAgent(create_mock_config(name="sequential_agent"))
+        agent = _make_mock_agent(create_mock_config(name="sequential_agent"))
 
         results = []
         for i in range(5):

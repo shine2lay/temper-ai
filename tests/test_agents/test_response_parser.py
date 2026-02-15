@@ -8,7 +8,7 @@ Tests cover:
 """
 
 
-from src.agents.response_parser import (
+from src.llm.response_parser import (
     extract_final_answer,
     extract_reasoning,
     parse_tool_calls,

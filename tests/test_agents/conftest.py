@@ -1,7 +1,7 @@
 """Shared fixtures for agent tests."""
 import pytest
 
-from src.agents.llm.base import BaseLLM
+from src.llm.providers.base import BaseLLM
 from src.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,

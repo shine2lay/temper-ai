@@ -124,13 +124,13 @@ def _get_all_reset_functions() -> List[Callable[[], None]]:
         pass
 
     try:
-        from src.agents.agent_factory import AgentFactory
+        from src.agents.utils.agent_factory import AgentFactory
         fns.append(AgentFactory.reset_for_testing)
     except ImportError:
         pass
 
     try:
-        from src.agents.pricing import PricingManager
+        from src.llm.pricing import PricingManager
         fns.append(PricingManager.reset_for_testing)
     except ImportError:
         pass

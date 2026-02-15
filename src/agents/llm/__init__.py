@@ -1,26 +1,24 @@
 """
-LLM provider clients for multi-provider inference support.
+LLM provider clients — backward-compatible re-export shim.
 
-Supports Ollama, OpenAI, Anthropic, and vLLM with unified interface.
+.. deprecated::
+    The canonical implementation lives in ``src.llm.providers``.
+    Import from ``src.llm.providers`` directly instead of ``src.agents.llm``.
 """
-from src.agents.llm.anthropic_provider import AnthropicLLM
-from src.agents.llm.base import (
+from src.llm.providers import (  # noqa: F401
+    AnthropicLLM,
     BaseLLM,
     LLMProvider,
     LLMResponse,
     LLMStreamChunk,
-)
-from src.agents.llm.factory import (
+    OllamaLLM,
+    OpenAILLM,
+    VllmLLM,
     create_llm_client,
     create_llm_from_config,
     create_llm_provider,
 )
-from src.agents.llm.ollama import OllamaLLM
-from src.agents.llm.openai_provider import OpenAILLM
-from src.agents.llm.vllm_provider import VllmLLM
-
-# Re-export exceptions for convenience
-from src.utils.exceptions import (
+from src.utils.exceptions import (  # noqa: F401
     LLMAuthenticationError,
     LLMError,
     LLMRateLimitError,

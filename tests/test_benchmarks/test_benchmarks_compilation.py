@@ -56,7 +56,7 @@ def test_agent_execution_overhead(mock_llm_provider, minimal_agent_config, bench
 
     Target: <100ms overhead (agent logic only, not LLM call)
     """
-    with patch('src.agents.standard_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup mock registry
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -200,7 +200,7 @@ def test_memory_usage_under_load(mock_llm_provider, minimal_agent_config, benchm
 
     Detects memory leaks by running operations multiple times.
     """
-    with patch('src.agents.standard_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup mock registry
         mock_tool_registry.return_value.list_tools.return_value = []
 

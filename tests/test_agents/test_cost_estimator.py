@@ -10,8 +10,8 @@ Tests cover:
 from unittest.mock import patch
 
 
-from src.agents.cost_estimator import estimate_cost
-from src.agents.llm.base import LLMResponse
+from src.llm.cost_estimator import estimate_cost
+from src.llm.providers.base import LLMResponse
 
 
 _SENTINEL = object()
@@ -52,7 +52,7 @@ class TestEstimateCost:
             total_tokens=150,
             model="gpt-4",
         )
-        with patch("src.agents.cost_estimator.get_pricing_manager") as mock_pm:
+        with patch("src.llm.cost_estimator.get_pricing_manager") as mock_pm:
             mock_pm.return_value.get_cost.return_value = 0.05
             cost = estimate_cost(response)
             mock_pm.return_value.get_cost.assert_called_once_with("gpt-4", 100, 50)
@@ -65,7 +65,7 @@ class TestEstimateCost:
             total_tokens=1000,
             model="gpt-4",
         )
-        with patch("src.agents.cost_estimator.get_pricing_manager") as mock_pm:
+        with patch("src.llm.cost_estimator.get_pricing_manager") as mock_pm:
             mock_pm.return_value.get_cost.return_value = 0.03
             cost = estimate_cost(response)
             # Should estimate 60% input (600), 40% output (400)
@@ -79,7 +79,7 @@ class TestEstimateCost:
             total_tokens=150,
             model=None,
         )
-        with patch("src.agents.cost_estimator.get_pricing_manager") as mock_pm:
+        with patch("src.llm.cost_estimator.get_pricing_manager") as mock_pm:
             mock_pm.return_value.get_cost.return_value = 0.01
             cost = estimate_cost(response, fallback_model="default-model")
             mock_pm.return_value.get_cost.assert_called_once_with(
@@ -93,7 +93,7 @@ class TestEstimateCost:
             total_tokens=150,
             model="claude-3",
         )
-        with patch("src.agents.cost_estimator.get_pricing_manager") as mock_pm:
+        with patch("src.llm.cost_estimator.get_pricing_manager") as mock_pm:
             mock_pm.return_value.get_cost.return_value = 0.02
             cost = estimate_cost(response, fallback_model="fallback")
             mock_pm.return_value.get_cost.assert_called_once_with(

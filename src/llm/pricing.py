@@ -12,7 +12,7 @@ from typing import Any, Dict, Optional
 import yaml
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from src.agents.constants import PRICING_DEFAULT_KEY
+from src.llm.constants import PRICING_DEFAULT_KEY
 from src.constants.limits import MULTIPLIER_VERY_LARGE, THRESHOLD_MIN_COUNT
 from src.constants.sizes import SIZE_1MB
 

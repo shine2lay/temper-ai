@@ -12,17 +12,17 @@ from typing import Any, ClassVar, Dict, FrozenSet, List, Literal, Optional, Unio
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from src.agents.constants import (
+from src.agents.utils.constants import (
     DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS,
     DEFAULT_MAX_TOKENS,
     DEFAULT_TEMPERATURE,
-    DEFAULT_TOP_P,
     MAX_EXECUTION_TIME_SECONDS,
     MAX_PROMPT_LENGTH,
     MAX_TOOL_CALLS_PER_EXECUTION,
     PRE_COMMAND_DEFAULT_TIMEOUT,
     PRE_COMMAND_MAX_TIMEOUT,
 )
+from src.llm.constants import DEFAULT_TOP_P
 from src.constants.durations import (
     DAYS_90,
     SECONDS_PER_30_MINUTES,

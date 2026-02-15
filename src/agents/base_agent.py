@@ -2,223 +2,211 @@
 
 Defines the abstract BaseAgent class that all agent implementations must inherit from,
 along with AgentResponse and ExecutionContext data classes.
+
+BaseAgent provides a template method pattern for execute():
+  execute() → _validate_input → _setup → _on_setup → _run → _on_after_run
+with error handling via _on_error / _build_error_response.
+
+Subclasses implement _run() (the core logic) and optionally override hooks.
 """
 from __future__ import annotations
 
+import logging
+import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, TypedDict
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
 
 if TYPE_CHECKING:
     from src.schemas import AgentConfig
-from src.agents.constants import (
-    BASE_CONFIDENCE,
-    MIN_OUTPUT_LENGTH,
-    MIN_REASONING_LENGTH,
-    REASONING_BONUS,
-    TOOL_FAILURE_MAJOR_PENALTY,
-    TOOL_FAILURE_MINOR_PENALTY,
-)
-from src.constants.probabilities import CONFIDENCE_LOW, PROB_MEDIUM
+from src.agents.models.response import AgentResponse, ToolCallRecord  # noqa: F401
+from src.agents.utils.constants import OUTPUT_PREVIEW_LENGTH
 from src.core.context import ExecutionContext  # canonical definition; re-exported here
+from src.llm.providers.factory import create_llm_from_config
+from src.prompts.engine import PromptEngine
+from src.tools.loader import (
+    apply_tool_config,
+    ensure_tools_discovered,
+    resolve_tool_config_templates,
+    resolve_tool_spec,
+)
+from src.tools.registry import ToolRegistry
 
-
-def _tool_failure_penalty(tool_calls: List[Any]) -> float:
-    """Calculate penalty for tool call failures.
-
-    Returns a penalty value (0.0 if no penalty) based on the tool success rate.
-    """
-    if not tool_calls:
-        return 0.0
-    successful_calls = sum(1 for tc in tool_calls if tc.get('success', False))
-    total_calls = len(tool_calls)
-    if total_calls == 0:
-        return 0.0
-    tool_success_rate = successful_calls / total_calls
-    if tool_success_rate < PROB_MEDIUM:
-        return TOOL_FAILURE_MAJOR_PENALTY
-    if tool_success_rate < BASE_CONFIDENCE:
-        return TOOL_FAILURE_MINOR_PENALTY
-    return 0.0
-
-
-class ToolCallRecord(TypedDict):
-    """Structured record of a single tool call made during agent execution.
-
-    Core fields (tool_name, arguments, result) are required.
-    Optional fields: success, duration_seconds.
-
-    Attributes:
-        tool_name: Name of the tool that was called
-        arguments: Arguments passed to the tool
-        result: String result returned by the tool
-        success: Whether the tool call succeeded
-        duration_seconds: Time taken for the tool call
-    """
-    tool_name: str
-    arguments: Dict[str, Any]
-    result: str
-    success: bool
-    duration_seconds: float
-
-
-@dataclass
-class AgentResponse:
-    """Response from agent execution.
-
-    Attributes:
-        output: Final text output from the agent
-        reasoning: Extracted reasoning/thought process
-        tool_calls: List of tool calls made during execution
-        metadata: Additional execution metadata
-        tokens: Total tokens used (prompt + completion)
-        estimated_cost_usd: Estimated cost in USD
-        latency_seconds: Execution time in seconds
-        error: Error message if execution failed
-        confidence: Confidence score (0.0 to 1.0), auto-calculated if not provided
-    """
-    output: str
-    reasoning: Optional[str] = None
-    tool_calls: List[ToolCallRecord] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    tokens: int = 0
-    estimated_cost_usd: float = 0.0
-    latency_seconds: float = 0.0
-    error: Optional[str] = None
-    confidence: Optional[float] = None
-
-    def __post_init__(self) -> None:
-        """Calculate confidence if not explicitly provided."""
-        if self.confidence is None:
-            self.confidence = self._calculate_confidence()
-
-    def _calculate_confidence(self) -> float:
-        """Calculate confidence score based on response quality.
-
-        Factors considered:
-        - Error presence: Major penalty
-        - Output length: Very short outputs get penalty
-        - Reasoning presence: Bonus for reasoning
-        - Tool call success: Bonus if tools were used successfully
-
-        Returns:
-            Confidence score between 0.0 and 1.0
-        """
-        if self.error:
-            return CONFIDENCE_LOW
-
-        confidence = BASE_CONFIDENCE
-
-        if len(self.output.strip()) < MIN_OUTPUT_LENGTH:
-            confidence -= CONFIDENCE_LOW
-
-        if self.reasoning and len(self.reasoning.strip()) > MIN_REASONING_LENGTH:
-            confidence = min(BASE_CONFIDENCE, confidence + REASONING_BONUS)
-
-        confidence -= _tool_failure_penalty(self.tool_calls)
-
-        return max(0.0, min(BASE_CONFIDENCE, confidence))
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent(ABC):
-    """Abstract base class for all agents.
+    """Abstract base class for all agents with template method pattern.
 
-    All agent implementations must inherit from this class and implement
-    the execute() method. This enables the "radical modularity" vision by
-    allowing multiple agent types (standard, debate, human, custom).
+    Provides shared infrastructure (PromptEngine, LLM, observer, stream callback)
+    and a template method execute() that calls hooks around the abstract _run().
 
-    The agent should:
-    1. Initialize from AgentConfig
-    2. Create necessary dependencies (LLM provider, tools, prompt engine)
-    3. Execute with input and return structured AgentResponse
+    Subclasses must implement:
+    - _run(input_data, context, start_time) → AgentResponse
+    - get_capabilities() → Dict
+
+    Optional hooks (no-op defaults):
+    - _on_setup(input_data, context)
+    - _on_before_run(input_data, context) → input_data
+    - _on_after_run(result) → result
+    - _on_error(error, start_time) → Optional[AgentResponse]
     """
 
     def __init__(self, config: AgentConfig):
-        """Initialize agent with configuration.
-
-        Args:
-            config: Agent configuration schema
-        """
+        """Initialize agent with configuration, prompt engine, and LLM."""
         self.config = config
         self.name = config.agent.name
         self.description = config.agent.description
         self.version = config.agent.version
 
-    @abstractmethod
+        self.prompt_engine = PromptEngine()
+        self.llm = create_llm_from_config(config.agent.inference)
+
+        # Infrastructure attributes — set by _setup() at execution time
+        self.tool_executor: Any = None
+        self.tracker: Any = None
+        self._observer: Any = None
+        self._stream_callback: Any = None
+        self._execution_context: Any = None
+
+    # ------------------------------------------------------------------
+    # Template method: execute()
+    # ------------------------------------------------------------------
+
     def execute(
         self,
         input_data: Dict[str, Any],
         context: Optional[ExecutionContext] = None
     ) -> AgentResponse:
-        """Execute agent with given input.
+        """Execute agent using template method pattern.
 
-        This is the main entry point for agent execution. Implementations should:
-        1. Render prompt with input data
-        2. Call LLM and handle tool calls
-        3. Execute tools as needed
-        4. Return structured response
+        Orchestrates: validate → setup → hooks → _run() → error handling.
+        Subclasses implement _run() for their core logic.
+        """
+        self._validate_input(input_data, context)
+        self._setup(input_data, context)
+        self._on_setup(input_data, context)
+        start_time = time.time()
+        try:
+            input_data = self._on_before_run(input_data, context)
+            result = self._run(input_data, context, start_time)
+            return self._on_after_run(result)
+        except Exception as e:
+            custom = self._on_error(e, start_time)
+            if custom is not None:
+                return custom
+            return self._build_error_response(e, start_time)
+
+    @abstractmethod
+    def _run(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext],
+        start_time: float,
+    ) -> AgentResponse:
+        """Core execution logic — subclasses implement this.
 
         Args:
-            input_data: Input data for the agent (e.g., {"query": "...", "data": {...}})
-            context: Optional execution context for tracking and environment
+            input_data: Validated input data dictionary
+            context: Optional execution context
+            start_time: time.time() when execute() started
 
         Returns:
             AgentResponse with output, reasoning, tool calls, and metrics
-
-        Raises:
-            ValueError: If input_data is invalid
-            RuntimeError: If execution fails
         """
-        pass
 
     async def aexecute(
         self,
         input_data: Dict[str, Any],
         context: Optional[ExecutionContext] = None
     ) -> AgentResponse:
-        """Async execution (default wraps sync execute).
+        """Async template method — mirrors execute() but calls _arun().
 
-        Override for native async implementations.
+        Orchestrates: validate → setup → hooks → _arun() → error handling.
+        Subclasses implement _arun() for native async logic.
+        """
+        self._validate_input(input_data, context)
+        self._setup(input_data, context, async_mode=True)
+        self._on_setup(input_data, context)
+        start_time = time.time()
+        try:
+            input_data = self._on_before_run(input_data, context)
+            result = await self._arun(input_data, context, start_time)
+            return self._on_after_run(result)
+        except Exception as e:
+            custom = self._on_error(e, start_time)
+            if custom is not None:
+                return custom
+            return self._build_error_response(e, start_time, async_mode=True)
 
-        Args:
-            input_data: Input data for the agent (e.g., {"query": "...", "data": {...}})
-            context: Optional execution context for tracking and environment
+    async def _arun(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext],
+        start_time: float,
+    ) -> AgentResponse:
+        """Async core logic — default wraps sync _run() in a thread.
 
-        Returns:
-            AgentResponse with output, reasoning, tool calls, and metrics
-
-        Raises:
-            ValueError: If input_data is invalid
-            RuntimeError: If execution fails
+        Override for native async implementations (e.g., async LLM calls).
         """
         import asyncio
-        return await asyncio.to_thread(self.execute, input_data, context)
+        return await asyncio.to_thread(self._run, input_data, context, start_time)
 
     @abstractmethod
     def get_capabilities(self) -> Dict[str, Any]:
-        """Get agent capabilities and metadata.
+        """Get agent capabilities and metadata."""
 
-        Returns a dict describing what this agent can do, what tools it has,
-        what models it uses, etc. Useful for agent discovery and selection.
+    # ------------------------------------------------------------------
+    # Hooks (no-op defaults — subclasses can override)
+    # ------------------------------------------------------------------
 
-        Returns:
-            Dict with capability information
-        """
-        pass
+    def _on_setup(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext],
+    ) -> None:
+        """Hook called after _setup(), before _run(). Override for custom setup."""
+
+    def _on_before_run(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext],
+    ) -> Dict[str, Any]:
+        """Hook called before _run(). Can modify input_data. Must return input_data."""
+        return input_data
+
+    def _on_after_run(self, result: AgentResponse) -> AgentResponse:
+        """Hook called after _run() succeeds. Can modify result. Must return result."""
+        return result
+
+    def _on_error(
+        self, error: Exception, start_time: float
+    ) -> Optional[AgentResponse]:
+        """Hook called on _run() error. Return AgentResponse to override default."""
+        return None
+
+    # ------------------------------------------------------------------
+    # Validation
+    # ------------------------------------------------------------------
+
+    def _validate_input(
+        self,
+        input_data: Any,
+        context: Optional[ExecutionContext] = None,
+    ) -> None:
+        """Validate input_data and context parameters."""
+        if input_data is None:
+            raise ValueError("input_data cannot be None")
+        if not isinstance(input_data, dict):
+            raise TypeError(
+                f"input_data must be a dictionary, got {type(input_data).__name__}"
+            )
+        if context is not None and not isinstance(context, ExecutionContext):
+            raise TypeError(
+                f"context must be an ExecutionContext instance, got {type(context).__name__}"
+            )
 
     def validate_config(self) -> bool:
-        """Validate agent configuration.
-
-        Checks that the agent config is valid and all required dependencies
-        are available (e.g., LLM provider is accessible, tools exist).
-
-        Returns:
-            True if configuration is valid
-
-        Raises:
-            ValueError: If configuration is invalid
-        """
-        # Basic validation - subclasses can override for more checks
+        """Validate agent configuration."""
         if not self.config.agent.name:
             raise ValueError("Agent name is required")
         if not self.config.agent.inference:
@@ -226,3 +214,237 @@ class BaseAgent(ABC):
         if not self.config.agent.prompt:
             raise ValueError("Prompt configuration is required")
         return True
+
+    # ------------------------------------------------------------------
+    # Execution setup
+    # ------------------------------------------------------------------
+
+    def _setup(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext],
+        async_mode: bool = False,
+    ) -> None:
+        """Common setup for sync and async execute paths."""
+        from src.agents.utils.agent_observer import AgentObserver
+        from src.tools.executor import ToolExecutor
+
+        self._execution_context = context
+        _tool_executor = input_data.get('tool_executor', None)
+        if _tool_executor is not None:
+            if not isinstance(_tool_executor, ToolExecutor):
+                raise TypeError(
+                    f"tool_executor must be a ToolExecutor instance, "
+                    f"got {type(_tool_executor).__name__}"
+                )
+        self.tool_executor = _tool_executor
+        self.tracker = input_data.get('tracker', None)
+        self._observer = AgentObserver(self.tracker, self._execution_context)
+        _stream_cb = input_data.get('stream_callback', None)
+        if _stream_cb is not None and hasattr(_stream_cb, 'make_callback'):
+            self._stream_callback = _stream_cb.make_callback(self.name)
+        else:
+            self._stream_callback = _stream_cb
+
+        resolve_tool_config_templates(
+            getattr(self, "tool_registry", None), input_data, self.name,
+        )
+
+        logger.info("[%s] Starting %sexecution", self.name, "async " if async_mode else "")
+
+    # ------------------------------------------------------------------
+    # Response building
+    # ------------------------------------------------------------------
+
+    def _build_response(
+        self,
+        output: str,
+        reasoning: Optional[str],
+        tool_calls: List[Dict[str, Any]],
+        tokens: int,
+        cost: float,
+        start_time: float,
+        error: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> AgentResponse:
+        """Build final AgentResponse with logging."""
+        duration = time.time() - start_time
+        output_preview = (
+            (output[:OUTPUT_PREVIEW_LENGTH].replace('\n', ' ').strip() + "...")
+            if len(output) > OUTPUT_PREVIEW_LENGTH
+            else output.replace('\n', ' ').strip()
+        )
+        logger.info(
+            "[%s] Execution complete (%d tokens, $%.4f, %.1fs) → %s",
+            self.name, tokens, cost, duration, output_preview or "(empty)",
+        )
+        return AgentResponse(
+            output=output,
+            reasoning=reasoning,
+            tool_calls=tool_calls,  # type: ignore[arg-type]
+            tokens=tokens,
+            estimated_cost_usd=cost,
+            latency_seconds=time.time() - start_time,
+            error=error,
+            metadata=metadata or {},
+        )
+
+    def _build_error_response(
+        self,
+        error: Exception,
+        start_time: float,
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
+        total_tokens: int = 0,
+        total_cost: float = 0.0,
+        async_mode: bool = False,
+    ) -> AgentResponse:
+        """Build error response for agent execution failures."""
+        from src.utils.exceptions import sanitize_error_message
+
+        safe_msg = sanitize_error_message(str(error))
+        label = "Agent async execution error" if async_mode else "Agent execution error"
+        logger.warning("%s: %s", label, safe_msg, exc_info=True)
+        return self._build_response(
+            output="",
+            reasoning=None,
+            tool_calls=tool_calls or [],
+            tokens=total_tokens,
+            cost=total_cost,
+            start_time=start_time,
+            error=f"Agent execution error: {safe_msg}",
+        )
+
+    # ------------------------------------------------------------------
+    # Stream callback
+    # ------------------------------------------------------------------
+
+    def _make_stream_callback(self) -> Optional[Callable]:
+        """Create a combined stream callback for CLI display and observability."""
+        user_cb = getattr(self, '_stream_callback', None)
+        observer = getattr(self, '_observer', None)
+        has_observer = observer is not None and observer.active
+
+        if user_cb is None and not has_observer:
+            return None
+
+        def combined_callback(chunk: Any) -> None:
+            if user_cb is not None:
+                try:
+                    user_cb(chunk)
+                except Exception:  # noqa: BLE001 -- streaming display must not disrupt execution
+                    pass
+            if has_observer and observer is not None:
+                try:
+                    observer.emit_stream_chunk(
+                        content=chunk.content,
+                        chunk_type=chunk.chunk_type,
+                        done=chunk.done,
+                        model=chunk.model,
+                        prompt_tokens=chunk.prompt_tokens,
+                        completion_tokens=chunk.completion_tokens,
+                    )
+                except Exception:  # noqa: BLE001 -- streaming event must not disrupt execution
+                    pass
+
+        return combined_callback
+
+    # ------------------------------------------------------------------
+    # Prompt rendering (shared base template logic)
+    # ------------------------------------------------------------------
+
+    def _render_template(
+        self,
+        input_data: Dict[str, Any],
+    ) -> str:
+        """Render the base template with variables."""
+        from src.prompts.validation import PromptRenderError, _is_safe_template_value
+
+        prompt_config = self.config.agent.prompt
+        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
+        all_variables = {**filtered_input, **prompt_config.variables}
+
+        if prompt_config.template:
+            try:
+                return self.prompt_engine.render_file(
+                    prompt_config.template, all_variables
+                )
+            except (PromptRenderError, ValueError, KeyError, FileNotFoundError) as e:
+                raise PromptRenderError(
+                    f"Failed to render template file {prompt_config.template}: {e}"
+                )
+        elif prompt_config.inline:
+            return self.prompt_engine.render(prompt_config.inline, all_variables)
+        else:
+            raise ValueError("No prompt template or inline prompt configured")
+
+    def _inject_input_context(
+        self,
+        template: str,
+        input_data: Dict[str, Any],
+        exclude_keys: frozenset[str] = frozenset(),
+    ) -> str:
+        """Auto-inject string input context into template.
+
+        Appends each string value from input_data as a labeled section,
+        skipping keys in exclude_keys and non-safe template values.
+        """
+        from src.prompts.validation import _is_safe_template_value
+
+        input_parts: List[str] = []
+        for key, value in input_data.items():
+            if not _is_safe_template_value(value):
+                continue
+            if value and isinstance(value, str) and key not in exclude_keys:
+                label = key.replace("_", " ").title()
+                input_parts.append(f"## {label}\n{value}")
+
+        if input_parts:
+            return template + "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
+        return template
+
+    # ------------------------------------------------------------------
+    # Tool registry creation (subclasses opt in)
+    # ------------------------------------------------------------------
+
+    def _create_tool_registry(self) -> ToolRegistry:
+        """Create tool registry and load configured tools.
+
+        Subclasses call this in __init__ if they need a tool registry.
+        BaseAgent does NOT call this by default.
+        """
+        registry = ToolRegistry(auto_discover=False)
+        configured_tools = self.config.agent.tools
+
+        if configured_tools is None:
+            registry.auto_discover()
+        elif configured_tools:
+            self._load_tools_from_config(registry, configured_tools)
+
+        return registry
+
+    def _load_tools_from_config(
+        self,
+        registry: Any,
+        configured_tools: List[Any],
+    ) -> None:
+        """Load specific tools from configuration."""
+        ensure_tools_discovered(registry)
+        available_tools = registry.list_tools()
+
+        configured_names: set[str] = set()
+        for tool_spec in configured_tools:
+            tool_name, tool_config = resolve_tool_spec(tool_spec)
+            tool_instance = registry.get(tool_name)
+
+            if tool_instance is None:
+                raise ValueError(
+                    f"Unknown tool '{tool_name}'. Available tools: {available_tools}\n"
+                    f"To add a new tool, create a BaseTool subclass in src/tools/"
+                )
+
+            configured_names.add(tool_name)
+            apply_tool_config(tool_instance, tool_name, tool_config)
+
+        for name in set(registry.list_tools()) - configured_names:
+            registry.unregister(name)
+

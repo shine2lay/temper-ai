@@ -6,8 +6,9 @@ Server-Side Template Injection (SSTI) attacks.
 """
 from typing import Any, Dict
 
-from src.agents.constants import ERROR_MSG_VARIABLE_PREFIX
 from src.constants.limits import MULTIPLIER_MEDIUM, MULTIPLIER_SMALL
+
+ERROR_MSG_VARIABLE_PREFIX = "Variable '"
 from src.constants.sizes import SIZE_100MB
 from src.utils.exceptions import AgentError, ErrorCode
 

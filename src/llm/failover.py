@@ -12,7 +12,7 @@ from typing import Any, List, Optional
 
 import httpx
 
-from src.agents.llm import BaseLLM, LLMError, LLMResponse  # M-04: Import from new location
+from src.llm.providers import BaseLLM, LLMError, LLMResponse  # M-04: Import from new location
 from src.constants.limits import (
     HTTP_CLIENT_ERROR_MAX,
     HTTP_CLIENT_ERROR_MIN,
@@ -52,8 +52,8 @@ class FailoverProvider:
 
     Example:
         ```python
-        from src.agents.llm import OllamaLLM, OpenAILLM  # M-04: Use new import location
-        from src.agents.llm_failover import FailoverProvider
+        from src.llm.providers import OllamaLLM, OpenAILLM  # M-04: Use new import location
+        from src.llm.failover import FailoverProvider
 
         # Create providers
         primary = OllamaLLM(model="llama3.2")

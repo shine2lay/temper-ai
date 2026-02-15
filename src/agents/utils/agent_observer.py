@@ -46,7 +46,9 @@ class AgentObserver:
         if not self.active or agent_id is None:
             return
         try:
-            self._tracker.track_llm_call(agent_id=agent_id, **kwargs)
+            from src.observability._tracker_helpers import LLMCallTrackingData
+            data = LLMCallTrackingData(agent_id=agent_id, **kwargs)
+            self._tracker.track_llm_call(data)
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:
             logger.warning(f"Failed to track LLM call: {e}")
 
@@ -56,7 +58,9 @@ class AgentObserver:
         if not self.active or agent_id is None:
             return
         try:
-            self._tracker.track_tool_call(agent_id=agent_id, **kwargs)
+            from src.observability._tracker_helpers import ToolCallTrackingData
+            data = ToolCallTrackingData(agent_id=agent_id, **kwargs)
+            self._tracker.track_tool_call(data)
         except (AttributeError, TypeError, ValueError, RuntimeError) as e:
             logger.warning(f"Failed to track tool call: {e}")
 

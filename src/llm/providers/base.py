@@ -20,44 +20,44 @@ except ImportError:
     CACHE_AVAILABLE = False
     LLMCache = None  # type: ignore
 
-from src.agents.constants import (
+from src.llm.constants import (
     DEFAULT_MAX_CIRCUIT_BREAKERS,
     DEFAULT_MAX_HTTP_CLIENTS,
     ERROR_MSG_RATE_LIMIT_EXCEEDED,
 )
 
 # Helper functions extracted to reduce class size
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     LLMContextManagerMixin,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     bind_callable_attributes as _bind_callable_attributes,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     close_async as _close_async,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     close_sync as _close_sync,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     get_or_create_async_client_safe as _get_async_client_safe,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     get_or_create_async_client_sync as _get_async_client_sync,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     get_or_create_sync_client as _get_sync_client,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     get_shared_circuit_breaker as _get_shared_cb,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     reset_shared_circuit_breakers as _reset_shared_cbs,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     reset_shared_http_clients as _reset_shared_http,
 )
-from src.agents.llm._base_helpers import (
+from src.llm.providers._base_helpers import (
     validate_base_url as _validate_base_url,
 )
 from src.constants.durations import SLEEP_VERY_SHORT, TIMEOUT_HTTP_DEFAULT

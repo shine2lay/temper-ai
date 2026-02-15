@@ -6,7 +6,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from src.agents.pricing import (
+from src.llm.pricing import (
     ModelPricing,
     PricingManager,
     SecurityError,

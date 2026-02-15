@@ -6,7 +6,7 @@ max_execution_time_seconds) are actually enforced during tool execution.
 import time
 from unittest.mock import MagicMock, patch
 
-from src.agents.llm_providers import LLMResponse
+from src.llm.providers import LLMResponse
 from src.agents.standard_agent import StandardAgent
 from src.compiler.schemas import (
     AgentConfig,
@@ -16,6 +16,8 @@ from src.compiler.schemas import (
     PromptConfig,
     SafetyConfig,
 )
+from src.llm.service import LLMService
+from src.llm._tool_execution import check_safety_mode as _check_safety_mode
 from src.tools.base import ToolResult
 
 
@@ -47,14 +49,20 @@ def _make_config(safety: SafetyConfig = None) -> AgentConfig:
 
 def _make_agent(safety: SafetyConfig = None) -> StandardAgent:
     """Create a StandardAgent with mocked dependencies and custom safety."""
-    with patch('src.agents.standard_agent.ToolRegistry'):
+    with patch('src.agents.base_agent.ToolRegistry'):
         agent = StandardAgent(_make_config(safety))
-    # Register a mock tool
+
+    # Build a mock tool with all methods LLMService needs for schema building
     mock_tool = MagicMock()
+    mock_tool.name = "bash"
+    mock_tool.description = "Execute commands"
+    mock_tool.get_parameters_schema.return_value = {"type": "object", "properties": {}}
+    mock_tool.get_result_schema.return_value = None
     mock_tool.execute.return_value = ToolResult(
         success=True, result="tool output"
     )
     agent.tool_registry.get = lambda name: mock_tool if name == "bash" else None
+    agent.tool_registry.get_all_tools = MagicMock(return_value={"bash": mock_tool})
 
     # Provide a mock tool_executor so execution doesn't block on missing safety stack
     mock_executor = MagicMock()
@@ -70,14 +78,31 @@ def _make_agent(safety: SafetyConfig = None) -> StandardAgent:
     return agent
 
 
+def _make_llm_service_and_execute_single(
+    safety: SafetyConfig,
+    tool_call: dict,
+) -> dict:
+    """Create LLMService and execute a single tool call with given safety config."""
+    mock_llm = MagicMock()
+    mock_inf_config = MagicMock()
+    service = LLMService(mock_llm, mock_inf_config)
+
+    mock_executor = MagicMock()
+    mock_executor.execute.return_value = ToolResult(success=True, result="tool output")
+
+    return service._execute_single_tool(
+        tool_call, mock_executor, None, safety,
+    )
+
+
 class TestRequireApprovalMode:
     """Test that require_approval mode blocks all tool execution."""
 
     def test_require_approval_blocks_tool(self):
         """Tools are blocked when mode is 'require_approval'."""
-        agent = _make_agent(SafetyConfig(mode="require_approval"))
-        result = agent._execute_single_tool(
-            {"name": "bash", "parameters": {"command": "ls"}}
+        result = _make_llm_service_and_execute_single(
+            SafetyConfig(mode="require_approval"),
+            {"name": "bash", "parameters": {"command": "ls"}},
         )
         assert result["success"] is False
         assert "blocked" in result["error"]
@@ -85,28 +110,27 @@ class TestRequireApprovalMode:
 
     def test_require_approval_blocks_any_tool(self):
         """All tools are blocked, not just specific ones."""
-        agent = _make_agent(SafetyConfig(mode="require_approval"))
+        safety = SafetyConfig(mode="require_approval")
         for tool_name in ["bash", "calculator", "web_scraper"]:
-            # Register mock for each
-            mock_tool = MagicMock()
-            mock_tool.execute.return_value = ToolResult(success=True, result="ok")
-            original_get = agent.tool_registry.get
-            agent.tool_registry.get = lambda name, t=mock_tool: t
-
-            result = agent._execute_single_tool(
-                {"name": tool_name, "parameters": {}}
+            result = _make_llm_service_and_execute_single(
+                safety,
+                {"name": tool_name, "parameters": {}},
             )
             assert result["success"] is False
             assert "require_approval" in result["error"]
 
     def test_require_approval_does_not_execute(self):
         """Tool.execute() is never called in require_approval mode."""
-        agent = _make_agent(SafetyConfig(mode="require_approval"))
-        mock_tool = MagicMock()
-        agent.tool_registry.get = lambda name: mock_tool
+        mock_llm = MagicMock()
+        mock_inf_config = MagicMock()
+        service = LLMService(mock_llm, mock_inf_config)
 
-        agent._execute_single_tool({"name": "bash", "parameters": {"command": "rm -rf /"}})
-        mock_tool.execute.assert_not_called()
+        mock_executor = MagicMock()
+        service._execute_single_tool(
+            {"name": "bash", "parameters": {"command": "rm -rf /"}},
+            mock_executor, None, SafetyConfig(mode="require_approval"),
+        )
+        mock_executor.execute.assert_not_called()
 
 
 class TestDryRunMode:
@@ -114,9 +138,9 @@ class TestDryRunMode:
 
     def test_dry_run_returns_simulated_result(self):
         """Dry run returns success with simulated output."""
-        agent = _make_agent(SafetyConfig(mode="dry_run"))
-        result = agent._execute_single_tool(
-            {"name": "bash", "parameters": {"command": "ls"}}
+        result = _make_llm_service_and_execute_single(
+            SafetyConfig(mode="dry_run"),
+            {"name": "bash", "parameters": {"command": "ls"}},
         )
         assert result["success"] is True
         assert "[DRY RUN]" in result["result"]
@@ -125,19 +149,22 @@ class TestDryRunMode:
 
     def test_dry_run_does_not_execute(self):
         """Tool.execute() is never called in dry_run mode."""
-        agent = _make_agent(SafetyConfig(mode="dry_run"))
-        mock_tool = MagicMock()
-        agent.tool_registry.get = lambda name: mock_tool
+        mock_llm = MagicMock()
+        mock_inf_config = MagicMock()
+        service = LLMService(mock_llm, mock_inf_config)
 
-        agent._execute_single_tool({"name": "bash", "parameters": {"command": "rm -rf /"}})
-        mock_tool.execute.assert_not_called()
+        mock_executor = MagicMock()
+        service._execute_single_tool(
+            {"name": "bash", "parameters": {"command": "rm -rf /"}},
+            mock_executor, None, SafetyConfig(mode="dry_run"),
+        )
+        mock_executor.execute.assert_not_called()
 
     def test_dry_run_includes_parameters(self):
         """Dry run output includes the parameters that would have been used."""
-        agent = _make_agent(SafetyConfig(mode="dry_run"))
-        params = {"command": "echo hello", "timeout": 30}
-        result = agent._execute_single_tool(
-            {"name": "bash", "parameters": params}
+        result = _make_llm_service_and_execute_single(
+            SafetyConfig(mode="dry_run"),
+            {"name": "bash", "parameters": {"command": "echo hello", "timeout": 30}},
         )
         assert "echo hello" in result["result"]
 
@@ -147,54 +174,50 @@ class TestRequireApprovalForTools:
 
     def test_listed_tool_blocked(self):
         """Tools in require_approval_for_tools list are blocked."""
-        agent = _make_agent(SafetyConfig(
-            mode="execute",
-            require_approval_for_tools=["bash"]
-        ))
-        result = agent._execute_single_tool(
-            {"name": "bash", "parameters": {"command": "ls"}}
+        result = _make_llm_service_and_execute_single(
+            SafetyConfig(mode="execute", require_approval_for_tools=["bash"]),
+            {"name": "bash", "parameters": {"command": "ls"}},
         )
         assert result["success"] is False
         assert "requires approval" in result["error"]
 
     def test_unlisted_tool_executes(self):
         """Tools NOT in the list execute normally."""
-        agent = _make_agent(SafetyConfig(
-            mode="execute",
-            require_approval_for_tools=["web_scraper"]
-        ))
-        result = agent._execute_single_tool(
-            {"name": "bash", "parameters": {"command": "ls"}}
+        result = _make_llm_service_and_execute_single(
+            SafetyConfig(mode="execute", require_approval_for_tools=["web_scraper"]),
+            {"name": "bash", "parameters": {"command": "ls"}},
         )
         assert result["success"] is True
         assert result["result"] == "tool output"
 
     def test_approval_list_checked_in_execute_mode(self):
         """Tool-specific approval is checked even in normal execute mode."""
-        agent = _make_agent(SafetyConfig(
-            mode="execute",
-            require_approval_for_tools=["bash", "calculator"]
-        ))
-        mock_tool = MagicMock()
-        agent.tool_registry.get = lambda name: mock_tool
+        mock_llm = MagicMock()
+        mock_inf_config = MagicMock()
+        service = LLMService(mock_llm, mock_inf_config)
 
-        result = agent._execute_single_tool(
-            {"name": "bash", "parameters": {}}
+        mock_executor = MagicMock()
+        result = service._execute_single_tool(
+            {"name": "bash", "parameters": {}},
+            mock_executor, None,
+            SafetyConfig(mode="execute", require_approval_for_tools=["bash", "calculator"]),
         )
         assert result["success"] is False
-        mock_tool.execute.assert_not_called()
+        mock_executor.execute.assert_not_called()
 
     def test_approval_list_does_not_execute_tool(self):
         """Blocked tools are not executed."""
-        agent = _make_agent(SafetyConfig(
-            mode="execute",
-            require_approval_for_tools=["bash"]
-        ))
-        mock_tool = MagicMock()
-        agent.tool_registry.get = lambda name: mock_tool
+        mock_llm = MagicMock()
+        mock_inf_config = MagicMock()
+        service = LLMService(mock_llm, mock_inf_config)
 
-        agent._execute_single_tool({"name": "bash", "parameters": {}})
-        mock_tool.execute.assert_not_called()
+        mock_executor = MagicMock()
+        service._execute_single_tool(
+            {"name": "bash", "parameters": {}},
+            mock_executor, None,
+            SafetyConfig(mode="execute", require_approval_for_tools=["bash"]),
+        )
+        mock_executor.execute.assert_not_called()
 
 
 class TestExecuteMode:
@@ -202,18 +225,18 @@ class TestExecuteMode:
 
     def test_execute_mode_runs_tool(self):
         """Tools execute normally in execute mode."""
-        agent = _make_agent(SafetyConfig(mode="execute"))
-        result = agent._execute_single_tool(
-            {"name": "bash", "parameters": {"command": "ls"}}
+        result = _make_llm_service_and_execute_single(
+            SafetyConfig(mode="execute"),
+            {"name": "bash", "parameters": {"command": "ls"}},
         )
         assert result["success"] is True
         assert result["result"] == "tool output"
 
     def test_default_mode_is_execute(self):
         """Default safety config allows normal execution."""
-        agent = _make_agent()  # default SafetyConfig
-        result = agent._execute_single_tool(
-            {"name": "bash", "parameters": {"command": "ls"}}
+        result = _make_llm_service_and_execute_single(
+            SafetyConfig(),
+            {"name": "bash", "parameters": {"command": "ls"}},
         )
         assert result["success"] is True
 
@@ -236,21 +259,23 @@ class TestMaxExecutionTimeEnforcement:
             total_tokens=10,
         )
         agent.llm.complete = MagicMock(return_value=mock_response)
+        # Also update llm_service.llm to use same mock
+        agent.llm_service.llm = agent.llm
 
         # Mock time.time to simulate time progression
         # First call is start_time, then each subsequent call adds time
         call_count = [0]
         base_time = 1000.0
 
-        original_time = time.time
-
         def mock_time():
             call_count[0] += 1
             # After first iteration (~4 calls), time exceeds limit
             return base_time + (call_count[0] * 0.5)
 
-        with patch('src.agents.standard_agent.time') as mock_time_module:
-            mock_time_module.time = mock_time
+        with patch('src.agents.base_agent.time') as mock_base_time, \
+             patch('src.llm.service.time') as mock_service_time:
+            mock_base_time.time = mock_time
+            mock_service_time.time = mock_time
 
             response = agent.execute({"query": "test"})
 
@@ -269,6 +294,7 @@ class TestMaxExecutionTimeEnforcement:
             total_tokens=10,
         )
         agent.llm.complete = MagicMock(return_value=mock_response)
+        agent.llm_service.llm = agent.llm
 
         response = agent.execute({"query": "test"})
 
@@ -280,27 +306,41 @@ class TestSafetyModeCannotBeBypassed:
     """Test that safety mode cannot be bypassed by any code path."""
 
     def test_tool_calls_list_respects_safety(self):
-        """_execute_tool_calls respects safety mode for each tool."""
-        agent = _make_agent(SafetyConfig(mode="require_approval"))
-        results = agent._execute_tool_calls([
-            {"name": "bash", "parameters": {"command": "ls"}},
-            {"name": "bash", "parameters": {"command": "pwd"}},
-        ])
+        """LLMService._execute_tools respects safety mode for each tool."""
+        mock_llm = MagicMock()
+        mock_inf_config = MagicMock()
+        service = LLMService(mock_llm, mock_inf_config)
+
+        results = service._execute_tools(
+            [
+                {"name": "bash", "parameters": {"command": "ls"}},
+                {"name": "bash", "parameters": {"command": "pwd"}},
+            ],
+            MagicMock(), None,
+            SafetyConfig(mode="require_approval"),
+        )
         assert all(r["success"] is False for r in results)
         assert all("require_approval" in r["error"] for r in results)
 
     def test_dry_run_in_tool_calls_list(self):
-        """_execute_tool_calls returns dry run results for all tools."""
-        agent = _make_agent(SafetyConfig(mode="dry_run"))
-        results = agent._execute_tool_calls([
-            {"name": "bash", "parameters": {"command": "ls"}},
-            {"name": "bash", "parameters": {"command": "pwd"}},
-        ])
+        """LLMService._execute_tools returns dry run results for all tools."""
+        mock_llm = MagicMock()
+        mock_inf_config = MagicMock()
+        service = LLMService(mock_llm, mock_inf_config)
+
+        results = service._execute_tools(
+            [
+                {"name": "bash", "parameters": {"command": "ls"}},
+                {"name": "bash", "parameters": {"command": "pwd"}},
+            ],
+            MagicMock(), None,
+            SafetyConfig(mode="dry_run"),
+        )
         assert all(r["success"] is True for r in results)
         assert all("[DRY RUN]" in r["result"] for r in results)
 
-    def test_execute_iteration_respects_safety(self):
-        """Full execute iteration respects safety mode."""
+    def test_execute_respects_safety(self):
+        """Full execute() respects safety mode."""
         agent = _make_agent(SafetyConfig(mode="require_approval"))
 
         # LLM returns tool calls
@@ -311,16 +351,18 @@ class TestSafetyModeCannotBeBypassed:
             total_tokens=10,
         )
         agent.llm.complete = MagicMock(return_value=mock_response)
+        agent.llm_service.llm = agent.llm
 
-        result = agent._execute_iteration(
-            "test prompt", 0, 0.0, [], time.time()
-        )
+        # Provide a tool in the registry so tools list is non-empty
+        mock_tool = MagicMock()
+        mock_tool.name = "bash"
+        mock_tool.description = "Execute commands"
+        mock_tool.get_parameters_schema.return_value = {"type": "object", "properties": {}}
+        mock_tool.get_result_schema.return_value = None
+        agent.tool_registry.get_all_tools = MagicMock(return_value={"bash": mock_tool})
 
-        # Should not be complete (tool calls were made but blocked)
-        assert result["complete"] is False
-        # Tool call should show blocked
-        blocked_calls = [
-            tc for tc in result["tool_calls_made"]
-            if not tc["success"]
-        ]
+        response = agent.execute({"query": "test"})
+
+        # Max iterations reached, with blocked tool calls
+        blocked_calls = [tc for tc in response.tool_calls if not tc["success"]]
         assert len(blocked_calls) > 0

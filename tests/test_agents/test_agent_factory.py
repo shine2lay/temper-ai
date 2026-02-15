@@ -3,7 +3,7 @@ import threading
 
 import pytest
 
-from src.agents.agent_factory import AgentFactory
+from src.agents.utils.agent_factory import AgentFactory
 from src.agents.base_agent import AgentResponse, BaseAgent
 from src.agents.standard_agent import StandardAgent
 from src.compiler.schemas import AgentConfig
@@ -73,7 +73,7 @@ def test_agent_factory_register_custom_type(minimal_agent_config):
     class CustomAgent(BaseAgent):
         """Custom test agent."""
 
-        def execute(self, input_data, context=None):
+        def _run(self, input_data, context=None, start_time=0.0):
             return AgentResponse(output="custom response")
 
         def get_capabilities(self):
@@ -101,7 +101,7 @@ def test_agent_factory_register_duplicate_type():
     class AnotherStandardAgent(BaseAgent):
         """Another standard agent."""
 
-        def execute(self, input_data, context=None):
+        def _run(self, input_data, context=None, start_time=0.0):
             return AgentResponse(output="test")
 
         def get_capabilities(self):
@@ -127,7 +127,7 @@ def test_agent_factory_creates_working_agent(minimal_agent_config):
     """Test factory-created agent can execute."""
     from unittest.mock import patch
 
-    with patch('src.agents.standard_agent.ToolRegistry'):
+    with patch('src.agents.base_agent.ToolRegistry'):
         agent = AgentFactory.create(minimal_agent_config)
 
         # Agent should have all required methods
@@ -157,7 +157,7 @@ class TestAgentFactoryThreadSafety:
             return AgentFactory.create(config_copy)
 
         # Mock ToolRegistry to avoid actual tool initialization
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 # Create 100 agents concurrently
                 futures = [
@@ -185,7 +185,7 @@ class TestAgentFactoryThreadSafety:
         def create_agent():
             return AgentFactory.create(minimal_agent_config)
 
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                 futures = [executor.submit(create_agent) for _ in range(200)]
                 results = [f.result() for f in futures]
@@ -205,7 +205,7 @@ class TestAgentFactoryThreadSafety:
             class CustomAgent(BaseAgent):
                 type_id = i  # Store type id as class variable
 
-                def execute(self, input_data, context=None):
+                def _run(self, input_data, context=None, start_time=0.0):
                     return AgentResponse(output=f"custom_{self.type_id}")
 
                 def get_capabilities(self):
@@ -236,7 +236,7 @@ class TestAgentFactoryThreadSafety:
                 with lock:
                     creation_results.append(e)
 
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
                 futures = []
 
@@ -282,7 +282,7 @@ class TestAgentFactoryThreadSafety:
 
             return agent
 
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 futures = [
                     executor.submit(create_and_track_agent, i)
@@ -329,7 +329,7 @@ class TestAgentFactoryThreadSafety:
             with lock:
                 creation_results.append(agent)
 
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                 futures = []
 
@@ -384,7 +384,7 @@ class TestAgentFactoryThreadSafety:
             )
             return AgentFactory.create(config)
 
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
                 futures = [
                     executor.submit(create_agent_with_config, i)
@@ -420,7 +420,7 @@ class TestAgentFactoryThreadSafety:
                 with lock:
                     errors.append(e)
 
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 # 10 threads, each creating 10 agents = 100 total
                 futures = [executor.submit(create_agents_batch) for _ in range(10)]
@@ -443,7 +443,7 @@ class TestAgentFactoryThreadSafety:
             # Don't hold reference, let GC clean up
             return agent.name
 
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             # Create many agents to test memory safety
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 futures = [

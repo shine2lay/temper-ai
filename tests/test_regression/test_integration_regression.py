@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agents.agent_factory import AgentFactory
+from src.agents.utils.agent_factory import AgentFactory
 from src.agents.standard_agent import StandardAgent
 from src.compiler.schemas import (
     AgentConfig,
@@ -71,7 +71,7 @@ class TestConfigAgentIntegration:
         Severity: HIGH (incorrect agent behavior)
         Fixed: AgentFactory now properly maps all config fields
         """
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             agent = AgentFactory.create(minimal_agent_config)
 
             # Verify all config fields mapped correctly
@@ -128,7 +128,7 @@ class TestAgentFactory:
         if hasattr(minimal_agent_config.agent, 'type'):
             delattr(minimal_agent_config.agent, 'type')
 
-        with patch('src.agents.standard_agent.ToolRegistry'):
+        with patch('src.agents.base_agent.ToolRegistry'):
             agent = AgentFactory.create(minimal_agent_config)
 
             # Should default to StandardAgent

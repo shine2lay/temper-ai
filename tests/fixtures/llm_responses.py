@@ -12,7 +12,7 @@ This replaces over-mocking in integration tests with realistic fixtures that:
 
 from typing import Optional
 
-from src.agents.llm_providers import LLMResponse
+from src.llm.providers import LLMResponse
 from src.utils.exceptions import (
     LLMAuthenticationError,
     LLMError,

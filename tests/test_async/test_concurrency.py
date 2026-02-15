@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.agents.llm_providers import LLMResponse
+from src.llm.providers import LLMResponse
 from src.agents.standard_agent import StandardAgent
 from src.compiler.langgraph_engine import LangGraphExecutionEngine
 from src.compiler.schemas import (
@@ -174,7 +174,7 @@ async def test_concurrent_workflow_execution(mock_config_loader, workflow_config
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.agents.standard_agent.ToolRegistry')
+@patch('src.agents.base_agent.ToolRegistry')
 async def test_async_llm_streaming(mock_tool_registry, minimal_agent_config):
     """Test streaming LLM responses asynchronously.
 
@@ -207,7 +207,7 @@ async def test_async_llm_streaming(mock_tool_registry, minimal_agent_config):
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.agents.standard_agent.ToolRegistry')
+@patch('src.agents.base_agent.ToolRegistry')
 async def test_parallel_agent_execution(mock_tool_registry, minimal_agent_config):
     """Test multiple agents executing in parallel.
 

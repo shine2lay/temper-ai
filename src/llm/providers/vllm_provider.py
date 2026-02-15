@@ -10,13 +10,13 @@ from typing import Any, Dict, Optional, cast
 
 import httpx
 
-from src.agents.constants import SSE_STREAM_DONE_MARKER
-from src.agents.llm._stream_helpers import (
+from src.llm.constants import SSE_STREAM_DONE_MARKER
+from src.llm.providers._stream_helpers import (
     build_stream_result,
     emit_final_chunk,
     process_chunk_content,
 )
-from src.agents.llm.base import (
+from src.llm.providers.base import (
     BaseLLM,
     LLMProvider,
     LLMResponse,

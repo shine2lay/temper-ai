@@ -5,11 +5,11 @@ config/model_pricing.yaml.
 """
 from typing import TYPE_CHECKING
 
-from src.agents.constants import DEFAULT_INPUT_TOKEN_RATIO, DEFAULT_OUTPUT_TOKEN_RATIO
-from src.agents.pricing import get_pricing_manager
+from src.llm.constants import DEFAULT_INPUT_TOKEN_RATIO, DEFAULT_OUTPUT_TOKEN_RATIO
+from src.llm.pricing import get_pricing_manager
 
 if TYPE_CHECKING:
-    from src.agents.llm.base import LLMResponse
+    from src.llm.providers.base import LLMResponse
 
 
 def estimate_cost(llm_response: "LLMResponse", fallback_model: str = "unknown") -> float:

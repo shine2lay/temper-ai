@@ -1,79 +1,49 @@
-"""
-Agent execution and LLM provider modules.
+"""Agent execution infrastructure.
 
-This module provides LLM provider clients, agent execution infrastructure,
-and the agent factory for creating different agent types.
+Provides the agent base class, standard agent implementation,
+agent factory, and prompt engine.
+
+LLM providers are available via ``src.llm.providers``.
+
+Imports are lazy to avoid circular dependency:
+  src.llm.providers.base -> src.agents.utils.constants
+  -> src.agents.__init__ -> src.agents.base_agent
+  -> src.llm.providers.factory -> src.llm.providers.base (circular)
 """
-from src.agents.agent_factory import (
-    AgentFactory,
-)
-from src.agents.base_agent import (
-    AgentResponse,
-    BaseAgent,
-    ExecutionContext,
-)
-from src.agents.llm import (
-    AnthropicLLM,
-    # Base classes
-    BaseLLM,
-    LLMAuthenticationError,
-    # Exceptions
-    LLMError,
-    LLMProvider,
-    LLMRateLimitError,
-    # Response types
-    LLMResponse,
-    LLMStreamChunk,
-    LLMTimeoutError,
-    # Provider implementations
-    OllamaLLM,
-    OpenAILLM,
-    VllmLLM,
-    # Factory
-    create_llm_client,
-    create_llm_from_config,
-)
-from src.agents.prompt_engine import (
-    PromptEngine,
-    PromptRenderError,
-)
-from src.agents.standard_agent import (
-    StandardAgent,
-)
+
+_LAZY_IMPORTS = {
+    "AgentFactory": "src.agents.utils.agent_factory",
+    "AgentResponse": "src.agents.models.response",
+    "ToolCallRecord": "src.agents.models.response",
+    "BaseAgent": "src.agents.base_agent",
+    "ExecutionContext": "src.agents.base_agent",
+    "StandardAgent": "src.agents.standard_agent",
+    "PromptEngine": "src.prompts.engine",
+    "PromptRenderError": "src.prompts.engine",
+}
+
+
+def __getattr__(name: str):
+    module_path = _LAZY_IMPORTS.get(name)
+    if module_path is not None:
+        import importlib
+
+        module = importlib.import_module(module_path)
+        value = getattr(module, name)
+        globals()[name] = value
+        return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 __all__ = [
-    # Base
-    "BaseLLM",
-    "LLMProvider",
-
-    # Response types
-    "LLMResponse",
-    "LLMStreamChunk",
-
-    # Exceptions
-    "LLMError",
-    "LLMTimeoutError",
-    "LLMRateLimitError",
-    "LLMAuthenticationError",
-
-    # Providers
-    "OllamaLLM",
-    "OpenAILLM",
-    "AnthropicLLM",
-    "VllmLLM",
-
-    # Factory
-    "create_llm_client",
-    "create_llm_from_config",
-
-    # Prompt Engine
-    "PromptEngine",
-    "PromptRenderError",
-
-    # Agent Classes
+    # Agent classes
     "BaseAgent",
     "AgentResponse",
     "ExecutionContext",
     "StandardAgent",
     "AgentFactory",
+
+    # Prompt engine
+    "PromptEngine",
+    "PromptRenderError",
 ]

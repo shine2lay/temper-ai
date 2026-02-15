@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 
 import httpx
 
-from src.agents.constants import (
+from src.llm.constants import (
     DEFAULT_KEEPALIVE_EXPIRY_SECONDS,
     DEFAULT_MAX_HTTP_CONNECTIONS,
     DEFAULT_MAX_KEEPALIVE_CONNECTIONS,
@@ -32,7 +32,7 @@ from src.utils.exceptions import (
 )
 
 if TYPE_CHECKING:
-    from src.agents.llm.base import BaseLLM, LLMResponse
+    from src.llm.providers.base import BaseLLM, LLMResponse
     from src.core.context import ExecutionContext
 
 logger = logging.getLogger(__name__)
@@ -172,7 +172,7 @@ def get_or_create_sync_client(instance: BaseLLM) -> httpx.Client:
                     http2_enabled = False
 
                 provider_name = instance.__class__.__name__.replace("LLM", "").lower()
-                from src.agents.llm.base import BaseLLM as _BaseLLM
+                from src.llm.providers.base import BaseLLM as _BaseLLM
                 # Create explicit timeout object to ensure all timeout types are set
                 timeout_config = httpx.Timeout(timeout=instance.timeout, connect=CONNECT_TIMEOUT_SECONDS)
                 instance._client = get_shared_http_client(
@@ -191,7 +191,7 @@ def get_or_create_sync_client(instance: BaseLLM) -> httpx.Client:
 async def get_or_create_async_client_safe(instance: BaseLLM) -> httpx.AsyncClient:
     """Get or create async HTTPx client with proper async locking (M-19)."""
     if instance._async_client is None:
-        from src.agents.llm.base import BaseLLM as _BaseLLM
+        from src.llm.providers.base import BaseLLM as _BaseLLM
         async with get_async_lock(_BaseLLM):
             if instance._async_client is None:
                 limits = httpx.Limits(
@@ -254,7 +254,7 @@ def check_cache(
     **kwargs: Any,
 ) -> Tuple[Optional[str], Optional[LLMResponse]]:
     """Check cache for a cached response."""
-    from src.agents.llm.base import LLMResponse as _LLMResponse
+    from src.llm.providers.base import LLMResponse as _LLMResponse
 
     if instance._cache is None:
         return None, None
@@ -439,7 +439,7 @@ def make_streaming_call_impl(
     Returns:
         Tuple of (cache_key, cached_response_or_none)
     """
-    from src.agents.constants import ERROR_MSG_RATE_LIMIT_EXCEEDED
+    from src.llm.constants import ERROR_MSG_RATE_LIMIT_EXCEEDED
     from src.utils.exceptions import LLMRateLimitError as _LLMRateLimitError
 
     # Rate limiter check

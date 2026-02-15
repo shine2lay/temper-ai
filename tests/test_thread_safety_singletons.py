@@ -10,9 +10,9 @@ import threading
 
 import pytest
 
-from src.agents.agent_factory import AgentFactory
+from src.agents.utils.agent_factory import AgentFactory
 from src.agents.base_agent import BaseAgent
-from src.agents.pricing import PricingManager, get_pricing_manager
+from src.llm.pricing import PricingManager, get_pricing_manager
 from src.tools.base import BaseTool, ToolMetadata, ToolResult
 from src.tools.registry import (
     ToolRegistry,

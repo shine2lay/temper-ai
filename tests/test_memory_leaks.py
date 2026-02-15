@@ -22,7 +22,7 @@ try:
 except ImportError:
     pytest.skip("psutil not installed (optional for memory leak tests)", allow_module_level=True)
 
-from src.agents.llm_providers import LLMResponse
+from src.llm.providers import LLMResponse
 from src.agents.standard_agent import StandardAgent
 from src.compiler.langgraph_compiler import LangGraphCompiler
 from src.compiler.schemas import (
@@ -188,7 +188,7 @@ def test_agent_execution_no_memory_leak(minimal_agent_config, mock_llm_response)
     - Memory growth <10MB per 100 executions
     - Memory usage stabilizes after warmup
     """
-    with patch('src.agents.standard_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -285,7 +285,7 @@ def test_llm_provider_no_memory_leak(minimal_agent_config):
     - Memory growth <10MB per 100 calls
     - Connection pooling doesn't accumulate
     """
-    with patch('src.agents.standard_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -401,7 +401,7 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
     - Memory growth <50MB over 500 executions
     - No continuous memory increase trend
     """
-    with patch('src.agents.standard_agent.ToolRegistry') as mock_tool_registry:
+    with patch('src.agents.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 

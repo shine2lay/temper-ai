@@ -3,8 +3,8 @@ LLM provider clients for multi-provider inference support.
 
 .. deprecated::
     This module is a backward-compatible re-export shim. The canonical
-    implementation has been split into the ``src.agents.llm`` package.
-    Import directly from ``src.agents.llm`` instead.
+    implementation has been split into the ``src.llm.providers`` package.
+    Import directly from ``src.llm.providers`` instead.
 
 Shim mapping:
 - base.py: BaseLLM, LLMProvider, LLMResponse, LLMStreamChunk
@@ -18,23 +18,23 @@ import importlib
 import warnings
 from typing import Any
 
-# Preserve module-level names that tests mock (e.g., src.agents.llm_providers.httpx)
+# Preserve module-level names that tests mock (e.g., src.llm.llm_providers.httpx)
 import httpx  # noqa: F401
 
 # Map of names exported by this shim to their canonical module paths.
 _SHIM_EXPORTS = {
     # Base classes
-    "BaseLLM": "src.agents.llm.base",
-    "LLMProvider": "src.agents.llm.base",
-    "LLMResponse": "src.agents.llm.base",
-    "LLMStreamChunk": "src.agents.llm.base",
+    "BaseLLM": "src.llm.providers.base",
+    "LLMProvider": "src.llm.providers.base",
+    "LLMResponse": "src.llm.providers.base",
+    "LLMStreamChunk": "src.llm.providers.base",
     # Provider implementations
-    "OllamaLLM": "src.agents.llm.ollama",
-    "OpenAILLM": "src.agents.llm.openai_provider",
-    "AnthropicLLM": "src.agents.llm.anthropic_provider",
-    "VllmLLM": "src.agents.llm.vllm_provider",
+    "OllamaLLM": "src.llm.providers.ollama",
+    "OpenAILLM": "src.llm.providers.openai_provider",
+    "AnthropicLLM": "src.llm.providers.anthropic_provider",
+    "VllmLLM": "src.llm.providers.vllm_provider",
     # Factory
-    "create_llm_client": "src.agents.llm.factory",
+    "create_llm_client": "src.llm.providers.factory",
     # Exceptions (re-exported from utils.exceptions)
     "LLMError": "src.utils.exceptions",
     "LLMTimeoutError": "src.utils.exceptions",
@@ -48,7 +48,7 @@ __all__ = list(_SHIM_EXPORTS.keys())
 def __getattr__(name: str) -> Any:
     if name in _SHIM_EXPORTS:
         warnings.warn(
-            f"Importing {name} from src.agents.llm_providers is deprecated. "
+            f"Importing {name} from src.llm.llm_providers is deprecated. "
             f"Import from {_SHIM_EXPORTS[name]} instead.",
             DeprecationWarning,
             stacklevel=2,

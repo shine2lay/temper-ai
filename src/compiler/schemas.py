@@ -315,7 +315,7 @@ class StageConfigInner(BaseModel):
     description: str
     version: str = DEFAULT_VERSION
     agents: List[str]
-    inputs: Dict[str, Any] = Field(default_factory=dict)
+    inputs: Optional[Dict[str, Any]] = None
     outputs: Dict[str, Any] = Field(default_factory=dict)
     execution: StageExecutionConfig = Field(default_factory=StageExecutionConfig)
     collaboration: Optional[CollaborationConfig] = None

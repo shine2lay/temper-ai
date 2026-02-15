@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.agents.dialogue_formatter import (
+from src.prompts.dialogue_formatter import (
     format_dialogue_history,
     format_stage_agent_outputs,
 )

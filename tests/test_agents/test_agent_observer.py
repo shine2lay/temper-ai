@@ -9,7 +9,7 @@ Tests cover:
 from unittest.mock import MagicMock
 
 
-from src.agents.agent_observer import AgentObserver
+from src.agents.utils.agent_observer import AgentObserver
 
 
 class TestAgentObserverInit:
@@ -78,10 +78,17 @@ class TestTrackLLMCall:
         ctx.agent_id = "agent-1"
         observer = AgentObserver(tracker, ctx)
 
-        observer.track_llm_call(provider="ollama", model="qwen3")
-        tracker.track_llm_call.assert_called_once_with(
-            agent_id="agent-1", provider="ollama", model="qwen3"
+        observer.track_llm_call(
+            provider="ollama", model="qwen3",
+            prompt="test", response="ok",
+            prompt_tokens=10, completion_tokens=5,
+            latency_ms=100, estimated_cost_usd=0.001,
         )
+        tracker.track_llm_call.assert_called_once()
+        data = tracker.track_llm_call.call_args[0][0]
+        assert data.agent_id == "agent-1"
+        assert data.provider == "ollama"
+        assert data.model == "qwen3"
 
     def test_noop_when_inactive(self):
         tracker = MagicMock()
@@ -97,7 +104,7 @@ class TestTrackLLMCall:
         ctx.agent_id = "agent-1"
         observer = AgentObserver(tracker, ctx)
 
-        # Should not raise
+        # Should not raise — incomplete kwargs cause TypeError, caught internally
         observer.track_llm_call(provider="ollama")
         assert "Failed to track LLM call" in caplog.text
 
@@ -111,10 +118,17 @@ class TestTrackToolCall:
         ctx.agent_id = "agent-1"
         observer = AgentObserver(tracker, ctx)
 
-        observer.track_tool_call(tool_name="calculator", success=True)
-        tracker.track_tool_call.assert_called_once_with(
-            agent_id="agent-1", tool_name="calculator", success=True
+        observer.track_tool_call(
+            tool_name="calculator",
+            input_params={"x": 1},
+            output_data={"result": 2},
+            duration_seconds=0.1,
+            status="success",
         )
+        tracker.track_tool_call.assert_called_once()
+        data = tracker.track_tool_call.call_args[0][0]
+        assert data.agent_id == "agent-1"
+        assert data.tool_name == "calculator"
 
     def test_noop_when_inactive(self):
         tracker = MagicMock()
@@ -130,6 +144,6 @@ class TestTrackToolCall:
         ctx.agent_id = "agent-1"
         observer = AgentObserver(tracker, ctx)
 
-        # Should not raise
+        # Should not raise — incomplete kwargs cause TypeError, caught internally
         observer.track_tool_call(tool_name="calc")
         assert "Failed to track tool call" in caplog.text

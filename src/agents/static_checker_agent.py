@@ -8,30 +8,16 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from src.schemas import AgentConfig
 
-from src.agents._pre_command_helpers import execute_pre_commands
-from src.agents._standard_agent_helpers import (
-    build_final_response as _build_final_response,
-)
-from src.agents._standard_agent_helpers import (
-    make_stream_callback as _make_stream_callback,
-)
-from src.agents._standard_agent_helpers import (
-    setup_execution as _setup_execution,
-)
+from src.agents.utils._pre_command_helpers import execute_pre_commands
 from src.agents.base_agent import AgentResponse, BaseAgent, ExecutionContext
-from src.agents.cost_estimator import estimate_cost
-from src.agents.llm import LLMError
-from src.agents.llm.factory import create_llm_from_config
-from src.agents.prompt_engine import PromptEngine
-from src.agents.prompt_validation import PromptRenderError, _is_safe_template_value
-from src.agents.response_parser import extract_final_answer, extract_reasoning
-from src.utils.exceptions import sanitize_error_message
+from src.utils.exceptions import LLMError
+from src.prompts.validation import PromptRenderError
+from src.llm.service import LLMService
 
 logger = logging.getLogger(__name__)
 
@@ -39,33 +25,23 @@ logger = logging.getLogger(__name__)
 _EXCLUDE_FROM_INJECT = frozenset({"command_results"})
 
 
-def _inject_input_context(template: str, filtered_input: Dict[str, Any]) -> str:
-    """Auto-inject string input context, excluding command_results."""
-    input_parts: List[str] = []
-    for key, value in filtered_input.items():
-        if value and isinstance(value, str) and key not in _EXCLUDE_FROM_INJECT:
-            label = key.replace("_", " ").title()
-            input_parts.append(f"## {label}\n{value}")
-    if input_parts:
-        return template + "\n\n---\n\n# Input Context\n\n" + "\n\n".join(input_parts)
-    return template
-
-
 class StaticCheckerAgent(BaseAgent):
     """Agent that runs deterministic pre_commands and synthesises results via LLM.
 
     Execution flow:
-    1. ``setup_execution()`` — sets up observer, stream callback, tracker
+    1. ``_setup()`` — sets up observer, stream callback, tracker (via BaseAgent)
     2. ``execute_pre_commands()`` — runs each shell command with StreamEvent emission
     3. Render prompt with command_results injected
-    4. Single LLM call (no tool-calling loop)
+    4. Single LLM call (no tool-calling loop) via LLMService
     5. Return ``AgentResponse``
     """
 
     def __init__(self, config: AgentConfig) -> None:
         super().__init__(config)
-        self.prompt_engine = PromptEngine()
-        self.llm = create_llm_from_config(self.config.agent.inference)
+        self.llm_service = LLMService(
+            llm=self.llm,
+            inference_config=config.agent.inference,
+        )
         self.validate_config()
 
     def validate_config(self) -> bool:
@@ -82,255 +58,96 @@ class StaticCheckerAgent(BaseAgent):
     # Prompt rendering (simplified — no tool schemas, no dialogue)
     # ------------------------------------------------------------------
 
-    def _render_base_template(
-        self,
-        all_variables: Dict[str, Any],
-    ) -> str:
-        """Render prompt from template file or inline config."""
-        prompt_config = self.config.agent.prompt
-        if prompt_config.template:
-            try:
-                return self.prompt_engine.render_file(
-                    prompt_config.template, all_variables,
-                )
-            except (PromptRenderError, ValueError, KeyError, FileNotFoundError) as e:
-                raise PromptRenderError(
-                    f"Failed to render template file {prompt_config.template}: {e}"
-                )
-        if prompt_config.inline:
-            return self.prompt_engine.render(prompt_config.inline, all_variables)
-        raise ValueError("No prompt template or inline prompt configured")
-
-    def _render_prompt(
+    def _build_prompt(
         self,
         input_data: Dict[str, Any],
         context: Optional[ExecutionContext] = None,
     ) -> str:
-        filtered_input = {k: v for k, v in input_data.items() if _is_safe_template_value(v)}
-        all_variables = {**filtered_input, **self.config.agent.prompt.variables}
-
-        template = self._render_base_template(all_variables)
-        template = _inject_input_context(template, filtered_input)
+        template = self._render_template(input_data)
+        template = self._inject_input_context(template, input_data, _EXCLUDE_FROM_INJECT)
         return template
 
     # ------------------------------------------------------------------
-    # Sync execution
+    # Core execution (_run replaces execute)
     # ------------------------------------------------------------------
 
-    def _execute_llm_call_and_extract(
+    def _run(
         self,
-        prompt: str,
         input_data: Dict[str, Any],
-    ) -> tuple[str, Optional[str], int, float]:
-        """Execute single LLM call and extract output/reasoning with token/cost tracking.
+        context: Optional[ExecutionContext],
+        start_time: float,
+    ) -> AgentResponse:
+        """Run pre_commands, render prompt, call LLM once, return response."""
+        command_results = execute_pre_commands(self, input_data)
+        if command_results is not None:
+            input_data["command_results"] = command_results
 
-        Args:
-            prompt: Rendered prompt string
-            input_data: Input data dict (may contain command_results)
+        prompt = self._build_prompt(input_data, context)
+        result = self.llm_service.run(
+            prompt,
+            tools=None,
+            observer=self._observer,
+            stream_callback=self._make_stream_callback(),
+            agent_name=self.name,
+        )
+        return self._build_checker_response(result, input_data, start_time)
 
-        Returns:
-            Tuple of (output, reasoning, total_tokens, total_cost)
-        """
-        # Single LLM call — no tool-calling loop
-        combined_cb = _make_stream_callback(self)  # type: ignore[arg-type]
-        if combined_cb:
-            llm_response = self.llm.stream(prompt, on_chunk=combined_cb)
-        else:
-            llm_response = self.llm.complete(prompt)
+    async def _arun(
+        self,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext],
+        start_time: float,
+    ) -> AgentResponse:
+        """Async: pre_commands in thread, then async LLM call."""
+        # pre_commands are sync subprocess calls — run in thread
+        command_results = await asyncio.to_thread(execute_pre_commands, self, input_data)
+        if command_results is not None:
+            input_data["command_results"] = command_results
 
-        total_tokens = llm_response.total_tokens or 0
-        cost = estimate_cost(llm_response, fallback_model=getattr(self.llm, "model", "unknown"))
+        prompt = self._build_prompt(input_data, context)
+        result = await self.llm_service.arun(
+            prompt,
+            tools=None,
+            observer=self._observer,
+            stream_callback=self._make_stream_callback(),
+            agent_name=self.name,
+        )
+        return self._build_checker_response(result, input_data, start_time)
 
-        output = extract_final_answer(llm_response.content)
-        reasoning = extract_reasoning(llm_response.content)
-
-        # Prepend raw command results so downstream agents see
-        # actual error details, not just the LLM's summary.
+    def _build_checker_response(self, result: Any, input_data: Dict[str, Any], start_time: float) -> AgentResponse:
+        """Build response, prepending raw command results for downstream agents."""
+        output = result.output
         raw_results = input_data.get("command_results", "")
         if raw_results and output:
             output = f"{raw_results}\n---\n{output}"
         elif raw_results:
             output = raw_results
 
-        return output, reasoning, total_tokens, cost
+        return self._build_response(
+            output=output,
+            reasoning=result.reasoning,
+            tool_calls=[],
+            tokens=result.tokens,
+            cost=result.cost,
+            start_time=start_time,
+            error=result.error,
+        )
 
-    def execute(
-        self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None,
-    ) -> AgentResponse:
-        """Execute agent synchronously with input data.
-
-        Runs pre_commands, renders prompt with their output, calls LLM once,
-        and returns structured response.
-
-        Args:
-            input_data: Dictionary of input variables to pass to the prompt.
-            context: Optional execution context for streaming and state tracking.
-
-        Returns:
-            AgentResponse with output, reasoning, tokens, cost, and error details.
-        """
-        if input_data is None:
-            raise ValueError("input_data cannot be None")
-        if not isinstance(input_data, dict):
-            raise TypeError(f"input_data must be a dictionary, got {type(input_data).__name__}")
-
-        _setup_execution(self, input_data, context, async_mode=False)  # type: ignore[arg-type]
-
-        start_time = time.time()
-        total_tokens = 0
-        total_cost = 0.0
-
-        try:
-            # Run deterministic pre_commands with StreamEvent emission
-            command_results = execute_pre_commands(self, input_data)
-            if command_results is not None:
-                input_data["command_results"] = command_results
-
-            prompt = self._render_prompt(input_data, context)
-
-            # Execute LLM call and extract output/reasoning
-            output, reasoning, total_tokens, total_cost = self._execute_llm_call_and_extract(prompt, input_data)
-
-            return _build_final_response(  # type: ignore[no-any-return]
-                self,  # type: ignore[arg-type]
-                output=output,
-                reasoning=reasoning,
-                tool_calls=[],
-                tokens=total_tokens,
-                cost=total_cost,
-                start_time=start_time,
-            )
-
-        except (LLMError, PromptRenderError, RuntimeError, ValueError, TimeoutError) as e:
-            safe_msg = sanitize_error_message(str(e))
-            logger.warning("StaticCheckerAgent execution error: %s", safe_msg, exc_info=True)
-            return _build_final_response(  # type: ignore[no-any-return]
-                self,  # type: ignore[arg-type]
-                output="",
-                reasoning=None,
-                tool_calls=[],
-                tokens=total_tokens,
-                cost=total_cost,
-                start_time=start_time,
-                error=f"Agent execution error: {safe_msg}",
-            )
-
-    # ------------------------------------------------------------------
-    # Async execution
-    # ------------------------------------------------------------------
-
-    async def _aexecute_llm_call_and_extract(
-        self,
-        prompt: str,
-        input_data: Dict[str, Any],
-    ) -> tuple[str, Optional[str], int, float]:
-        """Execute single async LLM call and extract output/reasoning with token/cost tracking.
-
-        Args:
-            prompt: Rendered prompt string
-            input_data: Input data dict (may contain command_results)
-
-        Returns:
-            Tuple of (output, reasoning, total_tokens, total_cost)
-        """
-        combined_cb = _make_stream_callback(self)  # type: ignore[arg-type]
-        if combined_cb:
-            llm_response = await self.llm.astream(prompt, on_chunk=combined_cb)
-        else:
-            llm_response = await self.llm.acomplete(prompt)
-
-        total_tokens = llm_response.total_tokens or 0
-        cost = estimate_cost(llm_response, fallback_model=getattr(self.llm, "model", "unknown"))
-
-        output = extract_final_answer(llm_response.content)
-        reasoning = extract_reasoning(llm_response.content)
-
-        # Prepend raw command results so downstream agents see
-        # actual error details, not just the LLM's summary.
-        raw_results = input_data.get("command_results", "")
-        if raw_results and output:
-            output = f"{raw_results}\n---\n{output}"
-        elif raw_results:
-            output = raw_results
-
-        return output, reasoning, total_tokens, cost
-
-    async def aexecute(
-        self,
-        input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None,
-    ) -> AgentResponse:
-        """Execute agent asynchronously with input data.
-
-        Runs pre_commands in thread pool, renders prompt with their output,
-        calls LLM once asynchronously, and returns structured response.
-
-        Args:
-            input_data: Dictionary of input variables to pass to the prompt.
-            context: Optional execution context for streaming and state tracking.
-
-        Returns:
-            AgentResponse with output, reasoning, tokens, cost, and error details.
-        """
-        if input_data is None:
-            raise ValueError("input_data cannot be None")
-        if not isinstance(input_data, dict):
-            raise TypeError(f"input_data must be a dictionary, got {type(input_data).__name__}")
-
-        _setup_execution(self, input_data, context, async_mode=True)  # type: ignore[arg-type]
-
-        start_time = time.time()
-        total_tokens = 0
-        total_cost = 0.0
-
-        try:
-            # pre_commands are sync subprocess calls — run in thread
-            command_results = await asyncio.to_thread(execute_pre_commands, self, input_data)
-            if command_results is not None:
-                input_data["command_results"] = command_results
-
-            prompt = self._render_prompt(input_data, context)
-
-            # Execute async LLM call and extract output/reasoning
-            output, reasoning, total_tokens, total_cost = await self._aexecute_llm_call_and_extract(prompt, input_data)
-
-            return _build_final_response(  # type: ignore[no-any-return]
-                self,  # type: ignore[arg-type]
-                output=output,
-                reasoning=reasoning,
-                tool_calls=[],
-                tokens=total_tokens,
-                cost=total_cost,
-                start_time=start_time,
-            )
-
-        except (LLMError, PromptRenderError, RuntimeError, ValueError, TimeoutError) as e:
-            safe_msg = sanitize_error_message(str(e))
-            logger.warning("StaticCheckerAgent async execution error: %s", safe_msg, exc_info=True)
-            return _build_final_response(  # type: ignore[no-any-return]
-                self,  # type: ignore[arg-type]
-                output="",
-                reasoning=None,
-                tool_calls=[],
-                tokens=total_tokens,
-                cost=total_cost,
-                start_time=start_time,
-                error=f"Agent execution error: {safe_msg}",
-            )
+    def _on_error(
+        self, error: Exception, start_time: float
+    ) -> Optional[AgentResponse]:
+        """Handle expected execution errors."""
+        if isinstance(error, (LLMError, PromptRenderError, RuntimeError,
+                              ValueError, TimeoutError)):
+            return self._build_error_response(error, start_time)
+        return None
 
     # ------------------------------------------------------------------
     # Capabilities
     # ------------------------------------------------------------------
 
     def get_capabilities(self) -> Dict[str, Any]:
-        """Get agent capabilities and configuration.
-
-        Returns:
-            Dictionary with agent name, description, version, type, LLM provider/model,
-            pre_commands list, and capability flags (streaming, multimodal).
-        """
+        """Get agent capabilities and configuration."""
         pre_commands = getattr(self.config.agent, "pre_commands", []) or []
         return {
             "name": self.name,

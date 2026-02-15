@@ -5,7 +5,7 @@ stream consumers are nearly identical.
 """
 from typing import Any, Callable, List, Optional
 
-from src.agents.llm.base import LLMStreamChunk
+from src.llm.providers.base import LLMStreamChunk
 
 
 def process_chunk_content(
@@ -61,7 +61,7 @@ def build_stream_result(
     finish_reason: Optional[str],
 ) -> Any:  # Returns LLMResponse
     """Build final LLMResponse from accumulated stream chunks."""
-    from src.agents.llm.base import LLMResponse
+    from src.llm.providers.base import LLMResponse
 
     full_content = "".join(content_parts)
     total = (prompt_tokens or 0) + (completion_tokens or 0) or None

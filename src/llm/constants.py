@@ -1,7 +1,8 @@
-"""Constants for the agents module.
+"""Constants for the LLM subsystem.
 
-Centralized constants for HTTP configuration, LLM defaults, timeout settings,
-rate limiting, and agent execution parameters.
+HTTP configuration, model defaults, streaming sentinels, cost estimation,
+pricing, error messages, and pool sizing constants used by LLM providers
+and the LLM service layer.
 """
 
 from src.constants.limits import DEFAULT_MAX_TOKENS as DEFAULT_MAX_TOKENS  # noqa: F401
@@ -33,33 +34,19 @@ OLLAMA_DEFAULT_PORT = 11434
 RATE_LIMIT_CRITICAL_THRESHOLD_SECONDS = 3600  # 1 hour
 
 # ============================================================================
-# Agent Execution
+# Error Messages
 # ============================================================================
 
-MAX_TOOL_CALLS_PER_EXECUTION = 20
-MAX_EXECUTION_TIME_SECONDS = 300  # 5 minutes
-MAX_PROMPT_LENGTH = 32_000  # Maximum prompt length in characters
-DEFAULT_CACHE_TTL_SECONDS = 3600  # 1 hour
-DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS = 8000  # Max chars for auto-injected dialogue context
-
-# ============================================================================
-# Confidence Scoring
-# ============================================================================
-
-BASE_CONFIDENCE = 1.0
-REASONING_BONUS = 0.1
-TOOL_FAILURE_MAJOR_PENALTY = 0.2
-TOOL_FAILURE_MINOR_PENALTY = 0.1
-MIN_OUTPUT_LENGTH = 10  # Minimum output length for confidence
-MIN_REASONING_LENGTH = 20  # Minimum reasoning length for bonus
-
-# ============================================================================
-# Text Preview & Truncation
-# ============================================================================
-
-PROMPT_PREVIEW_LENGTH = 200
-OUTPUT_PREVIEW_LENGTH = 150
+ERROR_MSG_RATE_LIMIT_EXCEEDED = "LLM rate limit exceeded"
+ERROR_MSG_VALID_PROVIDERS_SUFFIX = "'. Valid providers: "
+ERROR_MSG_TOOL_PREFIX = "Tool '"
 MAX_ERROR_MESSAGE_LENGTH = 500
+
+# ============================================================================
+# Streaming & API Sentinels
+# ============================================================================
+
+SSE_STREAM_DONE_MARKER = "[DONE]"
 
 # ============================================================================
 # Pool Sizing
@@ -76,42 +63,6 @@ TOKENS_PER_MILLION = 1_000_000
 MAX_REASONABLE_PRICE_PER_MILLION = 1000  # $1000 max per million tokens
 DEFAULT_INPUT_TOKEN_RATIO = 0.6
 DEFAULT_OUTPUT_TOKEN_RATIO = 0.4
-
-# ============================================================================
-# Pre-Command Execution
-# ============================================================================
-
-PRE_COMMAND_DEFAULT_TIMEOUT = 60
-PRE_COMMAND_MAX_TIMEOUT = 300
-PRE_COMMAND_MAX_OUTPUT_CHARS = 2000
-
-# ============================================================================
-# Environment Variables
-# ============================================================================
-
-ENV_VAR_PATH = "PATH"
-ENV_VAR_VIRTUAL_ENV = "VIRTUAL_ENV"
-
-# ============================================================================
-# Agent Types
-# ============================================================================
-
-AGENT_TYPE_STANDARD = "standard"
-
-# ============================================================================
-# Error Messages
-# ============================================================================
-
-ERROR_MSG_RATE_LIMIT_EXCEEDED = "LLM rate limit exceeded"
-ERROR_MSG_VALID_PROVIDERS_SUFFIX = "'. Valid providers: "
-ERROR_MSG_TOOL_PREFIX = "Tool '"
-ERROR_MSG_VARIABLE_PREFIX = "Variable '"
-
-# ============================================================================
-# Streaming & API Sentinels
-# ============================================================================
-
-SSE_STREAM_DONE_MARKER = "[DONE]"
 
 # ============================================================================
 # Pricing & Fallbacks

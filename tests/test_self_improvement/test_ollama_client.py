@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agents.llm_providers import LLMProvider, LLMResponse
+from src.llm.providers import LLMProvider, LLMResponse
 from src.self_improvement.ollama_client import OllamaClient
 from src.utils.exceptions import LLMError, LLMTimeoutError
 

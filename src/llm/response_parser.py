@@ -7,7 +7,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
-from src.agents.constants import REGEX_XML_TAG_CLOSING
+from src.llm.constants import REGEX_XML_TAG_CLOSING
 
 # XML tag constants for parsing LLM responses
 TOOL_CALL_TAG = "tool_call"

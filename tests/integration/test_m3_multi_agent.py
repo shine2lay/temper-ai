@@ -305,7 +305,7 @@ class TestParallelExecution:
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
             with patch('src.compiler.schemas.AgentConfig', side_effect=mock_agent_config):
-                with patch('src.agents.agent_factory.AgentFactory.create', side_effect=mock_create):
+                with patch('src.agents.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
                     result = compiler._execute_parallel_stage("test_stage", stage_config, state)
 
                     # Verify parallel execution completed
@@ -353,7 +353,7 @@ class TestParallelExecution:
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
             with patch('src.compiler.schemas.AgentConfig', side_effect=mock_agent_config):
-                with patch('src.agents.agent_factory.AgentFactory.create', side_effect=mock_create):
+                with patch('src.agents.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
                     # Should succeed with 2/3 agents
                     result = compiler._execute_parallel_stage("test_stage", stage_config, state)
 
@@ -402,7 +402,7 @@ class TestParallelExecution:
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
             with patch('src.compiler.schemas.AgentConfig', side_effect=mock_agent_config):
-                with patch('src.agents.agent_factory.AgentFactory.create', side_effect=mock_create):
+                with patch('src.agents.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
                     # Should raise RuntimeError
                     with pytest.raises(RuntimeError, match="Only 1/3 agents succeeded"):
                         compiler._execute_parallel_stage("test_stage", stage_config, state)

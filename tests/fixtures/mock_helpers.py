@@ -6,7 +6,7 @@ import pytest
 @pytest.fixture
 def mock_llm():
     """Mock LLM provider for agent tests."""
-    from src.agents.llm.base import BaseLLM
+    from src.llm.providers.base import BaseLLM
     llm = Mock(spec=BaseLLM)
     llm.generate.return_value = {"text": "Mock response", "tokens": 10}
     return llm

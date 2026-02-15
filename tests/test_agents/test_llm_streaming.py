@@ -17,8 +17,8 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import httpx
 import pytest
 
-from src.agents.llm.base import BaseLLM, LLMResponse, LLMStreamChunk, StreamCallback
-from src.agents.llm.ollama import OllamaLLM
+from src.llm.providers.base import BaseLLM, LLMResponse, LLMStreamChunk, StreamCallback
+from src.llm.providers.ollama import OllamaLLM
 from src.cli.stream_events import (
     LLM_DONE,
     LLM_TOKEN,
@@ -293,15 +293,15 @@ class TestAgentStreamingIntegration:
     """Test that agent layer correctly wires streaming callbacks."""
 
     def test_make_stream_callback_with_user_cb(self):
-        """make_stream_callback should return combined callback when user_cb is set."""
-        from src.agents._standard_agent_helpers import make_stream_callback
+        """_make_stream_callback should return combined callback when user_cb is set."""
+        from src.agents.base_agent import BaseAgent
 
-        agent = MagicMock()
+        agent = MagicMock(spec=BaseAgent)
         agent._stream_callback = MagicMock()
         agent._observer = MagicMock()
         agent._observer.active = True
 
-        cb = make_stream_callback(agent)
+        cb = BaseAgent._make_stream_callback(agent)
         assert cb is not None
 
         # Call the combined callback
@@ -312,27 +312,27 @@ class TestAgentStreamingIntegration:
         agent._observer.emit_stream_chunk.assert_called_once()
 
     def test_make_stream_callback_no_cb_no_observer(self):
-        """make_stream_callback should return None when neither is available."""
-        from src.agents._standard_agent_helpers import make_stream_callback
+        """_make_stream_callback should return None when neither is available."""
+        from src.agents.base_agent import BaseAgent
 
-        agent = MagicMock()
+        agent = MagicMock(spec=BaseAgent)
         agent._stream_callback = None
         agent._observer = MagicMock()
         agent._observer.active = False
 
-        cb = make_stream_callback(agent)
+        cb = BaseAgent._make_stream_callback(agent)
         assert cb is None
 
     def test_make_stream_callback_observer_only(self):
-        """make_stream_callback should work with only observer."""
-        from src.agents._standard_agent_helpers import make_stream_callback
+        """_make_stream_callback should work with only observer."""
+        from src.agents.base_agent import BaseAgent
 
-        agent = MagicMock()
+        agent = MagicMock(spec=BaseAgent)
         agent._stream_callback = None
         agent._observer = MagicMock()
         agent._observer.active = True
 
-        cb = make_stream_callback(agent)
+        cb = BaseAgent._make_stream_callback(agent)
         assert cb is not None
 
         chunk = LLMStreamChunk(content="hi", chunk_type="content", done=False)
@@ -340,30 +340,32 @@ class TestAgentStreamingIntegration:
         agent._observer.emit_stream_chunk.assert_called_once()
 
     def test_setup_execution_stores_stream_callback(self):
-        """setup_execution should extract stream_callback from input_data."""
-        from src.agents._standard_agent_helpers import setup_execution
+        """_setup should extract stream_callback from input_data."""
+        from src.agents.base_agent import BaseAgent
 
-        agent = MagicMock()
+        agent = MagicMock(spec=BaseAgent)
         agent.name = "test"
+        agent.tool_registry = None
         my_callback = lambda c: None  # noqa: E731
 
         context = MagicMock()
         context.agent_id = "agent-123"
 
-        setup_execution(agent, {"stream_callback": my_callback}, context)
+        BaseAgent._setup(agent, {"stream_callback": my_callback}, context)
         assert agent._stream_callback == my_callback
 
     def test_setup_execution_no_stream_callback(self):
-        """setup_execution should set None when no stream_callback provided."""
-        from src.agents._standard_agent_helpers import setup_execution
+        """_setup should set None when no stream_callback provided."""
+        from src.agents.base_agent import BaseAgent
 
-        agent = MagicMock()
+        agent = MagicMock(spec=BaseAgent)
         agent.name = "test"
+        agent.tool_registry = None
 
         context = MagicMock()
         context.agent_id = "agent-123"
 
-        setup_execution(agent, {}, context)
+        BaseAgent._setup(agent, {}, context)
         assert agent._stream_callback is None
 
 
@@ -529,7 +531,7 @@ class TestAgentObserverStreaming:
 
     def test_emit_stream_chunk_calls_tracker(self):
         """emit_stream_chunk should emit event via tracker's event bus."""
-        from src.agents.agent_observer import AgentObserver
+        from src.agents.utils.agent_observer import AgentObserver
 
         tracker = MagicMock()
         tracker._event_bus = MagicMock()
@@ -551,7 +553,7 @@ class TestAgentObserverStreaming:
 
     def test_emit_stream_chunk_no_tracker(self):
         """emit_stream_chunk should be a no-op when tracker is None."""
-        from src.agents.agent_observer import AgentObserver
+        from src.agents.utils.agent_observer import AgentObserver
 
         observer = AgentObserver(None, None)
         # Should not raise
@@ -560,7 +562,7 @@ class TestAgentObserverStreaming:
 
     def test_emit_stream_chunk_no_event_bus(self):
         """emit_stream_chunk should be a no-op when event_bus is missing."""
-        from src.agents.agent_observer import AgentObserver
+        from src.agents.utils.agent_observer import AgentObserver
 
         tracker = MagicMock(spec=[])  # No _event_bus attribute
         context = MagicMock()

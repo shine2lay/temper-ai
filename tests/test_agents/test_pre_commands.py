@@ -6,13 +6,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agents._pre_command_helpers import (
+from src.agents.utils._pre_command_helpers import (
     _render_command,
     _truncate,
     execute_pre_commands,
     format_pre_command_results,
 )
-from src.agents.constants import PRE_COMMAND_MAX_OUTPUT_CHARS
+from src.agents.utils.constants import PRE_COMMAND_MAX_OUTPUT_CHARS
 from src.schemas.agent_config import AgentConfig, PreCommand
 from src.tools.field_names import ToolResultFields
 
@@ -224,7 +224,7 @@ class TestExecutePreCommands:
         result = execute_pre_commands(agent, {})
         assert result is None
 
-    @patch("src.agents._pre_command_helpers.subprocess.run")
+    @patch("src.agents.utils._pre_command_helpers.subprocess.run")
     def test_successful_command(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(
             returncode=0, stdout="all good", stderr=""
@@ -241,7 +241,7 @@ class TestExecutePreCommands:
         assert "PASS" in result
         assert "all good" in result
 
-    @patch("src.agents._pre_command_helpers.subprocess.run")
+    @patch("src.agents.utils._pre_command_helpers.subprocess.run")
     def test_failed_command(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(
             returncode=1, stdout="", stderr="ImportError: bad"
@@ -258,7 +258,7 @@ class TestExecutePreCommands:
         assert "FAIL" in result
         assert "ImportError" in result
 
-    @patch("src.agents._pre_command_helpers.subprocess.run")
+    @patch("src.agents.utils._pre_command_helpers.subprocess.run")
     def test_timeout_command(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="sleep 999", timeout=30)
 
@@ -274,7 +274,7 @@ class TestExecutePreCommands:
         assert "FAIL" in result
         assert "Timed out" in result
 
-    @patch("src.agents._pre_command_helpers.subprocess.run")
+    @patch("src.agents.utils._pre_command_helpers.subprocess.run")
     def test_os_error_command(self, mock_run: MagicMock) -> None:
         mock_run.side_effect = OSError("No such file or directory")
 
@@ -289,7 +289,7 @@ class TestExecutePreCommands:
         assert result is not None
         assert "FAIL" in result
 
-    @patch("src.agents._pre_command_helpers.subprocess.run")
+    @patch("src.agents.utils._pre_command_helpers.subprocess.run")
     def test_template_substitution(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
 
@@ -305,7 +305,7 @@ class TestExecutePreCommands:
         assert "/tmp/test" in called_cmd
         assert "{{ workspace_path }}" not in called_cmd
 
-    @patch("src.agents._pre_command_helpers.subprocess.run")
+    @patch("src.agents.utils._pre_command_helpers.subprocess.run")
     def test_observer_tracking(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
 
@@ -341,7 +341,7 @@ class TestConfigLoading:
         assert cfg.agent.name == "vcs_static_checker"
         assert cfg.agent.type == "static_checker"
         assert cfg.agent.pre_commands is not None
-        assert len(cfg.agent.pre_commands) == 11
+        assert len(cfg.agent.pre_commands) == 3
         assert cfg.agent.pre_commands[0].name == "py_compile_all"
         assert cfg.agent.pre_commands[1].name == "ruff_lint"
         assert cfg.agent.tools is None  # static_checker has no tools key

@@ -175,6 +175,7 @@ class ErrorCode(str, Enum):
     # Agent errors (1300-1399)
     AGENT_INITIALIZATION_ERROR = "AGENT_INITIALIZATION_ERROR"
     AGENT_EXECUTION_ERROR = "AGENT_EXECUTION_ERROR"
+    AGENT_MAX_ITERATIONS = "AGENT_MAX_ITERATIONS"
     AGENT_TIMEOUT = "AGENT_TIMEOUT"
     AGENT_INVALID_OUTPUT = "AGENT_INVALID_OUTPUT"
 
@@ -588,6 +589,32 @@ class AgentError(BaseError):
             context=context,
             cause=cause,
             **kwargs
+        )
+
+
+class MaxIterationsError(AgentError):
+    """Raised when the LLM tool-calling loop exceeds the max iterations limit."""
+
+    def __init__(
+        self,
+        iterations: int,
+        tool_calls: Optional[list] = None,
+        tokens: int = 0,
+        cost: float = 0.0,
+        last_output: str = "",
+        last_reasoning: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        self.iterations = iterations
+        self.tool_calls = tool_calls or []
+        self.tokens = tokens
+        self.cost = cost
+        self.last_output = last_output
+        self.last_reasoning = last_reasoning
+        super().__init__(
+            message=f"Max tool calling iterations reached ({iterations})",
+            error_code=ErrorCode.AGENT_MAX_ITERATIONS,
+            **kwargs,
         )
 
 

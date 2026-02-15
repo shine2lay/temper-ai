@@ -13,7 +13,7 @@ Usage:
 
 from typing import Optional
 
-from src.agents.llm import LLMResponse, OllamaLLM  # M-04: Import from new location
+from src.llm.providers import LLMResponse, OllamaLLM
 from src.constants.durations import TIMEOUT_LONG
 from src.self_improvement.constants import (
     DEFAULT_OLLAMA_PORT,

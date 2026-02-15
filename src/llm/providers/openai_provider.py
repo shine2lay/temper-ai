@@ -3,7 +3,7 @@ from typing import Any, Dict
 
 import httpx
 
-from src.agents.llm.base import BaseLLM, LLMProvider, LLMResponse, StreamCallback
+from src.llm.providers.base import BaseLLM, LLMProvider, LLMResponse, StreamCallback
 
 
 class OpenAILLM(BaseLLM):

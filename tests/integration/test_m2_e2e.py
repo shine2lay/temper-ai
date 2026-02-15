@@ -27,7 +27,7 @@ from pathlib import Path
 import pytest
 from sqlmodel import select
 
-from src.agents.agent_factory import AgentFactory
+from src.agents.utils.agent_factory import AgentFactory
 
 # Agent components (should be ready after m2-04 + m2-04b)
 from src.agents.base_agent import AgentResponse, ExecutionContext
@@ -185,7 +185,7 @@ def test_agent_execution_mocked(config_loader):
     agent_config = AgentConfig(**agent_config_dict)
 
     # Create agent with mocked components
-    with patch('src.agents.standard_agent.ToolRegistry') as mock_registry:
+    with patch('src.agents.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(agent_config)
@@ -230,7 +230,7 @@ def test_agent_execution_real_ollama(config_loader, ollama_available):
 
     # Create agent
     from unittest.mock import patch
-    with patch('src.agents.standard_agent.ToolRegistry') as mock_registry:
+    with patch('src.agents.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
         mock_registry.return_value.get.return_value = None
 

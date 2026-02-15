@@ -9,7 +9,8 @@ Verifies that template injection attacks are blocked by:
 
 import pytest
 
-from src.agents.prompt_engine import PromptEngine, PromptRenderError
+from src.prompts.engine import PromptEngine, PromptRenderError
+from src.prompts.validation import TemplateVariableValidator
 
 
 class TestVariableTypeValidation:
@@ -91,7 +92,7 @@ class TestVariableSizeLimits:
 
     def test_blocks_oversized_string(self):
         engine = PromptEngine()
-        large_str = "x" * (PromptEngine.MAX_VAR_SIZE + 1)
+        large_str = "x" * (TemplateVariableValidator.MAX_VAR_SIZE + 1)
         with pytest.raises(PromptRenderError, match="exceeds size limit"):
             engine.render("{{val}}", {"val": large_str})
 
@@ -103,13 +104,13 @@ class TestVariableSizeLimits:
 
     def test_blocks_oversized_string_in_nested_dict(self):
         engine = PromptEngine()
-        large_str = "x" * (PromptEngine.MAX_VAR_SIZE + 1)
+        large_str = "x" * (TemplateVariableValidator.MAX_VAR_SIZE + 1)
         with pytest.raises(PromptRenderError, match="exceeds size limit"):
             engine.render("{{d}}", {"d": {"nested": large_str}})
 
     def test_blocks_oversized_string_in_list(self):
         engine = PromptEngine()
-        large_str = "x" * (PromptEngine.MAX_VAR_SIZE + 1)
+        large_str = "x" * (TemplateVariableValidator.MAX_VAR_SIZE + 1)
         with pytest.raises(PromptRenderError, match="exceeds size limit"):
             engine.render("{{items}}", {"items": [large_str]})
 

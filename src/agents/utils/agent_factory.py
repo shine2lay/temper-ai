@@ -12,7 +12,7 @@ import threading
 from typing import TYPE_CHECKING, Dict, Type
 
 from src.agents.base_agent import BaseAgent
-from src.agents.constants import AGENT_TYPE_STANDARD
+from src.agents.utils.constants import AGENT_TYPE_STANDARD
 from src.agents.standard_agent import StandardAgent
 from src.agents.static_checker_agent import StaticCheckerAgent
 

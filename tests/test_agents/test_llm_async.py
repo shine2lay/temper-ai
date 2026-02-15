@@ -9,15 +9,17 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 import pytest
 
-from src.agents.llm_providers import (
+from src.llm.providers import (
     AnthropicLLM,
-    LLMAuthenticationError,
     LLMProvider,
-    LLMRateLimitError,
     LLMResponse,
-    LLMTimeoutError,
     OllamaLLM,
     OpenAILLM,
+)
+from src.utils.exceptions import (
+    LLMAuthenticationError,
+    LLMRateLimitError,
+    LLMTimeoutError,
 )
 
 # ============================================================================

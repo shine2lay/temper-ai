@@ -2,12 +2,12 @@
 import warnings
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from src.agents.constants import ERROR_MSG_VALID_PROVIDERS_SUFFIX
-from src.agents.llm.anthropic_provider import AnthropicLLM
-from src.agents.llm.base import BaseLLM, LLMProvider
-from src.agents.llm.ollama import OllamaLLM
-from src.agents.llm.openai_provider import OpenAILLM
-from src.agents.llm.vllm_provider import VllmLLM
+from src.llm.constants import ERROR_MSG_VALID_PROVIDERS_SUFFIX
+from src.llm.providers.anthropic_provider import AnthropicLLM
+from src.llm.providers.base import BaseLLM, LLMProvider
+from src.llm.providers.ollama import OllamaLLM
+from src.llm.providers.openai_provider import OpenAILLM
+from src.llm.providers.vllm_provider import VllmLLM
 from src.utils.exceptions import LLMError
 
 if TYPE_CHECKING:

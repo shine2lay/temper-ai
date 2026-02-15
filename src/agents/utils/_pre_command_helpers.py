@@ -14,7 +14,7 @@ import subprocess  # noqa: S404 -- commands from trusted YAML config
 import time
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
-from src.agents.constants import (
+from src.agents.utils.constants import (
     ENV_VAR_PATH,
     ENV_VAR_VIRTUAL_ENV,
     PRE_COMMAND_MAX_OUTPUT_CHARS,

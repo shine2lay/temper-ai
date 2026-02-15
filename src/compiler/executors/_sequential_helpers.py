@@ -13,6 +13,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, cast
 
+from src.compiler.executors._base_helpers import _truncate_tracking_data
 from src.compiler.executors.state_keys import StateKeys
 from src.constants.durations import SECONDS_PER_MINUTE
 from src.constants.retries import (
@@ -48,6 +49,8 @@ class AgentExecutionContext:
     tracker: Optional[Any]
     config_loader: Any
     agent_factory_cls: Any = None
+    context_provider: Optional[Any] = None
+    stage_config: Optional[Any] = None
 
 
 @dataclass
@@ -183,7 +186,7 @@ def _load_or_cache_agent(
     if ctx.agent_factory_cls is not None:
         agent_factory = ctx.agent_factory_cls
     else:
-        from src.agents.agent_factory import AgentFactory as _AgentFactory
+        from src.agents.utils.agent_factory import AgentFactory as _AgentFactory
         agent_factory = _AgentFactory
     from src.compiler.schemas import AgentConfig
 
@@ -201,9 +204,46 @@ def _load_or_cache_agent(
 
 def _prepare_sequential_input(
     ctx: AgentExecutionContext,
-    prior_agent_outputs: Dict[str, Any]
+    prior_agent_outputs: Dict[str, Any],
+    context_provider: Optional[Any] = None,
+    stage_config: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Prepare input data for sequential agent execution."""
+    """Prepare input data for sequential agent execution.
+
+    When ``context_provider`` and ``stage_config`` are supplied and the
+    stage declares inputs with source refs, resolved (focused) context
+    is returned instead of the full state.
+    """
+    # Dynamic inputs override normal resolution
+    dynamic = ctx.state.get(StateKeys.DYNAMIC_INPUTS)
+    if dynamic is not None:
+        from src.compiler.context_provider import _INFRASTRUCTURE_KEYS
+
+        result = dict(dynamic)
+        for key in _INFRASTRUCTURE_KEYS:
+            if key in ctx.state:
+                result[key] = ctx.state[key]
+        result[StateKeys.CURRENT_STAGE_AGENTS] = dict(prior_agent_outputs)
+        return result
+
+    # Try focused resolution via context_provider
+    if context_provider is not None and stage_config is not None:
+        try:
+            resolved = context_provider.resolve(stage_config, ctx.state)
+            # Propagate context metadata to state for stage output tracking
+            if "_context_meta" in resolved:
+                ctx.state["_context_meta"] = resolved["_context_meta"]
+            resolved[StateKeys.CURRENT_STAGE_AGENTS] = dict(prior_agent_outputs)
+            return dict(resolved)
+        except Exception:
+            logger.debug(
+                "Context provider resolution failed for stage '%s', "
+                "falling back to full state",
+                ctx.stage_name,
+                exc_info=True,
+            )
+
+    # Legacy: full state with workflow_inputs unwrapped
     if hasattr(ctx.state, 'to_dict'):
         state_dict = ctx.state.to_dict(exclude_internal=True)
     else:
@@ -243,6 +283,7 @@ def _execute_with_tracker(
         k: v for k, v in input_data.items()
         if k not in _non_serializable_keys
     })
+    tracking_input_data = _truncate_tracking_data(tracking_input_data)
 
     if ctx.tracker is None:
         raise ValueError("Tracker required for agent execution tracking")
@@ -256,15 +297,16 @@ def _execute_with_tracker(
         input_data[StateKeys.TRACKER] = ctx.tracker
         response = agent.execute(input_data, context)
 
-        ctx.tracker.set_agent_output(
+        from src.observability.metric_aggregator import AgentOutputParams
+        ctx.tracker.set_agent_output(AgentOutputParams(
             agent_id=agent_id,
             output_data={StateKeys.OUTPUT: response.output},
             reasoning=response.reasoning,
             total_tokens=response.tokens,
             estimated_cost_usd=response.estimated_cost_usd,
             num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
-            num_tool_calls=len(response.tool_calls) if response.tool_calls else 0
-        )
+            num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
+        ))
 
     return response
 
@@ -321,7 +363,11 @@ def run_agent(
     from src.core.context import ExecutionContext
 
     agent, agent_config, agent_config_dict = _load_or_cache_agent(ctx, agent_name)
-    input_data = _prepare_sequential_input(ctx, prior_agent_outputs)
+    input_data = _prepare_sequential_input(
+        ctx, prior_agent_outputs,
+        context_provider=ctx.context_provider,
+        stage_config=ctx.stage_config,
+    )
 
     context = ExecutionContext(
         workflow_id=ctx.workflow_id,

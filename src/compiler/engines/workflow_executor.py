@@ -9,10 +9,9 @@ Supports:
 - Conditional stages (skip_if / condition)
 - Loop-back stages (loops_back_to / max_loops / loop_condition)
 - Stage-to-stage negotiation (re-run producer on ContextResolutionError)
-- Dynamic upstream retry (stage requests re-run of upstream via text signal)
+- Dynamic edge routing (stage declares next stage via _next_stage signal)
 """
 import logging
-import re
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable, Dict, List, Optional
@@ -33,8 +32,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_LOOPS = 2
 DEFAULT_MAX_NEGOTIATION_ROUNDS = 2
 DEFAULT_MAX_STAGE_PARALLEL_WORKERS = 4
-DEFAULT_MAX_UPSTREAM_RETRIES = 2
-_RETRY_UPSTREAM_KEY = "_retry_upstream"
+DEFAULT_MAX_DYNAMIC_HOPS = 5
 
 
 def _ref_attr(ref: Any, attr: str, default: Any = None) -> Any:
@@ -81,20 +79,7 @@ def _group_by_depth(
     return dict(groups)
 
 
-_RETRY_TEXT_PATTERN = re.compile(
-    r"RETRY_UPSTREAM:\s*(\S+)\s*\n\s*RETRY_FEEDBACK:\s*(.+?)(?:\n|$)",
-)
-
-
-def _parse_text_retry_signal(text: str) -> Optional[Dict[str, str]]:
-    """Parse RETRY_UPSTREAM/RETRY_FEEDBACK from agent text output."""
-    match = _RETRY_TEXT_PATTERN.search(text)
-    if match:
-        return {
-            "target": match.group(1).strip(),
-            "feedback": match.group(2).strip(),
-        }
-    return None
+_NEXT_STAGE_KEY = "_next_stage"
 
 
 class WorkflowExecutor:
@@ -223,9 +208,12 @@ class WorkflowExecutor:
                 stage_refs, state, workflow_config,
             )
 
-        # Execute with upstream retry support
-        return self._execute_with_upstream_retry(
-            stage_name, stage_ref, stage_nodes, state, workflow_config,
+        # Execute with dynamic edge routing
+        state = self._execute_with_negotiation(
+            stage_name, stage_nodes, state, workflow_config,
+        )
+        return self._follow_dynamic_edges(
+            stage_name, stage_nodes, state, workflow_config,
         )
 
     def _execute_parallel_stages(
@@ -270,35 +258,17 @@ class WorkflowExecutor:
                 runnable[0], stage_nodes, state, workflow_config,
             )
 
-        # Parallel execution
-        max_workers = min(DEFAULT_MAX_STAGE_PARALLEL_WORKERS, len(runnable))
-        results: Dict[str, Dict[str, Any]] = {}
+        results = self._run_parallel_stage_batch(runnable, stage_nodes, state)
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_name = {
-                executor.submit(
-                    self._run_stage_node, name, stage_nodes[name], state,
-                ): name
-                for name in runnable
-            }
-
-            for future in as_completed(future_to_name):
-                name = future_to_name[future]
-                try:
-                    results[name] = future.result()
-                except Exception:
-                    logger.exception("Stage '%s' failed in parallel execution", name)
-                    results[name] = {
-                        "stage_outputs": {
-                            name: {"stage_status": "failed", "error": "execution_error"}
-                        },
-                        "current_stage": name,
-                    }
-
-        # Merge all stage results into state
         for name in runnable:
             if name in results:
                 state = self._merge_stage_result(state, results[name])
+
+        # Process dynamic edges from each parallel stage sequentially
+        for name in runnable:
+            state = self._follow_dynamic_edges(
+                name, stage_nodes, state, workflow_config,
+            )
 
         return state
 
@@ -491,86 +461,19 @@ class WorkflowExecutor:
 
         return False
 
-    def _execute_with_upstream_retry(
-        self,
-        stage_name: str,
-        stage_ref: Any,
-        stage_nodes: Dict[str, Callable],
-        state: Dict[str, Any],
-        workflow_config: Dict[str, Any],
-    ) -> Dict[str, Any]:
-        """Execute stage, then check if it wants to retry an upstream stage.
-
-        If the stage output contains a ``_retry_upstream`` dict with
-        ``target`` (stage name) and ``feedback`` (str), re-run the
-        target stage with that feedback injected into state, then
-        re-run the current stage.
-        """
-        max_retries = _ref_attr(
-            stage_ref, "max_upstream_retries",
-            DEFAULT_MAX_UPSTREAM_RETRIES,
-        )
-
-        for attempt in range(max_retries + 1):
-            state = self._execute_with_negotiation(
-                stage_name, stage_nodes, state, workflow_config,
-            )
-
-            retry = self._extract_retry_signal(stage_name, state)
-            if retry is None:
-                return state
-
-            target = retry["target"]
-            if target not in stage_nodes:
-                logger.warning(
-                    "Stage '%s' requested retry of '%s' but "
-                    "target not found; ignoring", stage_name, target,
-                )
-                return state
-
-            if attempt >= max_retries:
-                logger.warning(
-                    "Stage '%s' still requesting retry after %d "
-                    "rounds; proceeding", stage_name, max_retries,
-                )
-                return state
-
-            logger.info(
-                "Stage '%s' requesting retry of upstream '%s' "
-                "(round %d/%d): %s",
-                stage_name, target, attempt + 1, max_retries,
-                retry.get("feedback", ""),
-            )
-            state["_upstream_feedback"] = retry
-            # Also inject into workflow_inputs so SourceResolver can find it
-            wi = state.get(StateKeys.WORKFLOW_INPUTS, {})
-            wi["_upstream_feedback"] = retry
-            state[StateKeys.WORKFLOW_INPUTS] = wi
-
-            result = self._run_stage_node(
-                target, stage_nodes[target], state,
-            )
-            state = self._merge_stage_result(state, result)
-            state.pop("_upstream_feedback", None)
-            # Clean up workflow_inputs
-            wi = state.get(StateKeys.WORKFLOW_INPUTS, {})
-            wi.pop("_upstream_feedback", None)
-
-        return state
-
     @staticmethod
-    def _extract_retry_signal(
+    def _extract_next_stage_signal(
         stage_name: str,
         state: Dict[str, Any],
     ) -> Optional[Dict[str, Any]]:
-        """Extract _retry_upstream signal from a stage's output.
+        """Extract _next_stage signal from a stage's output.
 
-        Checks three sources in priority order:
-        1. Top-level ``_retry_upstream`` dict (mock/direct usage)
-        2. Structured compartment (output extraction path)
-        3. Text pattern in agent output (LLM agent path):
-           ``RETRY_UPSTREAM: <target>``
-           ``RETRY_FEEDBACK: <feedback>``
+        Checks two sources in priority order:
+        1. Top-level ``_next_stage`` dict in stage output
+        2. ``structured`` compartment
+
+        Returns:
+            Dict with ``name`` (str) and ``inputs`` (dict), or None.
         """
         stage_data = state.get(StateKeys.STAGE_OUTPUTS, {}).get(
             stage_name, {},
@@ -579,27 +482,105 @@ class WorkflowExecutor:
             return None
 
         # 1. Top-level dict signal
-        retry = stage_data.get(_RETRY_UPSTREAM_KEY)
-        if retry and isinstance(retry, dict):
-            if retry.get("target") and retry.get("feedback"):
-                return retry
+        signal = stage_data.get(_NEXT_STAGE_KEY)
+        if isinstance(signal, dict) and signal.get("name"):
+            return {"name": signal["name"], "inputs": signal.get("inputs", {})}
 
         # 2. Structured compartment
         structured = stage_data.get("structured", {})
         if isinstance(structured, dict):
-            retry = structured.get(_RETRY_UPSTREAM_KEY)
-            if retry and isinstance(retry, dict):
-                if retry.get("target") and retry.get("feedback"):
-                    return retry
-
-        # 3. Text-based signal in agent output
-        output_text = stage_data.get("output", "")
-        if isinstance(output_text, str):
-            parsed = _parse_text_retry_signal(output_text)
-            if parsed:
-                return parsed
+            signal = structured.get(_NEXT_STAGE_KEY)
+            if isinstance(signal, dict) and signal.get("name"):
+                return {"name": signal["name"], "inputs": signal.get("inputs", {})}
 
         return None
+
+    def _follow_dynamic_edges(
+        self,
+        stage_name: str,
+        stage_nodes: Dict[str, Callable],
+        state: Dict[str, Any],
+        workflow_config: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Follow dynamic edge signals after a stage completes.
+
+        If the completed stage declared ``_next_stage``, run the target
+        stage with optional injected inputs. Supports chaining up to
+        ``DEFAULT_MAX_DYNAMIC_HOPS``.
+        """
+        current_stage = stage_name
+
+        for hop in range(DEFAULT_MAX_DYNAMIC_HOPS):
+            signal = self._extract_next_stage_signal(current_stage, state)
+            if signal is None:
+                break
+
+            target = signal["name"]
+            if target not in stage_nodes:
+                logger.warning(
+                    "Stage '%s' declared _next_stage '%s' but "
+                    "target not found; ignoring",
+                    current_stage, target,
+                )
+                break
+
+            logger.info(
+                "Dynamic edge: '%s' → '%s' (hop %d/%d)",
+                current_stage, target, hop + 1, DEFAULT_MAX_DYNAMIC_HOPS,
+            )
+
+            # Inject dynamic inputs if provided
+            if signal["inputs"]:
+                state[StateKeys.DYNAMIC_INPUTS] = signal["inputs"]
+
+            state = self._execute_with_negotiation(
+                target, stage_nodes, state, workflow_config,
+            )
+
+            # Clean up dynamic inputs
+            state.pop(StateKeys.DYNAMIC_INPUTS, None)
+
+            current_stage = target
+        else:
+            logger.warning(
+                "Dynamic edge chain reached max hops (%d) at stage '%s'",
+                DEFAULT_MAX_DYNAMIC_HOPS, current_stage,
+            )
+
+        return state
+
+    def _run_parallel_stage_batch(
+        self,
+        runnable: List[str],
+        stage_nodes: Dict[str, Callable],
+        state: Dict[str, Any],
+    ) -> Dict[str, Dict[str, Any]]:
+        """Execute stages in parallel using ThreadPoolExecutor."""
+        max_workers = min(DEFAULT_MAX_STAGE_PARALLEL_WORKERS, len(runnable))
+        results: Dict[str, Dict[str, Any]] = {}
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_name = {
+                executor.submit(
+                    self._run_stage_node, name, stage_nodes[name], state,
+                ): name
+                for name in runnable
+            }
+
+            for future in as_completed(future_to_name):
+                name = future_to_name[future]
+                try:
+                    results[name] = future.result()
+                except Exception:
+                    logger.exception("Stage '%s' failed in parallel execution", name)
+                    results[name] = {
+                        "stage_outputs": {
+                            name: {"stage_status": "failed", "error": "execution_error"}
+                        },
+                        "current_stage": name,
+                    }
+
+        return results
 
     @staticmethod
     def _run_stage_node(
@@ -613,7 +594,8 @@ class WorkflowExecutor:
         stage_outputs and current_stage keys.
         """
         logger.info("Executing stage '%s'", stage_name)
-        return node_fn(state)
+        result: Dict[str, Any] = node_fn(state)
+        return result
 
     @staticmethod
     def _merge_stage_result(

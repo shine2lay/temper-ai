@@ -10,11 +10,11 @@ import pytest
 
 from src.compiler.condition_evaluator import ConditionEvaluator
 from src.compiler.engines.workflow_executor import (
+    DEFAULT_MAX_DYNAMIC_HOPS,
     WorkflowExecutor,
     _build_ref_lookup,
     _group_by_depth,
     _is_conditional,
-    _parse_text_retry_signal,
     _ref_attr,
 )
 from src.compiler.state_manager import StateManager
@@ -472,141 +472,71 @@ class TestWorkflowExecutor:
         assert call_log.count("consumer") == 2
         assert "consumer" in result["stage_outputs"]
 
-    def test_upstream_retry_reruns_target_then_current(self):
-        """Test dynamic stage calling: stage B retries stage A with feedback."""
-        call_log = []
 
-        builder = MagicMock()
-        builder.extract_stage_name.side_effect = lambda ref: (
-            ref if isinstance(ref, str) else ref.get("name", str(ref))
-        )
+class TestExtractNextStageSignal:
+    """Test WorkflowExecutor._extract_next_stage_signal static method."""
 
-        def create_node(stage_name, workflow_config):
-            def node_fn(state):
-                call_log.append(stage_name)
-                if stage_name == "triage":
-                    # On retry, produce better output
-                    feedback = state.get("_upstream_feedback")
-                    output = "detailed specs" if feedback else "vague"
-                    return {
-                        "stage_outputs": {"triage": {
-                            "stage_status": "completed",
-                            "output": output,
-                        }},
-                        "current_stage": "triage",
-                    }
-                if stage_name == "design":
-                    triage_out = state.get("stage_outputs", {}).get(
-                        "triage", {},
-                    ).get("output", "")
-                    if triage_out == "vague":
-                        # Signal: retry triage with feedback
-                        return {
-                            "stage_outputs": {"design": {
-                                "stage_status": "completed",
-                                "output": "needs more detail",
-                                "_retry_upstream": {
-                                    "target": "triage",
-                                    "feedback": "need endpoint specs",
-                                },
-                            }},
-                            "current_stage": "design",
-                        }
-                    return {
-                        "stage_outputs": {"design": {
-                            "stage_status": "completed",
-                            "output": "design done",
-                        }},
-                        "current_stage": "design",
-                    }
-                return {
-                    "stage_outputs": {stage_name: {
-                        "stage_status": "completed",
-                    }},
-                    "current_stage": stage_name,
-                }
-            return node_fn
+    def test_top_level_signal(self):
+        """Test extraction from top-level _next_stage dict."""
+        state = {"stage_outputs": {"stage_a": {
+            "stage_status": "completed",
+            "_next_stage": {"name": "stage_b", "inputs": {"key": "val"}},
+        }}}
+        result = WorkflowExecutor._extract_next_stage_signal("stage_a", state)
+        assert result == {"name": "stage_b", "inputs": {"key": "val"}}
 
-        builder.create_stage_node.side_effect = create_node
+    def test_structured_signal(self):
+        """Test extraction from structured compartment."""
+        state = {"stage_outputs": {"stage_a": {
+            "stage_status": "completed",
+            "structured": {
+                "_next_stage": {"name": "stage_c", "inputs": {"x": 1}},
+            },
+        }}}
+        result = WorkflowExecutor._extract_next_stage_signal("stage_a", state)
+        assert result == {"name": "stage_c", "inputs": {"x": 1}}
 
+    def test_no_signal(self):
+        """Test returns None when no _next_stage present."""
+        state = {"stage_outputs": {"stage_a": {
+            "stage_status": "completed",
+            "output": "hello",
+        }}}
+        assert WorkflowExecutor._extract_next_stage_signal("stage_a", state) is None
+
+    def test_missing_name(self):
+        """Test returns None when _next_stage has no name."""
+        state = {"stage_outputs": {"stage_a": {
+            "_next_stage": {"inputs": {"key": "val"}},
+        }}}
+        assert WorkflowExecutor._extract_next_stage_signal("stage_a", state) is None
+
+    def test_inputs_default_empty(self):
+        """Test inputs defaults to empty dict when not provided."""
+        state = {"stage_outputs": {"stage_a": {
+            "_next_stage": {"name": "stage_b"},
+        }}}
+        result = WorkflowExecutor._extract_next_stage_signal("stage_a", state)
+        assert result == {"name": "stage_b", "inputs": {}}
+
+
+class TestDynamicEdgeRouting:
+    """Test dynamic edge routing in WorkflowExecutor."""
+
+    def _make_executor(self, stage_results=None):
+        """Create WorkflowExecutor with mock dependencies."""
+        results = stage_results or {}
+        builder = _make_mock_node_builder(results)
         evaluator = ConditionEvaluator()
         manager = StateManager()
-        executor = WorkflowExecutor(builder, evaluator, manager)
-
-        stage_refs = [
-            "triage",
-            {"name": "design", "depends_on": ["triage"]},
-        ]
-        state = {"stage_outputs": {}, "current_stage": ""}
-        result = executor.run(stage_refs, {}, state)
-
-        # triage: initial + retry = 2 calls
-        assert call_log.count("triage") == 2
-        # design: rejected first time + accepted second = 2 calls
-        assert call_log.count("design") == 2
-        # Final triage output should be the improved version
-        assert result["stage_outputs"]["triage"]["output"] == "detailed specs"
-        # Final design output should be accepted
-        assert result["stage_outputs"]["design"]["output"] == "design done"
-
-    def test_upstream_retry_respects_max_rounds(self):
-        """Test that upstream retry stops after max rounds."""
-        call_log = []
-
-        builder = MagicMock()
-        builder.extract_stage_name.side_effect = lambda ref: (
-            ref if isinstance(ref, str) else ref.get("name", str(ref))
+        return WorkflowExecutor(
+            node_builder=builder,
+            condition_evaluator=evaluator,
+            state_manager=manager,
         )
 
-        def create_node(stage_name, workflow_config):
-            def node_fn(state):
-                call_log.append(stage_name)
-                if stage_name == "upstream":
-                    return {
-                        "stage_outputs": {"upstream": {
-                            "stage_status": "completed",
-                            "output": "still vague",
-                        }},
-                        "current_stage": "upstream",
-                    }
-                # Always reject
-                return {
-                    "stage_outputs": {"downstream": {
-                        "stage_status": "completed",
-                        "_retry_upstream": {
-                            "target": "upstream",
-                            "feedback": "not good enough",
-                        },
-                    }},
-                    "current_stage": "downstream",
-                }
-            return node_fn
-
-        builder.create_stage_node.side_effect = create_node
-
-        executor = WorkflowExecutor(
-            builder, ConditionEvaluator(), StateManager(),
-        )
-
-        stage_refs = [
-            "upstream",
-            {
-                "name": "downstream",
-                "depends_on": ["upstream"],
-                "max_upstream_retries": 2,
-            },
-        ]
-        state = {"stage_outputs": {}, "current_stage": ""}
-        result = executor.run(stage_refs, {}, state)
-
-        # upstream: initial + 2 retries = 3
-        assert call_log.count("upstream") == 3
-        # downstream: initial + 2 retries = 3 (max_upstream_retries=2)
-        assert call_log.count("downstream") == 3
-        assert "downstream" in result["stage_outputs"]
-
-    def test_text_based_retry_signal(self):
-        """Test that RETRY_UPSTREAM/RETRY_FEEDBACK text pattern triggers retry."""
+    def test_dynamic_edge_runs_target_stage(self):
+        """Test that _next_stage signal causes target stage to run."""
         call_log = []
 
         builder = MagicMock()
@@ -618,37 +548,12 @@ class TestWorkflowExecutor:
             def node_fn(state):
                 call_log.append(stage_name)
                 if stage_name == "analyze":
-                    feedback = state.get("_upstream_feedback")
-                    output = "Detailed 5-point analysis" if feedback else "Brief summary"
                     return {
                         "stage_outputs": {"analyze": {
                             "stage_status": "completed",
-                            "output": output,
+                            "_next_stage": {"name": "fix"},
                         }},
                         "current_stage": "analyze",
-                    }
-                if stage_name == "evaluate":
-                    analysis = state.get("stage_outputs", {}).get(
-                        "analyze", {},
-                    ).get("output", "")
-                    if "Brief" in analysis:
-                        return {
-                            "stage_outputs": {"evaluate": {
-                                "stage_status": "completed",
-                                "output": (
-                                    "Analysis is too vague.\n"
-                                    "RETRY_UPSTREAM: analyze\n"
-                                    "RETRY_FEEDBACK: Need at least 5 technical points"
-                                ),
-                            }},
-                            "current_stage": "evaluate",
-                        }
-                    return {
-                        "stage_outputs": {"evaluate": {
-                            "stage_status": "completed",
-                            "output": "EVALUATION: PASS\nREASONING: Good detail",
-                        }},
-                        "current_stage": "evaluate",
                     }
                 return {
                     "stage_outputs": {stage_name: {"stage_status": "completed"}},
@@ -657,51 +562,291 @@ class TestWorkflowExecutor:
             return node_fn
 
         builder.create_stage_node.side_effect = create_node
+        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
 
-        executor = WorkflowExecutor(
-            builder, ConditionEvaluator(), StateManager(),
+        stage_refs = ["analyze", {"name": "fix", "depends_on": ["analyze"]}]
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(stage_refs, {}, state)
+
+        assert "analyze" in call_log
+        assert "fix" in call_log
+        # fix called twice: once via dynamic edge, once via normal DAG walk
+        assert call_log.count("fix") == 2
+        assert "fix" in result["stage_outputs"]
+
+    def test_no_signal_continues_normally(self):
+        """Test that without _next_stage, DAG proceeds normally."""
+        executor = self._make_executor({
+            "stage_a": {
+                "stage_outputs": {"stage_a": {"stage_status": "completed"}},
+                "current_stage": "stage_a",
+            },
+            "stage_b": {
+                "stage_outputs": {"stage_b": {"stage_status": "completed"}},
+                "current_stage": "stage_b",
+            },
+        })
+
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["stage_a", "stage_b"], {}, state)
+
+        assert "stage_a" in result["stage_outputs"]
+        assert "stage_b" in result["stage_outputs"]
+
+    def test_chain_two_hops(self):
+        """Test chaining: A → B → C via dynamic edges."""
+        call_log = []
+
+        builder = MagicMock()
+        builder.extract_stage_name.side_effect = lambda ref: (
+            ref if isinstance(ref, str) else ref.get("name", str(ref))
         )
 
+        def create_node(stage_name, workflow_config):
+            def node_fn(state):
+                call_log.append(stage_name)
+                if stage_name == "a":
+                    return {
+                        "stage_outputs": {"a": {
+                            "stage_status": "completed",
+                            "_next_stage": {"name": "b"},
+                        }},
+                        "current_stage": "a",
+                    }
+                if stage_name == "b":
+                    return {
+                        "stage_outputs": {"b": {
+                            "stage_status": "completed",
+                            "_next_stage": {"name": "c"},
+                        }},
+                        "current_stage": "b",
+                    }
+                return {
+                    "stage_outputs": {stage_name: {"stage_status": "completed"}},
+                    "current_stage": stage_name,
+                }
+            return node_fn
+
+        builder.create_stage_node.side_effect = create_node
+        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["a", "b", "c"], {}, state)
+
+        # a triggers b, b triggers c (via dynamic edges)
+        assert "a" in call_log
+        assert "b" in call_log
+        assert "c" in call_log
+        assert "c" in result["stage_outputs"]
+
+    def test_respects_max_hops(self):
+        """Test that dynamic edge chain stops at DEFAULT_MAX_DYNAMIC_HOPS."""
+        call_log = []
+
+        builder = MagicMock()
+        builder.extract_stage_name.side_effect = lambda ref: (
+            ref if isinstance(ref, str) else ref.get("name", str(ref))
+        )
+
+        def create_node(stage_name, workflow_config):
+            def node_fn(state):
+                call_log.append(stage_name)
+                # Always point to "loop" creating an infinite chain
+                return {
+                    "stage_outputs": {stage_name: {
+                        "stage_status": "completed",
+                        "_next_stage": {"name": "loop"},
+                    }},
+                    "current_stage": stage_name,
+                }
+            return node_fn
+
+        builder.create_stage_node.side_effect = create_node
+        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["loop"], {}, state)
+
+        # Initial call + DEFAULT_MAX_DYNAMIC_HOPS dynamic calls
+        assert call_log.count("loop") == 1 + DEFAULT_MAX_DYNAMIC_HOPS
+
+    def test_unknown_target_ignored(self):
+        """Test that _next_stage pointing to unknown stage is ignored."""
+        call_log = []
+
+        builder = MagicMock()
+        builder.extract_stage_name.side_effect = lambda ref: (
+            ref if isinstance(ref, str) else ref.get("name", str(ref))
+        )
+
+        def create_node(stage_name, workflow_config):
+            def node_fn(state):
+                call_log.append(stage_name)
+                return {
+                    "stage_outputs": {stage_name: {
+                        "stage_status": "completed",
+                        "_next_stage": {"name": "nonexistent"},
+                    }},
+                    "current_stage": stage_name,
+                }
+            return node_fn
+
+        builder.create_stage_node.side_effect = create_node
+        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["stage_a"], {}, state)
+
+        assert call_log == ["stage_a"]
+        assert "stage_a" in result["stage_outputs"]
+
+    def test_from_structured_compartment(self):
+        """Test dynamic edge from structured compartment."""
+        call_log = []
+
+        builder = MagicMock()
+        builder.extract_stage_name.side_effect = lambda ref: (
+            ref if isinstance(ref, str) else ref.get("name", str(ref))
+        )
+
+        def create_node(stage_name, workflow_config):
+            def node_fn(state):
+                call_log.append(stage_name)
+                if stage_name == "analyze":
+                    return {
+                        "stage_outputs": {"analyze": {
+                            "stage_status": "completed",
+                            "structured": {
+                                "_next_stage": {"name": "fix", "inputs": {"issue": "bug"}},
+                            },
+                        }},
+                        "current_stage": "analyze",
+                    }
+                return {
+                    "stage_outputs": {stage_name: {"stage_status": "completed"}},
+                    "current_stage": stage_name,
+                }
+            return node_fn
+
+        builder.create_stage_node.side_effect = create_node
+        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["analyze", "fix"], {}, state)
+
+        assert "analyze" in call_log
+        assert "fix" in call_log
+
+    def test_inputs_delivered_to_target(self):
+        """Test that _next_stage inputs are available as _dynamic_inputs."""
+        captured_inputs = {}
+
+        builder = MagicMock()
+        builder.extract_stage_name.side_effect = lambda ref: (
+            ref if isinstance(ref, str) else ref.get("name", str(ref))
+        )
+
+        def create_node(stage_name, workflow_config):
+            def node_fn(state):
+                if stage_name == "analyze":
+                    return {
+                        "stage_outputs": {"analyze": {
+                            "stage_status": "completed",
+                            "_next_stage": {
+                                "name": "fix",
+                                "inputs": {"issue": "null pointer", "file": "main.py"},
+                            },
+                        }},
+                        "current_stage": "analyze",
+                    }
+                if stage_name == "fix":
+                    # Capture dynamic inputs visible in state
+                    captured_inputs.update(state.get("_dynamic_inputs", {}))
+                return {
+                    "stage_outputs": {stage_name: {"stage_status": "completed"}},
+                    "current_stage": stage_name,
+                }
+            return node_fn
+
+        builder.create_stage_node.side_effect = create_node
+        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+
+        state = {"stage_outputs": {}, "current_stage": ""}
+        executor.run(["analyze", "fix"], {}, state)
+
+        assert captured_inputs == {"issue": "null pointer", "file": "main.py"}
+
+    def test_after_parallel_stages(self):
+        """Test dynamic edges are processed after parallel stages complete."""
+        call_log = []
+
+        builder = MagicMock()
+        builder.extract_stage_name.side_effect = lambda ref: (
+            ref if isinstance(ref, str) else ref.get("name", str(ref))
+        )
+
+        def create_node(stage_name, workflow_config):
+            def node_fn(state):
+                call_log.append(stage_name)
+                if stage_name == "branch_a":
+                    return {
+                        "stage_outputs": {"branch_a": {
+                            "stage_status": "completed",
+                            "_next_stage": {"name": "merge"},
+                        }},
+                        "current_stage": "branch_a",
+                    }
+                return {
+                    "stage_outputs": {stage_name: {"stage_status": "completed"}},
+                    "current_stage": stage_name,
+                }
+            return node_fn
+
+        builder.create_stage_node.side_effect = create_node
+        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+
         stage_refs = [
-            "analyze",
-            {"name": "evaluate", "depends_on": ["analyze"]},
+            "root",
+            {"name": "branch_a", "depends_on": ["root"]},
+            {"name": "branch_b", "depends_on": ["root"]},
+            {"name": "merge", "depends_on": ["branch_a", "branch_b"]},
         ]
         state = {"stage_outputs": {}, "current_stage": ""}
         result = executor.run(stage_refs, {}, state)
 
-        # analyze: initial + 1 retry = 2
-        assert call_log.count("analyze") == 2
-        # evaluate: rejected once + accepted = 2
-        assert call_log.count("evaluate") == 2
-        assert "PASS" in result["stage_outputs"]["evaluate"]["output"]
+        assert "merge" in call_log
+        assert "merge" in result["stage_outputs"]
 
-
-class TestParseTextRetrySignal:
-    """Test _parse_text_retry_signal helper."""
-
-    def test_valid_signal(self):
-        text = "Some preamble\nRETRY_UPSTREAM: analyze\nRETRY_FEEDBACK: Need more detail\nSome other text"
-        result = _parse_text_retry_signal(text)
-        assert result == {"target": "analyze", "feedback": "Need more detail"}
-
-    def test_no_signal(self):
-        assert _parse_text_retry_signal("EVALUATION: PASS") is None
-
-    def test_partial_signal_no_feedback(self):
-        assert _parse_text_retry_signal("RETRY_UPSTREAM: analyze") is None
-
-    def test_multiline_feedback(self):
-        text = "RETRY_UPSTREAM: triage\nRETRY_FEEDBACK: Missing endpoint specs and auth details"
-        result = _parse_text_retry_signal(text)
-        assert result["target"] == "triage"
-        assert "endpoint specs" in result["feedback"]
-
-    def test_signal_with_surrounding_text(self):
-        text = (
-            "The analysis is insufficient.\n"
-            "RETRY_UPSTREAM: gather\n"
-            "RETRY_FEEDBACK: Add concrete implementation steps\n"
-            "EVALUATION: FAIL"
+    def test_dynamic_inputs_cleaned_up(self):
+        """Test that _dynamic_inputs is removed from state after target runs."""
+        builder = MagicMock()
+        builder.extract_stage_name.side_effect = lambda ref: (
+            ref if isinstance(ref, str) else ref.get("name", str(ref))
         )
-        result = _parse_text_retry_signal(text)
-        assert result == {"target": "gather", "feedback": "Add concrete implementation steps"}
+
+        def create_node(stage_name, workflow_config):
+            def node_fn(state):
+                if stage_name == "analyze":
+                    return {
+                        "stage_outputs": {"analyze": {
+                            "stage_status": "completed",
+                            "_next_stage": {
+                                "name": "fix",
+                                "inputs": {"data": "test"},
+                            },
+                        }},
+                        "current_stage": "analyze",
+                    }
+                return {
+                    "stage_outputs": {stage_name: {"stage_status": "completed"}},
+                    "current_stage": stage_name,
+                }
+            return node_fn
+
+        builder.create_stage_node.side_effect = create_node
+        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["analyze", "fix"], {}, state)
+
+        assert "_dynamic_inputs" not in result

@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, cast
 
 from src.compiler.constants import ERROR_MSG_QUALITY_GATE_FAILED
+from src.compiler.executors._base_helpers import _truncate_tracking_data
 from src.compiler.executors.state_keys import StateKeys
 from src.constants.limits import DEFAULT_MIN_ITEMS, SMALL_ITEM_LIMIT
 from src.constants.probabilities import PROB_HIGH
@@ -82,13 +83,24 @@ class QualityGateFailureParams:
 
 
 def _prepare_agent_input(s: Dict[str, Any]) -> Dict[str, Any]:
-    """Prepare agent input data by unwrapping workflow_inputs and filtering reserved keys."""
+    """Prepare agent input data by unwrapping workflow_inputs and filtering reserved keys.
+
+    If STAGE_INPUT contains a ``_context_resolved`` flag, the context was
+    already resolved by a ContextProvider — skip the unwrap step.
+    """
+    input_data = s.get(StateKeys.STAGE_INPUT, {})
+
+    # If context was already resolved by ContextProvider, use it directly
+    if input_data.get("_context_resolved"):
+        result = dict(input_data)
+        result.pop("_context_resolved", None)
+        return result
+
     _reserved = frozenset({
         StateKeys.STAGE_OUTPUTS, StateKeys.CURRENT_STAGE, StateKeys.WORKFLOW_ID, StateKeys.TRACKER,
         StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER, StateKeys.SHOW_DETAILS,
         StateKeys.DETAIL_CONSOLE, StateKeys.WORKFLOW_INPUTS, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
     })
-    input_data = s.get(StateKeys.STAGE_INPUT, {})
     wi = {k: v for k, v in input_data.get(StateKeys.WORKFLOW_INPUTS, {}).items()
           if k not in _reserved}
     return {**input_data, **wi}
@@ -171,6 +183,7 @@ def _execute_agent_with_tracking(
         if k not in _non_serializable_keys
     }
     tracking_input_data = sanitize_config_for_display(tracking_input_data)
+    tracking_input_data = _truncate_tracking_data(tracking_input_data)
 
     with tracker.track_agent(
         agent_name=agent_name,
@@ -183,7 +196,8 @@ def _execute_agent_with_tracking(
         response = agent.execute(input_data, context)
 
         try:
-            tracker.set_agent_output(
+            from src.observability.metric_aggregator import AgentOutputParams
+            tracker.set_agent_output(AgentOutputParams(
                 agent_id=agent_id,
                 output_data={StateKeys.OUTPUT: response.output},
                 reasoning=response.reasoning,
@@ -191,7 +205,7 @@ def _execute_agent_with_tracking(
                 estimated_cost_usd=response.estimated_cost_usd,
                 num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
                 num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
-            )
+            ))
         except Exception:
             logger.warning("Failed to set agent output tracking for %s", agent_name, exc_info=True)
 
@@ -202,7 +216,7 @@ def _resolve_agent_factory(agent_factory_cls: Any) -> Any:
     """Resolve agent factory class, importing default if needed."""
     if agent_factory_cls is not None:
         return agent_factory_cls
-    from src.agents.agent_factory import AgentFactory as _AgentFactory
+    from src.agents.utils.agent_factory import AgentFactory as _AgentFactory
     return _AgentFactory
 
 
@@ -460,26 +474,72 @@ def build_collect_outputs_node(
 
 def build_init_parallel_node(
     state: Dict[str, Any],
+    context_provider: Optional[Any] = None,
+    stage_config: Optional[Any] = None,
 ) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     """Build the init node function for parallel execution.
 
+    When ``context_provider`` and ``stage_config`` are supplied and the
+    stage declares inputs with source refs, the resolved (focused) context
+    is placed in STAGE_INPUT instead of the full state.
+
     Args:
         state: Current workflow state
+        context_provider: Optional ContextProvider for selective resolution
+        stage_config: Stage configuration (needed for context resolution)
 
     Returns:
         Callable node function for initializing parallel state
     """
+    # Dynamic inputs override normal resolution
+    dynamic = state.get(StateKeys.DYNAMIC_INPUTS)
+    if dynamic is not None:
+        from src.compiler.context_provider import _INFRASTRUCTURE_KEYS
+
+        resolved_input_dyn: Dict[str, Any] = dict(dynamic)
+        resolved_input_dyn["_context_resolved"] = True
+        for key in _INFRASTRUCTURE_KEYS:
+            if key in state:
+                resolved_input_dyn[key] = state[key]
+
+        def init_parallel_dynamic(s: Dict[str, Any]) -> Dict[str, Any]:
+            return {
+                StateKeys.AGENT_OUTPUTS: {},
+                StateKeys.AGENT_STATUSES: {},
+                StateKeys.AGENT_METRICS: {},
+                StateKeys.ERRORS: {},
+                StateKeys.STAGE_INPUT: resolved_input_dyn,
+            }
+
+        return init_parallel_dynamic
+
+    # Try resolving focused context upfront
+    resolved_input: Optional[Dict[str, Any]] = None
+    if context_provider is not None and stage_config is not None:
+        try:
+            resolved_input = context_provider.resolve(stage_config, state)
+            resolved_input["_context_resolved"] = True
+            # Propagate context metadata to state for stage output tracking
+            if "_context_meta" in resolved_input:
+                state["_context_meta"] = resolved_input["_context_meta"]
+        except Exception:  # noqa: BLE001 -- graceful fallback when context resolution fails
+            resolved_input = None
+
     def init_parallel(s: Dict[str, Any]) -> Dict[str, Any]:
         """Initialize parallel state with empty collections."""
+        if resolved_input is not None:
+            stage_input = resolved_input
+        else:
+            stage_input = {
+                **state,
+                StateKeys.STAGE_OUTPUTS: state.get(StateKeys.STAGE_OUTPUTS, {}),
+            }
         return {
             StateKeys.AGENT_OUTPUTS: {},
             StateKeys.AGENT_STATUSES: {},
             StateKeys.AGENT_METRICS: {},
             StateKeys.ERRORS: {},
-            StateKeys.STAGE_INPUT: {
-                **state,
-                StateKeys.STAGE_OUTPUTS: state.get(StateKeys.STAGE_OUTPUTS, {})
-            }
+            StateKeys.STAGE_INPUT: stage_input,
         }
 
     return init_parallel
@@ -729,8 +789,9 @@ def update_state_with_results(
     agent_outputs_dict: Dict[str, Any],
     parallel_result: Dict[str, Any],
     aggregate_metrics: Dict[str, Any],
+    structured: Optional[Dict[str, Any]] = None,
 ) -> None:
-    """Update workflow state with parallel execution results and track synthesis.
+    """Update workflow state with parallel execution results in two-compartment format.
 
     Args:
         state: Current workflow state (mutated in place)
@@ -739,11 +800,12 @@ def update_state_with_results(
         agent_outputs_dict: Agent outputs dict
         parallel_result: Full parallel runner result
         aggregate_metrics: Aggregate metrics dict
+        structured: Extracted structured fields (from OutputExtractor)
     """
     agent_statuses = parallel_result.get(StateKeys.AGENT_STATUSES, {})
     stage_status = _compute_stage_status(agent_statuses)
 
-    state[StateKeys.STAGE_OUTPUTS][stage_name] = {
+    raw_dict: Dict[str, Any] = {
         StateKeys.DECISION: synthesis_result.decision,
         StateKeys.AGENT_OUTPUTS: agent_outputs_dict,
         StateKeys.AGENT_STATUSES: agent_statuses,
@@ -754,9 +816,23 @@ def update_state_with_results(
             StateKeys.METHOD: synthesis_result.method,
             StateKeys.CONFIDENCE: synthesis_result.confidence,
             StateKeys.VOTES: synthesis_result.votes,
-            StateKeys.CONFLICTS: len(synthesis_result.conflicts)
-        }
+            StateKeys.CONFLICTS: len(synthesis_result.conflicts),
+        },
     }
+
+    # Two-compartment format with top-level compat aliases
+    stage_entry: Dict[str, Any] = {
+        "structured": structured or {},
+        "raw": dict(raw_dict),
+        **raw_dict,  # Top-level compat for condition expressions
+    }
+
+    # Propagate context metadata from stage input if available
+    context_meta = state.get("_context_meta")
+    if context_meta is not None:
+        stage_entry["_context_meta"] = context_meta
+
+    state[StateKeys.STAGE_OUTPUTS][stage_name] = stage_entry
     state[StateKeys.CURRENT_STAGE] = stage_name
 
     tracker = state.get(StateKeys.TRACKER)

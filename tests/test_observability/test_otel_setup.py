@@ -38,8 +38,8 @@ class TestInitOtel:
         from src.observability.otel_setup import init_otel
 
         with patch.dict(os.environ, {}, clear=True):
-            # Should not raise
-            init_otel()
+            result = init_otel()
+            assert result is None  # noop when not configured
 
     def test_create_otel_backend_returns_none_when_not_configured(self) -> None:
         from src.observability.otel_setup import create_otel_backend

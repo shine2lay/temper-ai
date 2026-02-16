@@ -18,6 +18,10 @@ from src.stage.executors.base import StageExecutor
 from src.stage.executors.parallel import ParallelStageExecutor
 from src.stage.executors.sequential import SequentialStageExecutor
 from src.shared.constants.probabilities import PROB_MEDIUM
+from src.observability.resilience_events import (
+    FallbackEventData,
+    emit_fallback_event,
+)
 
 
 @dataclass
@@ -85,22 +89,20 @@ def _execute_parallel_with_switch_check(params: ParallelSwitchCheckParams) -> tu
     # Check if switch needed
     should_switch = disagreement_rate > params.disagreement_threshold
 
-    if should_switch and params.tracker and hasattr(params.tracker, 'track_collaboration_event'):
-        from src.observability._tracker_helpers import CollaborationEventData
-        params.tracker.track_collaboration_event(CollaborationEventData(
-            event_type="adaptive_mode_switch",
-            stage_name=params.stage_name,
-            agents=list(stage_output.get("agent_outputs", {}).keys()),
-            decision=None,
-            confidence=None,
-            metadata={
-                "reason": "disagreement_threshold_exceeded",
-                ADAPTIVE_META_DISAGREEMENT_RATE: disagreement_rate,
-                "threshold": params.disagreement_threshold,
-                "switching_from": EXECUTION_MODE_PARALLEL,
-                "switching_to": EXECUTION_MODE_SEQUENTIAL
-            }
-        ))
+    if should_switch and params.tracker:
+        emit_fallback_event(
+            tracker=params.tracker,
+            stage_id=params.stage_name,
+            event_data=FallbackEventData(
+                from_mode=EXECUTION_MODE_PARALLEL,
+                to_mode=EXECUTION_MODE_SEQUENTIAL,
+                reason="disagreement_threshold_exceeded",
+                stage_name=params.stage_name,
+                disagreement_rate=disagreement_rate,
+                threshold=params.disagreement_threshold,
+                agents=list(stage_output.get("agent_outputs", {}).keys()),
+            ),
+        )
 
     return parallel_state, should_switch, disagreement_rate, mode_metadata
 
@@ -193,21 +195,19 @@ class AdaptiveStageExecutor(StageExecutor):
             "error": str(params.e)
         }
 
-        if params.tracker and hasattr(params.tracker, 'track_collaboration_event'):
-            from src.observability._tracker_helpers import CollaborationEventData
-            params.tracker.track_collaboration_event(CollaborationEventData(
-                event_type="adaptive_mode_switch",
-                stage_name=params.stage_name,
-                agents=[],
-                decision=None,
-                confidence=None,
-                metadata={
-                    "reason": "parallel_execution_failed",
-                    "error": str(params.e),
-                    "switching_from": EXECUTION_MODE_PARALLEL,
-                    "switching_to": EXECUTION_MODE_SEQUENTIAL
-                }
-            ))
+        if params.tracker:
+            emit_fallback_event(
+                tracker=params.tracker,
+                stage_id=params.stage_name,
+                event_data=FallbackEventData(
+                    from_mode=EXECUTION_MODE_PARALLEL,
+                    to_mode=EXECUTION_MODE_SEQUENTIAL,
+                    reason="parallel_execution_failed",
+                    stage_name=params.stage_name,
+                    agents=[],
+                    error_message=str(params.e),
+                ),
+            )
 
         return self._fallback_to_sequential(
             params.stage_name, params.stage_config, params.state, params.config_loader,

@@ -130,12 +130,17 @@ class InMemoryCache(CacheBackend):
     - No external dependencies
     """
 
-    def __init__(self, max_size: int = DEFAULT_CACHE_SIZE):
+    def __init__(
+        self,
+        max_size: int = DEFAULT_CACHE_SIZE,
+        on_eviction: Optional[Any] = None,
+    ):
         """
         Initialize in-memory cache.
 
         Args:
             max_size: Maximum number of entries before eviction
+            on_eviction: Optional callback invoked on LRU eviction
         """
         self._cache: Dict[str, Tuple[str, Optional[float]]] = {}
         # PERFORMANCE FIX (code-medi-07): Use OrderedDict for O(1) LRU eviction
@@ -144,6 +149,7 @@ class InMemoryCache(CacheBackend):
         self._max_size = max_size
         self._lock = Lock()
         self._evictions = 0
+        self._on_eviction = on_eviction
 
         logger.debug(f"InMemoryCache initialized with max_size={max_size}")
 
@@ -257,6 +263,12 @@ class InMemoryCache(CacheBackend):
         self._evictions += 1
 
         logger.debug(f"Evicted LRU entry: {lru_key} (total evictions: {self._evictions})")
+
+        if self._on_eviction is not None:
+            try:
+                self._on_eviction(lru_key)
+            except (TypeError, RuntimeError, ValueError) as exc:
+                logger.debug("Eviction callback error: %s", exc)
 
     def get_stats(self, cleanup_expired: bool = True) -> Dict[str, Any]:
         """
@@ -637,6 +649,26 @@ def _generate_cache_key_hash(params: CacheKeyParams) -> str:
     return _hash_cache_key(request, security_context)
 
 
+def _create_cache_backend(
+    backend: str,
+    max_size: int,
+    redis_config: Optional[Dict[str, Any]],
+    eviction_cb: Optional[Any],
+) -> "CacheBackend":
+    """Create a cache backend from config."""
+    if backend == "memory":
+        return InMemoryCache(max_size=max_size, on_eviction=eviction_cb)
+    if backend == "redis":
+        rc = redis_config or {}
+        return RedisCache(
+            host=rc.get("host", "localhost"),
+            port=rc.get("port", DEFAULT_REDIS_PORT),
+            db=rc.get("db", DEFAULT_REDIS_DB),
+            password=rc.get("password"),
+        )
+    raise ValueError(f"Unknown cache backend: {backend}. Use 'memory' or 'redis'.")
+
+
 class LLMCache:
     """
     LLM response cache with content-based hashing.
@@ -667,10 +699,8 @@ class LLMCache:
         backend: str = "memory",
         ttl: Optional[int] = DEFAULT_TTL_SECONDS,
         max_size: int = DEFAULT_CACHE_SIZE,
-        redis_host: str = "localhost",
-        redis_port: int = DEFAULT_REDIS_PORT,
-        redis_db: int = DEFAULT_REDIS_DB,
-        redis_password: Optional[str] = None
+        redis_config: Optional[Dict[str, Any]] = None,
+        on_event: Optional[Any] = None,
     ):
         """
         Initialize LLM cache.
@@ -679,10 +709,10 @@ class LLMCache:
             backend: Cache backend ("memory" or "redis")
             ttl: Time-to-live in seconds (None = no expiration)
             max_size: Max entries for in-memory cache
-            redis_host: Redis host (if using Redis backend)
-            redis_port: Redis port
-            redis_db: Redis database number
-            redis_password: Redis password
+            redis_config: Redis connection config dict with keys:
+                host (default "localhost"), port (default 6379),
+                db (default 0), password (default None)
+            on_event: Optional callback for cache events (hit/miss/write/eviction)
 
         Raises:
             ValueError: If backend is unknown
@@ -690,21 +720,35 @@ class LLMCache:
         self.ttl = ttl
         self.stats = CacheStats()
         self._stats_lock = Lock()
+        self._on_event = on_event
 
         # Create backend
-        if backend == "memory":
-            self._backend: CacheBackend = InMemoryCache(max_size=max_size)
-        elif backend == "redis":
-            self._backend = RedisCache(
-                host=redis_host,
-                port=redis_port,
-                db=redis_db,
-                password=redis_password
-            )
-        else:
-            raise ValueError(f"Unknown cache backend: {backend}. Use 'memory' or 'redis'.")
+        eviction_cb = self._make_eviction_callback() if on_event else None
+        self._backend = _create_cache_backend(
+            backend, max_size, redis_config, eviction_cb,
+        )
 
         logger.info(f"LLMCache initialized with backend={backend}, ttl={ttl}s")
+
+    def _fire_cache_event(self, event_type: str, key: str) -> None:
+        """Fire a cache event to the on_event callback if set."""
+        if self._on_event is None:
+            return
+        from src.observability.llm_loop_events import CacheEventData, emit_cache_event
+
+        prefix = key[:CACHE_KEY_LOG_LENGTH] if key else ""
+        size = None
+        if isinstance(self._backend, InMemoryCache):
+            size = len(self._backend._cache)
+        emit_cache_event(self._on_event, CacheEventData(
+            event_type=event_type, key_prefix=prefix, cache_size=size,
+        ))
+
+    def _make_eviction_callback(self) -> Any:
+        """Create a callback for InMemoryCache eviction events."""
+        def _on_eviction(evicted_key: str) -> None:
+            self._fire_cache_event("eviction", evicted_key)
+        return _on_eviction
 
     def generate_key(
         self,
@@ -777,6 +821,7 @@ class LLMCache:
                     self.stats.misses += 1
                     logger.debug(f"Cache MISS: {key[:CACHE_KEY_LOG_LENGTH]}...")
 
+            self._fire_cache_event("hit" if value is not None else "miss", key)
             return value
 
         except (OSError, RuntimeError, ValueError) as e:
@@ -811,6 +856,7 @@ class LLMCache:
                 with self._stats_lock:
                     self.stats.writes += 1
                 logger.debug(f"Cached response: {key[:CACHE_KEY_LOG_LENGTH]}...")
+                self._fire_cache_event("write", key)
             else:
                 with self._stats_lock:
                     self.stats.errors += 1

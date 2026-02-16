@@ -91,6 +91,8 @@ class DialogueTrackingParams:
     round_outcome: str
     conv_score: Optional[float] = None
     agent_stances: Optional[Dict[str, str]] = None
+    dialogue_history: Optional[List[Dict[str, Any]]] = None
+    previous_convergence: Optional[float] = None
 
 
 @dataclass
@@ -505,27 +507,13 @@ def record_dialogue_round_outputs(
 
 
 def track_dialogue_round(params: DialogueTrackingParams) -> None:
-    """Track dialogue round collaboration event."""
+    """Track dialogue round collaboration event with enriched metrics."""
     if not (params.tracker and hasattr(params.tracker, 'track_collaboration_event')):
         return
 
     try:
         agent_names = [o.agent_name for o in params.current_outputs]
-        event_data: Dict[str, Any] = {
-            "agent_count": len(agent_names),
-            "avg_confidence": (
-                sum(o.confidence for o in params.current_outputs) / len(params.current_outputs)
-                if params.current_outputs else 0.0
-            ),
-        }
-
-        if params.agent_stances:
-            stance_dist: Dict[str, int] = {}
-            for s in params.agent_stances.values():
-                if s:
-                    stance_dist[s] = stance_dist.get(s, 0) + 1
-            event_data["stance_distribution"] = stance_dist
-            event_data["agent_stances"] = params.agent_stances
+        event_data: Dict[str, Any] = _build_dialogue_event_data(params, agent_names)
 
         from src.observability._tracker_helpers import CollaborationEventData
         params.tracker.track_collaboration_event(CollaborationEventData(
@@ -540,6 +528,58 @@ def track_dialogue_round(params: DialogueTrackingParams) -> None:
     except Exception:
         logger.warning(
             "Failed to track round %d collaboration event",
+            params.round_num,
+            exc_info=True,
+        )
+
+
+def _build_dialogue_event_data(
+    params: DialogueTrackingParams,
+    agent_names: List[str],
+) -> Dict[str, Any]:
+    """Build event data dict for dialogue round tracking."""
+    event_data: Dict[str, Any] = {
+        "agent_count": len(agent_names),
+        "avg_confidence": (
+            sum(o.confidence for o in params.current_outputs) / len(params.current_outputs)
+            if params.current_outputs else 0.0
+        ),
+    }
+
+    if params.agent_stances:
+        stance_dist: Dict[str, int] = {}
+        for s in params.agent_stances.values():
+            if s:
+                stance_dist[s] = stance_dist.get(s, 0) + 1
+        event_data["stance_distribution"] = stance_dist
+        event_data["agent_stances"] = params.agent_stances
+
+    _enrich_with_round_metrics(params, event_data)
+    return event_data
+
+
+def _enrich_with_round_metrics(
+    params: DialogueTrackingParams,
+    event_data: Dict[str, Any],
+) -> None:
+    """Enrich event data with computed dialogue round metrics."""
+    try:
+        from src.observability.dialogue_metrics import compute_round_metrics
+
+        history = params.dialogue_history or []
+        metrics = compute_round_metrics(
+            current_outputs=params.current_outputs,
+            dialogue_history=history,
+            round_number=params.round_num,
+            convergence_score=params.conv_score,
+            previous_convergence=params.previous_convergence,
+        )
+        event_data["confidence_trajectory"] = metrics.confidence_trajectory
+        event_data["convergence_speed"] = metrics.convergence_speed
+        event_data["stance_changes"] = metrics.stance_changes
+    except Exception:
+        logger.debug(
+            "Failed to compute dialogue round metrics for round %d",
             params.round_num,
             exc_info=True,
         )
@@ -613,6 +653,7 @@ def execute_dialogue_round(params: DialogueRoundParams) -> Tuple[list, float, Op
         tracker=params.tracker, strategy=params.strategy, state=params.state,
         current_outputs=current_outputs, round_num=params.round_num,
         round_outcome=round_outcome, conv_score=conv_score, agent_stances=agent_stances,
+        dialogue_history=params.dialogue_history,
     )
     track_dialogue_round(track_params)
 

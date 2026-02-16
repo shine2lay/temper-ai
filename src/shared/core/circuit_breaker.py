@@ -234,6 +234,7 @@ class CircuitBreaker:
         failure_threshold: Optional[int] = None,
         timeout_seconds: Optional[int] = None,
         success_threshold: Optional[int] = None,
+        observability_callback: Optional[Callable] = None,
     ):
         _validate_name(name)
         self.name = name
@@ -252,6 +253,9 @@ class CircuitBreaker:
         self._on_state_change_callbacks: List[
             Callable[[CircuitState, CircuitState], None]
         ] = []
+        self._observability_callbacks: List[Callable] = (
+            [observability_callback] if observability_callback is not None else []
+        )
 
         loaded = _init_state_from_storage(self.storage, self.name)
         self._state = loaded["state"]
@@ -292,7 +296,7 @@ class CircuitBreaker:
                             self._last_failure_time, self.config,
                         )
             current = self._state
-        _fire_callbacks_helper(pending)
+        _fire_callbacks_helper(pending, breaker=self)
         return current
 
     @state.setter
@@ -351,7 +355,7 @@ class CircuitBreaker:
                     self._failure_count, self._success_count,
                     self._last_failure_time, self.config,
                 )
-        _fire_callbacks_helper(pending)
+        _fire_callbacks_helper(pending, breaker=self)
 
     def record_failure(self, error: Optional[Exception] = None) -> None:
         """Record failed execution (safety module interface)."""
@@ -381,7 +385,7 @@ class CircuitBreaker:
                     self._failure_count, self._success_count,
                     self._last_failure_time, self.config,
                 )
-        _fire_callbacks_helper(pending)
+        _fire_callbacks_helper(pending, breaker=self)
 
     def call(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """Execute function through circuit breaker. Raises CircuitBreakerError if open."""
@@ -449,6 +453,14 @@ class CircuitBreaker:
         """Register callback for state changes."""
         self._on_state_change_callbacks.append(callback)
 
+    def add_observability_callback(self, callback: Callable) -> None:
+        """Register an observability callback for resilience tracking.
+
+        Args:
+            callback: Called with CircuitBreakerEventData on state transitions
+        """
+        self._observability_callbacks.append(callback)
+
     def reset(self) -> None:
         """Reset circuit breaker to CLOSED state."""
         with self.lock:
@@ -463,7 +475,7 @@ class CircuitBreaker:
                     self._failure_count, self._success_count,
                     self._last_failure_time, self.config,
                 )
-        _fire_callbacks_helper(pending)
+        _fire_callbacks_helper(pending, breaker=self)
 
     def force_open(self) -> None:
         """Manually force circuit breaker to OPEN state."""
@@ -471,7 +483,7 @@ class CircuitBreaker:
             pending = self._transition_to(CircuitState.OPEN)
             self._opened_at = datetime.now(UTC)
             self._last_failure_time = time.time()
-        _fire_callbacks_helper(pending)
+        _fire_callbacks_helper(pending, breaker=self)
 
     def _transition_to(self, new_state: CircuitState) -> Optional[tuple]:
         """Transition to new state. Must hold self.lock. Returns callback info or None."""

@@ -195,15 +195,21 @@ def load_state(storage: Any, name: str) -> dict:
     return defaults
 
 
-def fire_callbacks(transition_info: Optional[tuple]) -> None:
+def fire_callbacks(
+    transition_info: Optional[tuple],
+    breaker: Optional[Any] = None,
+) -> None:
     """Execute state change callbacks outside the lock.
 
     Args:
         transition_info: Tuple of (old_state, new_state, callbacks) or None
+        breaker: Optional CircuitBreaker instance for observability callbacks
     """
     if transition_info is None:
         return
     old_state, new_state, callbacks = transition_info
+
+    # Fire state-change callbacks
     for callback in callbacks:
         try:
             callback(old_state, new_state)
@@ -211,6 +217,68 @@ def fire_callbacks(transition_info: Optional[tuple]) -> None:
             logger.warning(
                 "Circuit breaker state change callback failed: %s", e
             )
+
+    # Fire observability callbacks
+    _fire_observability_callbacks(breaker, old_state, new_state)
+
+
+def _log_state_transition(breaker: Any, old_state: Any, new_state: Any) -> None:
+    """Log a structured circuit breaker state transition.
+
+    Args:
+        breaker: CircuitBreaker instance
+        old_state: Previous CircuitState
+        new_state: New CircuitState
+    """
+    logger.info(
+        "Circuit breaker %s transitioned %s -> %s (failures=%d)",
+        breaker.name,
+        old_state.value,
+        new_state.value,
+        breaker.failure_count,
+        extra={
+            "breaker_name": breaker.name,
+            "old_state": old_state.value,
+            "new_state": new_state.value,
+            "failure_count": breaker.failure_count,
+            "success_count": breaker.success_count,
+        },
+    )
+
+
+def _fire_observability_callbacks(
+    breaker: Optional[Any],
+    old_state: Any,
+    new_state: Any,
+) -> None:
+    """Fire observability callbacks for circuit breaker state transitions.
+
+    Args:
+        breaker: CircuitBreaker instance (may be None)
+        old_state: Previous CircuitState
+        new_state: New CircuitState
+    """
+    if breaker is None:
+        return
+    obs_callbacks = getattr(breaker, "_observability_callbacks", None)
+    if not obs_callbacks:
+        return
+
+    from src.observability.resilience_events import (
+        CircuitBreakerEventData,
+        emit_circuit_breaker_event,
+    )
+
+    event_data = CircuitBreakerEventData(
+        breaker_name=breaker.name,
+        old_state=old_state.value,
+        new_state=new_state.value,
+        failure_count=breaker.failure_count,
+        success_count=breaker.success_count,
+    )
+
+    for cb in obs_callbacks:
+        emit_circuit_breaker_event(callback=cb, event_data=event_data)
 
 
 def on_call_success(breaker: Any, reserved_state: Optional[Any] = None) -> None:
@@ -222,6 +290,8 @@ def on_call_success(breaker: Any, reserved_state: Optional[Any] = None) -> None:
     """
     from src.shared.core.circuit_breaker import CircuitState
 
+    old_state = None
+    new_state = None
     try:
         with breaker.lock:
             breaker.metrics.total_calls += 1
@@ -231,7 +301,9 @@ def on_call_success(breaker: Any, reserved_state: Optional[Any] = None) -> None:
             if breaker._state == CircuitState.HALF_OPEN:
                 breaker.success_count += 1
                 if breaker.success_count >= breaker.config.success_threshold:
+                    old_state = CircuitState.HALF_OPEN
                     breaker._state = CircuitState.CLOSED
+                    new_state = CircuitState.CLOSED
                     breaker.success_count = 0
 
             if breaker.storage:
@@ -243,6 +315,10 @@ def on_call_success(breaker: Any, reserved_state: Optional[Any] = None) -> None:
     finally:
         if reserved_state == CircuitState.HALF_OPEN:
             breaker._half_open_semaphore.release()
+
+    if old_state is not None and new_state is not None:
+        _log_state_transition(breaker, old_state, new_state)
+        _fire_observability_callbacks(breaker, old_state, new_state)
 
 
 def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any] = None) -> None:
@@ -260,6 +336,8 @@ def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any
             breaker._half_open_semaphore.release()
         return
 
+    old_state = None
+    new_state = None
     try:
         with breaker.lock:
             breaker.metrics.total_calls += 1
@@ -268,6 +346,8 @@ def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any
 
             breaker.failure_count += 1
             breaker.last_failure_time = time.time()
+
+            prev_state = breaker._state
 
             if breaker._state == CircuitState.HALF_OPEN:
                 breaker._state = CircuitState.OPEN
@@ -279,6 +359,10 @@ def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any
             elif breaker.failure_count >= breaker.config.failure_threshold:
                 breaker._state = CircuitState.OPEN
 
+            if breaker._state != prev_state:
+                old_state = prev_state
+                new_state = breaker._state
+
             if breaker.storage:
                 save_state(
                     breaker.storage, breaker.name, breaker._state,
@@ -288,6 +372,10 @@ def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any
     finally:
         if reserved_state == CircuitState.HALF_OPEN:
             breaker._half_open_semaphore.release()
+
+    if old_state is not None and new_state is not None:
+        _log_state_transition(breaker, old_state, new_state)
+        _fire_observability_callbacks(breaker, old_state, new_state)
 
 
 def reserve_execution(breaker: Any) -> Optional[Any]:

@@ -31,6 +31,13 @@ from src.shared.utils.exceptions import (
     ToolExecutionError,
     sanitize_error_message,
 )
+from src.observability.resilience_events import (
+    RetryEventData,
+    emit_retry_event,
+    RETRY_OUTCOME_EXHAUSTED,
+    RETRY_OUTCOME_FAILED,
+    RETRY_OUTCOME_SUCCESS,
+)
 
 # Agent retry backoff constants
 MAX_RETRY_BACKOFF_DIVISOR = 2  # Divide max time by this to get max retry delay (e.g., 60s / 2 = 30s max delay)
@@ -488,6 +495,7 @@ def retry_agent_with_backoff(
             ctx, agent_ref, prior_agent_outputs, agent_name, attempt, max_retries,
         )
         if should_stop:
+            _emit_retry_outcome(ctx, last_result, agent_name, attempt, max_retries, delay)
             return last_result
 
     logger.warning(
@@ -496,7 +504,61 @@ def retry_agent_with_backoff(
     )
     if last_result:
         last_result[StateKeys.METRICS][StateKeys.RETRIES] = max_retries
+    _emit_retry_exhausted(ctx, last_result, agent_name, max_retries)
     return last_result
+
+
+def _emit_retry_outcome(
+    ctx: AgentExecutionContext,
+    result: Dict[str, Any],
+    agent_name: str,
+    attempt: int,
+    max_retries: int,
+    delay: float,
+) -> None:
+    """Emit a retry event for a completed attempt (success or permanent error)."""
+    status = result.get(StateKeys.STATUS, "")
+    error_type = result.get(StateKeys.OUTPUT_DATA, {}).get(StateKeys.ERROR_TYPE)
+    outcome = RETRY_OUTCOME_SUCCESS if status == "success" else RETRY_OUTCOME_FAILED
+
+    emit_retry_event(
+        tracker=ctx.tracker,
+        stage_id=ctx.stage_id,
+        event_data=RetryEventData(
+            attempt_number=attempt,
+            max_retries=max_retries,
+            agent_name=agent_name,
+            stage_name=ctx.stage_name,
+            outcome=outcome,
+            error_type=error_type,
+            is_transient=is_transient_error(error_type) if error_type else None,
+            backoff_delay_seconds=delay,
+        ),
+    )
+
+
+def _emit_retry_exhausted(
+    ctx: AgentExecutionContext,
+    result: Dict[str, Any],
+    agent_name: str,
+    max_retries: int,
+) -> None:
+    """Emit a retry-exhausted event after all attempts failed."""
+    error_type = result.get(StateKeys.OUTPUT_DATA, {}).get(StateKeys.ERROR_TYPE) if result else None
+
+    emit_retry_event(
+        tracker=ctx.tracker,
+        stage_id=ctx.stage_id,
+        event_data=RetryEventData(
+            attempt_number=max_retries,
+            max_retries=max_retries,
+            agent_name=agent_name,
+            stage_name=ctx.stage_name,
+            outcome=RETRY_OUTCOME_EXHAUSTED,
+            error_type=error_type,
+            is_transient=True,
+        ),
+    )
 
 
 def _print_agent_progress(
@@ -736,4 +798,28 @@ def run_all_agents(
             accum.outputs[agent_name] = agent_result[StateKeys.OUTPUT_DATA]
             accum.metrics[agent_name] = agent_result[StateKeys.METRICS]
 
+    _emit_sequential_cost_summary(ctx, accum)
     return accum.outputs, accum.statuses, accum.metrics
+
+
+def _emit_sequential_cost_summary(
+    ctx: AgentExecutionContext,
+    accum: AgentResultAccumulators,
+) -> None:
+    """Emit cost rollup for sequential stage execution."""
+    try:
+        from src.observability.cost_rollup import (
+            compute_stage_cost_summary,
+            emit_cost_summary,
+        )
+
+        summary = compute_stage_cost_summary(
+            ctx.stage_name, accum.metrics, accum.statuses,
+        )
+        emit_cost_summary(ctx.tracker, ctx.stage_id, summary)
+    except Exception:
+        logger.debug(
+            "Failed to emit cost summary for stage %s",
+            ctx.stage_name,
+            exc_info=True,
+        )

@@ -400,7 +400,42 @@ def validate_quality_gates(
         return True, []
 
     violations = _check_inline_quality_gates(quality_gates_config, synthesis_result)
-    return len(violations) == 0, violations
+    passed = len(violations) == 0
+
+    if not passed:
+        _emit_quality_gate_violation_details(
+            state, stage_name, violations, synthesis_result, quality_gates_config,
+        )
+
+    return passed, violations
+
+
+def _emit_quality_gate_violation_details(
+    state: Dict[str, Any],
+    stage_name: str,
+    violations: list,
+    synthesis_result: Any,
+    quality_gates_config: Dict[str, Any],
+) -> None:
+    """Emit per-gate violation details as a collaboration event."""
+    try:
+        from src.observability.dialogue_metrics import (
+            build_quality_gate_details,
+            emit_quality_gate_details,
+        )
+
+        tracker = state.get(StateKeys.TRACKER)
+        stage_id = state.get(StateKeys.CURRENT_STAGE_ID, "")
+        details = build_quality_gate_details(
+            violations, synthesis_result, quality_gates_config,
+        )
+        emit_quality_gate_details(tracker, stage_id, stage_name, details)
+    except Exception:
+        logger.debug(
+            "Failed to emit quality gate violation details for %s",
+            stage_name,
+            exc_info=True,
+        )
 
 
 def build_collect_outputs_node(
@@ -850,3 +885,34 @@ def update_state_with_results(
             confidence=synthesis_result.confidence,
             metadata=tracker_metadata
         ))
+
+    _emit_parallel_cost_summary(state, stage_name, parallel_result)
+
+
+def _emit_parallel_cost_summary(
+    state: Dict[str, Any],
+    stage_name: str,
+    parallel_result: Dict[str, Any],
+) -> None:
+    """Emit cost rollup for parallel stage execution."""
+    try:
+        from src.observability.cost_rollup import (
+            compute_stage_cost_summary,
+            emit_cost_summary,
+        )
+
+        agent_metrics = parallel_result.get(StateKeys.AGENT_METRICS, {})
+        agent_statuses = parallel_result.get(StateKeys.AGENT_STATUSES, {})
+        tracker = state.get(StateKeys.TRACKER)
+        stage_id = state.get(StateKeys.CURRENT_STAGE_ID, "")
+
+        summary = compute_stage_cost_summary(
+            stage_name, agent_metrics, agent_statuses,
+        )
+        emit_cost_summary(tracker, stage_id, summary)
+    except Exception:
+        logger.debug(
+            "Failed to emit cost summary for stage %s",
+            stage_name,
+            exc_info=True,
+        )

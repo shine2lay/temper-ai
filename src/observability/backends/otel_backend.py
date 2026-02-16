@@ -54,6 +54,113 @@ _METRIC_LLM_LATENCY = "maf.llm.latency"
 _METRIC_TOOL_CALL_COUNT = "maf.tool.call.count"
 _METRIC_COST_TOTAL = "maf.cost.total"
 _METRIC_TOKENS_TOTAL = "maf.tokens.total"
+_METRIC_LLM_ITERATION = "maf.llm.iteration"
+_METRIC_CACHE_HIT = "maf.cache.hit"
+_METRIC_CACHE_MISS = "maf.cache.miss"
+_METRIC_RETRY_COUNT = "maf.retry.count"
+_METRIC_CB_STATE_CHANGE = "maf.circuit_breaker.state_change"
+_METRIC_DIALOGUE_CONVERGENCE = "maf.dialogue.convergence_speed"
+_METRIC_STAGE_COST = "maf.stage.cost_usd"
+
+# Resilience event type prefixes
+_RESILIENCE_RETRY = "resilience_retry"
+_RESILIENCE_CB = "resilience_circuit_breaker"
+
+# Dialogue/cost event types
+_EVENT_DIALOGUE_METRICS = "dialogue_round_metrics"
+_EVENT_QUALITY_GATE_DETAIL = "quality_gate_violation_detail"
+_EVENT_COST_SUMMARY = "cost_summary"
+
+
+def _init_metrics(backend: Any, meter: Any) -> None:
+    """Create all OTEL counters and histograms on the backend."""
+    backend._workflow_counter = meter.create_counter(
+        _METRIC_WORKFLOW_COUNT, description="Workflow executions",
+    )
+    backend._llm_call_counter = meter.create_counter(
+        _METRIC_LLM_CALL_COUNT, description="LLM calls",
+    )
+    backend._tool_call_counter = meter.create_counter(
+        _METRIC_TOOL_CALL_COUNT, description="Tool calls",
+    )
+    backend._llm_latency_histogram = meter.create_histogram(
+        _METRIC_LLM_LATENCY, unit="ms", description="LLM call latency",
+    )
+    backend._cost_counter = meter.create_counter(
+        _METRIC_COST_TOTAL, unit="usd", description="Accumulated cost",
+    )
+    backend._tokens_counter = meter.create_counter(
+        _METRIC_TOKENS_TOTAL, description="Accumulated tokens",
+    )
+    backend._llm_iteration_counter = meter.create_counter(
+        _METRIC_LLM_ITERATION, description="LLM loop iterations",
+    )
+    backend._cache_hit_counter = meter.create_counter(
+        _METRIC_CACHE_HIT, description="Cache hits",
+    )
+    backend._cache_miss_counter = meter.create_counter(
+        _METRIC_CACHE_MISS, description="Cache misses",
+    )
+    backend._retry_counter = meter.create_counter(
+        _METRIC_RETRY_COUNT, description="Agent retry attempts",
+    )
+    backend._cb_state_change_counter = meter.create_counter(
+        _METRIC_CB_STATE_CHANGE, description="Circuit breaker state changes",
+    )
+    backend._dialogue_convergence_histogram = meter.create_histogram(
+        _METRIC_DIALOGUE_CONVERGENCE,
+        description="Dialogue convergence speed per round",
+    )
+    backend._stage_cost_counter = meter.create_counter(
+        _METRIC_STAGE_COST, unit="usd", description="Per-stage cost",
+    )
+
+
+def _start_span(
+    backend: Any,
+    entity_id: str,
+    span_name: str,
+    attributes: Dict[str, Any],
+    parent_id: Optional[str] = None,
+) -> None:
+    """Start a span and register it in the backend's active spans."""
+    from opentelemetry import context as otel_context
+
+    parent_ctx = None
+    if parent_id and parent_id in backend._active_spans:
+        _, parent_ctx = backend._active_spans[parent_id]
+
+    if parent_ctx is not None:
+        ctx = otel_context.attach(parent_ctx)  # noqa: F841
+    span = backend._tracer.start_span(span_name, attributes=attributes)
+    span_ctx = otel_trace.set_span_in_context(span)
+    backend._active_spans[entity_id] = (span, span_ctx)
+
+
+def _end_span(
+    backend: Any,
+    entity_id: str,
+    status: str,
+    error_message: Optional[str] = None,
+) -> None:
+    """End and deregister a span from the backend."""
+    entry = backend._active_spans.pop(entity_id, None)
+    if entry is None:
+        return
+    span, _ = entry
+    try:
+        from opentelemetry.trace import StatusCode
+
+        if status in ("completed", "success"):
+            span.set_status(StatusCode.OK)
+        else:
+            span.set_status(StatusCode.ERROR, description=error_message or status)
+            if error_message:
+                span.set_attribute(_ATTR_ERROR_MESSAGE, error_message)
+        span.set_attribute(_ATTR_STATUS, status)
+        span.end()
+    except Exception:  # noqa: BLE001 — fire-and-forget
+        logger.debug("Failed to end OTEL span for %s", entity_id, exc_info=True)
 
 
 class OTelBackend(ObservabilityBackend):
@@ -63,6 +170,21 @@ class OTelBackend(ObservabilityBackend):
     ``track_*_end`` calls (which happen in different stack frames) can
     be correlated to the same OTEL span.
     """
+
+    _tracer: Any
+    _workflow_counter: Any
+    _llm_call_counter: Any
+    _tool_call_counter: Any
+    _llm_latency_histogram: Any
+    _cost_counter: Any
+    _tokens_counter: Any
+    _llm_iteration_counter: Any
+    _cache_hit_counter: Any
+    _cache_miss_counter: Any
+    _retry_counter: Any
+    _cb_state_change_counter: Any
+    _dialogue_convergence_histogram: Any
+    _stage_cost_counter: Any
 
     def __init__(self, service_name: str = "maf") -> None:
         try:
@@ -76,73 +198,10 @@ class OTelBackend(ObservabilityBackend):
 
         self._tracer = otel_trace.get_tracer(service_name)
         meter = otel_metrics.get_meter(service_name)
-
-        # Counters
-        self._workflow_counter = meter.create_counter(
-            _METRIC_WORKFLOW_COUNT, description="Workflow executions"
-        )
-        self._llm_call_counter = meter.create_counter(
-            _METRIC_LLM_CALL_COUNT, description="LLM calls"
-        )
-        self._tool_call_counter = meter.create_counter(
-            _METRIC_TOOL_CALL_COUNT, description="Tool calls"
-        )
-
-        # Histograms
-        self._llm_latency_histogram = meter.create_histogram(
-            _METRIC_LLM_LATENCY, unit="ms", description="LLM call latency"
-        )
-        self._cost_counter = meter.create_counter(
-            _METRIC_COST_TOTAL, unit="usd", description="Accumulated cost"
-        )
-        self._tokens_counter = meter.create_counter(
-            _METRIC_TOKENS_TOTAL, description="Accumulated tokens"
-        )
+        _init_metrics(self, meter)
 
         # Active span registry: entity_id → (Span, Context)
         self._active_spans: Dict[str, Tuple[Any, Any]] = {}
-
-    # ---- helpers ----
-
-    def _start_span(
-        self, entity_id: str, span_name: str, attributes: Dict[str, Any],
-        parent_id: Optional[str] = None,
-    ) -> None:
-        """Start a span and register it."""
-        from opentelemetry import context as otel_context
-
-        parent_ctx = None
-        if parent_id and parent_id in self._active_spans:
-            _, parent_ctx = self._active_spans[parent_id]
-
-        if parent_ctx is not None:
-            ctx = otel_context.attach(parent_ctx)  # noqa: F841
-        span = self._tracer.start_span(span_name, attributes=attributes)
-        span_ctx = otel_trace.set_span_in_context(span)
-        self._active_spans[entity_id] = (span, span_ctx)
-
-    def _end_span(
-        self, entity_id: str, status: str,
-        error_message: Optional[str] = None,
-    ) -> None:
-        """End and deregister a span."""
-        entry = self._active_spans.pop(entity_id, None)
-        if entry is None:
-            return
-        span, _ = entry
-        try:
-            from opentelemetry.trace import StatusCode
-
-            if status in ("completed", "success"):
-                span.set_status(StatusCode.OK)
-            else:
-                span.set_status(StatusCode.ERROR, description=error_message or status)
-                if error_message:
-                    span.set_attribute(_ATTR_ERROR_MESSAGE, error_message)
-            span.set_attribute(_ATTR_STATUS, status)
-            span.end()
-        except Exception:  # noqa: BLE001 — fire-and-forget
-            logger.debug("Failed to end OTEL span for %s", entity_id, exc_info=True)
 
     # ========== Workflow Tracking ==========
 
@@ -163,7 +222,7 @@ class OTelBackend(ObservabilityBackend):
                 attrs["maf.environment"] = data.environment
             if data.product_type:
                 attrs["maf.product_type"] = data.product_type
-        self._start_span(workflow_id, f"workflow:{workflow_name}", attrs)
+        _start_span(self,workflow_id, f"workflow:{workflow_name}", attrs)
         self._workflow_counter.add(1, {_ATTR_WORKFLOW_NAME: workflow_name})
 
     def track_workflow_end(
@@ -174,7 +233,7 @@ class OTelBackend(ObservabilityBackend):
         error_message: Optional[str] = None,
         error_stack_trace: Optional[str] = None,
     ) -> None:
-        self._end_span(workflow_id, status, error_message)
+        _end_span(self,workflow_id, status, error_message)
 
     def update_workflow_metrics(
         self,
@@ -201,7 +260,7 @@ class OTelBackend(ObservabilityBackend):
         start_time: datetime,
         input_data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        self._start_span(
+        _start_span(self,
             stage_id, f"stage:{stage_name}",
             {_ATTR_STAGE_ID: stage_id, _ATTR_STAGE_NAME: stage_name,
              _ATTR_WORKFLOW_ID: workflow_id},
@@ -224,7 +283,7 @@ class OTelBackend(ObservabilityBackend):
             span.set_attribute("maf.stage.agents_executed", num_agents_executed)
             span.set_attribute("maf.stage.agents_succeeded", num_agents_succeeded)
             span.set_attribute("maf.stage.agents_failed", num_agents_failed)
-        self._end_span(stage_id, status, error_message)
+        _end_span(self,stage_id, status, error_message)
 
     def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
         pass  # Stage output is potentially large — skip in OTEL
@@ -240,7 +299,7 @@ class OTelBackend(ObservabilityBackend):
         start_time: datetime,
         input_data: Optional[Dict[str, Any]] = None,
     ) -> None:
-        self._start_span(
+        _start_span(self,
             agent_id, f"agent:{agent_name}",
             {_ATTR_AGENT_ID: agent_id, _ATTR_AGENT_NAME: agent_name,
              _ATTR_STAGE_ID: stage_id},
@@ -254,7 +313,7 @@ class OTelBackend(ObservabilityBackend):
         status: str,
         error_message: Optional[str] = None,
     ) -> None:
-        self._end_span(agent_id, status, error_message)
+        _end_span(self,agent_id, status, error_message)
 
     def set_agent_output(
         self,
@@ -295,8 +354,8 @@ class OTelBackend(ObservabilityBackend):
             _ATTR_STATUS: data.status,
         }
         # Leaf span — start and immediately end
-        self._start_span(llm_call_id, span_name, attrs, parent_id=agent_id)
-        self._end_span(llm_call_id, data.status, data.error_message)
+        _start_span(self,llm_call_id, span_name, attrs, parent_id=agent_id)
+        _end_span(self,llm_call_id, data.status, data.error_message)
 
         # Metrics
         self._llm_call_counter.add(1, {_ATTR_PROVIDER: provider, _ATTR_MODEL: model})
@@ -330,10 +389,33 @@ class OTelBackend(ObservabilityBackend):
             _ATTR_STATUS: data.status,
         }
         # Leaf span
-        self._start_span(tool_execution_id, f"tool:{tool_name}", attrs, parent_id=agent_id)
-        self._end_span(tool_execution_id, data.status, data.error_message)
+        _start_span(self,tool_execution_id, f"tool:{tool_name}", attrs, parent_id=agent_id)
+        _end_span(self,tool_execution_id, data.status, data.error_message)
 
         self._tool_call_counter.add(1, {_ATTR_TOOL_NAME: tool_name})
+
+    # ========== LLM Iteration / Cache ==========
+
+    def track_llm_iteration(
+        self,
+        agent_name: str,
+        iteration_number: int,
+        tool_calls: int = 0,
+        tokens: int = 0,
+    ) -> None:
+        """Record an LLM loop iteration metric."""
+        self._llm_iteration_counter.add(
+            1, {_ATTR_AGENT_NAME: agent_name, "maf.iteration": iteration_number},
+        )
+        if tokens > 0:
+            self._tokens_counter.add(tokens, {_ATTR_AGENT_NAME: agent_name})
+
+    def track_cache_event(self, event_type: str) -> None:
+        """Record a cache hit or miss metric."""
+        if event_type == "hit":
+            self._cache_hit_counter.add(1)
+        elif event_type == "miss":
+            self._cache_miss_counter.add(1)
 
     # ========== Safety / Collaboration ==========
 
@@ -354,6 +436,8 @@ class OTelBackend(ObservabilityBackend):
         agents_involved: List[str],
         data: Optional[CollaborationEventData] = None,
     ) -> str:
+        if data is not None and data.event_data is not None:
+            _record_event_metrics(self, event_type, data.event_data)
         return ""  # Collaboration tracked in SQL
 
     # ========== Context / Maintenance ==========
@@ -372,6 +456,35 @@ class OTelBackend(ObservabilityBackend):
             "backend_type": "otel",
             "active_spans": len(self._active_spans),
         }
+
+
+def _record_event_metrics(
+    backend: Any,
+    event_type: str,
+    event_data: Dict[str, Any],
+) -> None:
+    """Record OTEL metrics for collaboration events (module-level)."""
+    if event_type == _RESILIENCE_RETRY:
+        agent = event_data.get("agent_name", "unknown")
+        backend._retry_counter.add(1, {_ATTR_AGENT_NAME: agent})
+    elif event_type == _RESILIENCE_CB:
+        breaker = event_data.get("breaker_name", "unknown")
+        new_state = event_data.get("new_state", "unknown")
+        backend._cb_state_change_counter.add(
+            1, {"maf.breaker.name": breaker, "maf.breaker.state": new_state},
+        )
+    elif event_type == _EVENT_DIALOGUE_METRICS:
+        speed = event_data.get("convergence_speed")
+        if speed is not None:
+            stage = event_data.get("stage_name", "unknown")
+            backend._dialogue_convergence_histogram.record(
+                speed, {_ATTR_STAGE_NAME: stage},
+            )
+    elif event_type == _EVENT_COST_SUMMARY:
+        cost = event_data.get("total_cost_usd", 0.0)
+        if cost > 0:
+            stage = event_data.get("stage_name", "unknown")
+            backend._stage_cost_counter.add(cost, {_ATTR_STAGE_NAME: stage})
 
 
 # Lazy import guard — only imported when OTEL is configured

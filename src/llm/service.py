@@ -28,6 +28,7 @@ from src.llm._retry import call_with_retry_async, call_with_retry_sync
 from src.llm._schemas import build_native_tool_defs, build_text_schemas
 from src.llm._tool_execution import execute_single_tool, execute_tools
 from src.llm._tracking import track_call, track_failed_call, validate_safety
+from src.observability.llm_loop_events import LLMIterationEventData, emit_llm_iteration_event
 from src.shared.utils.exceptions import MaxIterationsError, sanitize_error_message
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ class _RunState:
     effective_timeout: float = field(default_factory=lambda: float("inf"))
     native_tool_defs: Optional[List[Dict[str, Any]]] = None
     # Mutable state (changes per iteration)
+    iteration_number: int = 0
     tool_calls_made: List[Dict[str, Any]] = field(default_factory=list)
     total_tokens: int = 0
     total_cost: float = 0.0
@@ -186,6 +188,7 @@ class LLMService:
             if s.llm_response is None:
                 return self._handle_llm_failure(last_error, s, iteration)
 
+            s.iteration_number += 1
             parsed_calls = self._track_and_parse(s)
             if not parsed_calls:
                 return self._build_final_result(s, iteration)
@@ -231,6 +234,7 @@ class LLMService:
             if s.llm_response is None:
                 return self._handle_llm_failure(last_error, s, iteration)
 
+            s.iteration_number += 1
             parsed_calls = self._track_and_parse(s)
             if not parsed_calls:
                 return self._build_final_result(s, iteration)
@@ -311,12 +315,25 @@ class LLMService:
         """Track response metrics and return parsed tool calls."""
         resp = s.llm_response
         logger.info("[%s] LLM responded (%s tokens)", s.agent_name, resp.total_tokens or "?")
-        if resp.total_tokens:
-            s.total_tokens += resp.total_tokens
+        iter_tokens = resp.total_tokens or 0
+        if iter_tokens:
+            s.total_tokens += iter_tokens
         cost = self._estimate_cost(resp)
         s.total_cost += cost
         self._track_call(s.observer, s.prompt, resp, cost)
-        return parse_tool_calls(resp.content) if s.tools else []
+
+        parsed_calls = parse_tool_calls(resp.content) if s.tools else []
+
+        emit_llm_iteration_event(s.observer, LLMIterationEventData(
+            iteration_number=s.iteration_number,
+            agent_name=s.agent_name,
+            conversation_turns_count=len(s.conversation_turns),
+            tool_calls_this_iteration=len(parsed_calls),
+            total_tokens_this_iteration=iter_tokens,
+            total_cost_this_iteration=cost,
+        ))
+
+        return parsed_calls
 
     def _build_final_result(self, s: _RunState, iteration: int) -> LLMRunResult:
         """Build final result when no tool calls are needed."""

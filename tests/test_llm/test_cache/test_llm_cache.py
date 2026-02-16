@@ -588,7 +588,7 @@ class TestLLMCacheInitialization:
                 mock_client = Mock()
                 mock_redis_module.Redis.return_value = mock_client
 
-                cache = LLMCache(backend="redis", redis_host="localhost")
+                cache = LLMCache(backend="redis", redis_config={"host": "localhost"})
 
                 assert isinstance(cache._backend, RedisCache)
 

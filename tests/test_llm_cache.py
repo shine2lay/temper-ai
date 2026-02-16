@@ -493,10 +493,12 @@ class TestLLMCache:
 
         cache = LLMCache(
             backend="redis",
-            redis_host="localhost",
-            redis_port=6379,
-            redis_db=1,
-            redis_password="secret"
+            redis_config={
+                "host": "localhost",
+                "port": 6379,
+                "db": 1,
+                "password": "secret",
+            },
         )
 
         mock_redis_class.assert_called_once()

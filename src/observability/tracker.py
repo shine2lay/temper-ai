@@ -92,6 +92,7 @@ class WorkflowTrackingParams:
     assignment_strategy: Optional[str] = None
     assignment_context: Optional[Dict[str, Any]] = None
     custom_metrics: Optional[Dict[str, Any]] = None
+    cost_attribution_tags: Optional[Dict[str, str]] = None
 
 
 class ExecutionTracker(TrackerCollaborationMixin):
@@ -228,7 +229,8 @@ class ExecutionTracker(TrackerCollaborationMixin):
                     trigger_type=params.trigger_type, trigger_data=params.trigger_data,
                     optimization_target=params.optimization_target, product_type=params.product_type,
                     environment=params.environment, tags=params.tags,
-                    extra_metadata=extra_metadata
+                    extra_metadata=extra_metadata,
+                    cost_attribution_tags=params.cost_attribution_tags,
                 )
             )
             self._emit_event(_EVENT_WORKFLOW_START, {
@@ -417,9 +419,14 @@ class ExecutionTracker(TrackerCollaborationMixin):
             "num_tool_calls": params.num_tool_calls,
         })
 
-    def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
+    def set_stage_output(
+        self, stage_id: str, output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Set stage output data."""
-        self._metric_aggregator.set_stage_output(stage_id=stage_id, output_data=output_data)
+        self._metric_aggregator.set_stage_output(
+            stage_id=stage_id, output_data=output_data, output_lineage=output_lineage,
+        )
         self._emit_event(_EVENT_STAGE_OUTPUT, {
             ObservabilityFields.STAGE_ID: stage_id,
         })

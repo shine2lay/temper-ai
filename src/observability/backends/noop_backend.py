@@ -87,7 +87,8 @@ class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
     def set_stage_output(
         self,
         stage_id: str,
-        output_data: Dict[str, Any]
+        output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Set stage output (no-op)."""
         pass

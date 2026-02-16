@@ -381,6 +381,7 @@ def _workflow_to_dict(wf: Any, stages: Optional[List[Dict[str, Any]]] = None) ->
         ObservabilityFields.ERROR_MESSAGE: wf.error_message,
         ObservabilityFields.WORKFLOW_CONFIG: wf.workflow_config_snapshot,
         "extra_metadata": wf.extra_metadata,
+        "cost_attribution_tags": wf.cost_attribution_tags,
         "stages": stages or [],
     }
 
@@ -406,6 +407,7 @@ def _stage_to_dict(
         "num_agents_succeeded": stage.num_agents_succeeded,
         "num_agents_failed": stage.num_agents_failed,
         ObservabilityFields.ERROR_MESSAGE: stage.error_message,
+        "output_lineage": stage.output_lineage,
         "agents": agents or [],
         "collaboration_events": collaboration_events or [],
     }
@@ -462,6 +464,10 @@ def _llm_to_dict(llm: Any) -> Dict[str, Any]:
         ObservabilityFields.ERROR_MESSAGE: llm.error_message,
         ObservabilityFields.START_TIME: llm.start_time.isoformat() if llm.start_time else None,
         ObservabilityFields.END_TIME: llm.end_time.isoformat() if llm.end_time else None,
+        "failover_sequence": llm.failover_sequence,
+        "failover_from_provider": llm.failover_from_provider,
+        "prompt_template_hash": llm.prompt_template_hash,
+        "prompt_template_source": llm.prompt_template_source,
     }
 
 
@@ -722,7 +728,11 @@ def _create_llm_call_models(llm_calls: List[Any]) -> List[LLMCall]:
             status=call.status,
             error_message=call.error_message,
             start_time=ensure_utc(call.start_time),
-            retry_count=0
+            retry_count=0,
+            failover_sequence=getattr(call, "failover_sequence", None),
+            failover_from_provider=getattr(call, "failover_from_provider", None),
+            prompt_template_hash=getattr(call, "prompt_template_hash", None),
+            prompt_template_source=getattr(call, "prompt_template_source", None),
         )
         for call in llm_calls
     ]

@@ -840,7 +840,6 @@ def update_state_with_results(
     """
     agent_statuses = parallel_result.get(StateKeys.AGENT_STATUSES, {})
     stage_status = _compute_stage_status(agent_statuses)
-
     raw_dict: Dict[str, Any] = {
         StateKeys.DECISION: synthesis_result.decision,
         StateKeys.AGENT_OUTPUTS: agent_outputs_dict,
@@ -856,37 +855,83 @@ def update_state_with_results(
         },
     }
 
-    # Two-compartment format with top-level compat aliases
     stage_entry: Dict[str, Any] = {
         "structured": structured or {},
         "raw": dict(raw_dict),
         **raw_dict,  # Top-level compat for condition expressions
     }
-
-    # Propagate context metadata from stage input if available
     context_meta = state.get("_context_meta")
     if context_meta is not None:
         stage_entry["_context_meta"] = context_meta
-
     state[StateKeys.STAGE_OUTPUTS][stage_name] = stage_entry
     state[StateKeys.CURRENT_STAGE] = stage_name
 
-    tracker = state.get(StateKeys.TRACKER)
-    if tracker and hasattr(tracker, 'track_collaboration_event'):
-        tracker_metadata = _build_synthesis_metadata(
-            synthesis_result, parallel_result, aggregate_metrics
-        )
-        from src.observability._tracker_helpers import CollaborationEventData
-        tracker.track_collaboration_event(CollaborationEventData(
-            event_type="synthesis",
-            stage_name=stage_name,
-            agents=list(agent_outputs_dict.keys()),
-            decision=synthesis_result.decision,
-            confidence=synthesis_result.confidence,
-            metadata=tracker_metadata
-        ))
-
+    _emit_synthesis_event(
+        state, stage_name, synthesis_result, agent_outputs_dict,
+        parallel_result, aggregate_metrics,
+    )
+    _emit_output_lineage(state, stage_name, agent_outputs_dict, parallel_result, synthesis_result)
     _emit_parallel_cost_summary(state, stage_name, parallel_result)
+
+
+def _emit_synthesis_event(
+    state: Dict[str, Any],
+    stage_name: str,
+    synthesis_result: Any,
+    agent_outputs_dict: Dict[str, Any],
+    parallel_result: Dict[str, Any],
+    aggregate_metrics: Dict[str, Any],
+) -> None:
+    """Emit synthesis collaboration event via tracker (if available)."""
+    tracker = state.get(StateKeys.TRACKER)
+    if not (tracker and hasattr(tracker, 'track_collaboration_event')):
+        return
+    tracker_metadata = _build_synthesis_metadata(
+        synthesis_result, parallel_result, aggregate_metrics
+    )
+    from src.observability._tracker_helpers import CollaborationEventData
+    tracker.track_collaboration_event(CollaborationEventData(
+        event_type="synthesis",
+        stage_name=stage_name,
+        agents=list(agent_outputs_dict.keys()),
+        decision=synthesis_result.decision,
+        confidence=synthesis_result.confidence,
+        metadata=tracker_metadata
+    ))
+
+
+def _emit_output_lineage(
+    state: Dict[str, Any],
+    stage_name: str,
+    agent_outputs_dict: Dict[str, Any],
+    parallel_result: Dict[str, Any],
+    synthesis_result: Any,
+) -> None:
+    """Compute output lineage and store via tracker (best-effort)."""
+    try:
+        from src.observability.lineage import compute_output_lineage, lineage_to_dict
+
+        agent_statuses = parallel_result.get(StateKeys.AGENT_STATUSES, {})
+        synthesis_method = getattr(synthesis_result, "method", None)
+        lineage = compute_output_lineage(
+            stage_name, agent_outputs_dict, agent_statuses, synthesis_method,
+        )
+        lineage_dict = lineage_to_dict(lineage)
+
+        tracker = state.get(StateKeys.TRACKER)
+        stage_id = state.get(StateKeys.CURRENT_STAGE_ID, "")
+        if tracker and hasattr(tracker, "set_stage_output"):
+            tracker.set_stage_output(
+                stage_id=stage_id,
+                output_data={},
+                output_lineage=lineage_dict,
+            )
+    except Exception:
+        logger.debug(
+            "Failed to compute output lineage for stage %s",
+            stage_name,
+            exc_info=True,
+        )
 
 
 def _emit_parallel_cost_summary(

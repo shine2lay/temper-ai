@@ -62,6 +62,12 @@ class LLMCallTrackingData:
     max_tokens: Optional[int] = None
     status: str = "success"
     error_message: Optional[str] = None
+    # Failover tracking (Gap 9)
+    failover_sequence: Optional[List[str]] = None
+    failover_from_provider: Optional[str] = None
+    # Prompt versioning (Gap 6)
+    prompt_template_hash: Optional[str] = None
+    prompt_template_source: Optional[str] = None
 
 
 @dataclass
@@ -388,6 +394,10 @@ def track_llm_call(
             max_tokens=data.max_tokens,
             status=data.status,  # type: ignore[arg-type]
             error_message=safe_error_message,
+            failover_sequence=data.failover_sequence,
+            failover_from_provider=data.failover_from_provider,
+            prompt_template_hash=data.prompt_template_hash,
+            prompt_template_source=data.prompt_template_source,
         ),
     )
 

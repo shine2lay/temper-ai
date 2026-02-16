@@ -27,6 +27,7 @@ class WorkflowStartData:
     environment: Optional[str] = None
     tags: Optional[List[str]] = None
     extra_metadata: Optional[Dict[str, Any]] = None
+    cost_attribution_tags: Optional[Dict[str, str]] = None
 
 
 @dataclass
@@ -55,6 +56,12 @@ class LLMCallData:
     max_tokens: Optional[int] = None
     status: Literal["success", "failed"] = "success"
     error_message: Optional[str] = None
+    # Failover tracking (Gap 9)
+    failover_sequence: Optional[List[str]] = None
+    failover_from_provider: Optional[str] = None
+    # Prompt versioning (Gap 6)
+    prompt_template_hash: Optional[str] = None
+    prompt_template_source: Optional[str] = None
 
 
 @dataclass
@@ -263,7 +270,8 @@ class ObservabilityBackend(ABC):
     def set_stage_output(
         self,
         stage_id: str,
-        output_data: Dict[str, Any]
+        output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
     ) -> None:
         """
         Set stage output data.
@@ -271,6 +279,7 @@ class ObservabilityBackend(ABC):
         Args:
             stage_id: Stage execution ID
             output_data: Stage output data
+            output_lineage: Optional lineage tracking data
         """
         pass
 

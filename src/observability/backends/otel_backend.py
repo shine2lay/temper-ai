@@ -61,10 +61,12 @@ _METRIC_RETRY_COUNT = "maf.retry.count"
 _METRIC_CB_STATE_CHANGE = "maf.circuit_breaker.state_change"
 _METRIC_DIALOGUE_CONVERGENCE = "maf.dialogue.convergence_speed"
 _METRIC_STAGE_COST = "maf.stage.cost_usd"
+_METRIC_FAILOVER_COUNT = "maf.failover.count"
 
 # Resilience event type prefixes
 _RESILIENCE_RETRY = "resilience_retry"
 _RESILIENCE_CB = "resilience_circuit_breaker"
+_RESILIENCE_FAILOVER = "resilience_failover_provider"
 
 # Dialogue/cost event types
 _EVENT_DIALOGUE_METRICS = "dialogue_round_metrics"
@@ -113,6 +115,9 @@ def _init_metrics(backend: Any, meter: Any) -> None:
     )
     backend._stage_cost_counter = meter.create_counter(
         _METRIC_STAGE_COST, unit="usd", description="Per-stage cost",
+    )
+    backend._failover_counter = meter.create_counter(
+        _METRIC_FAILOVER_COUNT, description="Provider failover events",
     )
 
 
@@ -185,6 +190,7 @@ class OTelBackend(ObservabilityBackend):
     _cb_state_change_counter: Any
     _dialogue_convergence_histogram: Any
     _stage_cost_counter: Any
+    _failover_counter: Any
 
     def __init__(self, service_name: str = "maf") -> None:
         try:
@@ -222,6 +228,9 @@ class OTelBackend(ObservabilityBackend):
                 attrs["maf.environment"] = data.environment
             if data.product_type:
                 attrs["maf.product_type"] = data.product_type
+            if data.cost_attribution_tags:
+                for key, value in data.cost_attribution_tags.items():
+                    attrs[f"maf.cost.tag.{key}"] = value
         _start_span(self,workflow_id, f"workflow:{workflow_name}", attrs)
         self._workflow_counter.add(1, {_ATTR_WORKFLOW_NAME: workflow_name})
 
@@ -285,7 +294,10 @@ class OTelBackend(ObservabilityBackend):
             span.set_attribute("maf.stage.agents_failed", num_agents_failed)
         _end_span(self,stage_id, status, error_message)
 
-    def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
+    def set_stage_output(
+        self, stage_id: str, output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
+    ) -> None:
         pass  # Stage output is potentially large — skip in OTEL
 
     # ========== Agent Tracking ==========
@@ -353,6 +365,17 @@ class OTelBackend(ObservabilityBackend):
             _ATTR_COST_USD: data.estimated_cost_usd,
             _ATTR_STATUS: data.status,
         }
+        # Failover tracking
+        if data.failover_from_provider:
+            attrs["maf.llm.failover_from"] = data.failover_from_provider
+        if data.failover_sequence:
+            attrs["maf.llm.failover_count"] = len(data.failover_sequence)
+        # Prompt versioning
+        if data.prompt_template_hash:
+            attrs["maf.llm.prompt.template_hash"] = data.prompt_template_hash
+        if data.prompt_template_source:
+            attrs["maf.llm.prompt.template_source"] = data.prompt_template_source
+
         # Leaf span — start and immediately end
         _start_span(self,llm_call_id, span_name, attrs, parent_id=agent_id)
         _end_span(self,llm_call_id, data.status, data.error_message)
@@ -480,6 +503,12 @@ def _record_event_metrics(
             backend._dialogue_convergence_histogram.record(
                 speed, {_ATTR_STAGE_NAME: stage},
             )
+    elif event_type == _RESILIENCE_FAILOVER:
+        from_provider = event_data.get("from_provider", "unknown")
+        to_provider = event_data.get("to_provider", "unknown")
+        backend._failover_counter.add(
+            1, {"maf.failover.from": from_provider, "maf.failover.to": to_provider},
+        )
     elif event_type == _EVENT_COST_SUMMARY:
         cost = event_data.get("total_cost_usd", 0.0)
         if cost > 0:

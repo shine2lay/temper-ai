@@ -48,6 +48,12 @@ class LLMCallBufferParams:
     max_tokens: Optional[int] = None
     status: str = "success"
     error_message: Optional[str] = None
+    # Failover tracking (Gap 9)
+    failover_sequence: Optional[List[str]] = None
+    failover_from_provider: Optional[str] = None
+    # Prompt versioning (Gap 6)
+    prompt_template_hash: Optional[str] = None
+    prompt_template_source: Optional[str] = None
 
 
 @dataclass
@@ -84,6 +90,12 @@ class BufferedLLMCall:
     max_tokens: Optional[int] = None
     status: str = "success"
     error_message: Optional[str] = None
+    # Failover tracking (Gap 9)
+    failover_sequence: Optional[List[str]] = None
+    failover_from_provider: Optional[str] = None
+    # Prompt versioning (Gap 6)
+    prompt_template_hash: Optional[str] = None
+    prompt_template_source: Optional[str] = None
 
 
 @dataclass
@@ -254,7 +266,11 @@ class ObservabilityBuffer:
                 completion_tokens=params.completion_tokens, latency_ms=params.latency_ms,
                 estimated_cost_usd=params.estimated_cost_usd, start_time=params.start_time,
                 temperature=params.temperature, max_tokens=params.max_tokens,
-                status=params.status, error_message=params.error_message
+                status=params.status, error_message=params.error_message,
+                failover_sequence=params.failover_sequence,
+                failover_from_provider=params.failover_from_provider,
+                prompt_template_hash=params.prompt_template_hash,
+                prompt_template_source=params.prompt_template_source,
             ))
 
             # Update agent metrics

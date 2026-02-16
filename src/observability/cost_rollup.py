@@ -37,6 +37,7 @@ class StageCostSummary:
     total_duration_seconds: float = 0.0
     agent_count: int = 0
     agents: List[AgentCostEntry] = field(default_factory=list)
+    cost_attribution_tags: Optional[Dict[str, str]] = None
 
 
 def compute_stage_cost_summary(

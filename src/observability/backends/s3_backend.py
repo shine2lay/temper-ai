@@ -94,7 +94,10 @@ class S3ObservabilityBackend(ObservabilityBackend, ReadableBackendMixin):
         """Track stage end (stub - logs only)."""
         logger.debug(f"[S3 STUB] Stage end: {stage_id}{LOG_SEPARATOR_STATUS}{status}")
 
-    def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
+    def set_stage_output(
+        self, stage_id: str, output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Set stage output (stub - logs only)."""
         logger.debug(f"[S3 STUB] Stage output: {stage_id}")
 

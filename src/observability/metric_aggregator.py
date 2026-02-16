@@ -106,14 +106,17 @@ class MetricAggregator:
         self,
         stage_id: str,
         output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Set stage output data after execution.
 
         Args:
             stage_id: Stage execution ID
             output_data: Stage output data
+            output_lineage: Optional lineage metadata (which agent produced what)
         """
         self.backend.set_stage_output(
             stage_id=stage_id,
             output_data=output_data,
+            output_lineage=output_lineage,
         )

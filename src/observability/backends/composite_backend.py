@@ -139,9 +139,12 @@ class CompositeBackend(ObservabilityBackend, ReadableBackendMixin):
             num_agents_executed, num_agents_succeeded, num_agents_failed,
         )
 
-    def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
-        self._primary.set_stage_output(stage_id, output_data)
-        self._fan_out("set_stage_output", stage_id, output_data)
+    def set_stage_output(
+        self, stage_id: str, output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        self._primary.set_stage_output(stage_id, output_data, output_lineage)
+        self._fan_out("set_stage_output", stage_id, output_data, output_lineage)
 
     # ========== Agent Tracking ==========
 

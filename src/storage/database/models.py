@@ -73,6 +73,9 @@ class WorkflowExecution(SQLModel, table=True):
     tags: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
     extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
+    # Cost attribution
+    cost_attribution_tags: Optional[Dict[str, str]] = Field(default=None, sa_column=Column(JSON))
+
     created_at: datetime = Field(default_factory=utcnow)
 
     # Relationships
@@ -144,6 +147,9 @@ class StageExecution(SQLModel, table=True):
 
     # Metadata
     extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # noqa: duplicate
+
+    # Data lineage
+    output_lineage: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))
 
     # Relationships
     workflow: WorkflowExecution = Relationship(back_populates="stages")
@@ -334,6 +340,14 @@ class LLMCall(SQLModel, table=True):
 
     # Retry info
     retry_count: int = 0
+
+    # Failover tracking
+    failover_sequence: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    failover_from_provider: Optional[str] = None
+
+    # Prompt versioning
+    prompt_template_hash: Optional[str] = Field(default=None, max_length=16)  # noqa: duplicate
+    prompt_template_source: Optional[str] = None
 
     # Metadata
     extra_metadata: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))

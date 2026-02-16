@@ -92,6 +92,7 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
             status=_STATUS_RUNNING, start_time=ensure_utc(start_time),
             optimization_target=d.optimization_target, product_type=d.product_type,
             environment=d.environment, tags=d.tags, extra_metadata=d.extra_metadata,
+            cost_attribution_tags=d.cost_attribution_tags,
             total_llm_calls=0, total_tool_calls=0, total_tokens=0, total_cost_usd=0.0
         )
         with get_session() as session:
@@ -191,13 +192,18 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
 
                 session.commit()
 
-    def set_stage_output(self, stage_id: str, output_data: Dict[str, Any]) -> None:
+    def set_stage_output(
+        self, stage_id: str, output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """Set stage output data."""
         with get_session() as session:
             statement = select(StageExecution).where(StageExecution.id == stage_id)
             stage = session.exec(statement).first()
             if stage:
                 stage.output_data = output_data
+                if output_lineage is not None:
+                    stage.output_lineage = output_lineage
                 session.commit()
 
     # ========== Agent Tracking ==========
@@ -282,7 +288,11 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
                 prompt_tokens=data.prompt_tokens, completion_tokens=data.completion_tokens,
                 latency_ms=data.latency_ms, estimated_cost_usd=data.estimated_cost_usd,
                 start_time=start_time, temperature=data.temperature, max_tokens=data.max_tokens,
-                status=data.status, error_message=data.error_message
+                status=data.status, error_message=data.error_message,
+                failover_sequence=data.failover_sequence,
+                failover_from_provider=data.failover_from_provider,
+                prompt_template_hash=data.prompt_template_hash,
+                prompt_template_source=data.prompt_template_source,
             )
             self._buffer.buffer_llm_call(params)
             return
@@ -295,7 +305,11 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
             latency_ms=data.latency_ms, estimated_cost_usd=data.estimated_cost_usd,
             temperature=data.temperature, max_tokens=data.max_tokens,
             status=data.status, error_message=data.error_message,
-            start_time=ensure_utc(start_time), retry_count=0
+            start_time=ensure_utc(start_time), retry_count=0,
+            failover_sequence=data.failover_sequence,
+            failover_from_provider=data.failover_from_provider,
+            prompt_template_hash=data.prompt_template_hash,
+            prompt_template_source=data.prompt_template_source,
         )
         with get_session() as session:
             session.add(llm_call)

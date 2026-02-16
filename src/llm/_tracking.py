@@ -14,12 +14,16 @@ from src.shared.utils.exceptions import ConfigValidationError, sanitize_error_me
 logger = logging.getLogger(__name__)
 
 
-def track_call(
+def track_call(  # noqa: params — optional tracking metadata kwargs
     observer: Any,
     inference_config: Any,
     prompt: str,
     llm_response: Any,
     cost: float,
+    failover_sequence: Optional[list] = None,
+    failover_from_provider: Optional[str] = None,
+    prompt_template_hash: Optional[str] = None,
+    prompt_template_source: Optional[str] = None,
 ) -> None:
     """Track a successful LLM call via the observer."""
     if observer is None:
@@ -36,6 +40,10 @@ def track_call(
         temperature=inference_config.temperature,
         max_tokens=inference_config.max_tokens,
         status="success",
+        failover_sequence=failover_sequence,
+        failover_from_provider=failover_from_provider,
+        prompt_template_hash=prompt_template_hash,
+        prompt_template_source=prompt_template_source,
     )
 
 

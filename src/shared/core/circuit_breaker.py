@@ -329,11 +329,6 @@ class CircuitBreaker:
         """Timestamp of most recent failure."""
         return self._last_failure_time
 
-    @last_failure_time.setter
-    def last_failure_time(self, value: Optional[float]) -> None:
-        """Timestamp of most recent failure."""
-        self._last_failure_time = value
-
     def record_success(self) -> None:
         """Record successful execution (safety module interface)."""
         pending = None

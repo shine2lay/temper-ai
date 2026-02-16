@@ -824,6 +824,20 @@ def flush_buffer(
 _MAX_RECENT_IDS = 10
 
 
+def _update_recent_ids(existing: Any, data: ErrorFingerprintData) -> None:
+    """Append workflow/agent IDs to recent lists (capped at _MAX_RECENT_IDS)."""
+    if data.workflow_id:
+        wf_ids = list(existing.recent_workflow_ids or [])
+        if data.workflow_id not in wf_ids:
+            wf_ids.append(data.workflow_id)
+        existing.recent_workflow_ids = wf_ids[-_MAX_RECENT_IDS:]
+    if data.agent_name:
+        ag_names = list(existing.recent_agent_names or [])
+        if data.agent_name not in ag_names:
+            ag_names.append(data.agent_name)
+        existing.recent_agent_names = ag_names[-_MAX_RECENT_IDS:]
+
+
 def record_error_fingerprint(data: ErrorFingerprintData) -> bool:
     """Upsert an error fingerprint record. Returns True if new."""
     from src.storage.database.datetime_utils import utcnow
@@ -861,16 +875,7 @@ def record_error_fingerprint(data: ErrorFingerprintData) -> bool:
                     existing.resolved = False
                     existing.resolved_at = None
                 # Update recent lists (capped)
-                if data.workflow_id:
-                    wf_ids = list(existing.recent_workflow_ids or [])
-                    if data.workflow_id not in wf_ids:
-                        wf_ids.append(data.workflow_id)
-                    existing.recent_workflow_ids = wf_ids[-_MAX_RECENT_IDS:]
-                if data.agent_name:
-                    ag_names = list(existing.recent_agent_names or [])
-                    if data.agent_name not in ag_names:
-                        ag_names.append(data.agent_name)
-                    existing.recent_agent_names = ag_names[-_MAX_RECENT_IDS:]
+                _update_recent_ids(existing, data)
                 session.add(existing)
             session.commit()
     except (IntegrityError, SQLAlchemyError) as e:

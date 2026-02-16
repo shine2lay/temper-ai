@@ -30,6 +30,16 @@ from src.observability.constants import (
 logger = logging.getLogger(__name__)
 
 
+def _flush_loop(buffer: "ObservabilityBuffer") -> None:
+    """Background flush loop for ObservabilityBuffer.
+
+    Args:
+        buffer: The ObservabilityBuffer instance to flush periodically.
+    """
+    while not buffer._stop_flush_thread.wait(timeout=buffer.flush_interval):
+        buffer.flush()
+
+
 @dataclass
 class LLMCallBufferParams:
     """Parameters for buffering an LLM call."""
@@ -438,13 +448,8 @@ class ObservabilityBuffer:
     def _start_flush_thread(self) -> None:
         """Start background flush thread."""
         self._stop_flush_thread.clear()
-        self._flush_thread = threading.Thread(target=self._flush_loop, daemon=True)
+        self._flush_thread = threading.Thread(target=_flush_loop, args=(self,), daemon=True)
         self._flush_thread.start()
-
-    def _flush_loop(self) -> None:
-        """Background flush loop."""
-        while not self._stop_flush_thread.wait(timeout=self.flush_interval):
-            self.flush()
 
     def stop(self) -> None:
         """

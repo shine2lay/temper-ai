@@ -95,7 +95,8 @@ class TuningOptimizer:
         runs_per_config: int,
     ) -> OptimizationResult:
         """Run via ExperimentService for tracking and early stopping."""
-        assert self.experiment_service is not None
+        if self.experiment_service is None:
+            raise RuntimeError("experiment_service is required for _run_with_service")
         experiment = self.experiment_service.create_experiment(
             name="optimization_tuning",
             description="Automated config tuning",

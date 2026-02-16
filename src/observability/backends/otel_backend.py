@@ -16,7 +16,7 @@ import logging
 import time
 from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
 
 from src.observability.backend import (
     AgentOutputData,
@@ -208,7 +208,180 @@ def _end_span(
         logger.debug("Failed to end OTEL span for %s", entity_id, exc_info=True)
 
 
-class OTelBackend(ObservabilityBackend):
+class _OTelAsyncMixin:
+    """Mixin containing async method overrides for OTelBackend.
+
+    All async methods delegate to sync counterparts since OTEL operations
+    are in-memory and don't require I/O.
+    """
+
+    if TYPE_CHECKING:
+        # Sync methods resolved at runtime from OTelBackend via MRO
+        track_workflow_start: Callable[..., None]
+        track_workflow_end: Callable[..., None]
+        update_workflow_metrics: Callable[..., None]
+        track_stage_start: Callable[..., None]
+        track_stage_end: Callable[..., None]
+        set_stage_output: Callable[..., None]
+        track_agent_start: Callable[..., None]
+        track_agent_end: Callable[..., None]
+        set_agent_output: Callable[..., None]
+        track_llm_call: Callable[..., None]
+        track_tool_call: Callable[..., None]
+        track_safety_violation: Callable[..., None]
+        track_collaboration_event: Callable[..., str]
+
+    async def atrack_workflow_start(
+        self,
+        workflow_id: str,
+        workflow_name: str,
+        workflow_config: Dict[str, Any],
+        start_time: datetime,
+        data: Optional[WorkflowStartData] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_workflow_start(workflow_id, workflow_name, workflow_config, start_time, data)
+
+    async def atrack_workflow_end(
+        self,
+        workflow_id: str,
+        end_time: datetime,
+        status: str,
+        error_message: Optional[str] = None,
+        error_stack_trace: Optional[str] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_workflow_end(workflow_id, end_time, status, error_message, error_stack_trace)
+
+    async def aupdate_workflow_metrics(
+        self,
+        workflow_id: str,
+        total_llm_calls: int,
+        total_tool_calls: int,
+        total_tokens: int,
+        total_cost_usd: float,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.update_workflow_metrics(workflow_id, total_llm_calls, total_tool_calls, total_tokens, total_cost_usd)
+
+    async def atrack_stage_start(
+        self,
+        stage_id: str,
+        workflow_id: str,
+        stage_name: str,
+        stage_config: Dict[str, Any],
+        start_time: datetime,
+        input_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_stage_start(stage_id, workflow_id, stage_name, stage_config, start_time, input_data)
+
+    async def atrack_stage_end(
+        self,
+        stage_id: str,
+        end_time: datetime,
+        status: str,
+        error_message: Optional[str] = None,
+        num_agents_executed: int = 0,
+        num_agents_succeeded: int = 0,
+        num_agents_failed: int = 0,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_stage_end(
+            stage_id, end_time, status, error_message,
+            num_agents_executed, num_agents_succeeded, num_agents_failed,
+        )
+
+    async def aset_stage_output(
+        self,
+        stage_id: str,
+        output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.set_stage_output(stage_id, output_data, output_lineage)
+
+    async def atrack_agent_start(
+        self,
+        agent_id: str,
+        stage_id: str,
+        agent_name: str,
+        agent_config: Dict[str, Any],
+        start_time: datetime,
+        input_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_agent_start(agent_id, stage_id, agent_name, agent_config, start_time, input_data)
+
+    async def atrack_agent_end(
+        self,
+        agent_id: str,
+        end_time: datetime,
+        status: str,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_agent_end(agent_id, end_time, status, error_message)
+
+    async def aset_agent_output(
+        self,
+        agent_id: str,
+        output_data: Dict[str, Any],
+        metrics: Optional[AgentOutputData] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.set_agent_output(agent_id, output_data, metrics)
+
+    async def atrack_llm_call(
+        self,
+        llm_call_id: str,
+        agent_id: str,
+        provider: str,
+        model: str,
+        start_time: datetime,
+        data: LLMCallData,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_llm_call(llm_call_id, agent_id, provider, model, start_time, data)
+
+    async def atrack_tool_call(
+        self,
+        tool_execution_id: str,
+        agent_id: str,
+        tool_name: str,
+        start_time: datetime,
+        data: ToolCallData,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_tool_call(tool_execution_id, agent_id, tool_name, start_time, data)
+
+    async def atrack_safety_violation(
+        self,
+        violation_severity: str,
+        violation_message: str,
+        policy_name: str,
+        data: Optional[SafetyViolationData] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_safety_violation(violation_severity, violation_message, policy_name, data)
+
+    async def atrack_collaboration_event(
+        self,
+        stage_id: str,
+        event_type: str,
+        agents_involved: List[str],
+        data: Optional[CollaborationEventData] = None,
+    ) -> str:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        return self.track_collaboration_event(stage_id, event_type, agents_involved, data)
+
+    @asynccontextmanager
+    async def aget_session_context(self) -> AsyncIterator[Any]:
+        """Async session context (in-memory, no I/O)."""
+        yield None
+
+
+class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
     """OTEL tracing + metrics backend for MAF.
 
     Maintains an active-span registry so that ``track_*_start`` and
@@ -619,157 +792,6 @@ class OTelBackend(ObservabilityBackend):
             "backend_type": "otel",
             "active_spans": len(self._active_spans),
         }
-
-    # ========== Async Methods (in-memory, skip to_thread) ==========
-
-    async def atrack_workflow_start(
-        self,
-        workflow_id: str,
-        workflow_name: str,
-        workflow_config: Dict[str, Any],
-        start_time: datetime,
-        data: Optional[WorkflowStartData] = None,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_workflow_start(workflow_id, workflow_name, workflow_config, start_time, data)
-
-    async def atrack_workflow_end(
-        self,
-        workflow_id: str,
-        end_time: datetime,
-        status: str,
-        error_message: Optional[str] = None,
-        error_stack_trace: Optional[str] = None,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_workflow_end(workflow_id, end_time, status, error_message, error_stack_trace)
-
-    async def aupdate_workflow_metrics(
-        self,
-        workflow_id: str,
-        total_llm_calls: int,
-        total_tool_calls: int,
-        total_tokens: int,
-        total_cost_usd: float,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.update_workflow_metrics(workflow_id, total_llm_calls, total_tool_calls, total_tokens, total_cost_usd)
-
-    async def atrack_stage_start(
-        self,
-        stage_id: str,
-        workflow_id: str,
-        stage_name: str,
-        stage_config: Dict[str, Any],
-        start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_stage_start(stage_id, workflow_id, stage_name, stage_config, start_time, input_data)
-
-    async def atrack_stage_end(
-        self,
-        stage_id: str,
-        end_time: datetime,
-        status: str,
-        error_message: Optional[str] = None,
-        num_agents_executed: int = 0,
-        num_agents_succeeded: int = 0,
-        num_agents_failed: int = 0,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_stage_end(
-            stage_id, end_time, status, error_message,
-            num_agents_executed, num_agents_succeeded, num_agents_failed,
-        )
-
-    async def aset_stage_output(
-        self,
-        stage_id: str,
-        output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.set_stage_output(stage_id, output_data, output_lineage)
-
-    async def atrack_agent_start(
-        self,
-        agent_id: str,
-        stage_id: str,
-        agent_name: str,
-        agent_config: Dict[str, Any],
-        start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_agent_start(agent_id, stage_id, agent_name, agent_config, start_time, input_data)
-
-    async def atrack_agent_end(
-        self,
-        agent_id: str,
-        end_time: datetime,
-        status: str,
-        error_message: Optional[str] = None,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_agent_end(agent_id, end_time, status, error_message)
-
-    async def aset_agent_output(
-        self,
-        agent_id: str,
-        output_data: Dict[str, Any],
-        metrics: Optional[AgentOutputData] = None,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.set_agent_output(agent_id, output_data, metrics)
-
-    async def atrack_llm_call(
-        self,
-        llm_call_id: str,
-        agent_id: str,
-        provider: str,
-        model: str,
-        start_time: datetime,
-        data: LLMCallData,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_llm_call(llm_call_id, agent_id, provider, model, start_time, data)
-
-    async def atrack_tool_call(
-        self,
-        tool_execution_id: str,
-        agent_id: str,
-        tool_name: str,
-        start_time: datetime,
-        data: ToolCallData,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_tool_call(tool_execution_id, agent_id, tool_name, start_time, data)
-
-    async def atrack_safety_violation(
-        self,
-        violation_severity: str,
-        violation_message: str,
-        policy_name: str,
-        data: Optional[SafetyViolationData] = None,
-    ) -> None:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        self.track_safety_violation(violation_severity, violation_message, policy_name, data)
-
-    async def atrack_collaboration_event(
-        self,
-        stage_id: str,
-        event_type: str,
-        agents_involved: List[str],
-        data: Optional[CollaborationEventData] = None,
-    ) -> str:
-        """Async override: delegate to sync (in-memory, no I/O)."""
-        return self.track_collaboration_event(stage_id, event_type, agents_involved, data)
-
-    @asynccontextmanager
-    async def aget_session_context(self) -> AsyncIterator[Any]:
-        """Async session context (in-memory, no I/O)."""
-        yield None
 
 
 def _cleanup_stale_spans(backend: Any, ttl: float, max_spans: int) -> int:

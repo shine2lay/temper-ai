@@ -11,7 +11,17 @@ from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, AsyncIterator, ContextManager, Dict, List, Literal, Optional
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    AsyncIterator,
+    Callable,
+    ContextManager,
+    Dict,
+    List,
+    Literal,
+    Optional,
+)
 
 DEFAULT_LIST_LIMIT = 50
 
@@ -154,6 +164,23 @@ class _AsyncBackendDefaults:
     runtime through MRO from ObservabilityBackend.
     """
 
+    if TYPE_CHECKING:
+        # Sync methods resolved at runtime from ObservabilityBackend via MRO
+        track_workflow_start: Callable[..., None]
+        track_workflow_end: Callable[..., None]
+        update_workflow_metrics: Callable[..., None]
+        track_stage_start: Callable[..., None]
+        track_stage_end: Callable[..., None]
+        set_stage_output: Callable[..., None]
+        track_agent_start: Callable[..., None]
+        track_agent_end: Callable[..., None]
+        set_agent_output: Callable[..., None]
+        track_llm_call: Callable[..., None]
+        track_tool_call: Callable[..., None]
+        track_safety_violation: Callable[..., None]
+        track_collaboration_event: Callable[..., str]
+        get_session_context: Callable[..., ContextManager[Any]]
+
     async def atrack_workflow_start(
         self, workflow_id: str, workflow_name: str,
         workflow_config: Dict[str, Any], start_time: datetime,
@@ -172,7 +199,7 @@ class _AsyncBackendDefaults:
     ) -> None:
         """Async version of track_workflow_end."""
         await asyncio.to_thread(
-            self.track_workflow_end, workflow_id, end_time, status,  # type: ignore[arg-type]
+            self.track_workflow_end, workflow_id, end_time, status,
             error_message, error_stack_trace,
         )
 
@@ -207,7 +234,7 @@ class _AsyncBackendDefaults:
     ) -> None:
         """Async version of track_stage_end."""
         await asyncio.to_thread(
-            self.track_stage_end, stage_id, end_time, status,  # type: ignore[arg-type]
+            self.track_stage_end, stage_id, end_time, status,
             error_message, num_agents_executed, num_agents_succeeded,
             num_agents_failed,
         )
@@ -239,7 +266,7 @@ class _AsyncBackendDefaults:
     ) -> None:
         """Async version of track_agent_end."""
         await asyncio.to_thread(
-            self.track_agent_end, agent_id, end_time, status,  # type: ignore[arg-type]
+            self.track_agent_end, agent_id, end_time, status,
             error_message,
         )
 
@@ -279,7 +306,7 @@ class _AsyncBackendDefaults:
     ) -> None:
         """Async version of track_safety_violation."""
         await asyncio.to_thread(
-            self.track_safety_violation, violation_severity,  # type: ignore[arg-type]
+            self.track_safety_violation, violation_severity,
             violation_message, policy_name, data,
         )
 

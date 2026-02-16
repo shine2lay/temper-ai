@@ -366,7 +366,7 @@ def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any
             breaker.metrics.last_failure_time = datetime.now(UTC)
 
             breaker.failure_count += 1
-            breaker.last_failure_time = time.time()
+            breaker._last_failure_time = time.time()
 
             prev_state = breaker._state
 

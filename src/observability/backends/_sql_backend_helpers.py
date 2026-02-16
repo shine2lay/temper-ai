@@ -894,7 +894,7 @@ def get_top_errors(
     try:
         with get_session() as session:
             stmt = select(ErrorFingerprint).order_by(
-                ErrorFingerprint.occurrence_count.desc()  # type: ignore[union-attr]
+                ErrorFingerprint.occurrence_count.desc()  # type: ignore[attr-defined]
             )
             if classification:
                 stmt = stmt.where(ErrorFingerprint.classification == classification)

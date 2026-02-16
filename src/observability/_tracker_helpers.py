@@ -34,6 +34,7 @@ _CTX_STACK_TRACE = "stack_trace"
 _METRIC_LATENCY_P99 = "latency_p99"
 _METRIC_COST_USD = "cost_usd"
 _METRIC_DURATION = "duration"
+_METRIC_NEW_ERROR_TYPE = "new_error_type"
 
 # Event type identifiers for ObservabilityEventBus
 _EVENT_LLM_CALL = "llm_call"
@@ -751,14 +752,18 @@ def handle_workflow_success(
     )
 
 
-def _record_fingerprint_safe(backend: Any, error: Exception, workflow_id: Optional[str] = None, agent_name: Optional[str] = None) -> None:
-    """Compute and record error fingerprint. Best-effort, never raises."""
+def _record_fingerprint_safe(backend: Any, error: Exception, workflow_id: Optional[str] = None, agent_name: Optional[str] = None) -> bool:
+    """Compute and record error fingerprint. Best-effort, never raises.
+
+    Returns:
+        True if this is a new (previously unseen) fingerprint, False otherwise.
+    """
     try:
         from src.observability.error_fingerprinting import compute_error_fingerprint
 
         result = compute_error_fingerprint(error)
         if hasattr(backend, "record_error_fingerprint"):
-            backend.record_error_fingerprint(
+            is_new = backend.record_error_fingerprint(
                 fingerprint=result.fingerprint,
                 error_type=result.error_type,
                 error_code=result.error_code,
@@ -768,8 +773,35 @@ def _record_fingerprint_safe(backend: Any, error: Exception, workflow_id: Option
                 workflow_id=workflow_id,
                 agent_name=agent_name,
             )
+            return bool(is_new)
     except Exception:  # noqa: BLE001 — fingerprinting must never disrupt execution
         logger.debug("Error fingerprinting failed", exc_info=True)
+    return False
+
+
+def _alert_new_error_type(
+    alert_manager: Any,
+    error: Exception,
+    workflow_id: Optional[str] = None,
+    stage_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+) -> None:
+    """Fire alert for newly-seen error type. Best-effort, never raises."""
+    try:
+        context: Dict[str, Any] = {"error_type": type(error).__name__}
+        if workflow_id:
+            context[ObservabilityFields.WORKFLOW_ID] = workflow_id
+        if stage_id:
+            context[ObservabilityFields.STAGE_ID] = stage_id
+        if agent_name:
+            context[ObservabilityFields.AGENT_NAME] = agent_name
+        alert_manager.check_metric(
+            metric_type=_METRIC_NEW_ERROR_TYPE,
+            value=1,
+            context=context,
+        )
+    except Exception:  # noqa: BLE001 — alerting must never disrupt execution
+        logger.debug("Failed to alert for new error type", exc_info=True)
 
 
 def handle_workflow_error(
@@ -839,6 +871,8 @@ def handle_stage_error(
     emit_event_fn: Any,
     stage_id: str,
     error: Exception,
+    workflow_id: Optional[str] = None,
+    alert_manager: Any = None,
 ) -> None:
     """Handle stage execution error."""
     end_time = utcnow()
@@ -847,7 +881,9 @@ def handle_stage_error(
         status=ObservabilityFields.STATUS_FAILED,
         error_message=str(error),
     )
-    _record_fingerprint_safe(backend, error)
+    is_new = _record_fingerprint_safe(backend, error, workflow_id=workflow_id)
+    if is_new and alert_manager:
+        _alert_new_error_type(alert_manager, error, workflow_id=workflow_id, stage_id=stage_id)
     emit_event_fn("stage_end", {
         ObservabilityFields.STAGE_ID: stage_id,
         ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
@@ -881,6 +917,9 @@ def handle_agent_error(
     emit_event_fn: Any,
     agent_id: str,
     error: Exception,
+    workflow_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    alert_manager: Any = None,
 ) -> None:
     """Handle agent execution error."""
     end_time = utcnow()
@@ -889,7 +928,9 @@ def handle_agent_error(
         status=ObservabilityFields.STATUS_FAILED,
         error_message=str(error),
     )
-    _record_fingerprint_safe(backend, error)
+    is_new = _record_fingerprint_safe(backend, error, workflow_id=workflow_id, agent_name=agent_name)
+    if is_new and alert_manager:
+        _alert_new_error_type(alert_manager, error, workflow_id=workflow_id, agent_name=agent_name)
     emit_event_fn("agent_end", {
         ObservabilityFields.AGENT_ID: agent_id,
         ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,

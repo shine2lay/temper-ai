@@ -32,6 +32,7 @@ _ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY = "MAF_OTEL_INSTRUMENT_SQLALCHEMY"
 _DEFAULT_SERVICE_NAME = "maf"
 
 _TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+_FALSE_VALUES = frozenset({"0", "false", "no", "off"})
 
 
 def is_otel_configured() -> bool:
@@ -104,9 +105,29 @@ def _init_metrics(service_name: str) -> None:
     otel_metrics.set_meter_provider(provider)
 
 
+def _is_instrumentation_enabled(env_var: str, default_enabled: bool = False) -> bool:
+    """Check if an instrumentation is enabled via env var.
+
+    Args:
+        env_var: Environment variable name to check
+        default_enabled: Default when env var is not set
+
+    Returns:
+        True if instrumentation should be enabled
+    """
+    value = os.environ.get(env_var, "").lower()
+    if not value:
+        return default_enabled
+    if value in _TRUE_VALUES:
+        return True
+    if value in _FALSE_VALUES:
+        return False
+    return default_enabled
+
+
 def _init_auto_instrumentation() -> None:
     """Optionally instrument httpx and SQLAlchemy."""
-    if os.environ.get(_ENV_MAF_OTEL_INSTRUMENT_HTTPX, "").lower() in _TRUE_VALUES:
+    if _is_instrumentation_enabled(_ENV_MAF_OTEL_INSTRUMENT_HTTPX, default_enabled=True):
         try:
             from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
@@ -115,7 +136,9 @@ def _init_auto_instrumentation() -> None:
         except ImportError:
             logger.debug("httpx OTEL instrumentation not available")
 
-    if os.environ.get(_ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY, "").lower() in _TRUE_VALUES:
+    if _is_instrumentation_enabled(
+        _ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY, default_enabled=False
+    ):
         try:
             from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
 

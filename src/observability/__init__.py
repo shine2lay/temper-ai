@@ -13,6 +13,9 @@ from src.shared.core.context import ExecutionContext
 from .backend import ObservabilityBackend
 from .hooks import (
     ExecutionHook,
+    atrack_agent,  # noqa: F401
+    atrack_stage,  # noqa: F401
+    atrack_workflow,  # noqa: F401
     get_tracker,
     reset_tracker,
     set_tracker,

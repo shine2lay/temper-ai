@@ -13,9 +13,10 @@ Span hierarchy::
       │   │   └── tool:{name}
 """
 import logging
-from contextlib import contextmanager
+import time
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from src.observability.backend import (
     AgentOutputData,
@@ -72,6 +73,41 @@ _RESILIENCE_FAILOVER = "resilience_failover_provider"
 _EVENT_DIALOGUE_METRICS = "dialogue_round_metrics"
 _EVENT_QUALITY_GATE_DETAIL = "quality_gate_violation_detail"
 _EVENT_COST_SUMMARY = "cost_summary"
+
+
+# Span lifecycle constants
+SPAN_TTL_SECONDS = 3600      # 1 hour
+MAX_ACTIVE_SPANS = 10000     # Maximum concurrent spans
+CLEANUP_THRESHOLD = 100      # Run cleanup when span count exceeds this
+
+
+def _otel_safe_value(value: Any) -> Any:
+    """Convert value to OTEL-safe attribute type (str, int, float, bool)."""
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _add_event(
+    backend: Any,
+    entity_id: str,
+    event_name: str,
+    attributes: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Add a log event to an active span (fire-and-forget)."""
+    entry = backend._active_spans.get(entity_id)
+    if entry is None:
+        return
+    span, _, _ = entry
+    try:
+        clean: Dict[str, Any] = {}
+        if attributes:
+            for k, v in attributes.items():
+                if v is not None:
+                    clean[k] = _otel_safe_value(v)
+        span.add_event(event_name, attributes=clean)
+    except Exception:  # noqa: BLE001 — fire-and-forget
+        logger.debug("Failed to add event %s to span %s", event_name, entity_id)
 
 
 def _init_metrics(backend: Any, meter: Any) -> None:
@@ -133,13 +169,17 @@ def _start_span(
 
     parent_ctx = None
     if parent_id and parent_id in backend._active_spans:
-        _, parent_ctx = backend._active_spans[parent_id]
+        _, parent_ctx, _ = backend._active_spans[parent_id]
 
     if parent_ctx is not None:
         ctx = otel_context.attach(parent_ctx)  # noqa: F841
     span = backend._tracer.start_span(span_name, attributes=attributes)
     span_ctx = otel_trace.set_span_in_context(span)
-    backend._active_spans[entity_id] = (span, span_ctx)
+    backend._active_spans[entity_id] = (span, span_ctx, time.monotonic())
+
+    # Amortized cleanup
+    if len(backend._active_spans) > CLEANUP_THRESHOLD:
+        _cleanup_stale_spans(backend, SPAN_TTL_SECONDS, MAX_ACTIVE_SPANS)
 
 
 def _end_span(
@@ -152,7 +192,7 @@ def _end_span(
     entry = backend._active_spans.pop(entity_id, None)
     if entry is None:
         return
-    span, _ = entry
+    span, _, _ = entry
     try:
         from opentelemetry.trace import StatusCode
 
@@ -206,8 +246,8 @@ class OTelBackend(ObservabilityBackend):
         meter = otel_metrics.get_meter(service_name)
         _init_metrics(self, meter)
 
-        # Active span registry: entity_id → (Span, Context)
-        self._active_spans: Dict[str, Tuple[Any, Any]] = {}
+        # Active span registry: entity_id → (Span, Context, created_at_monotonic)
+        self._active_spans: Dict[str, Tuple[Any, Any, float]] = {}
 
     # ========== Workflow Tracking ==========
 
@@ -219,6 +259,7 @@ class OTelBackend(ObservabilityBackend):
         start_time: datetime,
         data: Optional[WorkflowStartData] = None,
     ) -> None:
+        """Record workflow execution start as an OTEL span."""
         attrs: Dict[str, Any] = {
             _ATTR_WORKFLOW_ID: workflow_id,
             _ATTR_WORKFLOW_NAME: workflow_name,
@@ -231,8 +272,19 @@ class OTelBackend(ObservabilityBackend):
             if data.cost_attribution_tags:
                 for key, value in data.cost_attribution_tags.items():
                     attrs[f"maf.cost.tag.{key}"] = value
-        _start_span(self,workflow_id, f"workflow:{workflow_name}", attrs)
+        _start_span(self, workflow_id, f"workflow:{workflow_name}", attrs)
         self._workflow_counter.add(1, {_ATTR_WORKFLOW_NAME: workflow_name})
+        wf_inner = workflow_config.get("workflow", workflow_config)
+        stage_count = len(wf_inner.get("stages", []))
+        event_attrs: Dict[str, Any] = {"stages": stage_count}
+        if data:
+            if data.environment:
+                event_attrs["environment"] = data.environment
+            if data.trigger_type:
+                event_attrs["trigger"] = data.trigger_type
+            if data.tags:
+                event_attrs["tags"] = ", ".join(data.tags)
+        _add_event(self, workflow_id, "workflow.started", event_attrs)
 
     def track_workflow_end(
         self,
@@ -242,7 +294,12 @@ class OTelBackend(ObservabilityBackend):
         error_message: Optional[str] = None,
         error_stack_trace: Optional[str] = None,
     ) -> None:
-        _end_span(self,workflow_id, status, error_message)
+        """Record workflow execution completion and end the span."""
+        event_attrs: Dict[str, Any] = {"status": status}
+        if error_message:
+            event_attrs["error"] = error_message[:256]  # noqa
+        _add_event(self, workflow_id, f"workflow.{status}", event_attrs)
+        _end_span(self, workflow_id, status, error_message)
 
     def update_workflow_metrics(
         self,
@@ -252,11 +309,18 @@ class OTelBackend(ObservabilityBackend):
         total_tokens: int,
         total_cost_usd: float,
     ) -> None:
+        """Update aggregated workflow metrics on the active span."""
         entry = self._active_spans.get(workflow_id)
         if entry:
-            span, _ = entry
+            span, _, _ = entry
             span.set_attribute("maf.workflow.total_tokens", total_tokens)
             span.set_attribute("maf.workflow.total_cost_usd", total_cost_usd)
+        _add_event(self, workflow_id, "workflow.metrics", {
+            "llm_calls": total_llm_calls,
+            "tool_calls": total_tool_calls,
+            "tokens": total_tokens,
+            "cost_usd": total_cost_usd,
+        })
 
     # ========== Stage Tracking ==========
 
@@ -269,12 +333,24 @@ class OTelBackend(ObservabilityBackend):
         start_time: datetime,
         input_data: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """Record stage execution start as a child span of the workflow."""
         _start_span(self,
             stage_id, f"stage:{stage_name}",
             {_ATTR_STAGE_ID: stage_id, _ATTR_STAGE_NAME: stage_name,
              _ATTR_WORKFLOW_ID: workflow_id},
             parent_id=workflow_id,
         )
+        inner = stage_config.get("stage", stage_config)
+        agents = inner.get("agents", [])
+        execution = inner.get("execution", {})
+        mode = execution.get("agent_mode", "sequential") if isinstance(execution, dict) else "sequential"
+        event_attrs: Dict[str, Any] = {
+            "agent_count": len(agents),
+            "execution_mode": mode,
+        }
+        if agents:
+            event_attrs["agents"] = ", ".join(str(a) for a in agents[:10])
+        _add_event(self, stage_id, "stage.started", event_attrs)
 
     def track_stage_end(
         self,
@@ -286,18 +362,28 @@ class OTelBackend(ObservabilityBackend):
         num_agents_succeeded: int = 0,
         num_agents_failed: int = 0,
     ) -> None:
+        """Record stage execution completion and end the span."""
         entry = self._active_spans.get(stage_id)
         if entry:
-            span, _ = entry
+            span, _, _ = entry
             span.set_attribute("maf.stage.agents_executed", num_agents_executed)
             span.set_attribute("maf.stage.agents_succeeded", num_agents_succeeded)
             span.set_attribute("maf.stage.agents_failed", num_agents_failed)
-        _end_span(self,stage_id, status, error_message)
+        event_attrs: Dict[str, Any] = {
+            "agents_executed": num_agents_executed,
+            "agents_succeeded": num_agents_succeeded,
+            "agents_failed": num_agents_failed,
+        }
+        if error_message:
+            event_attrs["error"] = error_message[:256]  # noqa
+        _add_event(self, stage_id, f"stage.{status}", event_attrs)
+        _end_span(self, stage_id, status, error_message)
 
     def set_stage_output(
         self, stage_id: str, output_data: Dict[str, Any],
         output_lineage: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """Set stage output (no-op; stage output too large for OTEL spans)."""
         pass  # Stage output is potentially large — skip in OTEL
 
     # ========== Agent Tracking ==========
@@ -311,12 +397,23 @@ class OTelBackend(ObservabilityBackend):
         start_time: datetime,
         input_data: Optional[Dict[str, Any]] = None,
     ) -> None:
+        """Record agent execution start as a child span of the stage."""
         _start_span(self,
             agent_id, f"agent:{agent_name}",
             {_ATTR_AGENT_ID: agent_id, _ATTR_AGENT_NAME: agent_name,
              _ATTR_STAGE_ID: stage_id},
             parent_id=stage_id,
         )
+        inner = agent_config.get("agent", agent_config)
+        inference = inner.get("inference", {})
+        event_attrs: Dict[str, Any] = {}
+        if inference.get("model"):
+            event_attrs["model"] = inference["model"]
+        if inference.get("provider"):
+            event_attrs["provider"] = inference["provider"]
+        if inner.get("type"):
+            event_attrs["type"] = inner["type"]
+        _add_event(self, agent_id, "agent.started", event_attrs)
 
     def track_agent_end(
         self,
@@ -325,7 +422,12 @@ class OTelBackend(ObservabilityBackend):
         status: str,
         error_message: Optional[str] = None,
     ) -> None:
-        _end_span(self,agent_id, status, error_message)
+        """Record agent execution completion and end the span."""
+        event_attrs: Dict[str, Any] = {"status": status}
+        if error_message:
+            event_attrs["error"] = error_message[:256]  # noqa
+        _add_event(self, agent_id, f"agent.{status}", event_attrs)
+        _end_span(self, agent_id, status, error_message)
 
     def set_agent_output(
         self,
@@ -333,15 +435,26 @@ class OTelBackend(ObservabilityBackend):
         output_data: Dict[str, Any],
         metrics: Optional[AgentOutputData] = None,
     ) -> None:
+        """Set agent output metrics as span attributes and events."""
         entry = self._active_spans.get(agent_id)
         if entry and metrics:
-            span, _ = entry
+            span, _, _ = entry
             if metrics.total_tokens is not None:
                 span.set_attribute("maf.agent.total_tokens", metrics.total_tokens)
             if metrics.estimated_cost_usd is not None:
                 span.set_attribute("maf.agent.cost_usd", metrics.estimated_cost_usd)
             if metrics.confidence_score is not None:
                 span.set_attribute("maf.agent.confidence", metrics.confidence_score)
+            event_attrs: Dict[str, Any] = {}
+            if metrics.total_tokens is not None:
+                event_attrs["tokens"] = metrics.total_tokens
+            if metrics.estimated_cost_usd is not None:
+                event_attrs["cost_usd"] = metrics.estimated_cost_usd
+            if metrics.confidence_score is not None:
+                event_attrs["confidence"] = metrics.confidence_score
+            if metrics.num_llm_calls is not None:
+                event_attrs["llm_calls"] = metrics.num_llm_calls
+            _add_event(self, agent_id, "agent.output", event_attrs)
 
     # ========== LLM Call Tracking ==========
 
@@ -354,6 +467,7 @@ class OTelBackend(ObservabilityBackend):
         start_time: datetime,
         data: LLMCallData,
     ) -> None:
+        """Record an LLM call as a leaf span with token and cost metrics."""
         span_name = f"llm:{provider}/{model}"
         attrs: Dict[str, Any] = {
             _ATTR_AGENT_ID: agent_id,
@@ -405,6 +519,7 @@ class OTelBackend(ObservabilityBackend):
         start_time: datetime,
         data: ToolCallData,
     ) -> None:
+        """Record a tool call as a leaf span with duration metrics."""
         attrs: Dict[str, Any] = {
             _ATTR_AGENT_ID: agent_id,
             _ATTR_TOOL_NAME: tool_name,
@@ -449,8 +564,16 @@ class OTelBackend(ObservabilityBackend):
         policy_name: str,
         data: Optional[SafetyViolationData] = None,
     ) -> None:
-        # Record as a standalone span event on the current span (if any)
-        pass  # Safety violations stored in SQL; OTEL just uses spans
+        """Record a safety violation as a span event on the relevant entity."""
+        entity_id = None
+        if data:
+            entity_id = data.agent_id or data.stage_id or data.workflow_id
+        if entity_id:
+            _add_event(self, entity_id, "safety.violation", {
+                "severity": violation_severity,
+                "policy": policy_name,
+                "message": violation_message[:256],  # noqa
+            })
 
     def track_collaboration_event(
         self,
@@ -459,26 +582,240 @@ class OTelBackend(ObservabilityBackend):
         agents_involved: List[str],
         data: Optional[CollaborationEventData] = None,
     ) -> str:
+        """Record a collaboration event as a span event with metrics."""
+        event_attrs: Dict[str, Any] = {
+            "agents": ", ".join(agents_involved),
+        }
+        if data:
+            if data.round_number is not None:
+                event_attrs["round"] = data.round_number
+            if data.resolution_strategy:
+                event_attrs["strategy"] = data.resolution_strategy
+            if data.outcome:
+                event_attrs["outcome"] = data.outcome
+            if data.confidence_score is not None:
+                event_attrs["confidence"] = data.confidence_score
+        _add_event(self, stage_id, f"collaboration.{event_type}", event_attrs)
         if data is not None and data.event_data is not None:
             _record_event_metrics(self, event_type, data.event_data)
-        return ""  # Collaboration tracked in SQL
+        return ""
 
     # ========== Context / Maintenance ==========
 
     @contextmanager
     def get_session_context(self) -> Any:
+        """Return a no-op context manager (OTEL has no session concept)."""
         yield None
 
     def cleanup_old_records(
         self, retention_days: int, dry_run: bool = False
     ) -> Dict[str, int]:
+        """Return empty dict (OTEL manages retention via exporters)."""
         return {}  # OTEL has its own retention via exporters
 
     def get_stats(self) -> Dict[str, Any]:
+        """Return backend statistics including active span count."""
         return {
             "backend_type": "otel",
             "active_spans": len(self._active_spans),
         }
+
+    # ========== Async Methods (in-memory, skip to_thread) ==========
+
+    async def atrack_workflow_start(
+        self,
+        workflow_id: str,
+        workflow_name: str,
+        workflow_config: Dict[str, Any],
+        start_time: datetime,
+        data: Optional[WorkflowStartData] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_workflow_start(workflow_id, workflow_name, workflow_config, start_time, data)
+
+    async def atrack_workflow_end(
+        self,
+        workflow_id: str,
+        end_time: datetime,
+        status: str,
+        error_message: Optional[str] = None,
+        error_stack_trace: Optional[str] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_workflow_end(workflow_id, end_time, status, error_message, error_stack_trace)
+
+    async def aupdate_workflow_metrics(
+        self,
+        workflow_id: str,
+        total_llm_calls: int,
+        total_tool_calls: int,
+        total_tokens: int,
+        total_cost_usd: float,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.update_workflow_metrics(workflow_id, total_llm_calls, total_tool_calls, total_tokens, total_cost_usd)
+
+    async def atrack_stage_start(
+        self,
+        stage_id: str,
+        workflow_id: str,
+        stage_name: str,
+        stage_config: Dict[str, Any],
+        start_time: datetime,
+        input_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_stage_start(stage_id, workflow_id, stage_name, stage_config, start_time, input_data)
+
+    async def atrack_stage_end(
+        self,
+        stage_id: str,
+        end_time: datetime,
+        status: str,
+        error_message: Optional[str] = None,
+        num_agents_executed: int = 0,
+        num_agents_succeeded: int = 0,
+        num_agents_failed: int = 0,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_stage_end(
+            stage_id, end_time, status, error_message,
+            num_agents_executed, num_agents_succeeded, num_agents_failed,
+        )
+
+    async def aset_stage_output(
+        self,
+        stage_id: str,
+        output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.set_stage_output(stage_id, output_data, output_lineage)
+
+    async def atrack_agent_start(
+        self,
+        agent_id: str,
+        stage_id: str,
+        agent_name: str,
+        agent_config: Dict[str, Any],
+        start_time: datetime,
+        input_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_agent_start(agent_id, stage_id, agent_name, agent_config, start_time, input_data)
+
+    async def atrack_agent_end(
+        self,
+        agent_id: str,
+        end_time: datetime,
+        status: str,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_agent_end(agent_id, end_time, status, error_message)
+
+    async def aset_agent_output(
+        self,
+        agent_id: str,
+        output_data: Dict[str, Any],
+        metrics: Optional[AgentOutputData] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.set_agent_output(agent_id, output_data, metrics)
+
+    async def atrack_llm_call(
+        self,
+        llm_call_id: str,
+        agent_id: str,
+        provider: str,
+        model: str,
+        start_time: datetime,
+        data: LLMCallData,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_llm_call(llm_call_id, agent_id, provider, model, start_time, data)
+
+    async def atrack_tool_call(
+        self,
+        tool_execution_id: str,
+        agent_id: str,
+        tool_name: str,
+        start_time: datetime,
+        data: ToolCallData,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_tool_call(tool_execution_id, agent_id, tool_name, start_time, data)
+
+    async def atrack_safety_violation(
+        self,
+        violation_severity: str,
+        violation_message: str,
+        policy_name: str,
+        data: Optional[SafetyViolationData] = None,
+    ) -> None:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        self.track_safety_violation(violation_severity, violation_message, policy_name, data)
+
+    async def atrack_collaboration_event(
+        self,
+        stage_id: str,
+        event_type: str,
+        agents_involved: List[str],
+        data: Optional[CollaborationEventData] = None,
+    ) -> str:
+        """Async override: delegate to sync (in-memory, no I/O)."""
+        return self.track_collaboration_event(stage_id, event_type, agents_involved, data)
+
+    @asynccontextmanager
+    async def aget_session_context(self) -> AsyncIterator[Any]:
+        """Async session context (in-memory, no I/O)."""
+        yield None
+
+
+def _cleanup_stale_spans(backend: Any, ttl: float, max_spans: int) -> int:
+    """Remove stale spans by TTL and capacity. Returns number cleaned."""
+    now = time.monotonic()
+    cleaned = 0
+
+    # Phase 1: TTL eviction
+    expired = [
+        eid for eid, (_, _, created) in backend._active_spans.items()
+        if now - created > ttl
+    ]
+    for eid in expired:
+        span, _, _ = backend._active_spans.pop(eid)
+        try:
+            from opentelemetry.trace import StatusCode
+
+            span.set_status(StatusCode.ERROR, description="Span TTL exceeded")
+            span.set_attribute(_ATTR_STATUS, "ttl_expired")
+            span.end()
+        except Exception:  # noqa: BLE001
+            pass
+        cleaned += 1
+
+    # Phase 2: Capacity eviction (oldest first)
+    if len(backend._active_spans) > max_spans:
+        sorted_spans = sorted(
+            backend._active_spans.items(), key=lambda x: x[1][2],
+        )
+        excess = len(backend._active_spans) - max_spans
+        for eid, (span, _, _) in sorted_spans[:excess]:
+            del backend._active_spans[eid]
+            try:
+                from opentelemetry.trace import StatusCode
+
+                span.set_status(
+                    StatusCode.ERROR, description="Span capacity exceeded",
+                )
+                span.end()
+            except Exception:  # noqa: BLE001
+                pass
+            cleaned += 1
+
+    if cleaned > 0:
+        logger.info("Cleaned %d stale OTEL spans", cleaned)
+    return cleaned
 
 
 def _record_event_metrics(

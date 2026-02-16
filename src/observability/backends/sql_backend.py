@@ -10,9 +10,9 @@ session state and the subtle bugs that come with session-stack / standalone-sess
 patterns (C-02).
 """
 import logging
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from sqlmodel import select
 
@@ -369,6 +369,28 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
         """Yield a database session context."""
         with get_session() as session:
             yield session
+
+    @asynccontextmanager
+    async def aget_session_context(self) -> AsyncGenerator[Any, None]:
+        """Async session context -- wraps sync CM in a thread.
+
+        Ensures the same CM instance is used for both __enter__
+        and __exit__, avoiding subtle issues with the default ABC
+        implementation.
+        """
+        import asyncio
+
+        cm = self.get_session_context()
+        session = await asyncio.to_thread(cm.__enter__)
+        try:
+            yield session
+        except Exception as exc:
+            await asyncio.to_thread(
+                cm.__exit__, type(exc), exc, exc.__traceback__,
+            )
+            raise
+        else:
+            await asyncio.to_thread(cm.__exit__, None, None, None)
 
     def get_agent_execution(self, agent_id: str) -> Optional[AgentExecution]:
         """Fetch a single agent execution record by ID."""

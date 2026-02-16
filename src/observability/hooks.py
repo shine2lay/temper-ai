@@ -69,6 +69,19 @@ def reset_tracker() -> None:
     _global_tracker = None
 
 
+def _extract_config(
+    get_config: Optional[Callable[..., Dict[str, Any]]],
+    args: tuple,
+    kwargs: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Extract config from decorator arguments."""
+    if get_config:
+        return get_config(*args, **kwargs)
+    if args and isinstance(args[0], dict):
+        return args[0]
+    return {}
+
+
 def track_workflow(
     workflow_name: Optional[str] = None,
     get_config: Optional[Callable[..., Dict[str, Any]]] = None
@@ -202,6 +215,88 @@ def track_agent(
                 result = func(*args, **kwargs)
                 return result
 
+        return wrapper
+    return decorator
+
+
+def atrack_workflow(
+    workflow_name: Optional[str] = None,
+    get_config: Optional[Callable[..., Dict[str, Any]]] = None,
+) -> Callable:
+    """Async decorator to track workflow execution."""
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        """Apply async workflow tracking to function."""
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Execute async function with workflow tracking."""
+            name = workflow_name or func.__name__
+            config = _extract_config(get_config, args, kwargs)
+
+            tracker = get_tracker()
+            async with tracker.atrack_workflow(
+                WorkflowTrackingParams(workflow_name=name, workflow_config=config)
+            ) as workflow_id:
+                if "workflow_id" in inspect.signature(func).parameters:
+                    kwargs["workflow_id"] = workflow_id
+                return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def atrack_stage(
+    stage_name: Optional[str] = None,
+    get_config: Optional[Callable[..., Dict[str, Any]]] = None,
+    workflow_id_param: str = "workflow_id",
+) -> Callable:
+    """Async decorator to track stage execution."""
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        """Apply async stage tracking to function."""
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Execute async function with stage tracking."""
+            name = stage_name or func.__name__
+            config = _extract_config(get_config, args, kwargs)
+
+            workflow_id = kwargs.get(workflow_id_param)
+            if not workflow_id and args and len(args) > 1:
+                workflow_id = args[1]
+
+            tracker = get_tracker()
+            async with tracker.atrack_stage(
+                name, config, cast(str, workflow_id)
+            ) as stage_id:
+                if "stage_id" in inspect.signature(func).parameters:
+                    kwargs["stage_id"] = stage_id
+                return await func(*args, **kwargs)
+        return wrapper
+    return decorator
+
+
+def atrack_agent(
+    agent_name: Optional[str] = None,
+    get_config: Optional[Callable[..., Dict[str, Any]]] = None,
+    stage_id_param: str = "stage_id",
+) -> Callable:
+    """Async decorator to track agent execution."""
+    def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+        """Apply async agent tracking to function."""
+        @wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            """Execute async function with agent tracking."""
+            name = agent_name or func.__name__
+            config = _extract_config(get_config, args, kwargs)
+
+            stage_id = kwargs.get(stage_id_param)
+            if not stage_id and args and len(args) > 1:
+                stage_id = args[1]
+
+            tracker = get_tracker()
+            async with tracker.atrack_agent(
+                name, config, cast(str, stage_id)
+            ) as agent_id:
+                if "agent_id" in inspect.signature(func).parameters:
+                    kwargs["agent_id"] = agent_id
+                return await func(*args, **kwargs)
         return wrapper
     return decorator
 
@@ -397,6 +492,108 @@ class ExecutionHook:
             tool_execution_id: UUID of tool execution
         """
         return self.tracker.track_tool_call(ToolCallTrackingData(
+            agent_id=agent_id,
+            tool_name=tool_name,
+            input_params=input_params,
+            output_data=output_data,
+            duration_seconds=duration,
+            status=status,
+        ))
+
+    # ========== Async Methods ==========
+
+    async def astart_workflow(
+        self,
+        workflow_name: str,
+        workflow_config: Dict[str, Any],
+        **kwargs: Any,
+    ) -> str:
+        """Async start tracking workflow. Returns workflow_id."""
+        ctx = self.tracker.atrack_workflow(WorkflowTrackingParams(
+            workflow_name=workflow_name, workflow_config=workflow_config, **kwargs
+        ))
+        workflow_id = await ctx.__aenter__()
+        self._active_contexts[workflow_id] = ctx
+        return str(workflow_id)
+
+    async def aend_workflow(self, workflow_id: str, error: Optional[Exception] = None) -> None:
+        """Async end tracking workflow."""
+        ctx = self._active_contexts.pop(workflow_id, None)
+        if ctx:
+            if error:
+                await ctx.__aexit__(type(error), error, error.__traceback__)
+            else:
+                await ctx.__aexit__(None, None, None)
+
+    async def astart_stage(
+        self,
+        stage_name: str,
+        stage_config: Dict[str, Any],
+        workflow_id: str,
+        input_data: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Async start tracking stage. Returns stage_id."""
+        ctx = self.tracker.atrack_stage(stage_name, stage_config, workflow_id, input_data)
+        stage_id = await ctx.__aenter__()
+        self._active_contexts[stage_id] = ctx
+        return str(stage_id)
+
+    async def aend_stage(self, stage_id: str, error: Optional[Exception] = None) -> None:
+        """Async end tracking stage."""
+        ctx = self._active_contexts.pop(stage_id, None)
+        if ctx:
+            if error:
+                await ctx.__aexit__(type(error), error, None)
+            else:
+                await ctx.__aexit__(None, None, None)
+
+    async def astart_agent(
+        self,
+        agent_name: str,
+        agent_config: Dict[str, Any],
+        stage_id: str,
+        input_data: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Async start tracking agent. Returns agent_id."""
+        ctx = self.tracker.atrack_agent(agent_name, agent_config, stage_id, input_data)
+        agent_id = await ctx.__aenter__()
+        self._active_contexts[agent_id] = ctx
+        return str(agent_id)
+
+    async def aend_agent(self, agent_id: str, error: Optional[Exception] = None) -> None:
+        """Async end tracking agent."""
+        ctx = self._active_contexts.pop(agent_id, None)
+        if ctx:
+            if error:
+                await ctx.__aexit__(type(error), error, None)
+            else:
+                await ctx.__aexit__(None, None, None)
+
+    async def alog_llm_call(self, params: LLMCallParams) -> str:
+        """Async log LLM call."""
+        return await self.tracker.atrack_llm_call(LLMCallTrackingData(
+            agent_id=params.agent_id,
+            provider=params.provider,
+            model=params.model,
+            prompt=params.prompt,
+            response=params.response,
+            prompt_tokens=params.prompt_tokens,
+            completion_tokens=params.completion_tokens,
+            latency_ms=params.latency_ms,
+            estimated_cost_usd=params.cost,
+        ))
+
+    async def alog_tool_call(
+        self,
+        agent_id: str,
+        tool_name: str,
+        input_params: Dict[str, Any],
+        output_data: Dict[str, Any],
+        duration: float,
+        status: str = "success",
+    ) -> str:
+        """Async log tool execution."""
+        return await self.tracker.atrack_tool_call(ToolCallTrackingData(
             agent_id=agent_id,
             tool_name=tool_name,
             input_params=input_params,

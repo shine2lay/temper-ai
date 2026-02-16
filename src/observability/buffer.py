@@ -142,6 +142,15 @@ class RetryableItem:
 
 
 @dataclass
+class BufferedLifecycleEvent:
+    """Buffered lifecycle event (end events only)."""
+    event_type: str  # "workflow_end", "stage_end", "agent_end"
+    entity_id: str
+    timestamp: datetime
+    data: Dict[str, Any]
+
+
+@dataclass
 class DeadLetterItem:
     """
     Item that exceeded max retries.
@@ -241,6 +250,10 @@ class ObservabilityBuffer:
         self._flush_thread: Optional[threading.Thread] = None
         self._stop_flush_thread = threading.Event()
 
+        # Lifecycle event buffer (end events only — start events write directly)
+        self.lifecycle_events: List[BufferedLifecycleEvent] = []
+        self._lifecycle_flush_callback: Optional[Callable[[List[BufferedLifecycleEvent]], None]] = None
+
         # Flush callback (injected by backend)
         self._flush_callback: Optional[Callable[[List[BufferedLLMCall], List[BufferedToolCall], Dict[str, AgentMetricUpdate]], None]] = None
 
@@ -250,6 +263,25 @@ class ObservabilityBuffer:
     def set_flush_callback(self, callback: Callable[[List[BufferedLLMCall], List[BufferedToolCall], Dict[str, AgentMetricUpdate]], None]) -> None:
         """Set callback function to execute when buffer flushes."""
         self._flush_callback = callback
+
+    def set_lifecycle_flush_callback(
+        self, callback: Callable[[List[BufferedLifecycleEvent]], None]
+    ) -> None:
+        """Set callback for flushing lifecycle events."""
+        self._lifecycle_flush_callback = callback
+
+    def buffer_lifecycle_event(self, event: BufferedLifecycleEvent) -> None:
+        """Buffer a lifecycle event for batch flushing."""
+        deferred_flush = None
+        with self.lock:
+            self.lifecycle_events.append(event)
+            if self._should_flush():
+                deferred_flush = self._swap_and_prepare()
+        if deferred_flush is not None:
+            items_to_flush, flush_cb = deferred_flush
+            execute_flush(items_to_flush, flush_cb, self.lock,
+                          self._pending_ids, self.retry_queue,
+                          self._handle_flush_failure_impl, merge_agent_metrics)
 
     def buffer_llm_call(self, params: LLMCallBufferParams) -> None:
         """Buffer LLM call for batch insertion.
@@ -324,8 +356,21 @@ class ObservabilityBuffer:
 
     def flush(self) -> None:
         """Flush all buffered operations to database."""
+        lifecycle_batch = None
         with self.lock:
+            # Swap lifecycle events under lock
+            if self.lifecycle_events:
+                lifecycle_batch = self.lifecycle_events
+                self.lifecycle_events = []
             swapped = self._swap_and_prepare()
+
+        # Flush lifecycle events first (outside lock)
+        if lifecycle_batch and self._lifecycle_flush_callback:
+            try:
+                self._lifecycle_flush_callback(lifecycle_batch)
+            except Exception:  # noqa: BLE001 — lifecycle flush must not crash
+                logger.warning("Lifecycle flush callback failed", exc_info=True)
+
         if swapped is None:
             return
         items_to_flush, flush_cb = swapped
@@ -335,7 +380,8 @@ class ObservabilityBuffer:
 
     def _should_flush(self) -> bool:
         """Check if buffer should be flushed (assumes lock is held)."""
-        total_items = len(self.llm_calls) + len(self.tool_calls) + len(self.retry_queue)
+        total_items = (len(self.llm_calls) + len(self.tool_calls)
+                       + len(self.retry_queue) + len(self.lifecycle_events))
         if total_items >= self.flush_size:
             return True
         if time.time() - self.last_flush_time >= self.flush_interval:
@@ -457,7 +503,9 @@ class ObservabilityBuffer:
                 "llm_calls_buffered": len(self.llm_calls),
                 "tool_calls_buffered": len(self.tool_calls),
                 "agent_metrics_buffered": len(self.agent_metrics),
-                "total_buffered": len(self.llm_calls) + len(self.tool_calls),
+                "lifecycle_events_buffered": len(self.lifecycle_events),
+                "total_buffered": (len(self.llm_calls) + len(self.tool_calls)
+                                   + len(self.lifecycle_events)),
                 "retry_queue_size": len(self.retry_queue),
                 "dlq_size": len(self.dead_letter_queue),
                 "pending_ids": len(self._pending_ids),

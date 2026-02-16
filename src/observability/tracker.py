@@ -5,11 +5,11 @@ Tracks workflow, stage, agent, LLM, and tool executions in real-time,
 writing to pluggable observability backends (SQL, Prometheus, S3, etc.).
 """
 import logging
-import threading
 import uuid
-from contextlib import contextmanager
+from contextlib import asynccontextmanager as _asynccontextmanager, contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional
+from typing import TYPE_CHECKING, Any, AsyncGenerator, Dict, Generator, List, Optional
 
 if TYPE_CHECKING:
     from src.observability.metric_aggregator import AgentOutputParams
@@ -110,10 +110,14 @@ class ExecutionTracker(TrackerCollaborationMixin):
         metric_registry: Optional[Any] = None,
         alert_manager: Optional[Any] = None,
         event_bus: Optional[ObservabilityEventBus] = None,
+        sampling_strategy: Optional[Any] = None,
     ):
         """Initialize execution tracker."""
         self._context_var = current_execution_context
-        self._local = threading.local()
+        self._session_stack_var: ContextVar[List[Any]] = ContextVar(
+            "session_stack", default=None  # type: ignore[arg-type]
+        )
+        self._sampling_strategy = sampling_strategy
 
         if backend is None:
             from src.observability.backends import SQLObservabilityBackend
@@ -174,11 +178,11 @@ class ExecutionTracker(TrackerCollaborationMixin):
 
     @property
     def _session_stack(self) -> List[Any]:
-        """Per-thread session stack."""
-        stack = getattr(self._local, 'session_stack', None)
+        """Per-task/thread session stack (ContextVar-backed)."""
+        stack = self._session_stack_var.get(None)
         if stack is None:
             stack = []
-            self._local.session_stack = stack
+            self._session_stack_var.set(stack)
         return stack
 
     def _collect_agent_metrics(self, agent_id: str) -> None:
@@ -256,6 +260,24 @@ class ExecutionTracker(TrackerCollaborationMixin):
                 self.context.workflow_id = None
 
     @contextmanager
+    def _ensure_session(self) -> Generator[None, None, None]:
+        """Ensure a session is available on the session stack.
+
+        If a parent session already exists, yields immediately.
+        Otherwise, opens a new session, pushes it onto the stack,
+        and pops it on exit.
+        """
+        if self._session_stack:
+            yield
+        else:
+            with self.backend.get_session_context() as session:
+                self._session_stack.append(session)
+                try:
+                    yield
+                finally:
+                    self._session_stack.pop()
+
+    @contextmanager
     def track_stage(
         self, stage_name: str, stage_config: Dict[str, Any],
         workflow_id: str, input_data: Optional[Dict[str, Any]] = None
@@ -267,7 +289,7 @@ class ExecutionTracker(TrackerCollaborationMixin):
         start_time = utcnow()
         sanitized_config = sanitize_config_for_display(stage_config)
 
-        if self._session_stack:
+        with self._ensure_session():
             self.backend.track_stage_start(
                 stage_id=stage_id, workflow_id=workflow_id, stage_name=stage_name,
                 stage_config=sanitized_config, start_time=start_time, input_data=input_data
@@ -282,32 +304,14 @@ class ExecutionTracker(TrackerCollaborationMixin):
                 yield stage_id
                 _handle_stage_success(self.backend, self._emit_event, stage_id)
             except Exception as e:
-                _handle_stage_error(self.backend, self._emit_event, stage_id, e)
+                _handle_stage_error(
+                    self.backend, self._emit_event, stage_id, e,
+                    workflow_id=self.context.workflow_id,
+                    alert_manager=self.alert_manager,
+                )
                 raise
             finally:
                 self.context.stage_id = None
-        else:
-            with self.backend.get_session_context() as session:
-                self._session_stack.append(session)
-                self.backend.track_stage_start(
-                    stage_id=stage_id, workflow_id=workflow_id, stage_name=stage_name,
-                    stage_config=sanitized_config, start_time=start_time, input_data=input_data
-                )
-                self._emit_event(_EVENT_STAGE_START, {
-                    ObservabilityFields.STAGE_ID: stage_id,
-                    ObservabilityFields.WORKFLOW_ID: workflow_id,
-                    "stage_name": stage_name,
-                    ObservabilityFields.START_TIME: start_time.isoformat(),
-                })
-                try:
-                    yield stage_id
-                    _handle_stage_success(self.backend, self._emit_event, stage_id)
-                except Exception as e:
-                    _handle_stage_error(self.backend, self._emit_event, stage_id, e)
-                    raise
-                finally:
-                    self._session_stack.pop()
-                    self.context.stage_id = None
 
     @contextmanager
     def track_agent(
@@ -321,7 +325,7 @@ class ExecutionTracker(TrackerCollaborationMixin):
         start_time = utcnow()
         sanitized_config = sanitize_config_for_display(agent_config)
 
-        if self._session_stack:
+        with self._ensure_session():
             from src.observability._tracker_helpers import AgentStartParams
             _track_agent_start_and_emit(
                 self.backend, self._emit_event,
@@ -336,32 +340,15 @@ class ExecutionTracker(TrackerCollaborationMixin):
                     self.backend, self._emit_event, self._collect_agent_metrics, agent_id,
                 )
             except Exception as e:
-                _handle_agent_error(self.backend, self._emit_event, agent_id, e)
+                _handle_agent_error(
+                    self.backend, self._emit_event, agent_id, e,
+                    workflow_id=self.context.workflow_id,
+                    agent_name=agent_name,
+                    alert_manager=self.alert_manager,
+                )
                 raise
             finally:
                 self.context.agent_id = None
-        else:
-            with self.backend.get_session_context() as session:
-                self._session_stack.append(session)
-                from src.observability._tracker_helpers import AgentStartParams
-                _track_agent_start_and_emit(
-                    self.backend, self._emit_event,
-                    AgentStartParams(
-                        agent_id=agent_id, stage_id=stage_id, agent_name=agent_name,
-                        sanitized_config=sanitized_config, start_time=start_time, input_data=input_data
-                    )
-                )
-                try:
-                    yield agent_id
-                    _handle_agent_success(
-                        self.backend, self._emit_event, self._collect_agent_metrics, agent_id,
-                    )
-                except Exception as e:
-                    _handle_agent_error(self.backend, self._emit_event, agent_id, e)
-                    raise
-                finally:
-                    self._session_stack.pop()
-                    self.context.agent_id = None
 
     def track_llm_call(self, data: LLMCallTrackingData) -> str:
         """Track LLM call with automatic sanitization.
@@ -446,5 +433,190 @@ class ExecutionTracker(TrackerCollaborationMixin):
             context=self.context,
             session_stack=self._session_stack,
             data=data,
+        )
+
+    # ========== Async Methods ==========
+
+    @_asynccontextmanager
+    async def _aensure_session(self) -> AsyncGenerator[None, None]:
+        """Async version of _ensure_session."""
+        if self._session_stack:
+            yield
+        else:
+            async with self.backend.aget_session_context() as session:
+                self._session_stack.append(session)
+                try:
+                    yield
+                finally:
+                    self._session_stack.pop()
+
+    @_asynccontextmanager
+    async def atrack_workflow(self, params: WorkflowTrackingParams) -> AsyncGenerator[str, None]:
+        """Async version of track_workflow.
+
+        Args:
+            params: WorkflowTrackingParams with all workflow tracking parameters
+
+        Yields:
+            workflow_id: The generated workflow execution ID
+        """
+        workflow_id = f"wf-{uuid.uuid4()}"
+        self.context.workflow_id = workflow_id
+        start_time = utcnow()
+        sanitized_config = sanitize_config_for_display(params.workflow_config)
+        extra_metadata = _build_extra_metadata(
+            params.experiment_id, params.variant_id,
+            params.assignment_strategy, params.assignment_context,
+            params.custom_metrics,
+        )
+
+        async with self.backend.aget_session_context() as session:
+            self._session_stack.append(session)
+            from src.observability.backend import WorkflowStartData
+            await self.backend.atrack_workflow_start(
+                workflow_id=workflow_id, workflow_name=params.workflow_name,
+                workflow_config=sanitized_config, start_time=start_time,
+                data=WorkflowStartData(
+                    trigger_type=params.trigger_type,
+                    trigger_data=params.trigger_data,
+                    optimization_target=params.optimization_target,
+                    product_type=params.product_type,
+                    environment=params.environment, tags=params.tags,
+                    extra_metadata=extra_metadata,
+                    cost_attribution_tags=params.cost_attribution_tags,
+                ),
+            )
+            self._emit_event(_EVENT_WORKFLOW_START, {
+                ObservabilityFields.WORKFLOW_ID: workflow_id,
+                "workflow_name": params.workflow_name,
+                ObservabilityFields.START_TIME: start_time.isoformat(),
+                "environment": params.environment,
+                "tags": params.tags,
+            })
+            try:
+                yield workflow_id
+                _handle_workflow_success(
+                    self.backend, self.alert_manager,
+                    self._emit_event, workflow_id,
+                )
+            except Exception as e:
+                _handle_workflow_error(
+                    self.backend, self._emit_event,
+                    self._get_stack_trace, workflow_id, e,
+                )
+                raise
+            finally:
+                self._session_stack.pop()
+                self.context.workflow_id = None
+
+    @_asynccontextmanager
+    async def atrack_stage(
+        self, stage_name: str, stage_config: Dict[str, Any],
+        workflow_id: str, input_data: Optional[Dict[str, Any]] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Async version of track_stage."""
+        stage_id = str(uuid.uuid4())
+        self.context.stage_id = stage_id
+        start_time = utcnow()
+        sanitized_config = sanitize_config_for_display(stage_config)
+
+        async with self._aensure_session():
+            await self.backend.atrack_stage_start(
+                stage_id=stage_id, workflow_id=workflow_id,
+                stage_name=stage_name, stage_config=sanitized_config,
+                start_time=start_time, input_data=input_data,
+            )
+            self._emit_event(_EVENT_STAGE_START, {
+                ObservabilityFields.STAGE_ID: stage_id,
+                ObservabilityFields.WORKFLOW_ID: workflow_id,
+                "stage_name": stage_name,
+                ObservabilityFields.START_TIME: start_time.isoformat(),
+            })
+            try:
+                yield stage_id
+                _handle_stage_success(
+                    self.backend, self._emit_event, stage_id,
+                )
+            except Exception as e:
+                _handle_stage_error(
+                    self.backend, self._emit_event, stage_id, e,
+                    workflow_id=self.context.workflow_id,
+                    alert_manager=self.alert_manager,
+                )
+                raise
+            finally:
+                self.context.stage_id = None
+
+    @_asynccontextmanager
+    async def atrack_agent(
+        self, agent_name: str, agent_config: Dict[str, Any],
+        stage_id: str, input_data: Optional[Dict[str, Any]] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Async version of track_agent."""
+        agent_id = str(uuid.uuid4())
+        self.context.agent_id = agent_id
+        start_time = utcnow()
+        sanitized_config = sanitize_config_for_display(agent_config)
+
+        async with self._aensure_session():
+            from src.observability._tracker_helpers import AgentStartParams
+            _track_agent_start_and_emit(
+                self.backend, self._emit_event,
+                AgentStartParams(
+                    agent_id=agent_id, stage_id=stage_id,
+                    agent_name=agent_name,
+                    sanitized_config=sanitized_config,
+                    start_time=start_time, input_data=input_data,
+                ),
+            )
+            try:
+                yield agent_id
+                _handle_agent_success(
+                    self.backend, self._emit_event,
+                    self._collect_agent_metrics, agent_id,
+                )
+            except Exception as e:
+                _handle_agent_error(
+                    self.backend, self._emit_event, agent_id, e,
+                    workflow_id=self.context.workflow_id,
+                    agent_name=agent_name,
+                    alert_manager=self.alert_manager,
+                )
+                raise
+            finally:
+                self.context.agent_id = None
+
+    async def atrack_llm_call(self, data: LLMCallTrackingData) -> str:
+        """Async version of track_llm_call.
+
+        Args:
+            data: LLMCallTrackingData with all LLM call tracking parameters
+
+        Returns:
+            LLM call ID
+        """
+        return _track_llm_call(
+            sanitizer=self.sanitizer,
+            backend=self.backend,
+            alert_manager=self.alert_manager,
+            data=data,
+            event_bus=self._event_bus,
+        )
+
+    async def atrack_tool_call(self, data: ToolCallTrackingData) -> str:
+        """Async version of track_tool_call.
+
+        Args:
+            data: ToolCallTrackingData with all tool call tracking parameters
+
+        Returns:
+            Tool execution ID
+        """
+        return _track_tool_call(
+            sanitize_dict_fn=self._sanitize_dict,
+            backend=self.backend,
+            alert_manager=self.alert_manager,
+            data=data,
+            event_bus=self._event_bus,
         )
 

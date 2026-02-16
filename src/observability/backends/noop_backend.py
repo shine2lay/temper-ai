@@ -174,6 +174,31 @@ class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
         """Track collaboration event (no-op)."""
         return ""
 
+    # ========== Error Fingerprinting ==========
+
+    def record_error_fingerprint(
+        self,
+        fingerprint: str,
+        error_type: str,
+        error_code: str,
+        classification: str,
+        normalized_message: str,
+        sample_message: str,
+        workflow_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+    ) -> bool:
+        """Record error fingerprint (no-op)."""
+        return False
+
+    def get_top_errors(
+        self,
+        limit: int = 10,
+        classification: Optional[str] = None,
+        since: Optional[Any] = None,
+    ) -> list:
+        """Get top errors (no-op)."""
+        return []
+
     # ========== Context Management ==========
 
     @contextmanager

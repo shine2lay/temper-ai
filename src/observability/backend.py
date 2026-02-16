@@ -427,6 +427,57 @@ class ObservabilityBackend(ABC):
         """
         pass
 
+    # ========== Error Fingerprinting ==========
+
+    def record_error_fingerprint(
+        self,
+        fingerprint: str,
+        error_type: str,
+        error_code: str,
+        classification: str,
+        normalized_message: str,
+        sample_message: str,
+        workflow_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+    ) -> bool:
+        """Record or update an error fingerprint.
+
+        Upserts: if fingerprint exists, increments count and updates last_seen.
+        If new, creates record with count=1.
+
+        Args:
+            fingerprint: 16-char hex fingerprint hash
+            error_type: Exception class name
+            error_code: Canonical error code
+            classification: transient/permanent/safety/unknown
+            normalized_message: Deterministic normalized message
+            sample_message: One raw example (truncated)
+            workflow_id: Optional workflow context
+            agent_name: Optional agent context
+
+        Returns:
+            True if this is a newly-seen fingerprint, False if existing.
+        """
+        return False  # Default no-op
+
+    def get_top_errors(
+        self,
+        limit: int = 10,
+        classification: Optional[str] = None,
+        since: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get top errors by occurrence count.
+
+        Args:
+            limit: Max results to return
+            classification: Filter by classification
+            since: Only errors seen after this time
+
+        Returns:
+            List of error fingerprint dicts, ordered by occurrence_count desc.
+        """
+        return []  # Default no-op
+
     # ========== Context Management ==========
 
     @abstractmethod

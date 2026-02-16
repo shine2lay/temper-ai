@@ -40,11 +40,9 @@ except RuntimeError:
     db_url = f"sqlite:///{Path.home()}/.claude/observability.db"
     init_database(db_url)
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+# Configure logging via canonical setup (injects execution context fields)
+from src.shared.utils.logging import setup_logging as _setup_logging
+_setup_logging(level="INFO", format_type="console")
 logger = logging.getLogger(__name__)
 
 # Argparse constants

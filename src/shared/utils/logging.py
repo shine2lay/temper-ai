@@ -221,6 +221,49 @@ def _sanitize_for_logging(text: str, max_length: int = SIZE_10KB) -> str:
     return text
 
 
+class ExecutionContextFilter(logging.Filter):
+    """Logging filter that injects execution context into every LogRecord.
+
+    Reads from the shared ``current_execution_context`` ContextVar (set by
+    the ExecutionTracker's context managers) and sets ``workflow_id``,
+    ``stage_id``, ``agent_id``, and ``session_id`` attributes on the record.
+
+    When OpenTelemetry is active, ``trace_id`` and ``span_id`` are also
+    injected from the current span context.
+
+    Attach to handlers (not loggers) so it works globally without
+    touching any of the 795+ existing log call sites.
+    """
+
+    # Context field names to inject into log records
+    _CONTEXT_FIELDS = ("workflow_id", "stage_id", "agent_id", "session_id")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        """Enrich *record* with execution context fields. Always returns True."""
+        # Read execution context from the shared ContextVar
+        from src.shared.core.context import current_execution_context
+
+        ctx = current_execution_context.get(None)
+        for field_name in self._CONTEXT_FIELDS:
+            setattr(record, field_name, getattr(ctx, field_name, None) if ctx else None)
+
+        # Optionally inject OTEL trace/span IDs
+        record.trace_id = None  # type: ignore[attr-defined]
+        record.span_id = None  # type: ignore[attr-defined]
+        try:
+            from opentelemetry import trace as otel_trace
+
+            span = otel_trace.get_current_span()
+            span_ctx = span.get_span_context()
+            if span_ctx and span_ctx.trace_id:
+                record.trace_id = format(span_ctx.trace_id, "032x")  # type: ignore[attr-defined]
+                record.span_id = format(span_ctx.span_id, "016x")  # type: ignore[attr-defined]
+        except ImportError:
+            pass  # opentelemetry not installed — skip
+
+        return True
+
+
 class SecretRedactingFormatter(logging.Formatter):
     """
     Logging formatter that redacts secrets from log messages.
@@ -352,17 +395,28 @@ class StructuredFormatter(SecretRedactingFormatter):
             'line': record.lineno,
         }
 
+        # Promote execution context fields to top-level JSON
+        # (injected by ExecutionContextFilter)
+        for ctx_field in ('workflow_id', 'stage_id', 'agent_id',
+                          'session_id', 'trace_id', 'span_id'):
+            value = getattr(record, ctx_field, None)
+            if value is not None:
+                log_entry[ctx_field] = value
+
         # Add exception info if present
         if record.exc_info:
             log_entry['exception'] = self.formatException(record.exc_info)
 
-        # Add extra fields (avoiding built-in attributes)
+        # Add extra fields (avoiding built-in and context attributes)
         builtin_attrs = {
             'name', 'msg', 'args', 'created', 'filename', 'funcName',
             'levelname', 'levelno', 'lineno', 'module', 'msecs',
             'message', 'pathname', 'process', 'processName',
             'relativeCreated', 'thread', 'threadName', 'exc_info',
-            'exc_text', 'stack_info'
+            'exc_text', 'stack_info',
+            # Context fields already promoted above
+            'workflow_id', 'stage_id', 'agent_id', 'session_id',
+            'trace_id', 'span_id',
         }
 
         extra_fields = {}
@@ -424,7 +478,7 @@ class ConsoleFormatter(SecretRedactingFormatter):
 
 def setup_logging(
     level: Optional[str] = None,
-    format_type: str = "console",
+    format_type: Optional[str] = None,
     log_file: Optional[str] = None,
     use_colors: bool = True
 ) -> None:
@@ -434,9 +488,15 @@ def setup_logging(
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
                If None, reads from LOG_LEVEL env var (default: INFO)
-        format_type: Output format ("console", "json", or "both")
+        format_type: Output format ("console", "json", "rich", or "both").
+                     If None, reads from MAF_LOG_FORMAT env var (default: "console")
         log_file: Optional file path for logging
         use_colors: Whether to use colors in console output
+
+    The ``ExecutionContextFilter`` is attached to every handler so that
+    ``workflow_id``, ``stage_id``, ``agent_id``, ``session_id``,
+    ``trace_id``, and ``span_id`` are available on every ``LogRecord``
+    without touching any existing log call sites.
 
     Example:
         >>> setup_logging(level="DEBUG", format_type="json")
@@ -447,10 +507,17 @@ def setup_logging(
     if level is None:
         level = os.environ.get('LOG_LEVEL', 'INFO').upper()
 
+    # Get format type from environment or parameter
+    if format_type is None:
+        format_type = os.environ.get('MAF_LOG_FORMAT', 'console').lower()
+
     # Validate log level
     numeric_level = getattr(logging, level, None)
     if not isinstance(numeric_level, int):
         numeric_level = logging.INFO
+
+    # Shared context filter — attached to every handler
+    context_filter = ExecutionContextFilter()
 
     # Get root logger
     root_logger = logging.getLogger()
@@ -464,6 +531,7 @@ def setup_logging(
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setLevel(numeric_level)
         console_handler.setFormatter(ConsoleFormatter(use_colors=use_colors))
+        console_handler.addFilter(context_filter)
         root_logger.addHandler(console_handler)
 
     # Add JSON handler (for structured logging)
@@ -471,7 +539,26 @@ def setup_logging(
         json_handler = logging.StreamHandler(sys.stderr)
         json_handler.setLevel(numeric_level)
         json_handler.setFormatter(StructuredFormatter())
+        json_handler.addFilter(context_filter)
         root_logger.addHandler(json_handler)
+
+    # Add Rich handler (for development with --show-details)
+    if format_type == 'rich':
+        try:
+            from rich.logging import RichHandler
+            rich_handler = RichHandler(
+                show_path=False, show_time=True, markup=False
+            )
+            rich_handler.setLevel(numeric_level)
+            rich_handler.addFilter(context_filter)
+            root_logger.addHandler(rich_handler)
+        except ImportError:
+            # Fall back to console if rich not available
+            console_handler = logging.StreamHandler(sys.stdout)
+            console_handler.setLevel(numeric_level)
+            console_handler.setFormatter(ConsoleFormatter(use_colors=use_colors))
+            console_handler.addFilter(context_filter)
+            root_logger.addHandler(console_handler)
 
     # Add file handler if specified
     if log_file:
@@ -481,6 +568,7 @@ def setup_logging(
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(numeric_level)
         file_handler.setFormatter(StructuredFormatter())
+        file_handler.addFilter(context_filter)
         root_logger.addHandler(file_handler)
 
     # Log initial configuration

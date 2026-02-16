@@ -122,6 +122,7 @@ class ObservabilityFields:
     # Error tracking
     ERROR_MESSAGE = "error_message"
     ERROR_STACK_TRACE = "error_stack_trace"
+    ERROR_FINGERPRINT = "error_fingerprint"
 
     # Configuration
     WORKFLOW_CONFIG = "workflow_config"

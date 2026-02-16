@@ -11,6 +11,7 @@ Usage:
     {'workflow_id': 'wf-123', 'stage_id': None, 'agent_id': 'agent-1', ...}
 """
 
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -60,6 +61,18 @@ class ExecutionContext:
             "metadata": self.metadata,
         }
 
+    def copy(self) -> "ExecutionContext":
+        """Return a shallow copy of this context."""
+        return ExecutionContext(
+            workflow_id=self.workflow_id,
+            stage_id=self.stage_id,
+            agent_id=self.agent_id,
+            session_id=self.session_id,
+            user_id=self.user_id,
+            tool_name=self.tool_name,
+            metadata=dict(self.metadata),
+        )
+
     def __repr__(self) -> str:
         parts = []
         if self.workflow_id:
@@ -75,3 +88,11 @@ class ExecutionContext:
         if self.tool_name:
             parts.append(f"tool={self.tool_name}")
         return f"ExecutionContext({', '.join(parts)})"
+
+
+# Module-level ContextVar shared between tracker and logging.
+# The tracker sets this during track_workflow/stage/agent context managers.
+# The ExecutionContextFilter reads it to inject fields into log records.
+current_execution_context: ContextVar[ExecutionContext] = ContextVar(
+    "current_execution_context"
+)

@@ -160,14 +160,26 @@ def _build_error_result(agent_name: str, e: Exception, duration: float) -> Dict[
             agent_name, error_message
         )
 
+    # Compute error fingerprint (best-effort)
+    fingerprint = None
+    try:
+        from src.observability.error_fingerprinting import compute_fingerprint
+        fingerprint = compute_fingerprint(type(e).__name__, error_type, str(e))
+    except Exception:  # noqa: BLE001 — fingerprinting must never disrupt execution
+        pass
+
+    output_data: Dict[str, Any] = {
+        StateKeys.OUTPUT: "",
+        StateKeys.ERROR: error_message,
+        StateKeys.ERROR_TYPE: error_type,
+        StateKeys.TRACEBACK: error_traceback,
+    }
+    if fingerprint is not None:
+        output_data["error_fingerprint"] = fingerprint
+
     return {
         StateKeys.AGENT_NAME: agent_name,
-        StateKeys.OUTPUT_DATA: {
-            StateKeys.OUTPUT: "",
-            StateKeys.ERROR: error_message,
-            StateKeys.ERROR_TYPE: error_type,
-            StateKeys.TRACEBACK: error_traceback,
-        },
+        StateKeys.OUTPUT_DATA: output_data,
         StateKeys.STATUS: "failed",
         StateKeys.METRICS: {
             StateKeys.TOKENS: 0,

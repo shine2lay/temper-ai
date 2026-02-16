@@ -56,6 +56,7 @@ class WorkflowExecution(SQLModel, table=True):
     status: str = Field(index=True)  # running | completed | failed | halted | timeout
     error_message: Optional[str] = None
     error_stack_trace: Optional[str] = None
+    error_fingerprint: Optional[str] = Field(default=None, index=True)
 
     # Context
     optimization_target: Optional[str] = None
@@ -129,6 +130,7 @@ class StageExecution(SQLModel, table=True):
     # Status
     status: str = Field(index=True)
     error_message: Optional[str] = None
+    error_fingerprint: Optional[str] = Field(default=None, index=True)
 
     # Data
     input_data: Optional[Dict[str, Any]] = Field(default=None, sa_column=Column(JSON))  # noqa: duplicate
@@ -209,6 +211,7 @@ class AgentExecution(SQLModel, table=True):
     # Status
     status: str = Field(index=True)
     error_message: Optional[str] = None
+    error_fingerprint: Optional[str] = Field(default=None, index=True)
     retry_count: int = 0
 
     # Core data
@@ -326,6 +329,7 @@ class LLMCall(SQLModel, table=True):
     # Status
     status: str = Field(index=True)
     error_message: Optional[str] = None
+    error_fingerprint: Optional[str] = Field(default=None, index=True)
     http_status_code: Optional[int] = None
 
     # Retry info
@@ -370,6 +374,7 @@ class ToolExecution(SQLModel, table=True):
     # Status
     status: str = Field(index=True)
     error_message: Optional[str] = None
+    error_fingerprint: Optional[str] = Field(default=None, index=True)
     retry_count: int = 0
 
     # Safety
@@ -538,6 +543,37 @@ class SchemaVersion(SQLModel, table=True):
     description: Optional[str] = None
 
 
+class ErrorFingerprint(SQLModel, table=True):
+    """Aggregated error fingerprint for dedup and trend analysis."""
+
+    __tablename__ = "error_fingerprints"
+
+    fingerprint: str = Field(primary_key=True)  # 16-char hex hash
+
+    # Identity
+    error_type: str = Field(index=True)  # Exception class name
+    error_code: str = Field(index=True)  # Canonical error code
+    classification: str = Field(index=True)  # transient | permanent | safety | unknown
+
+    # Messages
+    normalized_message: str  # Deterministic, for display
+    sample_message: Optional[str] = None  # One raw example
+
+    # Trending
+    occurrence_count: int = Field(default=1)
+    first_seen: datetime = Field(default_factory=utcnow)
+    last_seen: datetime = Field(default_factory=utcnow)
+
+    # Context (capped JSON arrays)
+    recent_workflow_ids: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+    recent_agent_names: Optional[List[str]] = Field(default=None, sa_column=Column(JSON))
+
+    # Lifecycle
+    resolved: bool = Field(default=False)
+    resolved_at: Optional[datetime] = None
+    resolution_note: Optional[str] = None
+
+
 # Create composite indexes for common query patterns
 # Performance optimization: Composite indices for common query patterns
 # - Foreign key + name/type: For filtering related entities
@@ -621,6 +657,9 @@ class RollbackEvent(SQLModel, table=True):
 
 
 # Indexes for rollback tables
+Index("idx_error_fp_classification", ErrorFingerprint.classification, ErrorFingerprint.last_seen)  # type: ignore[arg-type]
+Index("idx_error_fp_last_seen", ErrorFingerprint.last_seen)  # type: ignore[arg-type]
+
 Index("idx_rollback_snapshots_workflow", RollbackSnapshotDB.workflow_execution_id, RollbackSnapshotDB.created_at)  # type: ignore[arg-type]
 Index("idx_rollback_events_snapshot", RollbackEvent.snapshot_id, RollbackEvent.executed_at)  # type: ignore[arg-type]
 Index("idx_rollback_events_trigger", RollbackEvent.trigger, RollbackEvent.executed_at)  # type: ignore[arg-type]

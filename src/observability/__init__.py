@@ -40,6 +40,9 @@ _LAZY_IMPORTS: dict[str, tuple[str, str]] = {
     "SQLObservabilityBackend": (".backends", "SQLObservabilityBackend"),
     "PrometheusObservabilityBackend": (".backends", "PrometheusObservabilityBackend"),
     "S3ObservabilityBackend": (".backends", "S3ObservabilityBackend"),
+    # Composite / OTEL
+    "CompositeBackend": (".backends", "CompositeBackend"),
+    "OTelBackend": (".backends", "OTelBackend"),
     # Buffer
     "ObservabilityBuffer": (".buffer", "ObservabilityBuffer"),
     # Console
@@ -84,6 +87,8 @@ __all__ = [
     "SQLObservabilityBackend",
     "PrometheusObservabilityBackend",
     "S3ObservabilityBackend",
+    "CompositeBackend",
+    "OTelBackend",
     "ObservabilityBuffer",
     # Models
     "WorkflowExecution",

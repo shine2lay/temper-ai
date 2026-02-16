@@ -741,6 +741,27 @@ def handle_workflow_success(
     )
 
 
+def _record_fingerprint_safe(backend: Any, error: Exception, workflow_id: Optional[str] = None, agent_name: Optional[str] = None) -> None:
+    """Compute and record error fingerprint. Best-effort, never raises."""
+    try:
+        from src.observability.error_fingerprinting import compute_error_fingerprint
+
+        result = compute_error_fingerprint(error)
+        if hasattr(backend, "record_error_fingerprint"):
+            backend.record_error_fingerprint(
+                fingerprint=result.fingerprint,
+                error_type=result.error_type,
+                error_code=result.error_code,
+                classification=result.classification.value,
+                normalized_message=result.normalized_message,
+                sample_message=result.sample_message,
+                workflow_id=workflow_id,
+                agent_name=agent_name,
+            )
+    except Exception:  # noqa: BLE001 — fingerprinting must never disrupt execution
+        logger.debug("Error fingerprinting failed", exc_info=True)
+
+
 def handle_workflow_error(
     backend: Any,
     emit_event_fn: Any,
@@ -755,6 +776,7 @@ def handle_workflow_error(
         status=ObservabilityFields.STATUS_FAILED,
         error_message=str(error), error_stack_trace=get_stack_trace_fn(),
     )
+    _record_fingerprint_safe(backend, error, workflow_id=workflow_id)
     emit_event_fn("workflow_end", {
         ObservabilityFields.WORKFLOW_ID: workflow_id,
         ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
@@ -815,6 +837,7 @@ def handle_stage_error(
         status=ObservabilityFields.STATUS_FAILED,
         error_message=str(error),
     )
+    _record_fingerprint_safe(backend, error)
     emit_event_fn("stage_end", {
         ObservabilityFields.STAGE_ID: stage_id,
         ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,
@@ -856,6 +879,7 @@ def handle_agent_error(
         status=ObservabilityFields.STATUS_FAILED,
         error_message=str(error),
     )
+    _record_fingerprint_safe(backend, error)
     emit_event_fn("agent_end", {
         ObservabilityFields.AGENT_ID: agent_id,
         ObservabilityFields.STATUS: ObservabilityFields.STATUS_FAILED,

@@ -46,6 +46,8 @@ class MetricType(str, Enum):
     LATENCY_P99 = "latency_p99"
     DURATION = "duration"
     TOKEN_COUNT = "token_count"  # noqa: S105 — not a password
+    NEW_ERROR_TYPE = "new_error_type"
+    ERROR_SPIKE = "error_spike"
 
 
 @dataclass
@@ -160,6 +162,27 @@ class AlertManager:
             actions=[AlertAction.LOG_ERROR, AlertAction.HALT_WORKFLOW],
             enabled=False,  # Disabled by default (destructive action)
             metadata={"description": "Critical cost budget exceeded - halting workflow"}
+        ))
+
+        # New error type detected
+        self.add_rule(AlertRule(
+            name="new_error_type_detected",
+            metric_type=MetricType.NEW_ERROR_TYPE,
+            threshold=0,  # Any new error triggers alert
+            severity=AlertSeverity.INFO,
+            actions=[AlertAction.LOG_WARNING],
+            metadata={"description": "Previously unseen error type detected"}
+        ))
+
+        # Error spike (same fingerprint 10+ times in 5 minutes)
+        self.add_rule(AlertRule(
+            name="error_spike",
+            metric_type=MetricType.ERROR_SPIKE,
+            threshold=10,
+            window_seconds=SECONDS_PER_5_MINUTES,
+            severity=AlertSeverity.WARNING,
+            actions=[AlertAction.LOG_WARNING],
+            metadata={"description": "Same error occurred 10+ times in 5 minutes"}
         ))
 
     def add_rule(self, rule: AlertRule) -> None:

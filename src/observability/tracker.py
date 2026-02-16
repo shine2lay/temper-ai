@@ -4,7 +4,6 @@ Execution tracker for observability.
 Tracks workflow, stage, agent, LLM, and tool executions in real-time,
 writing to pluggable observability backends (SQL, Prometheus, S3, etc.).
 """
-import contextvars
 import logging
 import threading
 import uuid
@@ -15,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Dict, Generator, List, Optional
 if TYPE_CHECKING:
     from src.observability.metric_aggregator import AgentOutputParams
 
-from src.shared.core.context import ExecutionContext
+from src.shared.core.context import ExecutionContext, current_execution_context
 from src.storage.database.datetime_utils import utcnow
 from src.observability._tracker_helpers import (
     DecisionTrackingData,
@@ -112,9 +111,7 @@ class ExecutionTracker(TrackerCollaborationMixin):
         event_bus: Optional[ObservabilityEventBus] = None,
     ):
         """Initialize execution tracker."""
-        self._context_var: contextvars.ContextVar[ExecutionContext] = contextvars.ContextVar(
-            'execution_context'
-        )
+        self._context_var = current_execution_context
         self._local = threading.local()
 
         if backend is None:

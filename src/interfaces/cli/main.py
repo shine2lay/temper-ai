@@ -157,28 +157,22 @@ def main() -> None:
 def _setup_logging(verbose: bool, show_details: bool) -> None:
     """Configure logging based on verbosity and detail flags.
 
+    Uses the canonical ``setup_logging()`` from ``src.shared.utils.logging``
+    which attaches the ``ExecutionContextFilter`` to inject workflow/stage/agent
+    IDs and optional OTEL trace IDs into every log record.
+
     Args:
         verbose: Enable DEBUG level logging
         show_details: Attach RichHandler for INFO level streaming logs
     """
-    if verbose:
-        logging.basicConfig(
-            level=logging.DEBUG,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        )
-    else:
-        logging.basicConfig(level=logging.WARNING)
+    from src.shared.utils.logging import setup_logging
 
-    # Attach RichHandler for streaming logs when --show-details is active
-    if show_details and not verbose:
-        from rich.logging import RichHandler
-        src_logger = logging.getLogger("src")
-        if not any(isinstance(h, RichHandler) for h in src_logger.handlers):
-            src_logger.setLevel(logging.INFO)
-            src_logger.propagate = False
-            rh = RichHandler(console=console, show_path=False, show_time=True, markup=False)
-            rh.setLevel(logging.INFO)
-            src_logger.addHandler(rh)
+    if verbose:
+        setup_logging(level="DEBUG", format_type="console")
+    elif show_details:
+        setup_logging(level="INFO", format_type="rich")
+    else:
+        setup_logging(level="WARNING", format_type="console")
 
 
 def _load_workflow_config(
@@ -305,7 +299,22 @@ def _initialize_infrastructure(
         except ImportError:
             console.print("[yellow]Warning:[/yellow] Event bus not available")
 
-    tracker = ExecutionTracker(event_bus=event_bus) if event_bus else ExecutionTracker()
+    # Initialise OTEL (no-op if not configured / not installed)
+    from src.observability.otel_setup import init_otel, create_otel_backend
+    init_otel()
+
+    # Wrap backend with CompositeBackend if OTEL is active
+    otel_backend = create_otel_backend()
+    if otel_backend is not None:
+        from src.observability.backends.composite_backend import CompositeBackend
+        from src.observability.backends import SQLObservabilityBackend as _SQLBackend
+        sql_backend = _SQLBackend()
+        composite = CompositeBackend(primary=sql_backend, secondaries=[otel_backend])
+        tracker = ExecutionTracker(backend=composite, event_bus=event_bus)
+        if verbose:
+            console.print("[cyan]OTEL[/cyan] backend active (composite mode)")
+    else:
+        tracker = ExecutionTracker(event_bus=event_bus) if event_bus else ExecutionTracker()
 
     # Start dashboard server if requested
     dashboard_server = None

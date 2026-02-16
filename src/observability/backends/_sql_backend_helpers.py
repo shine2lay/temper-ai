@@ -23,6 +23,7 @@ from src.storage.database.datetime_utils import ensure_utc
 from src.storage.database.models import (
     AgentExecution,
     CollaborationEvent,
+    ErrorFingerprint,
     LLMCall,
     StageExecution,
     ToolExecution,
@@ -802,6 +803,116 @@ def flush_buffer(
 # Mixin: delegates thin-wrapper methods to module-level helpers
 # ---------------------------------------------------------------------------
 
+# ============================================================================
+# Error Fingerprinting
+# ============================================================================
+
+# Maximum recent IDs to store per fingerprint
+_MAX_RECENT_IDS = 10
+
+
+def record_error_fingerprint(
+    fingerprint: str,
+    error_type: str,
+    error_code: str,
+    classification: str,
+    normalized_message: str,
+    sample_message: str,
+    workflow_id: Optional[str] = None,
+    agent_name: Optional[str] = None,
+) -> bool:
+    """Upsert an error fingerprint record. Returns True if new."""
+    from src.storage.database.datetime_utils import utcnow
+
+    now = utcnow()
+    is_new = False
+
+    try:
+        with get_session() as session:
+            existing = session.get(ErrorFingerprint, fingerprint)
+            if existing is None:
+                is_new = True
+                recent_wf = [workflow_id] if workflow_id else []
+                recent_ag = [agent_name] if agent_name else []
+                record = ErrorFingerprint(
+                    fingerprint=fingerprint,
+                    error_type=error_type,
+                    error_code=error_code,
+                    classification=classification,
+                    normalized_message=normalized_message,
+                    sample_message=sample_message,
+                    occurrence_count=1,
+                    first_seen=now,
+                    last_seen=now,
+                    recent_workflow_ids=recent_wf,
+                    recent_agent_names=recent_ag,
+                )
+                session.add(record)
+            else:
+                existing.occurrence_count += 1
+                existing.last_seen = now
+                existing.sample_message = sample_message
+                # Re-open if resolved
+                if existing.resolved:
+                    existing.resolved = False
+                    existing.resolved_at = None
+                # Update recent lists (capped)
+                if workflow_id:
+                    wf_ids = list(existing.recent_workflow_ids or [])
+                    if workflow_id not in wf_ids:
+                        wf_ids.append(workflow_id)
+                    existing.recent_workflow_ids = wf_ids[-_MAX_RECENT_IDS:]
+                if agent_name:
+                    ag_names = list(existing.recent_agent_names or [])
+                    if agent_name not in ag_names:
+                        ag_names.append(agent_name)
+                    existing.recent_agent_names = ag_names[-_MAX_RECENT_IDS:]
+                session.add(existing)
+            session.commit()
+    except (IntegrityError, SQLAlchemyError) as e:
+        logger.warning("Failed to record error fingerprint %s: %s", fingerprint, e)
+
+    return is_new
+
+
+def get_top_errors(
+    limit: int = 10,
+    classification: Optional[str] = None,
+    since: Optional[datetime] = None,
+) -> List[Dict[str, Any]]:
+    """Get top errors by occurrence count."""
+    try:
+        with get_session() as session:
+            stmt = select(ErrorFingerprint).order_by(
+                ErrorFingerprint.occurrence_count.desc()  # type: ignore[union-attr]
+            )
+            if classification:
+                stmt = stmt.where(ErrorFingerprint.classification == classification)
+            if since:
+                stmt = stmt.where(ErrorFingerprint.last_seen >= since)
+            stmt = stmt.limit(limit)
+
+            results = session.exec(stmt).all()
+            return [
+                {
+                    "fingerprint": r.fingerprint,
+                    "error_type": r.error_type,
+                    "error_code": r.error_code,
+                    "classification": r.classification,
+                    "normalized_message": r.normalized_message,
+                    "sample_message": r.sample_message,
+                    "occurrence_count": r.occurrence_count,
+                    "first_seen": r.first_seen.isoformat() if r.first_seen else None,
+                    "last_seen": r.last_seen.isoformat() if r.last_seen else None,
+                    "resolved": r.resolved,
+                }
+                for r in results
+            ]
+    except SQLAlchemyError as e:
+        logger.warning("Failed to query top errors: %s", e)
+        return []
+
+
 class SQLDelegatedMethodsMixin:
     """Mixin providing read, safety, collaboration, and aggregation methods.
 
@@ -885,3 +996,29 @@ class SQLDelegatedMethodsMixin:
     def aggregate_stage_metrics(self, stage_id: str) -> Dict[str, int]:
         """Aggregate stage metrics."""
         return aggregate_stage_metrics(stage_id)
+
+    def record_error_fingerprint(
+        self,
+        fingerprint: str,
+        error_type: str,
+        error_code: str,
+        classification: str,
+        normalized_message: str,
+        sample_message: str,
+        workflow_id: Optional[str] = None,
+        agent_name: Optional[str] = None,
+    ) -> bool:
+        """Record error fingerprint (SQL implementation)."""
+        return record_error_fingerprint(
+            fingerprint, error_type, error_code, classification,
+            normalized_message, sample_message, workflow_id, agent_name,
+        )
+
+    def get_top_errors(
+        self,
+        limit: int = 10,
+        classification: Optional[str] = None,
+        since: Optional[datetime] = None,
+    ) -> List[Dict[str, Any]]:
+        """Get top errors (SQL implementation)."""
+        return get_top_errors(limit, classification, since)

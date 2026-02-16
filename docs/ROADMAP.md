@@ -51,19 +51,21 @@ The framework has a solid foundation. Four milestones are complete, quality is a
 
 ## Phase I: Intelligence Layer (M5)
 
-**Value Proposition:** The framework stops being a static executor and becomes a learning system. Agents remember past work, improve over time, and proactively apply lessons learned.
+**Value Proposition:** The framework stops producing "whatever the LLM gives you" and starts producing the output you actually want. A composable optimization engine lets users define how output quality is evaluated, then automatically refines, selects, and tunes until the target is met — all driven by workflow config.
 
 **Key Capabilities:**
-- Self-improvement loop runs automatically after each workflow
+- Composable evaluators: criteria (pass/fail), comparative (A vs B), scored (0-1), human-in-the-loop
+- Composable optimizers: iterative refinement (critique loop), best-of-N selection, statistical config tuning
+- Any optimizer can use any evaluator — radical modularity via configuration
+- Config tuning delegates to the proven `src/experimentation/` A/B testing engine
 - Agents have episodic, procedural, and cross-session memory
-- System recommends optimal configurations based on history
-- Background pattern mining surfaces actionable insights
+- Background pattern mining surfaces actionable heuristics
 
 **How It Changes User Experience:**
-- Repeated problem types get solved faster and better
-- "You're building auth — here's what worked in 3 previous projects"
-- System auto-tunes its own configuration based on outcomes
-- Quality improves measurably over time without manual intervention
+- Users define quality targets and evaluation criteria in workflow YAML
+- Workflows automatically refine output until criteria are met
+- Config optimization runs across multiple runs with statistical rigor
+- Repeated problem types get solved faster via memory and learned patterns
 
 ---
 
@@ -106,32 +108,85 @@ The framework has a solid foundation. Four milestones are complete, quality is a
 
 ## M5: Self-Improvement & Learning (Q1-Q2 2026)
 
-### M5.1: Loop Activation (~3-4 weeks)
+### M5.1: Optimization Engine (~4-5 weeks)
 
-Delete `src/self_improvement/` (untested, speculative) and build a fresh, thin self-improvement loop on top of the proven `src/experimentation/` engine.
+Delete `src/self_improvement/` (untested, speculative) and build a composable optimization engine in `src/improvement/`. Users configure evaluators (how to judge quality) and optimizers (how to improve) as a pipeline in workflow YAML.
+
+**Design: Two Core Abstractions**
+
+*Evaluators* — how you judge output quality:
+
+| Evaluator | How It Works | Deterministic? |
+|-----------|-------------|----------------|
+| `criteria` | Pass/fail checks (programmatic commands or LLM yes/no) | Mostly yes |
+| `comparative` | Pairwise "is A better than B?" ranking | No, but reliable |
+| `scored` | LLM-as-judge 0-1 score | No |
+| `human` | Ask user to pick/approve | Yes (but slow) |
+
+*Optimizers* — what to do about it:
+
+| Optimizer | What It Does | Needs Multiple Runs? |
+|-----------|-------------|---------------------|
+| `refinement` | Critique output, feed critique back, retry | No (sequential within one run) |
+| `selection` | Run N times, pick best output | Yes (N runs, same config) |
+| `tuning` | Tweak config, run batches, compare statistically | Yes (N runs per config variant) |
+
+Any optimizer can use any evaluator. They compose into a pipeline:
+
+```yaml
+optimization:
+  evaluators:
+    code_checks:
+      type: criteria
+      checks:
+        - name: compiles
+          method: programmatic
+          command: "python -m py_compile {output_file}"
+        - name: addresses_requirements
+          method: llm
+          prompt: "Does this output address all of: {requirements}?"
+    preference:
+      type: comparative
+      prompt: "Which output better solves the problem?"
+  pipeline:
+    - optimizer: refinement       # Per-run: critique and retry
+      evaluator: code_checks
+      max_iterations: 3
+    - optimizer: selection        # Per-batch: pick best from N runs
+      evaluator: preference
+      runs: 5
+    - optimizer: tuning           # Per-config: statistically compare configs
+      evaluator: preference
+      runs_per_config: 10
+      max_iterations: 3
+      strategies: [prompt, temperature]
+```
 
 **Deliverables:**
 - Delete `src/self_improvement/` and its tests; remove M5-specific DB tables (`m5_experiments`, `m5_experiment_results`, `m5_loop_state`)
-- Build new loop orchestrator (~100-200 lines) in `src/improvement/` with 3 phases: Detect, Experiment, Deploy
-- **Detect:** Query `src/observability/tracker.py` for performance regressions (quality drop, cost spike, error rate increase) against stored baselines
-- **Experiment:** Delegate to `src/experimentation/ExperimentService` for A/B testing — gains SPRT early stopping, Bayesian analysis, and guardrails for free
-- **Deploy:** Thin deployer that applies winning config through M4 safety (`ActionPolicyEngine`) with rollback on regression
-- First concrete strategy: prompt optimization (one strategy, validated end-to-end, not four speculative ones)
-- Hook into `src/workflow/workflow_executor.py` as post-workflow callback
-- Configuration flag to enable/disable per workflow
+- Build `src/improvement/` module:
+  - `engine.py` — `OptimizationEngine` that runs the configured pipeline (~80 lines)
+  - `models.py` — `EvaluationResult`, `OptimizationConfig`, pipeline schema (~60 lines)
+  - `evaluators/` — `criteria.py`, `comparative.py`, `scored.py`, `human.py` + base protocol (~250 lines)
+  - `optimizers/` — `refinement.py`, `selection.py`, `tuning.py` + base protocol (~240 lines)
+  - `strategies/` — `prompt.py`, `temperature.py` + base protocol (~120 lines)
+- `TuningOptimizer` delegates to `src/experimentation/ExperimentService` for A/B testing (gains SPRT, Bayesian analysis, guardrails for free)
+- Integrate into `src/workflow/workflow_executor.py` as configurable post-stage or post-workflow wrapper
+- Optimization config section in workflow YAML schema (`src/workflow/_schemas.py`)
 
 **Key Files:**
-- New `src/improvement/` module (loop orchestrator, detector, deployer, first strategy)
-- `src/experimentation/` (experiment engine — used as-is)
+- New `src/improvement/` module (~750 lines total, excluding tests)
+- `src/experimentation/` (A/B testing engine — used as-is by `TuningOptimizer`)
 - `src/workflow/workflow_executor.py` (integration point)
-- `src/observability/tracker.py` (outcome data source)
+- `src/workflow/_schemas.py` (optimization config schema)
 
 **Success Criteria:**
-- M5 loop runs automatically after workflow execution
-- Detects performance regressions and proposes improvements
-- Experiments run via `ExperimentService` with statistical rigor (SPRT, guardrails)
-- Zero degradations from bad improvements (rollback works)
-- Total new code < 500 lines (excluding tests)
+- Users can configure optimization via workflow YAML with no code changes
+- Refinement optimizer iterates until criteria pass (or max iterations)
+- Selection optimizer picks measurably better output from N candidates
+- Tuning optimizer finds statistically better config via `ExperimentService`
+- Each evaluator and optimizer works independently and composes in any combination
+- End-to-end test: workflow with optimization pipeline produces better output than without
 
 **Dependencies:** None (builds on M4 foundation + existing `src/experimentation/`)
 
@@ -381,7 +436,7 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 
 | Framework Milestone | VCS Unlock | What It Enables |
 |---------------------|------------|-----------------|
-| M5.1 Loop Activation | V3 | VCS can self-improve triage accuracy |
+| M5.1 Optimization Engine | V3 | VCS can optimize triage accuracy via evaluator pipeline |
 | M5.2 Agent Memory | V3 | Agents remember past triage patterns |
 | M6.1 Progressive Autonomy | V4 | VCS earns trust for auto-implementation |
 | M6.2 MAF Server | V2 | VCS web app triggers pipelines via API |
@@ -392,7 +447,7 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 # Part 4: Timeline
 
 ```
-2026 Q1 (Now)     M5.1 Loop Activation
+2026 Q1 (Now)     M5.1 Optimization Engine
 2026 Q1-Q2        M5.2 Agent Memory + M5.3 Continuous Learning
 2026 Q2            V2 VCS Web App + V3 Self-Improving VCS
 2026 Q2-Q3        M6.1 Progressive Autonomy || M6.2 MAF Server (parallel)
@@ -405,7 +460,7 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 ## Milestone Dependency Graph
 
 ```
-M5.1 Loop Activation
+M5.1 Optimization Engine
  ├──→ M5.2 Agent Memory
  │     ├──→ M5.3 Continuous Learning
  │     │     └──→ M7.1 Self-Modifying Lifecycle ──→ M7.2 Strategic Autonomy ──→ M7.3 Portfolio Management
@@ -448,7 +503,7 @@ Items from the [Vision Document](./VISION.md) explicitly deferred:
 | Vector search adds new dependency | Increased complexity, deployment friction | Medium | Start with simple embedding (numpy), upgrade to dedicated vector DB later |
 | Progressive autonomy safety gaps | Trust erosion if agent causes harm | Medium | Shadow mode, conservative defaults, feature flags, emergency stop |
 | Runtime DAG modification complexity | Workflow instability, hard-to-debug failures | High | Extensive testing, rollback mechanisms, shadow execution |
-| LLM cost explosion in continuous loop | Budget overrun from unbounded experimentation | Medium | Budget enforcement in M6.1, convergence detection in M5.3 |
+| LLM cost multiplication from optimization | Refinement + selection + tuning multiplies LLM calls per workflow | High | Max iteration caps per optimizer, cost tracking per pipeline run, budget enforcement in M6.1 |
 | Memory retrieval latency | Agent startup slowdown from memory queries | Low | Cache hot paths, async prefetch, latency budget (< 500ms) |
 
 ---
@@ -457,11 +512,12 @@ Items from the [Vision Document](./VISION.md) explicitly deferred:
 
 ### M5 Success
 
-- 20%+ improvement in agent performance after self-improvement cycles
+- Optimization pipeline produces measurably better output than single-run baseline
+- Evaluators and optimizers compose freely via config (no code changes for new combinations)
+- Tuning optimizer finds statistically significant config improvements via ExperimentService
 - Agents reference past projects in reasoning (verifiable in traces)
 - Pattern mining discovers 10+ actionable heuristics
-- < 5% cost increase from experimentation overhead
-- Convergence within 100 experiments per hypothesis
+- < 5% cost increase from optimization overhead (per-run, excluding tuning batches)
 
 ### M6 Success
 

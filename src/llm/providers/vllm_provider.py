@@ -72,6 +72,41 @@ class VllmLLM(BaseLLM):
 
         return request
 
+    @staticmethod
+    def _format_tool_calls_xml(tool_calls: list) -> str:
+        """Convert native OpenAI-format tool calls to <tool_call> XML tags.
+
+        Works with both complete tool calls (from non-streaming responses)
+        and accumulated tool call buffers (from streaming deltas).
+
+        Args:
+            tool_calls: List of dicts with 'function' key containing
+                        'name' and 'arguments'.
+
+        Returns:
+            Newline-separated ``<tool_call>`` XML tags, or empty string.
+        """
+        if not tool_calls:
+            return ""
+        parts = []
+        for tc in tool_calls:
+            func = tc.get("function", {})
+            args = func.get("arguments", {})
+            # Streaming accumulates arguments as a JSON string
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            tc_dict = {
+                "name": func.get("name", ""),
+                "arguments": args,
+            }
+            parts.append(
+                f"<tool_call>\n{json.dumps(tc_dict)}\n</tool_call>"
+            )
+        return "\n".join(parts)
+
     def _parse_response(self, response: Dict[str, Any], latency_ms: int) -> LLMResponse:
         choice = response["choices"][0]
         message = choice.get("message", {})
@@ -80,18 +115,9 @@ class VllmLLM(BaseLLM):
 
         # Handle tool calls (OpenAI function calling format)
         tool_calls = message.get("tool_calls")
-        if tool_calls:
-            tc_parts = []
-            for tc in tool_calls:
-                func = tc.get("function", {})
-                tc_dict = {
-                    "name": func.get("name", ""),
-                    "arguments": func.get("arguments", {}),
-                }
-                tc_parts.append(
-                    f"<tool_call>\n{json.dumps(tc_dict)}\n</tool_call>"
-                )
-            content = content + "\n" + "\n".join(tc_parts)
+        xml = self._format_tool_calls_xml(tool_calls or [])
+        if xml:
+            content = content + "\n" + xml
 
         return LLMResponse(
             content=content,
@@ -177,6 +203,33 @@ class VllmLLM(BaseLLM):
         result: LLMResponse = await self._circuit_breaker.async_call(_make_async_streaming_call)
         return result
 
+    @staticmethod
+    def _accumulate_delta_tool_calls(
+        data: Dict[str, Any],
+        tool_call_buf: Dict[int, Dict[str, str]],
+    ) -> None:
+        """Accumulate streamed tool call deltas into a buffer.
+
+        OpenAI streaming sends tool calls across multiple chunks as
+        ``delta.tool_calls[i].function.{name, arguments}``.  Each chunk
+        may contain a partial function name or partial JSON arguments.
+        This method accumulates them by index so they can be converted
+        to ``<tool_call>`` XML after the stream ends.
+        """
+        choices = data.get("choices", [])
+        if not choices:
+            return
+        delta = choices[0].get("delta", {})
+        for tc in delta.get("tool_calls", []):
+            idx = tc.get("index", 0)
+            func = tc.get("function", {})
+            if idx not in tool_call_buf:
+                tool_call_buf[idx] = {"name": "", "arguments": ""}
+            if "name" in func and func["name"]:
+                tool_call_buf[idx]["name"] += func["name"]
+            if "arguments" in func and func["arguments"]:
+                tool_call_buf[idx]["arguments"] += func["arguments"]
+
     def _consume_stream(
         self,
         response: httpx.Response,
@@ -185,6 +238,7 @@ class VllmLLM(BaseLLM):
         """Consume SSE streaming response synchronously."""
         content_parts: list[str] = []
         thinking_parts: list[str] = []
+        tool_call_buf: Dict[int, Dict[str, str]] = {}
         prompt_tokens: Optional[int] = None
         completion_tokens: Optional[int] = None
         finish_reason: Optional[str] = None
@@ -209,6 +263,9 @@ class VllmLLM(BaseLLM):
                     on_chunk, self.model
                 )
 
+            # Accumulate native tool calls from streaming deltas
+            self._accumulate_delta_tool_calls(data, tool_call_buf)
+
             # Extract usage from the chunk with stream_options.include_usage
             usage = data.get("usage")
             if usage:
@@ -217,6 +274,16 @@ class VllmLLM(BaseLLM):
 
             if is_done:
                 finish_reason = data["choices"][0].get("finish_reason")
+
+        # Convert accumulated native tool calls to XML tags
+        if tool_call_buf:
+            tc_list = [
+                {"function": tool_call_buf[idx]}
+                for idx in sorted(tool_call_buf)
+            ]
+            xml = self._format_tool_calls_xml(tc_list)
+            if xml:
+                content_parts.append("\n" + xml)
 
         return cast(LLMResponse, build_stream_result(
             content_parts, self.model, LLMProvider.VLLM,
@@ -231,6 +298,7 @@ class VllmLLM(BaseLLM):
         """Consume SSE streaming response asynchronously."""
         content_parts: list[str] = []
         thinking_parts: list[str] = []
+        tool_call_buf: Dict[int, Dict[str, str]] = {}
         prompt_tokens: Optional[int] = None
         completion_tokens: Optional[int] = None
         finish_reason: Optional[str] = None
@@ -255,6 +323,9 @@ class VllmLLM(BaseLLM):
                     on_chunk, self.model
                 )
 
+            # Accumulate native tool calls from streaming deltas
+            self._accumulate_delta_tool_calls(data, tool_call_buf)
+
             # Extract usage from the chunk
             usage = data.get("usage")
             if usage:
@@ -263,6 +334,16 @@ class VllmLLM(BaseLLM):
 
             if is_done:
                 finish_reason = data["choices"][0].get("finish_reason")
+
+        # Convert accumulated native tool calls to XML tags
+        if tool_call_buf:
+            tc_list = [
+                {"function": tool_call_buf[idx]}
+                for idx in sorted(tool_call_buf)
+            ]
+            xml = self._format_tool_calls_xml(tc_list)
+            if xml:
+                content_parts.append("\n" + xml)
 
         return cast(LLMResponse, build_stream_result(
             content_parts, self.model, LLMProvider.VLLM,

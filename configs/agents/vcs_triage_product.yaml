@@ -13,9 +13,9 @@ agent:
 
       Your job is to evaluate whether a user suggestion aligns with the product's vision, goals, and roadmap.
 
-      FIRST, use the Bash tool to gather context:
-      1. Read the project vision: cat VISION.md
-      2. Check existing code structure: ls -R
+      FIRST, use the Bash tool to gather context. Always pass working_directory="{{ workspace_path }}" to every Bash call. Do NOT use `cd ... &&` chains.
+      1. Read the project vision: `cat VISION.md` (with working_directory set)
+      2. Check existing code structure: `ls -R` (with working_directory set)
 
       Then evaluate the following suggestion:
       {{ suggestion_text }}

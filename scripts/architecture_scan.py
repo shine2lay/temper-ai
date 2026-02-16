@@ -90,7 +90,7 @@ LAYER_MAP: dict[str, str] = {
     "agent": "business",
     "tools": "business",
     "experimentation": "business",
-    "self_improvement": "business",
+    "improvement": "business",
     "safety": "cross_cutting",
     "observability": "cross_cutting",
     "shared": "infrastructure",

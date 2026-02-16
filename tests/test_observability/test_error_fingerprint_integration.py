@@ -6,6 +6,7 @@ and the _record_fingerprint_safe() tracker hook.
 import pytest
 from unittest.mock import MagicMock, patch
 
+from src.observability.backend import ErrorFingerprintData
 from src.observability.error_fingerprinting import (
     ErrorClassification,
     compute_error_fingerprint,
@@ -29,11 +30,12 @@ class TestRecordFingerprintSafe:
         _record_fingerprint_safe(backend, error, workflow_id="wf-123", agent_name="test_agent")
 
         backend.record_error_fingerprint.assert_called_once()
-        call_kwargs = backend.record_error_fingerprint.call_args
-        assert call_kwargs[1]["workflow_id"] == "wf-123"
-        assert call_kwargs[1]["agent_name"] == "test_agent"
-        assert call_kwargs[1]["error_type"] == "ValueError"
-        assert len(call_kwargs[1]["fingerprint"]) == 16
+        fp_data = backend.record_error_fingerprint.call_args[0][0]
+        assert isinstance(fp_data, ErrorFingerprintData)
+        assert fp_data.workflow_id == "wf-123"
+        assert fp_data.agent_name == "test_agent"
+        assert fp_data.error_type == "ValueError"
+        assert len(fp_data.fingerprint) == 16
 
     def test_never_raises_on_backend_error(self):
         backend = MagicMock()
@@ -58,8 +60,8 @@ class TestRecordFingerprintSafe:
         error = LLMError("Timed out", error_code=ErrorCode.LLM_TIMEOUT)
         _record_fingerprint_safe(backend, error)
 
-        call_kwargs = backend.record_error_fingerprint.call_args[1]
-        assert call_kwargs["classification"] == ErrorClassification.TRANSIENT.value
+        fp_data = backend.record_error_fingerprint.call_args[0][0]
+        assert fp_data.classification == ErrorClassification.TRANSIENT.value
 
 
 # ============================================================================
@@ -79,7 +81,7 @@ class TestCompositeBackendFingerprinting:
         secondary.record_error_fingerprint = MagicMock(return_value=False)
 
         composite = CompositeBackend(primary, [secondary])
-        result = composite.record_error_fingerprint(
+        fp_data = ErrorFingerprintData(
             fingerprint="a1b2c3d4e5f67890",
             error_type="ValueError",
             error_code="VALUE_ERROR",
@@ -87,6 +89,7 @@ class TestCompositeBackendFingerprinting:
             normalized_message="Invalid input",
             sample_message="Invalid input: value=42",
         )
+        result = composite.record_error_fingerprint(fp_data)
 
         assert result is True  # Returns primary's result
         primary.record_error_fingerprint.assert_called_once()
@@ -117,8 +120,7 @@ class TestCompositeBackendFingerprinting:
         )
 
         composite = CompositeBackend(primary, [secondary])
-        # Should not raise
-        result = composite.record_error_fingerprint(
+        fp_data = ErrorFingerprintData(
             fingerprint="a1b2c3d4e5f67890",
             error_type="ValueError",
             error_code="VALUE_ERROR",
@@ -126,6 +128,8 @@ class TestCompositeBackendFingerprinting:
             normalized_message="Error",
             sample_message="Error",
         )
+        # Should not raise
+        result = composite.record_error_fingerprint(fp_data)
         assert result is True
 
 
@@ -141,7 +145,7 @@ class TestNoOpBackendFingerprinting:
         from src.observability.backends.noop_backend import NoOpBackend
 
         backend = NoOpBackend()
-        result = backend.record_error_fingerprint(
+        fp_data = ErrorFingerprintData(
             fingerprint="a1b2c3d4e5f67890",
             error_type="ValueError",
             error_code="VALUE_ERROR",
@@ -149,6 +153,7 @@ class TestNoOpBackendFingerprinting:
             normalized_message="Error",
             sample_message="Error",
         )
+        result = backend.record_error_fingerprint(fp_data)
         assert result is False
 
     def test_get_top_errors_returns_empty(self):

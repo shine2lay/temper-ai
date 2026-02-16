@@ -23,10 +23,12 @@ agent:
       ## Your Task
       Verify that the generated code correctly implements the design spec.
 
-      Use Bash to:
-      1. Read the generated files: `cat {{ workspace_path }}/<file>`
-      2. Run the code if possible: `cd {{ workspace_path }} && python3 -c "import ..."`
+      Use Bash with working_directory="{{ workspace_path }}" to:
+      1. Read the generated files: `cat <file>` (with working_directory set)
+      2. Run the code if possible: `python3 -c "import ..."` (with working_directory set)
       3. Check acceptance criteria from the design spec
+
+      IMPORTANT: Do NOT use `cd ... &&` chains. Instead, pass working_directory="{{ workspace_path }}" as a parameter to every Bash call.
 
       Rules:
       - Only mark FAIL if you have CONCRETE EVIDENCE of a problem

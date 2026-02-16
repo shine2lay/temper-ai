@@ -10,6 +10,7 @@ Covers:
 import pytest
 from unittest.mock import MagicMock, patch
 
+from src.observability.backend import ErrorFingerprintData
 from src.observability._tracker_helpers import (
     _alert_new_error_type,
     _record_fingerprint_safe,
@@ -149,9 +150,10 @@ class TestHandleAgentErrorAlerting:
         )
 
         # Verify fingerprint got workflow_id and agent_name
-        fp_call = backend.record_error_fingerprint.call_args[1]
-        assert fp_call["workflow_id"] == "wf-42"
-        assert fp_call["agent_name"] == "researcher"
+        fp_data = backend.record_error_fingerprint.call_args[0][0]
+        assert isinstance(fp_data, ErrorFingerprintData)
+        assert fp_data.workflow_id == "wf-42"
+        assert fp_data.agent_name == "researcher"
 
         # Verify alert context includes agent_name (not stage_id)
         alert_call = alert_mgr.check_metric.call_args[1]

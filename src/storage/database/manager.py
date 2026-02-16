@@ -143,8 +143,6 @@ class DatabaseManager:
         test fixtures that need a quick in-memory schema setup.
         Do NOT call this in production startup paths.
         """
-        # Ensure M5 experiment models are imported so SQLModel registers them
-        import src.self_improvement.storage.experiment_models  # noqa: F401
         SQLModel.metadata.create_all(self.engine)
 
     def drop_all_tables(self) -> None:

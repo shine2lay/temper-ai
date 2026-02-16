@@ -101,6 +101,23 @@ class ObservabilityHealthMonitor:
             logger.debug("Health alert failed", exc_info=True)
 
 
+def _format_threshold_warning(
+    label: str, value: int, threshold: int, severity: str = "WARNING"
+) -> str:
+    """Format a threshold breach message.
+
+    Args:
+        label: Human-readable metric name (e.g. "DLQ size").
+        value: Current metric value.
+        threshold: Threshold that was exceeded.
+        severity: Severity tag (e.g. "WARNING", "CRITICAL").
+
+    Returns:
+        Formatted warning string.
+    """
+    return f"{severity}: {label} ({value}) exceeds {threshold}"
+
+
 def _evaluate_thresholds(stats: Dict[str, Any]) -> List[str]:
     """Evaluate buffer stats against health thresholds."""
     issues: List[str] = []
@@ -108,23 +125,23 @@ def _evaluate_thresholds(stats: Dict[str, Any]) -> List[str]:
     dlq_size = stats.get("dlq_size", 0)
     if dlq_size > THRESHOLD_LARGE_COUNT:
         issues.append(
-            f"CRITICAL: DLQ size ({dlq_size}) exceeds {THRESHOLD_LARGE_COUNT}"
+            _format_threshold_warning("DLQ size", dlq_size, THRESHOLD_LARGE_COUNT, "CRITICAL")
         )
     elif dlq_size > THRESHOLD_MEDIUM_COUNT:
         issues.append(
-            f"WARNING: DLQ size ({dlq_size}) exceeds {THRESHOLD_MEDIUM_COUNT}"
+            _format_threshold_warning("DLQ size", dlq_size, THRESHOLD_MEDIUM_COUNT)
         )
 
     retry_size = stats.get("retry_queue_size", 0)
     if retry_size > THRESHOLD_MEDIUM_COUNT:
         issues.append(
-            f"WARNING: Retry queue ({retry_size}) exceeds {THRESHOLD_MEDIUM_COUNT}"
+            _format_threshold_warning("Retry queue", retry_size, THRESHOLD_MEDIUM_COUNT)
         )
 
     pending_count = stats.get("pending_ids", 0)
     if pending_count > THRESHOLD_LARGE_COUNT:
         issues.append(
-            f"WARNING: Pending IDs ({pending_count}) exceeds {THRESHOLD_LARGE_COUNT}"
+            _format_threshold_warning("Pending IDs", pending_count, THRESHOLD_LARGE_COUNT)
         )
 
     return issues

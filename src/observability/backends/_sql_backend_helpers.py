@@ -36,6 +36,9 @@ from src.observability.backend import (
     CollaborationEventData as BackendCollaborationEventData,
 )
 from src.observability.backend import (
+    ErrorFingerprintData,
+)
+from src.observability.backend import (
     SafetyViolationData as BackendSafetyViolationData,
 )
 from src.observability.constants import ObservabilityFields
@@ -821,16 +824,7 @@ def flush_buffer(
 _MAX_RECENT_IDS = 10
 
 
-def record_error_fingerprint(
-    fingerprint: str,
-    error_type: str,
-    error_code: str,
-    classification: str,
-    normalized_message: str,
-    sample_message: str,
-    workflow_id: Optional[str] = None,
-    agent_name: Optional[str] = None,
-) -> bool:
+def record_error_fingerprint(data: ErrorFingerprintData) -> bool:
     """Upsert an error fingerprint record. Returns True if new."""
     from src.storage.database.datetime_utils import utcnow
 
@@ -839,18 +833,18 @@ def record_error_fingerprint(
 
     try:
         with get_session() as session:
-            existing = session.get(ErrorFingerprint, fingerprint)
+            existing = session.get(ErrorFingerprint, data.fingerprint)
             if existing is None:
                 is_new = True
-                recent_wf = [workflow_id] if workflow_id else []
-                recent_ag = [agent_name] if agent_name else []
+                recent_wf = [data.workflow_id] if data.workflow_id else []
+                recent_ag = [data.agent_name] if data.agent_name else []
                 record = ErrorFingerprint(
-                    fingerprint=fingerprint,
-                    error_type=error_type,
-                    error_code=error_code,
-                    classification=classification,
-                    normalized_message=normalized_message,
-                    sample_message=sample_message,
+                    fingerprint=data.fingerprint,
+                    error_type=data.error_type,
+                    error_code=data.error_code,
+                    classification=data.classification,
+                    normalized_message=data.normalized_message,
+                    sample_message=data.sample_message,
                     occurrence_count=1,
                     first_seen=now,
                     last_seen=now,
@@ -861,26 +855,26 @@ def record_error_fingerprint(
             else:
                 existing.occurrence_count += 1
                 existing.last_seen = now
-                existing.sample_message = sample_message
+                existing.sample_message = data.sample_message
                 # Re-open if resolved
                 if existing.resolved:
                     existing.resolved = False
                     existing.resolved_at = None
                 # Update recent lists (capped)
-                if workflow_id:
+                if data.workflow_id:
                     wf_ids = list(existing.recent_workflow_ids or [])
-                    if workflow_id not in wf_ids:
-                        wf_ids.append(workflow_id)
+                    if data.workflow_id not in wf_ids:
+                        wf_ids.append(data.workflow_id)
                     existing.recent_workflow_ids = wf_ids[-_MAX_RECENT_IDS:]
-                if agent_name:
+                if data.agent_name:
                     ag_names = list(existing.recent_agent_names or [])
-                    if agent_name not in ag_names:
-                        ag_names.append(agent_name)
+                    if data.agent_name not in ag_names:
+                        ag_names.append(data.agent_name)
                     existing.recent_agent_names = ag_names[-_MAX_RECENT_IDS:]
                 session.add(existing)
             session.commit()
     except (IntegrityError, SQLAlchemyError) as e:
-        logger.warning("Failed to record error fingerprint %s: %s", fingerprint, e)
+        logger.warning("Failed to record error fingerprint %s: %s", data.fingerprint, e)
 
     return is_new
 
@@ -1007,22 +1001,9 @@ class SQLDelegatedMethodsMixin:
         """Aggregate stage metrics."""
         return aggregate_stage_metrics(stage_id)
 
-    def record_error_fingerprint(
-        self,
-        fingerprint: str,
-        error_type: str,
-        error_code: str,
-        classification: str,
-        normalized_message: str,
-        sample_message: str,
-        workflow_id: Optional[str] = None,
-        agent_name: Optional[str] = None,
-    ) -> bool:
+    def record_error_fingerprint(self, data: ErrorFingerprintData) -> bool:
         """Record error fingerprint (SQL implementation)."""
-        return record_error_fingerprint(
-            fingerprint, error_type, error_code, classification,
-            normalized_message, sample_message, workflow_id, agent_name,
-        )
+        return record_error_fingerprint(data)
 
     def get_top_errors(
         self,

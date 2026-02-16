@@ -21,7 +21,8 @@ agent:
       {{ workspace_path }}
 
       Use Bash to inspect existing code (ls, cat, find) so your implementation
-      recommendations match the existing patterns.
+      recommendations match the existing patterns. Always pass working_directory="{{ workspace_path }}"
+      as a parameter to every Bash call. Do NOT use `cd ... &&` chains.
 
       ## Your Task
       Analyze the suggestion from an IMPLEMENTATION perspective:

@@ -38,7 +38,6 @@ from src.interfaces.cli.constants import (
     YAML_FILE_EXTENSION,
     YAML_GLOB_PATTERN,
 )
-from src.shared.constants.durations import HOURS_PER_WEEK
 from src.shared.utils.exceptions import WorkflowStageError
 
 console = Console()
@@ -248,6 +247,68 @@ def _start_dashboard_server(backend: Any, event_bus: Any, port: int) -> Any:
         return None
 
 
+def _import_core_modules(verbose: bool) -> tuple:
+    """Import and return core infrastructure modules, exiting on failure.
+
+    Returns:
+        Tuple of (ConfigLoader, ExecutionTracker, ToolRegistry) classes.
+
+    Raises:
+        SystemExit: If imports fail.
+    """
+    try:
+        from src.workflow.config_loader import ConfigLoader
+        from src.observability.tracker import ExecutionTracker
+        from src.tools.registry import ToolRegistry
+        return ConfigLoader, ExecutionTracker, ToolRegistry
+    except ImportError as e:
+        console.print(f"[red]Import error:[/red] {e}")
+        if verbose:
+            logger.exception("Failed to import required modules")
+        raise SystemExit(1)
+
+
+def _init_database(db_path: str, ensure_database_fn: Any, verbose: bool) -> None:
+    """Create the database directory and ensure schema exists.
+
+    Raises:
+        SystemExit: On filesystem or database errors.
+    """
+    try:
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        ensure_database_fn(f"{SQLITE_URL_PREFIX}{db_path}")
+    except (OSError, PermissionError) as e:
+        console.print(f"[red]Database initialization error:[/red] {e}")
+        if verbose:
+            logger.exception("Failed to initialize database")
+        raise SystemExit(1)
+
+
+def _create_tracker(event_bus: Any, verbose: bool) -> Any:
+    """Create an ExecutionTracker with OTEL composite backend if available.
+
+    Returns:
+        Configured ExecutionTracker instance.
+    """
+    from src.observability.tracker import ExecutionTracker
+    from src.observability.otel_setup import init_otel, create_otel_backend
+
+    init_otel()
+    otel_backend = create_otel_backend()
+
+    if otel_backend is not None:
+        from src.observability.backends.composite_backend import CompositeBackend
+        from src.observability.backends import SQLObservabilityBackend as _SQLBackend
+        sql_backend = _SQLBackend()
+        composite = CompositeBackend(primary=sql_backend, secondaries=[otel_backend])
+        tracker = ExecutionTracker(backend=composite, event_bus=event_bus)
+        if verbose:
+            console.print("[cyan]OTEL[/cyan] backend active (composite mode)")
+        return tracker
+
+    return ExecutionTracker(event_bus=event_bus) if event_bus else ExecutionTracker()
+
+
 def _initialize_infrastructure(
     config_root: str, db_path: str, dashboard_port: Optional[int], verbose: bool
 ) -> tuple:
@@ -265,32 +326,13 @@ def _initialize_infrastructure(
     Raises:
         SystemExit: On initialization failure
     """
-    # Import dependencies
-    try:
-        from src.workflow.config_loader import ConfigLoader
-        from src.observability.tracker import ExecutionTracker
-        from src.tools.registry import ToolRegistry
-    except ImportError as e:
-        console.print(f"[red]Import error:[/red] {e}")
-        if verbose:
-            logger.exception("Failed to import required modules")
-        raise SystemExit(1)
+    ConfigLoader, ExecutionTracker, ToolRegistry = _import_core_modules(verbose)
+    _init_database(db_path, ExecutionTracker.ensure_database, verbose)
 
-    # Init database
-    try:
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        ExecutionTracker.ensure_database(f"{SQLITE_URL_PREFIX}{db_path}")
-    except (OSError, PermissionError) as e:
-        console.print(f"[red]Database initialization error:[/red] {e}")
-        if verbose:
-            logger.exception("Failed to initialize database")
-        raise SystemExit(1)
-
-    # Create infrastructure
     config_loader = ConfigLoader(config_root=config_root)
     tool_registry = ToolRegistry(auto_discover=True)
 
-    # Create event bus and tracker
+    # Create event bus (needed for dashboard)
     event_bus = None
     if dashboard_port is not None:
         try:
@@ -299,22 +341,7 @@ def _initialize_infrastructure(
         except ImportError:
             console.print("[yellow]Warning:[/yellow] Event bus not available")
 
-    # Initialise OTEL (no-op if not configured / not installed)
-    from src.observability.otel_setup import init_otel, create_otel_backend
-    init_otel()
-
-    # Wrap backend with CompositeBackend if OTEL is active
-    otel_backend = create_otel_backend()
-    if otel_backend is not None:
-        from src.observability.backends.composite_backend import CompositeBackend
-        from src.observability.backends import SQLObservabilityBackend as _SQLBackend
-        sql_backend = _SQLBackend()
-        composite = CompositeBackend(primary=sql_backend, secondaries=[otel_backend])
-        tracker = ExecutionTracker(backend=composite, event_bus=event_bus)
-        if verbose:
-            console.print("[cyan]OTEL[/cyan] backend active (composite mode)")
-    else:
-        tracker = ExecutionTracker(event_bus=event_bus) if event_bus else ExecutionTracker()
+    tracker = _create_tracker(event_bus, verbose)
 
     # Start dashboard server if requested
     dashboard_server = None
@@ -1300,148 +1327,6 @@ def list_stages(config_root: str) -> None:
 from src.interfaces.cli.rollback import rollback  # noqa: E402
 
 main.add_command(rollback)
-
-
-# ─── m5 group ─────────────────────────────────────────────────────────
-
-
-@main.group()
-def m5() -> None:
-    """M5 self-improvement commands."""
-    pass
-
-
-def _get_m5_cli() -> Any:
-    """Lazy-load M5CLI to avoid import-time side effects."""
-    try:
-        from src.self_improvement.cli import M5CLI
-
-        return M5CLI()
-    except ImportError as e:
-        console.print(
-            f"[red]Error:[/red] M5 self-improvement module not available: {e}"
-        )
-        raise SystemExit(1)
-    except Exception as e:  # noqa: BLE001 -- CLI init catch-all
-        console.print(f"[red]Error:[/red] Failed to initialize M5 CLI: {e}")
-        raise SystemExit(1)
-
-
-@m5.command("run")
-@click.argument("agent_name")
-@click.option("--config", "config_file", type=click.Path(exists=True), help="Config file")
-def m5_run(agent_name: str, config_file: Optional[str]) -> None:
-    """Run improvement iteration for an agent."""
-    cli = _get_m5_cli()
-    code = cli.run_iteration(agent_name, config_file)
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("analyze")
-@click.argument("agent_name")
-@click.option(
-    "--window",
-    type=int,
-    default=HOURS_PER_WEEK,  # 168 hours = 1 week
-    show_default=True,
-    help="Analysis window in hours",
-)
-def m5_analyze(agent_name: str, window: int) -> None:
-    """Analyze agent performance."""
-    cli = _get_m5_cli()
-    code = cli.analyze(agent_name, window)
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("optimize")
-@click.argument("agent_name")
-@click.option("--config", "config_file", type=click.Path(exists=True), help="Config file")
-def m5_optimize(agent_name: str, config_file: Optional[str]) -> None:
-    """Optimize agent (alias for run)."""
-    cli = _get_m5_cli()
-    code = cli.optimize(agent_name, config_file)
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("status")
-@click.argument("agent_name")
-def m5_status(agent_name: str) -> None:
-    """Show loop status for an agent."""
-    cli = _get_m5_cli()
-    code = cli.status(agent_name)
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("metrics")
-@click.argument("agent_name")
-def m5_metrics(agent_name: str) -> None:
-    """Show metrics for an agent."""
-    cli = _get_m5_cli()
-    code = cli.metrics(agent_name)
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("pause")
-@click.argument("agent_name")
-def m5_pause(agent_name: str) -> None:
-    """Pause loop for an agent."""
-    cli = _get_m5_cli()
-    code = cli.pause(agent_name)
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("resume")
-@click.argument("agent_name")
-def m5_resume(agent_name: str) -> None:
-    """Resume loop for an agent."""
-    cli = _get_m5_cli()
-    code = cli.resume(agent_name)
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("reset")
-@click.argument("agent_name")
-def m5_reset(agent_name: str) -> None:
-    """Reset loop state for an agent."""
-    cli = _get_m5_cli()
-    code = cli.reset(agent_name)
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("health")
-def m5_health() -> None:
-    """Check M5 system health."""
-    cli = _get_m5_cli()
-    code = cli.health()
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("check-experiments")
-@click.argument("agent_name")
-def m5_check_experiments(agent_name: str) -> None:
-    """Check experiment status for an agent."""
-    cli = _get_m5_cli()
-    code = cli.check_experiments(agent_name)
-    if code:
-        raise SystemExit(code)
-
-
-@m5.command("list-agents")
-def m5_list_agents() -> None:
-    """List all agents with M5 state."""
-    cli = _get_m5_cli()
-    code = cli.list_agents()
-    if code:
-        raise SystemExit(code)
 
 
 if __name__ == "__main__":

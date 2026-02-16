@@ -125,55 +125,60 @@ def execute_agent(
         return _build_error_result(agent_name, e, duration)
 
 
-def _build_error_result(agent_name: str, e: Exception, duration: float) -> Dict[str, Any]:
-    """Build error result dict from an exception."""
-    if isinstance(e, CircuitBreakerError):
-        error_type = ErrorCode.LLM_CONNECTION_ERROR.value
-        error_message = sanitize_error_message(str(e))
-        error_traceback = sanitize_error_message(traceback.format_exc())
+# Maps stdlib exception class names to error codes for non-framework exceptions
+_STDLIB_ERROR_TYPE_MAP: Dict[str, str] = {
+    "TimeoutError": ErrorCode.SYSTEM_TIMEOUT.value,
+    "ConnectionError": ErrorCode.LLM_CONNECTION_ERROR.value,
+    "ValueError": ErrorCode.VALIDATION_ERROR.value,
+    "RuntimeError": ErrorCode.AGENT_EXECUTION_ERROR.value,
+}
 
+
+def _classify_error(
+    agent_name: str, e: Exception,
+) -> tuple[str, str, str]:
+    """Classify an exception into error_type, message, and traceback.
+
+    Also logs the failure at the appropriate level.
+
+    Returns:
+        Tuple of (error_type, sanitized_message, sanitized_traceback)
+    """
+    error_message = sanitize_error_message(str(e))
+    error_traceback = sanitize_error_message(traceback.format_exc())
+
+    if isinstance(e, CircuitBreakerError):
         logger.error(
             "Agent %s failed: Circuit breaker OPEN (provider unhealthy). "
             "Subsequent agents using same provider will fast-fail. Error: %s",
-            agent_name, error_message
+            agent_name, error_message,
         )
+        return ErrorCode.LLM_CONNECTION_ERROR.value, error_message, error_traceback
 
-    elif isinstance(e, BaseError):
-        error_type = e.error_code.value
-        error_message = sanitize_error_message(str(e))
-        error_traceback = sanitize_error_message(traceback.format_exc())
+    if isinstance(e, BaseError):
+        logger.warning("Agent %s failed in stage: %s", agent_name, error_message)
+        return e.error_code.value, error_message, error_traceback
 
-        logger.warning(
-            "Agent %s failed in stage: %s",
-            agent_name, error_message
-        )
+    error_type = _STDLIB_ERROR_TYPE_MAP.get(
+        type(e).__name__, ErrorCode.UNKNOWN_ERROR.value,
+    )
+    logger.warning("Agent %s failed in stage: %s", agent_name, error_message)
+    return error_type, error_message, error_traceback
 
-    else:
-        error_type_map = {
-            "TimeoutError": ErrorCode.SYSTEM_TIMEOUT.value,
-            "ConnectionError": ErrorCode.LLM_CONNECTION_ERROR.value,
-            "ValueError": ErrorCode.VALIDATION_ERROR.value,
-            "RuntimeError": ErrorCode.AGENT_EXECUTION_ERROR.value,
-        }
-        error_type = error_type_map.get(
-            type(e).__name__, ErrorCode.UNKNOWN_ERROR.value
-        )
 
-        error_message = sanitize_error_message(str(e))
-        error_traceback = sanitize_error_message(traceback.format_exc())
-
-        logger.warning(
-            "Agent %s failed in stage: %s",
-            agent_name, error_message
-        )
-
-    # Compute error fingerprint (best-effort)
-    fingerprint = None
+def _compute_error_fingerprint(e: Exception, error_type: str) -> Optional[str]:
+    """Compute an error fingerprint (best-effort, never raises)."""
     try:
         from src.observability.error_fingerprinting import compute_fingerprint
-        fingerprint = compute_fingerprint(type(e).__name__, error_type, str(e))
+        return compute_fingerprint(type(e).__name__, error_type, str(e))
     except Exception:  # noqa: BLE001 — fingerprinting must never disrupt execution
-        pass
+        return None
+
+
+def _build_error_result(agent_name: str, e: Exception, duration: float) -> Dict[str, Any]:
+    """Build error result dict from an exception."""
+    error_type, error_message, error_traceback = _classify_error(agent_name, e)
+    fingerprint = _compute_error_fingerprint(e, error_type)
 
     output_data: Dict[str, Any] = {
         StateKeys.OUTPUT: "",

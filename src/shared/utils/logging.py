@@ -248,16 +248,18 @@ class ExecutionContextFilter(logging.Filter):
             setattr(record, field_name, getattr(ctx, field_name, None) if ctx else None)
 
         # Optionally inject OTEL trace/span IDs
-        record.trace_id = None  # type: ignore[attr-defined]
-        record.span_id = None  # type: ignore[attr-defined]
+        record.trace_id = None
+        record.span_id = None
         try:
             from opentelemetry import trace as otel_trace
 
-            span = otel_trace.get_current_span()
-            span_ctx = span.get_span_context()
-            if span_ctx and span_ctx.trace_id:
-                record.trace_id = format(span_ctx.trace_id, "032x")  # type: ignore[attr-defined]
-                record.span_id = format(span_ctx.span_id, "016x")  # type: ignore[attr-defined]
+            get_span = getattr(otel_trace, "get_current_span", None)
+            if get_span is not None:
+                span = get_span()
+                span_ctx = span.get_span_context()
+                if span_ctx and span_ctx.trace_id:
+                    record.trace_id = format(span_ctx.trace_id, "032x")
+                    record.span_id = format(span_ctx.span_id, "016x")
         except ImportError:
             pass  # opentelemetry not installed — skip
 
@@ -373,6 +375,40 @@ class StructuredFormatter(SecretRedactingFormatter):
     - extra: Additional context fields
     """
 
+    # Attributes that belong to LogRecord itself or are promoted to top-level
+    _BUILTIN_ATTRS = frozenset({
+        'name', 'msg', 'args', 'created', 'filename', 'funcName',
+        'levelname', 'levelno', 'lineno', 'module', 'msecs',
+        'message', 'pathname', 'process', 'processName',
+        'relativeCreated', 'thread', 'threadName', 'exc_info',
+        'exc_text', 'stack_info',
+        # Context fields already promoted in format()
+        'workflow_id', 'stage_id', 'agent_id', 'session_id',
+        'trace_id', 'span_id',
+    })
+
+    # Execution-context fields promoted to top-level JSON keys
+    _CONTEXT_FIELDS = (
+        'workflow_id', 'stage_id', 'agent_id',
+        'session_id', 'trace_id', 'span_id',
+    )
+
+    def _collect_extra_fields(self, record: logging.LogRecord) -> dict:
+        """Extract non-builtin record attributes, redacting secrets.
+
+        Returns:
+            Dict of extra fields (may be empty).
+        """
+        extra_fields = {}
+        for key, value in record.__dict__.items():
+            if key in self._BUILTIN_ATTRS or key.startswith('_'):
+                continue
+            if any(pattern in key.lower() for pattern in self.REDACTED_KEYS):
+                extra_fields[key] = '***REDACTED***'
+            else:
+                extra_fields[key] = value
+        return extra_fields
+
     def format(self, record: logging.LogRecord) -> str:
         """
         Format log record as JSON with injection prevention and secret redaction.
@@ -397,8 +433,7 @@ class StructuredFormatter(SecretRedactingFormatter):
 
         # Promote execution context fields to top-level JSON
         # (injected by ExecutionContextFilter)
-        for ctx_field in ('workflow_id', 'stage_id', 'agent_id',
-                          'session_id', 'trace_id', 'span_id'):
+        for ctx_field in self._CONTEXT_FIELDS:
             value = getattr(record, ctx_field, None)
             if value is not None:
                 log_entry[ctx_field] = value
@@ -407,27 +442,7 @@ class StructuredFormatter(SecretRedactingFormatter):
         if record.exc_info:
             log_entry['exception'] = self.formatException(record.exc_info)
 
-        # Add extra fields (avoiding built-in and context attributes)
-        builtin_attrs = {
-            'name', 'msg', 'args', 'created', 'filename', 'funcName',
-            'levelname', 'levelno', 'lineno', 'module', 'msecs',
-            'message', 'pathname', 'process', 'processName',
-            'relativeCreated', 'thread', 'threadName', 'exc_info',
-            'exc_text', 'stack_info',
-            # Context fields already promoted above
-            'workflow_id', 'stage_id', 'agent_id', 'session_id',
-            'trace_id', 'span_id',
-        }
-
-        extra_fields = {}
-        for key, value in record.__dict__.items():
-            if key not in builtin_attrs and not key.startswith('_'):
-                # Redact secret fields
-                if any(pattern in key.lower() for pattern in self.REDACTED_KEYS):
-                    extra_fields[key] = '***REDACTED***'
-                else:
-                    extra_fields[key] = value
-
+        extra_fields = self._collect_extra_fields(record)
         if extra_fields:
             log_entry['extra'] = extra_fields
 
@@ -476,104 +491,111 @@ class ConsoleFormatter(SecretRedactingFormatter):
         return formatted
 
 
+def _configure_console_handler(
+    numeric_level: int,
+    context_filter: ExecutionContextFilter,
+    use_colors: bool,
+) -> logging.Handler:
+    """Create a console handler with the given level, filter, and color settings."""
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(numeric_level)
+    console_handler.setFormatter(ConsoleFormatter(use_colors=use_colors))
+    console_handler.addFilter(context_filter)
+    return console_handler
+
+
+def _configure_json_handler(
+    numeric_level: int,
+    context_filter: ExecutionContextFilter,
+) -> logging.Handler:
+    """Create a JSON handler writing to stderr with structured formatting."""
+    json_handler = logging.StreamHandler(sys.stderr)
+    json_handler.setLevel(numeric_level)
+    json_handler.setFormatter(StructuredFormatter())
+    json_handler.addFilter(context_filter)
+    return json_handler
+
+
+def _configure_rich_handler(
+    numeric_level: int,
+    context_filter: ExecutionContextFilter,
+    use_colors: bool,
+) -> logging.Handler:
+    """Create a Rich handler, falling back to console if Rich is unavailable."""
+    try:
+        from rich.logging import RichHandler
+        rich_handler = RichHandler(
+            show_path=False, show_time=True, markup=False
+        )
+        rich_handler.setLevel(numeric_level)
+        rich_handler.addFilter(context_filter)
+        return rich_handler
+    except ImportError:
+        # Fall back to console if rich not available
+        return _configure_console_handler(numeric_level, context_filter, use_colors)
+
+
+def _configure_file_handler(
+    log_file: str,
+    numeric_level: int,
+    context_filter: ExecutionContextFilter,
+) -> logging.Handler:
+    """Create a file handler with structured JSON formatting."""
+    log_path = Path(log_file)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(numeric_level)
+    file_handler.setFormatter(StructuredFormatter())
+    file_handler.addFilter(context_filter)
+    return file_handler
+
+
 def setup_logging(
     level: Optional[str] = None,
     format_type: Optional[str] = None,
     log_file: Optional[str] = None,
     use_colors: bool = True
 ) -> None:
-    """
-    Configure logging for the application.
+    """Configure logging for the application.
 
     Args:
-        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-               If None, reads from LOG_LEVEL env var (default: INFO)
-        format_type: Output format ("console", "json", "rich", or "both").
-                     If None, reads from MAF_LOG_FORMAT env var (default: "console")
-        log_file: Optional file path for logging
-        use_colors: Whether to use colors in console output
+        level: Log level (default: LOG_LEVEL env var or INFO).
+        format_type: Output format - "console", "json", "rich", or "both"
+                     (default: MAF_LOG_FORMAT env var or "console").
+        log_file: Optional file path for logging.
+        use_colors: Whether to use colors in console output.
 
-    The ``ExecutionContextFilter`` is attached to every handler so that
-    ``workflow_id``, ``stage_id``, ``agent_id``, ``session_id``,
-    ``trace_id``, and ``span_id`` are available on every ``LogRecord``
-    without touching any existing log call sites.
-
-    Example:
-        >>> setup_logging(level="DEBUG", format_type="json")
-        >>> logger = get_logger(__name__)
-        >>> logger.info("Application started", version="1.0")
+    ``ExecutionContextFilter`` is attached to every handler so that
+    execution-context and OTEL fields are available on every ``LogRecord``.
     """
-    # Get log level from environment or parameter
     if level is None:
         level = os.environ.get('LOG_LEVEL', 'INFO').upper()
-
-    # Get format type from environment or parameter
     if format_type is None:
         format_type = os.environ.get('MAF_LOG_FORMAT', 'console').lower()
 
-    # Validate log level
     numeric_level = getattr(logging, level, None)
     if not isinstance(numeric_level, int):
         numeric_level = logging.INFO
 
-    # Shared context filter — attached to every handler
     context_filter = ExecutionContextFilter()
-
-    # Get root logger
     root_logger = logging.getLogger()
     root_logger.setLevel(numeric_level)
-
-    # Remove existing handlers
     root_logger.handlers.clear()
 
-    # Add console handler
     if format_type in ('console', 'both'):
-        console_handler = logging.StreamHandler(sys.stdout)
-        console_handler.setLevel(numeric_level)
-        console_handler.setFormatter(ConsoleFormatter(use_colors=use_colors))
-        console_handler.addFilter(context_filter)
-        root_logger.addHandler(console_handler)
-
-    # Add JSON handler (for structured logging)
+        root_logger.addHandler(
+            _configure_console_handler(numeric_level, context_filter, use_colors))
     if format_type in ('json', 'both'):
-        json_handler = logging.StreamHandler(sys.stderr)
-        json_handler.setLevel(numeric_level)
-        json_handler.setFormatter(StructuredFormatter())
-        json_handler.addFilter(context_filter)
-        root_logger.addHandler(json_handler)
-
-    # Add Rich handler (for development with --show-details)
+        root_logger.addHandler(
+            _configure_json_handler(numeric_level, context_filter))
     if format_type == 'rich':
-        try:
-            from rich.logging import RichHandler
-            rich_handler = RichHandler(
-                show_path=False, show_time=True, markup=False
-            )
-            rich_handler.setLevel(numeric_level)
-            rich_handler.addFilter(context_filter)
-            root_logger.addHandler(rich_handler)
-        except ImportError:
-            # Fall back to console if rich not available
-            console_handler = logging.StreamHandler(sys.stdout)
-            console_handler.setLevel(numeric_level)
-            console_handler.setFormatter(ConsoleFormatter(use_colors=use_colors))
-            console_handler.addFilter(context_filter)
-            root_logger.addHandler(console_handler)
-
-    # Add file handler if specified
+        root_logger.addHandler(
+            _configure_rich_handler(numeric_level, context_filter, use_colors))
     if log_file:
-        log_path = Path(log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        root_logger.addHandler(
+            _configure_file_handler(log_file, numeric_level, context_filter))
 
-        file_handler = logging.FileHandler(log_file)
-        file_handler.setLevel(numeric_level)
-        file_handler.setFormatter(StructuredFormatter())
-        file_handler.addFilter(context_filter)
-        root_logger.addHandler(file_handler)
-
-    # Log initial configuration
-    logger = get_logger(__name__)
-    logger.debug(
+    get_logger(__name__).debug(
         f"Logging configured: level={level}, format={format_type}, file={log_file}"
     )
 

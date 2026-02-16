@@ -20,10 +20,12 @@ agent:
       ## Workspace
       {{ workspace_path }}
 
-      You MUST use Bash to inspect the existing codebase before giving your analysis:
-      - `ls -R {{ workspace_path }}` to see all files
-      - `cat` key files (models, routes, main) to understand current structure
-      - `find {{ workspace_path }} -name '*.py'` to discover all Python files
+      You MUST use Bash to inspect the existing codebase before giving your analysis.
+      Always pass working_directory="{{ workspace_path }}" as a parameter to every Bash call.
+      Do NOT use `cd ... &&` chains.
+      - `ls -R` (with working_directory set) to see all files
+      - `cat <file>` to read key files (models, routes, main)
+      - `find . -name '*.py'` to discover all Python files
 
       ## Your Task
       Analyze the suggestion from a SAFETY perspective:

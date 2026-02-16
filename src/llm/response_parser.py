@@ -4,10 +4,13 @@ Provides pure functions for parsing XML-tagged tool calls, answers, and reasonin
 from LLM response text, plus sanitization of tool output to prevent prompt injection.
 """
 import json
+import logging
 import re
 from typing import Any, Dict, List, Optional
 
 from src.llm.constants import REGEX_XML_TAG_CLOSING
+
+logger = logging.getLogger(__name__)
 
 # XML tag constants for parsing LLM responses
 TOOL_CALL_TAG = "tool_call"
@@ -33,6 +36,31 @@ REASONING_PATTERNS = {
 }
 
 
+def _extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
+    """Extract tool call dicts from text containing <tool_call> tags."""
+    tool_calls = []
+    for match in TOOL_CALL_PATTERN.findall(text):
+        try:
+            tool_call = json.loads(match.strip())
+            if "name" in tool_call:
+                tool_calls.append(tool_call)
+        except json.JSONDecodeError:
+            logger.warning(
+                "Malformed JSON in <tool_call> tag: %s",
+                match[:200],  # noqa: scanner: skip-magic
+            )
+    return tool_calls
+
+
+# Literal tag strings used for replacement and detection
+_TOOL_CALL_OPEN_TAG = "<tool_call>"
+_TOOL_CALL_CLOSE_TAG = "</tool_call>"
+
+# HTML-encoded tool_call tags that some models produce in multi-turn
+_HTML_TOOL_CALL_OPEN = "&lt;tool_call&gt;"
+_HTML_TOOL_CALL_CLOSE = "&lt;/tool_call&gt;"
+
+
 def parse_tool_calls(llm_response: str) -> List[Dict[str, Any]]:
     """Parse tool calls from LLM response.
 
@@ -41,23 +69,42 @@ def parse_tool_calls(llm_response: str) -> List[Dict[str, Any]]:
     {"name": "calculator", "parameters": {"expression": "2+2"}}
     </tool_call>
 
+    Also handles HTML-encoded variants (&lt;tool_call&gt;) that some
+    models produce in multi-turn conversations.
+
     Args:
         llm_response: Raw LLM response text
 
     Returns:
         List of tool call dicts with 'name' and 'parameters' keys
     """
-    tool_calls = []
+    tool_calls = _extract_tool_calls_from_text(llm_response)
 
-    matches = TOOL_CALL_PATTERN.findall(llm_response)
+    # Fallback: some models HTML-encode the tags in multi-turn
+    if not tool_calls and _HTML_TOOL_CALL_OPEN in llm_response:
+        decoded = llm_response.replace(
+            _HTML_TOOL_CALL_OPEN, _TOOL_CALL_OPEN_TAG
+        ).replace(
+            _HTML_TOOL_CALL_CLOSE, _TOOL_CALL_CLOSE_TAG
+        )
+        tool_calls = _extract_tool_calls_from_text(decoded)
+        if tool_calls:
+            logger.info(
+                "Recovered %d tool call(s) from HTML-encoded tags",
+                len(tool_calls),
+            )
 
-    for match in matches:
-        try:
-            tool_call = json.loads(match.strip())
-            if "name" in tool_call:
-                tool_calls.append(tool_call)
-        except json.JSONDecodeError:
-            continue
+    # Diagnostic: detect tool calls written as text but not parsed
+    if not tool_calls and _TOOL_CALL_OPEN_TAG in llm_response:
+        unclosed = llm_response.count(_TOOL_CALL_OPEN_TAG)
+        closed = llm_response.count(_TOOL_CALL_CLOSE_TAG)
+        logger.warning(
+            "Response contains <tool_call> text (%d open, %d close) "
+            "but 0 valid tool calls parsed — possible truncation or "
+            "malformed XML",
+            unclosed,
+            closed,
+        )
 
     return tool_calls
 

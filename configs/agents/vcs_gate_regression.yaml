@@ -23,11 +23,13 @@ agent:
       ## Your Task
       Verify that the new code does NOT break existing functionality.
 
-      Use Bash to:
-      1. Read existing code: `cat {{ workspace_path }}/<file>`
-      2. Check imports still work: `cd {{ workspace_path }} && python3 -c "import ..."`
-      3. Run existing tests if any: `cd {{ workspace_path }} && python3 -m pytest` (if tests exist)
+      Use Bash with working_directory="{{ workspace_path }}" to:
+      1. Read existing code: `cat <file>` (with working_directory set)
+      2. Check imports still work: `python3 -c "import ..."` (with working_directory set)
+      3. Run existing tests if any: `python3 -m pytest` (with working_directory set, if tests exist)
       4. Verify API endpoints still respond correctly (if applicable)
+
+      IMPORTANT: Do NOT use `cd ... &&` chains. Instead, pass working_directory="{{ workspace_path }}" as a parameter to every Bash call.
 
       Rules:
       - Only mark FAIL for ACTUAL regressions with evidence

@@ -455,6 +455,47 @@ class CompiledGraphRunner:
 
         return WorkflowDomainState.from_dict(domain_dict)
 
+    def execute_with_optimization(
+        self,
+        input_data: Dict[str, Any],
+        optimization_config: Any,
+        workflow_id: Optional[str] = None,
+        llm: Optional[Any] = None,
+        experiment_service: Optional[Any] = None,
+    ) -> Dict[str, Any]:
+        """Execute with optimization pipeline.
+
+        Falls through to execute() if optimization is disabled or
+        has no pipeline steps configured.
+
+        Args:
+            input_data: Input data for workflow
+            optimization_config: OptimizationConfig instance
+            workflow_id: Optional workflow execution ID
+            llm: LLM instance for LLM-based evaluators
+            experiment_service: ExperimentService for tuning optimizer
+
+        Returns:
+            Final workflow state dict (best output from optimization)
+        """
+        from src.improvement._schemas import OptimizationConfig
+        from src.improvement.engine import OptimizationEngine
+
+        if not isinstance(optimization_config, OptimizationConfig):
+            return self.execute(input_data, workflow_id)
+
+        if not optimization_config.enabled or not optimization_config.pipeline:
+            return self.execute(input_data, workflow_id)
+
+        engine = OptimizationEngine(
+            config=optimization_config,
+            llm=llm,
+            experiment_service=experiment_service,
+        )
+
+        result = engine.run(runner=self, input_data=input_data)
+        return result.output
+
 
 # Backward-compat alias (renamed to avoid naming collision with engines/workflow_executor.py)
 WorkflowExecutor = CompiledGraphRunner

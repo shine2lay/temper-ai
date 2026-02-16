@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.llm.service import LLMService, LLMRunResult, _RunState
-from src.observability.llm_loop_events import (
+from src.llm.llm_loop_events import (
     CacheEventData,
     LLMIterationEventData,
     emit_llm_iteration_event,

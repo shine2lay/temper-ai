@@ -20,6 +20,10 @@ agent:
       command: "find {{ workspace_path }} -name '*.py' -exec python3 -m py_compile {} +"
       timeout_seconds: 30
 
+    - name: ruff_autofix
+      command: "cd {{ workspace_path }} && if python3 -c 'import ruff' 2>/dev/null; then python3 -m ruff format . && python3 -m ruff check --select=E,F --fix . 2>&1; echo 'autofix applied'; else echo 'ruff not installed, skipping autofix'; fi"
+      timeout_seconds: 30
+
     - name: ruff_lint
       command: "cd {{ workspace_path }} && if python3 -c 'import ruff' 2>/dev/null; then python3 -m ruff check --select=E,F --no-fix .; else echo 'ruff not installed, skipping lint'; fi"
       timeout_seconds: 30
@@ -43,6 +47,8 @@ agent:
       - If ANY check has non-zero exit code → OVERALL: FAIL
       - Copy the exact error output into ERRORS — do not paraphrase
       - Do NOT speculate about issues not shown in the results
+      - ruff_autofix runs `ruff format` and `ruff check --fix` to auto-fix formatting
+        and trivially fixable issues BEFORE the lint check. Treat autofix as informational.
       - For ruff_lint: if ruff is not installed the check says "skipping" → treat as PASS.
         If ruff ran and found errors (exit code 1) → FAIL. Include the ruff output in ERRORS.
       - For import_modules: each line shows "import <mod>..." followed by output.

@@ -321,6 +321,27 @@ def on_call_success(breaker: Any, reserved_state: Optional[Any] = None) -> None:
         _fire_observability_callbacks(breaker, old_state, new_state)
 
 
+def _should_open_on_failure(breaker: Any, reserved_state: Optional[Any]) -> bool:
+    """Determine whether a failure should trip the breaker to OPEN.
+
+    Args:
+        breaker: CircuitBreaker instance (lock must be held by caller).
+        reserved_state: State at time of reservation.
+
+    Returns:
+        True if the breaker should transition to OPEN.
+    """
+    from src.shared.core.circuit_breaker import CircuitState
+
+    if breaker._state == CircuitState.HALF_OPEN:
+        return True
+    if reserved_state == CircuitState.HALF_OPEN and breaker._state != CircuitState.HALF_OPEN:
+        return True
+    if breaker.failure_count >= breaker.config.failure_threshold:
+        return True
+    return False
+
+
 def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any] = None) -> None:
     """Handle failed call() execution.
 
@@ -349,14 +370,7 @@ def on_call_failure(breaker: Any, error: Exception, reserved_state: Optional[Any
 
             prev_state = breaker._state
 
-            if breaker._state == CircuitState.HALF_OPEN:
-                breaker._state = CircuitState.OPEN
-            elif (
-                reserved_state == CircuitState.HALF_OPEN
-                and breaker._state != CircuitState.HALF_OPEN
-            ):
-                breaker._state = CircuitState.OPEN
-            elif breaker.failure_count >= breaker.config.failure_threshold:
+            if _should_open_on_failure(breaker, reserved_state):
                 breaker._state = CircuitState.OPEN
 
             if breaker._state != prev_state:

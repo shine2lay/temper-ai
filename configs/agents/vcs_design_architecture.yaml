@@ -21,7 +21,9 @@ agent:
       {{ workspace_path }}
 
       Use Bash to inspect the existing codebase (ls, cat, find) so your
-      architecture recommendations are grounded in what already exists.
+      architecture recommendations are grounded in what already exists. Always pass
+      working_directory="{{ workspace_path }}" as a parameter to every Bash call.
+      Do NOT use `cd ... &&` chains.
 
       ## Your Task
       Analyze the suggestion from an ARCHITECTURE perspective:

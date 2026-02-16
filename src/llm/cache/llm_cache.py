@@ -734,7 +734,7 @@ class LLMCache:
         """Fire a cache event to the on_event callback if set."""
         if self._on_event is None:
             return
-        from src.observability.llm_loop_events import CacheEventData, emit_cache_event
+        from src.llm.llm_loop_events import CacheEventData, emit_cache_event
 
         prefix = key[:CACHE_KEY_LOG_LENGTH] if key else ""
         size = None

@@ -232,8 +232,8 @@ class Bash(BaseTool):
         else:
             desc = (
                 "Executes shell commands in a sandboxed workspace directory. "
-                "Only allowed commands (npm, npx, node, hardhat, ls, cat, find, "
-                "mkdir, pwd) can be run. Working directory must be within workspace/."
+                "Only allowed commands can be run. No chaining with && or ;. "
+                "Use the working_directory parameter instead of cd."
             )
         return ToolMetadata(
             name="Bash",
@@ -256,9 +256,10 @@ class Bash(BaseTool):
             )
         else:
             cmd_desc = (
-                "Shell command to execute. Must start with an allowed "
-                "command (npm, npx, node, hardhat, ls, cat, find, mkdir, pwd). "
-                "No shell metacharacters (;|&$`><) allowed."
+                "A single shell command to execute. Must start with an allowed "
+                "command. No shell metacharacters (;|&$`><) allowed. "
+                "Do NOT chain commands with && or ;. "
+                "Use the working_directory parameter instead of 'cd'."
             )
         return {
             "type": "object",
@@ -271,6 +272,7 @@ class Bash(BaseTool):
                     "type": "string",
                     "description": (
                         "Working directory for command execution. "
+                        "Use this instead of 'cd <dir> && <command>'. "
                         "Must be within the workspace/ directory."
                     ),
                 },

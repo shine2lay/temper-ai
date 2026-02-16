@@ -88,12 +88,7 @@ class WorkflowSafetyConfig(BaseModel):
     custom_rules: List[Dict[str, Any]] = Field(default_factory=list)
 
 
-class OptimizationConfig(BaseModel):
-    """Optimization configuration."""
-    current_phase: Literal["growth", "retention", "efficiency", "quality"] = "growth"
-    primary_metric: str
-    secondary_metrics: List[str] = Field(default_factory=list)
-    thresholds: Dict[str, Dict[str, float]] = Field(default_factory=dict)
+from src.improvement._schemas import OptimizationConfig  # noqa: F401
 
 
 class WorkflowObservabilityConfig(BaseModel):

@@ -13,6 +13,7 @@ from typing import Any, AsyncIterator, ContextManager, Dict, List, Optional
 from src.observability.backend import (
     AgentOutputData,
     CollaborationEventData,
+    ErrorFingerprintData,
     LLMCallData,
     ObservabilityBackend,
     ReadableBackendMixin,
@@ -286,27 +287,10 @@ class CompositeBackend(ObservabilityBackend, ReadableBackendMixin):
 
     # ========== Error Fingerprinting ==========
 
-    def record_error_fingerprint(
-        self,
-        fingerprint: str,
-        error_type: str,
-        error_code: str,
-        classification: str,
-        normalized_message: str,
-        sample_message: str,
-        workflow_id: Optional[str] = None,
-        agent_name: Optional[str] = None,
-    ) -> bool:
+    def record_error_fingerprint(self, data: ErrorFingerprintData) -> bool:
         """Delegate to primary and fan out to secondaries."""
-        result = self._primary.record_error_fingerprint(
-            fingerprint, error_type, error_code, classification,
-            normalized_message, sample_message, workflow_id, agent_name,
-        )
-        self._fan_out(
-            "record_error_fingerprint",
-            fingerprint, error_type, error_code, classification,
-            normalized_message, sample_message, workflow_id, agent_name,
-        )
+        result = self._primary.record_error_fingerprint(data)
+        self._fan_out("record_error_fingerprint", data)
         return result
 
     def get_top_errors(

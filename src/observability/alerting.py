@@ -122,7 +122,12 @@ class AlertManager:
 
     def _add_default_rules(self) -> None:
         """Add default alert rules for common issues."""
-        # High cost alert
+        self._add_cost_rules()
+        self._add_latency_rules()
+        self._add_error_rules()
+
+    def _add_cost_rules(self) -> None:
+        """Add cost-related alert rules."""
         self.add_rule(AlertRule(
             name="high_cost_per_workflow",
             metric_type=MetricType.COST_USD,
@@ -132,18 +137,19 @@ class AlertManager:
             metadata={"description": "Workflow cost exceeds $5"}
         ))
 
-        # High error rate
+        # Critical cost threshold (disabled by default — destructive action)
         self.add_rule(AlertRule(
-            name="high_error_rate",
-            metric_type=MetricType.ERROR_RATE,
-            threshold=DEFAULT_ERROR_RATE_ALERT_THRESHOLD,  # 10% error rate
-            window_seconds=SECONDS_PER_5_MINUTES,  # 5 minutes
-            severity=AlertSeverity.ERROR,
-            actions=[AlertAction.LOG_ERROR],
-            metadata={"description": "Error rate exceeds 10% in 5 minute window"}
+            name="critical_cost_budget",
+            metric_type=MetricType.COST_USD,
+            threshold=CRITICAL_WORKFLOW_COST_ALERT_THRESHOLD_USD,
+            severity=AlertSeverity.CRITICAL,
+            actions=[AlertAction.LOG_ERROR, AlertAction.HALT_WORKFLOW],
+            enabled=False,
+            metadata={"description": "Critical cost budget exceeded - halting workflow"}
         ))
 
-        # Extreme latency
+    def _add_latency_rules(self) -> None:
+        """Add latency-related alert rules."""
         self.add_rule(AlertRule(
             name="extreme_latency_p99",
             metric_type=MetricType.LATENCY_P99,
@@ -153,15 +159,16 @@ class AlertManager:
             metadata={"description": "P99 latency exceeds 10 minutes"}
         ))
 
-        # Critical cost threshold
+    def _add_error_rules(self) -> None:
+        """Add error-related alert rules."""
         self.add_rule(AlertRule(
-            name="critical_cost_budget",
-            metric_type=MetricType.COST_USD,
-            threshold=CRITICAL_WORKFLOW_COST_ALERT_THRESHOLD_USD,
-            severity=AlertSeverity.CRITICAL,
-            actions=[AlertAction.LOG_ERROR, AlertAction.HALT_WORKFLOW],
-            enabled=False,  # Disabled by default (destructive action)
-            metadata={"description": "Critical cost budget exceeded - halting workflow"}
+            name="high_error_rate",
+            metric_type=MetricType.ERROR_RATE,
+            threshold=DEFAULT_ERROR_RATE_ALERT_THRESHOLD,  # 10% error rate
+            window_seconds=SECONDS_PER_5_MINUTES,  # 5 minutes
+            severity=AlertSeverity.ERROR,
+            actions=[AlertAction.LOG_ERROR],
+            metadata={"description": "Error rate exceeds 10% in 5 minute window"}
         ))
 
         # New error type detected

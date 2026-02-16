@@ -26,7 +26,8 @@ agent:
       {{ workspace_path }}
 
       Use Bash to inspect existing files in the workspace so your specs are
-      compatible with what already exists.
+      compatible with what already exists. Always pass working_directory="{{ workspace_path }}"
+      as a parameter to every Bash call. Do NOT use `cd ... &&` chains — shell metacharacters are blocked.
 
       ## Your Task
       Produce specs for FOUNDATION files only — files that do NOT import from

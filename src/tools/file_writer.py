@@ -109,7 +109,7 @@ class FileWriter(BaseTool):
         """Sync allowed_root from config (may be updated by agent)."""
         current_root = (self.config or {}).get("allowed_root")
         if current_root != self._configured_root:
-            logger.warning(
+            logger.info(
                 "FileWriter allowed_root changed: %s -> %s",
                 self._configured_root,
                 current_root,

@@ -101,6 +101,19 @@ class CollaborationEventData:
     timestamp: Optional[datetime] = None
 
 
+@dataclass(frozen=True)
+class ErrorFingerprintData:
+    """Data for recording an error fingerprint."""
+    fingerprint: str
+    error_type: str
+    error_code: str
+    classification: str
+    normalized_message: str
+    sample_message: str
+    workflow_id: Optional[str] = None
+    agent_name: Optional[str] = None
+
+
 class ReadableBackendMixin:
     """Mixin providing default read operations for observability data.
 
@@ -133,7 +146,171 @@ class ReadableBackendMixin:
         return None
 
 
-class ObservabilityBackend(ABC):
+class _AsyncBackendDefaults:
+    """Mixin providing default async implementations that delegate to sync.
+
+    All async methods call their sync counterparts via asyncio.to_thread.
+    The sync methods (e.g. self.track_workflow_start) are resolved at
+    runtime through MRO from ObservabilityBackend.
+    """
+
+    async def atrack_workflow_start(
+        self, workflow_id: str, workflow_name: str,
+        workflow_config: Dict[str, Any], start_time: datetime,
+        data: Optional[WorkflowStartData] = None,
+    ) -> None:
+        """Async version of track_workflow_start."""
+        await asyncio.to_thread(
+            self.track_workflow_start, workflow_id, workflow_name,
+            workflow_config, start_time, data,
+        )
+
+    async def atrack_workflow_end(
+        self, workflow_id: str, end_time: datetime, status: str,
+        error_message: Optional[str] = None,
+        error_stack_trace: Optional[str] = None,
+    ) -> None:
+        """Async version of track_workflow_end."""
+        await asyncio.to_thread(
+            self.track_workflow_end, workflow_id, end_time, status,  # type: ignore[arg-type]
+            error_message, error_stack_trace,
+        )
+
+    async def aupdate_workflow_metrics(
+        self, workflow_id: str, total_llm_calls: int,
+        total_tool_calls: int, total_tokens: int,
+        total_cost_usd: float,
+    ) -> None:
+        """Async version of update_workflow_metrics."""
+        await asyncio.to_thread(
+            self.update_workflow_metrics, workflow_id,
+            total_llm_calls, total_tool_calls, total_tokens,
+            total_cost_usd,
+        )
+
+    async def atrack_stage_start(
+        self, stage_id: str, workflow_id: str, stage_name: str,
+        stage_config: Dict[str, Any], start_time: datetime,
+        input_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Async version of track_stage_start."""
+        await asyncio.to_thread(
+            self.track_stage_start, stage_id, workflow_id,
+            stage_name, stage_config, start_time, input_data,
+        )
+
+    async def atrack_stage_end(
+        self, stage_id: str, end_time: datetime, status: str,
+        error_message: Optional[str] = None,
+        num_agents_executed: int = 0, num_agents_succeeded: int = 0,
+        num_agents_failed: int = 0,
+    ) -> None:
+        """Async version of track_stage_end."""
+        await asyncio.to_thread(
+            self.track_stage_end, stage_id, end_time, status,  # type: ignore[arg-type]
+            error_message, num_agents_executed, num_agents_succeeded,
+            num_agents_failed,
+        )
+
+    async def aset_stage_output(
+        self, stage_id: str, output_data: Dict[str, Any],
+        output_lineage: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Async version of set_stage_output."""
+        await asyncio.to_thread(
+            self.set_stage_output, stage_id, output_data,
+            output_lineage,
+        )
+
+    async def atrack_agent_start(
+        self, agent_id: str, stage_id: str, agent_name: str,
+        agent_config: Dict[str, Any], start_time: datetime,
+        input_data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """Async version of track_agent_start."""
+        await asyncio.to_thread(
+            self.track_agent_start, agent_id, stage_id,
+            agent_name, agent_config, start_time, input_data,
+        )
+
+    async def atrack_agent_end(
+        self, agent_id: str, end_time: datetime, status: str,
+        error_message: Optional[str] = None,
+    ) -> None:
+        """Async version of track_agent_end."""
+        await asyncio.to_thread(
+            self.track_agent_end, agent_id, end_time, status,  # type: ignore[arg-type]
+            error_message,
+        )
+
+    async def aset_agent_output(
+        self, agent_id: str, output_data: Dict[str, Any],
+        metrics: Optional[AgentOutputData] = None,
+    ) -> None:
+        """Async version of set_agent_output."""
+        await asyncio.to_thread(
+            self.set_agent_output, agent_id, output_data, metrics,
+        )
+
+    async def atrack_llm_call(
+        self, llm_call_id: str, agent_id: str, provider: str,
+        model: str, start_time: datetime, data: LLMCallData,
+    ) -> None:
+        """Async version of track_llm_call."""
+        await asyncio.to_thread(
+            self.track_llm_call, llm_call_id, agent_id,
+            provider, model, start_time, data,
+        )
+
+    async def atrack_tool_call(
+        self, tool_execution_id: str, agent_id: str,
+        tool_name: str, start_time: datetime, data: ToolCallData,
+    ) -> None:
+        """Async version of track_tool_call."""
+        await asyncio.to_thread(
+            self.track_tool_call, tool_execution_id, agent_id,
+            tool_name, start_time, data,
+        )
+
+    async def atrack_safety_violation(
+        self, violation_severity: str, violation_message: str,
+        policy_name: str,
+        data: Optional[SafetyViolationData] = None,
+    ) -> None:
+        """Async version of track_safety_violation."""
+        await asyncio.to_thread(
+            self.track_safety_violation, violation_severity,  # type: ignore[arg-type]
+            violation_message, policy_name, data,
+        )
+
+    async def atrack_collaboration_event(
+        self, stage_id: str, event_type: str,
+        agents_involved: List[str],
+        data: Optional[CollaborationEventData] = None,
+    ) -> str:
+        """Async version of track_collaboration_event."""
+        return await asyncio.to_thread(
+            self.track_collaboration_event, stage_id, event_type,
+            agents_involved, data,
+        )
+
+    @asynccontextmanager
+    async def aget_session_context(self) -> AsyncIterator[Any]:
+        """Async version of get_session_context. Default wraps sync."""
+        cm = self.get_session_context()
+        session = await asyncio.to_thread(cm.__enter__)
+        try:
+            yield session
+        except Exception as exc:
+            await asyncio.to_thread(
+                cm.__exit__, type(exc), exc, exc.__traceback__,
+            )
+            raise
+        else:
+            await asyncio.to_thread(cm.__exit__, None, None, None)
+
+
+class ObservabilityBackend(_AsyncBackendDefaults, ABC):
     """
     Abstract backend for observability data storage.
 
@@ -151,6 +328,9 @@ class ObservabilityBackend(ABC):
     - Backends handle their own connection management
     - Session/transaction management is backend-specific
     - Errors should be raised for unrecoverable failures
+
+    Async methods are inherited from _AsyncBackendDefaults; they delegate
+    to the sync abstract methods via asyncio.to_thread.
     """
 
     # ========== Workflow Tracking ==========
@@ -440,31 +620,15 @@ class ObservabilityBackend(ABC):
 
     # ========== Error Fingerprinting ==========
 
-    def record_error_fingerprint(
-        self,
-        fingerprint: str,
-        error_type: str,
-        error_code: str,
-        classification: str,
-        normalized_message: str,
-        sample_message: str,
-        workflow_id: Optional[str] = None,
-        agent_name: Optional[str] = None,
-    ) -> bool:
+    def record_error_fingerprint(self, data: ErrorFingerprintData) -> bool:
         """Record or update an error fingerprint.
 
         Upserts: if fingerprint exists, increments count and updates last_seen.
         If new, creates record with count=1.
 
         Args:
-            fingerprint: 16-char hex fingerprint hash
-            error_type: Exception class name
-            error_code: Canonical error code
-            classification: transient/permanent/safety/unknown
-            normalized_message: Deterministic normalized message
-            sample_message: One raw example (truncated)
-            workflow_id: Optional workflow context
-            agent_name: Optional agent context
+            data: ErrorFingerprintData bundle containing fingerprint hash,
+                error type/code, classification, messages, and optional context.
 
         Returns:
             True if this is a newly-seen fingerprint, False if existing.
@@ -510,163 +674,6 @@ class ObservabilityBackend(ABC):
                 pass
         """
         pass
-
-    # ========== Async Methods (default: delegate to sync via asyncio.to_thread) ==========
-
-    async def atrack_workflow_start(
-        self, workflow_id: str, workflow_name: str,
-        workflow_config: Dict[str, Any], start_time: datetime,
-        data: Optional[WorkflowStartData] = None,
-    ) -> None:
-        """Async version of track_workflow_start."""
-        await asyncio.to_thread(
-            self.track_workflow_start, workflow_id, workflow_name,
-            workflow_config, start_time, data,
-        )
-
-    async def atrack_workflow_end(
-        self, workflow_id: str, end_time: datetime, status: str,
-        error_message: Optional[str] = None,
-        error_stack_trace: Optional[str] = None,
-    ) -> None:
-        """Async version of track_workflow_end."""
-        await asyncio.to_thread(
-            self.track_workflow_end, workflow_id, end_time, status,  # type: ignore[arg-type]
-            error_message, error_stack_trace,
-        )
-
-    async def aupdate_workflow_metrics(
-        self, workflow_id: str, total_llm_calls: int,
-        total_tool_calls: int, total_tokens: int,
-        total_cost_usd: float,
-    ) -> None:
-        """Async version of update_workflow_metrics."""
-        await asyncio.to_thread(
-            self.update_workflow_metrics, workflow_id,
-            total_llm_calls, total_tool_calls, total_tokens,
-            total_cost_usd,
-        )
-
-    async def atrack_stage_start(
-        self, stage_id: str, workflow_id: str, stage_name: str,
-        stage_config: Dict[str, Any], start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Async version of track_stage_start."""
-        await asyncio.to_thread(
-            self.track_stage_start, stage_id, workflow_id,
-            stage_name, stage_config, start_time, input_data,
-        )
-
-    async def atrack_stage_end(
-        self, stage_id: str, end_time: datetime, status: str,
-        error_message: Optional[str] = None,
-        num_agents_executed: int = 0, num_agents_succeeded: int = 0,
-        num_agents_failed: int = 0,
-    ) -> None:
-        """Async version of track_stage_end."""
-        await asyncio.to_thread(
-            self.track_stage_end, stage_id, end_time, status,  # type: ignore[arg-type]
-            error_message, num_agents_executed, num_agents_succeeded,
-            num_agents_failed,
-        )
-
-    async def aset_stage_output(
-        self, stage_id: str, output_data: Dict[str, Any],
-        output_lineage: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Async version of set_stage_output."""
-        await asyncio.to_thread(
-            self.set_stage_output, stage_id, output_data,
-            output_lineage,
-        )
-
-    async def atrack_agent_start(
-        self, agent_id: str, stage_id: str, agent_name: str,
-        agent_config: Dict[str, Any], start_time: datetime,
-        input_data: Optional[Dict[str, Any]] = None,
-    ) -> None:
-        """Async version of track_agent_start."""
-        await asyncio.to_thread(
-            self.track_agent_start, agent_id, stage_id,
-            agent_name, agent_config, start_time, input_data,
-        )
-
-    async def atrack_agent_end(
-        self, agent_id: str, end_time: datetime, status: str,
-        error_message: Optional[str] = None,
-    ) -> None:
-        """Async version of track_agent_end."""
-        await asyncio.to_thread(
-            self.track_agent_end, agent_id, end_time, status,  # type: ignore[arg-type]
-            error_message,
-        )
-
-    async def aset_agent_output(
-        self, agent_id: str, output_data: Dict[str, Any],
-        metrics: Optional[AgentOutputData] = None,
-    ) -> None:
-        """Async version of set_agent_output."""
-        await asyncio.to_thread(
-            self.set_agent_output, agent_id, output_data, metrics,
-        )
-
-    async def atrack_llm_call(
-        self, llm_call_id: str, agent_id: str, provider: str,
-        model: str, start_time: datetime, data: LLMCallData,
-    ) -> None:
-        """Async version of track_llm_call."""
-        await asyncio.to_thread(
-            self.track_llm_call, llm_call_id, agent_id,
-            provider, model, start_time, data,
-        )
-
-    async def atrack_tool_call(
-        self, tool_execution_id: str, agent_id: str,
-        tool_name: str, start_time: datetime, data: ToolCallData,
-    ) -> None:
-        """Async version of track_tool_call."""
-        await asyncio.to_thread(
-            self.track_tool_call, tool_execution_id, agent_id,
-            tool_name, start_time, data,
-        )
-
-    async def atrack_safety_violation(
-        self, violation_severity: str, violation_message: str,
-        policy_name: str,
-        data: Optional[SafetyViolationData] = None,
-    ) -> None:
-        """Async version of track_safety_violation."""
-        await asyncio.to_thread(
-            self.track_safety_violation, violation_severity,  # type: ignore[arg-type]
-            violation_message, policy_name, data,
-        )
-
-    async def atrack_collaboration_event(
-        self, stage_id: str, event_type: str,
-        agents_involved: List[str],
-        data: Optional[CollaborationEventData] = None,
-    ) -> str:
-        """Async version of track_collaboration_event."""
-        return await asyncio.to_thread(
-            self.track_collaboration_event, stage_id, event_type,
-            agents_involved, data,
-        )
-
-    @asynccontextmanager
-    async def aget_session_context(self) -> AsyncIterator[Any]:
-        """Async version of get_session_context. Default wraps sync."""
-        cm = self.get_session_context()
-        session = await asyncio.to_thread(cm.__enter__)
-        try:
-            yield session
-        except Exception as exc:
-            await asyncio.to_thread(
-                cm.__exit__, type(exc), exc, exc.__traceback__,
-            )
-            raise
-        else:
-            await asyncio.to_thread(cm.__exit__, None, None, None)
 
     # ========== Maintenance Operations ==========
 

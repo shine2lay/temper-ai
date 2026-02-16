@@ -17,12 +17,17 @@ agent:
       ## Your Task
       Create a git snapshot of the workspace so we can roll back if code generation fails.
 
+      IMPORTANT: Do NOT use `cd ... &&` chains. Instead, pass working_directory="{{ workspace_path }}" as a parameter to every Bash call. Run each command separately.
+
       Steps:
-      1. Check if {{ workspace_path }} has a .git directory
-      2. If NO .git directory:
-         - `cd {{ workspace_path }} && git init && git add -A && git commit -m "initial: pre-vcs-execute snapshot"`
-      3. If .git EXISTS:
-         - `cd {{ workspace_path }} && git add -A && git stash push -m "vcs-pre-execute-$(date +%s)"`
+      1. Check if {{ workspace_path }} has a .git directory: `ls .git` (with working_directory set)
+      2. If NO .git directory, run these commands one at a time (each with working_directory="{{ workspace_path }}"):
+         - `git init`
+         - `git add -A`
+         - `git commit -m "initial: pre-vcs-execute snapshot"`
+      3. If .git EXISTS, run these commands one at a time (each with working_directory="{{ workspace_path }}"):
+         - `git add -A`
+         - `git stash push -m "vcs-pre-execute snapshot"`
          - If stash fails (nothing to stash), that's OK — report "no changes to stash"
 
       Report what you did in the answer.

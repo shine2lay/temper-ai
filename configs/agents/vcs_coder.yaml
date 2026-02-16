@@ -33,16 +33,26 @@ agent:
       {% if validate_output %}
       ## Validation Feedback (FIX THESE ISSUES)
       The previous code was validated and FAILED. You MUST fix the issues below.
-      Use Bash (cat, ls) to read existing files first, then rewrite ONLY the files that need fixing.
+      MANDATORY PROCEDURE:
+      1. Use Bash (cat) to read each file that needs fixing.
+      2. You MUST then call the FileWriter tool with overwrite=true to write the corrected file. Do NOT just describe the fix — you MUST call FileWriter.
+      3. Every file you fix MUST be written using FileWriter. No exceptions.
 
       {{ validate_output }}
       {% elif static_output and 'OVERALL: FAIL' in static_output %}
       ## Static Check Failures (FIX THESE FIRST)
-      The previous code FAILED deterministic static checks. Fix every error below
-      before writing any new code. Use Bash (cat) to read existing files first.
+      The previous code FAILED deterministic static checks. Fix every error below.
+      MANDATORY PROCEDURE:
+      1. Use Bash (cat) to read each file that has errors.
+      2. You MUST then call the FileWriter tool with overwrite=true to write the corrected file. Do NOT just describe the fix — you MUST call FileWriter.
+      3. Every file you fix MUST be written using FileWriter. No exceptions.
 
       {{ static_output }}
       {% endif %}
+
+      ## BASH USAGE RULE
+      Always pass working_directory="{{ workspace_path }}" as a parameter to every Bash call.
+      Do NOT use `cd ... &&` chains — shell metacharacters are blocked and will fail.
 
       ## REGRESSION SAFETY RULES
       - Do NOT modify or delete existing files unless the spec explicitly requires it.
@@ -50,12 +60,17 @@ agent:
       - If you must modify an existing file, preserve all existing functions and imports.
       - Never remove existing endpoints, models, or import paths.
 
+      ## CRITICAL TOOL USAGE RULE
+      You MUST use the FileWriter tool to write or rewrite every file. NEVER output code in your text response — always call FileWriter. If you read a file with Bash (cat), you MUST follow up by calling FileWriter to write the fixed version.
+
       ## Instructions
-      1. {% if validate_output %}Read existing files with Bash (cat), then fix ONLY the failing checks above.{% else %}Write each file specified in the spec using the FileWriter tool. Always set overwrite=true.{% endif %}
+      1. {% if validate_output %}Read existing files with Bash (cat), then fix ONLY the failing checks above. Call the FileWriter tool with overwrite=true to write each fixed file.{% else %}Write each file specified in the spec using the FileWriter tool. Always set overwrite=true.{% endif %}
       2. Use absolute paths: {{ workspace_path }}/<relative_path>
       3. After writing all files, use Bash to install dependencies if needed.
       4. Write clean, production-quality Python code.
       5. Include proper imports and error handling.
+      6. Use ABSOLUTE imports (e.g., `from models import ...`), NOT relative imports (e.g., `from .models import ...`).
+      7. Keep ALL lines under 88 characters to pass ruff E501 lint checks.
 
       After all files are written, provide a summary in <answer> tags:
       <answer>

@@ -234,8 +234,8 @@ def handle_auto_rollback(executor: ToolExecutor, snapshot: Any, tool_name: str, 
     """Handle auto-rollback on tool failure."""
     try:
         rollback_result = executor.rollback_manager.execute_rollback(snapshot.id)  # type: ignore[union-attr]
-        logger.warning(
-            f"Auto-rollback executed for failed tool '{tool_name}': "
+        logger.info(
+            f"Auto-rollback for tool '{tool_name}': "
             f"status={rollback_result.status.value}, "
             f"reverted={len(rollback_result.reverted_items)}"
         )

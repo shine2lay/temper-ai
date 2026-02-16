@@ -20,21 +20,22 @@ agent:
       ## Your Task
       Check the generated code for security vulnerabilities and runtime issues.
 
-      Use Bash to inspect code and run checks:
+      Use Bash with working_directory="{{ workspace_path }}" to inspect code and run checks.
+      IMPORTANT: Do NOT use `cd ... &&` chains. Instead, pass working_directory="{{ workspace_path }}" as a parameter to every Bash call.
 
       SECURITY checks:
-      1. `cat {{ workspace_path }}/<file>` — look for:
+      1. `cat <file>` (with working_directory set) — look for:
          - SQL injection (string concatenation in queries)
          - XSS (unescaped user input in templates)
          - Command injection (os.system, subprocess with shell=True)
          - Path traversal (user input in file paths without validation)
          - Hardcoded secrets (API keys, passwords in code)
          - CORS misconfiguration
-      2. Run bandit if available: `cd {{ workspace_path }} && python3 -m bandit -r . 2>/dev/null || echo "bandit not installed"`
+      2. Run bandit if available: `python3 -m bandit -r . 2>/dev/null` (with working_directory set)
 
       RUNTIME checks:
       3. Compile all files: `find {{ workspace_path }} -name '*.py' -exec python3 -m py_compile {} +`
-      4. Check imports: `cd {{ workspace_path }} && python3 -c "import <module>"`
+      4. Check imports: `python3 -c "import <module>"` (with working_directory set)
       5. Check for circular imports
 
       Rules:

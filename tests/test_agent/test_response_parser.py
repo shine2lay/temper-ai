@@ -66,6 +66,32 @@ class TestParseToolCalls:
         assert len(calls) == 1
         assert calls[0]["name"] == "file_writer"
 
+    def test_html_encoded_tool_calls(self):
+        """Models sometimes HTML-encode <tool_call> in multi-turn."""
+        response = (
+            'Fix the file:\n'
+            '&lt;tool_call&gt;\n'
+            '{"name": "FileWriter", "parameters": '
+            '{"path": "/tmp/f.py", "contents": "x=1"}}\n'
+            '&lt;/tool_call&gt;'
+        )
+        calls = parse_tool_calls(response)
+        assert len(calls) == 1
+        assert calls[0]["name"] == "FileWriter"
+        assert calls[0]["parameters"]["path"] == "/tmp/f.py"
+
+    def test_multiple_html_encoded_tool_calls(self):
+        response = (
+            '&lt;tool_call&gt;{"name": "A", "parameters": {}}'
+            '&lt;/tool_call&gt;\n'
+            '&lt;tool_call&gt;{"name": "B", "parameters": {}}'
+            '&lt;/tool_call&gt;'
+        )
+        calls = parse_tool_calls(response)
+        assert len(calls) == 2
+        assert calls[0]["name"] == "A"
+        assert calls[1]["name"] == "B"
+
     def test_empty_string(self):
         assert parse_tool_calls("") == []
 

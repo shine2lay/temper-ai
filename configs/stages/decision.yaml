@@ -46,17 +46,12 @@ stage:
       description: "Combined reasoning from all agents"
 
     votes:
-      type: object
+      type: dict
       description: "Vote distribution across options"
 
   # Collaboration strategy
   collaboration:
-    strategy: DialogueOrchestrator
-    max_rounds: 1
-    convergence_threshold: 0.8
-    dialogue_mode: false
-    config:
-      min_consensus: 0.67  # 2 out of 3 agents must agree
+    strategy: consensus
 
   # Conflict resolution
   conflict_resolution:

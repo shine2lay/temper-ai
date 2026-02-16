@@ -761,9 +761,11 @@ def _record_fingerprint_safe(backend: Any, error: Exception, workflow_id: Option
     try:
         from src.observability.error_fingerprinting import compute_error_fingerprint
 
+        from src.observability.backend import ErrorFingerprintData
+
         result = compute_error_fingerprint(error)
         if hasattr(backend, "record_error_fingerprint"):
-            is_new = backend.record_error_fingerprint(
+            fp_data = ErrorFingerprintData(
                 fingerprint=result.fingerprint,
                 error_type=result.error_type,
                 error_code=result.error_code,
@@ -773,6 +775,7 @@ def _record_fingerprint_safe(backend: Any, error: Exception, workflow_id: Option
                 workflow_id=workflow_id,
                 agent_name=agent_name,
             )
+            is_new = backend.record_error_fingerprint(fp_data)
             return bool(is_new)
     except Exception:  # noqa: BLE001 — fingerprinting must never disrupt execution
         logger.debug("Error fingerprinting failed", exc_info=True)

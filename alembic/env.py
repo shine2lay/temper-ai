@@ -23,9 +23,6 @@ if config.config_file_name is not None:
 from sqlmodel import SQLModel
 import src.observability.models  # noqa: F401
 import src.experimentation.models  # noqa: F401
-import src.self_improvement.storage.models  # noqa: F401
-import src.self_improvement.storage.experiment_models  # noqa: F401
-import src.self_improvement.loop.state_manager  # noqa: F401  (M5LoopStateRecord)
 
 target_metadata = SQLModel.metadata
 

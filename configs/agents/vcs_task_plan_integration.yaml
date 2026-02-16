@@ -31,7 +31,8 @@ agent:
       {{ workspace_path }}
 
       Use Bash to inspect existing files in the workspace so your specs
-      preserve backward compatibility.
+      preserve backward compatibility. Always pass working_directory="{{ workspace_path }}"
+      as a parameter to every Bash call. Do NOT use `cd ... &&` chains — shell metacharacters are blocked.
 
       ## Your Task
       Produce specs for INTEGRATION files — files that import from

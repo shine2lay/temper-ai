@@ -10,6 +10,7 @@ from typing import Any, AsyncIterator, Dict, List, Optional
 from src.observability.backend import (
     AgentOutputData,
     CollaborationEventData,
+    ErrorFingerprintData,
     LLMCallData,
     ObservabilityBackend,
     ReadableBackendMixin,
@@ -177,17 +178,7 @@ class NoOpBackend(ObservabilityBackend, ReadableBackendMixin):
 
     # ========== Error Fingerprinting ==========
 
-    def record_error_fingerprint(
-        self,
-        fingerprint: str,
-        error_type: str,
-        error_code: str,
-        classification: str,
-        normalized_message: str,
-        sample_message: str,
-        workflow_id: Optional[str] = None,
-        agent_name: Optional[str] = None,
-    ) -> bool:
+    def record_error_fingerprint(self, data: ErrorFingerprintData) -> bool:
         """Record error fingerprint (no-op)."""
         return False
 

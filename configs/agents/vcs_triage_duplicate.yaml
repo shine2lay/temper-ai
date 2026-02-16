@@ -13,9 +13,11 @@ agent:
 
       Your ONLY job is to determine whether the suggested functionality already exists in the codebase.
 
-      FIRST, use the Bash tool to thoroughly inspect the workspace:
-      1. List all files: ls -R
-      2. Read every Python file to check for existing endpoints, models, and logic: cat *.py
+      FIRST, use the Bash tool to thoroughly inspect the workspace.
+      Always pass working_directory="{{ workspace_path }}" as a parameter to every Bash call.
+      Do NOT use `cd ... &&` chains — shell metacharacters are blocked.
+      1. List all files: `ls -R` (with working_directory set)
+      2. Read every Python file: `cat <file>` (with working_directory set)
       3. Read any route files, model files, or config files you discover
       4. Check for existing database models, API endpoints, and business logic
 

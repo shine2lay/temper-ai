@@ -169,12 +169,23 @@ def create_app(
 
         shutdown_mgr = GracefulShutdownManager()
 
+    # Persistent run store for server mode
+    run_store = None
+    if mode == "server":
+        try:
+            from src.interfaces.server.run_store import RunStore
+
+            run_store = RunStore()
+        except Exception:  # noqa: BLE001
+            logger.warning("Failed to initialize RunStore, runs will not persist")
+
     # Execution service
     execution_service = WorkflowExecutionService(
         backend=backend,
         event_bus=event_bus,
         config_root=config_root,
         max_workers=max_workers,
+        run_store=run_store,
     )
 
     @asynccontextmanager
@@ -197,6 +208,12 @@ def create_app(
 
     # Configure CORS middleware
     _configure_cors(app, mode)
+
+    # API key authentication for server mode
+    if mode == "server":
+        from src.interfaces.server.auth import APIKeyMiddleware
+
+        app.add_middleware(APIKeyMiddleware)
 
     # Data service
     data_service = DashboardDataService(backend=backend, event_bus=event_bus)

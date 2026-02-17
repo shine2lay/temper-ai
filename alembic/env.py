@@ -23,6 +23,7 @@ if config.config_file_name is not None:
 from sqlmodel import SQLModel
 import src.observability.models  # noqa: F401
 import src.experimentation.models  # noqa: F401
+import src.interfaces.server.models  # noqa: F401
 
 target_metadata = SQLModel.metadata
 

@@ -115,6 +115,7 @@ class WorkflowExecutionService:
         event_bus: Any,
         config_root: str = "configs",
         max_workers: int = DEFAULT_MAX_WORKFLOW_WORKERS,
+        run_store: Any = None,
     ):
         """Initialize the execution service.
 
@@ -123,10 +124,12 @@ class WorkflowExecutionService:
             event_bus: ObservabilityEventBus for real-time updates
             config_root: Config directory root path
             max_workers: Max concurrent workflow executions
+            run_store: Optional RunStore for persistent run history
         """
         self.backend = backend
         self.event_bus = event_bus
         self.config_root = config_root
+        self.run_store = run_store
 
         # Thread pool for blocking workflow execution
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
@@ -190,6 +193,19 @@ class WorkflowExecutionService:
                 raise ValueError(f"Execution ID already exists: {execution_id}")
             self._executions[execution_id] = metadata
 
+        # Persist to store if available
+        if self.run_store is not None:
+            from src.interfaces.server.models import ServerRun
+
+            self.run_store.save_run(ServerRun(
+                execution_id=execution_id,
+                workflow_path=str(workflow_path),
+                workflow_name=workflow_name,
+                status=WorkflowExecutionStatus.PENDING.value,
+                input_data=input_data,
+                workspace=workspace,
+            ))
+
         logger.info(
             "Starting workflow execution: id=%s, workflow=%s, name=%s",
             execution_id,
@@ -221,6 +237,10 @@ class WorkflowExecutionService:
             # Update status to running
             metadata.status = WorkflowExecutionStatus.RUNNING
             metadata.started_at = datetime.now(timezone.utc)
+            if self.run_store is not None:
+                self.run_store.update_status(
+                    execution_id, "running", started_at=metadata.started_at,
+                )
 
             logger.info("Executing workflow in thread pool: %s", execution_id)
 
@@ -239,6 +259,13 @@ class WorkflowExecutionService:
             metadata.status = WorkflowExecutionStatus.COMPLETED
             metadata.completed_at = datetime.now(timezone.utc)
             metadata.result = _sanitize_workflow_result(result)
+            if self.run_store is not None:
+                self.run_store.update_status(
+                    execution_id, "completed",
+                    completed_at=metadata.completed_at,
+                    workflow_id=metadata.workflow_id,
+                    result_summary=metadata.result,
+                )
 
             logger.info("Workflow execution completed: %s", execution_id)
 
@@ -247,50 +274,14 @@ class WorkflowExecutionService:
             metadata.status = WorkflowExecutionStatus.FAILED
             metadata.completed_at = datetime.now(timezone.utc)
             metadata.error_message = str(e)
+            if self.run_store is not None:
+                self.run_store.update_status(
+                    execution_id, "failed",
+                    completed_at=metadata.completed_at,
+                    error_message=metadata.error_message,
+                )
 
             logger.exception("Workflow execution failed: %s", execution_id)
-
-    def _setup_workflow_infrastructure(self) -> tuple:
-        """Initialize config loader, tool registry, and tracker.
-
-        Returns:
-            Tuple of (config_loader, tool_registry, tracker).
-        """
-        from src.workflow.config_loader import ConfigLoader
-        from src.observability.tracker import ExecutionTracker
-        from src.tools.registry import ToolRegistry
-
-        config_loader = ConfigLoader(config_root=self.config_root)
-        tool_registry = ToolRegistry(auto_discover=True)
-        tracker = ExecutionTracker(event_bus=self.event_bus) if self.event_bus else ExecutionTracker()
-        return config_loader, tool_registry, tracker
-
-    def _compile_workflow(
-        self,
-        workflow_config: Dict[str, Any],
-        tool_registry: Any,
-        config_loader: Any,
-    ) -> tuple:
-        """Compile workflow into executable graph.
-
-        Args:
-            workflow_config: Workflow configuration dict.
-            tool_registry: ToolRegistry instance.
-            config_loader: ConfigLoader instance.
-
-        Returns:
-            Tuple of (compiled_workflow, engine).
-        """
-        from src.workflow.engine_registry import EngineRegistry
-
-        registry = EngineRegistry()
-        engine = registry.get_engine_from_config(
-            workflow_config,
-            tool_registry=tool_registry,
-            config_loader=config_loader,
-        )
-        compiled = engine.compile(workflow_config)
-        return compiled, engine
 
     def _execute_workflow_sync(
         self,
@@ -299,14 +290,13 @@ class WorkflowExecutionService:
         execution_id: str,
         workspace: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Execute workflow synchronously (runs in thread pool).
-
-        This is the blocking execution logic adapted from src/cli/main.py.
+        """Execute workflow synchronously via WorkflowRunner (runs in thread pool).
 
         Args:
             workflow_path: Absolute path to workflow YAML
             input_data: Workflow inputs
             execution_id: Execution ID for tracking
+            workspace: Optional workspace root directory
 
         Returns:
             Workflow result dictionary
@@ -314,56 +304,27 @@ class WorkflowExecutionService:
         Raises:
             RuntimeError: On workflow execution failure
         """
-        # Load workflow config
-        with open(workflow_path) as f:
-            workflow_config = yaml.safe_load(f)
+        from src.interfaces.server.workflow_runner import WorkflowRunner, WorkflowRunnerConfig
 
-        # Initialize infrastructure
-        config_loader, tool_registry, tracker = self._setup_workflow_infrastructure()
-
-        # Compile workflow
-        compiled, engine = self._compile_workflow(
-            workflow_config, tool_registry, config_loader
+        runner_config = WorkflowRunnerConfig(
+            config_root=self.config_root,
+            workspace=workspace,
         )
+        runner = WorkflowRunner(config=runner_config, event_bus=self.event_bus)
+        run_result = runner.run(workflow_path, input_data=input_data)
 
-        # Execute with tracking
-        wf = workflow_config.get("workflow", {})
-        workflow_name = wf.get("name", Path(workflow_path).stem)
+        # Store workflow_id so the API can return it to the frontend
+        self._executions[execution_id].workflow_id = run_result.workflow_id
 
-        with tracker.track_workflow(
-            workflow_name=workflow_name,
-            workflow_config=workflow_config,
-            trigger_type="dashboard",
-            environment="dashboard",
-        ) as workflow_id:
-            # Store workflow_id so the API can return it to the frontend
-            self._executions[execution_id].workflow_id = workflow_id
+        if run_result.status == "failed":
+            raise RuntimeError(run_result.error_message or "Workflow execution failed")
 
-            state: Dict[str, Any] = {
-                "workflow_inputs": input_data,
-                "tracker": tracker,
-                "config_loader": config_loader,
-                "tool_registry": tool_registry,
-                "workflow_id": workflow_id,
-                "show_details": False,
-                "detail_console": None,
-                "stream_callback": None,
-            }
-            if workspace is not None:
-                state["workspace_root"] = workspace
-            result: Dict[str, Any] = compiled.invoke(state)
-
-        # Cleanup
-        if hasattr(engine, "tool_executor") and engine.tool_executor:
-            try:
-                engine.tool_executor.shutdown()
-            except Exception as e:  # noqa: BLE001
-                logger.debug("Error during tool executor shutdown: %s", e)
-
-        return result
+        return run_result.result or {}
 
     async def get_execution_status(self, execution_id: str) -> Optional[Dict[str, Any]]:
         """Get execution status and metadata.
+
+        Falls back to persistent RunStore if not found in memory.
 
         Args:
             execution_id: Execution ID returned from execute_workflow_async
@@ -375,39 +336,60 @@ class WorkflowExecutionService:
             metadata = self._executions.get(execution_id)
             if metadata:
                 return metadata.to_dict()
-            return None
+
+        # Fallback to persistent store
+        if self.run_store is not None:
+            stored = self.run_store.get_run(execution_id)
+            if stored is not None:
+                return stored.to_dict()
+
+        return None
 
     async def list_executions(
         self,
         status: Optional[WorkflowExecutionStatus] = None,
         limit: int = 100,
+        offset: int = 0,
     ) -> list[Dict[str, Any]]:
         """List all tracked executions.
+
+        Merges in-memory active runs with persistent store data.
 
         Args:
             status: Filter by status (optional)
             limit: Max number of executions to return
+            offset: Number of results to skip
 
         Returns:
             List of execution metadata dicts
         """
-        async with self._lock:
-            executions = list(self._executions.values())
+        # If store available, query it (includes historical runs)
+        if self.run_store is not None:
+            status_str = status.value if status else None
+            stored = self.run_store.list_runs(
+                status=status_str, limit=limit + offset, offset=0,
+            )
+            stored_ids = {r.execution_id for r in stored}
+            results = [r.to_dict() for r in stored]
 
-        # Filter by status if specified
-        if status:
-            executions = [e for e in executions if e.status == status]
+            # Merge in-memory runs that may not be persisted yet
+            async with self._lock:
+                for meta in self._executions.values():
+                    if meta.execution_id not in stored_ids:
+                        if status is None or meta.status == status:
+                            results.append(meta.to_dict())
+        else:
+            async with self._lock:
+                executions = list(self._executions.values())
+            if status:
+                executions = [e for e in executions if e.status == status]
+            executions.sort(
+                key=lambda e: e.started_at or datetime.min.replace(tzinfo=timezone.utc),
+                reverse=True,
+            )
+            results = [e.to_dict() for e in executions]
 
-        # Sort by started_at (most recent first)
-        executions.sort(
-            key=lambda e: e.started_at or datetime.min.replace(tzinfo=timezone.utc),
-            reverse=True,
-        )
-
-        # Limit results
-        executions = executions[:limit]
-
-        return [e.to_dict() for e in executions]
+        return results[offset:offset + limit]
 
     async def cancel_execution(self, execution_id: str) -> bool:
         """Cancel a running workflow execution.

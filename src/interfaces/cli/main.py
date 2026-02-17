@@ -26,13 +26,18 @@ from rich.console import Console
 from rich.table import Table
 
 from src.interfaces.cli.constants import (
+    CLI_OPTION_API_KEY,
     CLI_OPTION_CONFIG_ROOT,
     CLI_OPTION_DB,
+    CLI_OPTION_SERVER,
     COLUMN_DESCRIPTION,
     COLUMN_NAME,
+    COLUMN_STATUS,
     DEFAULT_CONFIG_ROOT,
     DEFAULT_SERVER_HOST,
+    ENV_VAR_API_KEY,
     ENV_VAR_CONFIG_ROOT,
+    ENV_VAR_SERVER_URL,
     ERROR_DIR_NOT_FOUND,
     HELP_CONFIG_ROOT,
     SQLITE_URL_PREFIX,
@@ -848,7 +853,7 @@ def _print_run_summary(
 
     status = result.get("status", "completed")
     style = "green" if status == "completed" else "red"
-    table.add_row("Status", f"[{style}]{status}[/{style}]")
+    table.add_row(COLUMN_STATUS, f"[{style}]{status}[/{style}]")
 
     if "duration" in result:
         table.add_row("Duration", f"{result['duration']:.1f}s")
@@ -1467,6 +1472,265 @@ def list_stages(config_root: str) -> None:
         )
 
     console.print(table)
+
+
+# ─── trigger command ──────────────────────────────────────────────────
+
+
+@main.command()
+@click.argument("workflow")
+@click.option("--input", "input_file", type=click.Path(exists=True), help="YAML file with input values")
+@click.option(CLI_OPTION_SERVER, default=None, envvar=ENV_VAR_SERVER_URL, help="Server URL (default: http://127.0.0.1:8420)")
+@click.option(CLI_OPTION_API_KEY, default=None, envvar=ENV_VAR_API_KEY, help="API key for authentication")
+@click.option("--workspace", default=None, help="Restrict file operations to this directory")
+@click.option("--wait", is_flag=True, help="Wait for workflow to complete")
+def trigger(
+    workflow: str,
+    input_file: Optional[str],
+    server: Optional[str],
+    api_key: Optional[str],
+    workspace: Optional[str],
+    wait: bool,
+) -> None:
+    """Trigger a workflow on a running MAF server."""
+    import time
+
+    from src.interfaces.cli.server_client import DEFAULT_SERVER_URL, MAFServerClient
+
+    client = MAFServerClient(
+        base_url=server or DEFAULT_SERVER_URL,
+        api_key=api_key,
+    )
+
+    inputs: dict = {}
+    if input_file:
+        with open(input_file) as f:
+            inputs = yaml.safe_load(f) or {}
+
+    try:
+        result = client.trigger_run(workflow, inputs=inputs, workspace=workspace)
+    except Exception as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    execution_id = result.get("execution_id", "")
+    console.print(f"[green]Triggered:[/green] {execution_id}")
+
+    if not wait:
+        return
+
+    # Poll until terminal status
+    console.print("Waiting for completion...")
+    poll_interval = 2  # scanner: skip-magic
+    while True:
+        time.sleep(poll_interval)  # Intentional polling: wait for workflow completion
+        try:
+            status_data = client.get_status(execution_id)
+        except Exception as exc:
+            console.print(f"[yellow]Poll error:[/yellow] {exc}")
+            continue
+        current = status_data.get("status", "")
+        if current in ("completed", "failed", "cancelled"):
+            style = "green" if current == "completed" else "red"
+            console.print(f"[{style}]{current}[/{style}]")
+            if current == "failed":
+                err = status_data.get("error_message", "")
+                if err:
+                    console.print(f"  Error: {err}")
+                raise SystemExit(1)
+            return
+
+
+# ─── status command ──────────────────────────────────────────────────
+
+
+@main.command("status")
+@click.argument("run_id", required=False)
+@click.option(CLI_OPTION_SERVER, default=None, envvar=ENV_VAR_SERVER_URL, help="Server URL")
+@click.option(CLI_OPTION_API_KEY, default=None, envvar=ENV_VAR_API_KEY, help="API key")
+@click.option("--all", "show_all", is_flag=True, help="Show all runs (no limit)")
+def status(
+    run_id: Optional[str],
+    server: Optional[str],
+    api_key: Optional[str],
+    show_all: bool,
+) -> None:
+    """Show run status. Without RUN_ID, lists recent runs."""
+    from src.interfaces.cli.server_client import DEFAULT_SERVER_URL, MAFServerClient
+
+    client = MAFServerClient(
+        base_url=server or DEFAULT_SERVER_URL,
+        api_key=api_key,
+    )
+
+    try:
+        if run_id:
+            _display_single_run(client, run_id)
+        else:
+            _display_run_list(client, show_all)
+    except Exception as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+
+def _display_single_run(client: Any, run_id: str) -> None:
+    """Display detailed status for a single run."""
+    data = client.get_status(run_id)
+    table = Table(title=f"Run: {run_id}")
+    table.add_column("Field", style="cyan")
+    table.add_column("Value")
+
+    current = data.get("status", "unknown")
+    style = "green" if current == "completed" else ("red" if current == "failed" else "yellow")
+    table.add_row(COLUMN_STATUS, f"[{style}]{current}[/{style}]")
+    table.add_row("Workflow", data.get("workflow_name", ""))
+    table.add_row("Path", data.get("workflow_path", ""))
+    table.add_row("Workflow ID", data.get("workflow_id", "") or "")
+    table.add_row("Started", data.get("started_at", "") or "")
+    table.add_row("Completed", data.get("completed_at", "") or "")
+    if data.get("error_message"):
+        table.add_row("Error", data["error_message"])
+
+    console.print(table)
+
+
+def _display_run_list(client: Any, show_all: bool) -> None:
+    """Display a table of recent runs."""
+    limit = 1000 if show_all else 20  # scanner: skip-magic
+    data = client.list_runs(limit=limit)
+    runs = data.get("runs", [])
+
+    if not runs:
+        console.print("[yellow]No runs found[/yellow]")
+        return
+
+    table = Table(title="Recent Runs")
+    table.add_column("ID", style="cyan")
+    table.add_column("Workflow")
+    table.add_column(COLUMN_STATUS)
+    table.add_column("Started")
+
+    for run in runs:
+        current = run.get("status", "unknown")
+        style = "green" if current == "completed" else ("red" if current == "failed" else "yellow")
+        table.add_row(
+            run.get("execution_id", ""),
+            run.get("workflow_name", ""),
+            f"[{style}]{current}[/{style}]",
+            run.get("started_at", "") or "",
+        )
+
+    console.print(table)
+
+
+# ─── logs command ────────────────────────────────────────────────────
+
+
+@main.command()
+@click.argument("run_id")
+@click.option(CLI_OPTION_SERVER, default=None, envvar=ENV_VAR_SERVER_URL, help="Server URL")
+@click.option(CLI_OPTION_API_KEY, default=None, envvar=ENV_VAR_API_KEY, help="API key")
+@click.option("--follow", "-f", is_flag=True, help="Stream events via WebSocket")
+def logs(
+    run_id: str,
+    server: Optional[str],
+    api_key: Optional[str],
+    follow: bool,
+) -> None:
+    """Show events/logs for a run."""
+    from src.interfaces.cli.server_client import DEFAULT_SERVER_URL, MAFServerClient
+
+    client = MAFServerClient(
+        base_url=server or DEFAULT_SERVER_URL,
+        api_key=api_key,
+    )
+
+    if follow:
+        _stream_logs_ws(client, run_id)
+    else:
+        _display_logs_http(client, run_id)
+
+
+def _display_logs_http(client: Any, run_id: str) -> None:
+    """Fetch and display run events via HTTP."""
+    try:
+        # Get run status first to find workflow_id
+        status_data = client.get_status(run_id)
+    except Exception as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    workflow_id = status_data.get("workflow_id")
+    if not workflow_id:
+        console.print("[yellow]No events available (workflow not started yet)[/yellow]")
+        return
+
+    # Fetch events
+    try:
+        with client._client() as http:
+            resp = http.get(f"/api/runs/{run_id}/events", params={"limit": 100})  # scanner: skip-magic
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        console.print(f"[red]Error fetching events:[/red] {exc}")
+        raise SystemExit(1)
+
+    events = data.get("events", [])
+    if not events:
+        console.print("[yellow]No events recorded[/yellow]")
+        return
+
+    for evt in events:
+        ts = evt.get("timestamp", "")
+        etype = evt.get("event_type", "")
+        console.print(f"[dim]{ts}[/dim] [{_event_color(etype)}]{etype}[/{_event_color(etype)}]")
+
+
+def _stream_logs_ws(client: Any, run_id: str) -> None:
+    """Stream logs via WebSocket."""
+    try:
+        import websockets.sync.client as ws_client
+    except ImportError:
+        console.print("[red]Error:[/red] websockets not installed. Use --follow without -f or install websockets.")
+        raise SystemExit(1)
+
+    # Get workflow_id
+    try:
+        status_data = client.get_status(run_id)
+    except Exception as exc:
+        console.print(f"[red]Error:[/red] {exc}")
+        raise SystemExit(1)
+
+    workflow_id = status_data.get("workflow_id")
+    if not workflow_id:
+        console.print("[yellow]No workflow_id available yet[/yellow]")
+        raise SystemExit(1)
+
+    ws_url = client.base_url.replace("http://", "ws://").replace("https://", "wss://")
+    ws_url = f"{ws_url}/ws/{workflow_id}"
+
+    console.print(f"[cyan]Streaming events for {workflow_id}...[/cyan]")
+    try:
+        with ws_client.connect(ws_url) as ws:
+            for message in ws:
+                console.print(message)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Stream stopped[/yellow]")
+
+
+def _event_color(event_type: str) -> str:
+    """Return Rich color for event type."""
+    colors = {
+        "workflow_start": "green",
+        "workflow_end": "green",
+        "stage_start": "cyan",
+        "stage_end": "cyan",
+        "agent_start": "blue",
+        "agent_end": "blue",
+        "llm_call": "magenta",
+        "tool_call": "yellow",
+    }
+    return colors.get(event_type, "white")
 
 
 # ─── Mount existing rollback group ────────────────────────────────────

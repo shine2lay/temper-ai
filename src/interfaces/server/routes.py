@@ -86,6 +86,28 @@ async def _handle_create_run(execution_service: Any, body: RunRequest) -> RunRes
         raise HTTPException(status_code=HTTP_500_INTERNAL_SERVER_ERROR, detail="Internal server error: workflow execution failed") from e
 
 
+async def _handle_list_runs(
+    execution_service: Any,
+    status: Optional[str],
+    limit: int,
+    offset: int,
+) -> Dict[str, Any]:
+    """List workflow executions with optional filtering."""
+    from src.interfaces.dashboard.execution_service import WorkflowExecutionStatus
+
+    status_enum = None
+    if status is not None:
+        try:
+            status_enum = WorkflowExecutionStatus(status)
+        except ValueError:
+            return {"runs": [], "total": 0}
+
+    runs = await execution_service.list_executions(
+        status=status_enum, limit=limit, offset=offset,
+    )
+    return {"runs": runs, "total": len(runs)}
+
+
 async def _handle_get_run(execution_service: Any, run_id: str) -> Dict[str, Any]:
     """Get execution status by ID."""
     try:
@@ -224,6 +246,15 @@ def create_server_router(
     async def create_run(body: RunRequest = Body(...)) -> RunResponse:
         """Start a workflow execution."""
         return await _handle_create_run(execution_service, body)
+
+    @router.get("/runs")
+    async def list_runs(
+        status: Optional[str] = Query(None),
+        limit: int = Query(100, ge=1, le=1000),
+        offset: int = Query(0, ge=0),
+    ) -> Dict[str, Any]:
+        """List workflow executions."""
+        return await _handle_list_runs(execution_service, status, limit, offset)
 
     @router.get("/runs/{run_id}")
     async def get_run(run_id: str) -> Dict[str, Any]:

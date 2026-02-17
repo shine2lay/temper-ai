@@ -52,7 +52,11 @@ SQLITE_URL_PREFIX = "sqlite:///"
 
 CLI_OPTION_CONFIG_ROOT = "--config-root"
 CLI_OPTION_DB = "--db"
+CLI_OPTION_SERVER = "--server"
+CLI_OPTION_API_KEY = "--api-key"
 ENV_VAR_CONFIG_ROOT = "MAF_CONFIG_ROOT"
+ENV_VAR_SERVER_URL = "MAF_SERVER_URL"
+ENV_VAR_API_KEY = "MAF_API_KEY"
 
 # ============================================================================
 # Help Text
@@ -66,6 +70,7 @@ HELP_CONFIG_ROOT = "Config directory root"
 
 COLUMN_NAME = "Name"
 COLUMN_DESCRIPTION = "Description"
+COLUMN_STATUS = "Status"
 
 # ============================================================================
 # Error Message Prefixes

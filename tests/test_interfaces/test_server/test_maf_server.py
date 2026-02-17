@@ -361,6 +361,37 @@ class TestServerRoutes:
             for field in ("version", "tags", "inputs", "use_cases"):
                 assert field in wf, f"Missing field: {field}"
 
+    def test_list_runs_endpoint(self, client) -> None:
+        """GET /api/runs returns list of runs."""
+        test_client, mock_svc = client
+        mock_svc.list_executions = AsyncMock(return_value=[
+            {"execution_id": "exec-1", "status": "completed"},
+        ])
+        resp = test_client.get("/api/runs")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "runs" in data
+        assert "total" in data
+        assert data["total"] == 1
+
+    def test_list_runs_with_status_filter(self, client) -> None:
+        """GET /api/runs?status=completed filters by status."""
+        test_client, mock_svc = client
+        mock_svc.list_executions = AsyncMock(return_value=[])
+        resp = test_client.get("/api/runs?status=completed")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["runs"] == []
+
+    def test_list_runs_invalid_status(self, client) -> None:
+        """GET /api/runs?status=invalid returns empty list."""
+        test_client, _ = client
+        resp = test_client.get("/api/runs?status=invalid_status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["runs"] == []
+        assert data["total"] == 0
+
 
 class TestDashboardIncludesServerRouter:
     """Verify dashboard mode mounts the server router."""

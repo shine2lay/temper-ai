@@ -226,7 +226,7 @@ class TestAgentFailureHandling:
     @patch(CONFIG_PATCH)
     @patch(FACTORY_PATCH)
     def test_agent_failure_recorded_in_statuses(self, mock_factory, mock_config_cls):
-        """Failed agent is recorded with error details and execution continues with halt_on_failure=False."""
+        """Failed agent is recorded with error details and execution continues with continue_with_remaining policy."""
         failing_agent = Mock()
         failing_agent.execute.side_effect = RuntimeError("LLM timeout")
 
@@ -241,10 +241,12 @@ class TestAgentFailureHandling:
 
         result = executor.execute_stage(
             stage_name="resilient",
-            stage_config={"stage": {"agents": ["flaky_agent", "reliable_agent"]}},
+            stage_config={"stage": {
+                "agents": ["flaky_agent", "reliable_agent"],
+                "error_handling": {"on_agent_failure": "continue_with_remaining"},
+            }},
             state=state,
             config_loader=_mock_config_loader(),
-            halt_on_failure=False,  # Allow execution to continue after failure
         )
 
         stage_out = result[StateKeys.STAGE_OUTPUTS]["resilient"]
@@ -269,7 +271,7 @@ class TestAgentFailureHandling:
     @patch(CONFIG_PATCH)
     @patch(FACTORY_PATCH)
     def test_halt_on_failure_stops_execution(self, mock_factory, mock_config_cls):
-        """With halt_on_failure=True (default), stage stops after first agent failure."""
+        """With halt_stage policy (default), stage stops after first agent failure."""
         failing_agent = Mock()
         failing_agent.execute.side_effect = ValueError("Invalid input")
 
@@ -287,7 +289,6 @@ class TestAgentFailureHandling:
             stage_config={"stage": {"agents": ["failing", "should_not_run"]}},
             state=state,
             config_loader=_mock_config_loader(),
-            halt_on_failure=True,  # Explicit, but this is the default
         )
 
         stage_out = result[StateKeys.STAGE_OUTPUTS]["halt_test"]
@@ -327,7 +328,6 @@ class TestAgentFailureHandling:
             stage_config={"stage": {"agents": ["failing"]}},
             state=state,
             config_loader=_mock_config_loader(),
-            halt_on_failure=True,
         )
 
         stage_out = result[StateKeys.STAGE_OUTPUTS]["error_type_test"]

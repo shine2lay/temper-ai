@@ -13,7 +13,18 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional, cast
 
 from src.shared.constants.execution import ERROR_MSG_QUALITY_GATE_FAILED
-from src.stage.executors._base_helpers import _truncate_tracking_data
+from src.stage.executors._parallel_observability import (
+    _emit_output_lineage,
+    _emit_parallel_cost_summary,
+    _emit_quality_gate_violation_details,
+    _emit_synthesis_event,
+    _track_quality_gate_event,
+)
+from src.stage.executors._base_helpers import (
+    _save_conversation_turn,
+    build_agent_output_params,
+    prepare_tracking_input,
+)
 from src.stage.executors.state_keys import StateKeys
 from src.shared.constants.limits import DEFAULT_MIN_ITEMS, SMALL_ITEM_LIMIT
 from src.shared.constants.probabilities import PROB_HIGH
@@ -96,13 +107,8 @@ def _prepare_agent_input(s: Dict[str, Any]) -> Dict[str, Any]:
         result.pop("_context_resolved", None)
         return result
 
-    _reserved = frozenset({
-        StateKeys.STAGE_OUTPUTS, StateKeys.CURRENT_STAGE, StateKeys.WORKFLOW_ID, StateKeys.TRACKER,
-        StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER, StateKeys.SHOW_DETAILS,
-        StateKeys.DETAIL_CONSOLE, StateKeys.WORKFLOW_INPUTS, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
-    })
     wi = {k: v for k, v in input_data.get(StateKeys.WORKFLOW_INPUTS, {}).items()
-          if k not in _reserved}
+          if k not in StateKeys.RESERVED_UNWRAP_KEYS}
     return {**input_data, **wi}
 
 
@@ -172,18 +178,7 @@ def _execute_agent_with_tracking(
     from src.shared.utils.config_helpers import sanitize_config_for_display
 
     agent_config_for_tracking = sanitize_config_for_display(agent_config_dict)
-
-    # Filter non-serializable keys for tracking
-    _non_serializable_keys: frozenset[str] = frozenset({
-        StateKeys.TRACKER, StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER,
-        StateKeys.SHOW_DETAILS, StateKeys.DETAIL_CONSOLE, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
-    })
-    tracking_input_data = {
-        k: v for k, v in input_data.items()
-        if k not in _non_serializable_keys
-    }
-    tracking_input_data = sanitize_config_for_display(tracking_input_data)
-    tracking_input_data = _truncate_tracking_data(tracking_input_data)
+    tracking_input_data = prepare_tracking_input(input_data)
 
     with tracker.track_agent(
         agent_name=agent_name,
@@ -196,16 +191,7 @@ def _execute_agent_with_tracking(
         response = agent.execute(input_data, context)
 
         try:
-            from src.observability.metric_aggregator import AgentOutputParams
-            tracker.set_agent_output(AgentOutputParams(
-                agent_id=agent_id,
-                output_data={StateKeys.OUTPUT: response.output},
-                reasoning=response.reasoning,
-                total_tokens=response.tokens,
-                estimated_cost_usd=response.estimated_cost_usd,
-                num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
-                num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
-            ))
+            tracker.set_agent_output(build_agent_output_params(agent_id, response))
         except Exception:
             logger.warning("Failed to set agent output tracking for %s", agent_name, exc_info=True)
 
@@ -325,7 +311,7 @@ def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dic
             response = _run_agent(run_params)
 
             # Save conversation turn on success
-            _save_parallel_conversation_turn(
+            _save_conversation_turn(
                 params.state, history_key, input_data, response,
             )
 
@@ -349,37 +335,6 @@ def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dic
             return _build_agent_error_result(params.agent_name, e, duration)
 
     return agent_node
-
-
-def _save_parallel_conversation_turn(
-    state: Dict[str, Any],
-    history_key: str,
-    input_data: Dict[str, Any],
-    response: Any,
-) -> None:
-    """Persist the user/assistant turn into state conversation histories (parallel)."""
-    from src.llm.conversation import ConversationHistory
-
-    assistant_output = getattr(response, "output", None)
-    if not assistant_output:
-        return
-
-    user_prompt = getattr(response, "metadata", {}).get("_user_message")
-    if not user_prompt:
-        user_prompt = getattr(response, "metadata", {}).get("_rendered_prompt", "")
-
-    if StateKeys.CONVERSATION_HISTORIES not in state:
-        state[StateKeys.CONVERSATION_HISTORIES] = {}
-
-    history = input_data.get("_conversation_history")
-    if history is None:
-        history = ConversationHistory()
-
-    history.append_turn(
-        user_content=user_prompt or "",
-        assistant_content=assistant_output,
-    )
-    state[StateKeys.CONVERSATION_HISTORIES][history_key] = history.to_dict()
 
 
 def _extract_result_field(synthesis_result: Any, field: str) -> list:
@@ -454,34 +409,6 @@ def validate_quality_gates(
         )
 
     return passed, violations
-
-
-def _emit_quality_gate_violation_details(
-    state: Dict[str, Any],
-    stage_name: str,
-    violations: list,
-    synthesis_result: Any,
-    quality_gates_config: Dict[str, Any],
-) -> None:
-    """Emit per-gate violation details as a collaboration event."""
-    try:
-        from src.observability.dialogue_metrics import (
-            build_quality_gate_details,
-            emit_quality_gate_details,
-        )
-
-        tracker = state.get(StateKeys.TRACKER)
-        stage_id = state.get(StateKeys.CURRENT_STAGE_ID, "")
-        details = build_quality_gate_details(
-            violations, synthesis_result, quality_gates_config,
-        )
-        emit_quality_gate_details(tracker, stage_id, stage_name, details)
-    except Exception:
-        logger.debug(
-            "Failed to emit quality gate violation details for %s",
-            stage_name,
-            exc_info=True,
-        )
 
 
 def build_collect_outputs_node(
@@ -658,39 +585,6 @@ def print_parallel_progress(
             )
 
 
-def _track_quality_gate_event(
-    tracker: Any,
-    event_type: str,
-    stage_name: str,
-    synthesis_result: Any,
-    violations: list,
-    quality_gates_config: Dict[str, Any],
-    retry_count: int
-) -> None:
-    """Track quality gate event in observability system."""
-    if tracker and hasattr(tracker, 'track_collaboration_event'):
-        metadata = {
-            "violations": violations,
-            "synthesis_method": synthesis_result.method,
-            "retry_count": retry_count,
-            "max_retries": quality_gates_config.get("max_retries", 2)
-        }
-        if event_type == "quality_gate_failure":
-            metadata["on_failure_action"] = quality_gates_config.get("on_failure", "retry_stage")
-        elif event_type == "quality_gate_retry":
-            metadata["retry_attempt"] = retry_count + 1
-
-        from src.observability._tracker_helpers import CollaborationEventData
-        tracker.track_collaboration_event(CollaborationEventData(
-            event_type=event_type,
-            stage_name=stage_name,
-            agents=[],
-            decision=None,
-            confidence=getattr(synthesis_result, "confidence", 0.0),
-            metadata=metadata
-        ))
-
-
 def _handle_quality_gate_escalate(stage_name: str, violations: list) -> None:
     """Handle escalate policy for quality gate failure."""
     raise RuntimeError(
@@ -847,23 +741,6 @@ def _compute_stage_status(agent_statuses: Dict[str, Any]) -> str:
     return "completed"
 
 
-def _build_synthesis_metadata(
-    synthesis_result: Any,
-    parallel_result: Dict[str, Any],
-    aggregate_metrics: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Build tracker metadata for synthesis event."""
-    return {
-        StateKeys.METHOD: synthesis_result.method,
-        StateKeys.CONFIDENCE: synthesis_result.confidence,
-        StateKeys.VOTES: synthesis_result.votes,
-        "num_conflicts": len(synthesis_result.conflicts),
-        StateKeys.REASONING: synthesis_result.reasoning,
-        StateKeys.AGENT_STATUSES: parallel_result.get(StateKeys.AGENT_STATUSES, {}),
-        StateKeys.AGGREGATE_METRICS: aggregate_metrics
-    }
-
-
 def update_state_with_results(
     state: Dict[str, Any],
     stage_name: str,
@@ -918,92 +795,3 @@ def update_state_with_results(
     )
     _emit_output_lineage(state, stage_name, agent_outputs_dict, parallel_result, synthesis_result)
     _emit_parallel_cost_summary(state, stage_name, parallel_result)
-
-
-def _emit_synthesis_event(
-    state: Dict[str, Any],
-    stage_name: str,
-    synthesis_result: Any,
-    agent_outputs_dict: Dict[str, Any],
-    parallel_result: Dict[str, Any],
-    aggregate_metrics: Dict[str, Any],
-) -> None:
-    """Emit synthesis collaboration event via tracker (if available)."""
-    tracker = state.get(StateKeys.TRACKER)
-    if not (tracker and hasattr(tracker, 'track_collaboration_event')):
-        return
-    tracker_metadata = _build_synthesis_metadata(
-        synthesis_result, parallel_result, aggregate_metrics
-    )
-    from src.observability._tracker_helpers import CollaborationEventData
-    tracker.track_collaboration_event(CollaborationEventData(
-        event_type="synthesis",
-        stage_name=stage_name,
-        agents=list(agent_outputs_dict.keys()),
-        decision=synthesis_result.decision,
-        confidence=synthesis_result.confidence,
-        metadata=tracker_metadata
-    ))
-
-
-def _emit_output_lineage(
-    state: Dict[str, Any],
-    stage_name: str,
-    agent_outputs_dict: Dict[str, Any],
-    parallel_result: Dict[str, Any],
-    synthesis_result: Any,
-) -> None:
-    """Compute output lineage and store via tracker (best-effort)."""
-    try:
-        from src.observability.lineage import compute_output_lineage, lineage_to_dict
-
-        agent_statuses = parallel_result.get(StateKeys.AGENT_STATUSES, {})
-        synthesis_method = getattr(synthesis_result, "method", None)
-        lineage = compute_output_lineage(
-            stage_name, agent_outputs_dict, agent_statuses, synthesis_method,
-        )
-        lineage_dict = lineage_to_dict(lineage)
-
-        tracker = state.get(StateKeys.TRACKER)
-        stage_id = state.get(StateKeys.CURRENT_STAGE_ID, "")
-        if tracker and hasattr(tracker, "set_stage_output"):
-            tracker.set_stage_output(
-                stage_id=stage_id,
-                output_data={},
-                output_lineage=lineage_dict,
-            )
-    except Exception:
-        logger.debug(
-            "Failed to compute output lineage for stage %s",
-            stage_name,
-            exc_info=True,
-        )
-
-
-def _emit_parallel_cost_summary(
-    state: Dict[str, Any],
-    stage_name: str,
-    parallel_result: Dict[str, Any],
-) -> None:
-    """Emit cost rollup for parallel stage execution."""
-    try:
-        from src.observability.cost_rollup import (
-            compute_stage_cost_summary,
-            emit_cost_summary,
-        )
-
-        agent_metrics = parallel_result.get(StateKeys.AGENT_METRICS, {})
-        agent_statuses = parallel_result.get(StateKeys.AGENT_STATUSES, {})
-        tracker = state.get(StateKeys.TRACKER)
-        stage_id = state.get(StateKeys.CURRENT_STAGE_ID, "")
-
-        summary = compute_stage_cost_summary(
-            stage_name, agent_metrics, agent_statuses,
-        )
-        emit_cost_summary(tracker, stage_id, summary)
-    except Exception:
-        logger.debug(
-            "Failed to emit cost summary for stage %s",
-            stage_name,
-            exc_info=True,
-        )

@@ -13,7 +13,11 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, cast
 
-from src.stage.executors._base_helpers import _truncate_tracking_data
+from src.stage.executors._base_helpers import (
+    _save_conversation_turn,
+    build_agent_output_params,
+    prepare_tracking_input,
+)
 from src.stage.executors.state_keys import StateKeys
 from src.shared.constants.durations import SECONDS_PER_MINUTE
 from src.shared.constants.retries import (
@@ -79,12 +83,6 @@ _TRANSIENT_ERROR_TYPES: frozenset[str] = frozenset({
     ErrorCode.WORKFLOW_TIMEOUT.value,
 })
 
-# Reserved keys that must not be overwritten when unwrapping workflow_inputs
-_RESERVED_UNWRAP_KEYS: frozenset[str] = frozenset({
-    StateKeys.STAGE_OUTPUTS, StateKeys.CURRENT_STAGE, StateKeys.WORKFLOW_ID, StateKeys.TRACKER,
-    StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER, StateKeys.SHOW_DETAILS,
-    StateKeys.DETAIL_CONSOLE, StateKeys.WORKFLOW_INPUTS, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
-})
 
 
 def is_transient_error(error_type: str) -> bool:
@@ -237,7 +235,7 @@ def _build_legacy_input(
         state_dict = dict(ctx.state) if hasattr(ctx.state, '__iter__') else ctx.state
 
     wi = {k: v for k, v in state_dict.get(StateKeys.WORKFLOW_INPUTS, {}).items()
-          if k not in _RESERVED_UNWRAP_KEYS}
+          if k not in StateKeys.RESERVED_UNWRAP_KEYS}
 
     return {
         **state_dict,
@@ -302,17 +300,7 @@ def _execute_with_tracker(
     from src.shared.utils.config_helpers import sanitize_config_for_display
 
     agent_config_for_tracking = sanitize_config_for_display(agent_config_dict)
-
-    _non_serializable_keys: frozenset[str] = frozenset({
-        StateKeys.TRACKER, StateKeys.TOOL_REGISTRY, StateKeys.CONFIG_LOADER, StateKeys.VISUALIZER,
-        StateKeys.SHOW_DETAILS, StateKeys.DETAIL_CONSOLE, StateKeys.TOOL_EXECUTOR, StateKeys.STREAM_CALLBACK,
-    })
-
-    tracking_input_data = sanitize_config_for_display({
-        k: v for k, v in input_data.items()
-        if k not in _non_serializable_keys
-    })
-    tracking_input_data = _truncate_tracking_data(tracking_input_data)
+    tracking_input_data = prepare_tracking_input(input_data)
 
     if ctx.tracker is None:
         raise ValueError("Tracker required for agent execution tracking")
@@ -325,17 +313,7 @@ def _execute_with_tracker(
         context.agent_id = agent_id
         input_data[StateKeys.TRACKER] = ctx.tracker
         response = agent.execute(input_data, context)
-
-        from src.observability.metric_aggregator import AgentOutputParams
-        ctx.tracker.set_agent_output(AgentOutputParams(
-            agent_id=agent_id,
-            output_data={StateKeys.OUTPUT: response.output},
-            reasoning=response.reasoning,
-            total_tokens=response.tokens,
-            estimated_cost_usd=response.estimated_cost_usd,
-            num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
-            num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
-        ))
+        ctx.tracker.set_agent_output(build_agent_output_params(agent_id, response))
 
     return response
 
@@ -435,37 +413,6 @@ def run_agent(
     )
 
     return result
-
-
-def _save_conversation_turn(
-    state: Dict[str, Any],
-    history_key: str,
-    input_data: Dict[str, Any],
-    response: Any,
-) -> None:
-    """Persist the user/assistant turn into state conversation histories."""
-    from src.llm.conversation import ConversationHistory
-
-    assistant_output = getattr(response, "output", None)
-    if not assistant_output:
-        return
-
-    user_prompt = getattr(response, "metadata", {}).get("_user_message")
-    if not user_prompt:
-        user_prompt = getattr(response, "metadata", {}).get("_rendered_prompt", "")
-
-    if StateKeys.CONVERSATION_HISTORIES not in state:
-        state[StateKeys.CONVERSATION_HISTORIES] = {}
-
-    history = input_data.get("_conversation_history")
-    if history is None:
-        history = ConversationHistory()
-
-    history.append_turn(
-        user_content=user_prompt or "",
-        assistant_content=assistant_output,
-    )
-    state[StateKeys.CONVERSATION_HISTORIES][history_key] = history.to_dict()
 
 
 def _execute_retry_attempt(

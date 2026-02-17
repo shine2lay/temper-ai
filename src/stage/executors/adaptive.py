@@ -3,6 +3,7 @@
 Starts with parallel execution, switches to sequential if disagreement is high.
 """
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any, Dict, Optional, cast
 
 from src.shared.constants.execution import (
@@ -70,12 +71,7 @@ def _execute_parallel_with_switch_check(params: ParallelSwitchCheckParams) -> tu
     synthesis_info = stage_output.get("synthesis", {})
 
     # Calculate disagreement
-    class MinimalSynthesisResult:
-        """Lightweight synthesis result for disagreement calculation."""
-        def __init__(self, votes: Dict[str, int]) -> None:
-            self.votes = votes
-
-    synthesis_result = MinimalSynthesisResult(votes=synthesis_info.get("votes", {}))
+    synthesis_result = SimpleNamespace(votes=synthesis_info.get("votes", {}))
     disagreement_rate = _calculate_disagreement_rate(synthesis_result)
 
     # Build metadata

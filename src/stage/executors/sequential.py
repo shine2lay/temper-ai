@@ -8,7 +8,7 @@ import logging
 import threading
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Literal, Optional
+from typing import Any, Dict, Optional
 
 from src.shared.constants.probabilities import PROB_VERY_HIGH
 from src.shared.constants.sizes import UUID_HEX_SHORT_LENGTH
@@ -79,7 +79,7 @@ class SequentialStageExecutor(StageExecutor):
         self.shutdown_event = threading.Event()
 
     def _parse_stage_config(
-        self, stage_config: Any, halt_on_failure: bool,
+        self, stage_config: Any,
     ) -> tuple[list, Any]:
         """Extract agents list and error handling config from stage config."""
         error_handling_config = None
@@ -94,10 +94,7 @@ class SequentialStageExecutor(StageExecutor):
                 error_handling_config = StageErrorHandlingConfig(**error_handling_dict)
 
         if error_handling_config is None:
-            on_failure: Literal["halt_stage", "continue_with_remaining"] = (
-                "halt_stage" if halt_on_failure else "continue_with_remaining"
-            )
-            error_handling_config = StageErrorHandlingConfig(on_agent_failure=on_failure)
+            error_handling_config = StageErrorHandlingConfig(on_agent_failure="halt_stage")
 
         return agents, error_handling_config
 
@@ -267,12 +264,11 @@ class SequentialStageExecutor(StageExecutor):
         state: Dict[str, Any],
         config_loader: ConfigLoaderProtocol,
         tool_registry: Optional[DomainToolRegistryProtocol] = None,
-        halt_on_failure: bool = True
     ) -> Dict[str, Any]:
         """Execute stage with sequential agent execution. Returns updated state."""
         tracker = state.get(StateKeys.TRACKER)
 
-        agents, error_handling = self._parse_stage_config(stage_config, halt_on_failure)
+        agents, error_handling = self._parse_stage_config(stage_config)
 
         state["_stage_config_dict"] = (
             stage_config.model_dump() if hasattr(stage_config, 'model_dump') else stage_config

@@ -23,6 +23,7 @@ from src.stage.executors._parallel_helpers import (
 from src.stage.executors.base import ParallelRunner, StageExecutor
 from src.stage.executors.state_keys import StateKeys
 from src.shared.constants.durations import SECONDS_PER_30_MINUTES
+from src.stage._schemas import QualityGatesConfig
 from src.shared.constants.probabilities import PROB_VERY_HIGH
 from src.shared.constants.sizes import UUID_HEX_SHORT_LENGTH
 from src.shared.utils.config_helpers import get_nested_value
@@ -241,6 +242,19 @@ class ParallelStageExecutor(StageExecutor):
                 tracker=None, stage_id=f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}",
             )
 
+    @staticmethod
+    def _get_max_retries(stage_config: Any) -> int:
+        """Extract max quality gate retries from stage config."""
+        default_retries: int = QualityGatesConfig.model_fields["max_retries"].default  # type: ignore[assignment]
+        if isinstance(stage_config, dict):
+            qg = stage_config.get("quality_gates", {})
+            result: int = qg.get("max_retries", default_retries)
+            return result
+        if hasattr(stage_config, "quality_gates") and stage_config.quality_gates:
+            retries: int = stage_config.quality_gates.max_retries
+            return retries
+        return default_retries
+
     def _execute_stage_core(
         self,
         stage_name: str,
@@ -250,11 +264,12 @@ class ParallelStageExecutor(StageExecutor):
         tracker: Optional[Any] = None,
         stage_id: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Core stage execution logic (wall-clock retry loop)."""
+        """Core stage execution logic (bounded retry loop)."""
         wc_timeout = self._get_wall_clock_timeout(stage_config)
         wc_start = time.monotonic()
+        max_retries = self._get_max_retries(stage_config)
 
-        while True:
+        for _attempt in range(max_retries + 1):
             agents = self._get_agents(stage_config)
             _print_stage_header(state, stage_name)
 
@@ -288,6 +303,10 @@ class ParallelStageExecutor(StageExecutor):
 
             except (RuntimeError, ConfigNotFoundError, ConfigValidationError, ToolExecutionError, LLMError, ValueError) as exc:
                 return self._handle_stage_error(stage_name, stage_config, state, exc)
+
+        raise RuntimeError(
+            f"Stage '{stage_name}' exhausted {max_retries} quality gate retries"
+        )
 
     def _filter_leader_from_agents(
         self, agents: list, stage_config: Any,

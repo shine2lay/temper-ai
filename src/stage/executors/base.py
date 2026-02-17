@@ -75,9 +75,10 @@ def _run_dialogue_rounds(params: DialogueRoundsParams) -> tuple:
     final_round = 0
     total_cost = params.total_cost
 
+    from src.stage.executors._base_helpers import DialogueRoundParams
+
     for round_num in range(1, params.strategy.max_rounds):
         final_round = round_num
-        from src.stage.executors._base_helpers import DialogueRoundParams
         round_params = DialogueRoundParams(
             round_num=round_num, reinvoke_fn=params.executor._reinvoke_agents_with_dialogue,
             agents=params.agents, strategy=params.strategy, stage_name=params.stage_name,

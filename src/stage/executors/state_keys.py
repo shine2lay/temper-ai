@@ -96,3 +96,15 @@ class StateKeys:
     CURRENT_STAGE_ID = "current_stage_id"
     CURRENT_STAGE_AGENTS = "current_stage_agents"
     MODE_SWITCH = "mode_switch"
+
+    # Frozenset constants for filtering non-serializable and reserved keys
+    NON_SERIALIZABLE_KEYS: "frozenset[str]" = frozenset({
+        "tracker", "tool_registry", "config_loader", "visualizer",
+        "show_details", "detail_console", "tool_executor", "stream_callback",
+    })
+
+    RESERVED_UNWRAP_KEYS: "frozenset[str]" = frozenset({
+        "stage_outputs", "current_stage", "workflow_id", "tracker",
+        "tool_registry", "config_loader", "visualizer", "show_details",
+        "detail_console", "workflow_inputs", "tool_executor", "stream_callback",
+    })

@@ -109,6 +109,58 @@ class SingleDialogueAgentParams:
     strategy: Any
 
 
+def _save_conversation_turn(
+    state: Dict[str, Any],
+    history_key: str,
+    input_data: Dict[str, Any],
+    response: Any,
+) -> None:
+    """Persist the user/assistant turn into state conversation histories."""
+    from src.llm.conversation import ConversationHistory
+
+    assistant_output = getattr(response, "output", None)
+    if not assistant_output:
+        return
+
+    user_prompt = getattr(response, "metadata", {}).get("_user_message")
+    if not user_prompt:
+        user_prompt = getattr(response, "metadata", {}).get("_rendered_prompt", "")
+
+    if StateKeys.CONVERSATION_HISTORIES not in state:
+        state[StateKeys.CONVERSATION_HISTORIES] = {}
+
+    history = input_data.get("_conversation_history")
+    if history is None:
+        history = ConversationHistory()
+
+    history.append_turn(
+        user_content=user_prompt or "",
+        assistant_content=assistant_output,
+    )
+    state[StateKeys.CONVERSATION_HISTORIES][history_key] = history.to_dict()
+
+
+def prepare_tracking_input(input_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Filter non-serializable keys and sanitize input for tracking."""
+    filtered = {k: v for k, v in input_data.items() if k not in StateKeys.NON_SERIALIZABLE_KEYS}
+    result = sanitize_config_for_display(filtered)
+    return _truncate_tracking_data(result)
+
+
+def build_agent_output_params(agent_id: str, response: Any) -> Any:
+    """Build AgentOutputParams from an agent response."""
+    from src.observability.metric_aggregator import AgentOutputParams
+    return AgentOutputParams(
+        agent_id=agent_id,
+        output_data={StateKeys.OUTPUT: response.output},
+        reasoning=response.reasoning,
+        total_tokens=response.tokens,
+        estimated_cost_usd=response.estimated_cost_usd,
+        num_llm_calls=1 if response.tokens and response.tokens > 0 else 0,
+        num_tool_calls=len(response.tool_calls) if response.tool_calls else 0,
+    )
+
+
 def _create_execution_context(
     state: Dict[str, Any],
     current_stage_id: str,

@@ -27,7 +27,7 @@ from src.observability.resilience_events import (
 
 @dataclass
 class ParallelSwitchCheckParams:
-    """Parameters for parallel execution with switch checking (reduces 8 params to 7)."""
+    """Parameters for parallel execution with switch checking (bundles 8 params into 1)."""
     parallel_executor: Any
     stage_name: str
     stage_config: Any
@@ -40,7 +40,7 @@ class ParallelSwitchCheckParams:
 
 @dataclass
 class ParallelErrorHandlerParams:
-    """Parameters for parallel error handling (reduces 8 params to 7)."""
+    """Parameters for parallel error handling (bundles 8 params into 1)."""
     e: Exception
     stage_name: str
     stage_config: Any

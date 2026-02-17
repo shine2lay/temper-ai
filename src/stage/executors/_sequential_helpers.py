@@ -288,7 +288,7 @@ def _prepare_sequential_input(
     return _build_legacy_input(ctx, prior_agent_outputs)
 
 
-def _execute_with_tracker(
+def _execute_and_track_agent(
     agent: Any,
     input_data: Dict[str, Any],
     context: Any,
@@ -397,7 +397,7 @@ def run_agent(
 
     if ctx.tracker:
         agent_config_dict_for_tracking = _sanitize_agent_config_for_tracking(agent_config)
-        response = _execute_with_tracker(
+        response = _execute_and_track_agent(
             agent, input_data, context, agent_name,
             agent_config_dict_for_tracking, ctx
         )

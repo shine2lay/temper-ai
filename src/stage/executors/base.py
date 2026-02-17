@@ -36,7 +36,7 @@ DEFAULT_MAX_DIALOGUE_ROUNDS = 3
 
 @dataclass
 class FinalSynthesisResultParams:
-    """Parameters for building final synthesis result (reduces 8 params to 7)."""
+    """Parameters for building final synthesis result (bundles 8 params into 1)."""
     strategy: Any
     current_outputs: list
     final_round: int

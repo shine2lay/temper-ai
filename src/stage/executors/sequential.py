@@ -78,7 +78,7 @@ class SequentialStageExecutor(StageExecutor):
         # H-13: Shared shutdown event for interruptible retry waits
         self.shutdown_event = threading.Event()
 
-    def _parse_stage_config(
+    def _extract_agents_and_error_config(
         self, stage_config: Any,
     ) -> tuple[list, Any]:
         """Extract agents list and error handling config from stage config."""
@@ -268,7 +268,7 @@ class SequentialStageExecutor(StageExecutor):
         """Execute stage with sequential agent execution. Returns updated state."""
         tracker = state.get(StateKeys.TRACKER)
 
-        agents, error_handling = self._parse_stage_config(stage_config)
+        agents, error_handling = self._extract_agents_and_error_config(stage_config)
 
         state["_stage_config_dict"] = (
             stage_config.model_dump() if hasattr(stage_config, 'model_dump') else stage_config

@@ -37,7 +37,7 @@ class DialogueReinvocationParams:
 
 @dataclass
 class AgentExecutionParams:
-    """Parameters for agent execution with tracking (reduces 12 params to 7)."""
+    """Parameters for agent execution with tracking (bundles 12 params into 1)."""
     agent: Any
     input_data: Dict[str, Any]
     tracker: Any
@@ -54,7 +54,7 @@ class AgentExecutionParams:
 
 @dataclass
 class AgentExecutionParamsNoTracking:
-    """Parameters for agent execution without tracking (reduces 8 params to 7)."""
+    """Parameters for agent execution without tracking (bundles 8 params into 1)."""
     agent: Any
     input_data: Dict[str, Any]
     current_stage_id: str
@@ -67,7 +67,7 @@ class AgentExecutionParamsNoTracking:
 
 @dataclass
 class DialogueRoundParams:
-    """Parameters for dialogue round execution (reduces 10 params to 7)."""
+    """Parameters for dialogue round execution (bundles 10 params into 1)."""
     round_num: int
     reinvoke_fn: Callable[..., Tuple[list, Dict[str, Any]]]
     agents: list
@@ -82,7 +82,7 @@ class DialogueRoundParams:
 
 @dataclass
 class DialogueTrackingParams:
-    """Parameters for dialogue round tracking (reduces 8 params to 7)."""
+    """Parameters for dialogue round tracking (bundles 10 params into 1)."""
     tracker: Any
     strategy: Any
     state: Dict[str, Any]
@@ -97,7 +97,7 @@ class DialogueTrackingParams:
 
 @dataclass
 class SingleDialogueAgentParams:
-    """Parameters for single dialogue agent invocation (reduces 9 params to 7)."""
+    """Parameters for single dialogue agent invocation (bundles 9 params into 1)."""
     agent_name: str
     agent_ref: Any
     config_loader: ConfigLoaderProtocol
@@ -395,7 +395,7 @@ def _prepare_dialogue_input(
     }
 
 
-def _curate_and_get_context(
+def _curate_history_and_resolve_context(
     strategy: Any,
     dialogue_history: list,
     round_number: int,
@@ -431,7 +431,7 @@ def _invoke_single_dialogue_agent(params: SingleDialogueAgentParams) -> Tuple[An
     agent = AgentFactory.create(agent_config)
 
     agent_role = _extract_agent_role(agent_config)
-    curated_history, mode_context = _curate_and_get_context(
+    curated_history, mode_context = _curate_history_and_resolve_context(
         params.strategy, params.dialogue_history, params.round_number, params.agent_name,
     )
     input_data = _prepare_dialogue_input(
@@ -530,7 +530,7 @@ def fallback_consensus_synthesis(agent_outputs: list) -> Any:
     )
 
 
-def record_dialogue_round_outputs(
+def record_dialogue_outputs_and_cost(
     current_outputs: list,
     round_num: int,
     agent_stances: Dict[str, str],
@@ -685,7 +685,7 @@ def execute_dialogue_round(params: DialogueRoundParams) -> Tuple[list, float, Op
     if hasattr(params.strategy, 'extract_stances'):
         agent_stances = params.strategy.extract_stances(current_outputs, llm_providers)
 
-    round_cost = record_dialogue_round_outputs(
+    round_cost = record_dialogue_outputs_and_cost(
         current_outputs, params.round_num, agent_stances, params.dialogue_history,
     )
 

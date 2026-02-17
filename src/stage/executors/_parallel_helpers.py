@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AgentNodeParams:
-    """Parameters for creating agent execution node (reduces 9 params to 7)."""
+    """Parameters for creating agent execution node (bundles 9 params into 1)."""
     agent_name: str
     agent_ref: Any
     stage_name: str
@@ -56,7 +56,7 @@ class AgentNodeParams:
 
 @dataclass
 class AgentRunParams:
-    """Parameters for running agent with/without tracking (reduces 8 params to 7)."""
+    """Parameters for running agent with/without tracking (bundles 8 params into 1)."""
     agent: Any
     input_data: Dict[str, Any]
     context: Any
@@ -69,7 +69,7 @@ class AgentRunParams:
 
 @dataclass
 class QualityGateRetryParams:
-    """Parameters for quality gate retry handling (reduces 8 params to 7)."""
+    """Parameters for quality gate retry handling (bundles 8 params into 1)."""
     quality_gates_config: Dict[str, Any]
     stage_name: str
     state: Dict[str, Any]
@@ -82,7 +82,7 @@ class QualityGateRetryParams:
 
 @dataclass
 class QualityGateFailureParams:
-    """Parameters for quality gate failure handling (reduces 8 params to 7)."""
+    """Parameters for quality gate failure handling (bundles 8 params into 1)."""
     passed: bool
     violations: list
     synthesis_result: Any

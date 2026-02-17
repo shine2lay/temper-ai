@@ -18,7 +18,7 @@
 
 ## Where We Are
 
-The framework has a solid foundation. Twelve milestones are complete (M1-M4 + M5.1-M5.3 + M6.1-M6.3 + M7.1-M7.2), quality is at 96/100 (A+), and the optimization engine is wired into the CLI execution pipeline. Agents now have persistent memory with SQLite persistence, time-decay relevance, LLM-based procedural extraction, and cross-agent shared namespaces. The framework is exposed as an API service with REST endpoints, WebSocket streaming, persistent run history, CLI client commands, and API key authentication. Background pattern mining continuously discovers actionable heuristics from execution history, with auto-tune recommendations and convergence-aware scheduling. Workflows adapt their own structure based on project characteristics, and the system proposes strategic improvements with risk assessment and human review workflows.
+The framework has a solid foundation. Thirteen milestones are complete (M1-M4 + M5.1-M5.3 + M6.1-M6.3 + M7.1-M7.3), quality is at 100/100 (A+), and the optimization engine is wired into the CLI execution pipeline. Agents now have persistent memory with SQLite persistence, time-decay relevance, LLM-based procedural extraction, and cross-agent shared namespaces. The framework is exposed as an API service with REST endpoints, WebSocket streaming, persistent run history, CLI client commands, and API key authentication. Background pattern mining continuously discovers actionable heuristics from execution history, with auto-tune recommendations and convergence-aware scheduling. Workflows adapt their own structure based on project characteristics, and the system proposes strategic improvements with risk assessment and human review workflows.
 
 **Completed:**
 
@@ -37,6 +37,7 @@ The framework has a solid foundation. Twelve milestones are complete (M1-M4 + M5
 | M6.3: Multi-Product Templates | Copy-and-stamp template system (4 product types, 42 YAML configs), template registry/generator, CLI commands, quality gate presets, 63 tests |
 | M7.1: Self-Modifying Lifecycle | Pre-compilation workflow adaptation (project classifier, profile registry, lifecycle adapter), A/B testing, rollback monitoring, 103 tests |
 | M7.2: Strategic Autonomy | Goal proposal framework (4 analyzers, proposer, safety policy, review workflow), CLI + dashboard, cross-product learning, 101 tests |
+| M7.3: Portfolio Management | Multi-product orchestration, resource allocation (WFQ scheduling), component sharing (Jaccard similarity), portfolio optimization (4-metric scorecard), knowledge graph (SQLite, BFS traversal), 114 tests |
 
 **Post-Milestone Improvements:**
 
@@ -464,26 +465,40 @@ The system proposes improvements and opportunities, not just executes instructio
 
 ---
 
-### M7.3: Portfolio Management (~8-10 weeks)
+### M7.3: Portfolio Management — COMPLETE
 
-Manage multiple products simultaneously with autonomous resource allocation.
+Multi-product orchestration with autonomous resource allocation, component sharing, and strategic optimization.
 
-**Deliverables:**
-- Multi-product orchestration: manage N products with shared infrastructure
-- Resource allocation engine: distribute compute/agent time across products by priority
-- Cross-product component sharing: identify and extract reusable components
-- Portfolio optimization: recommend sunset/invest decisions based on metrics
-- Partial knowledge graph: semantic memory of domain concepts and technology compatibility
+**What Was Built:**
 
-**Key Files:**
-- `src/workflow/workflow_executor.py` (multi-product scheduling)
-- `src/memory/` (knowledge graph store)
-- `src/observability/` (portfolio-level metrics)
+| Component | File(s) | Status |
+|-----------|---------|--------|
+| Portfolio schemas | `src/portfolio/_schemas.py` | Done — PortfolioConfig, ProductConfig, AllocationStatus, ProductScorecard, Recommendation |
+| Portfolio models | `src/portfolio/models.py` | Done — 7 SQLModel tables (portfolios, product_runs, shared_components, kg_concepts, kg_edges, tech_compatibility, snapshots) |
+| `PortfolioStore` | `src/portfolio/store.py` | Done — SQLite/WAL CRUD for all 7 tables |
+| `PortfolioLoader` | `src/portfolio/loader.py` | Done — YAML config loading and validation |
+| `ResourceScheduler` | `src/portfolio/scheduler.py` | Done — WFQ scheduling (virtual_time = completed/weight), concurrency + budget gates, record_start/complete lifecycle |
+| `ComponentAnalyzer` | `src/portfolio/component_analyzer.py` | Done — Jaccard similarity (|A∩B|/|A∪B|) for cross-product stage config reuse, MIN_SIMILARITY=0.6 |
+| `PortfolioOptimizer` | `src/portfolio/optimizer.py` | Done — 4-metric scorecard (success_rate, cost_efficiency, trend, utilization) → composite_score → invest/maintain/reduce/sunset |
+| `KnowledgePopulator` + `KnowledgeQuery` | `src/portfolio/knowledge_graph.py` | Done — SQLite graph (concepts, edges, tech_compatibility), BFS traversal, concept_stats |
+| Portfolio constants | `src/portfolio/constants.py` | Done — thresholds, weights, limits |
+| Dashboard routes | `src/portfolio/dashboard_routes.py` | Done — 6 API endpoints via create_portfolio_router() |
+| CLI commands | `src/interfaces/cli/portfolio_commands.py` | Done — `maf portfolio list\|show\|run\|scorecards\|recommend\|components\|graph stats\|graph query` |
+| CLI wiring | `src/interfaces/cli/main.py` | Done — `portfolio_group` mounted |
+| Dashboard wiring | `src/interfaces/dashboard/app.py` | Done — portfolio router mounted |
+| Portfolio config | `configs/portfolios/example_portfolio.yaml` | Done — 3 products (web_app, api, data_pipeline) |
+| Tests | `tests/test_portfolio/` | Done — 114 tests (9 test files) |
 
-**Success Criteria:**
-- System manages 3+ products with autonomous resource allocation
-- Cross-product component sharing reduces build time for new products
-- Portfolio recommendations align with human strategic intent
+**Key Capabilities:**
+- **WFQ scheduling:** Weighted Fair Queuing selects next product by lowest virtual_time (completed/weight), with concurrency and budget gates
+- **Component sharing:** Jaccard similarity detects reusable stage configurations across products (threshold 0.6)
+- **Portfolio optimization:** 4-metric scorecard → composite score → invest/maintain/reduce/sunset recommendations
+- **Knowledge graph:** SQLite-backed concept graph with BFS traversal, technology compatibility tracking
+- **Dashboard:** 6 API endpoints for portfolio data and analysis
+
+**Remaining Gaps (for future work):**
+- **Full knowledge graph:** Current implementation covers domain concepts and tech compatibility; full semantic memory deferred
+- **Empirical validation:** Portfolio recommendations need 50+ runs to validate alignment with human strategic intent
 
 **Dependencies:** M7.2, M6.3
 
@@ -545,9 +560,9 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 2026 Q1            M6.3 Multi-Product Templates ✓ COMPLETE
 2026 Q1            M7.1 Self-Modifying Lifecycle ✓ COMPLETE
 2026 Q1            M7.2 Strategic Autonomy ✓ COMPLETE
+2026 Q1            M7.3 Portfolio Management ✓ COMPLETE
 2026 Q2 (Now)     V2 VCS Web App + V3 Self-Improving VCS
 2026 Q3            V4 Autonomous VCS
-2026 Q4            M7.3 Portfolio Management
 ```
 
 ## Milestone Dependency Graph
@@ -556,13 +571,13 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 M5.1 Optimization Engine ✓ COMPLETE
  ├──→ M5.2 Agent Memory ✓ COMPLETE
  │     ├──→ M5.3 Continuous Learning ✓ COMPLETE
- │     │     └──→ M7.1 Self-Modifying Lifecycle ✓ COMPLETE ──→ M7.2 Strategic Autonomy ✓ COMPLETE ──→ M7.3 Portfolio Management
+ │     │     └──→ M7.1 Self-Modifying Lifecycle ✓ COMPLETE ──→ M7.2 Strategic Autonomy ✓ COMPLETE ──→ M7.3 Portfolio Management ✓ COMPLETE
  │     └──→ M7.2 Strategic Autonomy ✓ COMPLETE
  └──→ M6.1 Progressive Autonomy ✓ COMPLETE
        └──→ M7.1 Self-Modifying Lifecycle ✓ COMPLETE
 
 M6.2 MAF Server ✓ COMPLETE
- └──→ M6.3 Multi-Product Templates ✓ COMPLETE ──→ M7.3 Portfolio Management
+ └──→ M6.3 Multi-Product Templates ✓ COMPLETE ──→ M7.3 Portfolio Management ✓ COMPLETE
 ```
 
 All dependencies are acyclic. M6.2 is fully independent and can run in parallel with any M5 or M6.1 work.

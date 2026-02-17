@@ -18,7 +18,7 @@
 
 ## Where We Are
 
-The framework has a solid foundation. Eight milestones are complete (M1-M4 + M5.1-M5.3 + M6.2), quality is at 100/100 (A+), and the optimization engine is wired into the CLI execution pipeline. Agents now have persistent memory with SQLite persistence, time-decay relevance, LLM-based procedural extraction, and cross-agent shared namespaces. The framework is exposed as an API service with REST endpoints, WebSocket streaming, persistent run history, CLI client commands, and API key authentication. Background pattern mining continuously discovers actionable heuristics from execution history, with auto-tune recommendations and convergence-aware scheduling.
+The framework has a solid foundation. Ten milestones are complete (M1-M4 + M5.1-M5.3 + M6.1-M6.3), quality is at 100/100 (A+), and the optimization engine is wired into the CLI execution pipeline. Agents now have persistent memory with SQLite persistence, time-decay relevance, LLM-based procedural extraction, and cross-agent shared namespaces. The framework is exposed as an API service with REST endpoints, WebSocket streaming, persistent run history, CLI client commands, and API key authentication. Background pattern mining continuously discovers actionable heuristics from execution history, with auto-tune recommendations and convergence-aware scheduling.
 
 **Completed:**
 
@@ -33,6 +33,8 @@ The framework has a solid foundation. Eight milestones are complete (M1-M4 + M5.
 | M5.2: Agent Memory | SQLite persistence, decay/pruning, LLM procedural extraction, cross-agent sharing, 163 tests |
 | M5.3: Continuous Learning | Background pattern mining (5 miners), recommendation engine, auto-tune, learning dashboard, convergence detection, 58 tests |
 | M6.2: MAF Server | WorkflowRunner API, persistent run history (SQLite), CLI client (trigger/status/logs), API key auth, 74 tests |
+| M6.1: Progressive Autonomy | Trust-based agent escalation (5 levels), approval routing matrix, budget enforcement, emergency stop, shadow mode, 136 tests |
+| M6.3: Multi-Product Templates | Copy-and-stamp template system (4 product types, 42 YAML configs), template registry/generator, CLI commands, quality gate presets, 63 tests |
 
 **Post-Milestone Improvements:**
 
@@ -264,29 +266,37 @@ Background pattern mining and proactive recommendations from execution history.
 
 ## M6: Adaptive Operations (Q2-Q3 2026)
 
-### M6.1: Progressive Autonomy (~6-8 weeks)
+### M6.1: Progressive Autonomy — COMPLETE
 
 Agents earn trust incrementally based on track record. Safety policies adapt to demonstrated reliability.
 
-**Deliverables:**
-- `AutonomyLevel` enum (Supervised, Spot-Checked, Risk-Gated, Autonomous, Strategic) in agent config
-- Merit-safety integration: connect `AgentMeritScore` from `src/observability/merit_score_service.py` to `ActionPolicyEngine`
-- Risk-based approval routing: CRITICAL requires multi-approver, HIGH requires single approver, MEDIUM uses probabilistic sampling
-- Dynamic trust escalation and de-escalation based on rolling track record
-- Emergency stop controller (global halt capability across all agents)
-- Runtime budget enforcement (pre-action cost estimation and caps)
-- Shadow mode: new autonomy levels run in shadow alongside current approval flow before going live
+**What Was Built:**
 
-**Key Files:**
-- `src/safety/` (policy engine, approval workflows)
-- `src/observability/merit_score_service.py` (merit scoring)
-- `src/storage/schemas/agent_config.py` (autonomy level config)
+| Component | File(s) | Status |
+|-----------|---------|--------|
+| `AutonomyLevel` enum + `AutonomyConfig` | `src/safety/autonomy/schemas.py` | Done — 5 levels (Supervised→Strategic), config with enabled=False default |
+| `AutonomyState/Transition/Budget/Emergency` models | `src/safety/autonomy/models.py` | Done — 4 SQLModel tables |
+| `AutonomyStore` | `src/safety/autonomy/store.py` | Done — SQLite/WAL CRUD for all 4 tables |
+| `TrustEvaluator` | `src/safety/autonomy/trust_evaluator.py` | Done — reads AgentMeritScore, checks thresholds |
+| `AutonomyManager` | `src/safety/autonomy/manager.py` | Done — state machine with cooldown, max-level cap, threading.Lock |
+| `BudgetEnforcer` | `src/safety/autonomy/budget_enforcer.py` | Done — per-scope spending tracking, cost estimation from model_pricing.yaml |
+| `ApprovalRouter` | `src/safety/autonomy/approval_router.py` | Done — severity × level decision matrix, spot-check sampling |
+| `AutonomyPolicy` | `src/safety/autonomy/policy.py` | Done — BaseSafetyPolicy subclass, emergency/budget/approval checks |
+| `MeritSafetyBridge` | `src/safety/autonomy/merit_bridge.py` | Done — rate-limited bridge from merit updates to autonomy evaluation |
+| `EmergencyStopController` | `src/safety/autonomy/emergency_stop.py` | Done — O(1) threading.Event, activate/deactivate, check_or_raise |
+| `ShadowMode` | `src/safety/autonomy/shadow_mode.py` | Done — non-blocking shadow validation, agreement tracking, promotion readiness |
+| CLI commands | `src/interfaces/cli/autonomy_commands.py` | Done — status, escalate, deescalate, emergency-stop, resume, budget, history |
+| Dashboard routes + UI | `src/safety/autonomy/dashboard_routes.py`, `autonomy.html` | Done — 8 endpoints, Plotly charts |
+| Alembic migration | `alembic/versions/g8b9c0123456_add_autonomy_tables.py` | Done — 4 tables |
+| Tests | `tests/test_safety/test_autonomy/`, `tests/test_interfaces/test_autonomy_cli.py` | Done — 136 tests |
 
-**Success Criteria:**
-- Human intervention rate decreases 30%+ for agents that have earned trust
-- Zero safety incidents from autonomy escalation (shadow mode catches issues)
-- Emergency stop halts all operations within 5 seconds
-- Budget enforcement prevents cost overruns
+**Key Capabilities:**
+- **5 autonomy levels:** SUPERVISED → SPOT_CHECKED → RISK_GATED → AUTONOMOUS → STRATEGIC
+- **Approval matrix:** CRITICAL=2 approvers always; HIGH=1 at lower levels, auto at AUTONOMOUS+; MEDIUM=spot-check sampling
+- **Budget enforcement:** Per-scope spending caps with warning/exhausted status transitions
+- **Emergency stop:** Module-level threading.Event for O(1) cross-thread halt, 5s SLA
+- **Shadow mode:** Validates escalation decisions non-blocking before promotion (50+ runs, 98%+ agreement threshold)
+- **Backward compatible:** AutonomyConfig.enabled=False by default; existing agents unaffected
 
 **Dependencies:** M5.1 (needs outcome tracking for merit calculation)
 
@@ -328,27 +338,43 @@ Expose the framework as an API service that external products can integrate with
 
 ---
 
-### M6.3: Multi-Product Templates (~4-6 weeks)
+### M6.3: Multi-Product Templates — COMPLETE
 
-Product type as a configuration parameter with pre-built workflow templates.
+Copy-and-stamp template system: users run `maf template create --type api --name my-api` and get a complete set of workflow/stage/agent configs generated from a proven template. No runtime merge complexity — configs are standalone once created.
 
-**Deliverables:**
-- Product type parameter in workflow config (`web_app`, `api`, `data_pipeline`, `cli_tool`, etc.)
-- Template registry with product-specific agent/tool/stage presets
-- New `configs/templates/` directory with proven workflow templates
-- Product-specific quality gates and validation rules
-- Template inheritance: start from base, override per product type
+**What Was Built:**
 
-**Key Files:**
-- New `configs/templates/` directory
-- `src/workflow/config_loader.py` (template resolution and merging)
+| Component | File(s) | Status |
+|-----------|---------|--------|
+| Template schemas | `src/workflow/templates/_schemas.py` | Done — TemplateManifest, TemplateQualityGates, TemplateDefaultInference |
+| Template registry | `src/workflow/templates/registry.py` | Done — discover, validate, cache manifests |
+| Template generator | `src/workflow/templates/generator.py` | Done — copy-and-stamp with `{{project_name}}`, inference overrides, quality gates |
+| Quality gate presets | `src/workflow/templates/quality_gates.py` | Done — per-product defaults (web_app, api, data_pipeline, cli_tool) |
+| Template YAML configs | `configs/templates/{web_app,api,data_pipeline,cli_tool}/` | Done — 42 files (4 manifests + 4 workflows + 17 stages + 17 agents) |
+| CLI commands | `src/interfaces/cli/template_commands.py` | Done — `maf template list\|info\|create` |
+| Product type expansion | `src/workflow/_schemas.py` | Done — added `data_pipeline`, `cli_tool` to Literal |
+| Unit + integration tests | `tests/test_workflow/test_templates/`, `tests/test_interfaces/test_template_cli.py` | Done — 63 tests |
 
-**Success Criteria:**
-- 3+ product types supported with end-to-end workflow templates
-- New project bootstraps in under 5 minutes using a template
-- Product-specific quality gates catch type-relevant issues
+**CLI Commands:**
 
-**Dependencies:** M6.2 (needs server for deployment-oriented templates)
+```bash
+maf template list                                    # List available templates
+maf template info api                                # Show template details + quality gates
+maf template create --type api --name my-api         # Generate project configs
+maf template create --type web_app --name mysite \
+    --provider ollama --model llama3 --output /tmp/out  # With inference overrides
+```
+
+**Quality Gate Presets:**
+
+| Product Type | min_confidence | require_citations | on_failure | Custom Checks |
+|---|---|---|---|---|
+| web_app | 0.70 | true | retry_stage | performance, accessibility, security |
+| api | 0.75 | true | retry_stage | schema_validation, backward_compatibility |
+| data_pipeline | 0.80 | false | escalate | data_quality, completeness |
+| cli_tool | 0.70 | false | retry_stage | help_text, exit_codes |
+
+**Dependencies:** M6.2 (server for deployment-oriented templates)
 
 ---
 
@@ -479,8 +505,9 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 2026 Q1            M5.2 Agent Memory ✓ COMPLETE
 2026 Q1            M6.2 MAF Server ✓ COMPLETE
 2026 Q1            M5.3 Continuous Learning ✓ COMPLETE
+2026 Q1            M6.1 Progressive Autonomy ✓ COMPLETE
+2026 Q1            M6.3 Multi-Product Templates ✓ COMPLETE
 2026 Q2 (Now)     V2 VCS Web App + V3 Self-Improving VCS
-2026 Q2-Q3        M6.1 Progressive Autonomy || M6.3 Multi-Product Templates (parallel)
 2026 Q3            V4 Autonomous VCS
 2026 Q4            M7.1 Self-Modifying Lifecycle
 2027 Q1            M7.2 Strategic Autonomy
@@ -495,11 +522,11 @@ M5.1 Optimization Engine ✓ COMPLETE
  │     ├──→ M5.3 Continuous Learning ✓ COMPLETE
  │     │     └──→ M7.1 Self-Modifying Lifecycle ──→ M7.2 Strategic Autonomy ──→ M7.3 Portfolio Management
  │     └──→ M7.2 Strategic Autonomy
- └──→ M6.1 Progressive Autonomy
+ └──→ M6.1 Progressive Autonomy ✓ COMPLETE
        └──→ M7.1 Self-Modifying Lifecycle
 
 M6.2 MAF Server ✓ COMPLETE
- └──→ M6.3 Multi-Product Templates ──→ M7.3 Portfolio Management
+ └──→ M6.3 Multi-Product Templates ✓ COMPLETE ──→ M7.3 Portfolio Management
 ```
 
 All dependencies are acyclic. M6.2 is fully independent and can run in parallel with any M5 or M6.1 work.

@@ -1,0 +1,55 @@
+stage:
+  name: "{{project_name}}_data_pipeline_ingest_design"
+  description: "Data ingestion architecture and source connectivity design"
+  version: "1.0"
+
+  agents:
+    - "{{project_name}}_data_pipeline_data_engineer"
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 600
+
+  inputs:
+    project_description:
+      type: string
+      required: true
+      description: "The project description"
+    data_sources:
+      type: string
+      required: true
+      description: "Data source descriptions and connection details"
+
+  outputs:
+    ingestion_plan:
+      type: dict
+      description: "Data ingestion architecture plan"
+    source_connectors:
+      type: array
+      description: "Source connector specifications"
+    schema_mapping:
+      type: dict
+      description: "Source-to-target schema mappings"
+
+  collaboration:
+    strategy: consensus
+
+  conflict_resolution:
+    strategy: HighestConfidenceResolver
+    metrics:
+      - confidence
+    auto_resolve_threshold: 0.85
+    escalation_threshold: 0.50
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 1
+    retry_failed_agents: true
+    max_agent_retries: 2
+
+  quality_gates:
+    enabled: true
+    min_confidence: 0.80
+    require_citations: false
+    on_failure: escalate
+    max_retries: 3

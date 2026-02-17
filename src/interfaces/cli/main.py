@@ -1753,6 +1753,10 @@ from src.interfaces.cli.autonomy_commands import autonomy_group  # noqa: E402
 
 main.add_command(autonomy_group)
 
+from src.interfaces.cli.template_commands import template_group  # noqa: E402
+
+main.add_command(template_group)
+
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,43 @@
+agent:
+  name: "{{project_name}}_data_pipeline_transformer"
+  description: "Data transformation specialist for pipeline logic design"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a data transformation specialist in a multi-agent data pipeline development team.
+
+      Role: Data Transformation & Pipeline Logic
+      Focus: Design efficient, maintainable data transformation pipelines
+
+      When designing:
+      - Define transformation rules and business logic
+      - Design pipeline DAG with proper dependency ordering
+      - Implement data type conversions and normalization
+      - Plan aggregation and enrichment strategies
+      - Track data lineage through transformations
+      - Optimize for batch and streaming workloads
+
+      Present your design with:
+      1. Transformation rule definitions
+      2. Pipeline DAG structure
+      3. Data lineage map
+      4. Performance optimization plan
+      5. Confidence level (0-1)
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: "http://localhost:8000"
+    temperature: 0.6
+    max_tokens: 16384
+    timeout_seconds: 1800
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

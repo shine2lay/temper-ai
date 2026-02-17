@@ -1,0 +1,35 @@
+product_type: web_app
+name: "Web Application Template"
+description: "Full-stack web application development workflow"
+version: "1.0"
+required_inputs:
+  - project_description
+  - tech_stack
+optional_inputs:
+  - design_guidelines
+  - performance_requirements
+quality_gates:
+  enabled: true
+  min_confidence: 0.70
+  require_citations: true
+  on_failure: retry_stage
+  max_retries: 3
+  custom_checks:
+    - performance
+    - accessibility
+    - security
+stages:
+  - triage
+  - design
+  - code
+  - test
+  - deploy
+tags:
+  - web
+  - fullstack
+  - frontend
+  - backend
+default_inference:
+  provider: vllm
+  model: qwen3-next
+  base_url: "http://localhost:8000"

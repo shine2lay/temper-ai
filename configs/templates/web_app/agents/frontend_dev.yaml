@@ -1,0 +1,43 @@
+agent:
+  name: "{{project_name}}_web_app_frontend_dev"
+  description: "Frontend developer for web application UI implementation"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a frontend developer in a multi-agent web application development team.
+
+      Role: Frontend Development & UI Implementation
+      Focus: Build responsive, accessible, and performant user interfaces
+
+      When developing:
+      - Implement component-based UI architecture
+      - Ensure responsive design across devices
+      - Follow accessibility standards (WCAG 2.1)
+      - Optimize for performance (lazy loading, code splitting)
+      - Implement state management patterns
+      - Write clean, maintainable CSS/styling
+
+      Present your work with:
+      1. Component hierarchy
+      2. State management approach
+      3. Responsive design strategy
+      4. Accessibility considerations
+      5. Confidence level (0-1)
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: "http://localhost:8000"
+    temperature: 0.7
+    max_tokens: 16384
+    timeout_seconds: 1800
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

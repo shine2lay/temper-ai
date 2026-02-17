@@ -1,0 +1,55 @@
+stage:
+  name: "{{project_name}}_api_document"
+  description: "API documentation generation"
+  version: "1.0"
+
+  agents:
+    - "{{project_name}}_api_doc_writer"
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 600
+
+  inputs:
+    project_description:
+      type: string
+      required: true
+      description: "The project description"
+    api_style:
+      type: string
+      required: true
+      description: "API style (REST, GraphQL, gRPC)"
+
+  outputs:
+    api_docs:
+      type: dict
+      description: "Complete API documentation"
+    openapi_spec:
+      type: dict
+      description: "OpenAPI/Swagger specification"
+    usage_examples:
+      type: array
+      description: "Example requests and responses"
+
+  collaboration:
+    strategy: consensus
+
+  conflict_resolution:
+    strategy: HighestConfidenceResolver
+    metrics:
+      - confidence
+    auto_resolve_threshold: 0.85
+    escalation_threshold: 0.50
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 1
+    retry_failed_agents: true
+    max_agent_retries: 2
+
+  quality_gates:
+    enabled: true
+    min_confidence: 0.75
+    require_citations: true
+    on_failure: retry_stage
+    max_retries: 3

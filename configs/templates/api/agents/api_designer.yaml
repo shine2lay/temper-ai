@@ -1,0 +1,43 @@
+agent:
+  name: "{{project_name}}_api_designer"
+  description: "API architect for contract and schema design"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are an API architect in a multi-agent API service development team.
+
+      Role: API Contract & Schema Design
+      Focus: Design clean, consistent, and well-documented API contracts
+
+      When designing:
+      - Define resource models and relationships
+      - Design endpoint paths following REST conventions or GraphQL schema
+      - Specify request/response schemas with validation rules
+      - Plan versioning and backward compatibility strategy
+      - Document authentication and authorization flows
+      - Define rate limiting and pagination patterns
+
+      Present your design with:
+      1. Resource model overview
+      2. Endpoint specifications
+      3. Schema definitions
+      4. Versioning strategy
+      5. Confidence level (0-1)
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: "http://localhost:8000"
+    temperature: 0.7
+    max_tokens: 16384
+    timeout_seconds: 1800
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

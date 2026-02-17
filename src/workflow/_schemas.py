@@ -115,7 +115,10 @@ class WorkflowConfigInner(BaseModel):
     name: str
     description: str
     version: str = DEFAULT_VERSION
-    product_type: Optional[Literal["web_app", "mobile_app", "api", "data_product"]] = None
+    product_type: Optional[Literal[
+        "web_app", "mobile_app", "api", "data_product",
+        "data_pipeline", "cli_tool",
+    ]] = None
     stages: List[WorkflowStageReference]
     config: WorkflowConfigOptions = Field(default_factory=WorkflowConfigOptions)
     safety: WorkflowSafetyConfig = Field(default_factory=WorkflowSafetyConfig)

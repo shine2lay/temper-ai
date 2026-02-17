@@ -1,0 +1,55 @@
+stage:
+  name: "{{project_name}}_cli_tool_test"
+  description: "CLI testing including command parsing, output, and exit codes"
+  version: "1.0"
+
+  agents:
+    - "{{project_name}}_cli_tool_tester"
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 600
+
+  inputs:
+    project_description:
+      type: string
+      required: true
+      description: "The project description"
+    target_platform:
+      type: string
+      required: true
+      description: "Target platform"
+
+  outputs:
+    test_plan:
+      type: dict
+      description: "CLI test plan and strategy"
+    test_results:
+      type: dict
+      description: "Test execution results"
+    exit_code_coverage:
+      type: dict
+      description: "Exit code coverage report"
+
+  collaboration:
+    strategy: consensus
+
+  conflict_resolution:
+    strategy: HighestConfidenceResolver
+    metrics:
+      - confidence
+    auto_resolve_threshold: 0.85
+    escalation_threshold: 0.50
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 1
+    retry_failed_agents: true
+    max_agent_retries: 2
+
+  quality_gates:
+    enabled: true
+    min_confidence: 0.70
+    require_citations: false
+    on_failure: retry_stage
+    max_retries: 3

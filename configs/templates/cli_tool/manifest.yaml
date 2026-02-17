@@ -1,0 +1,33 @@
+product_type: cli_tool
+name: "CLI Tool Template"
+description: "Command-line tool development and packaging workflow"
+version: "1.0"
+required_inputs:
+  - project_description
+  - target_platform
+optional_inputs:
+  - command_structure
+  - distribution_channels
+quality_gates:
+  enabled: true
+  min_confidence: 0.70
+  require_citations: false
+  on_failure: retry_stage
+  max_retries: 3
+  custom_checks:
+    - help_text
+    - exit_codes
+stages:
+  - design
+  - implement
+  - test
+  - package
+tags:
+  - cli
+  - tool
+  - command-line
+  - packaging
+default_inference:
+  provider: vllm
+  model: qwen3-next
+  base_url: "http://localhost:8000"

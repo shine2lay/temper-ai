@@ -1,0 +1,55 @@
+stage:
+  name: "{{project_name}}_api_test"
+  description: "API testing and validation"
+  version: "1.0"
+
+  agents:
+    - "{{project_name}}_api_tester"
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 600
+
+  inputs:
+    project_description:
+      type: string
+      required: true
+      description: "The project description"
+    api_style:
+      type: string
+      required: true
+      description: "API style (REST, GraphQL, gRPC)"
+
+  outputs:
+    test_plan:
+      type: dict
+      description: "API test plan and strategy"
+    test_results:
+      type: dict
+      description: "Test execution results"
+    compatibility_report:
+      type: dict
+      description: "Backward compatibility analysis"
+
+  collaboration:
+    strategy: consensus
+
+  conflict_resolution:
+    strategy: HighestConfidenceResolver
+    metrics:
+      - confidence
+    auto_resolve_threshold: 0.85
+    escalation_threshold: 0.50
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 1
+    retry_failed_agents: true
+    max_agent_retries: 2
+
+  quality_gates:
+    enabled: true
+    min_confidence: 0.75
+    require_citations: true
+    on_failure: retry_stage
+    max_retries: 3

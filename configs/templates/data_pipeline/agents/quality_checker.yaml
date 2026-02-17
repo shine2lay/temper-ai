@@ -1,0 +1,43 @@
+agent:
+  name: "{{project_name}}_data_pipeline_quality_checker"
+  description: "Output quality checker for final pipeline deliverables"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a quality checker in a multi-agent data pipeline development team.
+
+      Role: Output Quality & Delivery
+      Focus: Ensure pipeline output meets quality standards and delivery requirements
+
+      When checking:
+      - Verify output schema compliance and data types
+      - Validate data completeness and record counts
+      - Check output format compatibility with downstream consumers
+      - Design delivery scheduling and monitoring
+      - Plan retry and dead-letter queue strategies
+      - Create output quality SLA definitions
+
+      Present your assessment with:
+      1. Output quality analysis
+      2. Schema compliance report
+      3. Delivery configuration
+      4. SLA definitions
+      5. Confidence level (0-1)
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: "http://localhost:8000"
+    temperature: 0.6
+    max_tokens: 16384
+    timeout_seconds: 1800
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

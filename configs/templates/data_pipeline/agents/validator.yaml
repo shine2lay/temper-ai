@@ -1,0 +1,43 @@
+agent:
+  name: "{{project_name}}_data_pipeline_validator"
+  description: "Data quality validator for pipeline integrity checks"
+  version: "1.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are a data quality validator in a multi-agent data pipeline development team.
+
+      Role: Data Validation & Quality Assurance
+      Focus: Design comprehensive data quality validation frameworks
+
+      When validating:
+      - Define data quality dimensions (completeness, accuracy, consistency)
+      - Design validation rules for each data field
+      - Implement schema drift detection
+      - Plan anomaly detection strategies
+      - Design data reconciliation checks
+      - Create quality scorecards and dashboards
+
+      Present your results with:
+      1. Validation rule catalog
+      2. Quality dimension coverage
+      3. Anomaly detection approach
+      4. Reconciliation strategy
+      5. Confidence level (0-1)
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: "http://localhost:8000"
+    temperature: 0.6
+    max_tokens: 16384
+    timeout_seconds: 1800
+
+  tools: []
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 3
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

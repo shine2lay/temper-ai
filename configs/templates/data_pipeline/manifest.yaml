@@ -1,0 +1,33 @@
+product_type: data_pipeline
+name: "Data Pipeline Template"
+description: "Data ingestion, transformation, and validation pipeline workflow"
+version: "1.0"
+required_inputs:
+  - project_description
+  - data_sources
+optional_inputs:
+  - output_format
+  - quality_thresholds
+quality_gates:
+  enabled: true
+  min_confidence: 0.80
+  require_citations: false
+  on_failure: escalate
+  max_retries: 3
+  custom_checks:
+    - data_quality
+    - completeness
+stages:
+  - ingest_design
+  - transform
+  - validate
+  - output
+tags:
+  - data
+  - pipeline
+  - etl
+  - transformation
+default_inference:
+  provider: vllm
+  model: qwen3-next
+  base_url: "http://localhost:8000"

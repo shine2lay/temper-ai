@@ -1,0 +1,25 @@
+agent:
+  name: memory_researcher
+  description: "Research agent with persistent memory (SQLite-backed)"
+  inference:
+    provider: ollama
+    model: qwen3
+  memory:
+    enabled: true
+    type: episodic
+    scope: cross_session
+    provider: sqlite
+    retrieval_k: 5
+    relevance_threshold: 0.5
+    decay_factor: 0.95
+    auto_extract_procedural: true
+    shared_namespace: research_team
+  prompt:
+    inline: "You are a research agent with memory of past interactions. Use your memories of past research to provide better, more contextual answers. When you recall relevant information from previous sessions, reference it in your response."
+  tools: []
+  safety:
+    mode: execute
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation

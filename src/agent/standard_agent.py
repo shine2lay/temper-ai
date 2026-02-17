@@ -254,14 +254,27 @@ class StandardAgent(BaseAgent):
 
         try:
             mem_cfg = self.config.agent.memory
+            svc = self._get_memory_service()
             scope = self._build_memory_scope(context)
             query = self._extract_memory_query(input_data)
-            memory_text = self._get_memory_service().retrieve_context(
-                scope,
-                query,
-                retrieval_k=mem_cfg.retrieval_k,
-                relevance_threshold=mem_cfg.relevance_threshold,
-            )
+            shared_ns = getattr(mem_cfg, "shared_namespace", None)
+
+            if shared_ns:
+                shared_scope = svc.build_shared_scope(scope, shared_ns)
+                memory_text = svc.retrieve_with_shared(
+                    scope, shared_scope, query,
+                    retrieval_k=mem_cfg.retrieval_k,
+                    relevance_threshold=mem_cfg.relevance_threshold,
+                    decay_factor=mem_cfg.decay_factor,
+                )
+            else:
+                memory_text = svc.retrieve_context(
+                    scope, query,
+                    retrieval_k=mem_cfg.retrieval_k,
+                    relevance_threshold=mem_cfg.relevance_threshold,
+                    decay_factor=mem_cfg.decay_factor,
+                )
+
             if memory_text:
                 template += "\n\n---\n\n" + memory_text
         except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
@@ -280,18 +293,60 @@ class StandardAgent(BaseAgent):
             return result
 
         try:
+            mem_cfg = self.config.agent.memory
             scope = self._build_memory_scope(self._execution_context)
             output_text = result.output or ""
             if output_text:
-                self._get_memory_service().store_episodic(
+                svc = self._get_memory_service()
+                svc.store_episodic(
                     scope,
                     content=output_text,
                     metadata={"agent_name": self.name},
+                    max_episodes=mem_cfg.max_episodes,
                 )
+                self._maybe_extract_procedural(svc, scope, output_text, mem_cfg)
+                self._maybe_store_shared(svc, scope, output_text, mem_cfg)
         except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
             logger.warning("Memory storage failed for agent %s: %s", self.name, exc)
 
         return result
+
+    def _maybe_extract_procedural(
+        self, svc: MemoryService, scope: MemoryScope,
+        output_text: str, mem_cfg: Any,
+    ) -> None:
+        """Auto-extract procedural patterns when configured."""
+        if not getattr(mem_cfg, "auto_extract_procedural", False):
+            return
+        try:
+            from src.memory.extractors import extract_procedural_patterns
+
+            llm_fn = lambda prompt: self.llm.complete(prompt).content  # noqa: E731
+            patterns = extract_procedural_patterns(output_text, llm_fn)
+            for pattern in patterns:
+                svc.store_procedural(
+                    scope, pattern,
+                    metadata={"agent_name": self.name, "source": "auto_extract"},
+                )
+        except (ValueError, TypeError, RuntimeError, OSError, ImportError) as exc:
+            logger.warning("Procedural extraction failed for agent %s: %s", self.name, exc)
+
+    def _maybe_store_shared(
+        self, svc: MemoryService, scope: MemoryScope,
+        output_text: str, mem_cfg: Any,
+    ) -> None:
+        """Store memory in shared namespace when configured."""
+        shared_ns = getattr(mem_cfg, "shared_namespace", None)
+        if not shared_ns:
+            return
+        try:
+            shared_scope = svc.build_shared_scope(scope, shared_ns)
+            svc.store_episodic(
+                shared_scope, output_text,
+                metadata={"source_agent": self.name},
+            )
+        except (ValueError, TypeError, RuntimeError, OSError, ImportError) as exc:
+            logger.warning("Shared memory storage failed for agent %s: %s", self.name, exc)
 
     def get_capabilities(self) -> Dict[str, Any]:
         """Get agent capabilities."""

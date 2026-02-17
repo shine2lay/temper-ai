@@ -114,6 +114,18 @@ class MemoryConfig(BaseModel):
     max_episodes: int = Field(default=DEFAULT_QUEUE_SIZE, gt=0)
     decay_factor: float = Field(default=PROB_NEAR_CERTAIN, ge=0.0, le=1.0)
 
+    # Procedural extraction
+    auto_extract_procedural: bool = Field(
+        default=False,
+        description="Auto-extract procedural patterns from agent output via LLM",
+    )
+
+    # Cross-agent sharing
+    shared_namespace: Optional[str] = Field(
+        default=None,
+        description="Shared namespace for cross-agent memory pooling",
+    )
+
     @model_validator(mode='after')
     def validate_enabled_memory(self) -> 'MemoryConfig':
         """Validate that type and scope are set when memory is enabled."""

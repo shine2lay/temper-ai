@@ -28,27 +28,21 @@ class TuningOptimizer:
         config: Dict[str, Any],
     ) -> OptimizationResult:
         """Run config variants and select the best via experimentation."""
-        strategies: List[Dict[str, Any]] = config.get("strategies", [])
-        runs_per_config: int = config.get("runs", DEFAULT_RUNS)
-
-        if not self.experiment_service:
-            return self._run_without_service(
-                runner, input_data, evaluator, strategies, runs_per_config
-            )
-
-        return self._run_with_service(
-            runner, input_data, evaluator, strategies, runs_per_config
-        )
+        if self.experiment_service:
+            return self._run_with_service(runner, input_data, evaluator, config)
+        return self._run_without_service(runner, input_data, evaluator, config)
 
     def _run_without_service(
         self,
         runner: Any,
         input_data: Dict[str, Any],
         evaluator: EvaluatorProtocol,
-        strategies: List[Dict[str, Any]],
-        runs_per_config: int,
+        config: Dict[str, Any],
     ) -> OptimizationResult:
         """Fallback: run each strategy and pick best (no persistence)."""
+        strategies: List[Dict[str, Any]] = config.get("strategies", [])
+        runs_per_config: int = config.get("runs", DEFAULT_RUNS)
+
         if not strategies:
             output = runner.execute(input_data)
             result = evaluator.evaluate(output)
@@ -91,45 +85,69 @@ class TuningOptimizer:
         runner: Any,
         input_data: Dict[str, Any],
         evaluator: EvaluatorProtocol,
-        strategies: List[Dict[str, Any]],
-        runs_per_config: int,
+        config: Dict[str, Any],
     ) -> OptimizationResult:
-        """Run via ExperimentService for tracking and early stopping."""
-        if self.experiment_service is None:
-            raise RuntimeError("experiment_service is required for _run_with_service")
-        experiment = self.experiment_service.create_experiment(
-            name="optimization_tuning",
-            description="Automated config tuning",
-            variants=[{"name": s.get("name", f"v{i}"), "config": s}
-                       for i, s in enumerate(strategies)],
+        """Run via ExperimentService with proper tracking."""
+        from src.improvement._experiment_helpers import (
+            create_tuning_experiment,
+            create_workflow_id,
+            finalize_experiment,
+            track_run_result,
         )
-        exp_id = experiment.id if hasattr(experiment, "id") else str(experiment)
-        self.experiment_service.start_experiment(exp_id)
+
+        strategies: List[Dict[str, Any]] = config.get("strategies", [])
+        runs_per_config: int = config.get("runs", DEFAULT_RUNS)
+
+        evaluator_name = getattr(evaluator, "name", "unknown")
+        experiment_id = create_tuning_experiment(
+            self.experiment_service, evaluator_name,
+            strategies, runs_per_config,
+        )
 
         best_output: Dict[str, Any] = {}
         best_score = -1.0
+        run_idx = 0
 
         for strategy in strategies:
             for _ in range(runs_per_config):
+                workflow_id = create_workflow_id(experiment_id, run_idx)
+                self.experiment_service.assign_variant(
+                    workflow_id, experiment_id
+                )
+
                 merged_input = {**input_data, **strategy}
                 output = runner.execute(merged_input)
                 result = evaluator.evaluate(output)
+
+                track_run_result(
+                    self.experiment_service, workflow_id, result.score
+                )
 
                 if result.score > best_score:
                     best_score = result.score
                     best_output = output
 
-            stopping = self.experiment_service.check_early_stopping(exp_id)
+                run_idx += 1
+
+            stopping = self.experiment_service.check_early_stopping(
+                experiment_id
+            )
             if stopping.get("should_stop", False):
-                logger.info("Early stopping triggered for experiment %s", exp_id)
+                logger.info(
+                    "Early stopping triggered for experiment %s",
+                    experiment_id,
+                )
                 break
 
-        self.experiment_service.stop_experiment(exp_id)
+        experiment_results = finalize_experiment(
+            self.experiment_service, experiment_id
+        )
 
         return OptimizationResult(
             output=best_output,
             score=best_score,
-            iterations=len(strategies) * runs_per_config,
+            iterations=run_idx,
             improved=True,
-            details={"experiment_id": exp_id},
+            experiment_id=experiment_id,
+            experiment_results=experiment_results,
         )

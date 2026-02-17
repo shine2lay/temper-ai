@@ -57,10 +57,12 @@ class TestTuningOptimizer:
 
     def test_with_experiment_service(self):
         mock_service = MagicMock()
-        mock_experiment = MagicMock()
-        mock_experiment.id = "exp-123"  # noqa
-        mock_service.create_experiment.return_value = mock_experiment
+        mock_service.create_experiment.return_value = "exp-123"
         mock_service.check_early_stopping.return_value = {"should_stop": False}
+        mock_service.get_experiment_results.return_value = {
+            "recommended_winner": "v1",
+            "confidence": 0.85,
+        }
 
         runner = MagicMock()
         runner.execute.return_value = {"result": "tuned"}
@@ -80,16 +82,22 @@ class TestTuningOptimizer:
         )
 
         assert result.output == {"result": "tuned"}
+        assert result.experiment_id == "exp-123"
+        assert result.experiment_results is not None
         mock_service.create_experiment.assert_called_once()
         mock_service.start_experiment.assert_called_once_with("exp-123")
-        mock_service.stop_experiment.assert_called_once_with("exp-123")
+        mock_service.assign_variant.assert_called_once()
+        mock_service.track_execution_complete.assert_called_once()
+        mock_service.get_experiment_results.assert_called_once_with("exp-123")
+        mock_service.stop_experiment.assert_called_once()
 
     def test_early_stopping(self):
         mock_service = MagicMock()
-        mock_experiment = MagicMock()
-        mock_experiment.id = "exp-456"  # noqa
-        mock_service.create_experiment.return_value = mock_experiment
+        mock_service.create_experiment.return_value = "exp-456"
         mock_service.check_early_stopping.return_value = {"should_stop": True}
+        mock_service.get_experiment_results.return_value = {
+            "recommended_winner": "v1",
+        }
 
         runner = MagicMock()
         runner.execute.return_value = {"result": "v1"}
@@ -131,3 +139,5 @@ class TestTuningOptimizer:
         )
 
         assert result.output == {"result": "fallback"}
+        assert result.experiment_id is None
+        assert result.experiment_results is None

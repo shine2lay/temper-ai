@@ -11,7 +11,6 @@ from src.improvement._schemas import (
     OptimizationResult,
     PipelineStepConfig,
 )
-from src.improvement.constants import OPTIMIZER_TUNING
 from src.improvement.registry import OptimizationRegistry
 
 logger = logging.getLogger(__name__)
@@ -87,16 +86,7 @@ class OptimizationEngine:
             )
 
         optimizer_cls = self.registry.get_optimizer_class(step.optimizer)
-        kwargs: Dict[str, Any] = {}
-        if step.optimizer == OPTIMIZER_TUNING:
-            kwargs["experiment_service"] = self.experiment_service
-        elif hasattr(optimizer_cls, "__init__"):
-            # RefinementOptimizer takes llm
-            import inspect
-            sig = inspect.signature(optimizer_cls.__init__)
-            if "llm" in sig.parameters:
-                kwargs["llm"] = self.llm
-
+        kwargs = self._build_optimizer_kwargs(optimizer_cls)
         optimizer = optimizer_cls(**kwargs)
 
         step_config = {
@@ -109,6 +99,22 @@ class OptimizationEngine:
             runner, input_data, evaluator, step_config
         )
         return result
+
+    def _build_optimizer_kwargs(
+        self, optimizer_cls: Any
+    ) -> Dict[str, Any]:
+        """Build kwargs for optimizer constructor based on its signature."""
+        import inspect
+
+        kwargs: Dict[str, Any] = {}
+        sig = inspect.signature(optimizer_cls.__init__)
+
+        if "experiment_service" in sig.parameters:
+            kwargs["experiment_service"] = self.experiment_service
+        if "llm" in sig.parameters:
+            kwargs["llm"] = self.llm
+
+        return kwargs
 
     def _evaluate_final(
         self, output: Dict[str, Any]

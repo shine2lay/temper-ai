@@ -77,6 +77,8 @@ class OptimizationResult:
     iterations: int = 0
     improved: bool = False
     details: Dict[str, Any] = dataclasses.field(default_factory=dict)
+    experiment_id: Optional[str] = None
+    experiment_results: Optional[Dict[str, Any]] = None
 
     def __post_init__(self) -> None:
         self.score = max(MIN_SCORE, min(MAX_SCORE, self.score))

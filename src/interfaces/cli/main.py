@@ -12,6 +12,7 @@ Commands:
     maf list stages             List available stages
     maf rollback ...            Rollback operations
     maf m5 ...                  M5 self-improvement commands
+    maf memory ...              Memory management commands
 """
 import json
 import logging
@@ -72,6 +73,7 @@ class WorkflowExecutionParams:
     verbose: bool
     workspace: Optional[str] = None
     run_id: Optional[str] = None
+    workflow_name: str = ""
 
 
 @dataclass
@@ -85,6 +87,7 @@ class WorkflowStateParams:
     show_details: bool
     workspace: Optional[str] = None
     run_id: Optional[str] = None
+    workflow_name: str = ""
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────
@@ -377,12 +380,134 @@ def _build_workflow_state(params: WorkflowStateParams) -> dict[str, Any]:
         "show_details": params.show_details,
         "detail_console": console if params.show_details else None,
         "stream_callback": stream_display,
+        "workflow_name": params.workflow_name,
     }
     if params.workspace is not None:
         state["workspace_root"] = params.workspace
     if params.run_id is not None:
         state["run_id"] = params.run_id
     return state
+
+
+# Keys in workflow state that are infrastructure (non-serializable).
+# Everything else (stage_outputs, status, etc.) is data the evaluator needs.
+_INFRA_STATE_KEYS = frozenset({
+    "tracker", "config_loader", "tool_registry", "detail_console",
+    "stream_callback", "show_details",
+})
+
+
+class _CritiqueLLM:
+    """Adapter: wraps BaseLLM.complete() as .generate() for OptimizationEngine."""
+
+    def __init__(self, llm: Any) -> None:
+        self._llm = llm
+
+    def generate(self, prompt: str) -> str:
+        """Generate a text completion."""
+        response = self._llm.complete(prompt)
+        return str(response.content)
+
+
+def _create_critique_llm(workflow_config: dict) -> Optional[Any]:
+    """Try to create an LLM for optimization critique from the first agent.
+
+    Reads the stage_ref YAML directly, extracts the first agent name,
+    then loads the agent config to get the inference provider/model/url.
+    """
+    try:
+        wf = workflow_config.get("workflow", {})
+        stages = wf.get("stages", [])
+        if not stages:
+            return None
+        stage_ref = stages[0].get("stage_ref")
+        if not stage_ref:
+            return None
+        with open(stage_ref) as f:
+            stage_config = yaml.safe_load(f)
+        agents = stage_config.get("stage", {}).get("agents", [])
+        if not agents:
+            return None
+        agent_name = agents[0] if isinstance(agents[0], str) else agents[0].get("name")
+        agent_path = Path("configs/agents") / f"{agent_name}.yaml"
+        with open(agent_path) as f:
+            agent_config = yaml.safe_load(f)
+        inference = agent_config.get("agent", {}).get("inference", {})
+        provider = inference.get("provider", "vllm")
+        model = inference.get("model")
+        base_url = inference.get("base_url")
+        if not model or not base_url:
+            return None
+        from src.llm.providers.vllm_provider import VllmLLM
+        raw_llm: Any
+        if provider == "ollama":
+            from src.llm.providers.ollama import OllamaLLM
+            raw_llm = OllamaLLM(model=model, base_url=base_url)
+        else:
+            raw_llm = VllmLLM(model=model, base_url=base_url)
+        return _CritiqueLLM(raw_llm)
+    except Exception:  # noqa: BLE001 -- optional feature, fall back gracefully
+        logger.debug("Could not create critique LLM, using fallback")
+        return None
+
+
+def _create_experiment_service() -> Optional[Any]:
+    """Create and initialize ExperimentService for optimization tracking."""
+    try:
+        from src.experimentation.service import ExperimentService
+
+        service = ExperimentService()
+        service.initialize()
+        return service
+    except Exception:  # noqa: BLE001 -- optional feature, fall back gracefully
+        logger.debug("Could not create ExperimentService, optimization tracking disabled")
+        return None
+
+
+def _log_optimization_summary(result: Any) -> None:
+    """Log optimization result summary including experiment details."""
+    logger.info(
+        "Optimization complete: %d iterations, score=%.2f",
+        result.iterations,
+        result.score,
+    )
+
+    if result.experiment_id:
+        logger.info("Experiment ID: %s", result.experiment_id)
+
+    if result.experiment_results:
+        rec = result.experiment_results.get("recommendation")
+        confidence = result.experiment_results.get("confidence", 0.0)
+        winner = result.experiment_results.get("recommended_winner")
+        logger.info(
+            "Experiment: recommendation=%s, confidence=%.2f, winner=%s",
+            rec,
+            confidence,
+            winner,
+        )
+
+
+class _CLIWorkflowRunner:
+    """Thin wrapper so OptimizationEngine can re-execute the workflow."""
+
+    def __init__(self, compiled: Any, state_template: dict) -> None:
+        self._compiled = compiled
+        self._state_template = state_template
+
+    def execute(self, input_data: Any) -> Any:
+        """Run the workflow and return only serializable output.
+
+        Shallow-copies the state template (infrastructure objects like tracker,
+        config_loader are shared across runs), runs the workflow, then strips
+        non-serializable infrastructure keys so the evaluator can json.dumps().
+        """
+        state = dict(self._state_template)
+        if isinstance(input_data, dict):
+            state["workflow_inputs"] = dict(input_data)
+        result = self._compiled.invoke(state)
+        if isinstance(result, dict):
+            return {k: v for k, v in result.items() if k not in _INFRA_STATE_KEYS}
+        return result
 
 
 def _execute_workflow(params: WorkflowExecutionParams) -> Any:
@@ -408,8 +533,29 @@ def _execute_workflow(params: WorkflowExecutionParams) -> Any:
                 show_details=params.show_details,
                 workspace=params.workspace,
                 run_id=params.run_id,
+                workflow_name=params.workflow_name,
             )
         )
+
+        # Wire optimization engine if configured
+        opt_raw = params.workflow_config.get("workflow", {}).get("optimization")
+        if opt_raw and opt_raw.get("enabled", True):
+            from src.improvement import OptimizationConfig, OptimizationEngine
+
+            logger.info("Optimization enabled — running optimization pipeline")
+            opt_config = OptimizationConfig.model_validate(opt_raw)
+            critique_llm = _create_critique_llm(params.workflow_config)
+            experiment_service = _create_experiment_service()
+            opt_engine = OptimizationEngine(
+                config=opt_config,
+                llm=critique_llm,
+                experiment_service=experiment_service,
+            )
+            runner = _CLIWorkflowRunner(params.compiled, state)
+            opt_result = opt_engine.run(runner, params.inputs)
+            _log_optimization_summary(opt_result)
+            return opt_result.output
+
         return params.compiled.invoke(state)
     except WorkflowStageError as e:
         console.print(f"[red]Stage failure:[/red] {e.stage_name} — {e}")
@@ -671,6 +817,7 @@ def run(  # noqa: params — Click command, params are CLI args
             tracker=tracker, config_loader=config_loader, tool_registry=tool_registry,
             workflow_id=workflow_id, show_details=show_details, engine=engine,
             verbose=verbose, workspace=workspace, run_id=run_id,
+            workflow_name=workflow_name,
         )
         result = _execute_workflow(exec_params)
 
@@ -1327,6 +1474,10 @@ def list_stages(config_root: str) -> None:
 from src.interfaces.cli.rollback import rollback  # noqa: E402
 
 main.add_command(rollback)
+
+from src.interfaces.cli.memory_commands import memory_group  # noqa: E402
+
+main.add_command(memory_group)
 
 
 if __name__ == "__main__":

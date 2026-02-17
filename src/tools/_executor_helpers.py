@@ -415,6 +415,11 @@ def validate_policy(
 
     try:
         from src.safety.action_policy_engine import PolicyExecutionContext
+        metadata = {}
+        if context.get("autonomy_config") is not None:
+            metadata["autonomy_config"] = context["autonomy_config"]
+        if context.get("autonomy_level") is not None:
+            metadata["autonomy_level"] = context["autonomy_level"]
         enforcement = executor.policy_engine.validate_action_sync(
             action={"tool": tool_name, "params": params},
             context=PolicyExecutionContext(
@@ -422,7 +427,8 @@ def validate_policy(
                 workflow_id=context.get("workflow_id", "unknown"),
                 stage_id=context.get("stage_id", "unknown"),
                 action_type="tool_execution",
-                action_data={"tool_name": tool_name, "params": params}
+                action_data={"tool_name": tool_name, "params": params},
+                metadata=metadata,
             )
         )
 

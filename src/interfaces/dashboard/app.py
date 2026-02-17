@@ -14,6 +14,7 @@ from starlette.datastructures import MutableHeaders
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_WORKERS = 4
+_API_PREFIX = "/api"
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -104,7 +105,7 @@ def _register_routes(
     # /api/workflows/available match before parametric /api/workflows/{id}.
     app.include_router(
         create_server_router(execution_service, data_service, config_root),
-        prefix="/api",
+        prefix=_API_PREFIX,
     )
 
     # WebSocket endpoint for event streaming (both modes)
@@ -113,7 +114,7 @@ def _register_routes(
 
     if mode != "server":
         # Dashboard mode: data query routes + studio + static files
-        app.include_router(create_router(data_service), prefix="/api")
+        app.include_router(create_router(data_service), prefix=_API_PREFIX)
 
         # Studio config CRUD routes
         from src.interfaces.dashboard.studio_routes import create_studio_router
@@ -121,6 +122,30 @@ def _register_routes(
 
         studio_service = StudioService(config_root=config_root)
         app.include_router(create_studio_router(studio_service), prefix="/api/studio")
+
+        # Learning routes
+        try:
+            from src.learning.dashboard_routes import create_learning_router
+            from src.learning.dashboard_service import LearningDataService
+            from src.learning.store import LearningStore
+
+            _learning_store = LearningStore()
+            _learning_svc = LearningDataService(_learning_store)
+            app.include_router(create_learning_router(_learning_svc), prefix=_API_PREFIX)
+        except Exception:  # noqa: BLE001
+            logger.warning("Learning routes not available")
+
+        # Autonomy routes
+        try:
+            from src.safety.autonomy.dashboard_routes import create_autonomy_router
+            from src.safety.autonomy.dashboard_service import AutonomyDataService
+            from src.safety.autonomy.store import AutonomyStore
+
+            _autonomy_store = AutonomyStore()
+            _autonomy_svc = AutonomyDataService(_autonomy_store)
+            app.include_router(create_autonomy_router(_autonomy_svc), prefix=_API_PREFIX)
+        except Exception:  # noqa: BLE001
+            logger.warning("Autonomy routes not available")
 
         # Static files with no-cache middleware
         if STATIC_DIR.exists():
@@ -136,6 +161,47 @@ def _register_routes(
         async def root() -> RedirectResponse:
             """Redirect root to dashboard UI."""
             return RedirectResponse(url="/dashboard/list.html")
+
+
+def _init_server_components(mode: str) -> tuple:
+    """Initialize server-mode components (shutdown manager, run store, mining job).
+
+    Returns:
+        Tuple of (shutdown_mgr, run_store, mining_job) — each may be None.
+    """
+    shutdown_mgr = None
+    run_store = None
+    mining_job = None
+
+    if mode != "server":
+        return shutdown_mgr, run_store, mining_job
+
+    from src.interfaces.server.lifecycle import GracefulShutdownManager
+
+    shutdown_mgr = GracefulShutdownManager()
+
+    try:
+        from src.interfaces.server.run_store import RunStore
+
+        run_store = RunStore()
+    except Exception:  # noqa: BLE001
+        logger.warning("Failed to initialize RunStore, runs will not persist")
+
+    try:
+        from src.learning.background import BackgroundMiningJob
+        from src.learning.convergence import ConvergenceDetector
+        from src.learning.orchestrator import MiningOrchestrator
+        from src.learning.store import LearningStore
+
+        _ls = LearningStore()
+        mining_job = BackgroundMiningJob(
+            orchestrator=MiningOrchestrator(store=_ls),
+            convergence=ConvergenceDetector(_ls),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Background mining job not available")
+
+    return shutdown_mgr, run_store, mining_job
 
 
 def create_app(
@@ -161,31 +227,11 @@ def create_app(
     from src.interfaces.dashboard.execution_service import WorkflowExecutionService
 
     title = "MAF Server" if mode == "server" else "MAF Dashboard"
+    shutdown_mgr, run_store, _mining_job = _init_server_components(mode)
 
-    # Build lifespan for server mode (graceful shutdown)
-    shutdown_mgr = None
-    if mode == "server":
-        from src.interfaces.server.lifecycle import GracefulShutdownManager
-
-        shutdown_mgr = GracefulShutdownManager()
-
-    # Persistent run store for server mode
-    run_store = None
-    if mode == "server":
-        try:
-            from src.interfaces.server.run_store import RunStore
-
-            run_store = RunStore()
-        except Exception:  # noqa: BLE001
-            logger.warning("Failed to initialize RunStore, runs will not persist")
-
-    # Execution service
     execution_service = WorkflowExecutionService(
-        backend=backend,
-        event_bus=event_bus,
-        config_root=config_root,
-        max_workers=max_workers,
-        run_store=run_store,
+        backend=backend, event_bus=event_bus, config_root=config_root,
+        max_workers=max_workers, run_store=run_store,
     )
 
     @asynccontextmanager
@@ -193,32 +239,27 @@ def create_app(
         """Startup / shutdown lifecycle for the app."""
         if shutdown_mgr is not None:
             shutdown_mgr.register_signals()
+        if _mining_job is not None:
+            await _mining_job.start()
         yield
-        # Drain active workflows in server mode
+        if _mining_job is not None:
+            await _mining_job.stop()
         if shutdown_mgr is not None:
             await shutdown_mgr.drain(execution_service)
         execution_service.shutdown()
 
     app = FastAPI(title=title, version="0.1.0", lifespan=lifespan)
-
-    # Store on app.state for endpoint access
     app.state.execution_service = execution_service
     if shutdown_mgr is not None:
         app.state.shutdown_manager = shutdown_mgr
 
-    # Configure CORS middleware
     _configure_cors(app, mode)
-
-    # API key authentication for server mode
     if mode == "server":
         from src.interfaces.server.auth import APIKeyMiddleware
 
         app.add_middleware(APIKeyMiddleware)
 
-    # Data service
     data_service = DashboardDataService(backend=backend, event_bus=event_bus)
-
-    # Register routes and WebSocket endpoints
     _register_routes(app, execution_service, data_service, config_root, mode)
 
     return app

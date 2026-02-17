@@ -40,6 +40,9 @@ class MeritScoreService:
                        decision_outcome="success", confidence=0.85)
     """
 
+    def __init__(self, merit_bridge: Any = None) -> None:
+        self._merit_bridge = merit_bridge
+
     def update(
         self,
         session: Any,
@@ -73,6 +76,15 @@ class MeritScoreService:
         # This allows atomic transactions when merit updates are part of
         # a larger operation (e.g., DecisionTracker.track()).
         session.flush()
+
+        # Optional bridge: trigger autonomy evaluation if configured
+        if self._merit_bridge is not None:
+            try:
+                self._merit_bridge.on_decision_recorded(
+                    session, agent_name, domain, decision_outcome,
+                )
+            except (AttributeError, TypeError, ValueError, RuntimeError) as exc:
+                logger.debug("Merit bridge notification failed: %s", exc)
 
         self._log_merit_update(merit_score, agent_name, domain)
 

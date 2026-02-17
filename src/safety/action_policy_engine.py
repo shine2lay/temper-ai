@@ -149,7 +149,8 @@ class ActionPolicyEngine:
     def __init__(
         self,
         policy_registry: PolicyRegistry,
-        config: Optional[Dict[str, Any]] = None
+        config: Optional[Dict[str, Any]] = None,
+        emergency_stop: Optional[Any] = None,
     ):
         """Initialize action policy engine.
 
@@ -161,9 +162,11 @@ class ActionPolicyEngine:
                 - enable_caching: Enable result caching (default: True)
                 - short_circuit_critical: Stop on CRITICAL violations (default: True)
                 - log_violations: Log violations to observability (default: True)
+            emergency_stop: Optional EmergencyStopController for progressive autonomy.
         """
         self.registry = policy_registry
         self.config = config or {}
+        self._emergency_stop = emergency_stop
 
         # Configuration
         self.cache_ttl = self.config.get('cache_ttl', TTL_LONG)
@@ -218,6 +221,14 @@ class ActionPolicyEngine:
             >>> assert result.has_critical_violations()
         """
         start_time = time.time()
+
+        # Emergency stop: block all actions immediately
+        if self._emergency_stop is not None and self._emergency_stop.is_active():
+            return EnforcementResult(
+                allowed=False, violations=[], policies_executed=[],
+                execution_time_ms=0.0,
+                metadata={"reason": "emergency_stop_active"},
+            )
 
         # SA-06: Invalidate cache when the set of registered policies changes.
         self._invalidate_cache_if_policies_changed()
@@ -411,6 +422,15 @@ class ActionPolicyEngine:
         (e.g., StandardAgent._execute_iteration).
         """
         start_time = time.time()
+
+        # Emergency stop: block all actions immediately
+        if self._emergency_stop is not None and self._emergency_stop.is_active():
+            return EnforcementResult(
+                allowed=False, violations=[], policies_executed=[],
+                execution_time_ms=0.0,
+                metadata={"reason": "emergency_stop_active"},
+            )
+
         self._invalidate_cache_if_policies_changed()
 
         policies = self.registry.get_policies_for_action(context.action_type)

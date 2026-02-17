@@ -28,6 +28,7 @@ from src.safety.policy_registry import PolicyRegistry
 from src.safety.rate_limiter import WindowRateLimitPolicy
 from src.safety.rollback import RollbackManager
 from src.safety.secret_detection import SecretDetectionPolicy
+from src.safety.autonomy.policy import AutonomyPolicy
 from src.safety.stub_policies import ApprovalWorkflowPolicy, CircuitBreakerPolicy
 
 if TYPE_CHECKING:
@@ -51,6 +52,7 @@ _BUILTIN_POLICIES: Dict[str, Type[BaseSafetyPolicy]] = {
     "resource_limit_policy": ResourceLimitPolicy,
     "approval_workflow_policy": ApprovalWorkflowPolicy,
     "circuit_breaker_policy": CircuitBreakerPolicy,
+    "autonomy_policy": AutonomyPolicy,
 }
 
 # Custom policy class registrations (takes precedence over _BUILTIN_POLICIES).

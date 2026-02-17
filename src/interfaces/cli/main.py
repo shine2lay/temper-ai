@@ -1745,6 +1745,14 @@ from src.interfaces.cli.memory_commands import memory_group  # noqa: E402
 
 main.add_command(memory_group)
 
+from src.interfaces.cli.learning_commands import learning_group  # noqa: E402
+
+main.add_command(learning_group)
+
+from src.interfaces.cli.autonomy_commands import autonomy_group  # noqa: E402
+
+main.add_command(autonomy_group)
+
 
 if __name__ == "__main__":
     main()

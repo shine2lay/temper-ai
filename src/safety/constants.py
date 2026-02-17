@@ -11,6 +11,7 @@ from src.shared.constants.durations import SECONDS_PER_DAY
 
 RATE_LIMIT_PRIORITY = 85  # Prevent resource exhaustion before other policies
 SECRET_DETECTION_PRIORITY = 95  # High priority for secrets
+AUTONOMY_POLICY_PRIORITY = 98  # Before all other policies
 FORBIDDEN_OPS_PRIORITY = 90
 FILE_ACCESS_PRIORITY = 80
 BLAST_RADIUS_PRIORITY = 70

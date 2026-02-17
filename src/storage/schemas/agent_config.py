@@ -268,6 +268,18 @@ class AgentConfigInner(BaseModel):
     pre_commands: Optional[List[PreCommand]] = None
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    autonomy: Optional[Any] = Field(
+        default=None,
+        description="AutonomyConfig — lazy-validated to avoid circular imports",
+    )
+
+    @model_validator(mode="after")
+    def validate_autonomy(self) -> "AgentConfigInner":
+        """Parse autonomy dict into AutonomyConfig if provided."""
+        if self.autonomy is not None and isinstance(self.autonomy, dict):
+            from src.safety.autonomy.schemas import AutonomyConfig
+            self.autonomy = AutonomyConfig(**self.autonomy)
+        return self
     error_handling: ErrorHandlingConfig
     merit_tracking: MeritTrackingConfig = Field(default_factory=MeritTrackingConfig)
     observability: ObservabilityConfig = Field(default_factory=ObservabilityConfig)

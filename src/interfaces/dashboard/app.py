@@ -147,6 +147,18 @@ def _register_routes(
         except Exception:  # noqa: BLE001
             logger.warning("Autonomy routes not available")
 
+        # Goal proposal routes
+        try:
+            from src.goals.dashboard_routes import create_goals_router
+            from src.goals.dashboard_service import GoalDataService
+            from src.goals.store import GoalStore as GoalStoreForDash
+
+            _goal_store = GoalStoreForDash()
+            _goal_svc = GoalDataService(_goal_store)
+            app.include_router(create_goals_router(_goal_svc), prefix=_API_PREFIX)
+        except Exception:  # noqa: BLE001
+            logger.warning("Goal routes not available")
+
         # Static files with no-cache middleware
         if STATIC_DIR.exists():
             app.mount(

@@ -1,0 +1,21 @@
+memories:
+  - scope:
+      tenant_id: default
+      workflow_name: technical_problem_solving
+      agent_name: researcher
+    entries:
+      - content: "For fintech products, always include PCI compliance checks in security reviews"
+        type: procedural
+      - content: "OAuth2 with PKCE is preferred for web application authentication"
+        type: procedural
+      - content: "Previous research on authentication found that JWT tokens should have short expiry times (15 minutes) with refresh token rotation"
+        type: episodic
+  - scope:
+      tenant_id: default
+      workflow_name: memory_demo
+      agent_name: memory_researcher
+    entries:
+      - content: "Multi-factor authentication should be mandatory for financial transactions"
+        type: procedural
+      - content: "Rate limiting on login endpoints prevents brute force attacks effectively"
+        type: procedural

@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MAF - Continuous Learning</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body { font-family: system-ui, sans-serif; margin: 20px; background: #1a1a2e; color: #e0e0e0; }
+        h1 { color: #00d4ff; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 20px; }
+        .card { background: #16213e; border-radius: 8px; padding: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 8px; text-align: left; border-bottom: 1px solid #333; }
+        th { color: #00d4ff; }
+        .btn { padding: 6px 12px; border: none; border-radius: 4px; cursor: pointer; margin: 2px; }
+        .btn-apply { background: #28a745; color: white; }
+        .btn-dismiss { background: #dc3545; color: white; }
+        .btn-mine { background: #00d4ff; color: #1a1a2e; font-weight: bold; padding: 10px 20px; }
+        .status { padding: 2px 8px; border-radius: 4px; font-size: 0.85em; }
+        .converged { color: #28a745; } .not-converged { color: #ffc107; }
+        a { color: #00d4ff; }
+        nav { margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <nav><a href="/dashboard/list.html">&larr; Dashboard</a></nav>
+    <h1>Continuous Learning</h1>
+    <button class="btn btn-mine" onclick="triggerMine()">Run Mining</button>
+
+    <div class="grid">
+        <div class="card">
+            <h2>Pattern Summary</h2>
+            <div id="pattern-summary">Loading...</div>
+        </div>
+        <div class="card">
+            <h2>Convergence</h2>
+            <div id="convergence-status"></div>
+            <div id="convergence-chart"></div>
+        </div>
+        <div class="card" style="grid-column: span 2">
+            <h2>Mining History</h2>
+            <table id="mining-table"><thead><tr><th>ID</th><th>Status</th><th>Found</th><th>New</th><th>Novelty</th></tr></thead><tbody></tbody></table>
+        </div>
+        <div class="card" style="grid-column: span 2">
+            <h2>Pending Recommendations</h2>
+            <table id="rec-table"><thead><tr><th>Field</th><th>Current</th><th>Recommended</th><th>Rationale</th><th>Actions</th></tr></thead><tbody></tbody></table>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api/learning';
+        async function load() {
+            const [patterns, runs, conv, recs] = await Promise.all([
+                fetch(API+'/patterns').then(r=>r.json()),
+                fetch(API+'/mining-runs').then(r=>r.json()),
+                fetch(API+'/convergence').then(r=>r.json()),
+                fetch(API+'/recommendations').then(r=>r.json()),
+            ]);
+            renderPatterns(patterns);
+            renderRuns(runs);
+            renderConvergence(conv);
+            renderRecs(recs);
+        }
+        function renderPatterns(d) {
+            let html = `<p>Total: ${d.total}</p><table><tr><th>Type</th><th>Count</th></tr>`;
+            for (const [t,c] of Object.entries(d.counts_by_type)) html += `<tr><td>${t}</td><td>${c}</td></tr>`;
+            html += '</table>';
+            document.getElementById('pattern-summary').innerHTML = html;
+        }
+        function renderRuns(runs) {
+            const tbody = document.querySelector('#mining-table tbody');
+            tbody.innerHTML = runs.map(r => `<tr><td>${r.id.slice(0,8)}</td><td>${r.status}</td><td>${r.patterns_found}</td><td>${r.patterns_new}</td><td>${r.novelty_score.toFixed(2)}</td></tr>`).join('');
+        }
+        function renderConvergence(c) {
+            const s = c.converged ? '<span class="converged">Converged</span>' : '<span class="not-converged">Not Converged</span>';
+            document.getElementById('convergence-status').innerHTML = `<p>${s} | Avg: ${c.moving_average.toFixed(4)} | Points: ${c.data_points}</p>`;
+            if (c.scores.length > 1) {
+                Plotly.newPlot('convergence-chart', [{y: c.scores, type: 'scatter', name: 'Novelty'}], {height: 200, margin: {t:10,b:30,l:40,r:10}, paper_bgcolor: '#16213e', plot_bgcolor: '#16213e', font: {color: '#e0e0e0'}});
+            }
+        }
+        function renderRecs(recs) {
+            const tbody = document.querySelector('#rec-table tbody');
+            tbody.innerHTML = recs.map(r => `<tr><td>${r.field_path}</td><td>${r.current_value}</td><td>${r.recommended_value}</td><td>${r.rationale}</td><td><button class="btn btn-apply" onclick="applyRec('${r.id}')">Apply</button><button class="btn btn-dismiss" onclick="dismissRec('${r.id}')">Dismiss</button></td></tr>`).join('');
+        }
+        async function triggerMine() { await fetch(API+'/mine', {method:'POST'}); load(); }
+        async function applyRec(id) { await fetch(API+'/recommendations/'+id+'/apply', {method:'POST'}); load(); }
+        async function dismissRec(id) { await fetch(API+'/recommendations/'+id+'/dismiss', {method:'POST'}); load(); }
+        load();
+    </script>
+</body>
+</html>

@@ -1,0 +1,88 @@
+workflow:
+  name: tuning_decision_demo
+  description: "Decision workflow with tuning — tries different context strategies"
+  version: "1.0"
+
+  stages:
+    - name: decision
+      stage_ref: configs/stages/decision.yaml
+
+  inputs:
+    required:
+      - question
+      - options
+    optional:
+      - context
+
+  outputs:
+    - name: decision
+      description: "The recommended choice"
+      source: decision.final_decision
+
+    - name: confidence
+      description: "Confidence score (0-1)"
+      source: decision.confidence
+
+    - name: reasoning
+      description: "Why this decision was made"
+      source: decision.reasoning
+
+  # Tuning optimizer: tries each strategy (merged into workflow_inputs),
+  # evaluates the output, and picks the strategy that produced the best score.
+  # Each strategy adds extra context that steers the agents differently.
+  optimization:
+    enabled: true
+    evaluators:
+      quality_check:
+        type: criteria
+        checks:
+          - name: has_decision
+            method: programmatic
+            command: "python3 scripts/checks/has_decision.py"
+            timeout: 30
+          - name: has_detailed_reasoning
+            method: programmatic
+            command: "python3 scripts/checks/has_detailed_reasoning.py"
+            timeout: 30
+          - name: has_agent_agreement
+            method: programmatic
+            command: "python3 scripts/checks/has_agent_agreement.py"
+            timeout: 30
+          - name: has_high_confidence
+            method: programmatic
+            command: "python3 scripts/checks/has_high_confidence.py"
+            timeout: 30
+    pipeline:
+      - optimizer: tuning
+        evaluator: quality_check
+        runs: 1
+        strategies:
+          - name: risk_averse
+            _tuning_instructions: "Prioritize low-risk options. Avoid choices with high failure probability. Favor proven, battle-tested approaches over innovative but unproven ones."
+          - name: growth_focused
+            _tuning_instructions: "Prioritize options that maximize growth and scalability. Think 2-3 years ahead. Favor choices that create long-term competitive advantages."
+          - name: team_centric
+            _tuning_instructions: "Prioritize team productivity, developer happiness, and onboarding speed. Favor options that reduce cognitive load and make the codebase easier to work with."
+
+  config:
+    timeout_seconds: 3000
+    convergence_detection: false
+
+  error_handling:
+    on_stage_failure: halt
+    max_stage_retries: 2
+    escalation_policy: GracefulDegradation
+    enable_rollback: true
+
+  observability:
+    console_mode: standard
+    trace_everything: true
+    export_format: ["json"]
+    generate_dag_visualization: false
+    waterfall_in_console: true
+
+  tags:
+    - demo
+    - optimization
+    - tuning
+    - decision-making

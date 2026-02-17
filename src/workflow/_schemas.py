@@ -89,6 +89,7 @@ class WorkflowSafetyConfig(BaseModel):
 
 
 from src.improvement._schemas import OptimizationConfig  # noqa: F401
+from src.lifecycle._schemas import LifecycleConfig  # noqa: F401
 
 
 class WorkflowObservabilityConfig(BaseModel):
@@ -123,6 +124,7 @@ class WorkflowConfigInner(BaseModel):
     config: WorkflowConfigOptions = Field(default_factory=WorkflowConfigOptions)
     safety: WorkflowSafetyConfig = Field(default_factory=WorkflowSafetyConfig)
     optimization: Optional[OptimizationConfig] = None
+    lifecycle: LifecycleConfig = Field(default_factory=LifecycleConfig)
     observability: WorkflowObservabilityConfig = Field(default_factory=WorkflowObservabilityConfig)
     error_handling: WorkflowErrorHandlingConfig
     metadata: MetadataConfig = Field(default_factory=MetadataConfig)

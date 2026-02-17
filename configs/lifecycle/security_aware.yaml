@@ -1,0 +1,26 @@
+name: security_aware
+description: "Add security stages for high-risk or critical projects"
+version: "1.0"
+product_types: []
+rules:
+  - name: add_security_review_high_risk
+    action: add
+    stage_name: security_review
+    condition: "{{ risk_level in ['high', 'critical'] }}"
+    stage_ref: configs/stages/decision.yaml
+    insert_after: implement
+    rationale: "High-risk projects need dedicated security review after implementation"
+    priority: 10
+  - name: add_compliance_critical
+    action: add
+    stage_name: compliance_check
+    condition: "{{ risk_level == 'critical' }}"
+    stage_ref: configs/stages/decision.yaml
+    insert_after: security_review
+    rationale: "Critical projects need compliance verification"
+    priority: 5
+enabled: true
+min_autonomy_level: 2
+requires_approval: true
+source: manual
+confidence: 1.0

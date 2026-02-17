@@ -1,0 +1,6 @@
+# Input for lifecycle demo — small, low-risk project
+project_description: "Add a simple contact form to the website"
+size: small
+risk_level: low
+is_prototype: true
+question: "What stages should be skipped for this small project?"

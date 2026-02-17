@@ -24,6 +24,7 @@ from sqlmodel import SQLModel
 import src.observability.models  # noqa: F401
 import src.experimentation.models  # noqa: F401
 import src.interfaces.server.models  # noqa: F401
+import src.learning.models  # noqa: F401
 
 target_metadata = SQLModel.metadata
 

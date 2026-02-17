@@ -1,0 +1,9 @@
+# Input for the optimized decision demo
+question: "Should we migrate to microservices or stay with the monolith?"
+
+options:
+  - "Migrate to Microservices"
+  - "Stay Monolith"
+  - "Modular Monolith"
+
+context: "Team of 8, growing to 15. Current monolith is 50k LOC. Deployment frequency is weekly."

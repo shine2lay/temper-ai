@@ -1,0 +1,86 @@
+workflow:
+  name: optimized_decision_demo
+  description: "Decision workflow with optimization — runs 3x and picks best output"
+  version: "1.0"
+
+  stages:
+    - name: decision
+      stage_ref: configs/stages/decision.yaml
+
+  inputs:
+    required:
+      - question
+      - options
+    optional:
+      - context
+
+  outputs:
+    - name: decision
+      description: "The recommended choice"
+      source: decision.final_decision
+
+    - name: confidence
+      description: "Confidence score (0-1)"
+      source: decision.confidence
+
+    - name: reasoning
+      description: "Why this decision was made"
+      source: decision.reasoning
+
+  # Optimization pipeline — selection optimizer runs workflow 3x, picks best.
+  # Four checks with varying difficulty produce scores from 0.25 to 1.0:
+  #   has_decision        (easy, always passes)       → 0.25
+  #   has_detailed_reasoning (medium, usually passes)  → 0.25
+  #   has_agent_agreement (varies — unanimous = pass)  → 0 or 0.25
+  #   has_high_confidence (hard, rarely passes)        → 0 or 0.25
+  # Split runs score ~0.50, unanimous runs score ~0.75. The optimizer
+  # picks the run where agents agreed most, producing better decisions.
+  optimization:
+    enabled: true
+    evaluators:
+      quality_check:
+        type: criteria
+        checks:
+          - name: has_decision
+            method: programmatic
+            command: "python3 scripts/checks/has_decision.py"
+            timeout: 30
+          - name: has_detailed_reasoning
+            method: programmatic
+            command: "python3 scripts/checks/has_detailed_reasoning.py"
+            timeout: 30
+          - name: has_agent_agreement
+            method: programmatic
+            command: "python3 scripts/checks/has_agent_agreement.py"
+            timeout: 30
+          - name: has_high_confidence
+            method: programmatic
+            command: "python3 scripts/checks/has_high_confidence.py"
+            timeout: 30
+    pipeline:
+      - optimizer: selection
+        evaluator: quality_check
+        runs: 3
+
+  config:
+    timeout_seconds: 3000
+    convergence_detection: false
+
+  error_handling:
+    on_stage_failure: halt
+    max_stage_retries: 2
+    escalation_policy: GracefulDegradation
+    enable_rollback: true
+
+  observability:
+    console_mode: standard
+    trace_everything: true
+    export_format: ["json"]
+    generate_dag_visualization: false
+    waterfall_in_console: true
+
+  tags:
+    - demo
+    - optimization
+    - selection
+    - decision-making

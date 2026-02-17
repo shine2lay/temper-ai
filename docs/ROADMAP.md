@@ -1,6 +1,6 @@
 # Revised Roadmap: Path to Autonomous Product Companies
 
-**Version:** 2.2
+**Version:** 2.3
 **Date:** 2026-02-16
 **Status:** Active
 
@@ -18,7 +18,7 @@
 
 ## Where We Are
 
-The framework has a solid foundation. Ten milestones are complete (M1-M4 + M5.1-M5.3 + M6.1-M6.3), quality is at 100/100 (A+), and the optimization engine is wired into the CLI execution pipeline. Agents now have persistent memory with SQLite persistence, time-decay relevance, LLM-based procedural extraction, and cross-agent shared namespaces. The framework is exposed as an API service with REST endpoints, WebSocket streaming, persistent run history, CLI client commands, and API key authentication. Background pattern mining continuously discovers actionable heuristics from execution history, with auto-tune recommendations and convergence-aware scheduling.
+The framework has a solid foundation. Twelve milestones are complete (M1-M4 + M5.1-M5.3 + M6.1-M6.3 + M7.1-M7.2), quality is at 96/100 (A+), and the optimization engine is wired into the CLI execution pipeline. Agents now have persistent memory with SQLite persistence, time-decay relevance, LLM-based procedural extraction, and cross-agent shared namespaces. The framework is exposed as an API service with REST endpoints, WebSocket streaming, persistent run history, CLI client commands, and API key authentication. Background pattern mining continuously discovers actionable heuristics from execution history, with auto-tune recommendations and convergence-aware scheduling. Workflows adapt their own structure based on project characteristics, and the system proposes strategic improvements with risk assessment and human review workflows.
 
 **Completed:**
 
@@ -35,6 +35,8 @@ The framework has a solid foundation. Ten milestones are complete (M1-M4 + M5.1-
 | M6.2: MAF Server | WorkflowRunner API, persistent run history (SQLite), CLI client (trigger/status/logs), API key auth, 74 tests |
 | M6.1: Progressive Autonomy | Trust-based agent escalation (5 levels), approval routing matrix, budget enforcement, emergency stop, shadow mode, 136 tests |
 | M6.3: Multi-Product Templates | Copy-and-stamp template system (4 product types, 42 YAML configs), template registry/generator, CLI commands, quality gate presets, 63 tests |
+| M7.1: Self-Modifying Lifecycle | Pre-compilation workflow adaptation (project classifier, profile registry, lifecycle adapter), A/B testing, rollback monitoring, 103 tests |
+| M7.2: Strategic Autonomy | Goal proposal framework (4 analyzers, proposer, safety policy, review workflow), CLI + dashboard, cross-product learning, 101 tests |
 
 **Post-Milestone Improvements:**
 
@@ -380,51 +382,85 @@ maf template create --type web_app --name mysite \
 
 ## M7: Autonomous Systems (Q4 2026 - Q2 2027)
 
-### M7.1: Self-Modifying Lifecycle (~6-8 weeks)
+### M7.1: Self-Modifying Lifecycle — COMPLETE
 
-Workflows adapt their own structure based on project characteristics and historical outcomes.
+Pre-compilation workflow adaptation based on project characteristics and historical profiles.
 
-**Deliverables:**
-- Runtime workflow DAG modification: add, remove, reorder, and update stages during execution
-- Dynamic lifecycle selection based on project size, type, and risk profile
-- Lifecycle experimentation: A/B test different stage sequences for the same project type
-- Rollback mechanism: revert DAG changes if quality metrics degrade
+**What Was Built:**
 
-**Key Files:**
-- `src/workflow/langgraph_compiler.py` (DAG construction)
-- `src/workflow/workflow_executor.py` (runtime modification hooks)
-- `src/workflow/engine_registry.py` (engine-level adaptation)
+| Component | File(s) | Status |
+|-----------|---------|--------|
+| `ProjectClassifier` | `src/lifecycle/classifier.py` | Done — LLM-based + explicit-input fallback classification |
+| `ProfileRegistry` | `src/lifecycle/profiles.py` | Done — YAML + DB merge, profile matching |
+| `LifecycleAdapter` | `src/lifecycle/adapter.py` | Done — classify → match → autonomy gate → apply rules (SKIP/ADD/REORDER/MODIFY) → audit |
+| `HistoryAnalyzer` | `src/lifecycle/history.py` | Done — historical outcome analysis for adaptation decisions |
+| `LifecycleExperimenter` | `src/lifecycle/experiment.py` | Done — wraps ExperimentService for A/B testing lifecycle variants |
+| `RollbackMonitor` | `src/lifecycle/rollback.py` | Done — degradation detection, automatic rollback |
+| `LifecycleStore` | `src/lifecycle/store.py` | Done — SQLite/WAL persistence |
+| Lifecycle models | `src/lifecycle/models.py` | Done — SQLModel tables |
+| Lifecycle schemas | `src/lifecycle/_schemas.py` | Done — Pydantic models, LifecycleConfig in WorkflowConfigInner |
+| CLI commands | `src/interfaces/cli/lifecycle_commands.py` | Done — `maf lifecycle profiles\|classify\|preview\|history\|check` |
+| Dashboard routes | `src/lifecycle/dashboard_routes.py` | Done — 4 API endpoints |
+| Profile configs | `configs/lifecycle/{lean_small_projects,security_aware}.yaml` | Done |
+| Demo workflow | `configs/workflows/lifecycle_demo.yaml` | Done |
+| CLI wiring | `src/interfaces/cli/main.py` | Done — `_maybe_adapt_lifecycle()` between load and compile |
+| Tests | `tests/test_lifecycle/` | Done — 103 tests |
 
-**Success Criteria:**
-- System adapts workflow structure based on project type and past outcomes
-- Small projects automatically skip heavyweight stages
-- A/B tests demonstrate measurable improvement from adaptive lifecycles
+**Key Capabilities:**
+- **Project classification:** LLM-based or explicit-input classification by size, type, risk profile
+- **Profile matching:** YAML-defined lifecycle profiles merged with DB-stored overrides
+- **Adaptation rules:** SKIP stages (small projects skip design), ADD stages (security-aware adds audit), REORDER, MODIFY
+- **Autonomy gating:** Full M6.1 integration — adaptation level constrained by AutonomyLevel
+- **A/B testing:** LifecycleExperimenter wraps ExperimentService for lifecycle variant experiments
+- **Rollback monitoring:** RollbackMonitor detects quality degradation and reverts to previous lifecycle
 
-**Dependencies:** M5.3 (needs learning data for adaptation decisions), M6.1 (needs progressive autonomy for safe self-modification)
+**Dependencies:** M5.3 (learning data for adaptation decisions), M6.1 (progressive autonomy for safe self-modification)
 
 ---
 
-### M7.2: Strategic Autonomy (~8-10 weeks)
+### M7.2: Strategic Autonomy — COMPLETE
 
 The system proposes improvements and opportunities, not just executes instructions.
 
-**Deliverables:**
-- Goal proposal framework: system generates opportunity hypotheses from execution data
-- Goal-level safety policies and approval workflows (separate from action-level)
-- Autonomous analysis agents: codebase scanning for improvement opportunities
-- Cross-product learning: insights from Product A available to Product B
+**What Was Built:**
 
-**Key Files:**
-- `src/improvement/` (proposal generation)
-- `src/safety/` (goal-level policies)
-- `src/memory/` (cross-product memory)
+| Component | File(s) | Status |
+|-----------|---------|--------|
+| Goal schemas | `src/goals/_schemas.py` | Done — GoalType, GoalStatus, GoalRiskLevel, GoalProposal, RiskAssessment, ImpactEstimate, GoalEvidence |
+| Goal models | `src/goals/models.py` | Done — GoalProposalRecord, AnalysisRun (SQLModel) |
+| `GoalStore` | `src/goals/store.py` | Done — SQLite/WAL CRUD, filtering, counting |
+| `PerformanceAnalyzer` | `src/goals/analyzers/performance.py` | Done — slow stages, degradation detection |
+| `CostAnalyzer` | `src/goals/analyzers/cost.py` | Done — high-cost agents, expensive model detection |
+| `ReliabilityAnalyzer` | `src/goals/analyzers/reliability.py` | Done — recurring errors, high failure rate agents |
+| `CrossProductAnalyzer` | `src/goals/analyzers/cross_product.py` | Done — cross-product performance gaps, pattern transfer |
+| `GoalProposer` | `src/goals/proposer.py` | Done — orchestrates analyzers, deduplicates, scores (weighted formula), persists |
+| `AnalysisOrchestrator` | `src/goals/analysis_orchestrator.py` | Done — runs proposer, records analysis run metadata |
+| `BackgroundAnalysisJob` | `src/goals/background.py` | Done — periodic async loop for server mode |
+| `GoalSafetyPolicy` | `src/goals/safety_policy.py` | Done — rate limits, risk validation, auto-approve matrix by autonomy level |
+| `GoalReviewWorkflow` | `src/goals/review_workflow.py` | Done — state machine (proposed→approved/rejected/deferred), acceptance rate tracking |
+| `GoalDataService` | `src/goals/dashboard_service.py` | Done — dashboard data aggregation |
+| Dashboard routes | `src/goals/dashboard_routes.py` | Done — 8 endpoints (list, detail, stats, runs, analyze, approve, reject, defer) |
+| CLI commands | `src/interfaces/cli/goal_commands.py` | Done — `maf goals list\|propose\|review\|approve\|reject\|status` |
+| CLI wiring | `src/interfaces/cli/main.py` | Done — `goals_group` mounted |
+| Dashboard wiring | `src/interfaces/dashboard/app.py` | Done — goals router mounted |
+| Constants | `src/goals/constants.py` | Done — thresholds, weights, limits |
+| Tests | `tests/test_goals/` | Done — 101 tests |
 
-**Success Criteria:**
-- System proposes actionable improvements with 50%+ human acceptance rate
-- Cross-product insights reduce duplicate effort
-- Goal proposals include risk assessment, effort estimate, and expected impact
+**Key Capabilities:**
+- **4 analyzers** scan execution history: performance (slow/degrading stages), cost (expensive agents/models), reliability (recurring errors, high failure rates), cross-product (performance gaps, pattern transfer)
+- **Weighted scoring:** 0.35×impact + 0.25×confidence + 0.20×(1/effort) + 0.20×(1/risk)
+- **Deduplication:** SHA256 hash of goal_type + title, skips if matching active proposal exists
+- **Safety policy:** Rate limiting (20/day), auto-approve matrix by autonomy level (SUPERVISED=never, RISK_GATED=low, AUTONOMOUS=medium, STRATEGIC=high, CRITICAL=never)
+- **Review workflow:** State machine with PROPOSED→UNDER_REVIEW→APPROVED/REJECTED/DEFERRED transitions
+- **Cross-product learning:** CrossProductAnalyzer cross-references LearnedPattern data with product-type execution metrics
+- **Budget integration:** Read-only checks against BudgetEnforcer for cost-impacting proposals
+- **CLI:** `maf goals propose` runs analysis, `maf goals list` shows results, `maf goals approve/reject` applies decisions
 
-**Dependencies:** M7.1 (needs adaptive lifecycle), M5.2 (needs memory for cross-product learning)
+**Remaining Gaps (for future work):**
+- **Empirical acceptance rate:** Framework tracks acceptance rate but needs 50+ proposals to validate 50%+ target
+- **Auto-execution of approved goals:** Currently proposals are informational; approved goals don't auto-trigger workflow changes
+
+**Dependencies:** M7.1 (adaptive lifecycle), M5.2 (memory for cross-product learning)
 
 ---
 
@@ -507,11 +543,11 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 2026 Q1            M5.3 Continuous Learning ✓ COMPLETE
 2026 Q1            M6.1 Progressive Autonomy ✓ COMPLETE
 2026 Q1            M6.3 Multi-Product Templates ✓ COMPLETE
+2026 Q1            M7.1 Self-Modifying Lifecycle ✓ COMPLETE
+2026 Q1            M7.2 Strategic Autonomy ✓ COMPLETE
 2026 Q2 (Now)     V2 VCS Web App + V3 Self-Improving VCS
 2026 Q3            V4 Autonomous VCS
-2026 Q4            M7.1 Self-Modifying Lifecycle
-2027 Q1            M7.2 Strategic Autonomy
-2027 Q2            M7.3 Portfolio Management
+2026 Q4            M7.3 Portfolio Management
 ```
 
 ## Milestone Dependency Graph
@@ -520,10 +556,10 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 M5.1 Optimization Engine ✓ COMPLETE
  ├──→ M5.2 Agent Memory ✓ COMPLETE
  │     ├──→ M5.3 Continuous Learning ✓ COMPLETE
- │     │     └──→ M7.1 Self-Modifying Lifecycle ──→ M7.2 Strategic Autonomy ──→ M7.3 Portfolio Management
- │     └──→ M7.2 Strategic Autonomy
+ │     │     └──→ M7.1 Self-Modifying Lifecycle ✓ COMPLETE ──→ M7.2 Strategic Autonomy ✓ COMPLETE ──→ M7.3 Portfolio Management
+ │     └──→ M7.2 Strategic Autonomy ✓ COMPLETE
  └──→ M6.1 Progressive Autonomy ✓ COMPLETE
-       └──→ M7.1 Self-Modifying Lifecycle
+       └──→ M7.1 Self-Modifying Lifecycle ✓ COMPLETE
 
 M6.2 MAF Server ✓ COMPLETE
  └──→ M6.3 Multi-Product Templates ✓ COMPLETE ──→ M7.3 Portfolio Management

@@ -720,6 +720,42 @@ def _compile_workflow(
         raise SystemExit(1)
 
 
+def _maybe_adapt_lifecycle(
+    workflow_config: dict, inputs: dict, config_root: str, verbose: bool
+) -> dict:
+    """Apply lifecycle adaptation if enabled in workflow config."""
+    wf = workflow_config.get("workflow", {})
+    lifecycle_cfg = wf.get("lifecycle", {})
+    if not lifecycle_cfg.get("enabled", False):
+        return workflow_config
+
+    try:
+        from src.lifecycle.adapter import LifecycleAdapter
+        from src.lifecycle.classifier import ProjectClassifier
+        from src.lifecycle.profiles import ProfileRegistry
+        from src.lifecycle.store import LifecycleStore
+
+        store = LifecycleStore()
+        registry = ProfileRegistry(
+            config_dir=Path(config_root) / "lifecycle", store=store
+        )
+        classifier = ProjectClassifier()
+        adapter = LifecycleAdapter(
+            profile_registry=registry,
+            classifier=classifier,
+            store=store,
+        )
+        adapted = adapter.adapt(workflow_config, inputs)
+        if verbose:
+            console.print("[cyan]Lifecycle adaptation applied[/cyan]")
+        return adapted
+    except Exception as e:  # noqa: BLE001 -- lifecycle is optional
+        logger.warning("Lifecycle adaptation failed: %s", e)
+        if verbose:
+            console.print(f"[yellow]Lifecycle adaptation skipped:[/yellow] {e}")
+        return workflow_config
+
+
 @main.command()
 @click.argument("workflow", type=click.Path(exists=True))
 @click.option(
@@ -801,6 +837,10 @@ def run(  # noqa: params — Click command, params are CLI args
     workflow_config, inputs = _load_workflow_config(workflow, input_file, config_root, verbose)
 
     db_path = db or DEFAULT_DB_PATH
+
+    # Lifecycle adaptation: transform config before compilation
+    workflow_config = _maybe_adapt_lifecycle(workflow_config, inputs, config_root, verbose)
+
     needs_event_bus = dashboard is not None or events_to != "stderr" or event_format != "text"
     config_loader, tool_registry, tracker, event_bus, dashboard_server = _initialize_infrastructure(
         config_root, db_path, dashboard if dashboard is not None else (0 if needs_event_bus else None), verbose
@@ -1756,6 +1796,14 @@ main.add_command(autonomy_group)
 from src.interfaces.cli.template_commands import template_group  # noqa: E402
 
 main.add_command(template_group)
+
+from src.interfaces.cli.lifecycle_commands import lifecycle_group  # noqa: E402
+
+main.add_command(lifecycle_group)
+
+from src.interfaces.cli.goal_commands import goals_group  # noqa: E402
+
+main.add_command(goals_group)
 
 
 if __name__ == "__main__":

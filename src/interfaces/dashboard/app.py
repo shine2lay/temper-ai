@@ -159,6 +159,16 @@ def _register_routes(
         except Exception:  # noqa: BLE001
             logger.warning("Goal routes not available")
 
+        # Portfolio routes
+        try:
+            from src.portfolio.dashboard_routes import create_portfolio_router
+            from src.portfolio.store import PortfolioStore as PortfolioStoreForDash
+
+            _portfolio_store = PortfolioStoreForDash()
+            app.include_router(create_portfolio_router(_portfolio_store), prefix=_API_PREFIX)
+        except Exception:  # noqa: BLE001
+            logger.warning("Portfolio routes not available")
+
         # Static files with no-cache middleware
         if STATIC_DIR.exists():
             app.mount(

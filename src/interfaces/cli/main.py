@@ -1805,6 +1805,10 @@ from src.interfaces.cli.goal_commands import goals_group  # noqa: E402
 
 main.add_command(goals_group)
 
+from src.interfaces.cli.portfolio_commands import portfolio_group  # noqa: E402
+
+main.add_command(portfolio_group)
+
 
 if __name__ == "__main__":
     main()

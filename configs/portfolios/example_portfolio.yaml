@@ -1,0 +1,27 @@
+name: example_portfolio
+description: "Demo portfolio with 3 product types"
+strategy: weighted
+total_budget_usd: 100.0
+max_total_concurrent: 6
+products:
+  - name: web_app
+    weight: 2.0
+    max_concurrent: 3
+    budget_limit_usd: 50.0
+    workflow_configs:
+      - configs/workflows/lifecycle_demo.yaml
+    tags: [frontend, user-facing]
+  - name: api
+    weight: 1.5
+    max_concurrent: 2
+    budget_limit_usd: 30.0
+    workflow_configs:
+      - configs/workflows/quick_decision_demo.yaml
+    tags: [backend, service]
+  - name: data_pipeline
+    weight: 1.0
+    max_concurrent: 1
+    budget_limit_usd: 20.0
+    workflow_configs:
+      - configs/workflows/simple_research.yaml
+    tags: [data, batch]

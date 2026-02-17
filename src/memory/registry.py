@@ -5,7 +5,12 @@ from __future__ import annotations
 import threading
 from typing import Any, Dict, Type
 
-from src.memory.constants import PROVIDER_IN_MEMORY, PROVIDER_MEM0, PROVIDER_SQLITE
+from src.memory.constants import (
+    PROVIDER_IN_MEMORY,
+    PROVIDER_KNOWLEDGE_GRAPH,
+    PROVIDER_MEM0,
+    PROVIDER_SQLITE,
+)
 
 # Sentinel class for lazy-loaded providers
 _LAZY_SENTINEL = type("_LazySentinel", (), {})
@@ -41,6 +46,7 @@ class MemoryProviderRegistry:
         self._providers[PROVIDER_IN_MEMORY] = InMemoryAdapter
         self._providers[PROVIDER_MEM0] = _LAZY_SENTINEL
         self._providers[PROVIDER_SQLITE] = _LAZY_SENTINEL
+        self._providers[PROVIDER_KNOWLEDGE_GRAPH] = _LAZY_SENTINEL
 
     def get_provider_class(self, name: str) -> Type[Any]:
         """Get provider class by name. Lazily imports Mem0/SQLite if needed."""
@@ -62,6 +68,9 @@ class MemoryProviderRegistry:
         if name == PROVIDER_SQLITE:
             from src.memory.adapters.sqlite_adapter import SQLiteAdapter
             return SQLiteAdapter
+        if name == PROVIDER_KNOWLEDGE_GRAPH:
+            from src.memory.adapters.knowledge_graph_adapter import KnowledgeGraphMemoryAdapter
+            return KnowledgeGraphMemoryAdapter
         raise KeyError(f"No lazy import for provider: {name}")
 
     def register_provider(self, name: str, cls: Type[Any]) -> None:

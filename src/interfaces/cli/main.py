@@ -630,6 +630,102 @@ def _save_results(output: str, result: Any, verbose: bool) -> None:
             logger.exception("Failed to save results")
 
 
+def _run_autonomous_loop(
+    workflow_config: dict,
+    workflow_id: str,
+    workflow_name: str,
+    result: Any,
+    verbose: bool,
+    cli_autonomous: bool = False,
+) -> None:
+    """Run post-execution autonomous loop if enabled."""
+    from src.autonomy._schemas import AutonomousLoopConfig, WorkflowRunContext
+    from src.autonomy.orchestrator import PostExecutionOrchestrator
+
+    wf = workflow_config.get("workflow", {})
+    loop_raw = wf.get("autonomous_loop", {})
+    config = AutonomousLoopConfig(**loop_raw)
+
+    # CLI --autonomous flag overrides YAML
+    if cli_autonomous:
+        config.enabled = True
+
+    if not config.enabled:
+        return
+
+    # Build context from result
+    result_dict = result if isinstance(result, dict) else {}
+    context = WorkflowRunContext(
+        workflow_id=workflow_id,
+        workflow_name=workflow_name,
+        product_type=wf.get("product_type"),
+        result=result_dict,
+        duration_seconds=result_dict.get("duration", 0.0),
+        status=result_dict.get("status", "unknown"),
+        cost_usd=result_dict.get("total_cost", 0.0),
+        total_tokens=result_dict.get("total_tokens", 0),
+    )
+
+    orchestrator = PostExecutionOrchestrator(config)
+    report = orchestrator.run(context)
+
+    if verbose or True:  # Always show autonomous loop summary
+        _print_autonomous_summary(report)
+
+
+def _format_subsystem_result(
+    label: str, result: Any, errors: list, formatter: Any,
+) -> Optional[tuple]:
+    """Format a single subsystem row for the autonomous summary table.
+
+    Returns (label, description) or None if nothing to show.
+    """
+    if result:
+        desc = formatter(result)
+        return (label, desc) if desc else None
+    if result is None and any(label in e for e in errors):
+        return (label, "[yellow]error[/yellow]")
+    return None
+
+
+def _print_autonomous_summary(report: Any) -> None:
+    """Print summary of autonomous loop results."""
+    from rich.table import Table as RichTable
+
+    table = RichTable(title="Autonomous Loop")
+    table.add_column("Subsystem", style="cyan")
+    table.add_column("Result")
+
+    subsystems = [
+        ("Learning", report.learning_result, lambda lr: (
+            f"patterns={lr.get('patterns_found', 0)}, "
+            f"new={lr.get('patterns_new', 0)}, "
+            f"recs={lr.get('recommendations', 0)}"
+        )),
+        ("Goals", report.goals_result, lambda gr: (
+            f"proposals={gr.get('proposals_generated', 0)}"
+        )),
+        ("Portfolio", report.portfolio_result, lambda pr: (
+            "[dim]skipped (no product_type)[/dim]" if pr.get("skipped") else
+            f"scorecards={pr.get('scorecards', 0)}, "
+            f"recs={pr.get('recommendations', 0)}"
+        )),
+    ]
+
+    for label, result, formatter in subsystems:
+        row = _format_subsystem_result(label, result, report.errors, formatter)
+        if row:
+            table.add_row(*row)
+
+    table.add_row("Duration", f"{report.duration_ms:.1f}ms")
+
+    if report.errors:
+        table.add_row("Errors", str(len(report.errors)))
+
+    console.print()
+    console.print(table)
+
+
 def _handle_post_execution(
     result: Any,
     show_details: bool,
@@ -637,14 +733,27 @@ def _handle_post_execution(
     workflow_id: str,
     workflow_name: str,
     verbose: bool,
+    autonomous_opts: Optional[dict] = None,
 ) -> None:
-    """Handle post-execution tasks: summary, reports, gantt chart, and output saving."""
+    """Handle post-execution tasks: summary, reports, gantt chart, autonomous loop, and output saving.
+
+    ``autonomous_opts``, when provided, must contain ``workflow_config``
+    (the raw workflow dict) and ``cli_autonomous`` (bool CLI override).
+    """
     _print_run_summary(workflow_name, workflow_id, result)
 
     if show_details:
         _display_detailed_report(result)
 
     _display_gantt_chart(workflow_id)
+
+    # Run autonomous loop if enabled
+    if autonomous_opts is not None:
+        _run_autonomous_loop(
+            autonomous_opts["workflow_config"],
+            workflow_id, workflow_name, result, verbose,
+            cli_autonomous=autonomous_opts.get("cli_autonomous", False),
+        )
 
     if output:
         _save_results(output, result, verbose)
@@ -817,6 +926,11 @@ def _maybe_adapt_lifecycle(
     default=None,
     help="Externally-provided run ID for tracking",
 )
+@click.option(
+    "--autonomous",
+    is_flag=True,
+    help="Enable post-execution autonomous loop (pattern mining, goals, portfolio)",
+)
 def run(  # noqa: params — Click command, params are CLI args
     workflow: str,
     input_file: Optional[str],
@@ -830,6 +944,7 @@ def run(  # noqa: params — Click command, params are CLI args
     events_to: str,
     event_format: str,
     run_id: Optional[str],
+    autonomous: bool,
 ) -> None:
     """Run a workflow from a YAML config file."""
     from src.observability.tracker import WorkflowTrackingParams
@@ -866,7 +981,10 @@ def run(  # noqa: params — Click command, params are CLI args
         )
         result = _execute_workflow(exec_params)
 
-    _handle_post_execution(result, show_details, output, workflow_id, workflow_name, verbose)
+    _handle_post_execution(
+        result, show_details, output, workflow_id, workflow_name, verbose,
+        autonomous_opts={"workflow_config": workflow_config, "cli_autonomous": autonomous},
+    )
 
     if dashboard is not None:
         _handle_dashboard_keepalive(dashboard_server, dashboard)
@@ -1808,6 +1926,10 @@ main.add_command(goals_group)
 from src.interfaces.cli.portfolio_commands import portfolio_group  # noqa: E402
 
 main.add_command(portfolio_group)
+
+from src.interfaces.cli.experiment_commands import experiment_group  # noqa: E402
+
+main.add_command(experiment_group)
 
 
 if __name__ == "__main__":

@@ -277,6 +277,18 @@ class StandardAgent(BaseAgent):
 
             if memory_text:
                 template += "\n\n---\n\n" + memory_text
+
+            # Retrieve procedural memories (learned best practices)
+            try:
+                procedural_text = svc.retrieve_procedural_context(
+                    scope, query,
+                    retrieval_k=mem_cfg.retrieval_k,
+                    relevance_threshold=mem_cfg.relevance_threshold,
+                )
+                if procedural_text:
+                    template += "\n\n" + procedural_text
+            except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
+                logger.warning("Procedural memory injection failed for agent %s: %s", self.name, exc)
         except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
             logger.warning("Memory injection failed for agent %s: %s", self.name, exc)
 

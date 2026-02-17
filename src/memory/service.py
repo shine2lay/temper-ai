@@ -183,6 +183,28 @@ class MemoryService:
             _enforce_max_episodes(self._adapter, scope, max_episodes)
         return memory_id
 
+    def retrieve_procedural_context(
+        self,
+        scope: MemoryScope,
+        query: str,
+        max_chars: int = MAX_MEMORY_CONTEXT_CHARS,
+        retrieval_k: int = DEFAULT_RETRIEVAL_LIMIT,
+        relevance_threshold: float = 0.0,
+    ) -> str:
+        """Retrieve procedural memories (best practices, learned procedures).
+
+        Returns formatted markdown string, or empty string if none found.
+        """
+        entries = self._adapter.search(
+            scope=scope, query=query, limit=retrieval_k,
+            threshold=relevance_threshold,
+            memory_type=MEMORY_TYPE_PROCEDURAL,
+        )
+        if not entries:
+            return ""
+        result = MemorySearchResult(entries=entries, query=query, scope=scope)
+        return format_memory_context(result, max_chars=max_chars)
+
     def search(
         self,
         scope: MemoryScope,

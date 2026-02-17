@@ -1,0 +1,368 @@
+"""Tests for the PostExecutionOrchestrator."""
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from src.autonomy._schemas import (
+    AutonomousLoopConfig,
+    PostExecutionReport,
+    WorkflowRunContext,
+)
+from src.autonomy.orchestrator import PostExecutionOrchestrator
+
+
+def _make_context(**overrides: object) -> WorkflowRunContext:
+    """Create a test WorkflowRunContext with sensible defaults."""
+    defaults = {
+        "workflow_id": "wf-test-001",
+        "workflow_name": "test_workflow",
+        "product_type": "api",
+        "result": {"status": "completed"},
+        "duration_seconds": 10.0,
+        "status": "completed",
+        "cost_usd": 0.02,
+        "total_tokens": 500,
+    }
+    defaults.update(overrides)
+    return WorkflowRunContext(**defaults)
+
+
+class TestOrchestratorDisabled:
+    """Tests when the autonomous loop is disabled."""
+
+    def test_disabled_returns_empty_report(self) -> None:
+        config = AutonomousLoopConfig(enabled=False)
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+        assert report.learning_result is None
+        assert report.goals_result is None
+        assert report.portfolio_result is None
+        assert report.errors == []
+
+    def test_disabled_by_default(self) -> None:
+        config = AutonomousLoopConfig()
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+        assert report.learning_result is None
+
+
+class TestOrchestratorEnabled:
+    """Tests when subsystems are enabled."""
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    def test_all_subsystems_called(
+        self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
+    ) -> None:
+        mock_learning.return_value = {"patterns_found": 2}
+        mock_goals.return_value = {"proposals_generated": 1}
+        mock_portfolio.return_value = {"scorecards": 1}
+
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        ctx = _make_context()
+        report = orch.run(ctx)
+
+        mock_learning.assert_called_once()
+        mock_goals.assert_called_once()
+        mock_portfolio.assert_called_once()
+        assert report.learning_result == {"patterns_found": 2}
+        assert report.goals_result == {"proposals_generated": 1}
+        assert report.portfolio_result == {"scorecards": 1}
+        assert report.duration_ms >= 0
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    def test_selective_disable_learning(
+        self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
+    ) -> None:
+        mock_goals.return_value = {"proposals_generated": 0}
+        mock_portfolio.return_value = {"scorecards": 0}
+
+        config = AutonomousLoopConfig(
+            enabled=True, learning_enabled=False
+        )
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+
+        mock_learning.assert_not_called()
+        mock_goals.assert_called_once()
+        mock_portfolio.assert_called_once()
+        assert report.learning_result is None
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    def test_selective_disable_goals(
+        self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
+    ) -> None:
+        mock_learning.return_value = {"patterns_found": 0}
+        mock_portfolio.return_value = {"scorecards": 0}
+
+        config = AutonomousLoopConfig(
+            enabled=True, goals_enabled=False
+        )
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+
+        mock_goals.assert_not_called()
+        assert report.goals_result is None
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    def test_selective_disable_portfolio(
+        self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
+    ) -> None:
+        mock_learning.return_value = {"patterns_found": 0}
+        mock_goals.return_value = {"proposals_generated": 0}
+
+        config = AutonomousLoopConfig(
+            enabled=True, portfolio_enabled=False
+        )
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+
+        mock_portfolio.assert_not_called()
+        assert report.portfolio_result is None
+
+
+class TestOrchestratorGracefulDegradation:
+    """Tests for graceful degradation when subsystems fail."""
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    def test_learning_failure_doesnt_crash(
+        self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
+    ) -> None:
+        mock_learning.return_value = None
+        mock_goals.return_value = {"proposals_generated": 1}
+        mock_portfolio.return_value = {"scorecards": 1}
+
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+
+        # Learning failed, but goals and portfolio still ran
+        assert report.learning_result is None
+        assert report.goals_result is not None
+        assert report.portfolio_result is not None
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    def test_all_subsystems_fail(
+        self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
+    ) -> None:
+        mock_learning.return_value = None
+        mock_goals.return_value = None
+        mock_portfolio.return_value = None
+
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+
+        assert report.learning_result is None
+        assert report.goals_result is None
+        assert report.portfolio_result is None
+
+
+class TestOrchestratorLearningIntegration:
+    """Tests for _run_learning with mocked stores."""
+
+    def test_learning_import_error_graceful(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context()
+
+        with patch(
+            "src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning",
+            side_effect=None,
+        ):
+            # Simulate import error in the actual method
+            pass
+
+        # Direct test of _run_learning with import mock
+        with patch.dict("sys.modules", {"src.learning.orchestrator": None}):
+            result = orch._run_learning(ctx, report)
+            assert result is None
+            assert len(report.errors) == 1
+
+    def test_learning_with_mocked_stores(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context()
+
+        mock_mining_run = MagicMock()
+        mock_mining_run.id = "mr-001"
+        mock_mining_run.patterns_found = 3
+        mock_mining_run.patterns_new = 1
+        mock_mining_run.status = "completed"
+
+        with patch("src.learning.store.LearningStore") as MockStore, \
+             patch("src.learning.orchestrator.MiningOrchestrator") as MockMining, \
+             patch("src.learning.recommender.RecommendationEngine") as MockEngine:
+            MockStore.return_value = MagicMock()
+            MockMining.return_value.run_mining.return_value = mock_mining_run
+            MockEngine.return_value.generate_recommendations.return_value = ["rec1"]
+
+            result = orch._run_learning(ctx, report)
+
+        assert result is not None
+        assert result["patterns_found"] == 3
+        assert result["patterns_new"] == 1
+        assert result["recommendations"] == 1
+        assert result["status"] == "completed"
+        assert len(report.errors) == 0
+
+
+class TestOrchestratorGoalsIntegration:
+    """Tests for _run_goals with mocked stores."""
+
+    def test_goals_with_mocked_stores(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context()
+
+        mock_analysis_run = MagicMock()
+        mock_analysis_run.id = "ar-001"
+        mock_analysis_run.proposals_generated = 2
+        mock_analysis_run.status = "completed"
+
+        with patch("src.goals.store.GoalStore") as MockStore, \
+             patch("src.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch:
+            MockStore.return_value = MagicMock()
+            MockOrch.return_value.run_analysis.return_value = mock_analysis_run
+
+            result = orch._run_goals(ctx, report)
+
+        assert result is not None
+        assert result["proposals_generated"] == 2
+        assert result["status"] == "completed"
+        assert len(report.errors) == 0
+
+    def test_goals_exception_is_captured(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context()
+
+        with patch("src.goals.store.GoalStore", side_effect=RuntimeError("db error")):
+            result = orch._run_goals(ctx, report)
+
+        assert result is None
+        assert len(report.errors) == 1
+        assert "Goals" in report.errors[0]
+
+
+class TestOrchestratorPortfolioIntegration:
+    """Tests for _run_portfolio with mocked stores."""
+
+    def test_portfolio_with_product_type(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context(product_type="api")
+
+        # Mock a portfolio record whose config dict contains a matching product
+        mock_record = MagicMock()
+        mock_record.config = {
+            "name": "test",
+            "products": [{"name": "api"}],
+        }
+
+        with patch("src.portfolio.store.PortfolioStore") as MockStore, \
+             patch("src.portfolio.optimizer.PortfolioOptimizer") as MockOpt:
+            MockStore.return_value.list_portfolios.return_value = [mock_record]
+            MockOpt.return_value.compute_scorecards.return_value = [MagicMock()]
+            MockOpt.return_value.recommend.return_value = [MagicMock()]
+
+            result = orch._run_portfolio(ctx, report)
+
+        assert result is not None
+        assert result["product_type"] == "api"
+        assert result["scorecards"] == 1
+        assert result["recommendations"] == 1
+
+    def test_portfolio_without_product_type_skips(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context(product_type=None)
+
+        with patch("src.portfolio.store.PortfolioStore") as MockStore:
+            MockStore.return_value = MagicMock()
+            result = orch._run_portfolio(ctx, report)
+
+        assert result is not None
+        assert result["skipped"] is True
+
+    def test_portfolio_exception_is_captured(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context()
+
+        with patch("src.portfolio.store.PortfolioStore", side_effect=RuntimeError("db error")):
+            result = orch._run_portfolio(ctx, report)
+
+        assert result is None
+        assert len(report.errors) == 1
+        assert "Portfolio" in report.errors[0]
+
+
+class TestWorkflowSchemaBackwardCompat:
+    """Tests that existing workflow YAMLs still parse with the new field."""
+
+    def test_workflow_schema_without_autonomous_loop(self) -> None:
+        from src.workflow._schemas import WorkflowConfig
+
+        config_data = {
+            "workflow": {
+                "name": "test",
+                "description": "test workflow",
+                "stages": [
+                    {"name": "s1", "stage_ref": "configs/stages/s1.yaml"}
+                ],
+                "error_handling": {
+                    "on_stage_failure": "halt",
+                    "escalation_policy": "default",
+                },
+            }
+        }
+        parsed = WorkflowConfig(**config_data)
+        assert parsed.workflow.autonomous_loop.enabled is False
+
+    def test_workflow_schema_with_autonomous_loop(self) -> None:
+        from src.workflow._schemas import WorkflowConfig
+
+        config_data = {
+            "workflow": {
+                "name": "test",
+                "description": "test workflow",
+                "stages": [
+                    {"name": "s1", "stage_ref": "configs/stages/s1.yaml"}
+                ],
+                "autonomous_loop": {
+                    "enabled": True,
+                    "learning_enabled": True,
+                    "goals_enabled": False,
+                },
+                "error_handling": {
+                    "on_stage_failure": "halt",
+                    "escalation_policy": "default",
+                },
+            }
+        }
+        parsed = WorkflowConfig(**config_data)
+        assert parsed.workflow.autonomous_loop.enabled is True
+        assert parsed.workflow.autonomous_loop.learning_enabled is True
+        assert parsed.workflow.autonomous_loop.goals_enabled is False
+        assert parsed.workflow.autonomous_loop.portfolio_enabled is True

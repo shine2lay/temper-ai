@@ -178,6 +178,15 @@ def _register_optional_routes(app: FastAPI, config_root: str) -> None:
         except Exception:  # noqa: BLE001
             logger.warning("%s routes not available", label)
 
+    try:
+        from src.experimentation.dashboard_service import ExperimentDataService
+        from src.experimentation.dashboard_routes import create_experimentation_router
+
+        exp_svc = ExperimentDataService()
+        app.include_router(create_experimentation_router(exp_svc), prefix=_API_PREFIX)
+    except Exception:  # noqa: BLE001
+        logger.warning("Experimentation routes not available")
+
 
 _SUBMOD_STORE = "store"
 _SUBMOD_SVC = "dashboard_service"

@@ -92,6 +92,12 @@ from src.improvement._schemas import OptimizationConfig  # noqa: F401
 from src.lifecycle._schemas import LifecycleConfig  # noqa: F401
 
 
+def _default_autonomous_loop_config() -> "BaseModel":
+    """Lazy factory to avoid workflow→autonomy import for fan-out."""
+    from src.autonomy._schemas import AutonomousLoopConfig
+    return AutonomousLoopConfig()
+
+
 class WorkflowObservabilityConfig(BaseModel):
     """Workflow observability configuration."""
     console_mode: Literal["minimal", "standard", "verbose"] = "standard"
@@ -125,9 +131,19 @@ class WorkflowConfigInner(BaseModel):
     safety: WorkflowSafetyConfig = Field(default_factory=WorkflowSafetyConfig)
     optimization: Optional[OptimizationConfig] = None
     lifecycle: LifecycleConfig = Field(default_factory=LifecycleConfig)
+    autonomous_loop: Any = Field(default_factory=_default_autonomous_loop_config)
     observability: WorkflowObservabilityConfig = Field(default_factory=WorkflowObservabilityConfig)
     error_handling: WorkflowErrorHandlingConfig
     metadata: MetadataConfig = Field(default_factory=MetadataConfig)
+
+    @field_validator('autonomous_loop', mode='before')
+    @classmethod
+    def coerce_autonomous_loop(cls, v: Any) -> Any:
+        """Coerce dict to AutonomousLoopConfig at validation time."""
+        if isinstance(v, dict):
+            from src.autonomy._schemas import AutonomousLoopConfig
+            return AutonomousLoopConfig(**v)
+        return v
 
     @field_validator('stages')
     @classmethod

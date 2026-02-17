@@ -4,296 +4,191 @@
 
 ## Vision
 
-This framework enables AI agents to autonomously execute complete product lifecycles—from market research to deployment to iterative improvement—with minimal human intervention. The system learns from outcomes, experiments with approaches, and continuously optimizes itself.
+This framework enables AI agents to autonomously execute complete product lifecycles -- from market research to deployment to iterative improvement -- with minimal human intervention. The system learns from outcomes, experiments with approaches, and continuously optimizes itself.
 
 See [META_AUTONOMOUS_FRAMEWORK_VISION.md](./docs/VISION.md) for the complete vision.
 
-## Current Status: Milestone 4 ✅ COMPLETE - Ready for M5
+## Current Status: Milestone 8 COMPLETE
 
-**Latest Achievement:** Safety & Governance System - Full enterprise-grade safety controls for autonomous operation.
+**17 milestones complete (M1-M4, M5.1-M5.3, M6.1-M6.3, M7.1-M7.3, M8.1-M8.4).**
 
-### Milestone 2 Deliverables ✅
-- ✅ LLM provider abstraction (Ollama, OpenAI, Anthropic, vLLM)
-- ✅ Tool registry with auto-discovery and execution
-- ✅ Jinja2 prompt engine with template rendering
-- ✅ StandardAgent implementation (LLM + tools)
-- ✅ AgentFactory and BaseAgent interface
-- ✅ LangGraph workflow compiler (YAML → executable graphs)
-- ✅ Real-time console streaming visualization
-- ✅ End-to-end integration tests (7/10 passing, 94 unit tests)
+The autonomous self-improving loop is now functional: workflows can learn from their own execution, propose improvements, and auto-apply feedback.
 
-### Milestone 2.5 Deliverables ✅
-- ✅ ExecutionEngine abstract interface (compile, execute, feature detection)
-- ✅ CompiledWorkflow interface (invoke, ainvoke, metadata, visualization)
-- ✅ LangGraphExecutionEngine adapter (wraps M2 compiler, 100% backward compatible)
-- ✅ EngineRegistry for runtime engine selection
-- ✅ Updated all imports to use abstraction layer
-- ✅ Comprehensive documentation (architecture guide, custom engine tutorial)
-
-**M2.5 Status:** Execution engine abstraction complete. Framework decoupled from LangGraph, ready for M5+ features.
-**M2.5 ROI:** 1.5 days investment → 61.5 days saved on future migrations (41× return)
-**See:** [Milestone 2.5 Completion Report](./docs/milestones/milestone2.5_completion.md) for full details.
-
-### Milestone 3 Deliverables ✅ COMPLETE
-- ✅ **Parallel Agent Execution** - 2-3x speedup with LangGraph nested subgraphs
-- ✅ **Consensus Strategy** - Democratic majority voting with confidence tracking
-- ✅ **Debate Strategy** - Multi-round debate with automatic convergence detection
-- ✅ **Merit-Weighted Resolver** - Weight votes by agent expertise and success rate
-- ✅ **Strategy Registry** - Pluggable strategy selection with automatic fallback
-- ✅ **Convergence Detection** - Early termination when agents reach agreement
-- ✅ **Collaboration Observability** - Track synthesis events, conflicts, convergence
-- ✅ **Example Workflows** - Parallel research and debate decision demos
-- ✅ **Comprehensive Documentation** - User guides and technical references
-- ✅ **Multi-Agent State** - Shared state management for collaborative workflows
-- ✅ **Configuration Schema** - YAML configuration for multi-agent workflows
-- ✅ **Quality Gates** - Validation checkpoints for collaboration output
-- ✅ **Adaptive Execution** - Dynamic strategy selection based on context
-- ✅ **E2E Integration Tests** - Full workflow integration testing
-
-**M3 Status:** Multi-agent collaboration system complete. Parallel execution delivers 2.25x speedup.
-**Performance:** 3 agents sequential (45s) → parallel (20s) = 2.25x faster
-**Test Coverage:** Full integration test suite passing
-**See:** [Milestone 3 Completion Report](./docs/milestones/milestone3_completion.md) for full details.
-
-### Milestone 4 Deliverables ✅ COMPLETE
-- ✅ **PolicyComposer** - Compose and execute multiple safety policies in priority order
-- ✅ **Safety Policies** - File access, secret detection, forbidden operations, rate limiting, blast radius
-- ✅ **Approval Workflow** - Human-in-the-loop approvals for high-risk actions
-- ✅ **Rollback Manager** - Snapshot and rollback mechanisms for safe experimentation
-- ✅ **Circuit Breakers** - Automatic failure detection and recovery
-- ✅ **Safety Gates** - Multi-layer safety validation checkpoints
-- ✅ **Observability Integration** - Full safety event tracking and violation logging
-- ✅ **Configuration System** - Flexible policy configuration and action mappings
-- ✅ **Comprehensive Testing** - 60+ safety tests covering all policies and edge cases
-- ✅ **Production Readiness** - Deployment guides and operational documentation
-
-**M4 Status:** Enterprise-grade safety system complete. Ready for autonomous operation with full governance.
-**Safety Coverage:** 11 implemented policies across 3 priority tiers (P0-P2)
-**Test Coverage:** 60+ safety-specific tests passing
-**See:** [Milestone 4 Completion Report](./docs/milestones/milestone4_completion.md) for full details.
-
-## Architecture Overview
+## Architecture
 
 ```
-configs/          # YAML configurations
-├── agents/       # Agent definitions
-├── stages/       # Stage definitions
-├── workflows/    # Workflow lifecycle definitions
-├── tools/        # Tool configurations
-├── prompts/      # Reusable prompt templates
-└── triggers/     # Workflow activation triggers
-
 src/
-├── compiler/     # YAML → LangGraph compiler
-├── agents/       # Agent implementations
-├── tools/        # Tool implementations
-├── strategies/   # Collaboration & conflict resolution
-├── safety/       # Safety enforcement
-├── observability/ # Tracing, logging, metrics
-└── cli/          # Command-line interface
+  workflow/        # LangGraph compiler/engine, config_loader, DAG/node builders
+  stage/           # Stage compiler, executors (sequential, parallel, adaptive)
+  agent/           # StandardAgent, BaseAgent, LLM providers, strategies
+  llm/             # LLMService, cache, prompts, tool_keys
+  tools/           # Tool registry, bash executor
+  safety/          # Action policies, autonomy management, security
+  observability/   # Execution tracker, metrics, collaboration tracker
+  memory/          # Episodic, procedural, semantic memory with adapters
+  learning/        # Pattern mining, recommendations, auto-tuning
+  goals/           # Goal proposal, analysis, safety policy, review workflow
+  portfolio/       # Multi-product orchestration, optimization, knowledge graph
+  lifecycle/       # Self-modifying workflow adaptation
+  experimentation/ # A/B testing, statistical analysis
+  autonomy/        # Post-execution loop, feedback application, audit
+  storage/         # Database models, schemas
+  shared/          # Core utilities, constants, circuit breaker
+  interfaces/      # CLI (maf), dashboard, HTTP server
+
+configs/
+  agents/          # Agent definitions (YAML)
+  stages/          # Stage definitions
+  workflows/       # Workflow lifecycle definitions
+  templates/       # Product type templates (web_app, api, data_pipeline, cli_tool)
+  lifecycle/       # Lifecycle adaptation profiles
+  portfolios/      # Portfolio configurations
 ```
 
 ## Key Features
 
-1. **Radical Modularity** - Every component is swappable and configurable
-2. **Full Observability** - Every decision traced and queryable
-3. **Self-Improvement Loop** - System learns from outcomes and optimizes itself
-4. **Progressive Autonomy** - Earns trust gradually from supervised to autonomous
-5. **Configuration as Code** - YAML-based workflow definitions
-6. **Multi-Layer Safety** - Composable safety rules across tool/agent/stage/workflow
-
-### M3 Multi-Agent Collaboration (New!)
-
-**Parallel Execution:** Run multiple agents concurrently for 2-3x faster execution
-- LangGraph nested subgraphs with concurrent branches
-- Configurable max concurrent agents
-- Automatic error handling and minimum success threshold
-
-**Collaboration Strategies:** Synthesize agent outputs intelligently
-- **Consensus** - Democratic majority voting (<10ms latency)
-- **Debate** - Multi-round argumentation with convergence detection
-- **Merit-Weighted** - Expert opinions weighted by success rate and domain expertise
-
-**Conflict Resolution:** Automatic disagreement detection and resolution
-- Primary strategy → Conflict resolver → Human escalation chain
-- Configurable disagreement thresholds
-- Merit-based weighting for expert tie-breaking
-
-**Convergence Detection:** Stop debate early when agents reach agreement
-- Automatic detection when 80% of agents unchanged
-- Cost savings through early termination
-- Higher confidence scores for converged decisions
-
-**Example Usage:**
-```yaml
-# Parallel execution with consensus synthesis
-execution:
-  agent_mode: parallel
-  max_concurrent: 3
-
-collaboration:
-  strategy: consensus
-  conflict_resolver: merit_weighted
-  config:
-    threshold: 0.5
-    conflict_threshold: 0.3
-```
-
-**Run Demo Workflows:**
-```bash
-# Parallel research (3 agents, consensus)
-python examples/run_multi_agent_workflow.py parallel-research
-
-# Debate decision (3 agents, multi-round debate)
-python examples/run_multi_agent_workflow.py debate-decision
-```
-
-**Learn More:**
-- [Multi-Agent Collaboration Guide](./docs/features/collaboration/multi_agent_collaboration.md)
-- [Collaboration Strategies Reference](./docs/features/collaboration/collaboration_strategies.md)
-- [M3 Examples](./examples/guides/multi_agent_collaboration_examples.md)
+1. **Radical Modularity** - Every component is swappable and configurable via YAML
+2. **Full Observability** - Every decision traced and queryable (SQLite + OTEL)
+3. **Autonomous Self-Improvement** - Post-execution learning loop mines patterns, proposes goals, applies feedback
+4. **Progressive Autonomy** - 5-level trust system (Supervised to Strategic) with budget enforcement
+5. **Multi-Agent Collaboration** - Parallel execution with consensus, debate, and merit-weighted strategies
+6. **Multi-Layer Safety** - Composable policies, approval workflows, emergency stop, audit trail
+7. **Portfolio Management** - Multi-product orchestration with knowledge graph and scorecards
+8. **A/B Experimentation** - Statistical testing for workflow variants
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.11 or higher
-- (Optional) Ollama for local LLMs
-- (Optional) PostgreSQL for production observability
-
 ### Installation
 
-1. **Clone the repository:**
-```bash
-# ⚠️ IMPORTANT: Replace 'yourusername' with the actual GitHub username/org before running
-git clone https://github.com/yourusername/meta-autonomous-framework.git
-cd meta-autonomous-framework
-```
-
-2. **Create virtual environment:**
 ```bash
 python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. **Install dependencies:**
-```bash
-# Note: Project uses pyproject.toml (setuptools auto-generates setup.py)
+source venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-4. **Configure environment:**
-```bash
-cp .env.example .env
-# Edit .env with your configuration
-```
-
-5. **Run the demo:**
-```bash
-# Activate virtual environment
-source venv/bin/activate
-
-# Run Milestone 1 demo
-python examples/milestone1_demo.py
-
-# Run integration tests
-pytest tests/integration/test_milestone1_e2e.py -v
-```
-
-### Running Your First Workflow
+### Run a Workflow
 
 ```bash
-# Run a simple research workflow with Ollama
-python examples/run_workflow.py configs/workflows/simple_research.yaml
+# Simple workflow
+maf run configs/workflows/quick_decision_demo.yaml --input examples/demo_input.yaml --show-details
 
-# With custom input
-python examples/run_workflow.py simple_research --prompt "Research Python typing benefits"
-
-# Verbose output with result saving
-python examples/run_workflow.py simple_research --verbose --output results.json
+# With autonomous learning loop
+maf run configs/workflows/quick_decision_demo.yaml --input examples/demo_input.yaml --autonomous --show-details
 ```
 
-### Using the Execution Engine API
+### Validate a Workflow
 
-The framework uses an execution engine abstraction layer for flexible workflow execution:
-
-```python
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
-
-# Load workflow config
-loader = ConfigLoader()
-config = loader.load_workflow("simple_research")
-
-# Get engine from registry (default: langgraph)
-registry = EngineRegistry()
-engine = registry.get_engine_from_config(config)
-
-# Compile workflow
-compiled = engine.compile(config)
-
-# Execute workflow
-result = engine.execute(compiled, {"topic": "Python typing"})
-
-# Access results
-print(result["stage_outputs"])
+```bash
+maf validate configs/workflows/quick_decision_demo.yaml --check-refs
 ```
 
-**Select specific engine:**
+### List Resources
 
-```python
-# Explicitly select LangGraph engine
-engine = registry.get_engine("langgraph")
-
-# Or specify engine in workflow YAML:
-# workflow:
-#   engine: langgraph
-#   engine_config:
-#     max_retries: 3
+```bash
+maf list workflows
+maf list agents
+maf list stages
 ```
 
-**Check engine capabilities:**
+### Autonomous Mode
 
-```python
-# Feature detection for engine capabilities
-if engine.supports_feature("convergence_detection"):
-    print("Engine supports convergence detection for M5!")
-else:
-    print("Using basic execution mode")
+Enable post-execution analysis via YAML or CLI flag:
+
+```yaml
+workflow:
+  name: my_workflow
+  autonomous_loop:
+    enabled: true
+    learning_enabled: true
+    goals_enabled: true
+    portfolio_enabled: true
 ```
 
-See [Execution Engine Architecture](./docs/features/execution/execution_engine_architecture.md) for details.
+Or: `maf run workflow.yaml --autonomous`
+
+See [Autonomous Mode Guide](./docs/guides/autonomous_mode.md) for details.
+
+### Learning & Goals
+
+```bash
+maf learning mine          # Mine patterns from execution history
+maf learning patterns      # View discovered patterns
+maf learning recommend     # Generate recommendations
+maf goals propose          # Propose improvement goals
+maf goals list             # List proposals
+```
+
+### Experimentation
+
+```bash
+maf experiment list                    # List experiments
+maf experiment create --name X ...     # Create experiment
+maf experiment start <id>             # Start experiment
+maf experiment results <id>           # View analysis
+```
+
+### Templates
+
+```bash
+maf template list                     # List product types
+maf template create --type api --name my-api  # Scaffold new project
+```
+
+### Dashboard
+
+```bash
+maf dashboard                         # Launch web UI on port 8420
+```
 
 ## Development
-
-### Project Structure
-
-All Python packages have `__init__.py` files for proper imports.
 
 ### Running Tests
 
 ```bash
-pytest
+source venv/bin/activate
+
+# Run core tests (parallel)
+python -m pytest tests/test_workflow/ tests/test_stage/ tests/test_agent/ tests/test_safety/ -n auto
+
+# Run all tests
+python -m pytest tests/ -n auto --ignore=tests/property --ignore=tests/self_improvement --ignore=tests/benchmarks --ignore=tests/test_benchmarks
+
+# Quality check
+python3 scripts/architecture_scan.py
 ```
 
 ### Code Quality
 
 ```bash
-# Format code
-black .
-
-# Lint
-ruff check .
-
-# Type check
-mypy src/
+black .           # Format
+ruff check .      # Lint
+mypy src/         # Type check
 ```
 
-## Documentation
+## Milestone History
 
-- [Vision Document](./docs/VISION.md) - The ultimate vision and philosophy
-- [Technical Specification](./TECHNICAL_SPECIFICATION.md) - Implementation details and schemas
-- [Configuration Guide](./docs/CONFIGURATION.md) - How to configure agents, stages, workflows
-- Observability Guide - Understanding traces and metrics (Coming soon)
+| Milestone | Description | Status |
+|-----------|-------------|--------|
+| M1 | Full observability infrastructure | Complete |
+| M2 | Basic agent execution with LangGraph | Complete |
+| M2.5 | Execution engine abstraction layer | Complete |
+| M3 | Multi-agent collaboration strategies | Complete |
+| M4 | Safety & governance system | Complete |
+| M5.1 | Self-improvement foundation | Complete |
+| M5.2 | Experimentation framework | Complete |
+| M5.3 | Continuous learning | Complete |
+| M6.1 | Progressive autonomy | Complete |
+| M6.2 | Memory system | Complete |
+| M6.3 | Multi-product templates | Complete |
+| M7.1 | Self-modifying lifecycle | Complete |
+| M7.2 | Strategic autonomy (goal proposals) | Complete |
+| M7.3 | Portfolio management | Complete |
+| M8.1 | Post-execution autonomous loop | Complete |
+| M8.2 | Feedback application | Complete |
+| M8.3 | Memory completion | Complete |
+| M8.4 | Experimentation CLI + dashboard | Complete |
+
+See [docs/milestones/](./docs/milestones/) for detailed retrospectives.
 
 ## Technology Stack
 
@@ -301,47 +196,22 @@ mypy src/
 - **Configuration:** YAML with Pydantic validation
 - **Database:** SQLModel + SQLAlchemy (SQLite dev, Postgres prod)
 - **Console UI:** Rich library
+- **Dashboard:** FastAPI + WebSocket
 - **LLM Providers:** Multi-provider support (Ollama, vLLM, OpenAI, Anthropic)
+- **Testing:** pytest + pytest-xdist (parallel)
 
-## Contributing
+## Documentation
 
-This project is currently in early development (Milestone 1). Contributions will be welcome once core infrastructure is complete.
+- [Vision Document](./docs/VISION.md)
+- [Autonomous Mode Guide](./docs/guides/autonomous_mode.md)
+- [Feedback Loop Architecture](./docs/architecture/feedback_loop.md)
+- [Configuration Guide](./docs/CONFIGURATION.md)
+- [Milestone Retrospectives](./docs/milestones/)
 
 ## License
 
 MIT License - See LICENSE file for details
 
-## Roadmap
-
-- **Milestone 1:** Full observability infrastructure ✅ **COMPLETE**
-- **Milestone 2:** Basic agent execution with LangGraph ✅ **COMPLETE**
-- **Milestone 2.5:** Execution engine abstraction layer ✅ **COMPLETE** (1.5 days)
-- **Milestone 3:** Multi-agent collaboration strategies ✅ **COMPLETE**
-  - ✅ Parallel execution (2-3x speedup)
-  - ✅ Consensus, debate, merit-weighted strategies
-  - ✅ Convergence detection
-  - ✅ Quality gates, adaptive execution, E2E tests
-- **Milestone 4:** Safety & experimentation infrastructure ✅ **COMPLETE**
-  - ✅ PolicyComposer and safety policies
-  - ✅ Approval workflow and rollback manager
-  - ✅ Circuit breakers and safety gates
-- **Milestone 5:** Self-improvement loop ← **NEXT** (4 weeks)
-- **Milestone 6:** Production-ready with multiple product types (4 weeks)
-
-### Why M2.5 (Abstraction Layer)?
-
-After specialist analysis, adding an abstraction layer over LangGraph now (at minimal coupling) will:
-- **Prevent vendor lock-in** - Switch execution engines later with minimal effort (weeks vs months)
-- **Enable M5+ features** - Convergence detection, self-modifying lifecycle, meta-circular execution
-- **Support experimentation** - A/B test different engines in production
-- **ROI: 41×** - 1.5 days investment saves 3-17 weeks on future migrations
-
-**Cost to switch engines:**
-- Without abstraction: 24 weeks at M6 (project-threatening)
-- With abstraction: 6.5 weeks at M6 (manageable)
-
-See [Milestone Roadmap](./docs/ROADMAP.md) for detailed timeline and tasks.
-
 ---
 
-**Built with ❤️ for the future of autonomous AI systems**
+**Built for the future of autonomous AI systems**

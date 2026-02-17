@@ -97,6 +97,7 @@ LAYER_MAP: dict[str, str] = {
     "llm": "infrastructure",
     "storage": "infrastructure",
     "auth": "infrastructure",
+    "memory": "infrastructure",
 }
 
 # Lower number = higher layer. Upward deps (high->low number) are violations.

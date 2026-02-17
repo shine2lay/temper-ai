@@ -717,7 +717,7 @@ def test_get_agent_execution_not_found(mock_get_session, backend_no_buffer):
 # ========== Tests for Stats and Indexes ==========
 
 
-@patch('src.observability.backends.sql_backend._get_backend_stats')
+@patch('src.observability.backends._sql_backend_helpers.get_backend_stats')
 def test_get_stats(mock_get_stats, backend_no_buffer):
     """Test getting backend stats."""
     expected_stats = {"workflows": 10, "agents": 50}
@@ -742,7 +742,7 @@ def test_create_indexes(backend_no_buffer):
 # ========== Tests for Delegated Methods ==========
 
 
-@patch('src.observability.backends.sql_backend._track_safety_violation')
+@patch('src.observability.backends._sql_backend_helpers.track_safety_violation')
 def test_track_safety_violation(mock_track, backend_no_buffer):
     """Test tracking safety violation."""
     backend_no_buffer.track_safety_violation(
@@ -757,7 +757,7 @@ def test_track_safety_violation(mock_track, backend_no_buffer):
     mock_track.assert_called_once()
 
 
-@patch('src.observability.backends.sql_backend._track_collaboration_event')
+@patch('src.observability.backends._sql_backend_helpers.track_collaboration_event')
 def test_track_collaboration_event(mock_track, backend_no_buffer):
     """Test tracking collaboration event."""
     mock_track.return_value = "collab_123"
@@ -773,7 +773,7 @@ def test_track_collaboration_event(mock_track, backend_no_buffer):
     mock_track.assert_called_once()
 
 
-@patch('src.observability.backends.sql_backend._cleanup_old_records')
+@patch('src.observability.backends._sql_backend_helpers.cleanup_old_records')
 def test_cleanup_old_records(mock_cleanup, backend_no_buffer):
     """Test cleaning up old records."""
     mock_cleanup.return_value = {"workflows": 5, "stages": 10}
@@ -784,7 +784,7 @@ def test_cleanup_old_records(mock_cleanup, backend_no_buffer):
     mock_cleanup.assert_called_once_with(30, True)
 
 
-@patch('src.observability.backends.sql_backend._aggregate_workflow_metrics')
+@patch('src.observability.backends._sql_backend_helpers.aggregate_workflow_metrics')
 def test_aggregate_workflow_metrics(mock_aggregate, backend_no_buffer):
     """Test aggregating workflow metrics."""
     mock_aggregate.return_value = {
@@ -800,7 +800,7 @@ def test_aggregate_workflow_metrics(mock_aggregate, backend_no_buffer):
     mock_aggregate.assert_called_once_with("wf_123")
 
 
-@patch('src.observability.backends.sql_backend._aggregate_stage_metrics')
+@patch('src.observability.backends._sql_backend_helpers.aggregate_stage_metrics')
 def test_aggregate_stage_metrics(mock_aggregate, backend_no_buffer):
     """Test aggregating stage metrics."""
     mock_aggregate.return_value = {

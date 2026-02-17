@@ -55,16 +55,12 @@ class CollaborationEventTracker:
 
     def track_collaboration_event(
         self,
-        params: CollaborationEventParams,
+        params: Optional[CollaborationEventParams] = None,
+        **kwargs: Any,
     ) -> str:
-        """Track collaboration event for multi-agent interactions.
-
-        Args:
-            params: CollaborationEventParams with all event parameters
-
-        Returns:
-            ID of created collaboration event record, or empty string on failure.
-        """
+        """Track collaboration event for multi-agent interactions."""
+        if params is None:
+            params = CollaborationEventParams(**kwargs)
 
         # Validate and process
         if not self._validate_collab_params(params):

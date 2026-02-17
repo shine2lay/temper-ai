@@ -37,6 +37,26 @@ class DecisionTrackingParams:
     extra_metadata: Optional[Dict[str, Any]] = None
 
 
+def _resolve_decision_params(
+    params_or_decision_type: Any, **kwargs: Any
+) -> DecisionTrackingParams:
+    """Resolve backward-compatible args to DecisionTrackingParams."""
+    if isinstance(params_or_decision_type, DecisionTrackingParams):
+        return params_or_decision_type
+    if params_or_decision_type is not None:
+        return DecisionTrackingParams(
+            decision_type=params_or_decision_type, **kwargs
+        )
+    if "decision_type" in kwargs:
+        return DecisionTrackingParams(**kwargs)
+    p = kwargs.get("params")
+    if isinstance(p, DecisionTrackingParams):
+        return p
+    raise TypeError(
+        "track() requires a DecisionTrackingParams or decision_type argument"
+    )
+
+
 class DecisionTracker:
     """Tracks decision outcomes and delegates merit score updates.
 
@@ -68,17 +88,16 @@ class DecisionTracker:
     def track(
         self,
         session: Any,
-        params: DecisionTrackingParams
+        params_or_decision_type: Any = None,
+        **kwargs: Any,
     ) -> str:
         """Track a decision outcome and optionally update merit scores.
 
-        Args:
-            session: Database session for persistence
-            params: DecisionTrackingParams with all decision tracking parameters
-
-        Returns:
-            Decision ID or empty string on failure
+        Supports both new and old calling conventions:
+            tracker.track(session, DecisionTrackingParams(...))
+            tracker.track(session, decision_type="x", outcome="y", decision_data={})
         """
+        params = _resolve_decision_params(params_or_decision_type, **kwargs)
 
         decision_id = f"decision-{uuid.uuid4().hex[:UUID_HEX_LENGTH]}"
 

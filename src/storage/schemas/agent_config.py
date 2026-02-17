@@ -97,8 +97,13 @@ class SafetyConfig(BaseModel):
 class MemoryConfig(BaseModel):
     """Memory configuration."""
     enabled: bool = False
-    type: Optional[Literal["vector", "episodic", "procedural", "semantic"]] = None
+    type: Optional[Literal["vector", "episodic", "procedural", "semantic", "cross_session"]] = None
     scope: Optional[Literal["session", "project", "cross_session", "permanent"]] = None
+
+    # Memory backend and isolation
+    provider: str = Field(default="in_memory", description="Memory backend: 'mem0', 'in_memory'")
+    memory_namespace: Optional[str] = Field(default=None, description="Cross-workflow namespace override")
+    tenant_id: str = Field(default="default", description="Tenant ID for multi-tenant isolation")
 
     # Vector memory config
     retrieval_k: int = Field(default=MEDIUM_ITEM_LIMIT, gt=0)

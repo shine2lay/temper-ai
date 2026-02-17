@@ -293,12 +293,12 @@ class ObservabilityBuffer:
                           self._pending_ids, self.retry_queue,
                           self._handle_flush_failure_impl, merge_agent_metrics)
 
-    def buffer_llm_call(self, params: LLMCallBufferParams) -> None:
-        """Buffer LLM call for batch insertion.
-
-        Args:
-            params: LLMCallBufferParams with all LLM call parameters
-        """
+    def buffer_llm_call(
+        self, params: Optional[LLMCallBufferParams] = None, **kwargs: Any
+    ) -> None:
+        """Buffer LLM call for batch insertion."""
+        if params is None:
+            params = LLMCallBufferParams(**kwargs)
         deferred_flush = None
         with self.lock:
             self.llm_calls.append(BufferedLLMCall(
@@ -334,12 +334,12 @@ class ObservabilityBuffer:
                           self._pending_ids, self.retry_queue,
                           self._handle_flush_failure_impl, merge_agent_metrics)
 
-    def buffer_tool_call(self, params: ToolCallBufferParams) -> None:
-        """Buffer tool call for batch insertion.
-
-        Args:
-            params: ToolCallBufferParams with all tool call parameters
-        """
+    def buffer_tool_call(
+        self, params: Optional[ToolCallBufferParams] = None, **kwargs: Any
+    ) -> None:
+        """Buffer tool call for batch insertion."""
+        if params is None:
+            params = ToolCallBufferParams(**kwargs)
         deferred_flush = None
         with self.lock:
             self.tool_calls.append(BufferedToolCall(

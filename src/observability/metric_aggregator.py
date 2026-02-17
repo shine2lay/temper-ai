@@ -80,12 +80,12 @@ class MetricAggregator:
                 exc_info=True,
             )
 
-    def set_agent_output(self, params: AgentOutputParams) -> None:
-        """Set agent output data after execution.
-
-        Args:
-            params: AgentOutputParams with all agent output parameters
-        """
+    def set_agent_output(
+        self, params: Optional[AgentOutputParams] = None, **kwargs: Any
+    ) -> None:
+        """Set agent output data after execution."""
+        if params is None:
+            params = AgentOutputParams(**kwargs)
         from src.observability.backend import AgentOutputData
         self.backend.set_agent_output(
             agent_id=params.agent_id,

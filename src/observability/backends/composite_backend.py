@@ -245,8 +245,11 @@ class CompositeBackend(_CompositeAsyncMixin, _CompositeReadMixin, ObservabilityB
         workflow_config: Dict[str, Any],
         start_time: datetime,
         data: Optional[WorkflowStartData] = None,
+        **kwargs: Any,
     ) -> None:
         """Delegate to primary and fan out to secondaries."""
+        if data is None and kwargs:
+            data = WorkflowStartData(**kwargs)
         self._primary.track_workflow_start(
             workflow_id, workflow_name, workflow_config, start_time, data
         )
@@ -372,8 +375,9 @@ class CompositeBackend(_CompositeAsyncMixin, _CompositeReadMixin, ObservabilityB
     def set_agent_output(
         self,
         agent_id: str,
-        output_data: Dict[str, Any],
+        output_data: Optional[Dict[str, Any]] = None,
         metrics: Optional[AgentOutputData] = None,
+        **kwargs: Any,
     ) -> None:
         """Delegate to primary and fan out to secondaries."""
         self._primary.set_agent_output(agent_id, output_data, metrics)
@@ -387,10 +391,13 @@ class CompositeBackend(_CompositeAsyncMixin, _CompositeReadMixin, ObservabilityB
         agent_id: str,
         provider: str,
         model: str,
-        start_time: datetime,
-        data: LLMCallData,
+        start_time: Optional[datetime] = None,
+        data: Optional[LLMCallData] = None,
+        **kwargs: Any,
     ) -> None:
         """Delegate to primary and fan out to secondaries."""
+        if data is None and kwargs:
+            data = LLMCallData(**kwargs)
         self._primary.track_llm_call(
             llm_call_id, agent_id, provider, model, start_time, data
         )
@@ -404,10 +411,13 @@ class CompositeBackend(_CompositeAsyncMixin, _CompositeReadMixin, ObservabilityB
         tool_execution_id: str,
         agent_id: str,
         tool_name: str,
-        start_time: datetime,
-        data: ToolCallData,
+        start_time: Optional[datetime] = None,
+        data: Optional[ToolCallData] = None,
+        **kwargs: Any,
     ) -> None:
         """Delegate to primary and fan out to secondaries."""
+        if data is None and kwargs:
+            data = ToolCallData(**kwargs)
         self._primary.track_tool_call(
             tool_execution_id, agent_id, tool_name, start_time, data
         )
@@ -424,10 +434,11 @@ class CompositeBackend(_CompositeAsyncMixin, _CompositeReadMixin, ObservabilityB
         violation_message: str,
         policy_name: str,
         data: Optional[SafetyViolationData] = None,
+        **kwargs: Any,
     ) -> None:
         """Delegate to primary and fan out to secondaries."""
         self._primary.track_safety_violation(
-            violation_severity, violation_message, policy_name, data  # type: ignore[arg-type]
+            violation_severity, violation_message, policy_name, data
         )
         self._fan_out(
             "track_safety_violation",
@@ -438,8 +449,9 @@ class CompositeBackend(_CompositeAsyncMixin, _CompositeReadMixin, ObservabilityB
         self,
         stage_id: str,
         event_type: str,
-        agents_involved: List[str],
+        agents_involved: Optional[List[str]] = None,
         data: Optional[CollaborationEventData] = None,
+        **kwargs: Any,
     ) -> str:
         """Delegate to primary and fan out to secondaries."""
         result = self._primary.track_collaboration_event(

@@ -90,6 +90,8 @@ dashboard = [
     "uvicorn[standard]>=0.34.0",
 ]
 
+memory = ["mem0ai>=1.0.0"]
+
 # TODO: Replace 'yourusername' with actual GitHub username/organization
 [project.urls]
 Homepage = "https://github.com/yourusername/meta-autonomous-framework"
@@ -237,3 +239,7 @@ ignore_errors = true
 module = "tests.*"
 disallow_untyped_defs = false
 disallow_incomplete_defs = false
+
+[[tool.mypy.overrides]]
+module = ["mem0.*", "chromadb.*"]
+ignore_missing_imports = true

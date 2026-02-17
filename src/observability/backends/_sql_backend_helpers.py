@@ -955,7 +955,7 @@ class SQLDelegatedMethodsMixin:
 
     def track_safety_violation(
         self, violation_severity: str, violation_message: str, policy_name: str,
-        data: Optional[BackendSafetyViolationData] = None
+        data: Optional[BackendSafetyViolationData] = None, **kwargs: Any
     ) -> None:
         """Track safety violation."""
         violation_data = SqlSafetyViolationParams(
@@ -972,14 +972,15 @@ class SQLDelegatedMethodsMixin:
         track_safety_violation(violation_data)
 
     def track_collaboration_event(
-        self, stage_id: str, event_type: str, agents_involved: List[str],
-        data: Optional[BackendCollaborationEventData] = None
+        self, stage_id: str, event_type: str, agents_involved: Optional[List[str]] = None,
+        data: Optional[BackendCollaborationEventData] = None, **kwargs: Any
     ) -> str:
         """Track collaboration event."""
+        agents = agents_involved if agents_involved is not None else []
         collab_data = SqlCollaborationEventParams(
             stage_id=stage_id,
             event_type=event_type,
-            agents_involved=agents_involved,
+            agents_involved=agents,
             event_data=data.event_data if data else None,
             round_number=data.round_number if data else None,
             resolution_strategy=data.resolution_strategy if data else None,

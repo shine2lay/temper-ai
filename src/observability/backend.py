@@ -369,7 +369,8 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         workflow_name: str,
         workflow_config: Dict[str, Any],
         start_time: datetime,
-        data: Optional[WorkflowStartData] = None
+        data: Optional[WorkflowStartData] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Record workflow execution start.
@@ -540,8 +541,9 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
     def set_agent_output(
         self,
         agent_id: str,
-        output_data: Dict[str, Any],
-        metrics: Optional[AgentOutputData] = None
+        output_data: Optional[Dict[str, Any]] = None,
+        metrics: Optional[AgentOutputData] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Set agent output data and metrics.
@@ -562,8 +564,9 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         agent_id: str,
         provider: str,
         model: str,
-        start_time: datetime,
-        data: LLMCallData
+        start_time: Optional[datetime] = None,
+        data: Optional[LLMCallData] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Record LLM call.
@@ -586,8 +589,9 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         tool_execution_id: str,
         agent_id: str,
         tool_name: str,
-        start_time: datetime,
-        data: ToolCallData
+        start_time: Optional[datetime] = None,
+        data: Optional[ToolCallData] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Record tool execution.
@@ -606,10 +610,11 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
     @abstractmethod
     def track_safety_violation(
         self,
-        violation_severity: Literal["INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"],
+        violation_severity: str,
         violation_message: str,
         policy_name: str,
-        data: Optional[SafetyViolationData] = None
+        data: Optional[SafetyViolationData] = None,
+        **kwargs: Any,
     ) -> None:
         """
         Track safety violation.
@@ -627,8 +632,9 @@ class ObservabilityBackend(_AsyncBackendDefaults, ABC):
         self,
         stage_id: str,
         event_type: str,
-        agents_involved: List[str],
-        data: Optional[CollaborationEventData] = None
+        agents_involved: Optional[List[str]] = None,
+        data: Optional[CollaborationEventData] = None,
+        **kwargs: Any,
     ) -> str:
         """
         Track collaboration event to backend.

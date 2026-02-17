@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 import yaml
 
@@ -341,7 +341,7 @@ class WorkflowExecutionService:
         if self.run_store is not None:
             stored = self.run_store.get_run(execution_id)
             if stored is not None:
-                return stored.to_dict()
+                return cast(Dict[str, Any], stored.to_dict())
 
         return None
 
@@ -363,33 +363,45 @@ class WorkflowExecutionService:
         Returns:
             List of execution metadata dicts
         """
-        # If store available, query it (includes historical runs)
         if self.run_store is not None:
-            status_str = status.value if status else None
-            stored = self.run_store.list_runs(
-                status=status_str, limit=limit + offset, offset=0,
-            )
-            stored_ids = {r.execution_id for r in stored}
-            results = [r.to_dict() for r in stored]
-
-            # Merge in-memory runs that may not be persisted yet
-            async with self._lock:
-                for meta in self._executions.values():
-                    if meta.execution_id not in stored_ids:
-                        if status is None or meta.status == status:
-                            results.append(meta.to_dict())
+            results = await self._list_from_store(status, limit + offset)
         else:
-            async with self._lock:
-                executions = list(self._executions.values())
-            if status:
-                executions = [e for e in executions if e.status == status]
-            executions.sort(
-                key=lambda e: e.started_at or datetime.min.replace(tzinfo=timezone.utc),
-                reverse=True,
-            )
-            results = [e.to_dict() for e in executions]
+            results = await self._list_from_memory(status)
 
         return results[offset:offset + limit]
+
+    async def _list_from_store(
+        self,
+        status: Optional[WorkflowExecutionStatus],
+        fetch_limit: int,
+    ) -> list[Dict[str, Any]]:
+        """Query persistent store and merge in-memory active runs."""
+        status_str = status.value if status else None
+        stored = self.run_store.list_runs(status=status_str, limit=fetch_limit, offset=0)
+        stored_ids = {r.execution_id for r in stored}
+        results = [r.to_dict() for r in stored]
+
+        async with self._lock:
+            for meta in self._executions.values():
+                if meta.execution_id in stored_ids:
+                    continue
+                if status is None or meta.status == status:
+                    results.append(meta.to_dict())
+        return results
+
+    async def _list_from_memory(
+        self, status: Optional[WorkflowExecutionStatus],
+    ) -> list[Dict[str, Any]]:
+        """List executions from in-memory tracking only."""
+        async with self._lock:
+            executions = list(self._executions.values())
+        if status:
+            executions = [e for e in executions if e.status == status]
+        executions.sort(
+            key=lambda e: e.started_at or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+        return [e.to_dict() for e in executions]
 
     async def cancel_execution(self, execution_id: str) -> bool:
         """Cancel a running workflow execution.

@@ -86,73 +86,86 @@ class WorkflowRunner:
         started_at = datetime.now(timezone.utc)
         sub_id: Optional[str] = None
 
-        # Subscribe on_event callback to event bus
         if on_event is not None and self.event_bus is not None:
             sub_id = self.event_bus.subscribe(on_event)
 
         engine = None
         try:
-            # Resolve workflow file
-            workflow_file = self._resolve_workflow_path(workflow_path)
-
-            with open(workflow_file) as f:
-                workflow_config = yaml.safe_load(f)
-
-            wf = workflow_config.get("workflow", {})
-            workflow_name = wf.get("name", workflow_file.stem)
-
-            # Setup infrastructure
-            config_loader, tool_registry, tracker = self._setup_infrastructure()
-
-            # Compile
-            compiled, engine = self._compile(workflow_config, tool_registry, config_loader)
-
-            # Execute with tracking
-            effective_workspace = workspace or self.config.workspace
-            result_data = self._execute(
-                compiled=compiled,
-                workflow_config=workflow_config,
-                workflow_name=workflow_name,
-                input_data=input_data or {},
-                tracker=tracker,
-                config_loader=config_loader,
-                tool_registry=tool_registry,
-                workspace=effective_workspace,
-                run_id=run_id,
+            result_data, workflow_name, engine = self._run_core(
+                workflow_path, input_data or {}, workspace, run_id,
             )
-
             completed_at = datetime.now(timezone.utc)
-            return WorkflowRunResult(
-                workflow_id=result_data.get("workflow_id", ""),
-                workflow_name=workflow_name,
-                status="completed",
+            return self._build_result(
+                "completed", result_data.get("workflow_id", ""),
+                workflow_name, started_at, completed_at,
                 result=self._sanitize_result(result_data),
-                started_at=started_at,
-                completed_at=completed_at,
-                duration_seconds=(completed_at - started_at).total_seconds(),
             )
-
         except FileNotFoundError:
             raise
         except Exception as exc:
             completed_at = datetime.now(timezone.utc)
             logger.exception("WorkflowRunner execution failed")
-            return WorkflowRunResult(
-                workflow_id="",
-                workflow_name=workflow_path,
-                status="failed",
+            return self._build_result(
+                "failed", "", workflow_path, started_at, completed_at,
                 error_message=str(exc),
-                started_at=started_at,
-                completed_at=completed_at,
-                duration_seconds=(completed_at - started_at).total_seconds(),
             )
         finally:
-            # Cleanup event subscription
             if sub_id is not None and self.event_bus is not None:
                 self.event_bus.unsubscribe(sub_id)
-            # Cleanup engine
             if engine is not None:
                 self._cleanup_engine(engine)
+
+    def _run_core(
+        self,
+        workflow_path: str,
+        input_data: Dict[str, Any],
+        workspace: Optional[str],
+        run_id: Optional[str],
+    ) -> tuple:
+        """Resolve, compile, and execute a workflow.
+
+        Returns:
+            Tuple of (result_data, workflow_name, engine).
+        """
+        workflow_file = self._resolve_workflow_path(workflow_path)
+
+        with open(workflow_file) as f:
+            workflow_config = yaml.safe_load(f)
+
+        wf = workflow_config.get("workflow", {})
+        workflow_name = wf.get("name", workflow_file.stem)
+
+        infra = self._setup_infrastructure()
+        compiled, engine = self._compile(workflow_config, infra[1], infra[0])
+
+        effective_workspace = workspace or self.config.workspace
+        result_data = self._execute(
+            compiled, workflow_config, workflow_name,
+            input_data, infra, effective_workspace, run_id,
+        )
+        return result_data, workflow_name, engine
+
+    def _build_result(
+        self,
+        status: str,
+        workflow_id: str,
+        workflow_name: str,
+        started_at: datetime,
+        completed_at: datetime,
+        result: Optional[Dict[str, Any]] = None,
+        error_message: Optional[str] = None,
+    ) -> WorkflowRunResult:
+        """Construct a WorkflowRunResult."""
+        return WorkflowRunResult(
+            workflow_id=workflow_id,
+            workflow_name=workflow_name,
+            status=status,
+            result=result,
+            error_message=error_message,
+            started_at=started_at,
+            completed_at=completed_at,
+            duration_seconds=(completed_at - started_at).total_seconds(),
+        )
 
     def _resolve_workflow_path(self, workflow_path: str) -> Path:
         """Resolve workflow path, checking config_root if not absolute."""
@@ -215,14 +228,14 @@ class WorkflowRunner:
         workflow_config: Dict[str, Any],
         workflow_name: str,
         input_data: Dict[str, Any],
-        tracker: Any,
-        config_loader: Any,
-        tool_registry: Any,
+        infra: tuple,
         workspace: Optional[str] = None,
         run_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Execute compiled workflow with tracking."""
         from src.observability.tracker import WorkflowTrackingParams
+
+        config_loader, tool_registry, tracker = infra
 
         with tracker.track_workflow(WorkflowTrackingParams(
             workflow_name=workflow_name,

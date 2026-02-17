@@ -8,9 +8,9 @@ When ``MAF_API_KEY`` is not set, authentication is disabled (dev mode).
 """
 import logging
 import os
-from typing import Any, Callable
+from typing import Any
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.status import HTTP_401_UNAUTHORIZED
@@ -39,7 +39,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         else:
             logger.info("API key authentication disabled (MAF_API_KEY not set)")
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:  # type: ignore[type-arg]
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Check API key for non-exempt requests."""
         # No key configured → auth disabled
         if not self.api_key:

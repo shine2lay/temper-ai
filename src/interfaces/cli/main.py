@@ -1493,8 +1493,6 @@ def trigger(
     wait: bool,
 ) -> None:
     """Trigger a workflow on a running MAF server."""
-    import time
-
     from src.interfaces.cli.server_client import DEFAULT_SERVER_URL, MAFServerClient
 
     client = MAFServerClient(
@@ -1516,10 +1514,14 @@ def trigger(
     execution_id = result.get("execution_id", "")
     console.print(f"[green]Triggered:[/green] {execution_id}")
 
-    if not wait:
-        return
+    if wait:
+        _poll_until_complete(client, execution_id)
 
-    # Poll until terminal status
+
+def _poll_until_complete(client: Any, execution_id: str) -> None:
+    """Poll server until the run reaches a terminal status."""
+    import time
+
     console.print("Waiting for completion...")
     poll_interval = 2  # scanner: skip-magic
     while True:

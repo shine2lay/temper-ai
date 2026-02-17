@@ -47,7 +47,7 @@ class RunStore:
                 cursor.execute("PRAGMA foreign_keys=ON")
                 cursor.close()
 
-        SQLModel.metadata.create_all(self.engine, tables=[ServerRun.__table__])
+        SQLModel.metadata.create_all(self.engine, tables=[ServerRun.__table__])  # type: ignore[attr-defined]
         logger.info("RunStore initialized: %s", self.database_url)
 
     def save_run(self, run: ServerRun) -> None:
@@ -72,7 +72,7 @@ class RunStore:
         Results are ordered by created_at descending (newest first).
         """
         with Session(self.engine) as session:
-            stmt = select(ServerRun).order_by(ServerRun.created_at.desc())  # type: ignore[union-attr]
+            stmt = select(ServerRun).order_by(ServerRun.created_at.desc())  # type: ignore[attr-defined]
             if status is not None:
                 stmt = stmt.where(ServerRun.status == status)
             stmt = stmt.offset(offset).limit(limit)

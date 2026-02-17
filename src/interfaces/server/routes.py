@@ -218,29 +218,10 @@ def _handle_list_available_workflows(config_root: str) -> Dict[str, Any]:
     return {"workflows": workflows, "total": len(workflows)}
 
 
-def create_server_router(
-    execution_service: Any,
-    data_service: Any,
-    config_root: str = "configs",
-) -> APIRouter:
-    """Create the server-mode API router.
-
-    Args:
-        execution_service: WorkflowExecutionService instance.
-        data_service: DashboardDataService for querying recorded data.
-        config_root: Config directory root path.
-    """
-    router = APIRouter()
-
-    @router.get("/health")
-    def health() -> Dict[str, Any]:
-        """Liveness probe — always 200 if the process is up."""
-        return _handle_health()
-
-    @router.get("/health/ready")
-    def readiness(request: Request) -> Dict[str, Any]:
-        """Readiness probe — 503 when draining."""
-        return _handle_readiness(execution_service, request)
+def _register_run_routes(
+    router: APIRouter, execution_service: Any,
+) -> None:
+    """Register run CRUD routes on the router."""
 
     @router.post("/runs", response_model=RunResponse)
     async def create_run(body: RunRequest = Body(...)) -> RunResponse:
@@ -274,6 +255,33 @@ def create_server_router(
     ) -> Dict[str, Any]:
         """Get events for a specific run."""
         return await _handle_get_run_events(execution_service, run_id, limit, offset)
+
+
+def create_server_router(
+    execution_service: Any,
+    data_service: Any,
+    config_root: str = "configs",
+) -> APIRouter:
+    """Create the server-mode API router.
+
+    Args:
+        execution_service: WorkflowExecutionService instance.
+        data_service: DashboardDataService for querying recorded data.
+        config_root: Config directory root path.
+    """
+    router = APIRouter()
+
+    @router.get("/health")
+    def health() -> Dict[str, Any]:
+        """Liveness probe — always 200 if the process is up."""
+        return _handle_health()
+
+    @router.get("/health/ready")
+    def readiness(request: Request) -> Dict[str, Any]:
+        """Readiness probe — 503 when draining."""
+        return _handle_readiness(execution_service, request)
+
+    _register_run_routes(router, execution_service)
 
     @router.post("/validate")
     def validate_workflow(body: ValidateRequest = Body(...)) -> Dict[str, Any]:

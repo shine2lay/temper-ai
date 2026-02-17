@@ -94,6 +94,7 @@ class LangGraphWorkflowState(WorkflowDomainState):
     current_stage: Annotated[str, _keep_latest] = ""
     workflow_id: Annotated[str, _keep_latest] = ""
     stage_loop_counts: Annotated[Dict[str, int], _merge_dicts] = field(default_factory=dict)
+    conversation_histories: Annotated[Dict[str, Any], _merge_dicts] = field(default_factory=dict)
     topic: Annotated[Optional[str], _keep_latest] = None
     depth: Annotated[Optional[str], _keep_latest] = None
     focus_areas: Annotated[Optional[List[str]], _keep_latest] = None

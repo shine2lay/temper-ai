@@ -69,7 +69,7 @@ def _setup_factory_and_config(mock_agent_config_cls, mock_factory, agents_or_res
 # Both AgentFactory (module-level import) and AgentConfig (local import in _run_agent)
 # need patching to isolate the executor from Pydantic validation and real agent creation.
 FACTORY_PATCH = "src.stage.executors.sequential.AgentFactory"
-CONFIG_PATCH = "src.workflow.schemas.AgentConfig"
+CONFIG_PATCH = "src.storage.schemas.agent_config.AgentConfig"
 
 
 class TestSequentialOutputAccumulation:

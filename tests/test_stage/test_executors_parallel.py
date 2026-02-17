@@ -153,7 +153,7 @@ class TestParallelExecution:
 
         # Mock AgentFactory and agent execution
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             # Configure mock agent
@@ -219,7 +219,7 @@ class TestParallelExecution:
             return response
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.base.SynthesisResult') as mock_synthesis_class:
 
             # Configure mock agent with delay
@@ -280,7 +280,7 @@ class TestErrorHandling:
         executor = ParallelStageExecutor()
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'):
+             patch('src.storage.schemas.agent_config.AgentConfig'):
 
             # All agents fail
             mock_agent = Mock()
@@ -327,7 +327,7 @@ class TestErrorHandling:
             return response
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             mock_agent = Mock()
@@ -383,7 +383,7 @@ class TestErrorHandling:
             return response
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.base.SynthesisResult'):
 
             mock_agent = Mock()
@@ -431,7 +431,7 @@ class TestErrorHandling:
         executor = ParallelStageExecutor()
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'):
+             patch('src.storage.schemas.agent_config.AgentConfig'):
 
             # Agent fails
             mock_agent = Mock()
@@ -465,7 +465,7 @@ class TestErrorHandling:
         executor = ParallelStageExecutor()
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'):
+             patch('src.storage.schemas.agent_config.AgentConfig'):
 
             # Agent fails
             mock_agent = Mock()
@@ -526,7 +526,7 @@ class TestAggregateMetrics:
             return agent_responses[agent_name]
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             mock_agent = Mock()
@@ -587,7 +587,7 @@ class TestAggregateMetrics:
             return response
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             mock_agent = Mock()
@@ -646,7 +646,7 @@ class TestSynthesisIntegration:
         }
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'):
+             patch('src.storage.schemas.agent_config.AgentConfig'):
 
             mock_agent = Mock()
             mock_agent.execute.return_value = mock_agent_response
@@ -687,7 +687,7 @@ class TestSynthesisIntegration:
         }
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.registry.get_strategy_from_config') as mock_get_strategy:
 
             # Configure mock strategy with required attributes
@@ -750,7 +750,7 @@ class TestQualityGates:
         }
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             mock_agent = Mock()
@@ -790,7 +790,7 @@ class TestQualityGates:
         }
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.base.SynthesisResult') as mock_synthesis_class:
 
             # Low confidence synthesis result
@@ -861,7 +861,7 @@ class TestQualityGates:
             return result
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.registry.get_strategy_from_config') as mock_get_strategy:
 
             # Mock strategy to return synthesis result
@@ -916,7 +916,7 @@ class TestQualityGates:
         }
 
         with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.workflow.schemas.AgentConfig'), \
+             patch('src.storage.schemas.agent_config.AgentConfig'), \
              patch('src.agent.strategies.base.SynthesisResult') as mock_synthesis_class:
 
             # Always low confidence

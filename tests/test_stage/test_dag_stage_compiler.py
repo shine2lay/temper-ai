@@ -33,14 +33,17 @@ def _make_compiler():
 
 
 def _make_stage_node(stage_name):
-    """Create a stage node that records its execution."""
+    """Create a stage node that returns partial state updates.
+
+    Returns only changed fields so LangGraph reducers can merge
+    concurrent writes from parallel fan-out branches.
+    """
 
     def node(state):
-        if not hasattr(state, "stage_outputs") or state.stage_outputs is None:
-            state.stage_outputs = {}
-        state.stage_outputs[stage_name] = f"output_{stage_name}"
-        state.current_stage = stage_name
-        return state
+        return {
+            "stage_outputs": {stage_name: f"output_{stage_name}"},
+            "current_stage": stage_name,
+        }
 
     return node
 
@@ -56,10 +59,9 @@ class TestBackwardCompatibility:
         def _tracker(name, _cfg):
             def node(state):
                 execution_order.append(name)
-                if not hasattr(state, "stage_outputs"):
-                    state.stage_outputs = {}
-                state.stage_outputs[name] = f"out_{name}"
-                return state
+                return {
+                    "stage_outputs": {name: f"out_{name}"},
+                }
             return node
 
         with patch.object(node_builder, "create_stage_node", side_effect=_tracker):
@@ -360,11 +362,10 @@ class TestDAGBarrierNodes:
         def _node_factory(name, _cfg):
             def node(state):
                 execution_order.append(name)
-                if not hasattr(state, "stage_outputs"):
-                    state.stage_outputs = {}
-                state.stage_outputs[name] = f"output_{name}"
-                state.current_stage = name
-                return state
+                return {
+                    "stage_outputs": {name: f"output_{name}"},
+                    "current_stage": name,
+                }
             return node
 
         with patch.object(node_builder, "create_stage_node", side_effect=_node_factory):
@@ -559,12 +560,11 @@ class TestDAGVCSPattern:
 
         def _counting_factory(name, _cfg):
             def node(state):
-                if not hasattr(state, "stage_outputs"):
-                    state.stage_outputs = {}
                 exec_counts[name] = exec_counts.get(name, 0) + 1
-                state.stage_outputs[name] = f"output_{name}"
-                state.current_stage = name
-                return state
+                return {
+                    "stage_outputs": {name: f"output_{name}"},
+                    "current_stage": name,
+                }
             return node
 
         with patch.object(

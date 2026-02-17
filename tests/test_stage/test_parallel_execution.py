@@ -156,7 +156,7 @@ class TestSequentialExecutor:
             "stage_outputs": {}
         }
 
-        with patch('src.workflow.schemas.AgentConfig') as mock_config_class:
+        with patch('src.storage.schemas.agent_config.AgentConfig') as mock_config_class:
             with patch('src.stage.executors.sequential.AgentFactory.create') as mock_create:
                 mock_config_class.return_value = mock_agent_config
                 mock_create.return_value = mock_agent
@@ -235,7 +235,7 @@ class TestBackwardCompatibility:
         }
 
         with patch.object(compiler.config_loader, 'load_agent') as mock_load:
-            with patch('src.workflow.schemas.AgentConfig') as mock_config_class:
+            with patch('src.storage.schemas.agent_config.AgentConfig') as mock_config_class:
                 with patch('src.stage.executors.sequential.AgentFactory.create') as mock_create:
                     mock_load.return_value = {"name": "agent1"}
                     mock_config_class.return_value = mock_agent_config

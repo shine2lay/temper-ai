@@ -161,7 +161,7 @@ class TestAdaptiveExecution:
             return mock_agents[agent_name]
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('src.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
+            with patch('src.storage.schemas.agent_config.AgentConfig', side_effect=mock_agent_config):
                 with patch('src.stage.executors.parallel.AgentFactory.create', side_effect=mock_create):
                     with patch('src.stage.executors.sequential.AgentFactory.create', side_effect=mock_create):
                         result = compiler.executors['adaptive'].execute_stage(
@@ -226,7 +226,7 @@ class TestAdaptiveExecution:
             return mock_agents[agent_name]
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('src.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
+            with patch('src.storage.schemas.agent_config.AgentConfig', side_effect=mock_agent_config):
                 with patch('src.stage.executors.parallel.AgentFactory.create', side_effect=mock_create):
                     with patch('src.stage.executors.sequential.AgentFactory.create', side_effect=mock_create):
                         result = compiler.executors['adaptive'].execute_stage(
@@ -277,7 +277,7 @@ class TestAdaptiveExecution:
             return mock_agents[agent_name]
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('src.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
+            with patch('src.storage.schemas.agent_config.AgentConfig', side_effect=mock_agent_config):
                 with patch('src.stage.executors.parallel.AgentFactory.create', side_effect=mock_create):
                     with patch('src.stage.executors.sequential.AgentFactory.create', side_effect=mock_create):
                         result = compiler.executors['adaptive'].execute_stage(
@@ -341,7 +341,7 @@ class TestAdaptiveExecution:
             return mock_agents[agent_name]
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('src.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
+            with patch('src.storage.schemas.agent_config.AgentConfig', side_effect=mock_agent_config):
                 with patch('src.stage.executors.parallel.AgentFactory.create', side_effect=mock_create):
                     with patch('src.stage.executors.sequential.AgentFactory.create', side_effect=mock_create):
                         result = compiler.executors['adaptive'].execute_stage(

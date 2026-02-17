@@ -66,6 +66,9 @@ class StateKeys:
     # Loop tracking (conditional stages)
     STAGE_LOOP_COUNTS = "stage_loop_counts"
 
+    # Conversation history for stage:agent re-invocations
+    CONVERSATION_HISTORIES = "conversation_histories"
+
     # Synthesis sub-keys
     METHOD = "method"
     VOTES = "votes"

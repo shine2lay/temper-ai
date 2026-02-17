@@ -197,6 +197,9 @@ class WorkflowStateDict(TypedDict, total=False):
     # Quality gate retry tracking (parallel executor)
     stage_retry_counts: Dict[str, int]
 
+    # Conversation history for stage:agent re-invocations
+    conversation_histories: Dict[str, Any]
+
     # Parallel executor internal state
     agent_outputs: Dict[str, Any]
     agent_statuses: Dict[str, Any]

@@ -22,15 +22,23 @@ class AnthropicLLM(BaseLLM):
         return headers
 
     def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
-        return {
+        messages = kwargs.get("messages")
+        if messages is None:
+            messages = [{"role": "user", "content": prompt}]
+        request: Dict[str, Any] = {
             "model": self.model,
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
+            "messages": messages,
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             "temperature": kwargs.get("temperature", self.temperature),
             "top_p": kwargs.get("top_p", self.top_p),
         }
+        # Anthropic API requires system messages as a top-level param
+        non_system = [m for m in messages if m.get("role") != "system"]
+        system_msgs = [m for m in messages if m.get("role") == "system"]
+        if system_msgs:
+            request["system"] = system_msgs[0]["content"]
+            request["messages"] = non_system
+        return request
 
     def _parse_response(self, response: Dict[str, Any], latency_ms: int) -> LLMResponse:
         content_block = response["content"][0]

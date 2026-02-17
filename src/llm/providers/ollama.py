@@ -55,6 +55,7 @@ class OllamaLLM(BaseLLM):
     def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
         tools = kwargs.get("tools")
         stream = kwargs.get("stream", False)
+        messages = kwargs.get("messages")
         # Ollama sampling options shared by both /api/chat and /api/generate
         options: Dict[str, Any] = {
             "temperature": kwargs.get("temperature", self.temperature),
@@ -66,13 +67,22 @@ class OllamaLLM(BaseLLM):
         if tools:
             self._use_chat_api = True
             options["num_ctx"] = kwargs.get("max_tokens", self.max_tokens) + SIZE_4KB
+            if messages is None:
+                messages = [{"role": "user", "content": prompt}]
             return {
                 "model": self.model,
-                "messages": [
-                    {"role": "user", "content": prompt}
-                ],
+                "messages": messages,
                 "options": options,
                 "tools": tools,
+                "stream": stream,
+            }
+        elif messages is not None:
+            # Multi-turn history without tools: use /api/chat
+            self._use_chat_api = True
+            return {
+                "model": self.model,
+                "messages": messages,
+                "options": options,
                 "stream": stream,
             }
         else:

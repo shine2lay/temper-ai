@@ -295,6 +295,8 @@ def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dic
     """
     def agent_node(s: Dict[str, Any]) -> Dict[str, Any]:
         """Execute single agent and store result."""
+        from src.llm.conversation import ConversationHistory, make_history_key
+
         start_time = time.time()
 
         try:
@@ -303,6 +305,14 @@ def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dic
                 params.agent_name, params.config_loader, params.agent_cache, agent_factory
             )
             input_data = _prepare_agent_input(s)
+
+            # Load conversation history for this stage:agent pair
+            history_key = make_history_key(params.stage_name, params.agent_name)
+            histories = params.state.get(StateKeys.CONVERSATION_HISTORIES, {})
+            history_data = histories.get(history_key)
+            if history_data is not None:
+                input_data["_conversation_history"] = ConversationHistory.from_dict(history_data)
+
             agent_config_dict_for_tracking = _config_to_tracking_dict(agent_config, agent_config_dict)
             effective_stage_id = params.stage_id if params.stage_id else f"stage-{uuid.uuid4().hex[:UUID_HEX_SHORT_LENGTH]}"
             context = _create_agent_context(params.state, params.stage_name, params.agent_name, effective_stage_id)
@@ -313,6 +323,11 @@ def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dic
                 tracker=params.tracker, stage_id=params.stage_id, effective_stage_id=effective_stage_id
             )
             response = _run_agent(run_params)
+
+            # Save conversation turn on success
+            _save_parallel_conversation_turn(
+                params.state, history_key, input_data, response,
+            )
 
             duration = time.time() - start_time
             return _build_agent_success_result(params.agent_name, response, duration)
@@ -334,6 +349,37 @@ def create_agent_node(params: AgentNodeParams) -> Callable[[Dict[str, Any]], Dic
             return _build_agent_error_result(params.agent_name, e, duration)
 
     return agent_node
+
+
+def _save_parallel_conversation_turn(
+    state: Dict[str, Any],
+    history_key: str,
+    input_data: Dict[str, Any],
+    response: Any,
+) -> None:
+    """Persist the user/assistant turn into state conversation histories (parallel)."""
+    from src.llm.conversation import ConversationHistory
+
+    assistant_output = getattr(response, "output", None)
+    if not assistant_output:
+        return
+
+    user_prompt = getattr(response, "metadata", {}).get("_user_message")
+    if not user_prompt:
+        user_prompt = getattr(response, "metadata", {}).get("_rendered_prompt", "")
+
+    if StateKeys.CONVERSATION_HISTORIES not in state:
+        state[StateKeys.CONVERSATION_HISTORIES] = {}
+
+    history = input_data.get("_conversation_history")
+    if history is None:
+        history = ConversationHistory()
+
+    history.append_turn(
+        user_content=user_prompt or "",
+        assistant_content=assistant_output,
+    )
+    state[StateKeys.CONVERSATION_HISTORIES][history_key] = history.to_dict()
 
 
 def _extract_result_field(synthesis_result: Any, field: str) -> list:

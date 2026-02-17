@@ -390,6 +390,7 @@ def run_agent(
         Dict with keys: agent_name, output_data, status, metrics
     """
     from src.shared.core.context import ExecutionContext
+    from src.llm.conversation import ConversationHistory, make_history_key
 
     agent, agent_config, agent_config_dict = _load_or_cache_agent(ctx, agent_name)
     input_data = _prepare_sequential_input(
@@ -398,6 +399,13 @@ def run_agent(
         stage_config=ctx.stage_config,
     )
 
+    # Load conversation history for this stage:agent pair
+    history_key = make_history_key(ctx.stage_name, agent_name)
+    histories = ctx.state.get(StateKeys.CONVERSATION_HISTORIES, {})
+    history_data = histories.get(history_key)
+    if history_data is not None:
+        input_data["_conversation_history"] = ConversationHistory.from_dict(history_data)
+
     context = ExecutionContext(
         workflow_id=ctx.workflow_id,
         stage_id=ctx.stage_id,
@@ -405,6 +413,7 @@ def run_agent(
         metadata={
             "stage_name": ctx.stage_name,
             "agent_name": agent_name,
+            "workflow_name": ctx.state.get("workflow_name", ""),
         }
     )
 
@@ -418,7 +427,45 @@ def run_agent(
         response = agent.execute(input_data, context)
 
     duration = time.time() - start_time
-    return _build_success_result(agent_name, response, duration)
+    result = _build_success_result(agent_name, response, duration)
+
+    # Save conversation turn on success
+    _save_conversation_turn(
+        ctx.state, history_key, input_data, response,
+    )
+
+    return result
+
+
+def _save_conversation_turn(
+    state: Dict[str, Any],
+    history_key: str,
+    input_data: Dict[str, Any],
+    response: Any,
+) -> None:
+    """Persist the user/assistant turn into state conversation histories."""
+    from src.llm.conversation import ConversationHistory
+
+    assistant_output = getattr(response, "output", None)
+    if not assistant_output:
+        return
+
+    user_prompt = getattr(response, "metadata", {}).get("_user_message")
+    if not user_prompt:
+        user_prompt = getattr(response, "metadata", {}).get("_rendered_prompt", "")
+
+    if StateKeys.CONVERSATION_HISTORIES not in state:
+        state[StateKeys.CONVERSATION_HISTORIES] = {}
+
+    history = input_data.get("_conversation_history")
+    if history is None:
+        history = ConversationHistory()
+
+    history.append_turn(
+        user_content=user_prompt or "",
+        assistant_content=assistant_output,
+    )
+    state[StateKeys.CONVERSATION_HISTORIES][history_key] = history.to_dict()
 
 
 def _execute_retry_attempt(

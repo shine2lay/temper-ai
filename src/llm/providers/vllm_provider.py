@@ -48,10 +48,13 @@ class VllmLLM(BaseLLM):
     def _build_request(self, prompt: str, **kwargs: Any) -> Dict[str, Any]:
         stream = kwargs.get("stream", False)
         tools = kwargs.get("tools")
+        messages = kwargs.get("messages")
+        if messages is None:
+            messages = [{"role": "user", "content": prompt}]
 
         request: Dict[str, Any] = {
             "model": self.model,
-            "messages": [{"role": "user", "content": prompt}],
+            "messages": messages,
             "temperature": kwargs.get("temperature", self.temperature),
             "max_tokens": kwargs.get("max_tokens", self.max_tokens),
             "top_p": kwargs.get("top_p", self.top_p),

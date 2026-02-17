@@ -39,6 +39,42 @@ logger = logging.getLogger(__name__)
 _DEFAULT_MAX_ITERATIONS = 10  # scanner: skip-magic
 
 
+class _MessagesLLMWrapper:
+    """Thin proxy that injects ``messages`` kwarg into every LLM call.
+
+    Used to thread conversation history through the retry module without
+    changing its signature.  Delegates all attribute access to the
+    underlying LLM so that the wrapper is transparent to callers.
+    """
+
+    def __init__(self, llm: Any, messages: List[Dict[str, str]]) -> None:
+        self._llm = llm
+        self._messages = messages
+
+    def complete(self, prompt: str, **kwargs: Any) -> Any:
+        """Delegate to wrapped LLM with messages injected."""
+        kwargs.setdefault("messages", self._messages)
+        return self._llm.complete(prompt, **kwargs)
+
+    async def acomplete(self, prompt: str, **kwargs: Any) -> Any:
+        """Async delegate to wrapped LLM with messages injected."""
+        kwargs.setdefault("messages", self._messages)
+        return await self._llm.acomplete(prompt, **kwargs)
+
+    def stream(self, prompt: str, **kwargs: Any) -> Any:
+        """Streaming delegate to wrapped LLM with messages injected."""
+        kwargs.setdefault("messages", self._messages)
+        return self._llm.stream(prompt, **kwargs)
+
+    async def astream(self, prompt: str, **kwargs: Any) -> Any:
+        """Async streaming delegate to wrapped LLM with messages injected."""
+        kwargs.setdefault("messages", self._messages)
+        return await self._llm.astream(prompt, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._llm, name)
+
+
 # ---------------------------------------------------------------------------
 # LLMRunResult
 # ---------------------------------------------------------------------------
@@ -54,6 +90,9 @@ class LLMRunResult:
     iterations: int = 0
     error: Optional[str] = None
     raw_response: Optional[Any] = None
+    # Conversation history support: the user/assistant texts for this turn
+    user_message: Optional[str] = None
+    assistant_message: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +125,9 @@ class _RunState:
     system_prompt: str = ""
     prompt: str = ""
     llm_response: Any = None
+    # Multi-turn conversation history support
+    messages: Optional[List[Dict[str, str]]] = None
+    user_prompt_text: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +206,7 @@ class LLMService:
         max_iterations: Optional[int] = None,
         max_execution_time: Optional[float] = None,
         start_time: Optional[float] = None,
+        messages: Optional[List[Dict[str, str]]] = None,
     ) -> LLMRunResult:
         """Execute the LLM call lifecycle (sync).
 
@@ -175,7 +218,7 @@ class LLMService:
             stream_callback=stream_callback, safety_config=safety_config,
             agent_name=agent_name,
         )
-        self._prepare_run_state(s, prompt, max_iterations, max_execution_time, start_time)
+        self._prepare_run_state(s, prompt, max_iterations, max_execution_time, start_time, messages)
 
         for iteration in range(s.resolved_max_iterations):
             guard = self._check_iteration_guards(s, iteration)
@@ -184,6 +227,7 @@ class LLMService:
 
             s.llm_response, last_error = self._call_with_retry_sync(
                 s.prompt, s.stream_callback, s.native_tool_defs, s.observer,
+                messages=s.messages,
             )
             if s.llm_response is None:
                 return self._handle_llm_failure(last_error, s, iteration)
@@ -211,6 +255,7 @@ class LLMService:
         max_iterations: Optional[int] = None,
         max_execution_time: Optional[float] = None,
         start_time: Optional[float] = None,
+        messages: Optional[List[Dict[str, str]]] = None,
     ) -> LLMRunResult:
         """Execute the LLM call lifecycle (async).
 
@@ -221,7 +266,7 @@ class LLMService:
             stream_callback=stream_callback, safety_config=safety_config,
             agent_name=agent_name,
         )
-        self._prepare_run_state(s, prompt, max_iterations, max_execution_time, start_time)
+        self._prepare_run_state(s, prompt, max_iterations, max_execution_time, start_time, messages)
 
         for iteration in range(s.resolved_max_iterations):
             guard = self._check_iteration_guards(s, iteration)
@@ -230,6 +275,7 @@ class LLMService:
 
             s.llm_response, last_error = await self._call_with_retry_async(
                 s.prompt, s.stream_callback, s.native_tool_defs, s.observer,
+                messages=s.messages,
             )
             if s.llm_response is None:
                 return self._handle_llm_failure(last_error, s, iteration)
@@ -255,6 +301,7 @@ class LLMService:
         max_iterations: Optional[int],
         max_execution_time: Optional[float],
         start_time: Optional[float],
+        messages: Optional[List[Dict[str, str]]] = None,
     ) -> None:
         """Resolve settings, build tool schemas, and initialize loop state."""
         s.resolved_max_iterations = resolve_max_iterations(max_iterations, s.safety_config)
@@ -270,6 +317,9 @@ class LLMService:
 
         s.system_prompt = prompt
         s.prompt = prompt + text_schemas if text_schemas else prompt
+        s.user_prompt_text = prompt
+        if messages is not None:
+            s.messages = list(messages)
 
     def _check_iteration_guards(
         self, s: _RunState, iteration: int,
@@ -337,12 +387,15 @@ class LLMService:
 
     def _build_final_result(self, s: _RunState, iteration: int) -> LLMRunResult:
         """Build final result when no tool calls are needed."""
+        output = extract_final_answer(s.llm_response.content)
         return LLMRunResult(
-            output=extract_final_answer(s.llm_response.content),
+            output=output,
             reasoning=extract_reasoning(s.llm_response.content),
             tool_calls=s.tool_calls_made, tokens=s.total_tokens,
             cost=s.total_cost, iterations=iteration + 1,
             raw_response=s.llm_response,
+            user_message=s.user_prompt_text,
+            assistant_message=output,
         )
 
     def _execute_and_inject(self, s: _RunState, parsed_calls: List[Dict[str, Any]]) -> None:
@@ -364,6 +417,9 @@ class LLMService:
             s.conversation_turns, s.max_tool_result_size, s.max_prompt_length,
             remaining_budget,
         )
+        # After first tool iteration, clear messages so subsequent
+        # iterations use the text-based inject_results prompt
+        s.messages = None
 
     def _raise_max_iterations(self, s: _RunState) -> None:
         """Raise MaxIterationsError when iteration limit is reached."""
@@ -385,10 +441,12 @@ class LLMService:
         stream_callback: Optional[Callable],
         native_tool_defs: Optional[List[Dict[str, Any]]],
         observer: Any,
+        messages: Optional[List[Dict[str, str]]] = None,
     ) -> tuple[Optional[Any], Optional[Exception]]:
         """Call LLM with retries (sync). Delegates to _retry module."""
+        llm = _MessagesLLMWrapper(self.llm, messages) if messages else self.llm
         return call_with_retry_sync(
-            self.llm, self.inference_config,
+            llm, self.inference_config,
             prompt, stream_callback, native_tool_defs,
             observer, self._track_failed_call,
         )
@@ -399,10 +457,12 @@ class LLMService:
         stream_callback: Optional[Callable],
         native_tool_defs: Optional[List[Dict[str, Any]]],
         observer: Any,
+        messages: Optional[List[Dict[str, str]]] = None,
     ) -> tuple[Optional[Any], Optional[Exception]]:
         """Call LLM with retries (async). Delegates to _retry module."""
+        llm = _MessagesLLMWrapper(self.llm, messages) if messages else self.llm
         return await call_with_retry_async(
-            self.llm, self.inference_config,
+            llm, self.inference_config,
             prompt, stream_callback, native_tool_defs,
             observer, self._track_failed_call,
         )

@@ -20,6 +20,9 @@ from src.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
 from src.agent.utils.constants import DEFAULT_MAX_DIALOGUE_CONTEXT_CHARS, PROMPT_PREVIEW_LENGTH
 from src.llm.prompts.validation import PromptRenderError, _is_safe_template_value
 from src.llm.service import LLMRunResult, LLMService
+from src.memory._schemas import MemoryScope
+from src.memory.constants import MEMORY_QUERY_MAX_CHARS
+from src.memory.service import MemoryService
 from src.shared.utils.exceptions import (
     ConfigValidationError,
     LLMError,
@@ -58,6 +61,8 @@ class StandardAgent(BaseAgent):
             inference_config=config.agent.inference,
         )
 
+        self._memory_service: Optional[MemoryService] = None
+
         self.validate_config()
 
     def _run(
@@ -68,8 +73,16 @@ class StandardAgent(BaseAgent):
     ) -> AgentResponse:
         """Execute multi-turn tool-calling loop via LLMService."""
         prompt = self._prepare_prompt(input_data, context)
-        result = self.llm_service.run(**self._llm_kwargs(prompt, start_time))
-        return self._convert_result(result, start_time)
+        kwargs = self._llm_kwargs(prompt, start_time)
+        messages = self._build_messages_from_history(input_data, prompt)
+        if messages is not None:
+            kwargs["messages"] = messages
+        result = self.llm_service.run(**kwargs)
+        response = self._convert_result(result, start_time)
+        response.metadata["_rendered_prompt"] = prompt
+        response.metadata["_user_message"] = result.user_message
+        response.metadata["_assistant_message"] = result.assistant_message
+        return response
 
     async def _arun(
         self,
@@ -79,8 +92,31 @@ class StandardAgent(BaseAgent):
     ) -> AgentResponse:
         """Async multi-turn tool-calling loop via LLMService."""
         prompt = self._prepare_prompt(input_data, context)
-        result = await self.llm_service.arun(**self._llm_kwargs(prompt, start_time))
-        return self._convert_result(result, start_time)
+        kwargs = self._llm_kwargs(prompt, start_time)
+        messages = self._build_messages_from_history(input_data, prompt)
+        if messages is not None:
+            kwargs["messages"] = messages
+        result = await self.llm_service.arun(**kwargs)
+        response = self._convert_result(result, start_time)
+        response.metadata["_rendered_prompt"] = prompt
+        response.metadata["_user_message"] = result.user_message
+        response.metadata["_assistant_message"] = result.assistant_message
+        return response
+
+    @staticmethod
+    def _build_messages_from_history(
+        input_data: Dict[str, Any], current_prompt: str,
+    ) -> Optional[list]:
+        """Build multi-turn messages list from conversation history.
+
+        Returns None when no history is present (single-turn mode).
+        """
+        history = input_data.get("_conversation_history")
+        if history is None or len(history) == 0:
+            return None
+        messages = history.to_message_list()
+        messages.append({"role": "user", "content": current_prompt})
+        return messages
 
     def _prepare_prompt(self, input_data: Dict[str, Any], context: Optional[ExecutionContext]) -> str:
         """Render prompt, store as system prompt, and log preview."""
@@ -179,8 +215,83 @@ class StandardAgent(BaseAgent):
         template = self._render_template(input_data)
         template = self._inject_input_context(template, input_data, _MODE_CONTEXT_KEYS)
         template = self._inject_dialogue_context(template, input_data)
+        template = self._inject_memory_context(template, input_data, context)
 
         return template
+
+    def _get_memory_service(self) -> MemoryService:
+        """Lazy-create and cache the MemoryService instance."""
+        if self._memory_service is None:
+            mem_cfg = self.config.agent.memory
+            self._memory_service = MemoryService(provider_name=mem_cfg.provider)
+        return self._memory_service
+
+    def _build_memory_scope(self, context: Optional[ExecutionContext] = None) -> MemoryScope:
+        """Build a MemoryScope from agent config and execution context."""
+        mem_cfg = self.config.agent.memory
+        workflow_name = ""
+        if context and context.metadata:
+            workflow_name = context.metadata.get("workflow_name", "")
+        return self._get_memory_service().build_scope(
+            tenant_id=mem_cfg.tenant_id,
+            workflow_name=workflow_name,
+            agent_name=self.name,
+            namespace=mem_cfg.memory_namespace,
+        )
+
+    def _inject_memory_context(
+        self,
+        template: str,
+        input_data: Dict[str, Any],
+        context: Optional[ExecutionContext] = None,
+    ) -> str:
+        """Inject relevant memories into the prompt template.
+
+        Returns template unchanged if memory is disabled or on error.
+        """
+        if not self.config.agent.memory.enabled:
+            return template
+
+        try:
+            mem_cfg = self.config.agent.memory
+            scope = self._build_memory_scope(context)
+            query = self._extract_memory_query(input_data)
+            memory_text = self._get_memory_service().retrieve_context(
+                scope,
+                query,
+                retrieval_k=mem_cfg.retrieval_k,
+                relevance_threshold=mem_cfg.relevance_threshold,
+            )
+            if memory_text:
+                template += "\n\n---\n\n" + memory_text
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
+            logger.warning("Memory injection failed for agent %s: %s", self.name, exc)
+
+        return template
+
+    def _extract_memory_query(self, input_data: Dict[str, Any]) -> str:
+        """Build a query string from input_data string values (truncated to 500 chars)."""
+        parts = [str(v) for v in input_data.values() if isinstance(v, str)]
+        return " ".join(parts)[:MEMORY_QUERY_MAX_CHARS]
+
+    def _on_after_run(self, result: AgentResponse) -> AgentResponse:
+        """Store execution output as episodic memory after run."""
+        if not self.config.agent.memory.enabled:
+            return result
+
+        try:
+            scope = self._build_memory_scope(self._execution_context)
+            output_text = result.output or ""
+            if output_text:
+                self._get_memory_service().store_episodic(
+                    scope,
+                    content=output_text,
+                    metadata={"agent_name": self.name},
+                )
+        except (ValueError, TypeError, KeyError, RuntimeError, OSError, ImportError) as exc:
+            logger.warning("Memory storage failed for agent %s: %s", self.name, exc)
+
+        return result
 
     def get_capabilities(self) -> Dict[str, Any]:
         """Get agent capabilities."""

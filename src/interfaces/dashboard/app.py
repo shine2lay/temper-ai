@@ -88,101 +88,126 @@ def _register_routes(
     config_root: str,
     mode: str,
 ) -> None:
-    """Register API routes and WebSocket endpoints.
+    """Register API routes and WebSocket endpoints."""
+    _register_core_routes(app, execution_service, data_service, config_root)
 
-    Args:
-        app: FastAPI application instance.
-        execution_service: WorkflowExecutionService instance.
-        data_service: DashboardDataService instance.
-        config_root: Config directory root path.
-        mode: "server" or "dashboard".
-    """
-    from src.interfaces.dashboard.routes import create_router
+    if mode != "server":
+        _register_dashboard_routes(app, data_service, config_root)
+
+
+def _register_core_routes(
+    app: FastAPI,
+    execution_service: Any,
+    data_service: Any,
+    config_root: str,
+) -> None:
+    """Register server + WebSocket routes (all modes)."""
     from src.interfaces.dashboard.websocket import create_ws_endpoint
     from src.interfaces.server.routes import create_server_router
 
-    # Server router is always included first so literal routes like
-    # /api/workflows/available match before parametric /api/workflows/{id}.
     app.include_router(
         create_server_router(execution_service, data_service, config_root),
         prefix=_API_PREFIX,
     )
 
-    # WebSocket endpoint for event streaming (both modes)
     ws_handler = create_ws_endpoint(data_service)
     app.add_api_websocket_route("/ws/{workflow_id}", ws_handler)
 
-    if mode != "server":
-        # Dashboard mode: data query routes + studio + static files
-        app.include_router(create_router(data_service), prefix=_API_PREFIX)
 
-        # Studio config CRUD routes
-        from src.interfaces.dashboard.studio_routes import create_studio_router
-        from src.interfaces.dashboard.studio_service import StudioService
+def _register_dashboard_routes(
+    app: FastAPI, data_service: Any, config_root: str,
+) -> None:
+    """Register dashboard-only routes (studio, learning, goals, portfolio)."""
+    from src.interfaces.dashboard.routes import create_router
 
-        studio_service = StudioService(config_root=config_root)
-        app.include_router(create_studio_router(studio_service), prefix="/api/studio")
+    app.include_router(create_router(data_service), prefix=_API_PREFIX)
 
-        # Learning routes
+    # Studio config CRUD routes
+    from src.interfaces.dashboard.studio_routes import create_studio_router
+    from src.interfaces.dashboard.studio_service import StudioService
+
+    studio_service = StudioService(config_root=config_root)
+    app.include_router(create_studio_router(studio_service), prefix="/api/studio")
+
+    _register_optional_routes(app, config_root)
+
+    # Static files with no-cache middleware
+    if STATIC_DIR.exists():
+        app.mount(
+            "/dashboard",
+            StaticFiles(directory=str(STATIC_DIR), html=True),
+            name="dashboard",
+        )
+        app.add_middleware(_NoCacheStaticMiddleware)
+
+    # Root redirect
+    @app.get("/")
+    async def root() -> RedirectResponse:
+        """Redirect root to dashboard UI."""
+        return RedirectResponse(url="/dashboard/list.html")
+
+
+def _register_optional_routes(app: FastAPI, config_root: str) -> None:
+    """Register optional dashboard routes (learning, autonomy, goals, portfolio).
+
+    Uses importlib for cross-domain optional integrations to keep
+    the interfaces module fan-out within architectural limits.
+    """
+    import importlib
+
+    try:
+        from src.safety.autonomy.dashboard_routes import create_autonomy_router
+        from src.safety.autonomy.dashboard_service import AutonomyDataService
+        from src.safety.autonomy.store import AutonomyStore
+
+        _autonomy_store = AutonomyStore()
+        _autonomy_svc = AutonomyDataService(_autonomy_store)
+        app.include_router(create_autonomy_router(_autonomy_svc), prefix=_API_PREFIX)
+    except Exception:  # noqa: BLE001
+        logger.warning("Autonomy routes not available")
+
+    _OPTIONAL_ROUTES = [
+        ("src.learning", "Learning"),
+        ("src.goals", "Goal"),
+        ("src.portfolio", "Portfolio"),
+    ]
+    for domain, label in _OPTIONAL_ROUTES:
         try:
-            from src.learning.dashboard_routes import create_learning_router
-            from src.learning.dashboard_service import LearningDataService
-            from src.learning.store import LearningStore
-
-            _learning_store = LearningStore()
-            _learning_svc = LearningDataService(_learning_store)
-            app.include_router(create_learning_router(_learning_svc), prefix=_API_PREFIX)
+            mod_routes = importlib.import_module(f"{domain}.dashboard_routes")
+            _register_domain_routes(app, domain, mod_routes)
         except Exception:  # noqa: BLE001
-            logger.warning("Learning routes not available")
+            logger.warning("%s routes not available", label)
 
-        # Autonomy routes
-        try:
-            from src.safety.autonomy.dashboard_routes import create_autonomy_router
-            from src.safety.autonomy.dashboard_service import AutonomyDataService
-            from src.safety.autonomy.store import AutonomyStore
 
-            _autonomy_store = AutonomyStore()
-            _autonomy_svc = AutonomyDataService(_autonomy_store)
-            app.include_router(create_autonomy_router(_autonomy_svc), prefix=_API_PREFIX)
-        except Exception:  # noqa: BLE001
-            logger.warning("Autonomy routes not available")
+_SUBMOD_STORE = "store"
+_SUBMOD_SVC = "dashboard_service"
 
-        # Goal proposal routes
-        try:
-            from src.goals.dashboard_routes import create_goals_router
-            from src.goals.dashboard_service import GoalDataService
-            from src.goals.store import GoalStore as GoalStoreForDash
+_DOMAIN_REGISTRY = {
+    "src.learning": ("LearningStore", "LearningDataService", "create_learning_router"),
+    "src.goals": ("GoalStore", "GoalDataService", "create_goals_router"),
+    "src.portfolio": ("PortfolioStore", None, "create_portfolio_router"),
+}
 
-            _goal_store = GoalStoreForDash()
-            _goal_svc = GoalDataService(_goal_store)
-            app.include_router(create_goals_router(_goal_svc), prefix=_API_PREFIX)
-        except Exception:  # noqa: BLE001
-            logger.warning("Goal routes not available")
 
-        # Portfolio routes
-        try:
-            from src.portfolio.dashboard_routes import create_portfolio_router
-            from src.portfolio.store import PortfolioStore as PortfolioStoreForDash
+def _register_domain_routes(app: FastAPI, domain: str, mod_routes: Any) -> None:
+    """Register routes for a dynamically loaded domain module."""
+    import importlib
 
-            _portfolio_store = PortfolioStoreForDash()
-            app.include_router(create_portfolio_router(_portfolio_store), prefix=_API_PREFIX)
-        except Exception:  # noqa: BLE001
-            logger.warning("Portfolio routes not available")
+    entry = _DOMAIN_REGISTRY.get(domain)
+    if entry is None:
+        return
+    store_cls, svc_cls, router_fn = entry
 
-        # Static files with no-cache middleware
-        if STATIC_DIR.exists():
-            app.mount(
-                "/dashboard",
-                StaticFiles(directory=str(STATIC_DIR), html=True),
-                name="dashboard",
-            )
-            app.add_middleware(_NoCacheStaticMiddleware)
+    mod_store = importlib.import_module(f"{domain}.{_SUBMOD_STORE}")
+    store = getattr(mod_store, store_cls)()
+    router_factory = getattr(mod_routes, router_fn)
 
-        # Root redirect
-        @app.get("/")
-        async def root() -> RedirectResponse:
-            """Redirect root to dashboard UI."""
-            return RedirectResponse(url="/dashboard/list.html")
+    if svc_cls is not None:
+        mod_svc = importlib.import_module(f"{domain}.{_SUBMOD_SVC}")
+        svc = getattr(mod_svc, svc_cls)(store)
+        app.include_router(router_factory(svc), prefix=_API_PREFIX)
+    else:
+        app.include_router(router_factory(store), prefix=_API_PREFIX)
 
 
 def _init_server_components(mode: str) -> tuple:

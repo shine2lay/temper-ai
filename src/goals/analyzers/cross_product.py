@@ -166,17 +166,24 @@ def _make_cross_proposal(
     )
 
 
-def _cross_ref_patterns(
-    learning_store: object, by_product: dict[str, list]
-) -> List[GoalProposal]:
-    """Cross-reference learned patterns with product types."""
+def _fetch_active_patterns(learning_store: object) -> list:
+    """Fetch active patterns from the learning store, or empty list."""
     try:
         from src.learning.store import LearningStore
 
         if not isinstance(learning_store, LearningStore):
             return []
-        patterns = learning_store.list_patterns(status="active", limit=PATTERN_LIST_LIMIT)
+        return learning_store.list_patterns(status="active", limit=PATTERN_LIST_LIMIT)
     except (ImportError, AttributeError):
+        return []
+
+
+def _cross_ref_patterns(
+    learning_store: object, by_product: dict[str, list]
+) -> List[GoalProposal]:
+    """Cross-reference learned patterns with product types."""
+    patterns = _fetch_active_patterns(learning_store)
+    if not patterns:
         return []
 
     product_types = set(by_product.keys())

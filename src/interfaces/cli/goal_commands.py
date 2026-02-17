@@ -22,6 +22,12 @@ if TYPE_CHECKING:
 
 console = Console()
 
+_COL_STATUS = "Status"
+_OPT_REVIEWER = "--reviewer"
+_OPT_REASON = "--reason"
+_HELP_REVIEWER = "Reviewer name"
+_RECENT_ANALYSIS_RUNS = 5  # noqa: scanner: skip-magic
+
 DEFAULT_LOOKBACK_HOURS = 48
 DEFAULT_PROPOSAL_LIMIT = 20
 DEFAULT_GOALS_DB = "sqlite:///./goals.db"
@@ -70,7 +76,7 @@ def list_proposals(
     table.add_column("ID", width=_COL_WIDTH_ID)
     table.add_column("Type")
     table.add_column("Title", width=_COL_WIDTH_TITLE)
-    table.add_column("Status")
+    table.add_column(_COL_STATUS)
     table.add_column("Priority")
     table.add_column("Risk")
     for p in proposals:
@@ -109,8 +115,8 @@ def propose(lookback: int, db: str) -> None:
 @goals_group.command("review")
 @click.argument("proposal_id")
 @click.option("--action", type=click.Choice(["approve", "reject", "defer"]), required=True)
-@click.option("--reviewer", required=True, help="Reviewer name")
-@click.option("--reason", default=None, help="Review reason")
+@click.option(_OPT_REVIEWER, required=True, help=_HELP_REVIEWER)
+@click.option(_OPT_REASON, default=None, help="Review reason")
 @click.option(_OPT_DB, default=DEFAULT_GOALS_DB, help=_HELP_DB)
 def review(proposal_id: str, action: str, reviewer: str, reason: str | None, db: str) -> None:
     """Apply a review decision to a proposal."""
@@ -130,8 +136,8 @@ def review(proposal_id: str, action: str, reviewer: str, reason: str | None, db:
 
 @goals_group.command("approve")
 @click.argument("proposal_id")
-@click.option("--reviewer", required=True, help="Reviewer name")
-@click.option("--reason", default=None, help="Approval reason")
+@click.option(_OPT_REVIEWER, required=True, help=_HELP_REVIEWER)
+@click.option(_OPT_REASON, default=None, help="Approval reason")
 @click.option(_OPT_DB, default=DEFAULT_GOALS_DB, help=_HELP_DB)
 def approve(proposal_id: str, reviewer: str, reason: str | None, db: str) -> None:
     """Approve a goal proposal."""
@@ -150,8 +156,8 @@ def approve(proposal_id: str, reviewer: str, reason: str | None, db: str) -> Non
 
 @goals_group.command("reject")
 @click.argument("proposal_id")
-@click.option("--reviewer", required=True, help="Reviewer name")
-@click.option("--reason", default=None, help="Rejection reason")
+@click.option(_OPT_REVIEWER, required=True, help=_HELP_REVIEWER)
+@click.option(_OPT_REASON, default=None, help="Rejection reason")
 @click.option(_OPT_DB, default=DEFAULT_GOALS_DB, help=_HELP_DB)
 def reject(proposal_id: str, reviewer: str, reason: str | None, db: str) -> None:
     """Reject a goal proposal."""
@@ -186,18 +192,18 @@ def status(db: str) -> None:
 
     if counts:
         table = Table(title="Proposals by Status")
-        table.add_column("Status")
+        table.add_column(_COL_STATUS)
         table.add_column("Count")
         for s, c in sorted(counts.items()):
             table.add_row(s, str(c))
         console.print(table)
 
     # Show recent analysis runs
-    runs = store.list_analysis_runs(limit=5)
+    runs = store.list_analysis_runs(limit=_RECENT_ANALYSIS_RUNS)
     if runs:
         run_table = Table(title="Recent Analysis Runs")
         run_table.add_column("ID", width=_COL_WIDTH_ID)
-        run_table.add_column("Status")
+        run_table.add_column(_COL_STATUS)
         run_table.add_column("Proposals")
         run_table.add_column("Started")
         for r in runs:

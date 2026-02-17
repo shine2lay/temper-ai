@@ -47,6 +47,18 @@ MIN_FAILURES_FOR_PROPOSAL = 3
 HIGH_FAILURE_RATE = 0.15
 MIN_PRODUCT_TYPES_CROSS = 2
 
+# Scoring defaults
+DEFAULT_EFFORT_SCORE = 0.5  # noqa: scanner: skip-magic
+DEFAULT_RISK_SCORE = 0.5  # noqa: scanner: skip-magic
+SCORE_ROUND_DIGITS = 4  # noqa: scanner: skip-magic
+RECENT_ANALYSIS_RUNS = 5  # noqa: scanner: skip-magic
+
+# CLI repeated strings
+COL_STATUS = "Status"
+OPT_REVIEWER = "--reviewer"
+OPT_REASON = "--reason"
+HELP_REVIEWER = "Reviewer name"
+
 # Store
 DEFAULT_DATABASE_URL = "sqlite:///./goals.db"
 DEFAULT_LIST_LIMIT = 100

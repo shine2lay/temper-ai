@@ -403,6 +403,26 @@ def validate_and_get_tool(
     return tool, None
 
 
+def _build_policy_context(
+    tool_name: str, params: Dict[str, Any], context: Dict[str, Any],
+) -> Any:
+    """Build a PolicyExecutionContext from tool execution context."""
+    from src.safety.action_policy_engine import PolicyExecutionContext
+
+    metadata = {
+        k: context[k] for k in ("autonomy_config", "autonomy_level")
+        if context.get(k) is not None
+    }
+    return PolicyExecutionContext(
+        agent_id=context.get("agent_id", "unknown"),
+        workflow_id=context.get("workflow_id", "unknown"),
+        stage_id=context.get("stage_id", "unknown"),
+        action_type="tool_execution",
+        action_data={"tool_name": tool_name, "params": params},
+        metadata=metadata,
+    )
+
+
 def validate_policy(
     executor: ToolExecutor,
     tool_name: str,
@@ -414,23 +434,9 @@ def validate_policy(
         return None
 
     try:
-        from src.safety.action_policy_engine import PolicyExecutionContext
-        metadata = {}
-        if context.get("autonomy_config") is not None:
-            metadata["autonomy_config"] = context["autonomy_config"]
-        if context.get("autonomy_level") is not None:
-            metadata["autonomy_level"] = context["autonomy_level"]
-        enforcement = executor.policy_engine.validate_action_sync(
-            action={"tool": tool_name, "params": params},
-            context=PolicyExecutionContext(
-                agent_id=context.get("agent_id", "unknown"),
-                workflow_id=context.get("workflow_id", "unknown"),
-                stage_id=context.get("stage_id", "unknown"),
-                action_type="tool_execution",
-                action_data={"tool_name": tool_name, "params": params},
-                metadata=metadata,
-            )
-        )
+        action = {"tool": tool_name, "params": params}
+        ctx = _build_policy_context(tool_name, params, context)
+        enforcement = executor.policy_engine.validate_action_sync(action=action, context=ctx)
 
         if not enforcement.allowed:
             return ToolResult(
@@ -441,10 +447,8 @@ def validate_policy(
 
         if enforcement.has_blocking_violations() and executor.approval_workflow:
             approval_request = executor.approval_workflow.request_approval(
-                action={"tool": tool_name, "params": params},
-                reason="HIGH/CRITICAL policy violations detected",
-                context=context,
-                violations=enforcement.violations,
+                action=action, reason="HIGH/CRITICAL policy violations detected",
+                context=context, violations=enforcement.violations,
                 metadata={"enforcement_result": enforcement.metadata}
             )
             if not wait_for_approval(executor, approval_request.id):

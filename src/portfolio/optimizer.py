@@ -1,8 +1,8 @@
 """4-metric scorecard optimizer with portfolio recommendations."""
 
 import logging
-from datetime import timedelta
-from typing import Dict, List
+from datetime import datetime, timedelta
+from typing import Dict, List, Tuple
 
 from src.portfolio._schemas import (
     OptimizationAction,
@@ -23,10 +23,25 @@ from src.portfolio.constants import (
     WEIGHT_TREND,
     WEIGHT_UTILIZATION,
 )
+from src.portfolio.models import ProductRunRecord
 from src.portfolio.store import PortfolioStore
 from src.storage.database.datetime_utils import ensure_utc, utcnow
 
 logger = logging.getLogger(__name__)
+
+PCT_MULTIPLIER = 100.0  # noqa: scanner: skip-magic
+
+
+def _utc_at_or_after(run: ProductRunRecord, cutoff: datetime) -> bool:
+    """Check if a run's start time is at or after a cutoff."""
+    dt = ensure_utc(run.started_at)
+    return dt is not None and dt >= cutoff
+
+
+def _utc_before(run: ProductRunRecord, cutoff: datetime) -> bool:
+    """Check if a run's start time is before a cutoff."""
+    dt = ensure_utc(run.started_at)
+    return dt is not None and dt < cutoff
 
 
 class PortfolioOptimizer:
@@ -96,11 +111,7 @@ class PortfolioOptimizer:
         lookback_cutoff = now - timedelta(hours=lookback_hours)
         recent_cutoff = now - timedelta(hours=RECENT_LOOKBACK_HOURS)
 
-        period_runs = [
-            r for r in runs
-            if r.started_at is not None
-            and ensure_utc(r.started_at) >= lookback_cutoff
-        ]
+        period_runs = [r for r in runs if _utc_at_or_after(r, lookback_cutoff)]
 
         success_rate = _calc_success_rate(period_runs)
         cost_efficiency = _calc_cost_efficiency(period_runs)
@@ -132,7 +143,7 @@ def _fmt_trend(value: float) -> str:
     return f"{value:+.2f}"
 
 
-def _classify_action(sc: ProductScorecard):
+def _classify_action(sc: ProductScorecard) -> Tuple[OptimizationAction, str]:
     """Determine OptimizationAction and rationale from a scorecard."""
     score = sc.composite_score
     trend = sc.trend
@@ -159,7 +170,7 @@ def _classify_action(sc: ProductScorecard):
     )
 
 
-def _calc_success_rate(runs) -> float:
+def _calc_success_rate(runs: List[ProductRunRecord]) -> float:
     """Successful / total, 0.0 if no runs."""
     if not runs:
         return 0.0
@@ -167,7 +178,7 @@ def _calc_success_rate(runs) -> float:
     return successful / len(runs)
 
 
-def _calc_cost_efficiency(runs) -> float:
+def _calc_cost_efficiency(runs: List[ProductRunRecord]) -> float:
     """success_count / total_cost, normalized 0-1, capped at 1.0."""
     if not runs:
         return 0.0
@@ -179,25 +190,17 @@ def _calc_cost_efficiency(runs) -> float:
     return min(1.0, raw)
 
 
-def _calc_trend(runs, recent_cutoff) -> float:
+def _calc_trend(runs: List[ProductRunRecord], recent_cutoff: datetime) -> float:
     """recent_success_rate - historical_success_rate."""
-    recent = [
-        r for r in runs
-        if r.started_at is not None
-        and ensure_utc(r.started_at) >= recent_cutoff
-    ]
-    historical = [
-        r for r in runs
-        if r.started_at is not None
-        and ensure_utc(r.started_at) < recent_cutoff
-    ]
+    recent = [r for r in runs if _utc_at_or_after(r, recent_cutoff)]
+    historical = [r for r in runs if _utc_before(r, recent_cutoff)]
     recent_rate = _calc_success_rate(recent)
     historical_rate = _calc_success_rate(historical)
     return recent_rate - historical_rate
 
 
 def _calc_utilization(
-    runs, max_concurrent: int, lookback_hours: int,
+    runs: List[ProductRunRecord], max_concurrent: int, lookback_hours: int,
 ) -> float:
     """actual_runs / (max_concurrent * time_factor), capped at 1.0."""
     if max_concurrent <= 0 or lookback_hours <= 0:

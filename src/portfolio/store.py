@@ -117,8 +117,9 @@ class PortfolioStore:
 
     def count_product_runs(
         self, product_type: str, portfolio_id: Optional[str] = None,
+        status: Optional[str] = None,
     ) -> int:
-        """Count total runs for a product type."""
+        """Count runs for a product type, optionally filtered by status."""
         from sqlalchemy import func
 
         with Session(self.engine) as session:
@@ -129,17 +130,8 @@ class PortfolioStore:
                 stmt = stmt.where(
                     ProductRunRecord.portfolio_id == portfolio_id
                 )
-            return int(session.exec(stmt).one())
-
-    def count_active_runs(self, product_type: str) -> int:
-        """Count currently active (running) runs for a product type."""
-        from sqlalchemy import func
-
-        with Session(self.engine) as session:
-            stmt = select(func.count(ProductRunRecord.id)).where(  # type: ignore[arg-type]
-                ProductRunRecord.product_type == product_type,
-                ProductRunRecord.status == "running",
-            )
+            if status is not None:
+                stmt = stmt.where(ProductRunRecord.status == status)
             return int(session.exec(stmt).one())
 
     def get_total_cost(
@@ -149,7 +141,7 @@ class PortfolioStore:
         from sqlalchemy import func
 
         with Session(self.engine) as session:
-            stmt = select(func.coalesce(func.sum(ProductRunRecord.cost_usd), 0.0)).where(  # type: ignore[arg-type]
+            stmt = select(func.coalesce(func.sum(ProductRunRecord.cost_usd), 0.0)).where(
                 ProductRunRecord.product_type == product_type,
             )
             if portfolio_id is not None:
@@ -187,18 +179,19 @@ class PortfolioStore:
             session.merge(record)
             session.commit()
 
-    def get_concept(self, name: str) -> Optional[KGConceptRecord]:
-        """Get a concept by name, or None."""
+    def get_concept(
+        self, name: Optional[str] = None, concept_id: Optional[str] = None,
+    ) -> Optional[KGConceptRecord]:
+        """Get a concept by name or ID, or None."""
         with Session(self.engine) as session:
-            stmt = select(KGConceptRecord).where(
-                KGConceptRecord.name == name
-            )
-            return session.exec(stmt).first()
-
-    def get_concept_by_id(self, concept_id: str) -> Optional[KGConceptRecord]:
-        """Get a concept by ID, or None."""
-        with Session(self.engine) as session:
-            return session.get(KGConceptRecord, concept_id)
+            if concept_id is not None:
+                return session.get(KGConceptRecord, concept_id)
+            if name is not None:
+                stmt = select(KGConceptRecord).where(
+                    KGConceptRecord.name == name
+                )
+                return session.exec(stmt).first()
+            return None
 
     def list_concepts(
         self,
@@ -293,22 +286,21 @@ class PortfolioStore:
             stmt = stmt.limit(limit)
             return list(session.exec(stmt).all())
 
-    # ── Utilities ──────────────────────────────────────────────────────
 
-    def update_portfolio_status(self, name: str, enabled: bool) -> bool:
-        """Update a portfolio's enabled status. Returns True if found."""
-        with Session(self.engine) as session:
-            stmt = select(PortfolioRecord).where(
-                PortfolioRecord.name == name
-            )
-            portfolio = session.exec(stmt).first()
-            if portfolio is None:
-                return False
-            portfolio.enabled = enabled
-            portfolio.updated_at = utcnow()
-            session.add(portfolio)
-            session.commit()
-            return True
+def update_portfolio_status(store: PortfolioStore, name: str, enabled: bool) -> bool:
+    """Update a portfolio's enabled status. Returns True if found."""
+    with Session(store.engine) as session:
+        stmt = select(PortfolioRecord).where(
+            PortfolioRecord.name == name
+        )
+        portfolio = session.exec(stmt).first()
+        if portfolio is None:
+            return False
+        portfolio.enabled = enabled
+        portfolio.updated_at = utcnow()
+        session.add(portfolio)
+        session.commit()
+        return True
 
 
 def _register_sqlite_pragmas(engine: Engine) -> None:

@@ -32,6 +32,15 @@ def _apply_review(
 def create_goals_router(goal_service: GoalDataService) -> APIRouter:
     """Create goal proposal API router."""
     router = APIRouter(prefix="/goals", tags=["goals"])
+    _register_query_routes(router, goal_service)
+    _register_action_routes(router, goal_service)
+    return router
+
+
+def _register_query_routes(
+    router: APIRouter, goal_service: GoalDataService,
+) -> None:
+    """Register read-only query endpoints."""
 
     @router.get("/proposals")
     def get_proposals(
@@ -63,6 +72,12 @@ def create_goals_router(goal_service: GoalDataService) -> APIRouter:
     def get_analysis_runs() -> List[Dict[str, Any]]:
         """Get recent analysis runs."""
         return goal_service.get_analysis_runs()
+
+
+def _register_action_routes(
+    router: APIRouter, goal_service: GoalDataService,
+) -> None:
+    """Register mutation endpoints."""
 
     @router.post("/analyze")
     def trigger_analysis() -> Dict[str, Any]:
@@ -103,5 +118,3 @@ def create_goals_router(goal_service: GoalDataService) -> APIRouter:
     ) -> Dict[str, Any]:
         """Defer a proposal."""
         return _apply_review(goal_service, proposal_id, "defer", reviewer, reason)
-
-    return router

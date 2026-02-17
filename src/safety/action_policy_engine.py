@@ -126,24 +126,6 @@ class ActionPolicyEngine:
     - Short-circuit on CRITICAL violations
     - Async policy execution
     - Observability integration
-
-    Example:
-        >>> engine = ActionPolicyEngine(registry, config={"cache_ttl": 60})
-        >>>
-        >>> context = PolicyExecutionContext(
-        ...     agent_id="agent-123",
-        ...     workflow_id="wf-456",
-        ...     stage_id="research",
-        ...     action_type="file_write",
-        ...     action_data={"path": "/tmp/file.txt"}
-        ... )
-        >>>
-        >>> result = await engine.validate_action(
-        ...     action={"command": "cat > file.txt"},
-        ...     context=context
-        ... )
-        >>> if not result.allowed:
-        ...     raise ValueError(f"Action blocked: {result.violations}")
     """
 
     def __init__(

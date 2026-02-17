@@ -1,16 +1,21 @@
 """FastAPI routes for portfolio management dashboard."""
 
-from typing import Any, Dict, List
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
 
 from src.portfolio.constants import ERR_PORTFOLIO_NOT_FOUND
 from src.portfolio.store import PortfolioStore
 
+if TYPE_CHECKING:
+    from src.portfolio._schemas import PortfolioConfig
+
 HTTP_404 = 404
 
 
-def _load_config(name: str):
+def _load_config(name: str) -> "PortfolioConfig":
     """Load a portfolio config by name, raising HTTP 404 on failure."""
     from src.portfolio.loader import PortfolioLoader
 

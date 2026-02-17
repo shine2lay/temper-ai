@@ -71,14 +71,15 @@ class TestPortfolioCRUD:
         store.save_portfolio(
             PortfolioRecord(id="1", name="my-portfolio", enabled=True)
         )
-        updated = store.update_portfolio_status("my-portfolio", enabled=False)
+        from src.portfolio.store import update_portfolio_status
+        updated = update_portfolio_status(store, "my-portfolio", enabled=False)
         assert updated is True
         record = store.get_portfolio("my-portfolio")
         assert record is not None
         assert record.enabled is False
         assert record.updated_at is not None
 
-        not_found = store.update_portfolio_status("no-such", enabled=True)
+        not_found = update_portfolio_status(store, "no-such", enabled=True)
         assert not_found is False
 
 
@@ -135,7 +136,7 @@ class TestProductRunCRUD:
                     status=status,
                 )
             )
-        assert store.count_active_runs("api") == 2
+        assert store.count_product_runs("api", status="running") == 2
 
     def test_get_total_cost(self, store):
         for cost in [1.0, 2.5, 0.5]:

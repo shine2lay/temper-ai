@@ -25,11 +25,9 @@ from rich.table import Table
 
 console = Console()
 
-from src.portfolio.constants import (
-    COL_NAME,
-    COL_PRODUCT,
-    ID_DISPLAY_LEN,
-)
+_COL_NAME = "Name"
+_COL_PRODUCT = "Product"
+_ID_DISPLAY_LEN = 12  # noqa: scanner: skip-magic
 
 DEFAULT_PORTFOLIO_DB = "sqlite:///./portfolio.db"
 DEFAULT_PORTFOLIO_CONFIG_DIR = "configs/portfolios"
@@ -79,7 +77,7 @@ def list_portfolios(db: str, config_dir: str) -> None:
         return
 
     table = Table(title="Portfolios")
-    table.add_column(COL_NAME, style="cyan")
+    table.add_column(_COL_NAME, style="cyan")
     table.add_column("Source")
     table.add_column("Products", style="yellow")
     table.add_column("Strategy")
@@ -143,7 +141,7 @@ def show_portfolio(name: str, db: str, config_dir: str) -> None:
 
     if cfg.products:
         table = Table(title="Products")
-        table.add_column(COL_NAME, style="cyan")
+        table.add_column(_COL_NAME, style="cyan")
         table.add_column("Weight", style="yellow")
         table.add_column("Max Concurrent")
         table.add_column("Budget Limit")
@@ -159,7 +157,7 @@ def show_portfolio(name: str, db: str, config_dir: str) -> None:
 
     if alloc_map:
         alloc_table = Table(title="Allocation Status")
-        alloc_table.add_column(COL_PRODUCT, style="cyan")
+        alloc_table.add_column(_COL_PRODUCT, style="cyan")
         alloc_table.add_column("Active", style="yellow")
         alloc_table.add_column("Completed")
         alloc_table.add_column("Budget Used")
@@ -199,22 +197,24 @@ def run_product(name: str, product: str | None, db: str, config_dir: str) -> Non
 
     scheduler = ResourceScheduler(store=store)
 
+    selected: str
     if product is not None:
         if not scheduler.can_execute(cfg, product):
             console.print(f"[red]Cannot execute:[/red] {product} (capacity or budget exceeded)")
             raise SystemExit(1)
         selected = product
     else:
-        selected = scheduler.next_product(cfg)
-        if selected is None:
+        next_p = scheduler.next_product(cfg)
+        if next_p is None:
             console.print("[yellow]No product eligible for execution[/yellow]")
             return
+        selected = next_p
 
     import uuid
 
     workflow_id = str(uuid.uuid4())
     scheduler.record_start(selected, workflow_id, portfolio_id=name)
-    console.print(f"[green]Started run:[/green] {workflow_id[:ID_DISPLAY_LEN]} ({selected})")
+    console.print(f"[green]Started run:[/green] {workflow_id[:_ID_DISPLAY_LEN]} ({selected})")
 
 
 # -- scorecards -----------------------------------------------------------
@@ -245,7 +245,7 @@ def scorecards(name: str, db: str, config_dir: str) -> None:
         return
 
     table = Table(title="Product Scorecards")
-    table.add_column(COL_PRODUCT, style="cyan")
+    table.add_column(_COL_PRODUCT, style="cyan")
     table.add_column("Success Rate")
     table.add_column("Cost Efficiency")
     table.add_column("Trend")
@@ -294,7 +294,7 @@ def recommend(name: str, db: str, config_dir: str) -> None:
         return
 
     table = Table(title="Recommendations")
-    table.add_column(COL_PRODUCT, style="cyan")
+    table.add_column(_COL_PRODUCT, style="cyan")
     table.add_column("Action", style="yellow")
     table.add_column("Composite Score")
     table.add_column("Weight Delta")
@@ -377,8 +377,8 @@ def graph_stats(db: str) -> None:
     stats = query.concept_stats()
 
     console.print("\n[cyan]Knowledge Graph Statistics[/cyan]")
-    concepts_by_type = stats.get("concepts_by_type", {})
-    edges_by_relation = stats.get("edges_by_relation", {})
+    concepts_by_type: dict = stats.get("concepts_by_type", {})
+    edges_by_relation: dict = stats.get("edges_by_relation", {})
     console.print("[cyan]Concepts by type:[/cyan]")
     for ctype, count in concepts_by_type.items():
         console.print(f"  {ctype}: {count}")
@@ -404,7 +404,7 @@ def graph_query(concept: str, depth: int, db: str) -> None:
         return
 
     table = Table(title=f"Related Concepts: {concept}")
-    table.add_column(COL_NAME, style="cyan")
+    table.add_column(_COL_NAME, style="cyan")
     table.add_column("Type")
     table.add_column("Relation", style="yellow")
     table.add_column("Depth")

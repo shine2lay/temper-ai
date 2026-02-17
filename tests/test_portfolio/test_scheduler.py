@@ -219,10 +219,10 @@ class TestRecordLifecycle:
         )
         scheduler.record_start("web_app", "wf-a")
         scheduler.record_start("web_app", "wf-b")
-        assert store.count_active_runs("web_app") == 2
+        assert store.count_product_runs("web_app", status="running") == 2
 
         scheduler.record_complete("web_app", "wf-a", cost_usd=1.0, success=True)
-        assert store.count_active_runs("web_app") == 1
+        assert store.count_product_runs("web_app", status="running") == 1
 
 
 class TestAllocationStatus:

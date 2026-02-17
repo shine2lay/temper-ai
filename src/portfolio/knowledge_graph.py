@@ -247,7 +247,7 @@ class KnowledgeQuery:
                 if neighbor_id in visited:
                     continue
                 visited.add(neighbor_id)
-                concept = self.store.get_concept_by_id(neighbor_id)
+                concept = self.store.get_concept(concept_id=neighbor_id)
                 if concept is None:
                     continue
                 results.append({
@@ -285,7 +285,7 @@ class KnowledgeQuery:
                 if neighbor_id in visited:
                     continue
                 visited.add(neighbor_id)
-                concept = self.store.get_concept_by_id(neighbor_id)
+                concept = self.store.get_concept(concept_id=neighbor_id)
                 if concept is None:
                     continue
                 new_path = path + [concept.name]
@@ -298,7 +298,7 @@ class KnowledgeQuery:
         """Get all compatibility records for a technology."""
         return self.store.get_compatibility(tech_name)
 
-    def concept_stats(self) -> Dict[str, int]:
+    def concept_stats(self) -> Dict[str, Any]:
         """Count concepts by type and edges by relation."""
         concepts = self.store.list_concepts()
         edges = self.store.query_edges()

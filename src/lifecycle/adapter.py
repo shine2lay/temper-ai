@@ -389,16 +389,23 @@ def _apply_add(
     return result
 
 
+def _find_stage_index(
+    stages: List[Dict[str, Any]], name: Optional[str],
+) -> Optional[int]:
+    """Find the index of a stage by name, or None."""
+    if name is None:
+        return None
+    for i, s in enumerate(stages):
+        if s.get("name") == name:
+            return i
+    return None
+
+
 def _apply_reorder(
     stages: List[Dict[str, Any]], rule: AdaptationRule
 ) -> List[Dict[str, Any]]:
     """Move a stage to a new position."""
-    stage_idx = None
-    for i, s in enumerate(stages):
-        if s.get("name") == rule.stage_name:
-            stage_idx = i
-            break
-
+    stage_idx = _find_stage_index(stages, rule.stage_name)
     if stage_idx is None:
         logger.warning(
             "Reorder rule %s: stage %s not found",
@@ -410,18 +417,13 @@ def _apply_reorder(
     stage = stages[stage_idx]
     result = [s for i, s in enumerate(stages) if i != stage_idx]
 
-    insert_idx = len(result)
-    if rule.move_after:
-        for i, s in enumerate(result):
-            if s.get("name") == rule.move_after:
-                insert_idx = i + 1
-                break
-
-    if rule.move_before:
-        for i, s in enumerate(result):
-            if s.get("name") == rule.move_before:
-                insert_idx = i
-                break
+    insert_idx = _find_stage_index(result, rule.move_after)
+    if insert_idx is not None:
+        insert_idx += 1
+    else:
+        insert_idx = _find_stage_index(result, rule.move_before)
+    if insert_idx is None:
+        insert_idx = len(result)
 
     result.insert(insert_idx, stage)
     return result

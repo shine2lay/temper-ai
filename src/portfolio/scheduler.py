@@ -4,7 +4,7 @@ import logging
 import uuid
 from typing import Dict, Optional
 
-from src.portfolio._schemas import AllocationStatus, PortfolioConfig
+from src.portfolio._schemas import AllocationStatus, PortfolioConfig, ProductDefinition
 from src.portfolio.models import ProductRunRecord
 from src.portfolio.store import PortfolioStore
 from src.storage.database.datetime_utils import safe_duration_seconds, utcnow
@@ -57,7 +57,7 @@ class ResourceScheduler:
         if product is None:
             return False
 
-        active = self.store.count_active_runs(product_type)
+        active = self.store.count_product_runs(product_type, status="running")
         if active >= product.max_concurrent:
             return False
 
@@ -67,7 +67,7 @@ class ResourceScheduler:
                 return False
 
         total_active = sum(
-            self.store.count_active_runs(p.name)
+            self.store.count_product_runs(p.name, status="running")
             for p in portfolio.products
         )
         if total_active >= portfolio.max_total_concurrent:
@@ -148,7 +148,7 @@ class ResourceScheduler:
         result: Dict[str, AllocationStatus] = {}
 
         for product in portfolio.products:
-            active = self.store.count_active_runs(product.name)
+            active = self.store.count_product_runs(product.name, status="running")
             completed = self.store.count_product_runs(product.name)
             budget_used = self.store.get_total_cost(product.name)
             max_c = product.max_concurrent
@@ -166,7 +166,7 @@ class ResourceScheduler:
         return result
 
 
-def _find_product(portfolio: PortfolioConfig, name: str):
+def _find_product(portfolio: PortfolioConfig, name: str) -> Optional[ProductDefinition]:
     """Find a ProductDefinition by name within a portfolio."""
     for product in portfolio.products:
         if product.name == name:

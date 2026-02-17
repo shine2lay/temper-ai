@@ -9,9 +9,12 @@ from src.goals._schemas import GoalProposal
 from src.goals.analyzers.base import BaseAnalyzer
 from src.goals.constants import (
     DEDUP_KEY_LENGTH,
+    DEFAULT_EFFORT_SCORE,
     DEFAULT_LOOKBACK_HOURS,
+    DEFAULT_RISK_SCORE,
     EFFORT_SCORES,
     RISK_SCORES,
+    SCORE_ROUND_DIGITS,
     WEIGHT_CONFIDENCE,
     WEIGHT_EFFORT_INVERSE,
     WEIGHT_IMPACT,
@@ -124,10 +127,10 @@ class GoalProposer:
         impact_score = min(avg_improvement / 100.0, 1.0)  # noqa: scanner: skip-magic
 
         effort_score = EFFORT_SCORES.get(
-            proposal.effort_estimate.value, 0.5
+            proposal.effort_estimate.value, DEFAULT_EFFORT_SCORE
         )
         risk_score = RISK_SCORES.get(
-            proposal.risk_assessment.level.value, 0.5
+            proposal.risk_assessment.level.value, DEFAULT_RISK_SCORE
         )
 
         score = (
@@ -136,7 +139,7 @@ class GoalProposer:
             + WEIGHT_EFFORT_INVERSE * effort_score
             + WEIGHT_RISK_INVERSE * risk_score
         )
-        return round(score, 4)
+        return round(score, SCORE_ROUND_DIGITS)
 
     def _enrich_with_patterns(self, proposal: GoalProposal) -> None:
         """Cross-reference with learned patterns if available."""

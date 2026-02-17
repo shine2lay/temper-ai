@@ -139,7 +139,7 @@ class RefinementOptimizer:
         )
 
         workflow_id = create_workflow_id(experiment_id, 0)
-        self.experiment_service.assign_variant(workflow_id, experiment_id)
+        self.experiment_service.assign_variant(workflow_id, experiment_id)  # type: ignore[union-attr]
 
         output = runner.execute(input_data)
         eval_result = evaluator.evaluate(output)
@@ -166,7 +166,7 @@ class RefinementOptimizer:
         iteration = 0
         for iteration in range(1, max_iterations + 1):
             workflow_id = create_workflow_id(experiment_id, iteration)
-            self.experiment_service.assign_variant(workflow_id, experiment_id)
+            self.experiment_service.assign_variant(workflow_id, experiment_id)  # type: ignore[union-attr]
 
             critique = self._generate_critique(best_output, best_eval)
             refined_input = self._inject_critique(input_data, critique)

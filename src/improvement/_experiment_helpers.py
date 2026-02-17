@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 METRIC_OPTIMIZATION_SCORE = "optimization_score"
 STATUS_COMPLETED = "completed"
 MIN_SAMPLE_SIZE_SINGLE = 1
+BASELINE_TRAFFIC_SHARE = 0.5
 
 
 def generate_experiment_name(
@@ -51,10 +52,10 @@ def create_refinement_experiment(
 ) -> str:
     """Create and start experiment for RefinementOptimizer."""
     variants: List[Dict[str, Any]] = [
-        {"name": "baseline", "traffic": 0.5}
+        {"name": "baseline", "traffic": BASELINE_TRAFFIC_SHARE}
     ]
     variants.extend(
-        {"name": f"iteration-{i}", "traffic": 0.5 / max(max_iterations, 1)}
+        {"name": f"iteration-{i}", "traffic": BASELINE_TRAFFIC_SHARE / max(max_iterations, 1)}
         for i in range(1, max_iterations + 1)
     )
     exp_id: str = service.create_experiment(

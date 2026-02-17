@@ -90,9 +90,7 @@ class TuningOptimizer:
         """Run via ExperimentService with proper tracking."""
         from src.improvement._experiment_helpers import (
             create_tuning_experiment,
-            create_workflow_id,
             finalize_experiment,
-            track_run_result,
         )
 
         strategies: List[Dict[str, Any]] = config.get("strategies", [])
@@ -104,6 +102,39 @@ class TuningOptimizer:
             strategies, runs_per_config,
         )
 
+        best_output, best_score, run_idx = self._execute_strategy_runs(
+            runner, input_data, evaluator, strategies,
+            runs_per_config, experiment_id,
+        )
+
+        experiment_results = finalize_experiment(
+            self.experiment_service, experiment_id
+        )
+
+        return OptimizationResult(
+            output=best_output,
+            score=best_score,
+            iterations=run_idx,
+            improved=True,
+            experiment_id=experiment_id,
+            experiment_results=experiment_results,
+        )
+
+    def _execute_strategy_runs(
+        self,
+        runner: Any,
+        input_data: Dict[str, Any],
+        evaluator: EvaluatorProtocol,
+        strategies: List[Dict[str, Any]],
+        runs_per_config: int,
+        experiment_id: str,
+    ) -> tuple:
+        """Execute all strategy runs and return (best_output, best_score, run_idx)."""
+        from src.improvement._experiment_helpers import (
+            create_workflow_id,
+            track_run_result,
+        )
+
         best_output: Dict[str, Any] = {}
         best_score = -1.0
         run_idx = 0
@@ -111,7 +142,7 @@ class TuningOptimizer:
         for strategy in strategies:
             for _ in range(runs_per_config):
                 workflow_id = create_workflow_id(experiment_id, run_idx)
-                self.experiment_service.assign_variant(
+                self.experiment_service.assign_variant(  # type: ignore[union-attr]
                     workflow_id, experiment_id
                 )
 
@@ -129,7 +160,7 @@ class TuningOptimizer:
 
                 run_idx += 1
 
-            stopping = self.experiment_service.check_early_stopping(
+            stopping = self.experiment_service.check_early_stopping(  # type: ignore[union-attr]
                 experiment_id
             )
             if stopping.get("should_stop", False):
@@ -139,15 +170,4 @@ class TuningOptimizer:
                 )
                 break
 
-        experiment_results = finalize_experiment(
-            self.experiment_service, experiment_id
-        )
-
-        return OptimizationResult(
-            output=best_output,
-            score=best_score,
-            iterations=run_idx,
-            improved=True,
-            experiment_id=experiment_id,
-            experiment_results=experiment_results,
-        )
+        return best_output, best_score, run_idx

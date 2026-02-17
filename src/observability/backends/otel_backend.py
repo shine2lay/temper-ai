@@ -424,15 +424,18 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
 
     # ========== Workflow Tracking ==========
 
-    def track_workflow_start(
+    def track_workflow_start(  # noqa: radon
         self,
         workflow_id: str,
         workflow_name: str,
         workflow_config: Dict[str, Any],
         start_time: datetime,
         data: Optional[WorkflowStartData] = None,
+        **kwargs: Any,
     ) -> None:
         """Record workflow execution start as an OTEL span."""
+        if data is None and kwargs:
+            data = WorkflowStartData(**kwargs)
         attrs: Dict[str, Any] = {
             _ATTR_WORKFLOW_ID: workflow_id,
             _ATTR_WORKFLOW_NAME: workflow_name,
@@ -605,8 +608,9 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
     def set_agent_output(
         self,
         agent_id: str,
-        output_data: Dict[str, Any],
+        output_data: Optional[Dict[str, Any]] = None,
         metrics: Optional[AgentOutputData] = None,
+        **kwargs: Any,
     ) -> None:
         """Set agent output metrics as span attributes and events."""
         entry = self._active_spans.get(agent_id)
@@ -637,10 +641,15 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         agent_id: str,
         provider: str,
         model: str,
-        start_time: datetime,
-        data: LLMCallData,
+        start_time: Optional[datetime] = None,
+        data: Optional[LLMCallData] = None,
+        **kwargs: Any,
     ) -> None:
         """Record an LLM call as a leaf span with token and cost metrics."""
+        if data is None and kwargs:
+            data = LLMCallData(**kwargs)
+        if data is None:
+            return
         span_name = f"llm:{provider}/{model}"
         attrs: Dict[str, Any] = {
             _ATTR_AGENT_ID: agent_id,
@@ -689,10 +698,15 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         tool_execution_id: str,
         agent_id: str,
         tool_name: str,
-        start_time: datetime,
-        data: ToolCallData,
+        start_time: Optional[datetime] = None,
+        data: Optional[ToolCallData] = None,
+        **kwargs: Any,
     ) -> None:
         """Record a tool call as a leaf span with duration metrics."""
+        if data is None and kwargs:
+            data = ToolCallData(**kwargs)
+        if data is None:
+            return
         attrs: Dict[str, Any] = {
             _ATTR_AGENT_ID: agent_id,
             _ATTR_TOOL_NAME: tool_name,
@@ -736,6 +750,7 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         violation_message: str,
         policy_name: str,
         data: Optional[SafetyViolationData] = None,
+        **kwargs: Any,
     ) -> None:
         """Record a safety violation as a span event on the relevant entity."""
         entity_id = None
@@ -752,12 +767,13 @@ class OTelBackend(_OTelAsyncMixin, ObservabilityBackend):
         self,
         stage_id: str,
         event_type: str,
-        agents_involved: List[str],
+        agents_involved: Optional[List[str]] = None,
         data: Optional[CollaborationEventData] = None,
+        **kwargs: Any,
     ) -> str:
         """Record a collaboration event as a span event with metrics."""
         event_attrs: Dict[str, Any] = {
-            "agents": ", ".join(agents_involved),
+            "agents": ", ".join(agents_involved or []),
         }
         if data:
             if data.round_number is not None:

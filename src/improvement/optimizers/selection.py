@@ -94,7 +94,7 @@ class SelectionOptimizer:
 
         for i in range(runs):
             workflow_id = create_workflow_id(experiment_id, i)
-            self.experiment_service.assign_variant(workflow_id, experiment_id)
+            self.experiment_service.assign_variant(workflow_id, experiment_id)  # type: ignore[union-attr]
 
             output = runner.execute(input_data)
             result = evaluator.evaluate(output)

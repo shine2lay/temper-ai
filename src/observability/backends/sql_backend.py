@@ -17,7 +17,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 from sqlmodel import select
 
 from src.storage.database import get_session
-from src.storage.database.datetime_utils import ensure_utc, safe_duration_seconds
+from src.storage.database.datetime_utils import ensure_utc, safe_duration_seconds, utcnow
 from src.storage.database.models import (
     AgentExecution,
     LLMCall,
@@ -46,6 +46,31 @@ from src.observability.backends._sql_backend_helpers import (
 from src.observability.constants import ObservabilityFields
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_LLM_DATA = LLMCallData(
+    prompt="", response="", prompt_tokens=0,
+    completion_tokens=0, latency_ms=0, estimated_cost_usd=0.0,
+)
+
+_DEFAULT_TOOL_DATA = ToolCallData(input_params={}, output_data={}, duration_seconds=0.0)
+
+
+def _ensure_llm_data(data: Optional[LLMCallData], kwargs: Dict[str, Any]) -> LLMCallData:
+    """Resolve LLMCallData from explicit arg, kwargs, or defaults."""
+    if data is not None:
+        return data
+    if kwargs:
+        return LLMCallData(**kwargs)
+    return _DEFAULT_LLM_DATA
+
+
+def _ensure_tool_data(data: Optional[ToolCallData], kwargs: Dict[str, Any]) -> ToolCallData:
+    """Resolve ToolCallData from explicit arg, kwargs, or defaults."""
+    if data is not None:
+        return data
+    if kwargs:
+        return ToolCallData(**kwargs)
+    return _DEFAULT_TOOL_DATA
 
 
 class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, ReadableBackendMixin):
@@ -80,9 +105,12 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
 
     def track_workflow_start(
         self, workflow_id: str, workflow_name: str, workflow_config: Dict[str, Any],
-        start_time: datetime, data: Optional[WorkflowStartData] = None
+        start_time: datetime, data: Optional[WorkflowStartData] = None,
+        **kwargs: Any,
     ) -> None:
         """Record workflow execution start."""
+        if data is None and kwargs:
+            data = WorkflowStartData(**kwargs)
         d = data or WorkflowStartData()
         workflow_exec = WorkflowExecution(
             id=workflow_id, workflow_name=workflow_name,
@@ -246,11 +274,13 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
                 ag.error_message = error_message
                 session.commit()
 
-    def set_agent_output(
-        self, agent_id: str, output_data: Dict[str, Any],
-        metrics: Optional[AgentOutputData] = None
+    def set_agent_output(  # noqa: radon
+        self, agent_id: str, output_data: Optional[Dict[str, Any]] = None,
+        metrics: Optional[AgentOutputData] = None, **kwargs: Any,
     ) -> None:
         """Set agent output data and metrics."""
+        if metrics is None and kwargs:
+            metrics = AgentOutputData(**kwargs)
         with get_session() as session:
             statement = select(AgentExecution).where(AgentExecution.id == agent_id)
             agent = session.exec(statement).first()
@@ -275,14 +305,17 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
 
     # ========== LLM Call Tracking ==========
 
-    def track_llm_call(
+    def track_llm_call(  # noqa: radon
         self, llm_call_id: str, agent_id: str, provider: str, model: str,
-        start_time: datetime, data: LLMCallData
+        start_time: Optional[datetime] = None, data: Optional[LLMCallData] = None,
+        **kwargs: Any,
     ) -> None:
         """Record LLM call."""
+        data = _ensure_llm_data(data, kwargs)
+        if start_time is None:
+            start_time = ensure_utc(utcnow())
         if self._buffer:
-            from src.observability.buffer import LLMCallBufferParams
-            params = LLMCallBufferParams(
+            self._buffer.buffer_llm_call(
                 llm_call_id=llm_call_id, agent_id=agent_id, provider=provider,
                 model=model, prompt=data.prompt, response=data.response,
                 prompt_tokens=data.prompt_tokens, completion_tokens=data.completion_tokens,
@@ -294,7 +327,6 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
                 prompt_template_hash=data.prompt_template_hash,
                 prompt_template_source=data.prompt_template_source,
             )
-            self._buffer.buffer_llm_call(params)
             return
 
         llm_call = LLMCall(
@@ -327,19 +359,21 @@ class SQLObservabilityBackend(SQLDelegatedMethodsMixin, ObservabilityBackend, Re
 
     def track_tool_call(
         self, tool_execution_id: str, agent_id: str, tool_name: str,
-        start_time: datetime, data: ToolCallData
+        start_time: Optional[datetime] = None, data: Optional[ToolCallData] = None,
+        **kwargs: Any,
     ) -> None:
         """Record tool execution."""
+        data = _ensure_tool_data(data, kwargs)
+        if start_time is None:
+            start_time = ensure_utc(utcnow())
         if self._buffer:
-            from src.observability.buffer import ToolCallBufferParams
-            params = ToolCallBufferParams(
+            self._buffer.buffer_tool_call(
                 tool_execution_id=tool_execution_id, agent_id=agent_id,
                 tool_name=tool_name, input_params=data.input_params, output_data=data.output_data,
                 start_time=start_time, duration_seconds=data.duration_seconds,
                 status=data.status, error_message=data.error_message,
                 safety_checks=data.safety_checks, approval_required=data.approval_required
             )
-            self._buffer.buffer_tool_call(params)
             return
 
         start_time_utc = ensure_utc(start_time)

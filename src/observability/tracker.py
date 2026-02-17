@@ -95,6 +95,47 @@ class WorkflowTrackingParams:
     cost_attribution_tags: Optional[Dict[str, str]] = None
 
 
+# Helper functions for backward compatibility
+def _resolve_workflow_params(workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any) -> WorkflowTrackingParams:
+    """Resolve workflow tracking parameters from old or new calling conventions."""
+    if isinstance(workflow_name_or_params, WorkflowTrackingParams):
+        return workflow_name_or_params
+
+    wf_name = workflow_name_or_params if workflow_name_or_params is not None else kwargs.pop('workflow_name', '')
+    wf_config = workflow_config if workflow_config is not None else kwargs.pop('workflow_config', {})
+    return WorkflowTrackingParams(workflow_name=wf_name, workflow_config=wf_config, **kwargs)
+
+
+def _resolve_llm_data(data_or_agent_id: Any = None, **kwargs: Any) -> LLMCallTrackingData:
+    """Resolve LLM call tracking data from old or new calling conventions.
+
+    Accepts either a LLMCallTrackingData directly, or keyword arguments
+    (provider, model, prompt, response, prompt_tokens, completion_tokens,
+    latency_ms, estimated_cost_usd) that are forwarded to the dataclass.
+    """
+    if isinstance(data_or_agent_id, LLMCallTrackingData):
+        return data_or_agent_id
+
+    if data_or_agent_id is not None:
+        kwargs.setdefault('agent_id', data_or_agent_id)
+    return LLMCallTrackingData(**kwargs)
+
+
+def _resolve_tool_data(data_or_agent_id: Any = None, **kwargs: Any) -> ToolCallTrackingData:
+    """Resolve tool call tracking data from old or new calling conventions.
+
+    Accepts either a ToolCallTrackingData directly, or keyword arguments
+    (tool_name, input_params, output_data, duration_seconds) forwarded
+    to the dataclass.
+    """
+    if isinstance(data_or_agent_id, ToolCallTrackingData):
+        return data_or_agent_id
+
+    if data_or_agent_id is not None:
+        kwargs.setdefault('agent_id', data_or_agent_id)
+    return ToolCallTrackingData(**kwargs)
+
+
 class _TrackerAsyncMixin:
     """Mixin providing async tracking methods for ExecutionTracker."""
 
@@ -132,8 +173,9 @@ class _TrackerAsyncMixin:
                     self._session_stack.pop()
 
     @_asynccontextmanager
-    async def atrack_workflow(self, params: WorkflowTrackingParams) -> AsyncGenerator[str, None]:
+    async def atrack_workflow(self, workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any) -> AsyncGenerator[str, None]:
         """Async version of track_workflow."""
+        params = _resolve_workflow_params(workflow_name_or_params, workflow_config, **kwargs)
         workflow_id = f"wf-{uuid.uuid4()}"
         self.context.workflow_id = workflow_id
         start_time = utcnow()
@@ -260,15 +302,23 @@ class _TrackerAsyncMixin:
             finally:
                 self.context.agent_id = None
 
-    async def atrack_llm_call(self, data: LLMCallTrackingData) -> str:
+    async def atrack_llm_call(
+        self,
+        data_or_agent_id: Any = None,
+        **kwargs: Any,
+    ) -> str:
         """Async version of track_llm_call.
 
         Args:
-            data: LLMCallTrackingData with all LLM call tracking parameters
+            data_or_agent_id: LLMCallTrackingData or agent_id string
+            **kwargs: Keyword args forwarded to LLMCallTrackingData
+                (provider, model, prompt, response, prompt_tokens,
+                completion_tokens, latency_ms, estimated_cost_usd)
 
         Returns:
             LLM call ID
         """
+        data = _resolve_llm_data(data_or_agent_id, **kwargs)
         return _track_llm_call(
             sanitizer=self.sanitizer,
             backend=self.backend,
@@ -277,15 +327,18 @@ class _TrackerAsyncMixin:
             event_bus=self._event_bus,
         )
 
-    async def atrack_tool_call(self, data: ToolCallTrackingData) -> str:
+    async def atrack_tool_call(self, data_or_agent_id: Any = None, **kwargs: Any) -> str:
         """Async version of track_tool_call.
 
         Args:
-            data: ToolCallTrackingData with all tool call tracking parameters
+            data_or_agent_id: ToolCallTrackingData or agent_id string
+            **kwargs: Keyword args forwarded to ToolCallTrackingData
+                (tool_name, input_params, output_data, duration_seconds)
 
         Returns:
             Tool execution ID
         """
+        data = _resolve_tool_data(data_or_agent_id, **kwargs)
         return _track_tool_call(
             sanitize_dict_fn=self._sanitize_dict,
             backend=self.backend,
@@ -403,15 +456,18 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
         self._event_bus.emit(event)
 
     @contextmanager
-    def track_workflow(self, params: WorkflowTrackingParams) -> Generator[str, None, None]:
+    def track_workflow(self, workflow_name_or_params: Any = None, workflow_config: Any = None, **kwargs: Any) -> Generator[str, None, None]:
         """Track workflow execution.
 
         Args:
-            params: WorkflowTrackingParams with all workflow tracking parameters
+            workflow_name_or_params: WorkflowTrackingParams or workflow_name string
+            workflow_config: Workflow configuration dict
+            **kwargs: Additional parameters for WorkflowTrackingParams
 
         Yields:
             workflow_id: The generated workflow execution ID
         """
+        params = _resolve_workflow_params(workflow_name_or_params, workflow_config, **kwargs)
         workflow_id = f"wf-{uuid.uuid4()}"
         self.context.workflow_id = workflow_id
 
@@ -550,15 +606,23 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
             finally:
                 self.context.agent_id = None
 
-    def track_llm_call(self, data: LLMCallTrackingData) -> str:
+    def track_llm_call(
+        self,
+        data_or_agent_id: Any = None,
+        **kwargs: Any,
+    ) -> str:
         """Track LLM call with automatic sanitization.
 
         Args:
-            data: LLMCallTrackingData with all LLM call tracking parameters
+            data_or_agent_id: LLMCallTrackingData or agent_id string
+            **kwargs: Keyword args forwarded to LLMCallTrackingData
+                (provider, model, prompt, response, prompt_tokens,
+                completion_tokens, latency_ms, estimated_cost_usd)
 
         Returns:
             LLM call ID
         """
+        data = _resolve_llm_data(data_or_agent_id, **kwargs)
         return _track_llm_call(
             sanitizer=self.sanitizer,
             backend=self.backend,
@@ -567,15 +631,18 @@ class ExecutionTracker(_TrackerAsyncMixin, TrackerCollaborationMixin):
             event_bus=self._event_bus,
         )
 
-    def track_tool_call(self, data: ToolCallTrackingData) -> str:
+    def track_tool_call(self, data_or_agent_id: Any = None, **kwargs: Any) -> str:
         """Track tool execution.
 
         Args:
-            data: ToolCallTrackingData with all tool call tracking parameters
+            data_or_agent_id: ToolCallTrackingData or agent_id string
+            **kwargs: Keyword args forwarded to ToolCallTrackingData
+                (tool_name, input_params, output_data, duration_seconds)
 
         Returns:
             Tool execution ID
         """
+        data = _resolve_tool_data(data_or_agent_id, **kwargs)
         return _track_tool_call(
             sanitize_dict_fn=self._sanitize_dict,
             backend=self.backend,

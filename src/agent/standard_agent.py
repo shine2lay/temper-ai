@@ -114,7 +114,7 @@ class StandardAgent(BaseAgent):
         history = input_data.get("_conversation_history")
         if history is None or len(history) == 0:
             return None
-        messages = history.to_message_list()
+        messages: list = history.to_message_list()
         messages.append({"role": "user", "content": current_prompt})
         return messages
 

@@ -240,14 +240,13 @@ class MeritWeightedResolver(ConflictResolver):
     def resolve(self, conflict: Conflict, agent_outputs: List[AgentOutput], config: Dict[str, Any]) -> ResolutionResult:
         """Backward-compatible resolve method.
 
-        Uses confidence as merit proxy since full merit tracking is in M4.
+        Uses confidence as merit proxy for backward compatibility.
         """
-        # Create minimal context from agent_outputs
+        # Create context from agent_outputs using confidence as merit proxy
         agent_merits = {}
         agent_output_dict = {}
 
         for output in agent_outputs:
-            # Use confidence as merit proxy
             agent_merits[output.agent_name] = AgentMerit(
                 agent_name=output.agent_name,
                 domain_merit=output.confidence,
@@ -327,11 +326,9 @@ class MeritWeightedResolver(ConflictResolver):
 
 
 class HumanEscalationResolver(ConflictResolver):
-    """Human escalation resolver (placeholder for M3).
+    """Human escalation resolver.
 
-    Escalates conflicts to human for manual resolution.
-    In M3, returns error prompting human intervention.
-    In M4+, will integrate with approval workflow system.
+    Escalates conflicts to human for manual resolution by raising RuntimeError.
     """
 
     def resolve_with_context(
@@ -345,11 +342,8 @@ class HumanEscalationResolver(ConflictResolver):
             conflict: Conflict requiring human input
             context: Resolution context
 
-        Returns:
-            Resolution indicating human escalation needed
-
         Raises:
-            RuntimeError: Always (requires human intervention)
+            RuntimeError: Always — requires human intervention, never returns.
         """
         # Build escalation message
         decision_summary = ", ".join(
@@ -367,8 +361,8 @@ class HumanEscalationResolver(ConflictResolver):
         )
 
     def resolve(self, conflict: Conflict, agent_outputs: List[AgentOutput], config: Dict[str, Any]) -> ResolutionResult:
-        """Backward-compatible resolve method."""
-        # Create minimal context
+        """Backward-compatible resolve method. Always raises RuntimeError."""
+        # Create minimal context (agent_outputs unused — resolve_with_context always raises)
         context = ResolutionContext(
             agent_merits={},
             agent_outputs={},

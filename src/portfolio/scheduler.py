@@ -5,6 +5,7 @@ import uuid
 from typing import Dict, Optional
 
 from src.portfolio._schemas import AllocationStatus, PortfolioConfig, ProductDefinition
+from src.portfolio._tracking import track_portfolio_event
 from src.portfolio.models import ProductRunRecord
 from src.portfolio.store import PortfolioStore
 from src.storage.database.datetime_utils import safe_duration_seconds, utcnow
@@ -47,6 +48,13 @@ class ResourceScheduler:
                 best_product,
                 best_vtime,
             )
+        track_portfolio_event(
+            "scheduler_wfq_selection",
+            {"portfolio": portfolio.name},
+            f"selected:{best_product}" if best_product else "none_eligible",
+            impact_metrics={"virtual_time": best_vtime if best_product else None},
+            tags=["portfolio", "scheduler"],
+        )
         return best_product
 
     def can_execute(
@@ -96,6 +104,13 @@ class ResourceScheduler:
             product_type,
             workflow_id,
         )
+        track_portfolio_event(
+            "scheduler_product_start",
+            {"product_type": product_type, "workflow_id": workflow_id,
+             "portfolio_id": portfolio_id},
+            "started",
+            tags=["portfolio", "scheduler"],
+        )
 
     def record_complete(
         self,
@@ -140,6 +155,17 @@ class ResourceScheduler:
             success,
             cost_usd,
         )
+        track_portfolio_event(
+            "scheduler_product_complete",
+            {"product_type": product_type, "workflow_id": workflow_id},
+            "success" if success else "failure",
+            impact_metrics={
+                "cost_usd": cost_usd,
+                "duration_s": record.duration_s,
+                "success": success,
+            },
+            tags=["portfolio", "scheduler"],
+        )
 
     def get_allocation_status(
         self, portfolio: PortfolioConfig,
@@ -163,6 +189,16 @@ class ResourceScheduler:
                 utilization=utilization,
             )
 
+        track_portfolio_event(
+            "scheduler_allocation_status",
+            {"portfolio": portfolio.name, "product_count": len(portfolio.products)},
+            "computed",
+            impact_metrics={
+                name: {"active": s.active_runs, "utilization": s.utilization}
+                for name, s in result.items()
+            },
+            tags=["portfolio", "scheduler"],
+        )
         return result
 
 

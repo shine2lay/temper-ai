@@ -403,7 +403,7 @@ class MultiRoundStrategy(CollaborationStrategy):
         if self.context_strategy == "full":
             return dialogue_history
         elif self.context_strategy == "recent":
-            return curate_recent(dialogue_history, current_round, self.context_window_size)
+            return curate_recent(dialogue_history, self.context_window_size)
         elif self.context_strategy == "relevant":
             return curate_relevant(dialogue_history, agent_name, self.context_window_size)
         else:

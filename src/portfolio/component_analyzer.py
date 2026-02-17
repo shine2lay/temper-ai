@@ -8,6 +8,7 @@ from typing import Dict, List, Set
 import yaml
 
 from src.portfolio._schemas import ComponentMatch, PortfolioConfig
+from src.portfolio._tracking import track_portfolio_event
 from src.portfolio.constants import MIN_SIMILARITY_THRESHOLD
 from src.portfolio.models import SharedComponentRecord
 from src.portfolio.store import PortfolioStore
@@ -58,6 +59,13 @@ class ComponentAnalyzer:
         logger.info(
             "Portfolio analysis complete: %d shared components found",
             len(matches),
+        )
+        track_portfolio_event(
+            "component_analysis",
+            {"product_count": len(product_stages)},
+            "completed",
+            impact_metrics={"matches_found": len(matches)},
+            tags=["portfolio", "component_analyzer"],
         )
         return matches
 

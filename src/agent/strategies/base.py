@@ -518,7 +518,7 @@ def extract_majority_decision(agent_outputs: List[AgentOutput]) -> Optional[Any]
     if not counts:
         return None
 
-    # Get most common (up to DEFAULT_MOST_COMMON_LIMIT to check for ties)
+    # Get top 2 to check for ties
     most_common = counts.most_common(2)
 
     # Check for tie

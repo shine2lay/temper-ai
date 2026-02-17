@@ -39,7 +39,7 @@ _TEMPLATE_VAR_RE = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 # Max characters of stderr to include in error message metadata
 MAX_STDERR_ERROR_CHARS = 200
 
-# Depth from this file to project root: _pre_command_helpers.py → utils/ → agents/ → src/ → project
+# Depth from this file to project root: _pre_command_helpers.py → utils/ → agent/ → src/ → project
 _PROJECT_ROOT_DEPTH = 3
 
 
@@ -202,7 +202,9 @@ def _emit_pre_command_events(
     rendered_command: str,
     result: Dict[str, Any],
 ) -> None:
-    """Emit StreamEvents for pre-command execution (TOOL_START, PROGRESS, TOOL_RESULT).
+    """Emit StreamEvents for pre-command execution (PROGRESS, TOOL_RESULT).
+
+    TOOL_START is emitted by the caller before execution, not here.
 
     Args:
         agent: The agent instance

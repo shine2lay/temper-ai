@@ -61,7 +61,7 @@ class StaticCheckerAgent(BaseAgent):
     def _build_prompt(
         self,
         input_data: Dict[str, Any],
-        context: Optional[ExecutionContext] = None,
+        context: Optional[ExecutionContext] = None,  # noqa: unused — kept for interface compat
     ) -> str:
         template = self._render_template(input_data)
         template = self._inject_input_context(template, input_data, _EXCLUDE_FROM_INJECT)

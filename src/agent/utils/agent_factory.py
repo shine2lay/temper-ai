@@ -26,9 +26,11 @@ class AgentFactory:
     Maps agent type strings to implementation classes and provides a unified
     create() method for instantiation.
 
-    Supported types:
+    Built-in types:
     - "standard": StandardAgent with LLM + tool execution loop
-    - More types can be added in M3+ (debate, human, custom, etc.)
+    - "static_checker": StaticCheckerAgent for command-based checks
+
+    Custom types can be registered via register_type().
     """
 
     _lock = threading.Lock()

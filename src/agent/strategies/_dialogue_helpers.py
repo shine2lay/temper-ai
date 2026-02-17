@@ -266,14 +266,12 @@ def build_merit_weighted_reasoning(
 
 def curate_recent(
     dialogue_history: List[Dict[str, Any]],
-    current_round: int,
     context_window_size: int,
 ) -> List[Dict[str, Any]]:
     """Curate history to recent rounds only (sliding window).
 
     Args:
         dialogue_history: Full dialogue history
-        current_round: Current round number
         context_window_size: Number of recent rounds to include
 
     Returns:
@@ -321,7 +319,7 @@ def curate_relevant(
     """
     if not agent_name:
         logger.debug("No agent_name for relevance filtering, using recent strategy")
-        return curate_recent(dialogue_history, len(dialogue_history), context_window_size)
+        return curate_recent(dialogue_history, context_window_size)
 
     curated = []
     latest_round = max((entry["round"] for entry in dialogue_history), default=0)
@@ -343,7 +341,7 @@ def curate_relevant(
             f"Relevance filtering produced too little context ({len(curated)} entries), "
             f"using recent strategy"
         )
-        return curate_recent(dialogue_history, len(dialogue_history), context_window_size)
+        return curate_recent(dialogue_history, context_window_size)
 
     logger.debug(
         f"Context curation (relevant for {agent_name}): "

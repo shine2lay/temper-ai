@@ -10,6 +10,7 @@ from src.portfolio._schemas import (
     PortfolioRecommendation,
     ProductScorecard,
 )
+from src.portfolio._tracking import track_portfolio_event
 from src.portfolio.constants import (
     DEFAULT_LOOKBACK_HOURS,
     RECENT_LOOKBACK_HOURS,
@@ -64,6 +65,15 @@ class PortfolioOptimizer:
                 lookback_hours,
             )
             scorecards.append(scorecard)
+        track_portfolio_event(
+            "optimizer_scorecards",
+            {"product_count": len(scorecards), "lookback_hours": lookback_hours},
+            "computed",
+            impact_metrics={
+                sc.product_type: sc.composite_score for sc in scorecards
+            },
+            tags=["portfolio", "optimizer"],
+        )
         return scorecards
 
     def recommend(
@@ -81,6 +91,15 @@ class PortfolioOptimizer:
                     rationale=rationale,
                 )
             )
+        track_portfolio_event(
+            "optimizer_recommendations",
+            {"product_count": len(recommendations)},
+            "computed",
+            impact_metrics={
+                r.product_type: r.action.value for r in recommendations
+            },
+            tags=["portfolio", "optimizer"],
+        )
         return recommendations
 
     def optimize_weights(
@@ -92,12 +111,20 @@ class PortfolioOptimizer:
         total_score = sum(sc.composite_score for sc in scorecards)
         if total_score <= 0:
             count = len(scorecards) if scorecards else 1
-            return {sc.product_type: 1.0 / count for sc in scorecards}
-
-        return {
-            sc.product_type: sc.composite_score / total_score
-            for sc in scorecards
-        }
+            weights = {sc.product_type: 1.0 / count for sc in scorecards}
+        else:
+            weights = {
+                sc.product_type: sc.composite_score / total_score
+                for sc in scorecards
+            }
+        track_portfolio_event(
+            "optimizer_weights",
+            {"product_count": len(scorecards), "total_score": total_score},
+            "computed",
+            impact_metrics=weights,
+            tags=["portfolio", "optimizer"],
+        )
+        return weights
 
     def _compute_product_scorecard(
         self,

@@ -9,6 +9,7 @@ from uuid import uuid4
 import yaml
 
 from src.portfolio._schemas import KGConceptType, KGRelation, PortfolioConfig
+from src.portfolio._tracking import track_portfolio_event
 from src.portfolio.constants import DEFAULT_BFS_DEPTH, DEFAULT_RUN_LIMIT, MAX_BFS_DEPTH
 from src.portfolio.models import (
     KGConceptRecord,
@@ -34,6 +35,13 @@ class KnowledgePopulator:
         added = 0
         for product in portfolio.products:
             added += self._populate_product(product.name, product.workflow_configs)
+        track_portfolio_event(
+            "kg_populate_from_config",
+            {"portfolio": portfolio.name, "product_count": len(portfolio.products)},
+            "completed",
+            impact_metrics={"concepts_added": added},
+            tags=["portfolio", "knowledge_graph"],
+        )
         return added
 
     def _populate_product(self, product_name: str, workflow_configs: List[str]) -> int:
@@ -157,6 +165,13 @@ class KnowledgePopulator:
             self._ensure_edge(
                 product_concept.id, outcome_id, KGRelation.PRODUCED_RESULT,
             )
+        track_portfolio_event(
+            "kg_populate_from_runs",
+            {"product_type": product_type, "runs_processed": len(runs)},
+            "completed",
+            impact_metrics={"concepts_added": added},
+            tags=["portfolio", "knowledge_graph"],
+        )
         return added
 
     def add_tech_compatibility(
@@ -257,6 +272,13 @@ class KnowledgeQuery:
                     "depth": current_depth + 1,
                 })
                 queue.append((neighbor_id, current_depth + 1))
+        track_portfolio_event(
+            "kg_bfs_related",
+            {"concept": concept_name, "max_depth": depth},
+            "completed",
+            impact_metrics={"results_found": len(results), "nodes_visited": len(visited)},
+            tags=["portfolio", "knowledge_graph"],
+        )
         return results
 
     def find_path(
@@ -290,8 +312,23 @@ class KnowledgeQuery:
                     continue
                 new_path = path + [concept.name]
                 if neighbor_id == end.id:
+                    track_portfolio_event(
+                        "kg_find_path",
+                        {"source": source, "target": target, "max_depth": max_depth},
+                        "found",
+                        impact_metrics={"path_length": len(new_path),
+                                        "nodes_visited": len(visited)},
+                        tags=["portfolio", "knowledge_graph"],
+                    )
                     return new_path
                 queue.append((neighbor_id, new_path))
+        track_portfolio_event(
+            "kg_find_path",
+            {"source": source, "target": target, "max_depth": max_depth},
+            "not_found",
+            impact_metrics={"nodes_visited": len(visited)},
+            tags=["portfolio", "knowledge_graph"],
+        )
         return None
 
     def get_tech_compatibility(self, tech_name: str) -> list:
@@ -315,10 +352,21 @@ class KnowledgeQuery:
                 edges_by_relation.get(e.relation, 0) + 1
             )
 
-        return {
+        stats = {
             "concepts_by_type": concepts_by_type,
             "edges_by_relation": edges_by_relation,
         }
+        track_portfolio_event(
+            "kg_concept_stats",
+            {},
+            "computed",
+            impact_metrics={
+                "total_concepts": len(concepts),
+                "total_edges": len(edges),
+            },
+            tags=["portfolio", "knowledge_graph"],
+        )
+        return stats
 
     # ── Helpers ────────────────────────────────────────────────────────
 

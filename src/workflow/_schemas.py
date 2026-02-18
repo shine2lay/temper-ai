@@ -126,6 +126,13 @@ class WorkflowConfigInner(BaseModel):
         "web_app", "mobile_app", "api", "data_product",
         "data_pipeline", "cli_tool",
     ]] = None
+    predecessor_injection: bool = Field(
+        default=False,
+        description=(
+            "When true, stages without explicit inputs receive "
+            "outputs from DAG predecessors only (not full state)."
+        ),
+    )
     stages: List[WorkflowStageReference]
     config: WorkflowConfigOptions = Field(default_factory=WorkflowConfigOptions)
     safety: WorkflowSafetyConfig = Field(default_factory=WorkflowSafetyConfig)

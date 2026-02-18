@@ -141,12 +141,22 @@ def _normalize_list_signal(items: List[Any]) -> Optional[Dict[str, Any]]:
 
 
 def _normalize_dict_signal(signal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    """Normalize dict-format signal (old single or parallel)."""
+    """Normalize dict-format signal (old single or parallel).
+
+    Parallel signals may include a ``converge`` field specifying a stage
+    to run exactly once after all parallel branches complete::
+
+        {"mode": "parallel", "targets": [...], "converge": {"name": "D"}}
+    """
     if signal.get("mode") == "parallel" and isinstance(signal.get("targets"), list):
         targets = _extract_target_list(signal["targets"])
         if not targets:
             return None
-        return {"targets": targets, "mode": "parallel"}
+        result: Dict[str, Any] = {"targets": targets, "mode": "parallel"}
+        converge = signal.get("converge")
+        if isinstance(converge, dict) and converge.get("name"):
+            result["converge"] = {"name": converge["name"]}
+        return result
     if signal.get("name"):
         return {
             "targets": [{"name": signal["name"], "inputs": signal.get("inputs", {})}],
@@ -268,7 +278,7 @@ def _run_parallel_stage_batch(
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_name = {
             executor.submit(
-                _run_stage_node, name, stage_nodes[name], state,
+                _run_stage_node, name, stage_nodes[name], dict(state),
             ): name
             for name in runnable
         }
@@ -379,6 +389,9 @@ class WorkflowExecutor:
         depths = compute_depths(dag)
         depth_groups = _group_by_depth(dag, depths)
         ref_lookup = _build_ref_lookup(stage_refs)
+
+        # Wire DAG into predecessor resolver for context resolution
+        self.node_builder.wire_dag_context(dag)
 
         # Pre-build stage node callables
         stage_nodes: Dict[str, Callable] = {}

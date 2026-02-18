@@ -97,8 +97,12 @@ class StageCompiler:
             )
             graph.add_node(stage_name, stage_node)  # type: ignore
 
-        # Add edges (conditional-aware), may add loop gate nodes
+        # Wire DAG into predecessor resolver for context resolution
         stage_refs = self._get_stage_refs(workflow_config)
+        dag = build_stage_dag(stage_names, stage_refs)
+        self.node_builder.wire_dag_context(dag)
+
+        # Add edges (conditional-aware), may add loop gate nodes
         self._add_edges(graph, stage_names, stage_refs)
 
         graph.set_entry_point("init")

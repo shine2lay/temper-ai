@@ -14,7 +14,7 @@ workflow:
   name: dynamic_retry_demo
   description: "Demo of dynamic edge routing — evaluator routes back to analyzer with feedback"
   version: "2.0"
-  engine: native
+  engine: dynamic
 
   stages:
     - name: analyze

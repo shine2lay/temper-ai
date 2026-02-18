@@ -5,18 +5,18 @@ Centralized constants to avoid magic numbers throughout the codebase.
 
 # Performance Monitoring
 MAX_LATENCY_SAMPLES = 1000  # Maximum number of latency samples to keep in memory
-MAX_SLOW_OPERATIONS = 100   # Maximum number of slow operations to track
+MAX_SLOW_OPERATIONS = 100  # Maximum number of slow operations to track
 DEFAULT_CLEANUP_INTERVAL = 1000  # Run cleanup every N records
 DEFAULT_SLOW_THRESHOLD_MS = 1000.0  # Default threshold (1 second)
 MS_PER_SECOND = 1000.0  # Milliseconds per second conversion factor
 
 # Default operation thresholds (in milliseconds)
 DEFAULT_THRESHOLDS_MS = {
-    "llm_call": 5000.0,           # 5 seconds
-    "tool_execution": 3000.0,     # 3 seconds
-    "stage_execution": 10000.0,   # 10 seconds
-    "agent_execution": 30000.0,   # 30 seconds
-    "workflow_execution": 60000.0, # 1 minute
+    "llm_call": 5000.0,  # 5 seconds
+    "tool_execution": 3000.0,  # 3 seconds
+    "stage_execution": 10000.0,  # 10 seconds
+    "agent_execution": 30000.0,  # 30 seconds
+    "workflow_execution": 60000.0,  # 1 minute
 }
 
 # Buffer Configuration
@@ -31,7 +31,9 @@ RETRY_DELAY_SECONDS = 1.0  # Delay between retry attempts
 
 DEFAULT_ALERT_COOLDOWN_SECONDS = 300  # 5 minutes between alerts
 MAX_ALERT_HISTORY = 1000
+DEFAULT_PERSISTED_ALERTS_LIMIT = 50  # Default limit for DB alert queries
 DEFAULT_ERROR_RATE_ALERT_THRESHOLD = 0.1  # 10% error rate
+DEFAULT_ERROR_SPIKE_THRESHOLD = 10  # Same error 10+ times triggers spike alert
 DEFAULT_LATENCY_ALERT_MULTIPLIER = 2.0  # 2x normal latency
 
 # ============================================================================
@@ -81,6 +83,17 @@ DEFAULT_AGGREGATION_INTERVAL_SECONDS = 60
 LOG_SEPARATOR_STATUS = " status="
 LOG_MESSAGE_METRICS_CREATED = " metrics created for period "
 
+
+# ============================================================================
+# Lifecycle Events (pre-execution pipeline)
+# ============================================================================
+
+EVENT_CONFIG_LOADED = "config_loaded"
+EVENT_LIFECYCLE_ADAPTED = "lifecycle_adapted"
+EVENT_WORKFLOW_COMPILING = "workflow_compiling"
+EVENT_WORKFLOW_COMPILED = "workflow_compiled"
+EVENT_VALIDATION_PASSED = "validation_passed"
+EVENT_VALIDATION_FAILED = "validation_failed"
 
 # ============================================================================
 # Database Field Names

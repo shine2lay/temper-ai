@@ -52,7 +52,7 @@ class EngineRegistry:
             RuntimeError: If default engine cannot be imported/registered
         """
         try:
-            from src.workflow.langgraph_engine import LangGraphExecutionEngine
+            from src.workflow.engines.langgraph_engine import LangGraphExecutionEngine
             self._engines["langgraph"] = LangGraphExecutionEngine
         except ImportError as e:
             raise RuntimeError(
@@ -60,8 +60,9 @@ class EngineRegistry:
                 "Ensure langgraph dependencies are installed."
             ) from e
 
-        from src.workflow.engines.native_engine import NativeExecutionEngine
-        self._engines["native"] = NativeExecutionEngine
+        from src.workflow.engines.dynamic_engine import DynamicExecutionEngine
+        self._engines["dynamic"] = DynamicExecutionEngine
+        self._engines["native"] = DynamicExecutionEngine  # Alias for backward compat
 
     def register_engine(
         self,

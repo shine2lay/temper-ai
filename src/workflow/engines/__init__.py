@@ -1,19 +1,28 @@
-"""Native execution engine package.
+"""Workflow execution engine package.
 
-Provides a Python-native workflow execution engine as an alternative to LangGraph.
-The native engine supports all current features (sequential, parallel, conditional,
-loop) plus input negotiation between stages and agents.
-
-Components:
-- NativeExecutionEngine: ExecutionEngine implementation
-- NativeCompiledWorkflow: CompiledWorkflow wrapper
+Provides execution engines:
+- DynamicExecutionEngine: Python-native with negotiation and dynamic routing
+- LangGraphExecutionEngine: LangGraph-based StateGraph execution
 - WorkflowExecutor: DAG-aware stage execution loop
 - ThreadPoolParallelRunner: ParallelRunner using concurrent.futures
+
+Legacy aliases:
+- NativeExecutionEngine → DynamicExecutionEngine
+- NativeCompiledWorkflow → DynamicCompiledWorkflow
 """
 
-from src.workflow.engines.native_engine import (  # noqa: F401
-    NativeCompiledWorkflow,
-    NativeExecutionEngine,
+from src.workflow.engines.dynamic_engine import (  # noqa: F401
+    DynamicCompiledWorkflow,
+    DynamicExecutionEngine,
 )
-from src.workflow.engines.native_runner import ThreadPoolParallelRunner  # noqa: F401
+from src.workflow.engines.dynamic_runner import ThreadPoolParallelRunner  # noqa: F401
+from src.workflow.engines.langgraph_compiler import LangGraphCompiler  # noqa: F401
+from src.workflow.engines.langgraph_engine import (  # noqa: F401
+    LangGraphCompiledWorkflow,
+    LangGraphExecutionEngine,
+)
 from src.workflow.engines.workflow_executor import WorkflowExecutor  # noqa: F401
+
+# Legacy aliases
+NativeCompiledWorkflow = DynamicCompiledWorkflow  # noqa: F401
+NativeExecutionEngine = DynamicExecutionEngine  # noqa: F401

@@ -1,17 +1,15 @@
-"""Tests for NativeExecutionEngine and NativeCompiledWorkflow.
+"""Tests for DynamicExecutionEngine and DynamicCompiledWorkflow.
 
 Tests engine interface compliance, compile/execute lifecycle,
-feature detection, cancellation, and metadata.
+feature detection, cancellation, metadata, and dynamic routing support.
 """
-import asyncio
-from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.workflow.engines.native_engine import (
-    NativeCompiledWorkflow,
-    NativeExecutionEngine,
+from src.workflow.engines.dynamic_engine import (
+    DynamicCompiledWorkflow,
+    DynamicExecutionEngine,
 )
 from src.workflow.execution_engine import (
     ExecutionMode,
@@ -19,18 +17,18 @@ from src.workflow.execution_engine import (
 )
 
 
-class TestNativeCompiledWorkflow:
-    """Test NativeCompiledWorkflow."""
+class TestDynamicCompiledWorkflow:
+    """Test DynamicCompiledWorkflow."""
 
     def _make_workflow(self, stage_refs=None, run_result=None):
-        """Create a NativeCompiledWorkflow with mock executor."""
+        """Create a DynamicCompiledWorkflow with mock executor."""
         runner = MagicMock()
         runner.run.return_value = run_result or {
             "stage_outputs": {"test": {"status": "ok"}},
             "current_stage": "test",
         }
         config = {"workflow": {"stages": stage_refs or ["stage_a"]}}
-        return NativeCompiledWorkflow(
+        return DynamicCompiledWorkflow(
             workflow_executor=runner,
             workflow_config=config,
             stage_refs=stage_refs or ["stage_a"],
@@ -66,7 +64,7 @@ class TestNativeCompiledWorkflow:
             await wf.ainvoke({})
 
     def test_get_metadata(self):
-        """Test metadata extraction."""
+        """Test metadata reports 'dynamic' engine."""
         wf = self._make_workflow(["stage_a", "stage_b"])
         meta = wf.get_metadata()
         assert meta["engine"] == "dynamic"
@@ -107,23 +105,28 @@ class TestNativeCompiledWorkflow:
         assert wf.is_cancelled() is True
 
 
-class TestNativeExecutionEngine:
-    """Test NativeExecutionEngine."""
+class TestDynamicExecutionEngine:
+    """Test DynamicExecutionEngine."""
 
     def _make_engine(self):
         """Create engine with mocked safety stack."""
         with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock_safety:
             mock_safety.return_value = MagicMock()
-            engine = NativeExecutionEngine()
+            engine = DynamicExecutionEngine()
         return engine
 
     def test_supports_feature_negotiation(self):
-        """Test native engine supports negotiation."""
+        """Test dynamic engine supports negotiation."""
         engine = self._make_engine()
         assert engine.supports_feature("negotiation") is True
         assert engine.supports_feature("sequential_stages") is True
         assert engine.supports_feature("parallel_stages") is True
         assert engine.supports_feature("conditional_routing") is True
+
+    def test_supports_feature_dynamic_routing(self):
+        """Test dynamic engine supports dynamic routing."""
+        engine = self._make_engine()
+        assert engine.supports_feature("dynamic_routing") is True
 
     def test_supports_feature_unsupported(self):
         """Test unsupported features return False."""
@@ -137,8 +140,8 @@ class TestNativeExecutionEngine:
         with pytest.raises(ValueError, match="at least one stage"):
             engine.compile({"workflow": {"stages": []}})
 
-    def test_compile_returns_native_workflow(self):
-        """Test compile returns NativeCompiledWorkflow."""
+    def test_compile_returns_dynamic_workflow(self):
+        """Test compile returns DynamicCompiledWorkflow."""
         engine = self._make_engine()
 
         # Mock config_loader to return valid configs
@@ -162,7 +165,7 @@ class TestNativeExecutionEngine:
         config = {"workflow": {"stages": ["test_stage"]}}
         compiled = engine.compile(config)
 
-        assert isinstance(compiled, NativeCompiledWorkflow)
+        assert isinstance(compiled, DynamicCompiledWorkflow)
 
     def test_execute_wrong_type_raises(self):
         """Test execute raises on wrong compiled workflow type."""
@@ -173,8 +176,7 @@ class TestNativeExecutionEngine:
     def test_execute_stream_raises(self):
         """Test execute raises on STREAM mode."""
         engine = self._make_engine()
-        wf = MagicMock(spec=NativeCompiledWorkflow)
-        # Make isinstance check pass
+        wf = MagicMock(spec=DynamicCompiledWorkflow)
         with pytest.raises(NotImplementedError, match="STREAM"):
             engine.execute(wf, {}, mode=ExecutionMode.STREAM)
 
@@ -189,7 +191,7 @@ class TestNativeExecutionEngine:
             "workflow_id": "test",
             "workflow_inputs": {"topic": "test"},
         }
-        wf = NativeCompiledWorkflow(
+        wf = DynamicCompiledWorkflow(
             workflow_executor=runner,
             workflow_config={"workflow": {"stages": ["s"]}},
             stage_refs=["s"],
@@ -209,7 +211,7 @@ class TestNativeExecutionEngine:
             "stage_outputs": {"s": {"status": "ok"}},
             "current_stage": "s",
         }
-        wf = NativeCompiledWorkflow(
+        wf = DynamicCompiledWorkflow(
             workflow_executor=runner,
             workflow_config={"workflow": {"stages": ["s"]}},
             stage_refs=["s"],
@@ -229,39 +231,78 @@ class TestNativeExecutionEngine:
     async def test_async_execute_stream_raises(self):
         """Test async_execute raises on STREAM mode."""
         engine = self._make_engine()
-        wf = MagicMock(spec=NativeCompiledWorkflow)
+        wf = MagicMock(spec=DynamicCompiledWorkflow)
         with pytest.raises(NotImplementedError, match="STREAM"):
             await engine.async_execute(wf, {}, mode=ExecutionMode.STREAM)
 
 
 class TestEngineRegistration:
-    """Test that native engine is registered in EngineRegistry."""
+    """Test that dynamic engine is registered in EngineRegistry."""
 
-    def test_native_in_registry(self):
-        """Test native engine is available via registry."""
+    def test_dynamic_in_registry(self):
+        """Test dynamic engine is available via registry."""
+        from src.workflow.engine_registry import EngineRegistry
+
+        registry = EngineRegistry()
+        assert "dynamic" in registry.list_engines()
+
+    def test_native_alias_in_registry(self):
+        """Test native alias still works via registry."""
         from src.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
         assert "native" in registry.list_engines()
 
-    def test_get_native_engine(self):
-        """Test creating native engine via registry."""
+    def test_get_dynamic_engine(self):
+        """Test creating dynamic engine via registry."""
+        from src.workflow.engine_registry import EngineRegistry
+
+        registry = EngineRegistry()
+        with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+            mock.return_value = MagicMock()
+            engine = registry.get_engine("dynamic")
+        assert isinstance(engine, DynamicExecutionEngine)
+
+    def test_native_alias_returns_dynamic(self):
+        """Test that 'native' alias returns DynamicExecutionEngine."""
         from src.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
         with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine("native")
-        assert isinstance(engine, NativeExecutionEngine)
+        assert isinstance(engine, DynamicExecutionEngine)
 
     def test_config_based_selection(self):
         """Test engine selection from workflow config."""
         from src.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
-        config = {"workflow": {"engine": "native", "stages": ["s1"]}}
+        config = {"workflow": {"engine": "dynamic", "stages": ["s1"]}}
 
         with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine_from_config(config)
-        assert isinstance(engine, NativeExecutionEngine)
+        assert isinstance(engine, DynamicExecutionEngine)
+
+
+class TestBackwardCompatibility:
+    """Test that old Native* names still work."""
+
+    def test_native_names_importable(self):
+        """Test NativeExecutionEngine and NativeCompiledWorkflow still importable."""
+        from src.workflow.engines.native_engine import (
+            NativeCompiledWorkflow,
+            NativeExecutionEngine,
+        )
+        assert NativeExecutionEngine is DynamicExecutionEngine
+        assert NativeCompiledWorkflow is DynamicCompiledWorkflow
+
+    def test_native_from_init(self):
+        """Test old names from engines __init__."""
+        from src.workflow.engines import (
+            NativeCompiledWorkflow,
+            NativeExecutionEngine,
+        )
+        assert NativeExecutionEngine is DynamicExecutionEngine
+        assert NativeCompiledWorkflow is DynamicCompiledWorkflow

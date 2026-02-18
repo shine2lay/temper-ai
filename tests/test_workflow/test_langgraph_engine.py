@@ -296,7 +296,7 @@ class TestLangGraphExecutionEngine:
         assert engine.tool_registry == mock_registry
         assert engine.config_loader == mock_loader
 
-    @patch('src.workflow.langgraph_engine.LangGraphCompiler')
+    @patch('src.workflow.engines.langgraph_engine.LangGraphCompiler')
     def test_compile(self, mock_compiler_class):
         """Test workflow compilation."""
         # Setup mock

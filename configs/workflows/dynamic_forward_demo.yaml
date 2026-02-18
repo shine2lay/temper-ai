@@ -15,7 +15,7 @@ workflow:
   name: dynamic_forward_demo
   description: "Demo of dynamic forward routing — classifier routes to specialist branches"
   version: "1.0"
-  engine: native
+  engine: dynamic
 
   stages:
     - name: demo_forward_classify

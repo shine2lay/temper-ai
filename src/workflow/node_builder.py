@@ -95,10 +95,6 @@ class NodeBuilder:
             else:
                 state_dict = state.to_typed_dict()
 
-            # Add tool_executor to state if available (for safety-integrated tool execution)
-            if self.tool_executor is not None:
-                state_dict['tool_executor'] = self.tool_executor
-
             # Load stage config
             stage_config = self._load_stage_config(stage_name, workflow_config)
 
@@ -307,6 +303,27 @@ class NodeBuilder:
                 return cast(str, name)
 
         raise ValueError(f"Cannot extract stage name from: {stage}")
+
+    def wire_dag_context(self, dag: Any) -> None:
+        """Pass the built DAG to PredecessorResolver in each executor.
+
+        Called after DAG construction so the resolver knows predecessor
+        relationships at execution time.
+
+        Args:
+            dag: StageDAG from ``build_stage_dag()``.
+        """
+        for executor in self.executors.values():
+            ctx = getattr(executor, "context_provider", None)
+            if ctx is None:
+                continue
+            # If the context_provider is a SourceResolver, check its fallback
+            predecessor = getattr(ctx, "_predecessor", None)
+            if predecessor is not None and hasattr(predecessor, "set_dag"):
+                predecessor.set_dag(dag)
+            # If it's a PredecessorResolver directly
+            if hasattr(ctx, "set_dag"):
+                ctx.set_dag(dag)
 
     def extract_agent_name(self, agent_ref: Any) -> str:
         """Extract agent name from various agent reference formats.

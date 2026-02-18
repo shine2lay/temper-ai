@@ -3,15 +3,17 @@
 Resolves declared stage inputs from workflow state, replacing the legacy
 pass-everything approach with selective context injection.
 
-Two resolver implementations:
+Three resolver implementations:
 
 - ``SourceResolver``: Resolves ``source`` refs from stage input declarations.
   Used when a stage declares inputs with ``source`` fields.
+- ``PredecessorResolver``: DAG-based — stage gets outputs from its DAG
+  predecessors only. Opt-in via ``predecessor_injection: true``.
 - ``PassthroughResolver``: Legacy behavior — returns full state with
   ``workflow_inputs`` unwrapped to top level. Used when inputs are omitted.
 """
 import logging
-from typing import Any, Dict, Optional, Protocol, runtime_checkable
+from typing import Any, Dict, List, Optional, Protocol, runtime_checkable
 
 from src.workflow.context_schemas import parse_stage_inputs
 from src.stage.executors.state_keys import StateKeys
@@ -111,11 +113,19 @@ class SourceResolver:
     - ``<stage>.structured.<field>`` → structured compartment only
     - ``<stage>.raw.<field>`` → raw compartment only
 
-    Falls back to ``PassthroughResolver`` when no inputs are declared.
+    Falls back to ``PassthroughResolver`` (or optional ``fallback`` resolver)
+    when no inputs are declared.
     """
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        fallback: Optional[Any] = None,
+    ) -> None:
         self._passthrough = PassthroughResolver()
+        self._predecessor: Optional[PredecessorResolver] = (
+            fallback if isinstance(fallback, PredecessorResolver) else None
+        )
+        self._fallback = fallback or self._passthrough
 
     def resolve(
         self, stage_config: Any, workflow_state: Dict[str, Any]
@@ -125,7 +135,7 @@ class SourceResolver:
         parsed = parse_stage_inputs(raw_inputs)
 
         if parsed is None:
-            return self._passthrough.resolve(stage_config, workflow_state)
+            return self._fallback.resolve(stage_config, workflow_state)
 
         stage_name = _get_stage_name(stage_config)
         resolved: Dict[str, Any] = {}
@@ -224,6 +234,100 @@ class SourceResolver:
 
         value = get_nested_value(stage_data, field_path)
         return value, value is not None
+
+
+class PredecessorResolver:
+    """DAG-based resolver — stage gets outputs from its predecessors only.
+
+    Resolution rules:
+    - Root stages (no predecessors): get ``workflow_inputs``
+    - Other stages: get the merged outputs of all DAG predecessors
+    - Skipped predecessors are excluded
+    - Dynamic convergence predecessors (``_convergence_predecessors``)
+      are also included when present
+
+    The DAG must be set via ``set_dag()`` before use.
+    """
+
+    def __init__(self) -> None:
+        self._dag: Optional[Any] = None  # StageDAG (set later)
+
+    def set_dag(self, dag: Any) -> None:
+        """Set the stage DAG for predecessor lookup.
+
+        Args:
+            dag: StageDAG from ``build_stage_dag()``.
+        """
+        self._dag = dag
+
+    def resolve(
+        self, stage_config: Any, workflow_state: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Resolve stage inputs from predecessors in the DAG.
+
+        Args:
+            stage_config: Stage configuration (dict or Pydantic model).
+            workflow_state: Current workflow state dict.
+
+        Returns:
+            Dict with predecessor outputs merged, plus infrastructure keys.
+        """
+        stage_name = _get_stage_name(stage_config)
+        predecessors = self._get_predecessors(stage_name, workflow_state)
+
+        resolved: Dict[str, Any] = {}
+
+        if not predecessors:
+            # Root stage: use workflow_inputs
+            wi = workflow_state.get(StateKeys.WORKFLOW_INPUTS, {})
+            if isinstance(wi, dict):
+                resolved.update(wi)
+        else:
+            # Merge outputs from predecessors
+            stage_outputs = workflow_state.get(StateKeys.STAGE_OUTPUTS, {})
+            for pred in predecessors:
+                pred_data = stage_outputs.get(pred)
+                if isinstance(pred_data, dict):
+                    resolved[pred] = pred_data
+
+        resolved["_context_meta"] = {
+            "mode": "predecessor",
+            "predecessors": predecessors,
+        }
+
+        _add_infrastructure_keys(resolved, workflow_state)
+        return resolved
+
+    def _get_predecessors(
+        self,
+        stage_name: str,
+        workflow_state: Dict[str, Any],
+    ) -> List[str]:
+        """Get predecessor stage names for the given stage.
+
+        Checks (in order):
+        1. Dynamic convergence predecessors from state
+        2. DAG predecessors (reverse edges)
+        3. Empty list if no DAG is set
+        """
+        # Dynamic convergence predecessors (set by fan-out convergence)
+        convergence_preds = workflow_state.get("_convergence_predecessors", {})
+        if stage_name in convergence_preds:
+            preds: List[str] = convergence_preds[stage_name]
+            return preds
+
+        if self._dag is None:
+            return []
+
+        # DAG predecessors: stages that this stage depends on
+        predecessors: List[str] = []
+        stage_outputs = workflow_state.get(StateKeys.STAGE_OUTPUTS, {})
+        for pred in self._dag.predecessors.get(stage_name, []):
+            # Exclude skipped predecessors (no output recorded)
+            if pred in stage_outputs:
+                predecessors.append(pred)
+
+        return predecessors
 
 
 class PassthroughResolver:

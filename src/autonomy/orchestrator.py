@@ -2,14 +2,18 @@
 
 import logging
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from src.autonomy._schemas import (
     AutonomousLoopConfig,
     PostExecutionReport,
     WorkflowRunContext,
 )
-from src.autonomy.constants import DEFAULT_LOOKBACK_HOURS, MS_PER_SECOND
+from src.autonomy.constants import (
+    DEFAULT_LOOKBACK_HOURS,
+    LOOP_TIMEOUT_SECONDS,
+    MS_PER_SECOND,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,8 +45,20 @@ class PostExecutionOrchestrator:
         if self._config.learning_enabled:
             report.learning_result = self._run_learning(context, report)
 
+        if self._budget_exhausted(start, report):
+            return report
+
         if self._config.goals_enabled:
             report.goals_result = self._run_goals(context, report)
+
+        if self._budget_exhausted(start, report):
+            return report
+
+        if self._config.auto_apply_learning or self._config.auto_apply_goals:
+            report.feedback_result = self._run_feedback(context, report)
+
+        if self._budget_exhausted(start, report):
+            return report
 
         if self._config.portfolio_enabled:
             report.portfolio_result = self._run_portfolio(context, report)
@@ -58,10 +74,21 @@ class PostExecutionOrchestrator:
         )
         return report
 
+    def _budget_exhausted(
+        self, start: float, report: PostExecutionReport,
+    ) -> bool:
+        """Return True and finalize report if LOOP_TIMEOUT_SECONDS exceeded."""
+        if (time.monotonic() - start) > LOOP_TIMEOUT_SECONDS:
+            report.errors.append("Timeout: skipped remaining subsystems")
+            elapsed_ms = (time.monotonic() - start) * MS_PER_SECOND
+            report.duration_ms = round(elapsed_ms, 1)
+            return True
+        return False
+
     def _run_learning(
         self, context: WorkflowRunContext, report: PostExecutionReport
     ) -> Optional[Dict[str, Any]]:
-        """Run pattern mining and recommendation generation."""
+        """Run pattern mining, recommendation generation, and memory sync."""
         try:
             from src.learning.orchestrator import MiningOrchestrator
             from src.learning.recommender import RecommendationEngine
@@ -76,6 +103,9 @@ class PostExecutionOrchestrator:
             engine = RecommendationEngine(store=store)
             recs = engine.generate_recommendations()
 
+            # Sync learned patterns to memory system
+            self._sync_memory_bridge(store, report)
+
             return {
                 "mining_run_id": mining_run.id,
                 "patterns_found": mining_run.patterns_found,
@@ -89,17 +119,35 @@ class PostExecutionOrchestrator:
             report.errors.append(msg)
             return None
 
+    def _sync_memory_bridge(
+        self, store: object, report: PostExecutionReport,
+    ) -> None:
+        """Sync learned patterns to memory via LearningToMemoryBridge."""
+        try:
+            from src.autonomy.memory_bridge import LearningToMemoryBridge
+
+            bridge = LearningToMemoryBridge(learning_store=store)
+            synced = bridge.sync_patterns_to_memory()
+            report.memory_sync_result = {"patterns_synced": synced}
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Memory bridge sync failed: %s", exc)
+
     def _run_goals(
         self, context: WorkflowRunContext, report: PostExecutionReport
     ) -> Optional[Dict[str, Any]]:
-        """Run goal analysis and proposal generation."""
+        """Run goal analysis and proposal generation with all analyzers."""
         try:
             from src.goals.analysis_orchestrator import AnalysisOrchestrator
             from src.goals.store import GoalStore
 
-            store = GoalStore()
+            goal_store = GoalStore()
+
+            from src.learning.store import LearningStore
+
+            learning_store = LearningStore()
+            analyzers = self._build_goal_analyzers(learning_store)
             orchestrator = AnalysisOrchestrator(
-                store=store, learning_store=None
+                store=goal_store, analyzers=analyzers, learning_store=learning_store,
             )
             analysis_run = orchestrator.run_analysis(
                 lookback_hours=DEFAULT_LOOKBACK_HOURS
@@ -115,6 +163,64 @@ class PostExecutionOrchestrator:
             logger.warning(msg)
             report.errors.append(msg)
             return None
+
+    def _build_goal_analyzers(self, learning_store: object) -> list:
+        """Build the list of goal analyzers."""
+        from src.goals.analyzers.cost import CostAnalyzer
+        from src.goals.analyzers.cross_product import CrossProductAnalyzer
+        from src.goals.analyzers.performance import PerformanceAnalyzer
+        from src.goals.analyzers.reliability import ReliabilityAnalyzer
+
+        return [
+            PerformanceAnalyzer(),
+            ReliabilityAnalyzer(),
+            CostAnalyzer(),
+            CrossProductAnalyzer(learning_store=learning_store),
+        ]
+
+    def _run_feedback(
+        self, context: WorkflowRunContext, report: PostExecutionReport,
+    ) -> Optional[Dict[str, Any]]:
+        """Apply learned recommendations and approved goals."""
+        try:
+            results: Dict[str, Any] = {}
+            if self._config.auto_apply_learning:
+                results["learning"] = self._apply_learning_feedback()
+            if self._config.auto_apply_goals:
+                results["goals"] = self._apply_goal_feedback()
+            return results if results else None
+        except Exception as exc:  # noqa: BLE001
+            msg = f"Feedback subsystem error: {exc}"
+            logger.warning(msg)
+            report.errors.append(msg)
+            return None
+
+    def _apply_learning_feedback(self) -> List[Dict[str, Any]]:
+        """Apply pending learning recommendations via FeedbackApplier."""
+        from src.autonomy.feedback_applier import FeedbackApplier
+        from src.learning.store import LearningStore
+
+        store = LearningStore()
+        applier = FeedbackApplier(
+            learning_store=store,
+            max_auto_apply=self._config.max_auto_apply_per_run,
+        )
+        return applier.apply_learning_recommendations(
+            min_confidence=self._config.auto_apply_min_confidence,
+        )
+
+    def _apply_goal_feedback(self) -> List[Dict[str, Any]]:
+        """Apply approved goals via FeedbackApplier."""
+        from src.autonomy.feedback_applier import FeedbackApplier
+        from src.goals.store import GoalStore
+        from src.learning.store import LearningStore
+
+        applier = FeedbackApplier(
+            learning_store=LearningStore(),
+            goal_store=GoalStore(),
+            max_auto_apply=self._config.max_auto_apply_per_run,
+        )
+        return applier.apply_approved_goals()
 
     def _run_portfolio(
         self, context: WorkflowRunContext, report: PostExecutionReport

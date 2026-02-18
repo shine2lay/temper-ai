@@ -48,5 +48,7 @@ class PostExecutionReport(BaseModel):
     learning_result: Optional[Dict[str, Any]] = None
     goals_result: Optional[Dict[str, Any]] = None
     portfolio_result: Optional[Dict[str, Any]] = None
+    feedback_result: Optional[Dict[str, Any]] = None
+    memory_sync_result: Optional[Dict[str, Any]] = None
     errors: List[str] = Field(default_factory=list)
     duration_ms: float = 0.0

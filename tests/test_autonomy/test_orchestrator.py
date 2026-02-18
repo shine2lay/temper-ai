@@ -1,5 +1,6 @@
 """Tests for the PostExecutionOrchestrator."""
 
+import time
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -366,3 +367,243 @@ class TestWorkflowSchemaBackwardCompat:
         assert parsed.workflow.autonomous_loop.learning_enabled is True
         assert parsed.workflow.autonomous_loop.goals_enabled is False
         assert parsed.workflow.autonomous_loop.portfolio_enabled is True
+
+
+class TestOrchestratorFeedbackWiring:
+    """Tests for feedback subsystem wiring in the orchestrator."""
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_feedback")
+    def test_feedback_called_when_auto_apply_learning(
+        self,
+        mock_feedback: MagicMock,
+        mock_learning: MagicMock,
+        mock_goals: MagicMock,
+        mock_portfolio: MagicMock,
+    ) -> None:
+        mock_learning.return_value = {"patterns_found": 1}
+        mock_goals.return_value = {"proposals_generated": 0}
+        mock_portfolio.return_value = {"scorecards": 0}
+        mock_feedback.return_value = {"learning": []}
+
+        config = AutonomousLoopConfig(
+            enabled=True, auto_apply_learning=True,
+        )
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+
+        mock_feedback.assert_called_once()
+        assert report.feedback_result == {"learning": []}
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_feedback")
+    def test_feedback_called_when_auto_apply_goals(
+        self,
+        mock_feedback: MagicMock,
+        mock_learning: MagicMock,
+        mock_goals: MagicMock,
+        mock_portfolio: MagicMock,
+    ) -> None:
+        mock_learning.return_value = {"patterns_found": 0}
+        mock_goals.return_value = {"proposals_generated": 1}
+        mock_portfolio.return_value = {"scorecards": 0}
+        mock_feedback.return_value = {"goals": []}
+
+        config = AutonomousLoopConfig(
+            enabled=True, auto_apply_goals=True,
+        )
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+
+        mock_feedback.assert_called_once()
+        assert report.feedback_result == {"goals": []}
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    def test_feedback_not_called_when_disabled(
+        self,
+        mock_learning: MagicMock,
+        mock_goals: MagicMock,
+        mock_portfolio: MagicMock,
+    ) -> None:
+        mock_learning.return_value = {"patterns_found": 0}
+        mock_goals.return_value = {"proposals_generated": 0}
+        mock_portfolio.return_value = {"scorecards": 0}
+
+        config = AutonomousLoopConfig(
+            enabled=True,
+            auto_apply_learning=False,
+            auto_apply_goals=False,
+        )
+        orch = PostExecutionOrchestrator(config)
+        report = orch.run(_make_context())
+
+        assert report.feedback_result is None
+
+
+class TestOrchestratorMemoryBridge:
+    """Tests for memory bridge wiring in _run_learning."""
+
+    def test_memory_sync_result_set_after_learning(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context()
+
+        mock_mining_run = MagicMock()
+        mock_mining_run.id = "mr-001"
+        mock_mining_run.patterns_found = 2
+        mock_mining_run.patterns_new = 1
+        mock_mining_run.status = "completed"
+
+        with patch("src.learning.store.LearningStore") as MockStore, \
+             patch("src.learning.orchestrator.MiningOrchestrator") as MockMining, \
+             patch("src.learning.recommender.RecommendationEngine") as MockEngine, \
+             patch("src.autonomy.memory_bridge.LearningToMemoryBridge") as MockBridge:
+            MockStore.return_value = MagicMock()
+            MockMining.return_value.run_mining.return_value = mock_mining_run
+            MockEngine.return_value.generate_recommendations.return_value = []
+            MockBridge.return_value.sync_patterns_to_memory.return_value = 3
+
+            result = orch._run_learning(ctx, report)
+
+        assert result is not None
+        assert report.memory_sync_result == {"patterns_synced": 3}
+
+    def test_memory_bridge_failure_does_not_crash_learning(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context()
+
+        mock_mining_run = MagicMock()
+        mock_mining_run.id = "mr-002"
+        mock_mining_run.patterns_found = 1
+        mock_mining_run.patterns_new = 0
+        mock_mining_run.status = "completed"
+
+        with patch("src.learning.store.LearningStore") as MockStore, \
+             patch("src.learning.orchestrator.MiningOrchestrator") as MockMining, \
+             patch("src.learning.recommender.RecommendationEngine") as MockEngine, \
+             patch("src.autonomy.memory_bridge.LearningToMemoryBridge") as MockBridge:
+            MockStore.return_value = MagicMock()
+            MockMining.return_value.run_mining.return_value = mock_mining_run
+            MockEngine.return_value.generate_recommendations.return_value = []
+            MockBridge.return_value.sync_patterns_to_memory.side_effect = RuntimeError("memory error")
+
+            result = orch._run_learning(ctx, report)
+
+        # Learning should still succeed even if bridge fails
+        assert result is not None
+        assert result["patterns_found"] == 1
+        assert report.memory_sync_result is None
+
+
+class TestOrchestratorTimeout:
+    """Tests for timeout enforcement in the orchestrator."""
+
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    def test_timeout_skips_remaining_subsystems(
+        self,
+        mock_learning: MagicMock,
+        mock_goals: MagicMock,
+        mock_portfolio: MagicMock,
+    ) -> None:
+        # Make learning "take too long" by patching time.monotonic
+        call_count = 0
+        real_monotonic = time.monotonic
+
+        def fake_monotonic() -> float:
+            nonlocal call_count
+            call_count += 1
+            # First call is at start; second call is in _budget_exhausted after learning
+            # Return a value exceeding 300s after the first check
+            if call_count <= 1:
+                return real_monotonic()
+            return real_monotonic() + 400
+
+        mock_learning.return_value = {"patterns_found": 1}
+
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+
+        with patch("src.autonomy.orchestrator.time.monotonic", side_effect=fake_monotonic):
+            report = orch.run(_make_context())
+
+        # Learning was called
+        mock_learning.assert_called_once()
+        # Goals and portfolio should have been skipped due to timeout
+        mock_goals.assert_not_called()
+        mock_portfolio.assert_not_called()
+        assert any("Timeout" in e for e in report.errors)
+
+    def test_budget_exhausted_returns_false_within_timeout(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        start = time.monotonic()
+        assert orch._budget_exhausted(start, report) is False
+        assert report.errors == []
+
+
+class TestOrchestratorGoalAnalyzers:
+    """Tests that analyzers are passed to AnalysisOrchestrator in _run_goals."""
+
+    def test_analyzers_passed_to_orchestrator(self) -> None:
+        config = AutonomousLoopConfig(enabled=True)
+        orch = PostExecutionOrchestrator(config)
+        report = PostExecutionReport()
+        ctx = _make_context()
+
+        mock_analysis_run = MagicMock()
+        mock_analysis_run.id = "ar-001"
+        mock_analysis_run.proposals_generated = 0
+        mock_analysis_run.status = "completed"
+
+        with patch("src.goals.store.GoalStore") as MockGoalStore, \
+             patch("src.learning.store.LearningStore") as MockLearningStore, \
+             patch("src.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch, \
+             patch("src.goals.analyzers.performance.PerformanceAnalyzer"), \
+             patch("src.goals.analyzers.reliability.ReliabilityAnalyzer"), \
+             patch("src.goals.analyzers.cost.CostAnalyzer"), \
+             patch("src.goals.analyzers.cross_product.CrossProductAnalyzer"):
+            MockGoalStore.return_value = MagicMock()
+            MockLearningStore.return_value = MagicMock()
+            MockOrch.return_value.run_analysis.return_value = mock_analysis_run
+
+            result = orch._run_goals(ctx, report)
+
+        assert result is not None
+        # Verify AnalysisOrchestrator was constructed with analyzers kwarg
+        call_kwargs = MockOrch.call_args
+        assert "analyzers" in call_kwargs.kwargs
+        assert len(call_kwargs.kwargs["analyzers"]) > 0
+        # learning_store should be a LearningStore, not a GoalStore
+        assert call_kwargs.kwargs["learning_store"] is MockLearningStore.return_value
+
+
+class TestPostExecutionReportNewFields:
+    """Tests for the new fields on PostExecutionReport."""
+
+    def test_feedback_result_defaults_to_none(self) -> None:
+        report = PostExecutionReport()
+        assert report.feedback_result is None
+
+    def test_memory_sync_result_defaults_to_none(self) -> None:
+        report = PostExecutionReport()
+        assert report.memory_sync_result is None
+
+    def test_new_fields_can_be_set(self) -> None:
+        report = PostExecutionReport(
+            feedback_result={"learning": []},
+            memory_sync_result={"patterns_synced": 5},
+        )
+        assert report.feedback_result == {"learning": []}
+        assert report.memory_sync_result["patterns_synced"] == 5

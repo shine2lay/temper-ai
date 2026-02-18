@@ -266,6 +266,21 @@ class SequentialStageExecutor(StageExecutor):
         tool_registry: Optional[DomainToolRegistryProtocol] = None,
     ) -> Dict[str, Any]:
         """Execute stage with sequential agent execution. Returns updated state."""
+        convergence_cfg = self._get_convergence_config(stage_config)
+        if convergence_cfg and convergence_cfg.enabled:
+            return self._execute_with_convergence(
+                stage_name, stage_config, state, config_loader, convergence_cfg,
+            )
+        return self._execute_once(stage_name, stage_config, state, config_loader)
+
+    def _execute_once(
+        self,
+        stage_name: str,
+        stage_config: Any,
+        state: Dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+    ) -> Dict[str, Any]:
+        """Run all agents once and store the stage output. Returns updated state."""
         tracker = state.get(StateKeys.TRACKER)
 
         agents, error_handling = self._extract_agents_and_error_config(stage_config)
@@ -296,7 +311,15 @@ class SequentialStageExecutor(StageExecutor):
         )
         self._store_stage_output(state, stage_name, output_data, structured=structured)
 
-        # Persist stage output to DB for dashboard visibility
+        self._persist_stage_output(state, stage_name, tracker)
+
+        return state
+
+    @staticmethod
+    def _persist_stage_output(
+        state: Dict[str, Any], stage_name: str, tracker: Any,
+    ) -> None:
+        """Persist stage output to DB for dashboard visibility."""
         stage_id = state.get(StateKeys.CURRENT_STAGE_ID)
         if tracker and stage_id and hasattr(tracker, 'set_stage_output'):
             try:
@@ -305,6 +328,49 @@ class SequentialStageExecutor(StageExecutor):
                     tracker.set_stage_output(stage_id, stage_out)
             except Exception:
                 logger.warning("Failed to persist stage output", exc_info=True)
+
+    @staticmethod
+    def _get_convergence_config(stage_config: Any) -> Any:
+        """Extract convergence config from a stage config object or dict."""
+        if hasattr(stage_config, 'stage') and hasattr(stage_config.stage, 'convergence'):
+            return stage_config.stage.convergence
+        if isinstance(stage_config, dict):
+            return get_nested_value(stage_config, 'stage.convergence')
+        return None
+
+    def _execute_with_convergence(
+        self,
+        stage_name: str,
+        stage_config: Any,
+        state: Dict[str, Any],
+        config_loader: ConfigLoaderProtocol,
+        convergence_cfg: Any,
+    ) -> Dict[str, Any]:
+        """Re-execute the stage until outputs converge or max iterations."""
+        from src.stage.convergence import StageConvergenceDetector
+
+        detector = StageConvergenceDetector(convergence_cfg)
+        previous_output: Optional[str] = None
+
+        for iteration in range(convergence_cfg.max_iterations):
+            state = self._execute_once(
+                stage_name, stage_config, state, config_loader,
+            )
+            current_output = (
+                state
+                .get(StateKeys.STAGE_OUTPUTS, {})
+                .get(stage_name, {})
+                .get(StateKeys.OUTPUT, "")
+            )
+            if previous_output is not None and detector.has_converged(
+                previous_output, current_output,
+            ):
+                logger.info(
+                    "Stage %s converged after %d iterations",
+                    stage_name, iteration + 1,
+                )
+                break
+            previous_output = current_output
 
         return state
 

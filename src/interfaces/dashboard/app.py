@@ -220,17 +220,18 @@ def _register_domain_routes(app: FastAPI, domain: str, mod_routes: Any) -> None:
 
 
 def _init_server_components(mode: str) -> tuple:
-    """Initialize server-mode components (shutdown manager, run store, mining job).
+    """Initialize server-mode components (shutdown manager, run store, jobs).
 
     Returns:
-        Tuple of (shutdown_mgr, run_store, mining_job) — each may be None.
+        Tuple of (shutdown_mgr, run_store, mining_job, analysis_job) — each may be None.
     """
     shutdown_mgr = None
     run_store = None
     mining_job = None
+    analysis_job = None
 
     if mode != "server":
-        return shutdown_mgr, run_store, mining_job
+        return shutdown_mgr, run_store, mining_job, analysis_job
 
     from src.interfaces.server.lifecycle import GracefulShutdownManager
 
@@ -257,7 +258,19 @@ def _init_server_components(mode: str) -> tuple:
     except Exception:  # noqa: BLE001
         logger.warning("Background mining job not available")
 
-    return shutdown_mgr, run_store, mining_job
+    try:
+        from src.goals.analysis_orchestrator import AnalysisOrchestrator
+        from src.goals.background import BackgroundAnalysisJob
+        from src.goals.store import GoalStore
+
+        goal_store = GoalStore()
+        analysis_job = BackgroundAnalysisJob(
+            orchestrator=AnalysisOrchestrator(store=goal_store),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("Background analysis job not available")
+
+    return shutdown_mgr, run_store, mining_job, analysis_job
 
 
 def create_app(
@@ -283,7 +296,7 @@ def create_app(
     from src.interfaces.dashboard.execution_service import WorkflowExecutionService
 
     title = "MAF Server" if mode == "server" else "MAF Dashboard"
-    shutdown_mgr, run_store, _mining_job = _init_server_components(mode)
+    shutdown_mgr, run_store, _mining_job, _analysis_job = _init_server_components(mode)
 
     execution_service = WorkflowExecutionService(
         backend=backend, event_bus=event_bus, config_root=config_root,
@@ -297,7 +310,11 @@ def create_app(
             shutdown_mgr.register_signals()
         if _mining_job is not None:
             await _mining_job.start()
+        if _analysis_job is not None:
+            await _analysis_job.start()
         yield
+        if _analysis_job is not None:
+            await _analysis_job.stop()
         if _mining_job is not None:
             await _mining_job.stop()
         if shutdown_mgr is not None:

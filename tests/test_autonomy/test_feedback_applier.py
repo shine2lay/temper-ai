@@ -564,6 +564,64 @@ class TestFeedbackApplierErrorHandling:
         with pytest.raises(RuntimeError, match="db error"):
             applier.apply_approved_goals()
 
+
+class TestGoalCompletionAfterApply:
+    """Tests that goals are marked as completed after successful application."""
+
+    @patch("src.autonomy.feedback_applier.AuditLogger")
+    def test_goal_marked_completed_after_apply(self, MockAudit: MagicMock) -> None:
+        goal_store = MagicMock()
+        goal = _mock_goal(
+            goal_id="goal-complete",
+            proposed_actions=["configs/a.yaml:model.temp=0.3"],
+        )
+        goal_store.list_proposals.return_value = [goal]
+
+        applier = FeedbackApplier(
+            learning_store=MagicMock(), goal_store=goal_store,
+        )
+        results = applier.apply_approved_goals()
+
+        assert len(results) == 1
+        assert results[0]["status"] == "applied"
+        goal_store.update_proposal_status.assert_called_once_with(
+            "goal-complete", "completed",
+        )
+
+    def test_goal_not_marked_completed_if_unparseable(self) -> None:
+        goal_store = MagicMock()
+        goal = _mock_goal(
+            goal_id="goal-unparse",
+            proposed_actions=["some vague action"],
+        )
+        goal_store.list_proposals.return_value = [goal]
+
+        applier = FeedbackApplier(
+            learning_store=MagicMock(), goal_store=goal_store,
+        )
+        results = applier.apply_approved_goals()
+
+        assert results[0]["status"] == "unparseable"
+        goal_store.update_proposal_status.assert_not_called()
+
+    @patch("src.autonomy.feedback_applier.AuditLogger")
+    def test_goal_completion_failure_does_not_crash(self, MockAudit: MagicMock) -> None:
+        goal_store = MagicMock()
+        goal = _mock_goal(
+            goal_id="goal-fail",
+            proposed_actions=["configs/a.yaml:key=val"],
+        )
+        goal_store.list_proposals.return_value = [goal]
+        goal_store.update_proposal_status.side_effect = RuntimeError("db error")
+
+        applier = FeedbackApplier(
+            learning_store=MagicMock(), goal_store=goal_store,
+        )
+        # Should not raise despite the status update failing
+        results = applier.apply_approved_goals()
+        assert len(results) == 1
+        assert results[0]["status"] == "applied"
+
     def test_safety_check_exception_blocks_goal(self) -> None:
         goal_store = MagicMock()
         goal = _mock_goal()

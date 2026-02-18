@@ -416,3 +416,134 @@ class TestMetricsTracking:
         output_data = result[StateKeys.STAGE_OUTPUTS]["confident"]["agent_outputs"]["agent1"]
         assert output_data["confidence"] == 0.92
         assert output_data["reasoning"] == "test reasoning"
+
+
+class TestConvergenceLoop:
+    """Test convergence-based re-execution in sequential executor."""
+
+    def test_convergence_stops_after_output_stabilises(self):
+        """Convergence loop stops early when _execute_once returns stable output."""
+        executor = SequentialStageExecutor()
+
+        # Track how many times _execute_once is called
+        call_count = 0
+        outputs = ["draft v1", "draft v2", "final answer", "final answer"]
+
+        def mock_execute_once(stage_name, stage_config, state, config_loader):
+            nonlocal call_count
+            output = outputs[min(call_count, len(outputs) - 1)]
+            call_count += 1
+            if StateKeys.STAGE_OUTPUTS not in state:
+                state[StateKeys.STAGE_OUTPUTS] = {}
+            state[StateKeys.STAGE_OUTPUTS][stage_name] = {
+                StateKeys.OUTPUT: output,
+            }
+            return state
+
+        executor._execute_once = mock_execute_once
+
+        from src.stage._schemas import ConvergenceConfig
+        convergence_cfg = ConvergenceConfig(
+            enabled=True, max_iterations=10, method="exact_hash",
+        )
+
+        state: dict = {"stage_outputs": {}, "workflow_id": "wf-conv"}
+        result = executor._execute_with_convergence(
+            "converge_stage", {}, state, _mock_config_loader(), convergence_cfg,
+        )
+
+        # Should stop at iteration 4 (outputs[2]==outputs[3] -> converged)
+        assert call_count == 4
+        assert result[StateKeys.STAGE_OUTPUTS]["converge_stage"][StateKeys.OUTPUT] == "final answer"
+
+    def test_convergence_respects_max_iterations(self):
+        """Loop stops at max_iterations when outputs never stabilise."""
+        executor = SequentialStageExecutor()
+
+        call_count = 0
+
+        def mock_execute_once(stage_name, stage_config, state, config_loader):
+            nonlocal call_count
+            call_count += 1
+            if StateKeys.STAGE_OUTPUTS not in state:
+                state[StateKeys.STAGE_OUTPUTS] = {}
+            state[StateKeys.STAGE_OUTPUTS][stage_name] = {
+                StateKeys.OUTPUT: f"unique output {call_count}",
+            }
+            return state
+
+        executor._execute_once = mock_execute_once
+
+        from src.stage._schemas import ConvergenceConfig
+        convergence_cfg = ConvergenceConfig(
+            enabled=True, max_iterations=3, method="exact_hash",
+        )
+
+        state: dict = {"stage_outputs": {}, "workflow_id": "wf-conv"}
+        executor._execute_with_convergence(
+            "no_conv", {}, state, _mock_config_loader(), convergence_cfg,
+        )
+
+        assert call_count == 3
+
+    def test_execute_stage_dispatches_to_convergence(self):
+        """execute_stage calls _execute_with_convergence when config is enabled."""
+        executor = SequentialStageExecutor()
+        convergence_called = False
+
+        def mock_convergence(stage_name, stage_config, state, config_loader, cfg):
+            nonlocal convergence_called
+            convergence_called = True
+            return state
+
+        executor._execute_with_convergence = mock_convergence
+
+        from src.stage._schemas import ConvergenceConfig, StageConfig, StageConfigInner
+        inner = StageConfigInner(
+            name="conv_stage",
+            description="test",
+            agents=["agent1"],
+            convergence=ConvergenceConfig(enabled=True),
+        )
+        stage_config = StageConfig(stage=inner)
+
+        state: dict = {"stage_outputs": {}, "workflow_id": "wf-test"}
+        executor.execute_stage(
+            "conv_stage", stage_config, state, _mock_config_loader(),
+        )
+
+        assert convergence_called is True
+
+    def test_convergence_no_false_positive_on_empty_first_output(self):
+        """Empty first output should NOT trigger convergence on iteration 0."""
+        executor = SequentialStageExecutor()
+
+        call_count = 0
+        # First iteration returns empty, second returns empty — converges on iter 2
+        outputs = ["", "", "result"]
+
+        def mock_execute_once(stage_name, stage_config, state, config_loader):
+            nonlocal call_count
+            output = outputs[min(call_count, len(outputs) - 1)]
+            call_count += 1
+            if StateKeys.STAGE_OUTPUTS not in state:
+                state[StateKeys.STAGE_OUTPUTS] = {}
+            state[StateKeys.STAGE_OUTPUTS][stage_name] = {
+                StateKeys.OUTPUT: output,
+            }
+            return state
+
+        executor._execute_once = mock_execute_once
+
+        from src.stage._schemas import ConvergenceConfig
+        convergence_cfg = ConvergenceConfig(
+            enabled=True, max_iterations=5, method="exact_hash",
+        )
+
+        state: dict = {"stage_outputs": {}, "workflow_id": "wf-empty"}
+        executor._execute_with_convergence(
+            "empty_stage", {}, state, _mock_config_loader(), convergence_cfg,
+        )
+
+        # Should run twice: iter 0 skips check (no previous), iter 1 compares "" vs "" → converges
+        assert call_count == 2

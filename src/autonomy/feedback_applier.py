@@ -188,7 +188,18 @@ class FeedbackApplier:
                     self._audit_goal_action(goal.id, item)
                 all_results.append(item)
 
+            # Mark goal as completed to prevent re-application
+            if any(item.get("status") == "applied" for item in translated):
+                self._complete_goal(store, goal.id)
+
         return all_results
+
+    def _complete_goal(self, store: object, goal_id: str) -> None:
+        """Mark a goal as completed after successful application."""
+        try:
+            store.update_proposal_status(goal_id, "completed")  # type: ignore[attr-defined]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to mark goal %s as completed: %s", goal_id, exc)
 
     def _check_goal_safety(self, goal: object) -> bool:
         """Validate a goal through the safety policy if one is configured."""

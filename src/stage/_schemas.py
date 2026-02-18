@@ -10,9 +10,15 @@ from src.shared.constants.probabilities import (
     PROB_CRITICAL,
     PROB_HIGH,
     PROB_MEDIUM,
+    PROB_NEAR_CERTAIN,
     PROB_VERY_HIGH,
 )
 from src.shared.constants.retries import DEFAULT_MAX_RETRIES, MIN_RETRY_ATTEMPTS
+from src.shared.constants.convergence import (
+    DEFAULT_CONVERGENCE_MAX_ITERATIONS,
+    MAX_CONVERGENCE_ITERATIONS,
+    MIN_CONVERGENCE_ITERATIONS,
+)
 from src.storage.schemas.agent_config import MetadataConfig
 
 
@@ -173,6 +179,23 @@ class ConflictResolutionConfig(BaseModel):
         return self
 
 
+class ConvergenceConfig(BaseModel):
+    """Configuration for convergence-based stage re-execution."""
+
+    enabled: bool = False
+    max_iterations: int = Field(
+        default=DEFAULT_CONVERGENCE_MAX_ITERATIONS,
+        ge=MIN_CONVERGENCE_ITERATIONS,
+        le=MAX_CONVERGENCE_ITERATIONS,
+    )
+    similarity_threshold: float = Field(
+        default=PROB_NEAR_CERTAIN,
+        ge=0.0,
+        le=1.0,
+    )
+    method: Literal["exact_hash", "semantic"] = "exact_hash"
+
+
 class StageSafetyConfig(BaseModel):
     """Stage safety configuration."""
     mode: Literal["execute", "dry_run", "require_approval"] = "execute"
@@ -214,6 +237,7 @@ class StageConfigInner(BaseModel):
     safety: StageSafetyConfig = Field(default_factory=StageSafetyConfig)
     error_handling: StageErrorHandlingConfig = Field(default_factory=StageErrorHandlingConfig)
     quality_gates: QualityGatesConfig = Field(default_factory=QualityGatesConfig)
+    convergence: Optional[ConvergenceConfig] = None
     metadata: MetadataConfig = Field(default_factory=MetadataConfig)
 
     @field_validator('agents')

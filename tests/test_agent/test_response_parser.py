@@ -1,12 +1,13 @@
-"""Tests for response_parser module (src/agents/response_parser.py).
+"""Tests for response_parser module (src/llm/response_parser.py).
 
 Tests cover:
-- parse_tool_calls: XML tag extraction, JSON parsing, edge cases
+- parse_tool_calls: XML tag extraction, JSON parsing, bare JSON recovery, edge cases
 - sanitize_tool_output: tag escaping, role delimiter escaping
 - extract_final_answer: answer tag extraction, fallback to full text
 - extract_reasoning: multiple tag types (reasoning, thinking, think, thought)
 """
 
+import json
 
 from src.llm.response_parser import (
     extract_final_answer,
@@ -100,6 +101,79 @@ class TestParseToolCalls:
         calls = parse_tool_calls(response)
         assert len(calls) == 1
         assert calls[0]["extra"] == "ok"
+
+
+    def test_bare_json_tool_call(self):
+        """Bare JSON object with 'name' key is recovered as tool call."""
+        response = '{"name": "FileWriter", "parameters": {"path": "f.py", "content": "x=1"}}'
+        calls = parse_tool_calls(response)
+        assert len(calls) == 1
+        assert calls[0]["name"] == "FileWriter"
+        assert calls[0]["parameters"]["path"] == "f.py"
+
+    def test_bare_json_with_surrounding_text(self):
+        """Bare JSON embedded in explanation text is recovered."""
+        response = (
+            "I'll fix the file now.\n\n"
+            '{"name": "FileWriter", "parameters": {"path": "/tmp/app.py", "content": "print(1)"}}\n\n'
+            "This should resolve the issue."
+        )
+        calls = parse_tool_calls(response)
+        assert len(calls) == 1
+        assert calls[0]["name"] == "FileWriter"
+        assert calls[0]["parameters"]["content"] == "print(1)"
+
+    def test_bare_json_multiple(self):
+        """Multiple bare JSON tool calls are all recovered."""
+        response = (
+            '{"name": "FileWriter", "parameters": {"path": "a.py", "content": "a"}}\n'
+            'Some text\n'
+            '{"name": "Bash", "parameters": {"command": "ls"}}\n'
+        )
+        calls = parse_tool_calls(response)
+        assert len(calls) == 2
+        assert calls[0]["name"] == "FileWriter"
+        assert calls[1]["name"] == "Bash"
+
+    def test_bare_json_with_arguments_key(self):
+        """'arguments' key is normalized to 'parameters'."""
+        response = '{"name": "FileWriter", "arguments": {"path": "f.py", "content": "x"}}'
+        calls = parse_tool_calls(response)
+        assert len(calls) == 1
+        assert calls[0]["name"] == "FileWriter"
+        assert "parameters" in calls[0]
+        assert calls[0]["parameters"]["path"] == "f.py"
+
+    def test_bare_json_no_name_skipped(self):
+        """JSON objects without 'name' key are not treated as tool calls."""
+        response = '{"status": "ok", "count": 3}'
+        calls = parse_tool_calls(response)
+        assert calls == []
+
+    def test_bare_json_not_used_when_xml_works(self):
+        """XML-tagged tool calls take priority; bare JSON is not double-parsed."""
+        response = (
+            '<tool_call>{"name": "Bash", "parameters": {"command": "ls"}}</tool_call>\n'
+            '{"name": "FileWriter", "parameters": {"path": "f.py", "content": "x"}}'
+        )
+        calls = parse_tool_calls(response)
+        # Only the XML-tagged call should be returned
+        assert len(calls) == 1
+        assert calls[0]["name"] == "Bash"
+
+    def test_bare_json_nested_content(self):
+        """FileWriter with code containing braces is parsed correctly."""
+        code = 'def foo():\n    d = {"key": "value"}\n    return d\n'
+        response = (
+            '{"name": "FileWriter", "parameters": '
+            '{"path": "app.py", "content": '
+            + json.dumps(code)
+            + "}}"
+        )
+        calls = parse_tool_calls(response)
+        assert len(calls) == 1
+        assert calls[0]["name"] == "FileWriter"
+        assert calls[0]["parameters"]["content"] == code
 
 
 class TestSanitizeToolOutput:

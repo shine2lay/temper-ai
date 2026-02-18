@@ -340,7 +340,7 @@ class LLMService:
                 error=f"LLM call blocked by pre-call hook: {blocked}",
             )
 
-        safety_error = validate_safety(s.tool_executor, self.inference_config, s.prompt)
+        safety_error = validate_safety(s.tool_executor, self.inference_config, s.prompt, s.agent_name)
         if safety_error is not None:
             return LLMRunResult(
                 output="", tool_calls=s.tool_calls_made, tokens=s.total_tokens,

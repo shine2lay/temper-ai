@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional, Set
 
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from src.tools.base import BaseTool, ParameterValidationResult, ToolMetadata, ToolResult
 
 logger = logging.getLogger(__name__)
 from src.tools.constants import FILE_ENCODING_UTF8
@@ -51,6 +51,35 @@ class FileWriter(BaseTool):
     """
 
     MAX_FILE_SIZE = _MAX_FILE_SIZE  # 10MB limit
+
+    # LLMs commonly use these aliases instead of canonical parameter names
+    _PARAM_ALIASES: Dict[str, str] = {
+        "path": "file_path",
+        "filepath": "file_path",
+        "filename": "file_path",
+        "file": "file_path",
+        "contents": "content",
+        "text": "content",
+        "data": "content",
+    }
+
+    @staticmethod
+    def _normalize_params(params: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize common LLM parameter aliases to canonical names."""
+        normalized = {}
+        for key, value in params.items():
+            canonical = FileWriter._PARAM_ALIASES.get(key, key)
+            # Don't overwrite canonical key if already present
+            if canonical not in normalized:
+                normalized[canonical] = value
+            elif key == canonical:
+                # Canonical key wins over previously-mapped alias
+                normalized[canonical] = value
+        return normalized
+
+    def validate_params(self, params: Dict[str, Any]) -> ParameterValidationResult:
+        """Validate parameters, normalizing common LLM aliases first."""
+        return super().validate_params(self._normalize_params(params))
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize FileWriter with path safety validator.
@@ -196,6 +225,7 @@ class FileWriter(BaseTool):
         Returns:
             ToolResult with success status and path written
         """
+        kwargs = self._normalize_params(kwargs)
         file_path = kwargs.get("file_path")
         content = kwargs.get("content")
         overwrite = kwargs.get("overwrite", False)

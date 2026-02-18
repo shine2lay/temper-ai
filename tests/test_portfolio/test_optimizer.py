@@ -271,7 +271,7 @@ class TestOptimizeWeights:
             ProductScorecard(product_type="web_app", composite_score=0.8),
             ProductScorecard(product_type="api", composite_score=0.2),
         ]
-        weights = optimizer.optimize_weights(portfolio, scorecards)
+        weights = optimizer.optimize_weights(scorecards)
         assert weights["web_app"] == pytest.approx(0.8)
         assert weights["api"] == pytest.approx(0.2)
 
@@ -280,7 +280,7 @@ class TestOptimizeWeights:
             ProductScorecard(product_type="web_app", composite_score=0.5),
             ProductScorecard(product_type="api", composite_score=0.5),
         ]
-        weights = optimizer.optimize_weights(portfolio, scorecards)
+        weights = optimizer.optimize_weights(scorecards)
         assert weights["web_app"] == pytest.approx(0.5)
         assert weights["api"] == pytest.approx(0.5)
 

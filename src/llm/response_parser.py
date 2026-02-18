@@ -61,6 +61,33 @@ _HTML_TOOL_CALL_OPEN = "&lt;tool_call&gt;"
 _HTML_TOOL_CALL_CLOSE = "&lt;/tool_call&gt;"
 
 
+def _extract_bare_json_tool_calls(text: str) -> List[Dict[str, Any]]:
+    """Extract tool call dicts from bare JSON objects in text.
+
+    Scans for JSON objects containing a "name" key, which indicates
+    a tool call. Uses json.JSONDecoder().raw_decode() for robust
+    parsing of nested JSON (e.g., FileWriter content parameters).
+    """
+    tool_calls = []
+    decoder = json.JSONDecoder()
+    pos = 0
+    while pos < len(text):
+        idx = text.find("{", pos)
+        if idx == -1:
+            break
+        try:
+            obj, end = decoder.raw_decode(text, idx)
+            if isinstance(obj, dict) and "name" in obj:
+                # Normalize "arguments" → "parameters" for compatibility
+                if "arguments" in obj and "parameters" not in obj:
+                    obj["parameters"] = obj.pop("arguments")
+                tool_calls.append(obj)
+            pos = end
+        except json.JSONDecodeError:
+            pos = idx + 1
+    return tool_calls
+
+
 def parse_tool_calls(llm_response: str) -> List[Dict[str, Any]]:
     """Parse tool calls from LLM response.
 
@@ -91,6 +118,15 @@ def parse_tool_calls(llm_response: str) -> List[Dict[str, Any]]:
         if tool_calls:
             logger.info(
                 "Recovered %d tool call(s) from HTML-encoded tags",
+                len(tool_calls),
+            )
+
+    # Fallback: recover bare JSON tool calls from text
+    if not tool_calls:
+        tool_calls = _extract_bare_json_tool_calls(llm_response)
+        if tool_calls:
+            logger.info(
+                "Recovered %d tool call(s) from bare JSON in text",
                 len(tool_calls),
             )
 

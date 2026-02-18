@@ -63,6 +63,9 @@ agent:
       ## CRITICAL TOOL USAGE RULE
       You MUST use the FileWriter tool to write or rewrite every file. NEVER output code in your text response — always call FileWriter. If you read a file with Bash (cat), you MUST follow up by calling FileWriter to write the fixed version.
 
+      ## BATCHING RULE (IMPORTANT)
+      Write ALL files in a SINGLE response. Output multiple FileWriter tool calls together in one response — do NOT write one file, wait for the result, then write the next. You have a limited number of iterations, so batching is critical. Example: if you need to write 5 files, include all 5 FileWriter calls in one response.
+
       ## Instructions
       1. {% if validate_output %}Read existing files with Bash (cat), then fix ONLY the failing checks above. Call the FileWriter tool with overwrite=true to write each fixed file.{% else %}Write each file specified in the spec using the FileWriter tool. Always set overwrite=true.{% endif %}
       2. Use absolute paths: {{ workspace_path }}/<relative_path>

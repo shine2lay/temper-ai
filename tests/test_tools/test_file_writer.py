@@ -39,6 +39,44 @@ class TestFileWriterMetadata:
         assert set(schema["required"]) == {"file_path", "content"}
 
 
+class TestParameterNormalization:
+    """Test LLM parameter alias normalization."""
+
+    def test_path_alias_normalized(self):
+        """'path' is normalized to 'file_path'."""
+        result = FileWriter._normalize_params({"path": "/tmp/f.py", "content": "x"})
+        assert result == {"file_path": "/tmp/f.py", "content": "x"}
+
+    def test_contents_alias_normalized(self):
+        """'contents' is normalized to 'content'."""
+        result = FileWriter._normalize_params({"file_path": "/tmp/f.py", "contents": "x"})
+        assert result == {"file_path": "/tmp/f.py", "content": "x"}
+
+    def test_both_aliases_normalized(self):
+        """Both 'path' and 'contents' normalized together."""
+        result = FileWriter._normalize_params({"path": "/tmp/f.py", "contents": "x"})
+        assert result == {"file_path": "/tmp/f.py", "content": "x"}
+
+    def test_canonical_names_unchanged(self):
+        """Canonical parameter names pass through unchanged."""
+        params = {"file_path": "/tmp/f.py", "content": "x", "overwrite": True}
+        result = FileWriter._normalize_params(params)
+        assert result == params
+
+    def test_canonical_not_overwritten_by_alias(self):
+        """If both canonical and alias present, canonical wins."""
+        result = FileWriter._normalize_params({
+            "file_path": "/canonical", "path": "/alias", "content": "x",
+        })
+        assert result["file_path"] == "/canonical"
+
+    def test_validate_params_normalizes(self):
+        """validate_params accepts aliased parameters."""
+        writer = FileWriter()
+        result = writer.validate_params({"path": "/tmp/f.py", "contents": "x"})
+        assert result.valid
+
+
 class TestBasicFileWriting:
     """Test basic file writing operations."""
 

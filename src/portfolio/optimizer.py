@@ -104,7 +104,6 @@ class PortfolioOptimizer:
 
     def optimize_weights(
         self,
-        portfolio: PortfolioConfig,
         scorecards: List[ProductScorecard],
     ) -> Dict[str, float]:
         """Suggest new weights proportional to composite scores."""

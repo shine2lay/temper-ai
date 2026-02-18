@@ -99,6 +99,13 @@ class ComponentAnalyzer:
                                 differing_keys=rec.differing_keys,
                             )
                         )
+        track_portfolio_event(
+            "find_similar_stages",
+            {"product_type": product_type, "min_similarity": min_similarity},
+            "completed",
+            impact_metrics={"results_found": len(results)},
+            tags=["portfolio", "component_analyzer"],
+        )
         return results
 
     @staticmethod

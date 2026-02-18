@@ -86,7 +86,7 @@ class TestFullWorkflow:
             scheduler.record_complete("api", f"wf-api-{i}", cost_usd=1.0, success=i < 3)
 
         scorecards = optimizer.compute_scorecards(portfolio)
-        weights = optimizer.optimize_weights(portfolio, scorecards)
+        weights = optimizer.optimize_weights(scorecards)
 
         # web_app should get higher weight due to better performance
         assert weights["web_app"] > weights["api"]

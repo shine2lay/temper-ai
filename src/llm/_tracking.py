@@ -106,6 +106,7 @@ def validate_safety(
     tool_executor: Any,
     inference_config: Any,
     prompt: str,
+    agent_id: str = "unknown",
 ) -> Optional[str]:
     """Run safety validation for an LLM call. Returns error message or None."""
     if tool_executor is None:
@@ -114,7 +115,7 @@ def validate_safety(
         return None
 
     try:
-        violation_msg = _validate_with_policy(tool_executor, inference_config, prompt)
+        violation_msg = _validate_with_policy(tool_executor, inference_config, prompt, agent_id)
         if violation_msg:
             logger.warning("LLM call blocked by safety policy: %s", violation_msg)
             return f"LLM call blocked by safety policy: {violation_msg}"
@@ -131,12 +132,13 @@ def _validate_with_policy(
     tool_executor: Any,
     inference_config: Any,
     prompt: str,
+    agent_id: str = "unknown",
 ) -> Optional[str]:
     """Validate LLM call with policy engine. Returns violation message or None."""
     from src.safety.action_policy_engine import PolicyExecutionContext
 
     policy_context = PolicyExecutionContext(
-        agent_id="unknown",
+        agent_id=agent_id,
         workflow_id=FALLBACK_UNKNOWN_VALUE,
         stage_id=FALLBACK_UNKNOWN_VALUE,
         action_type="llm_call",

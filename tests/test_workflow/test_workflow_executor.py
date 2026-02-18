@@ -1,12 +1,11 @@
 """Tests for WorkflowExecutor class."""
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 from langgraph.graph import StateGraph
 
 from src.workflow.domain_state import WorkflowDomainState
 from src.stage.executors.state_keys import StateKeys
-from src.workflow.state_manager import StateManager
 from src.workflow.workflow_executor import WorkflowExecutor
 from src.observability.tracker import ExecutionTracker
 
@@ -22,7 +21,6 @@ class TestWorkflowExecutorInitialization:
 
         assert executor.graph is mock_graph
         assert executor.tracker is None
-        assert isinstance(executor.state_manager, StateManager)
 
     def test_init_with_tracker(self):
         """Test initialization with tracker."""
@@ -33,14 +31,6 @@ class TestWorkflowExecutorInitialization:
 
         assert executor.tracker is mock_tracker
 
-    def test_init_with_custom_state_manager(self):
-        """Test initialization with custom state manager."""
-        mock_graph = Mock(spec=StateGraph)
-        custom_state_manager = Mock(spec=StateManager)
-
-        executor = WorkflowExecutor(mock_graph, state_manager=custom_state_manager)
-
-        assert executor.state_manager is custom_state_manager
 
 
 class TestExecute:
@@ -80,20 +70,15 @@ class TestExecute:
         assert "workflow_id" in call_args
 
     def test_execute_initializes_state(self):
-        """Test that execute initializes state via state manager."""
+        """Test that execute initializes state via initialize_state."""
         mock_graph = Mock()
         mock_graph.invoke = Mock(return_value={})
 
-        mock_state_manager = Mock(spec=StateManager)
-        mock_state_manager.initialize_state.return_value = WorkflowDomainState(
-            workflow_id="wf-456"
-        )
-
-        executor = WorkflowExecutor(mock_graph, state_manager=mock_state_manager)
-        executor.execute({"input": "data"})
-
-        # Verify state manager was called
-        mock_state_manager.initialize_state.assert_called_once()
+        executor = WorkflowExecutor(mock_graph)
+        with patch('src.workflow.workflow_executor.initialize_state',
+                   return_value=WorkflowDomainState(workflow_id="wf-456")) as mock_init:
+            executor.execute({"input": "data"})
+            mock_init.assert_called_once()
 
     def test_execute_passes_tracker(self):
         """Test that execute passes tracker to state initialization."""
@@ -101,19 +86,13 @@ class TestExecute:
         mock_graph.invoke = Mock(return_value={})
 
         mock_tracker = Mock(spec=ExecutionTracker)
-        mock_state_manager = Mock(spec=StateManager)
-        mock_state_manager.initialize_state.return_value = WorkflowDomainState()
 
-        executor = WorkflowExecutor(
-            mock_graph,
-            tracker=mock_tracker,
-            state_manager=mock_state_manager
-        )
-        executor.execute({"input": "data"})
-
-        # Verify tracker was passed to initialize_state
-        call_kwargs = mock_state_manager.initialize_state.call_args[1]
-        assert call_kwargs["tracker"] is mock_tracker
+        executor = WorkflowExecutor(mock_graph, tracker=mock_tracker)
+        with patch('src.workflow.workflow_executor.initialize_state',
+                   return_value=WorkflowDomainState()) as mock_init:
+            executor.execute({"input": "data"})
+            call_kwargs = mock_init.call_args[1]
+            assert call_kwargs["tracker"] is mock_tracker
 
 
 class TestExecuteAsync:
@@ -160,22 +139,17 @@ class TestExecuteAsync:
 
     @pytest.mark.asyncio
     async def test_execute_async_initializes_state(self):
-        """Test that execute_async initializes state via state manager."""
+        """Test that execute_async initializes state via initialize_state."""
         from unittest.mock import AsyncMock
 
         mock_graph = Mock()
         mock_graph.ainvoke = AsyncMock(return_value={})
 
-        mock_state_manager = Mock(spec=StateManager)
-        mock_state_manager.initialize_state.return_value = WorkflowDomainState(
-            workflow_id="wf-async-789"
-        )
-
-        executor = WorkflowExecutor(mock_graph, state_manager=mock_state_manager)
-        await executor.execute_async({"input": "data"})
-
-        # Verify state manager was called
-        mock_state_manager.initialize_state.assert_called_once()
+        executor = WorkflowExecutor(mock_graph)
+        with patch('src.workflow.workflow_executor.initialize_state',
+                   return_value=WorkflowDomainState(workflow_id="wf-async-789")) as mock_init:
+            await executor.execute_async({"input": "data"})
+            mock_init.assert_called_once()
 
 
 class TestStream:
@@ -203,20 +177,15 @@ class TestStream:
         assert results[2][StateKeys.CURRENT_STAGE] == "synthesis"
 
     def test_stream_initializes_state(self):
-        """Test that stream initializes state via state manager."""
+        """Test that stream initializes state via initialize_state."""
         mock_graph = Mock()
         mock_graph.stream = Mock(return_value=iter([]))
 
-        mock_state_manager = Mock(spec=StateManager)
-        mock_state_manager.initialize_state.return_value = WorkflowDomainState(
-            workflow_id="wf-stream-123"
-        )
-
-        executor = WorkflowExecutor(mock_graph, state_manager=mock_state_manager)
-        list(executor.stream({"input": "data"}))
-
-        # Verify state manager was called
-        mock_state_manager.initialize_state.assert_called_once()
+        executor = WorkflowExecutor(mock_graph)
+        with patch('src.workflow.workflow_executor.initialize_state',
+                   return_value=WorkflowDomainState(workflow_id="wf-stream-123")) as mock_init:
+            list(executor.stream({"input": "data"}))
+            mock_init.assert_called_once()
 
 
 class TestBackwardCompatibility:

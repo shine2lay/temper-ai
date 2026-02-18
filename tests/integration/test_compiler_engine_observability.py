@@ -22,7 +22,7 @@ from src.workflow.config_loader import ConfigLoader
 from src.workflow.domain_state import InfrastructureContext, WorkflowDomainState
 from src.workflow.langgraph_compiler import LangGraphCompiler
 from src.workflow.langgraph_engine import LangGraphExecutionEngine
-from src.workflow.state_manager import StateManager
+from src.workflow.state_manager import initialize_state
 from src.observability.database import DatabaseManager, init_database
 from src.observability.tracker import ExecutionTracker
 from src.tools.calculator import Calculator
@@ -69,10 +69,6 @@ def execution_tracker(init_db_fixture):
     return ExecutionTracker()
 
 
-@pytest.fixture
-def state_manager():
-    """Create state manager."""
-    return StateManager()
 
 
 @pytest.fixture
@@ -147,7 +143,7 @@ def test_workflow_compilation_to_execution(
 # Test 2: State Propagation Through Stages
 # ============================================================================
 
-def test_state_propagation_multi_stage(state_manager):
+def test_state_propagation_multi_stage():
     """Test state propagates correctly through multiple stages."""
     # Initialize state
     domain_state = WorkflowDomainState(
@@ -319,19 +315,22 @@ def test_execution_context_not_checkpointed(checkpoint_manager):
 # Test 7: StateManager Integration
 # ============================================================================
 
-def test_state_manager_checkpoint_integration(state_manager, checkpoint_manager):
-    """Test StateManager works with checkpoint system."""
+def test_state_initialization_checkpoint_integration(checkpoint_manager):
+    """Test initialize_state works with checkpoint system."""
     # Initialize state
-    domain = state_manager.initialize_state(
+    state = initialize_state(
         input_data={"input": "test"},
         workflow_id="wf-state-mgr-test"
     )
 
-    # Get domain state for checkpointing
-    domain_for_checkpoint = domain.domain  # Access separated domain
+    # Create domain state for checkpointing
+    domain = WorkflowDomainState(
+        workflow_id=state["workflow_id"],
+        input="test",
+    )
 
     # Save checkpoint
-    checkpoint_id = checkpoint_manager.save_checkpoint(domain_for_checkpoint)
+    checkpoint_manager.save_checkpoint(domain)
 
     # Load checkpoint
     restored_domain = checkpoint_manager.load_checkpoint("wf-state-mgr-test")

@@ -28,7 +28,7 @@ from src.stage.executors import (
     SequentialStageExecutor,
 )
 from src.workflow.node_builder import NodeBuilder
-from src.workflow.state_manager import StateManager
+from src.workflow.state_manager import initialize_state
 from src.safety.factory import create_safety_stack
 from src.tools.executor import ToolExecutor
 from src.tools.registry import ToolRegistry
@@ -48,12 +48,10 @@ class NativeCompiledWorkflow(CompiledWorkflow):
         workflow_executor: WorkflowExecutor,
         workflow_config: Dict[str, Any],
         stage_refs: List[Any],
-        state_manager: StateManager,
     ) -> None:
         self.workflow_executor = workflow_executor
         self.workflow_config = workflow_config
         self.stage_refs = stage_refs
-        self.state_manager = state_manager
         self._cancelled = False
 
     def invoke(self, state: Dict[str, Any]) -> Dict[str, Any]:
@@ -204,16 +202,21 @@ class NativeExecutionEngine(ExecutionEngine):
 
     def _initialize_components(self) -> None:
         """Initialize the component hierarchy."""
-        self.state_manager = StateManager()
-
         # Use ThreadPoolParallelRunner instead of LangGraphParallelRunner
         from src.workflow.engines.native_runner import ThreadPoolParallelRunner
         native_runner = ThreadPoolParallelRunner()
 
         self.executors = {
-            "sequential": SequentialStageExecutor(),
-            "parallel": ParallelStageExecutor(parallel_runner=native_runner),
-            "adaptive": AdaptiveStageExecutor(),
+            "sequential": SequentialStageExecutor(
+                tool_executor=self.tool_executor,
+            ),
+            "parallel": ParallelStageExecutor(
+                parallel_runner=native_runner,
+                tool_executor=self.tool_executor,
+            ),
+            "adaptive": AdaptiveStageExecutor(
+                tool_executor=self.tool_executor,
+            ),
         }
 
         from src.workflow.context_provider import SourceResolver
@@ -264,7 +267,6 @@ class NativeExecutionEngine(ExecutionEngine):
         workflow_executor = WorkflowExecutor(
             node_builder=self.node_builder,
             condition_evaluator=self.condition_evaluator,
-            state_manager=self.state_manager,
             negotiation_config=negotiation_config,
         )
 
@@ -272,7 +274,6 @@ class NativeExecutionEngine(ExecutionEngine):
             workflow_executor=workflow_executor,
             workflow_config=workflow_config,
             stage_refs=stages,
-            state_manager=self.state_manager,
         )
 
     def execute(
@@ -305,7 +306,7 @@ class NativeExecutionEngine(ExecutionEngine):
             raise NotImplementedError("STREAM mode not yet supported")
 
         # Initialize state
-        state = self.state_manager.initialize_state(input_data)
+        state = initialize_state(input_data)
 
         if mode == ExecutionMode.ASYNC:
             try:
@@ -346,7 +347,7 @@ class NativeExecutionEngine(ExecutionEngine):
         if mode == ExecutionMode.STREAM:
             raise NotImplementedError("STREAM mode not yet supported")
 
-        state = self.state_manager.initialize_state(input_data)
+        state = initialize_state(input_data)
 
         if mode == ExecutionMode.SYNC:
             return await asyncio.to_thread(

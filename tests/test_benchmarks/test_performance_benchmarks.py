@@ -24,7 +24,7 @@ from src.workflow.langgraph_compiler import LangGraphCompiler
 from src.workflow.node_builder import NodeBuilder
 from src.storage.schemas.agent_config import AgentConfig, AgentConfigInner, InferenceConfig, PromptConfig
 from src.stage.stage_compiler import StageCompiler
-from src.workflow.state_manager import StateManager
+from src.workflow.state_manager import initialize_state
 from src.observability.buffer import ObservabilityBuffer
 from src.observability.database import DatabaseManager, IsolationLevel
 from src.observability.performance import PerformanceTracker
@@ -272,19 +272,15 @@ def test_compiler_state_initialization(benchmark):
     Target: <10ms
     Measures: State manager initialization overhead
     """
-    state_manager = StateManager()
-
-    workflow_config = {"workflow": {"name": "test", "version": "1.0"}}
     initial_input = {"topic": "test"}
 
     result = benchmark(
-        state_manager.initialize_workflow_state,
-        workflow_config,
+        initialize_state,
         initial_input
     )
 
     assert result is not None
-    assert "workflow_name" in result
+    assert "workflow_inputs" in result
 
 @pytest.mark.benchmark(group="compiler")
 def test_compiler_node_builder_creation(benchmark):
@@ -320,11 +316,10 @@ def test_compiler_stage_compilation(benchmark):
     Target: <100ms
     Measures: Stage-to-node compilation overhead
     """
-    state_manager = StateManager()
     node_builder = Mock()
     node_builder.build_stage_node.return_value = lambda x: x
 
-    stage_compiler = StageCompiler(state_manager, node_builder)
+    stage_compiler = StageCompiler(node_builder)
 
     stages = [{"name": "test_stage"}]
 

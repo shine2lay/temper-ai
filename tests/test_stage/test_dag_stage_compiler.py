@@ -13,13 +13,11 @@ from src.workflow.config_loader import ConfigLoader
 from src.workflow.node_builder import NodeBuilder
 from src.stage.executors.state_keys import StateKeys
 from src.stage.stage_compiler import StageCompiler
-from src.workflow.state_manager import StateManager
 from src.tools.registry import ToolRegistry
 
 
 def _make_compiler():
     """Create a StageCompiler with real components."""
-    state_manager = StateManager()
     config_loader = ConfigLoader()
     tool_registry = ToolRegistry()
     executors = {
@@ -28,7 +26,7 @@ def _make_compiler():
         "adaptive": Mock(),
     }
     node_builder = NodeBuilder(config_loader, tool_registry, executors)
-    compiler = StageCompiler(state_manager, node_builder)
+    compiler = StageCompiler(node_builder)
     return compiler, node_builder
 
 

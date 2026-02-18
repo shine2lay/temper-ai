@@ -17,7 +17,6 @@ from src.workflow.execution_engine import (
     ExecutionMode,
     WorkflowCancelledError,
 )
-from src.workflow.state_manager import StateManager
 
 
 class TestNativeCompiledWorkflow:
@@ -35,7 +34,6 @@ class TestNativeCompiledWorkflow:
             workflow_executor=runner,
             workflow_config=config,
             stage_refs=stage_refs or ["stage_a"],
-            state_manager=StateManager(),
         )
 
     def test_invoke(self):
@@ -195,7 +193,6 @@ class TestNativeExecutionEngine:
             workflow_executor=runner,
             workflow_config={"workflow": {"stages": ["s"]}},
             stage_refs=["s"],
-            state_manager=StateManager(),
         )
 
         result = engine.execute(wf, {"topic": "test"})
@@ -216,7 +213,6 @@ class TestNativeExecutionEngine:
             workflow_executor=runner,
             workflow_config={"workflow": {"stages": ["s"]}},
             stage_refs=["s"],
-            state_manager=StateManager(),
         )
 
         result = await engine.async_execute(wf, {"topic": "test"})

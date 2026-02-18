@@ -25,7 +25,6 @@ from src.workflow.condition_evaluator import (
 from src.workflow.dag_builder import StageDAG, build_stage_dag, compute_depths
 from src.stage.executors.state_keys import StateKeys
 from src.workflow.node_builder import NodeBuilder
-from src.workflow.state_manager import StateManager
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +33,7 @@ DEFAULT_MAX_LOOPS = 2
 DEFAULT_MAX_NEGOTIATION_ROUNDS = 2
 DEFAULT_MAX_STAGE_PARALLEL_WORKERS = 4
 DEFAULT_MAX_DYNAMIC_HOPS = 5
+DEFAULT_MAX_DYNAMIC_TARGETS = 10
 
 
 def _ref_attr(ref: Any, attr: str, default: Any = None) -> Any:
@@ -111,6 +111,64 @@ def _merge_stage_result(
     return state
 
 
+def _normalize_next_stage_signal(raw_signal: Any) -> Optional[Dict[str, Any]]:
+    """Normalize various _next_stage signal formats into ``{targets, mode}``.
+
+    Supported formats (backward-compatible):
+    - Old single dict: ``{"name": "B", "inputs": {...}}``
+      → ``{"targets": [{"name": "B", "inputs": {...}}], "mode": "sequential"}``
+    - Sequential chain (list): ``[{"name": "B"}, {"name": "C"}]``
+      → ``{"targets": [...], "mode": "sequential"}``
+    - Parallel fan-out: ``{"mode": "parallel", "targets": [...]}``
+      → passed through as-is (with target normalization)
+
+    Returns:
+        Normalized dict with ``targets`` and ``mode``, or None.
+    """
+    if isinstance(raw_signal, list):
+        return _normalize_list_signal(raw_signal)
+    if isinstance(raw_signal, dict):
+        return _normalize_dict_signal(raw_signal)
+    return None
+
+
+def _normalize_list_signal(items: List[Any]) -> Optional[Dict[str, Any]]:
+    """Normalize list-format signal (sequential chain)."""
+    targets = _extract_target_list(items)
+    if not targets:
+        return None
+    return {"targets": targets, "mode": "sequential"}
+
+
+def _normalize_dict_signal(signal: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Normalize dict-format signal (old single or parallel)."""
+    if signal.get("mode") == "parallel" and isinstance(signal.get("targets"), list):
+        targets = _extract_target_list(signal["targets"])
+        if not targets:
+            return None
+        return {"targets": targets, "mode": "parallel"}
+    if signal.get("name"):
+        return {
+            "targets": [{"name": signal["name"], "inputs": signal.get("inputs", {})}],
+            "mode": "sequential",
+        }
+    return None
+
+
+def _extract_target_list(items: List[Any]) -> List[Dict[str, Any]]:
+    """Extract and cap target list from raw items."""
+    targets: List[Dict[str, Any]] = []
+    for item in items[:DEFAULT_MAX_DYNAMIC_TARGETS]:
+        if isinstance(item, dict) and item.get("name"):
+            targets.append({"name": item["name"], "inputs": item.get("inputs", {})})
+    if len(items) > DEFAULT_MAX_DYNAMIC_TARGETS:
+        logger.warning(
+            "Dynamic targets truncated from %d to %d",
+            len(items), DEFAULT_MAX_DYNAMIC_TARGETS,
+        )
+    return targets
+
+
 def _extract_next_stage_signal(
     stage_name: str,
     state: Dict[str, Any],
@@ -118,35 +176,35 @@ def _extract_next_stage_signal(
     """Extract _next_stage signal from a stage's output.
 
     Checks three sources in priority order:
-    1. Top-level ``_next_stage`` dict in stage output
+    1. Top-level ``_next_stage`` in stage output
     2. ``structured`` compartment
-    3. Raw ``output`` text parsed as JSON (fallback when extraction fails)
+    3. Raw ``output`` text parsed as JSON (fallback)
 
     Returns:
-        Dict with ``name`` (str) and ``inputs`` (dict), or None.
+        Normalized dict with ``targets`` (list of {name, inputs}) and
+        ``mode`` ("sequential" or "parallel"), or None.
     """
-    stage_data = state.get(StateKeys.STAGE_OUTPUTS, {}).get(
-        stage_name, {},
-    )
+    stage_data = state.get(StateKeys.STAGE_OUTPUTS, {}).get(stage_name, {})
     if not isinstance(stage_data, dict):
         return None
 
     signal = stage_data.get(_NEXT_STAGE_KEY)
-    if isinstance(signal, dict) and signal.get("name"):
-        return {"name": signal["name"], "inputs": signal.get("inputs", {})}
+    if signal is not None:
+        normalized = _normalize_next_stage_signal(signal)
+        if normalized is not None:
+            return normalized
 
     structured = stage_data.get("structured", {})
     if isinstance(structured, dict):
         signal = structured.get(_NEXT_STAGE_KEY)
-        if isinstance(signal, dict) and signal.get("name"):
-            return {"name": signal["name"], "inputs": signal.get("inputs", {})}
+        if signal is not None:
+            normalized = _normalize_next_stage_signal(signal)
+            if normalized is not None:
+                return normalized
 
-    # Fallback: parse raw output text as JSON
     raw_output = stage_data.get("output")
     if isinstance(raw_output, str):
-        signal = _parse_next_stage_from_text(raw_output)
-        if signal is not None:
-            return signal
+        return _parse_next_stage_from_text(raw_output)
 
     return None
 
@@ -159,14 +217,12 @@ def _parse_next_stage_from_text(text: str) -> Optional[Dict[str, Any]]:
     2. Output contains an embedded JSON object with ``_next_stage``
 
     Returns:
-        Dict with ``name`` and ``inputs``, or None.
+        Normalized dict with ``targets`` and ``mode``, or None.
     """
-    # Try parsing the full text as JSON
     parsed = _try_parse_json(text.strip())
-    if parsed is not None:
-        signal = parsed.get(_NEXT_STAGE_KEY)
-        if isinstance(signal, dict) and signal.get("name"):
-            return {"name": signal["name"], "inputs": signal.get("inputs", {})}
+    signal = _extract_signal_from_parsed(parsed)
+    if signal is not None:
+        return signal
 
     # Try extracting embedded JSON: find first '{' and last '}'
     first_brace = text.find("{")
@@ -174,11 +230,18 @@ def _parse_next_stage_from_text(text: str) -> Optional[Dict[str, Any]]:
     if first_brace >= 0 and last_brace > first_brace:
         substring = text[first_brace:last_brace + 1]
         parsed = _try_parse_json(substring)
-        if parsed is not None:
-            signal = parsed.get(_NEXT_STAGE_KEY)
-            if isinstance(signal, dict) and signal.get("name"):
-                return {"name": signal["name"], "inputs": signal.get("inputs", {})}
+        return _extract_signal_from_parsed(parsed)
 
+    return None
+
+
+def _extract_signal_from_parsed(parsed: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """Extract and normalize _next_stage signal from parsed JSON dict."""
+    if parsed is None:
+        return None
+    signal = parsed.get(_NEXT_STAGE_KEY)
+    if signal is not None:
+        return _normalize_next_stage_signal(signal)
     return None
 
 
@@ -226,6 +289,40 @@ def _run_parallel_stage_batch(
     return results
 
 
+def _build_dynamic_input_wrappers(
+    targets: List[Dict[str, Any]],
+    stage_nodes: Dict[str, Callable],
+) -> Dict[str, Callable]:
+    """Build wrapper nodes that inject per-target DYNAMIC_INPUTS.
+
+    For parallel fan-out, each target may have its own inputs that need
+    to be injected before the stage node runs.
+    """
+    wrapped: Dict[str, Callable] = {}
+    for target_info in targets:
+        name = target_info["name"]
+        node_fn = stage_nodes[name]
+        inputs = target_info.get("inputs", {})
+        if inputs:
+            wrapped[name] = _make_input_wrapper(node_fn, inputs)
+        else:
+            wrapped[name] = node_fn
+    return wrapped
+
+
+def _make_input_wrapper(
+    node_fn: Callable, inputs: Dict[str, Any],
+) -> Callable:
+    """Create a wrapper that sets DYNAMIC_INPUTS before calling node_fn."""
+    def wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
+        """Inject dynamic inputs, run node, then clean up."""
+        state[StateKeys.DYNAMIC_INPUTS] = inputs
+        result = node_fn(state)
+        state.pop(StateKeys.DYNAMIC_INPUTS, None)
+        return result
+    return wrapper
+
+
 class WorkflowExecutor:
     """Walks workflow stages as a Python loop — no compiled graph.
 
@@ -236,7 +333,6 @@ class WorkflowExecutor:
     Args:
         node_builder: NodeBuilder for creating stage execution callables
         condition_evaluator: ConditionEvaluator for conditional/loop expressions
-        state_manager: StateManager for state operations
         negotiation_config: Optional negotiation configuration dict
     """
 
@@ -244,12 +340,10 @@ class WorkflowExecutor:
         self,
         node_builder: NodeBuilder,
         condition_evaluator: ConditionEvaluator,
-        state_manager: StateManager,
         negotiation_config: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.node_builder = node_builder
         self.condition_evaluator = condition_evaluator
-        self.state_manager = state_manager
         self._negotiation_config = negotiation_config or {}
 
     def run(
@@ -646,50 +740,14 @@ class WorkflowExecutor:
     ) -> Dict[str, Any]:
         """Follow dynamic edge signals after a stage completes.
 
-        If the completed stage declared ``_next_stage``, run the target
-        stage with optional injected inputs. Supports chaining up to
-        ``DEFAULT_MAX_DYNAMIC_HOPS``.
+        Delegates to ``_dynamic_edge_helpers.follow_dynamic_edges``.
         """
-        current_stage = stage_name
+        from src.workflow.engines._dynamic_edge_helpers import follow_dynamic_edges
 
-        for hop in range(DEFAULT_MAX_DYNAMIC_HOPS):
-            signal = _extract_next_stage_signal(current_stage, state)
-            if signal is None:
-                break
-
-            target = signal["name"]
-            if target not in stage_nodes:
-                logger.warning(
-                    "Stage '%s' declared _next_stage '%s' but "
-                    "target not found; ignoring",
-                    current_stage, target,
-                )
-                break
-
-            logger.info(
-                "Dynamic edge: '%s' → '%s' (hop %d/%d)",
-                current_stage, target, hop + 1, DEFAULT_MAX_DYNAMIC_HOPS,
-            )
-
-            # Inject dynamic inputs if provided
-            if signal["inputs"]:
-                state[StateKeys.DYNAMIC_INPUTS] = signal["inputs"]
-
-            state = self._execute_with_negotiation(
-                target, stage_nodes, state, workflow_config,
-            )
-
-            # Clean up dynamic inputs
-            state.pop(StateKeys.DYNAMIC_INPUTS, None)
-
-            current_stage = target
-        else:
-            logger.warning(
-                "Dynamic edge chain reached max hops (%d) at stage '%s'",
-                DEFAULT_MAX_DYNAMIC_HOPS, current_stage,
-            )
-
-        return state
+        return follow_dynamic_edges(
+            stage_name, stage_nodes, state, workflow_config,
+            self._execute_with_negotiation,
+        )
 
 
 

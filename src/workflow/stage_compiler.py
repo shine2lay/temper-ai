@@ -24,7 +24,7 @@ from src.workflow.routing_functions import (
     create_conditional_router,
     create_loop_router,
 )
-from src.workflow.state_manager import StateManager
+from src.workflow.state_manager import create_init_node
 
 logger = logging.getLogger(__name__)
 
@@ -44,25 +44,22 @@ class StageCompiler:
 
     Example:
         >>> evaluator = ConditionEvaluator()
-        >>> stage_compiler = StageCompiler(state_manager, node_builder, evaluator)
+        >>> stage_compiler = StageCompiler(node_builder, evaluator)
         >>> graph = stage_compiler.compile_stages(stage_names, workflow_config)
     """
 
     def __init__(
         self,
-        state_manager: StateManager,
         node_builder: NodeBuilder,
         condition_evaluator: Optional[ConditionEvaluator] = None,
     ) -> None:
         """Initialize stage compiler.
 
         Args:
-            state_manager: StateManager for creating initialization nodes
             node_builder: NodeBuilder for creating stage execution nodes
             condition_evaluator: Evaluator for conditional/loop expressions
                                (default: creates new ConditionEvaluator)
         """
-        self.state_manager = state_manager
         self.node_builder = node_builder
         self.condition_evaluator = condition_evaluator or ConditionEvaluator()
 
@@ -89,7 +86,7 @@ class StageCompiler:
         graph: StateGraph[Any] = StateGraph(LangGraphWorkflowState)
 
         # Add initialization node
-        init_node = self.state_manager.create_init_node()
+        init_node = create_init_node()
         graph.add_node("init", init_node)  # type: ignore
 
         # Add execution node for each stage

@@ -5,7 +5,7 @@ into executable LangGraph StateGraphs. It delegates all specialized work to
 focused components:
 
 - ConfigLoader: Loads workflow/stage/agent configurations
-- StateManager: Manages workflow state initialization and operations
+- state_manager: Module-level state initialization functions
 - NodeBuilder: Creates executable nodes from stage configurations
 - StageCompiler: Constructs LangGraph StateGraph from stages
 - Executors: Execute stages (sequential, parallel, adaptive)
@@ -37,7 +37,7 @@ from src.stage.executors import (
 )
 from src.workflow.node_builder import NodeBuilder
 from src.workflow.stage_compiler import StageCompiler
-from src.workflow.state_manager import StateManager
+from src.workflow.state_manager import create_init_node
 from src.workflow.workflow_executor import CompiledGraphRunner
 from src.safety.factory import create_safety_stack
 from src.tools.executor import ToolExecutor
@@ -75,7 +75,6 @@ class LangGraphCompiler:
     Components:
         - tool_registry: Manages available tools for agents
         - config_loader: Loads configuration files
-        - state_manager: Handles state initialization and operations
         - executors: Stage execution strategies (sequential/parallel/adaptive)
         - node_builder: Creates executable nodes from configs
         - stage_compiler: Constructs StateGraph from stages
@@ -137,21 +136,23 @@ class LangGraphCompiler:
         """Initialize the component hierarchy.
 
         Component Dependencies:
-            StateManager → (independent)
             Executors → (independent)
             NodeBuilder → ConfigLoader, ToolRegistry, Executors
-            StageCompiler → StateManager, NodeBuilder
+            StageCompiler → NodeBuilder
 
         This initialization order ensures all dependencies are satisfied.
         """
-        # State management (independent)
-        self.state_manager = StateManager()
-
-        # Stage executors (independent)
+        # Stage executors (receive tool_executor through constructor)
         self.executors = {
-            'sequential': SequentialStageExecutor(),
-            'parallel': ParallelStageExecutor(),
-            'adaptive': AdaptiveStageExecutor(),
+            'sequential': SequentialStageExecutor(
+                tool_executor=self.tool_executor,
+            ),
+            'parallel': ParallelStageExecutor(
+                tool_executor=self.tool_executor,
+            ),
+            'adaptive': AdaptiveStageExecutor(
+                tool_executor=self.tool_executor,
+            ),
         }
 
         # Context provider for selective stage input resolution
@@ -170,9 +171,8 @@ class LangGraphCompiler:
         # Condition evaluator for conditional/loop stages
         self.condition_evaluator = ConditionEvaluator()
 
-        # Stage compiler (depends on state_manager, node_builder, condition_evaluator)
+        # Stage compiler (depends on node_builder, condition_evaluator)
         self.stage_compiler = StageCompiler(
-            state_manager=self.state_manager,
             node_builder=self.node_builder,
             condition_evaluator=self.condition_evaluator,
         )

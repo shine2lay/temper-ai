@@ -9,7 +9,6 @@ import pytest
 from src.stage.executors.state_keys import StateKeys
 from src.workflow.node_builder import NodeBuilder
 from src.stage.stage_compiler import StageCompiler
-from src.workflow.state_manager import StateManager
 from tests.fixtures.realistic_data import (
     create_realistic_workflow_config,
 )
@@ -20,12 +19,10 @@ class TestStageCompilerInitialization:
 
     def test_init_with_dependencies(self):
         """Test initialization with all dependencies."""
-        state_manager = Mock(spec=StateManager)
         node_builder = Mock(spec=NodeBuilder)
 
-        compiler = StageCompiler(state_manager, node_builder)
+        compiler = StageCompiler(node_builder)
 
-        assert compiler.state_manager is state_manager
         assert compiler.node_builder is node_builder
 
 
@@ -34,14 +31,11 @@ class TestCompileStages:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.state_manager = Mock(spec=StateManager)
         self.node_builder = Mock(spec=NodeBuilder)
-        self.compiler = StageCompiler(self.state_manager, self.node_builder)
+        self.compiler = StageCompiler(self.node_builder)
 
     def test_compile_stages_creates_graph(self):
         """Test that compile_stages creates a StateGraph."""
-        # Mock init node
-        self.state_manager.create_init_node.return_value = Mock()
 
         # Mock stage nodes
         self.node_builder.create_stage_node.return_value = Mock()
@@ -66,9 +60,6 @@ class TestCompileStages:
 
     def test_compile_stages_adds_init_node(self):
         """Test that compile_stages adds initialization node."""
-        mock_init_node = Mock()
-        self.state_manager.create_init_node.return_value = mock_init_node
-
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research"]
@@ -76,17 +67,15 @@ class TestCompileStages:
 
         graph = self.compiler.compile_stages(stage_names, workflow_config)
 
-        # Verify create_init_node was called exactly once with no arguments
-        self.state_manager.create_init_node.assert_called_once_with()
-
         # Verify init node is in the graph
         graph_structure = graph.get_graph()
         node_names = {node.id for node in graph_structure.nodes.values()}
         assert "__start__" in node_names, "Graph should have __start__ node"
+        assert "init" in node_names, "Graph should have init node"
 
     def test_compile_stages_creates_stage_nodes(self):
         """Test that compile_stages creates nodes for each stage."""
-        self.state_manager.create_init_node.return_value = Mock()
+
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis", "synthesis"]
@@ -117,7 +106,7 @@ class TestCompileStages:
 
     def test_compile_stages_passes_workflow_config(self):
         """Test that compile_stages passes workflow config to node builder."""
-        self.state_manager.create_init_node.return_value = Mock()
+
         self.node_builder.create_stage_node.return_value = Mock()
 
         workflow_config = {"workflow": {"name": "test"}}
@@ -136,7 +125,7 @@ class TestCompileStages:
 
     def test_compile_stages_single_stage(self):
         """Test compile_stages with single stage."""
-        self.state_manager.create_init_node.return_value = Mock()
+
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research"]
@@ -151,7 +140,7 @@ class TestCompileStages:
 
     def test_compile_stages_multiple_stages(self):
         """Test compile_stages with multiple stages."""
-        self.state_manager.create_init_node.return_value = Mock()
+
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis", "synthesis", "recommendation"]
@@ -170,16 +159,15 @@ class TestSequentialEdges:
 
     def setup_method(self):
         """Set up test fixtures."""
-        self.state_manager = Mock(spec=StateManager)
         self.node_builder = Mock(spec=NodeBuilder)
-        self.compiler = StageCompiler(self.state_manager, self.node_builder)
+        self.compiler = StageCompiler(self.node_builder)
 
     def test_sequential_edges_correct_flow(self):
         """Test that sequential edges create correct flow."""
         # We'll test this indirectly through compile_stages
         # since _add_sequential_edges is private
 
-        self.state_manager.create_init_node.return_value = Mock()
+
         self.node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis"]
@@ -210,7 +198,7 @@ class TestSequentialEdges:
 
     def test_edges_connect_all_stages(self):
         """Test that edges connect all stages sequentially."""
-        self.state_manager.create_init_node.return_value = Mock()
+
         self.node_builder.create_stage_node.return_value = Mock()
 
         # Test with multiple stages
@@ -252,11 +240,9 @@ class TestCompileParallelStages:
 
     def test_parallel_falls_back_to_sequential(self):
         """Test that parallel compilation currently falls back to sequential."""
-        state_manager = Mock(spec=StateManager)
         node_builder = Mock(spec=NodeBuilder)
-        compiler = StageCompiler(state_manager, node_builder)
+        compiler = StageCompiler(node_builder)
 
-        state_manager.create_init_node.return_value = Mock()
         node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis"]
@@ -274,11 +260,9 @@ class TestCompileConditionalStages:
 
     def test_conditional_falls_back_to_sequential(self):
         """Test that conditional compilation currently falls back to sequential."""
-        state_manager = Mock(spec=StateManager)
         node_builder = Mock(spec=NodeBuilder)
-        compiler = StageCompiler(state_manager, node_builder)
+        compiler = StageCompiler(node_builder)
 
-        state_manager.create_init_node.return_value = Mock()
         node_builder.create_stage_node.return_value = Mock()
 
         stage_names = ["research", "analysis"]
@@ -305,7 +289,6 @@ class TestIntegrationWithRealGraph:
         from src.tools.registry import ToolRegistry
 
         # Create real components
-        state_manager = StateManager()
         config_loader = ConfigLoader()
         tool_registry = ToolRegistry()
         executors = {
@@ -315,7 +298,7 @@ class TestIntegrationWithRealGraph:
         }
 
         node_builder = NodeBuilder(config_loader, tool_registry, executors)
-        compiler = StageCompiler(state_manager, node_builder)
+        compiler = StageCompiler(node_builder)
 
         # Mock the node builder's stage node creation
         def mock_stage_node(state):
@@ -351,7 +334,6 @@ class TestIntegrationWithRealGraph:
         from src.workflow.config_loader import ConfigLoader
         from src.tools.registry import ToolRegistry
 
-        state_manager = StateManager()
         config_loader = ConfigLoader()
         tool_registry = ToolRegistry()
         executors = {
@@ -361,7 +343,7 @@ class TestIntegrationWithRealGraph:
         }
 
         node_builder = NodeBuilder(config_loader, tool_registry, executors)
-        compiler = StageCompiler(state_manager, node_builder)
+        compiler = StageCompiler(node_builder)
 
         # Track execution order
         execution_order = []

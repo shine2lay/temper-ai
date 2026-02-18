@@ -8,7 +8,7 @@ import pytest
 from src.workflow.domain_state import WorkflowDomainState
 from src.stage.executors.state_keys import StateKeys
 from src.workflow.langgraph_state import LangGraphWorkflowState
-from src.workflow.state_manager import StateManager
+from src.workflow.state_manager import initialize_state
 
 
 class TestInputPassthrough:
@@ -97,10 +97,9 @@ class TestInputPassthrough:
         assert state_dict["workflow_inputs"]["technical_context"] == "asyncio service"
         assert state_dict["workflow_inputs"]["severity"] == "high"
 
-    def test_state_manager_wraps_inputs(self):
-        """StateManager.initialize_state() stores input_data in workflow_inputs."""
-        manager = StateManager()
-        state = manager.initialize_state(
+    def test_initialize_state_wraps_inputs(self):
+        """initialize_state() stores input_data in workflow_inputs."""
+        state = initialize_state(
             input_data={
                 "problem_description": "test problem",
                 "technical_context": "test context",
@@ -108,25 +107,6 @@ class TestInputPassthrough:
         )
         assert state["workflow_inputs"]["problem_description"] == "test problem"
         assert state["workflow_inputs"]["technical_context"] == "test context"
-
-    def test_state_manager_prepare_stage_input_unwraps(self):
-        """StateManager.prepare_stage_input() unwraps workflow_inputs to top level."""
-        manager = StateManager()
-        state = {
-            "stage_outputs": {},
-            "current_stage": "",
-            "workflow_inputs": {
-                "problem_description": "Memory leak",
-                "severity": "high",
-            },
-        }
-        stage_input = manager.prepare_stage_input(state)
-
-        # Custom fields should be at top level
-        assert stage_input["problem_description"] == "Memory leak"
-        assert stage_input["severity"] == "high"
-        # workflow_inputs key should be removed
-        assert "workflow_inputs" not in stage_input
 
     def test_sequential_helpers_unwrap(self):
         """Sequential executor unwraps workflow_inputs into input_data."""

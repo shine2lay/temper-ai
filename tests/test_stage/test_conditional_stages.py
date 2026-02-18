@@ -8,7 +8,6 @@ from src.stage.executors.state_keys import StateKeys
 from src.workflow.node_builder import NodeBuilder
 from src.workflow._schemas import WorkflowStageReference
 from src.stage.stage_compiler import StageCompiler
-from src.workflow.state_manager import StateManager
 
 
 class TestConditionalStageSkip:
@@ -16,13 +15,12 @@ class TestConditionalStageSkip:
 
     def test_conditional_stage_skipped_when_tests_pass(self):
         """Integration: fix stage skipped when test stage succeeds."""
-        state_manager = StateManager()
         config_loader = Mock()
         tool_registry = Mock()
         executors = {"sequential": Mock(), "parallel": Mock(), "adaptive": Mock()}
         node_builder = NodeBuilder(config_loader, tool_registry, executors)
         evaluator = ConditionEvaluator()
-        compiler = StageCompiler(state_manager, node_builder, evaluator)
+        compiler = StageCompiler(node_builder, evaluator)
 
         execution_order = []
 
@@ -67,13 +65,12 @@ class TestConditionalStageSkip:
 
     def test_conditional_stage_executes_when_tests_fail(self):
         """Integration: fix stage runs when test stage fails."""
-        state_manager = StateManager()
         config_loader = Mock()
         tool_registry = Mock()
         executors = {"sequential": Mock(), "parallel": Mock(), "adaptive": Mock()}
         node_builder = NodeBuilder(config_loader, tool_registry, executors)
         evaluator = ConditionEvaluator()
-        compiler = StageCompiler(state_manager, node_builder, evaluator)
+        compiler = StageCompiler(node_builder, evaluator)
 
         execution_order = []
 
@@ -119,13 +116,12 @@ class TestSkipIfStage:
     """Test skip_if conditional logic."""
 
     def test_skip_if_true_skips_stage(self):
-        state_manager = StateManager()
         config_loader = Mock()
         tool_registry = Mock()
         executors = {"sequential": Mock(), "parallel": Mock(), "adaptive": Mock()}
         node_builder = NodeBuilder(config_loader, tool_registry, executors)
         evaluator = ConditionEvaluator()
-        compiler = StageCompiler(state_manager, node_builder, evaluator)
+        compiler = StageCompiler(node_builder, evaluator)
 
         execution_order = []
 
@@ -171,13 +167,12 @@ class TestLoopExecution:
 
     def test_loop_executes_correct_iterations(self):
         """Integration: fix→test loop runs until tests pass."""
-        state_manager = StateManager()
         config_loader = Mock()
         tool_registry = Mock()
         executors = {"sequential": Mock(), "parallel": Mock(), "adaptive": Mock()}
         node_builder = NodeBuilder(config_loader, tool_registry, executors)
         evaluator = ConditionEvaluator()
-        compiler = StageCompiler(state_manager, node_builder, evaluator)
+        compiler = StageCompiler(node_builder, evaluator)
 
         call_counts = {"test": 0, "fix": 0}
 
@@ -230,13 +225,12 @@ class TestLoopExecution:
 
     def test_max_loops_prevents_infinite_loop(self):
         """Integration: max_loops caps iterations even if condition stays true."""
-        state_manager = StateManager()
         config_loader = Mock()
         tool_registry = Mock()
         executors = {"sequential": Mock(), "parallel": Mock(), "adaptive": Mock()}
         node_builder = NodeBuilder(config_loader, tool_registry, executors)
         evaluator = ConditionEvaluator()
-        compiler = StageCompiler(state_manager, node_builder, evaluator)
+        compiler = StageCompiler(node_builder, evaluator)
 
         call_counts = {"test": 0, "fix": 0}
 
@@ -327,13 +321,12 @@ class TestPureSequentialUnchanged:
     """Verify pure sequential workflows still work unchanged."""
 
     def test_sequential_workflow_no_conditions(self):
-        state_manager = StateManager()
         config_loader = Mock()
         tool_registry = Mock()
         executors = {"sequential": Mock(), "parallel": Mock(), "adaptive": Mock()}
         node_builder = NodeBuilder(config_loader, tool_registry, executors)
         evaluator = ConditionEvaluator()
-        compiler = StageCompiler(state_manager, node_builder, evaluator)
+        compiler = StageCompiler(node_builder, evaluator)
 
         execution_order = []
 

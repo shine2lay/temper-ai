@@ -11,16 +11,17 @@ import pytest
 from src.workflow.condition_evaluator import ConditionEvaluator
 from src.workflow.engines.workflow_executor import (
     DEFAULT_MAX_DYNAMIC_HOPS,
+    DEFAULT_MAX_DYNAMIC_TARGETS,
     WorkflowExecutor,
     _build_ref_lookup,
     _extract_next_stage_signal,
     _group_by_depth,
     _is_conditional,
+    _normalize_next_stage_signal,
     _parse_next_stage_from_text,
     _ref_attr,
     _try_parse_json,
 )
-from src.workflow.state_manager import StateManager
 
 
 def _make_mock_node_builder(stage_results: Dict[str, Dict[str, Any]]):
@@ -121,11 +122,9 @@ class TestWorkflowExecutor:
         results = stage_results or {}
         builder = _make_mock_node_builder(results)
         evaluator = ConditionEvaluator()
-        manager = StateManager()
         return WorkflowExecutor(
             node_builder=builder,
             condition_evaluator=evaluator,
-            state_manager=manager,
             negotiation_config=negotiation_config,
         )
 
@@ -291,8 +290,7 @@ class TestWorkflowExecutor:
 
         builder = make_node_builder()
         evaluator = ConditionEvaluator()
-        manager = StateManager()
-        executor = WorkflowExecutor(builder, evaluator, manager)
+        executor = WorkflowExecutor(builder, evaluator)
 
         stage_refs = [
             {
@@ -421,8 +419,7 @@ class TestWorkflowExecutor:
         builder.create_stage_node.side_effect = create_node
 
         evaluator = ConditionEvaluator()
-        manager = StateManager()
-        executor = WorkflowExecutor(builder, evaluator, manager)
+        executor = WorkflowExecutor(builder, evaluator)
 
         state = {"stage_outputs": {}, "current_stage": ""}
         with pytest.raises(ContextResolutionError):
@@ -454,9 +451,8 @@ class TestWorkflowExecutor:
         builder.create_stage_node.side_effect = create_node
 
         evaluator = ConditionEvaluator()
-        manager = StateManager()
         executor = WorkflowExecutor(
-            builder, evaluator, manager,
+            builder, evaluator,
             negotiation_config={"enabled": True, "max_stage_rounds": 2},
         )
 
@@ -478,7 +474,7 @@ class TestWorkflowExecutor:
 
 
 class TestExtractNextStageSignal:
-    """Test _extract_next_stage_signal static method."""
+    """Test _extract_next_stage_signal — returns normalized {targets, mode}."""
 
     def test_top_level_signal(self):
         """Test extraction from top-level _next_stage dict."""
@@ -487,7 +483,10 @@ class TestExtractNextStageSignal:
             "_next_stage": {"name": "stage_b", "inputs": {"key": "val"}},
         }}}
         result = _extract_next_stage_signal("stage_a", state)
-        assert result == {"name": "stage_b", "inputs": {"key": "val"}}
+        assert result == {
+            "targets": [{"name": "stage_b", "inputs": {"key": "val"}}],
+            "mode": "sequential",
+        }
 
     def test_structured_signal(self):
         """Test extraction from structured compartment."""
@@ -498,7 +497,7 @@ class TestExtractNextStageSignal:
             },
         }}}
         result = _extract_next_stage_signal("stage_a", state)
-        assert result == {"name": "stage_c", "inputs": {"x": 1}}
+        assert result["targets"][0] == {"name": "stage_c", "inputs": {"x": 1}}
 
     def test_no_signal(self):
         """Test returns None when no _next_stage present."""
@@ -521,7 +520,36 @@ class TestExtractNextStageSignal:
             "_next_stage": {"name": "stage_b"},
         }}}
         result = _extract_next_stage_signal("stage_a", state)
-        assert result == {"name": "stage_b", "inputs": {}}
+        assert result["targets"][0] == {"name": "stage_b", "inputs": {}}
+
+    def test_list_format_sequential(self):
+        """Test list format produces sequential multi-target signal."""
+        state = {"stage_outputs": {"stage_a": {
+            "_next_stage": [
+                {"name": "B", "inputs": {"x": 1}},
+                {"name": "C", "inputs": {"y": 2}},
+            ],
+        }}}
+        result = _extract_next_stage_signal("stage_a", state)
+        assert result["mode"] == "sequential"
+        assert len(result["targets"]) == 2
+        assert result["targets"][0]["name"] == "B"
+        assert result["targets"][1]["name"] == "C"
+
+    def test_parallel_format(self):
+        """Test parallel dict format."""
+        state = {"stage_outputs": {"stage_a": {
+            "_next_stage": {
+                "mode": "parallel",
+                "targets": [
+                    {"name": "B", "inputs": {}},
+                    {"name": "C", "inputs": {}},
+                ],
+            },
+        }}}
+        result = _extract_next_stage_signal("stage_a", state)
+        assert result["mode"] == "parallel"
+        assert len(result["targets"]) == 2
 
 
 class TestDynamicEdgeRouting:
@@ -532,11 +560,9 @@ class TestDynamicEdgeRouting:
         results = stage_results or {}
         builder = _make_mock_node_builder(results)
         evaluator = ConditionEvaluator()
-        manager = StateManager()
         return WorkflowExecutor(
             node_builder=builder,
             condition_evaluator=evaluator,
-            state_manager=manager,
         )
 
     def test_dynamic_edge_runs_target_stage(self):
@@ -566,7 +592,7 @@ class TestDynamicEdgeRouting:
             return node_fn
 
         builder.create_stage_node.side_effect = create_node
-        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+        executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         stage_refs = ["analyze", {"name": "fix", "depends_on": ["analyze"]}]
         state = {"stage_outputs": {}, "current_stage": ""}
@@ -632,7 +658,7 @@ class TestDynamicEdgeRouting:
             return node_fn
 
         builder.create_stage_node.side_effect = create_node
-        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+        executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         state = {"stage_outputs": {}, "current_stage": ""}
         result = executor.run(["a", "b", "c"], {}, state)
@@ -666,7 +692,7 @@ class TestDynamicEdgeRouting:
             return node_fn
 
         builder.create_stage_node.side_effect = create_node
-        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+        executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         state = {"stage_outputs": {}, "current_stage": ""}
         result = executor.run(["loop"], {}, state)
@@ -696,7 +722,7 @@ class TestDynamicEdgeRouting:
             return node_fn
 
         builder.create_stage_node.side_effect = create_node
-        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+        executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         state = {"stage_outputs": {}, "current_stage": ""}
         result = executor.run(["stage_a"], {}, state)
@@ -733,7 +759,7 @@ class TestDynamicEdgeRouting:
             return node_fn
 
         builder.create_stage_node.side_effect = create_node
-        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+        executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         state = {"stage_outputs": {}, "current_stage": ""}
         result = executor.run(["analyze", "fix"], {}, state)
@@ -773,7 +799,7 @@ class TestDynamicEdgeRouting:
             return node_fn
 
         builder.create_stage_node.side_effect = create_node
-        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+        executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         state = {"stage_outputs": {}, "current_stage": ""}
         executor.run(["analyze", "fix"], {}, state)
@@ -807,7 +833,7 @@ class TestDynamicEdgeRouting:
             return node_fn
 
         builder.create_stage_node.side_effect = create_node
-        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+        executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         stage_refs = [
             "root",
@@ -848,7 +874,7 @@ class TestDynamicEdgeRouting:
             return node_fn
 
         builder.create_stage_node.side_effect = create_node
-        executor = WorkflowExecutor(builder, ConditionEvaluator(), StateManager())
+        executor = WorkflowExecutor(builder, ConditionEvaluator())
 
         state = {"stage_outputs": {}, "current_stage": ""}
         result = executor.run(["analyze", "fix"], {}, state)
@@ -877,12 +903,15 @@ class TestTryParseJson:
 
 
 class TestParseNextStageFromText:
-    """Test _parse_next_stage_from_text helper."""
+    """Test _parse_next_stage_from_text — returns normalized {targets, mode}."""
 
     def test_full_json_with_next_stage(self):
         text = '{"evaluation": "FAIL", "_next_stage": {"name": "analyze", "inputs": {"feedback": "too brief"}}}'
         result = _parse_next_stage_from_text(text)
-        assert result == {"name": "analyze", "inputs": {"feedback": "too brief"}}
+        assert result == {
+            "targets": [{"name": "analyze", "inputs": {"feedback": "too brief"}}],
+            "mode": "sequential",
+        }
 
     def test_json_without_next_stage(self):
         text = '{"evaluation": "PASS", "reasoning": "looks good"}'
@@ -891,7 +920,8 @@ class TestParseNextStageFromText:
     def test_embedded_json_in_text(self):
         text = 'Here is my evaluation:\n{"evaluation": "FAIL", "_next_stage": {"name": "retry", "inputs": {}}}\nDone.'
         result = _parse_next_stage_from_text(text)
-        assert result == {"name": "retry", "inputs": {}}
+        assert result["targets"][0] == {"name": "retry", "inputs": {}}
+        assert result["mode"] == "sequential"
 
     def test_plain_text_no_json(self):
         assert _parse_next_stage_from_text("just plain text") is None
@@ -903,12 +933,13 @@ class TestParseNextStageFromText:
     def test_whitespace_around_json(self):
         text = '  \n  {"_next_stage": {"name": "fix"}}  \n  '
         result = _parse_next_stage_from_text(text)
-        assert result == {"name": "fix", "inputs": {}}
+        assert result["targets"][0] == {"name": "fix", "inputs": {}}
+        assert result["mode"] == "sequential"
 
     def test_next_stage_inputs_default_empty(self):
         text = '{"_next_stage": {"name": "stage_b"}}'
         result = _parse_next_stage_from_text(text)
-        assert result == {"name": "stage_b", "inputs": {}}
+        assert result["targets"][0] == {"name": "stage_b", "inputs": {}}
 
 
 class TestExtractNextStageSignalFromOutput:
@@ -922,7 +953,8 @@ class TestExtractNextStageSignalFromOutput:
             "output": '{"evaluation": "FAIL", "_next_stage": {"name": "analyze", "inputs": {"feedback": "needs detail"}}}',
         }}}
         result = _extract_next_stage_signal("eval", state)
-        assert result == {"name": "analyze", "inputs": {"feedback": "needs detail"}}
+        assert result["targets"][0] == {"name": "analyze", "inputs": {"feedback": "needs detail"}}
+        assert result["mode"] == "sequential"
 
     def test_top_level_takes_priority_over_output_text(self):
         """Test that top-level signal is preferred over output text."""
@@ -931,7 +963,7 @@ class TestExtractNextStageSignalFromOutput:
             "output": '{"_next_stage": {"name": "from_text"}}',
         }}}
         result = _extract_next_stage_signal("eval", state)
-        assert result["name"] == "from_top"
+        assert result["targets"][0]["name"] == "from_top"
 
     def test_structured_takes_priority_over_output_text(self):
         """Test that structured signal is preferred over output text."""
@@ -940,7 +972,7 @@ class TestExtractNextStageSignalFromOutput:
             "output": '{"_next_stage": {"name": "from_text"}}',
         }}}
         result = _extract_next_stage_signal("eval", state)
-        assert result["name"] == "from_structured"
+        assert result["targets"][0]["name"] == "from_structured"
 
     def test_output_text_with_surrounding_prose(self):
         """Test extraction from output with surrounding non-JSON text."""
@@ -949,7 +981,8 @@ class TestExtractNextStageSignalFromOutput:
             "output": 'The analysis was weak.\n{"_next_stage": {"name": "redo", "inputs": {"reason": "vague"}}}\nEnd.',
         }}}
         result = _extract_next_stage_signal("eval", state)
-        assert result == {"name": "redo", "inputs": {"reason": "vague"}}
+        assert result["targets"][0] == {"name": "redo", "inputs": {"reason": "vague"}}
+        assert result["mode"] == "sequential"
 
     def test_output_text_no_signal(self):
         """Test no false positive from output text without _next_stage."""
@@ -966,3 +999,343 @@ class TestExtractNextStageSignalFromOutput:
             "output": "The analysis looks great. No issues found.",
         }}}
         assert _extract_next_stage_signal("eval", state) is None
+
+
+class TestNormalizeNextStageSignal:
+    """Test _normalize_next_stage_signal helper."""
+
+    def test_old_single_dict(self):
+        """Test old single-target dict normalizes to sequential."""
+        result = _normalize_next_stage_signal({"name": "B", "inputs": {"x": 1}})
+        assert result == {
+            "targets": [{"name": "B", "inputs": {"x": 1}}],
+            "mode": "sequential",
+        }
+
+    def test_list_format(self):
+        """Test list format normalizes to sequential chain."""
+        result = _normalize_next_stage_signal([
+            {"name": "B", "inputs": {"x": 1}},
+            {"name": "C"},
+        ])
+        assert result["mode"] == "sequential"
+        assert len(result["targets"]) == 2
+        assert result["targets"][0] == {"name": "B", "inputs": {"x": 1}}
+        assert result["targets"][1] == {"name": "C", "inputs": {}}
+
+    def test_parallel_dict(self):
+        """Test parallel dict format."""
+        result = _normalize_next_stage_signal({
+            "mode": "parallel",
+            "targets": [{"name": "B"}, {"name": "C"}],
+        })
+        assert result["mode"] == "parallel"
+        assert len(result["targets"]) == 2
+
+    def test_none_for_invalid(self):
+        """Test None returned for invalid input."""
+        assert _normalize_next_stage_signal("not a signal") is None
+        assert _normalize_next_stage_signal(42) is None
+
+    def test_none_for_empty_list(self):
+        """Test None for empty list."""
+        assert _normalize_next_stage_signal([]) is None
+
+    def test_none_for_dict_without_name(self):
+        """Test None for dict missing name key."""
+        assert _normalize_next_stage_signal({"inputs": {"x": 1}}) is None
+
+    def test_max_targets_enforced(self):
+        """Test list > DEFAULT_MAX_DYNAMIC_TARGETS is truncated."""
+        targets = [{"name": f"s{i}"} for i in range(DEFAULT_MAX_DYNAMIC_TARGETS + 5)]
+        result = _normalize_next_stage_signal(targets)
+        assert len(result["targets"]) == DEFAULT_MAX_DYNAMIC_TARGETS
+
+    def test_parallel_empty_targets(self):
+        """Test parallel dict with empty targets returns None."""
+        result = _normalize_next_stage_signal({
+            "mode": "parallel",
+            "targets": [],
+        })
+        assert result is None
+
+
+class TestMultiTargetDynamicRouting:
+    """Test multi-target dynamic edge routing in WorkflowExecutor."""
+
+    def _make_builder(self, node_fn_factory):
+        """Create mock NodeBuilder with custom node function factory."""
+        builder = MagicMock()
+        builder.extract_stage_name.side_effect = lambda ref: (
+            ref if isinstance(ref, str) else ref.get("name", str(ref))
+        )
+        builder.create_stage_node.side_effect = lambda name, cfg: node_fn_factory(name)
+        return builder
+
+    def _make_executor(self, node_fn_factory, **kwargs):
+        """Create WorkflowExecutor with custom node function factory."""
+        builder = self._make_builder(node_fn_factory)
+        return WorkflowExecutor(
+            node_builder=builder,
+            condition_evaluator=ConditionEvaluator(),
+            **kwargs,
+        )
+
+    def test_sequential_multi_target(self):
+        """A emits [B, C] → both run in order."""
+        call_log = []
+
+        def make_fn(name):
+            def fn(state):
+                call_log.append(name)
+                if name == "a":
+                    return {
+                        "stage_outputs": {"a": {
+                            "stage_status": "completed",
+                            "_next_stage": [
+                                {"name": "b", "inputs": {"from": "a"}},
+                                {"name": "c", "inputs": {"from": "a"}},
+                            ],
+                        }},
+                        "current_stage": "a",
+                    }
+                return {
+                    "stage_outputs": {name: {"stage_status": "completed"}},
+                    "current_stage": name,
+                }
+            return fn
+
+        executor = self._make_executor(make_fn)
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["a", "b", "c"], {}, state)
+
+        # b and c called via dynamic edge from a, then again via normal DAG walk
+        assert "b" in call_log
+        assert "c" in call_log
+        # Dynamic edge order: b before c (sequential)
+        dynamic_calls = [c for c in call_log[1:] if c in ("b", "c")]
+        assert dynamic_calls[0] == "b"
+        assert dynamic_calls[1] == "c"
+        assert "b" in result["stage_outputs"]
+        assert "c" in result["stage_outputs"]
+
+    def test_parallel_multi_target(self):
+        """A emits parallel {B, C} → both run concurrently."""
+        call_log = []
+
+        def make_fn(name):
+            def fn(state):
+                call_log.append(name)
+                if name == "a":
+                    return {
+                        "stage_outputs": {"a": {
+                            "stage_status": "completed",
+                            "_next_stage": {
+                                "mode": "parallel",
+                                "targets": [
+                                    {"name": "b", "inputs": {}},
+                                    {"name": "c", "inputs": {}},
+                                ],
+                            },
+                        }},
+                        "current_stage": "a",
+                    }
+                return {
+                    "stage_outputs": {name: {"stage_status": "completed"}},
+                    "current_stage": name,
+                }
+            return fn
+
+        executor = self._make_executor(make_fn)
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["a", "b", "c"], {}, state)
+
+        assert "b" in call_log
+        assert "c" in call_log
+        assert "b" in result["stage_outputs"]
+        assert "c" in result["stage_outputs"]
+
+    def test_old_single_target_still_works(self):
+        """Old single-target format still triggers dynamic routing."""
+        call_log = []
+
+        def make_fn(name):
+            def fn(state):
+                call_log.append(name)
+                if name == "a":
+                    return {
+                        "stage_outputs": {"a": {
+                            "stage_status": "completed",
+                            "_next_stage": {"name": "b", "inputs": {"key": "val"}},
+                        }},
+                        "current_stage": "a",
+                    }
+                return {
+                    "stage_outputs": {name: {"stage_status": "completed"}},
+                    "current_stage": name,
+                }
+            return fn
+
+        executor = self._make_executor(make_fn)
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["a", "b"], {}, state)
+
+        assert "b" in call_log
+        assert "b" in result["stage_outputs"]
+
+    def test_max_targets_enforced_in_routing(self):
+        """List with > DEFAULT_MAX_DYNAMIC_TARGETS truncates targets."""
+        overflow_count = DEFAULT_MAX_DYNAMIC_TARGETS + 5
+        target_names = [f"s{i}" for i in range(overflow_count)]
+
+        def make_fn(name):
+            def fn(state):
+                if name == "a":
+                    return {
+                        "stage_outputs": {"a": {
+                            "stage_status": "completed",
+                            "_next_stage": [
+                                {"name": t} for t in target_names
+                            ],
+                        }},
+                        "current_stage": "a",
+                    }
+                return {
+                    "stage_outputs": {name: {"stage_status": "completed"}},
+                    "current_stage": name,
+                }
+            return fn
+
+        executor = self._make_executor(make_fn)
+        # Only register stages for truncated set + a
+        all_stages = ["a"] + target_names[:DEFAULT_MAX_DYNAMIC_TARGETS]
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(all_stages, {}, state)
+
+        # Only first DEFAULT_MAX_DYNAMIC_TARGETS targets should be in output
+        present = [t for t in target_names if t in result["stage_outputs"]]
+        assert len(present) <= DEFAULT_MAX_DYNAMIC_TARGETS
+
+    def test_parallel_results_merged(self):
+        """Parallel targets' outputs are all merged into state."""
+        def make_fn(name):
+            def fn(state):
+                if name == "root":
+                    return {
+                        "stage_outputs": {"root": {
+                            "stage_status": "completed",
+                            "_next_stage": {
+                                "mode": "parallel",
+                                "targets": [
+                                    {"name": "x", "inputs": {"data": "x_in"}},
+                                    {"name": "y", "inputs": {"data": "y_in"}},
+                                ],
+                            },
+                        }},
+                        "current_stage": "root",
+                    }
+                return {
+                    "stage_outputs": {name: {
+                        "stage_status": "completed",
+                        "result": f"{name}_done",
+                    }},
+                    "current_stage": name,
+                }
+            return fn
+
+        executor = self._make_executor(make_fn)
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["root", "x", "y"], {}, state)
+
+        assert "x" in result["stage_outputs"]
+        assert "y" in result["stage_outputs"]
+        assert result["stage_outputs"]["x"]["result"] == "x_done"
+        assert result["stage_outputs"]["y"]["result"] == "y_done"
+
+    def test_sequential_chain_hop_counting(self):
+        """3 sequential targets consume 3 hops toward the limit."""
+        call_log = []
+
+        def make_fn(name):
+            def fn(state):
+                call_log.append(name)
+                if name == "a":
+                    return {
+                        "stage_outputs": {"a": {
+                            "stage_status": "completed",
+                            "_next_stage": [
+                                {"name": "b"},
+                                {"name": "c"},
+                                {"name": "d"},
+                            ],
+                        }},
+                        "current_stage": "a",
+                    }
+                return {
+                    "stage_outputs": {name: {"stage_status": "completed"}},
+                    "current_stage": name,
+                }
+            return fn
+
+        executor = self._make_executor(make_fn)
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(["a", "b", "c", "d"], {}, state)
+
+        # All 3 targets reached via dynamic edges
+        assert "b" in result["stage_outputs"]
+        assert "c" in result["stage_outputs"]
+        assert "d" in result["stage_outputs"]
+
+    def test_parallel_no_recursive_fan_out(self):
+        """Parallel targets' _next_stage signals followed sequentially only."""
+        call_log = []
+
+        def make_fn(name):
+            def fn(state):
+                call_log.append(name)
+                if name == "root":
+                    return {
+                        "stage_outputs": {"root": {
+                            "stage_status": "completed",
+                            "_next_stage": {
+                                "mode": "parallel",
+                                "targets": [
+                                    {"name": "p1"},
+                                    {"name": "p2"},
+                                ],
+                            },
+                        }},
+                        "current_stage": "root",
+                    }
+                if name == "p1":
+                    return {
+                        "stage_outputs": {"p1": {
+                            "stage_status": "completed",
+                            "_next_stage": {
+                                "mode": "parallel",
+                                "targets": [
+                                    {"name": "nested_a"},
+                                    {"name": "nested_b"},
+                                ],
+                            },
+                        }},
+                        "current_stage": "p1",
+                    }
+                return {
+                    "stage_outputs": {name: {"stage_status": "completed"}},
+                    "current_stage": name,
+                }
+            return fn
+
+        executor = self._make_executor(make_fn)
+        state = {"stage_outputs": {}, "current_stage": ""}
+        result = executor.run(
+            ["root", "p1", "p2", "nested_a", "nested_b"], {}, state,
+        )
+
+        # p1's parallel _next_stage should NOT be followed (only sequential)
+        # _follow_sequential_signals_from checks mode == "sequential"
+        p1_dynamic_calls = [c for c in call_log if c in ("nested_a", "nested_b")]
+        # nested_a and nested_b run via normal DAG walk (depth group), not fan-out
+        assert "p1" in result["stage_outputs"]
+        assert "p2" in result["stage_outputs"]

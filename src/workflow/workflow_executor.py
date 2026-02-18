@@ -11,7 +11,7 @@ from langgraph.graph import StateGraph
 
 from src.workflow.checkpoint_manager import CheckpointManager
 from src.workflow.domain_state import WorkflowDomainState
-from src.workflow.state_manager import StateManager
+from src.workflow.state_manager import initialize_state
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +104,6 @@ class CompiledGraphRunner:
         self,
         graph: StateGraph[Any],
         tracker: Optional[Any] = None,
-        state_manager: Optional[StateManager] = None,
         checkpoint_manager: Optional[CheckpointManager] = None,
         enable_checkpoints: bool = False
     ) -> None:
@@ -113,13 +112,11 @@ class CompiledGraphRunner:
         Args:
             graph: Compiled StateGraph from LangGraphCompiler
             tracker: ExecutionTracker for observability (optional)
-            state_manager: StateManager for state initialization (optional)
             checkpoint_manager: CheckpointManager for checkpoint/resume (optional)
             enable_checkpoints: Enable automatic checkpointing (default: False)
         """
         self.graph = graph
         self.tracker = tracker
-        self.state_manager = state_manager or StateManager()
         self.checkpoint_manager = checkpoint_manager
         self.enable_checkpoints = enable_checkpoints
 
@@ -159,7 +156,7 @@ class CompiledGraphRunner:
             >>> print(result["stage_outputs"]["research"])
         """
         # Prepare initial state using state manager
-        state = self.state_manager.initialize_state(
+        state = initialize_state(
             input_data=input_data,
             workflow_id=workflow_id,
             tracker=self.tracker
@@ -194,7 +191,7 @@ class CompiledGraphRunner:
             ... )
         """
         # Prepare initial state using state manager
-        state = self.state_manager.initialize_state(
+        state = initialize_state(
             input_data=input_data,
             workflow_id=workflow_id,
             tracker=self.tracker
@@ -227,7 +224,7 @@ class CompiledGraphRunner:
             ...     print(f"Current stage: {state.get('current_stage')}")
         """
         # Prepare initial state
-        state = self.state_manager.initialize_state(
+        state = initialize_state(
             input_data=input_data,
             workflow_id=workflow_id,
             tracker=self.tracker
@@ -268,7 +265,7 @@ class CompiledGraphRunner:
             raise RuntimeError("Checkpoint manager not configured. Set enable_checkpoints=True or provide checkpoint_manager")
 
         # Prepare initial state
-        state = self.state_manager.initialize_state(
+        state = initialize_state(
             input_data=input_data,
             workflow_id=workflow_id,
             tracker=self.tracker

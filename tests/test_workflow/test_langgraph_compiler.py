@@ -5,6 +5,7 @@ import pytest
 
 from src.workflow.domain_state import WorkflowDomainState
 from src.workflow.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
+from src.workflow.state_manager import create_init_node
 from tests.fixtures.realistic_data import REALISTIC_CONFIG_LOADER
 
 
@@ -165,8 +166,7 @@ def test_start_node_initialization():
     WorkflowDomainState always initializes stage_outputs={} and workflow_id
     in __post_init__, so the init_node returns empty updates (no changes needed).
     """
-    compiler = LangGraphCompiler()
-    start_node = compiler.state_manager.create_init_node()
+    start_node = create_init_node()
 
     # WorkflowDomainState auto-initializes all fields
     state = WorkflowDomainState()
@@ -182,9 +182,8 @@ def test_start_node_initialization():
 
 
 def test_start_node_preserves_existing_workflow_id():
-    """Test start node doesn't override existing workflow_id via StateManager."""
-    compiler = LangGraphCompiler()
-    start_node = compiler.state_manager.create_init_node()
+    """Test start node doesn't override existing workflow_id."""
+    start_node = create_init_node()
 
     # Create state with existing workflow_id
     state = WorkflowDomainState(workflow_id="existing-id")

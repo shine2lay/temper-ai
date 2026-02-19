@@ -358,7 +358,7 @@ class TestLangGraphExecutionEngine:
 
         mock_compiled = Mock(spec=LangGraphCompiledWorkflow)
 
-        with pytest.raises(NotImplementedError, match="STREAM mode not supported"):
+        with pytest.raises(NotImplementedError, match="STREAM mode not yet supported"):
             engine.execute(
                 mock_compiled,
                 {"input": "test"},

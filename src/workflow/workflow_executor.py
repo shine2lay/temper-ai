@@ -36,13 +36,9 @@ def _save_checkpoint_on_interval(
     checkpoint_manager.save_checkpoint(domain_state)
 
     if tracker:
-        tracker.log_event(
-            "checkpoint_saved",
-            {
-                "workflow_id": workflow_id,
-                "stage": stage_name,
-                "stage_count": stage_count
-            }
+        logger.info(
+            "Checkpoint saved for workflow %s at stage '%s' (count: %d)",
+            workflow_id, stage_name, stage_count,
         )
 
 
@@ -67,13 +63,9 @@ def _save_checkpoint_on_error(
         checkpoint_manager.save_checkpoint(domain_state)
 
         if tracker:
-            tracker.log_event(
-                "checkpoint_saved_on_error",
-                {
-                    "workflow_id": workflow_id,
-                    "error": str(error),
-                    "stage_count": stage_count
-                }
+            logger.info(
+                "Checkpoint saved on error for workflow %s (stage_count: %d, error: %s)",
+                workflow_id, stage_count, error,
             )
     except Exception as checkpoint_error:
         logger.error(
@@ -82,11 +74,6 @@ def _save_checkpoint_on_error(
             checkpoint_error,
             exc_info=True
         )
-        if tracker:
-            tracker.log_event(
-                "checkpoint_save_failed",
-                {"error": str(checkpoint_error)}
-            )
 
 
 class CompiledGraphRunner:
@@ -121,12 +108,8 @@ class CompiledGraphRunner:
         self.enable_checkpoints = enable_checkpoints
 
         # Initialize checkpoint manager if checkpoints enabled but not provided.
-        # NOTE: The default CheckpointManager may use SQLite with StaticPool
-        # (via src.observability.database). StaticPool with SQLite is
-        # development-only. In production, use a proper connection pool
-        # (e.g., PostgreSQL with pool_size settings). StaticPool shares a
-        # single connection across all threads, which is sufficient for
-        # testing but will cause contention under load.
+        # The default CheckpointManager uses FileCheckpointBackend (JSON files).
+        # For production with high concurrency, consider a database-backed backend.
         if enable_checkpoints and checkpoint_manager is None:
             self.checkpoint_manager = CheckpointManager()
 
@@ -328,13 +311,10 @@ class CompiledGraphRunner:
         domain_state = self.checkpoint_manager.load_checkpoint(workflow_id)
 
         if self.tracker:
-            self.tracker.log_event(
-                "checkpoint_resumed",
-                {
-                    "workflow_id": workflow_id,
-                    "current_stage": domain_state.current_stage,
-                    "completed_stages": list(domain_state.stage_outputs.keys())
-                }
+            logger.info(
+                "Checkpoint resumed for workflow %s (stage: %s, completed: %s)",
+                workflow_id, domain_state.current_stage,
+                list(domain_state.stage_outputs.keys()),
             )
 
         if input_data:
@@ -407,10 +387,7 @@ class CompiledGraphRunner:
 
             if final_state is None:
                 if self.tracker:
-                    self.tracker.log_event(
-                        "workflow_already_complete",
-                        {"workflow_id": workflow_id}
-                    )
+                    logger.info("Workflow %s already complete", workflow_id)
                 return state_dict
 
             final_domain_state = self._extract_domain_state(final_state)

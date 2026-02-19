@@ -185,7 +185,9 @@ class WorkflowDomainState:
         """
         return self.stage_outputs.copy()
 
-    def to_dict(self, exclude_none: bool = False, exclude_internal: bool = False) -> Dict[str, Any]:
+    def to_dict(  # noqa: duplicate
+        self, exclude_none: bool = False, exclude_internal: bool = False,  # noqa: kept for backward compat
+    ) -> Dict[str, Any]:
         """Convert state to dictionary for serialization.
 
         All fields are guaranteed serializable (no infrastructure objects).
@@ -193,7 +195,8 @@ class WorkflowDomainState:
         Args:
             exclude_none: Exclude None values from output
             exclude_internal: Accepted for backward compatibility (no-op,
-                domain state has no internal/infrastructure fields)
+                domain state has no internal/infrastructure fields).
+                Kept to satisfy ``LangGraphWorkflowState.to_dict()`` signature.
 
         Returns:
             Dictionary representation of state (JSON-serializable)

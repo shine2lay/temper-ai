@@ -42,6 +42,9 @@ def follow_dynamic_edges(
         state: Current workflow state
         workflow_config: Full workflow configuration
         negotiate_fn: Callable for executing a stage with negotiation
+
+    Returns:
+        Updated workflow state after following all dynamic edges
     """
     current_stage = stage_name
     hop_count = 0
@@ -143,6 +146,11 @@ def _follow_parallel_targets(
     Args:
         signal: Normalized parallel signal dict with ``targets``,
             ``mode``, and optional ``converge``.
+        stage_nodes: Pre-built stage node callables
+        state: Current workflow state
+        workflow_config: Full workflow configuration
+        hop_count: Current dynamic hop count
+        negotiate_fn: Callable for executing a stage with negotiation
 
     Returns:
         Tuple of (state, hop_count)

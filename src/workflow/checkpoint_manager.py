@@ -242,11 +242,12 @@ class CheckpointManager:
                 f"Checkpoint load failed for {workflow_id}: {e}"
             ) from e
 
-    def should_checkpoint(self, stage_name: str, elapsed_time: float = 0) -> bool:
+    def should_checkpoint(self, stage_name: str = "", elapsed_time: float = 0) -> bool:
         """Determine if a checkpoint should be saved.
 
         Args:
-            stage_name: Name of the stage that just completed
+            stage_name: Name of the stage that just completed (reserved for
+                future per-stage strategies; currently unused)
             elapsed_time: Seconds since last checkpoint
 
         Returns:

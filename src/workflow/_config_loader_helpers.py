@@ -44,7 +44,7 @@ def load_config_file(directory: Path, name: str) -> Dict[str, Any]:
     for ext in ['.yaml', '.yml', '.json']:
         file_path = directory / f"{name}{ext}"
         if file_path.exists():
-            return parse_config_file(file_path)
+            return load_and_validate_config_file(file_path)
 
     raise ConfigNotFoundError(
         message=f"Config file not found: {name} in {directory}\nTried extensions: .yaml, .yml, .json",
@@ -52,8 +52,8 @@ def load_config_file(directory: Path, name: str) -> Dict[str, Any]:
     )
 
 
-def parse_config_file(file_path: Path) -> Dict[str, Any]:
-    """Parse a YAML or JSON configuration file with security protections.
+def load_and_validate_config_file(file_path: Path) -> Dict[str, Any]:
+    """Load and validate a YAML or JSON configuration file with security protections.
 
     Args:
         file_path: Path to config file

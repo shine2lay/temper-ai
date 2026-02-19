@@ -270,12 +270,12 @@ class TestCheckpointManager:
 
         assert manager.has_checkpoint("wf-manager-test")
 
-    def test_delete_checkpoint(self, manager, sample_domain_state):
-        """Test deleting checkpoint."""
+    def test_delete_all_checkpoints(self, manager, sample_domain_state):
+        """Test deleting all checkpoints for a workflow."""
         manager.save_checkpoint("wf-manager-test", sample_domain_state)
         assert manager.has_checkpoint("wf-manager-test")
 
-        deleted = manager.delete_checkpoint("wf-manager-test")
+        deleted = manager.delete_all_checkpoints("wf-manager-test")
 
         assert deleted is True
         assert not manager.has_checkpoint("wf-manager-test")

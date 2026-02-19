@@ -417,7 +417,7 @@ class StageCompiler:
         router = create_conditional_router(
             next_ref, after_next, next_index, stage_refs, self.condition_evaluator,
         )
-        # next_name is guaranteed non-None because next_ref is non-None (from line 429)
+        # next_name is guaranteed non-None because next_ref is non-None (from guard on line 405)
         if next_name is None:
             raise ValueError("next_name must not be None when next_ref is set")
         graph.add_conditional_edges(
@@ -476,11 +476,13 @@ class StageCompiler:
         self,
         stage_names: List[str],
         workflow_config: Dict[str, Any],
-        _conditions: Dict[str, Any],
+        _conditions: Dict[str, Any],  # noqa: kept for backward compat, unused
     ) -> Pregel[Any, Any]:
         """Compile stages with conditional branching.
 
         Now delegates to compile_stages which handles conditional edges natively.
+        The ``_conditions`` parameter is accepted for backward compatibility but
+        is not used — conditional edges are resolved from stage refs in compile_stages.
         """
         return self.compile_stages(stage_names, workflow_config)
 

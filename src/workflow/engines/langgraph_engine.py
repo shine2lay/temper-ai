@@ -159,7 +159,7 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
 
         return {
             "engine": "langgraph",
-            "version": "0.2.0",  # LangGraph version used in M2
+            "version": "0.2.0",  # LangGraph integration version
             "config": self.workflow_config,
             "stages": stage_names
         }
@@ -197,7 +197,7 @@ class LangGraphCompiledWorkflow(CompiledWorkflow):
 
         lines.append("    END([End])")
 
-        # Add edges (sequential for M2)
+        # Add edges (sequential for visualization)
         if stage_names:
             lines.append(f"    START --> {stage_names[0]}")
             for i in range(len(stage_names) - 1):
@@ -323,7 +323,7 @@ class LangGraphExecutionEngine(ExecutionEngine):
 
         # Mode check
         if mode == ExecutionMode.STREAM:
-            raise NotImplementedError("STREAM mode not supported in M2")
+            raise NotImplementedError("STREAM mode not yet supported")
 
         if mode == ExecutionMode.ASYNC:
             # CO-01: asyncio.run() is only safe when no event loop is running.
@@ -367,7 +367,7 @@ class LangGraphExecutionEngine(ExecutionEngine):
             )
 
         if mode == ExecutionMode.STREAM:
-            raise NotImplementedError("STREAM mode not supported in M2")
+            raise NotImplementedError("STREAM mode not yet supported")
 
         if mode == ExecutionMode.SYNC:
             return await asyncio.to_thread(
@@ -385,18 +385,18 @@ class LangGraphExecutionEngine(ExecutionEngine):
         Returns:
             True if feature is supported, False otherwise
 
-        M2 LangGraph Capabilities:
+        LangGraph Capabilities:
         - Supported: sequential_stages, parallel_stages, conditional_routing,
                     checkpointing, state_persistence
-        - Not supported (M3+): convergence_detection, dynamic_stage_injection,
-                               nested_workflows
+        - Not yet supported: convergence_detection, dynamic_stage_injection,
+                             nested_workflows
 
         Example:
             >>> engine = LangGraphExecutionEngine()
             >>> if engine.supports_feature("parallel_stages"):
             ...     print("Can execute stages in parallel")
         """
-        # M2 LangGraph capabilities
+        # LangGraph capabilities
         supported = {
             "sequential_stages",      # Sequential execution
             "parallel_stages",        # LangGraph supports parallel branches

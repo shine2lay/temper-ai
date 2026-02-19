@@ -191,7 +191,7 @@ class LangGraphCompiler:
                 Structure: {"workflow": {"stages": [...]}}
 
         Returns:
-            Compiled StateGraph ready for execution
+            Compiled LangGraph (Pregel) ready for execution
 
         Raises:
             ValueError: If workflow has no stages
@@ -222,10 +222,10 @@ class LangGraphCompiler:
         # Step 3: Validate all stage and agent configs (fail fast)
         self._validate_all_configs(stages, workflow_config)
 
-        # Step 3: Extract stage names (delegate to NodeBuilder)
+        # Step 4: Extract stage names (delegate to NodeBuilder)
         stage_names = self._extract_stage_names(stages)
 
-        # Step 4: Compile to graph (delegate to StageCompiler)
+        # Step 5: Compile to graph (delegate to StageCompiler)
         return self.stage_compiler.compile_stages(stage_names, workflow_config)  # type: ignore[return-value]
 
     def _validate_quality_gates(

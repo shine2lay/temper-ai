@@ -142,8 +142,8 @@ class CheckpointManager:
         """Check if checkpoint exists for workflow."""
         return self._manager.has_checkpoint(workflow_id)
 
-    def delete_checkpoint(self, workflow_id: str) -> bool:
-        """Delete workflow checkpoint."""
+    def delete_all_checkpoints(self, workflow_id: str) -> bool:
+        """Delete all checkpoints for a workflow."""
         latest_id = self._manager.get_latest_checkpoint_id(workflow_id)
         if latest_id is None:
             return False

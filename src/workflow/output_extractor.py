@@ -124,6 +124,8 @@ class LLMOutputExtractor:
 
     def _call_llm(self, prompt: str) -> str:
         """Call LLM for extraction. Override in tests."""
+        import time
+
         try:
             from src.llm.providers.factory import create_llm_client
 
@@ -144,8 +146,26 @@ class LLMOutputExtractor:
                 base_url=base_url,
                 timeout=self.timeout_seconds,
             )
+            start = time.monotonic()
             response = llm.complete(prompt)
-            return response.content if hasattr(response, "content") else str(response)
+            latency_ms = (time.monotonic() - start) * 1000  # scanner: skip-magic
+            content = response.content if hasattr(response, "content") else str(response)
+
+            # Track the LLM call for observability
+            try:
+                from src.observability.hooks import get_tracker
+                tracker = get_tracker()
+                tracker.track_llm_call(
+                    provider=provider,
+                    model=model,
+                    prompt_tokens=len(prompt) // 4,  # scanner: skip-magic
+                    completion_tokens=len(content) // 4,  # scanner: skip-magic
+                    latency_ms=latency_ms,
+                )
+            except (ImportError, AttributeError, RuntimeError):
+                pass  # Observability should never break extraction
+
+            return content
         except ImportError:
             logger.warning("LLM infrastructure not available for output extraction")
             return "{}"

@@ -155,9 +155,9 @@ class LangGraphWorkflowState(WorkflowDomainState):
         """Convert state to dictionary with caching.
 
         Args:
-            exclude_internal: Exclude infrastructure objects (for serialization)
             exclude_none: Accepted for backward compatibility with
                 WorkflowDomainState.to_dict() (no-op here).
+            exclude_internal: Exclude infrastructure objects (for serialization)
 
         Returns:
             Dictionary representation of state

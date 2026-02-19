@@ -16,14 +16,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_MAX_WORKERS = 4
 _API_PREFIX = "/api"
 
-STATIC_DIR = Path(__file__).parent / "static"
+REACT_DIST_DIR = Path(__file__).parent / "react-dist"
 
 # Header value for static assets — revalidate on every request
 _NO_CACHE = "no-cache, must-revalidate"
 
 
 class _NoCacheStaticMiddleware:
-    """ASGI middleware: adds Cache-Control: no-cache to /dashboard/ responses.
+    """ASGI middleware: adds Cache-Control: no-cache to /app/ responses.
 
     Ensures browsers always revalidate static files with the server.
     Unchanged files get a fast 304; changed files get fresh content.
@@ -33,7 +33,9 @@ class _NoCacheStaticMiddleware:
         self.app = app
 
     async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
-        if scope["type"] != "http" or not scope["path"].startswith("/dashboard/"):
+        path = scope.get("path", "")
+        is_static = path.startswith("/app/")
+        if scope["type"] != "http" or not is_static:
             await self.app(scope, receive, send)
             return
 
@@ -90,9 +92,12 @@ def _register_routes(
 ) -> None:
     """Register API routes and WebSocket endpoints."""
     _register_core_routes(app, execution_service, data_service, config_root)
+    _register_data_api_routes(app, data_service)
 
     if mode != "server":
-        _register_dashboard_routes(app, data_service, config_root)
+        _register_dashboard_extras(app, data_service, config_root)
+
+    _mount_react_app(app)
 
 
 def _register_core_routes(
@@ -114,14 +119,20 @@ def _register_core_routes(
     app.add_api_websocket_route("/ws/{workflow_id}", ws_handler)
 
 
-def _register_dashboard_routes(
-    app: FastAPI, data_service: Any, config_root: str,
-) -> None:
-    """Register dashboard-only routes (studio, learning, goals, portfolio)."""
+def _register_data_api_routes(app: FastAPI, data_service: Any) -> None:
+    """Register data query routes (workflows, stages, agents, llm/tool calls).
+
+    Available in ALL modes so the React frontend can fetch data.
+    """
     from src.interfaces.dashboard.routes import create_router
 
     app.include_router(create_router(data_service), prefix=_API_PREFIX)
 
+
+def _register_dashboard_extras(
+    app: FastAPI, data_service: Any, config_root: str,
+) -> None:
+    """Register dashboard-only routes (studio, learning, goals, portfolio)."""
     # Studio config CRUD routes
     from src.interfaces.dashboard.studio_routes import create_studio_router
     from src.interfaces.dashboard.studio_service import StudioService
@@ -131,20 +142,39 @@ def _register_dashboard_routes(
 
     _register_optional_routes(app, config_root)
 
-    # Static files with no-cache middleware
-    if STATIC_DIR.exists():
+
+class _SPAStaticFiles(StaticFiles):
+    """StaticFiles with SPA fallback: serves index.html for unknown paths.
+
+    Enables React Router client-side routing by returning index.html
+    for any path that doesn't match a real static file.
+    """
+
+    async def get_response(self, path: str, scope: Any) -> Any:
+        """Return static file response, falling back to index.html for SPA routing."""
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException:
+            # SPA fallback — serve index.html for client-side routing
+            return await super().get_response("index.html", scope)
+
+
+def _mount_react_app(app: FastAPI) -> None:
+    """Mount the React SPA at /app if the build exists."""
+    if REACT_DIST_DIR.exists():
         app.mount(
-            "/dashboard",
-            StaticFiles(directory=str(STATIC_DIR), html=True),
-            name="dashboard",
+            "/app",
+            _SPAStaticFiles(directory=str(REACT_DIST_DIR), html=True),
+            name="react-app",
         )
         app.add_middleware(_NoCacheStaticMiddleware)
 
-    # Root redirect
     @app.get("/")
     async def root() -> RedirectResponse:
-        """Redirect root to dashboard UI."""
-        return RedirectResponse(url="/dashboard/list.html")
+        """Redirect root to React app."""
+        return RedirectResponse(url="/app")
 
 
 def _register_optional_routes(app: FastAPI, config_root: str) -> None:

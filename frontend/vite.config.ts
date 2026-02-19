@@ -13,7 +13,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../src/interfaces/dashboard/react-dist',
+    outDir: '../temper_ai/interfaces/dashboard/react-dist',
     emptyOutDir: true,
   },
   server: {

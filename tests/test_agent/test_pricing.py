@@ -6,7 +6,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from src.llm.pricing import (
+from temper_ai.llm.pricing import (
     ModelPricing,
     PricingManager,
     SecurityError,

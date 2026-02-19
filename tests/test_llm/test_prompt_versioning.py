@@ -7,7 +7,7 @@ import pytest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from src.llm.prompts.engine import PromptEngine, _compute_template_hash
+from temper_ai.llm.prompts.engine import PromptEngine, _compute_template_hash
 
 
 class TestComputeTemplateHash:
@@ -90,7 +90,7 @@ class TestRenderFileWithMetadata:
 
     def test_file_not_found_raises(self) -> None:
         """Missing template file raises PromptRenderError."""
-        from src.llm.prompts.validation import PromptRenderError
+        from temper_ai.llm.prompts.validation import PromptRenderError
 
         engine = PromptEngine()
         if engine.jinja_env is None:
@@ -100,7 +100,7 @@ class TestRenderFileWithMetadata:
 
     def test_no_jinja_env_raises(self) -> None:
         """Missing jinja_env raises PromptRenderError."""
-        from src.llm.prompts.validation import PromptRenderError
+        from temper_ai.llm.prompts.validation import PromptRenderError
 
         engine = PromptEngine(templates_dir="/nonexistent/path")
         with pytest.raises(PromptRenderError, match="templates directory not configured"):

@@ -6,8 +6,8 @@ and produces empty sequence on first-try success.
 import pytest
 from unittest.mock import MagicMock
 
-from src.llm.failover import FailoverConfig, FailoverProvider
-from src.llm.providers import LLMError, LLMResponse
+from temper_ai.llm.failover import FailoverConfig, FailoverProvider
+from temper_ai.llm.providers import LLMError, LLMResponse
 
 
 def _make_provider(model: str, provider_name: str = "test") -> MagicMock:

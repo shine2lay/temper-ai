@@ -16,14 +16,14 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 
 import pytest
 
-from src.safety._action_policy_helpers import canonical_json
-from src.safety.action_policy_engine import (
+from temper_ai.safety._action_policy_helpers import canonical_json
+from temper_ai.safety.action_policy_engine import (
     ActionPolicyEngine,
     EnforcementResult,
     PolicyExecutionContext,
 )
-from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
-from src.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.policy_registry import PolicyRegistry
 
 # ============================================================================
 # Mock Policies for Testing

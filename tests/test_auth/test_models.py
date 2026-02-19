@@ -10,7 +10,7 @@ Tests cover User and Session models including:
 import pytest
 from datetime import datetime, timedelta, timezone
 
-from src.auth.models import User, Session
+from temper_ai.auth.models import User, Session
 
 
 class TestUser:

@@ -1,8 +1,8 @@
 """Shared fixtures for agent tests."""
 import pytest
 
-from src.llm.providers.base import BaseLLM
-from src.storage.schemas.agent_config import (
+from temper_ai.llm.providers.base import BaseLLM
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,

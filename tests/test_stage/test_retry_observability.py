@@ -11,19 +11,19 @@ from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 
-from src.observability.resilience_events import (
+from temper_ai.observability.resilience_events import (
     EVENT_TYPE_FALLBACK,
     EVENT_TYPE_RETRY,
     RETRY_OUTCOME_EXHAUSTED,
     RETRY_OUTCOME_FAILED,
     RETRY_OUTCOME_SUCCESS,
 )
-from src.stage.executors._sequential_helpers import (
+from temper_ai.stage.executors._sequential_helpers import (
     AgentExecutionContext,
     retry_agent_with_backoff,
 )
-from src.stage.executors.state_keys import StateKeys
-from src.shared.utils.exceptions import ErrorCode
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.shared.utils.exceptions import ErrorCode
 
 
 def _make_ctx(tracker=None):
@@ -71,7 +71,7 @@ def _make_failure_result(agent_name="agent-1", error_type=None):
 class TestRetryEmitsEvents:
     """Test that retry_agent_with_backoff emits retry events."""
 
-    @patch("src.stage.executors._sequential_helpers._execute_retry_attempt")
+    @patch("temper_ai.stage.executors._sequential_retry._execute_retry_attempt")
     def test_success_on_first_retry_emits_event(self, mock_attempt):
         """When retry succeeds, a success event should be emitted."""
         tracker = Mock()
@@ -90,7 +90,7 @@ class TestRetryEmitsEvents:
         assert collab_data.event_data["outcome"] == RETRY_OUTCOME_SUCCESS
         assert collab_data.event_data["attempt_number"] == 1
 
-    @patch("src.stage.executors._sequential_helpers._execute_retry_attempt")
+    @patch("temper_ai.stage.executors._sequential_retry._execute_retry_attempt")
     def test_permanent_error_emits_failed_event(self, mock_attempt):
         """When a permanent error stops retries, a failed event should be emitted."""
         tracker = Mock()
@@ -108,7 +108,7 @@ class TestRetryEmitsEvents:
         collab_data = tracker.track_collaboration_event.call_args[0][0]
         assert collab_data.event_data["outcome"] == RETRY_OUTCOME_FAILED
 
-    @patch("src.stage.executors._sequential_helpers._execute_retry_attempt")
+    @patch("temper_ai.stage.executors._sequential_retry._execute_retry_attempt")
     def test_exhausted_retries_emits_exhausted_event(self, mock_attempt):
         """When all retries are exhausted, an exhausted event should be emitted."""
         tracker = Mock()
@@ -128,7 +128,7 @@ class TestRetryEmitsEvents:
         assert collab_data.event_data["attempt_number"] == 2
         assert collab_data.event_data["max_retries"] == 2
 
-    @patch("src.stage.executors._sequential_helpers._execute_retry_attempt")
+    @patch("temper_ai.stage.executors._sequential_retry._execute_retry_attempt")
     def test_no_tracker_does_not_raise(self, mock_attempt):
         """Retry should work fine without a tracker."""
         ctx = _make_ctx(tracker=None)
@@ -139,7 +139,7 @@ class TestRetryEmitsEvents:
         result = retry_agent_with_backoff(ctx, "agent_ref", {}, 3, "agent-1")
         assert result[StateKeys.STATUS] == "success"
 
-    @patch("src.stage.executors._sequential_helpers._execute_retry_attempt")
+    @patch("temper_ai.stage.executors._sequential_retry._execute_retry_attempt")
     def test_retry_event_includes_stage_info(self, mock_attempt):
         """Retry events should include stage_name and stage_id."""
         tracker = Mock()
@@ -162,7 +162,7 @@ class TestAdaptiveFallbackEvents:
 
     def test_fallback_on_disagreement(self):
         """When disagreement exceeds threshold, a fallback event should be emitted."""
-        from src.stage.executors.adaptive import (
+        from temper_ai.stage.executors.adaptive import (
             ParallelSwitchCheckParams,
             _execute_parallel_with_switch_check,
         )
@@ -203,7 +203,7 @@ class TestAdaptiveFallbackEvents:
 
     def test_no_fallback_when_below_threshold(self):
         """No fallback event when disagreement is below threshold."""
-        from src.stage.executors.adaptive import (
+        from temper_ai.stage.executors.adaptive import (
             ParallelSwitchCheckParams,
             _execute_parallel_with_switch_check,
         )
@@ -239,7 +239,7 @@ class TestAdaptiveFallbackEvents:
 
     def test_fallback_on_error(self):
         """When parallel execution fails, a fallback event should be emitted."""
-        from src.stage.executors.adaptive import (
+        from temper_ai.stage.executors.adaptive import (
             AdaptiveStageExecutor,
             ParallelErrorHandlerParams,
         )
@@ -278,7 +278,7 @@ class TestCircuitBreakerObservability:
 
     def test_callback_fired_on_state_transition(self):
         """Observability callback should fire when state transitions."""
-        from src.shared.core.circuit_breaker import CircuitBreaker
+        from temper_ai.shared.core.circuit_breaker import CircuitBreaker
 
         callback = Mock()
         breaker = CircuitBreaker(
@@ -298,7 +298,7 @@ class TestCircuitBreakerObservability:
 
     def test_add_observability_callback(self):
         """add_observability_callback should register additional callbacks."""
-        from src.shared.core.circuit_breaker import CircuitBreaker
+        from temper_ai.shared.core.circuit_breaker import CircuitBreaker
 
         breaker = CircuitBreaker(name="test-breaker", failure_threshold=2)
         callback = Mock()
@@ -308,7 +308,7 @@ class TestCircuitBreakerObservability:
 
     def test_no_callback_no_error(self):
         """No observability callbacks should not cause errors."""
-        from src.shared.core.circuit_breaker import CircuitBreaker
+        from temper_ai.shared.core.circuit_breaker import CircuitBreaker
 
         breaker = CircuitBreaker(name="test-breaker", failure_threshold=2)
 

@@ -6,8 +6,8 @@ could bypass safety limits or cause undefined behavior.
 """
 import pytest
 
-from src.safety.policies.rate_limit_policy import RateLimitPolicy
-from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
+from temper_ai.safety.policies.rate_limit_policy import RateLimitPolicy
+from temper_ai.safety.policies.resource_limit_policy import ResourceLimitPolicy
 
 
 class TestRateLimitPolicyValidation:
@@ -304,7 +304,7 @@ class TestSecretDetectionPolicyValidation:
 
     def test_reject_non_list_enabled_patterns(self):
         """Test that non-list enabled_patterns is rejected (unless string)."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         # Dict should be rejected
         with pytest.raises(ValueError, match="enabled_patterns must be a list"):
@@ -312,56 +312,56 @@ class TestSecretDetectionPolicyValidation:
 
     def test_convert_string_to_list_enabled_patterns(self):
         """Test that single string is converted to list for convenience."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         policy = SecretDetectionPolicy({"enabled_patterns": "aws_access_key"})
         assert "aws_access_key" in policy.enabled_patterns
 
     def test_reject_invalid_pattern_name(self):
         """Test that unknown pattern name is rejected."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         with pytest.raises(ValueError, match="Unknown pattern 'invalid_pattern'"):
             SecretDetectionPolicy({"enabled_patterns": ["invalid_pattern"]})
 
     def test_reject_empty_enabled_patterns(self):
         """Test that empty enabled_patterns is rejected."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         with pytest.raises(ValueError, match="enabled_patterns cannot be empty"):
             SecretDetectionPolicy({"enabled_patterns": []})
 
     def test_reject_negative_entropy_threshold(self):
         """Test that negative entropy threshold is rejected."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         with pytest.raises(ValueError, match="entropy_threshold must be between 0.0 and 8.0"):
             SecretDetectionPolicy({"entropy_threshold": -1.0})
 
     def test_reject_extreme_entropy_threshold(self):
         """Test that entropy threshold > 8.0 is rejected (max Shannon entropy)."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         with pytest.raises(ValueError, match="entropy_threshold must be between 0.0 and 8.0"):
             SecretDetectionPolicy({"entropy_threshold": 10.0})
 
     def test_reject_string_entropy_threshold(self):
         """Test that string entropy threshold is rejected."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         with pytest.raises(ValueError, match="entropy_threshold must be a number"):
             SecretDetectionPolicy({"entropy_threshold": "high"})
 
     def test_reject_non_list_excluded_paths(self):
         """Test that non-list excluded_paths is rejected."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         with pytest.raises(ValueError, match="excluded_paths must be a list"):
             SecretDetectionPolicy({"excluded_paths": "/project"})
 
     def test_reject_too_long_excluded_path(self):
         """Test that excluded_paths with > 500 chars is rejected."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         long_path = "a" * 501
         with pytest.raises(ValueError, match="excluded_paths items must be <= 500"):
@@ -369,7 +369,7 @@ class TestSecretDetectionPolicyValidation:
 
     def test_reject_too_many_excluded_paths(self):
         """Test that > 1000 excluded_paths is rejected."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         many_paths = [f"path_{i}" for i in range(1001)]
         with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
@@ -377,14 +377,14 @@ class TestSecretDetectionPolicyValidation:
 
     def test_reject_string_allow_test_secrets(self):
         """Test that string boolean is rejected (prevents 'false' -> True bug)."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         with pytest.raises(ValueError, match="must be a boolean"):
             SecretDetectionPolicy({"allow_test_secrets": "false"})
 
     def test_accept_valid_configuration(self):
         """Test that valid configuration is accepted."""
-        from src.safety.secret_detection import SecretDetectionPolicy
+        from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
         policy = SecretDetectionPolicy({
             "enabled_patterns": ["aws_access_key", "github_token"],
@@ -405,21 +405,21 @@ class TestFileAccessPolicyValidation:
 
     def test_reject_non_list_allowed_paths(self):
         """Test that non-list allowed_paths is rejected."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         with pytest.raises(ValueError, match="allowed_paths must be a list"):
             FileAccessPolicy({"allowed_paths": "/project/src"})
 
     def test_reject_non_string_path_item(self):
         """Test that non-string path items are rejected."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         with pytest.raises(ValueError, match="allowed_paths items must be strings"):
             FileAccessPolicy({"allowed_paths": ["/project", 123]})
 
     def test_reject_too_long_path(self):
         """Test that paths > 500 chars are rejected."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         long_path = "a" * 501
         with pytest.raises(ValueError, match="allowed_paths items must be <= 500"):
@@ -427,7 +427,7 @@ class TestFileAccessPolicyValidation:
 
     def test_reject_too_many_paths(self):
         """Test that > 1000 paths are rejected."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         many_paths = [f"/path{i}" for i in range(1001)]
         with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
@@ -435,7 +435,7 @@ class TestFileAccessPolicyValidation:
 
     def test_reject_string_allow_parent_traversal(self):
         """Test that string boolean is rejected (CRITICAL: prevents security bypass)."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         # This is CRITICAL: "false" would evaluate to True, enabling parent traversal!
         with pytest.raises(ValueError, match="must be a boolean"):
@@ -443,14 +443,14 @@ class TestFileAccessPolicyValidation:
 
     def test_reject_string_allow_symlinks(self):
         """Test that string boolean is rejected for allow_symlinks."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         with pytest.raises(ValueError, match="must be a boolean"):
             FileAccessPolicy({"allow_symlinks": "true"})
 
     def test_auto_add_dot_to_extensions(self):
         """Test that missing dot is auto-added to extensions."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         policy = FileAccessPolicy({"forbidden_extensions": ["exe", "dll"]})
         assert ".exe" in policy.forbidden_extensions
@@ -458,7 +458,7 @@ class TestFileAccessPolicyValidation:
 
     def test_reject_too_long_extension(self):
         """Test that extensions > 20 chars are rejected."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         long_ext = "a" * 21
         with pytest.raises(ValueError, match="forbidden_extensions items must be <= 20"):
@@ -466,7 +466,7 @@ class TestFileAccessPolicyValidation:
 
     def test_reject_too_many_extensions(self):
         """Test that > 100 extensions are rejected."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         many_exts = [f".ext{i}" for i in range(101)]
         with pytest.raises(ValueError, match="forbidden_extensions must have <= 100"):
@@ -474,14 +474,14 @@ class TestFileAccessPolicyValidation:
 
     def test_reject_non_list_forbidden_directories(self):
         """Test that non-list forbidden_directories is rejected."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         with pytest.raises(ValueError, match="forbidden_directories must be a list"):
             FileAccessPolicy({"forbidden_directories": "/etc"})
 
     def test_accept_valid_configuration(self):
         """Test that valid configuration is accepted."""
-        from src.safety.file_access import FileAccessPolicy
+        from temper_ai.safety.file_access import FileAccessPolicy
 
         policy = FileAccessPolicy({
             "allowed_paths": ["/project/src", "/project/tests"],
@@ -504,28 +504,28 @@ class TestForbiddenOperationsPolicyValidation:
 
     def test_reject_string_check_file_writes(self):
         """Test that string boolean is rejected."""
-        from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+        from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         with pytest.raises(ValueError, match="must be a boolean"):
             ForbiddenOperationsPolicy({"check_file_writes": "yes"})
 
     def test_reject_non_dict_custom_patterns(self):
         """Test that non-dict custom_forbidden_patterns is rejected."""
-        from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+        from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         with pytest.raises(ValueError, match="custom_forbidden_patterns must be a dict"):
             ForbiddenOperationsPolicy({"custom_forbidden_patterns": ["pattern1"]})
 
     def test_reject_non_string_pattern_value(self):
         """Test that non-string pattern values are rejected."""
-        from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+        from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         with pytest.raises(ValueError, match="must be a string"):
             ForbiddenOperationsPolicy({"custom_forbidden_patterns": {"test": 123}})
 
     def test_reject_too_long_pattern(self):
         """Test that patterns > 500 chars are rejected."""
-        from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+        from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         long_pattern = "a" * 501
         with pytest.raises(ValueError, match="must be <= 500 characters"):
@@ -533,7 +533,7 @@ class TestForbiddenOperationsPolicyValidation:
 
     def test_reject_too_many_patterns(self):
         """Test that > 100 custom patterns are rejected."""
-        from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+        from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         many_patterns = {f"pattern{i}": f"test{i}" for i in range(101)}
         with pytest.raises(ValueError, match="must have <= 100 patterns"):
@@ -541,14 +541,14 @@ class TestForbiddenOperationsPolicyValidation:
 
     def test_reject_non_list_whitelist(self):
         """Test that non-list whitelist_commands is rejected."""
-        from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+        from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         with pytest.raises(ValueError, match="whitelist_commands must be a list"):
             ForbiddenOperationsPolicy({"whitelist_commands": "cat file.txt"})
 
     def test_reject_too_long_whitelist_command(self):
         """Test that whitelist commands > 200 chars are rejected."""
-        from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+        from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         long_cmd = "a" * 201
         with pytest.raises(ValueError, match="whitelist_commands items must be <= 200"):
@@ -556,7 +556,7 @@ class TestForbiddenOperationsPolicyValidation:
 
     def test_reject_too_many_whitelist_commands(self):
         """Test that > 1000 whitelist commands are rejected."""
-        from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+        from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         many_cmds = [f"cmd{i}" for i in range(1001)]
         with pytest.raises(ValueError, match="config list/tuple/set must have <= 1000 items"):
@@ -564,7 +564,7 @@ class TestForbiddenOperationsPolicyValidation:
 
     def test_accept_valid_configuration(self):
         """Test that valid configuration is accepted."""
-        from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+        from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
         policy = ForbiddenOperationsPolicy({
             "check_file_writes": True,

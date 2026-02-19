@@ -1,6 +1,6 @@
 # Examples Directory
 
-This directory contains demo scripts and examples for the Meta-Autonomous Framework.
+This directory contains demo scripts and examples for the Temper AI.
 
 ## Prerequisites
 
@@ -207,8 +207,8 @@ sqlite3 workflow_execution.db "SELECT * FROM workflow_executions ORDER BY start_
 
 **Query with Python:**
 ```python
-from src.observability.database import get_session
-from src.observability.models import WorkflowExecution
+from temper_ai.observability.database import get_session
+from temper_ai.observability.models import WorkflowExecution
 
 with get_session() as session:
     executions = session.query(WorkflowExecution).all()
@@ -350,7 +350,7 @@ tests/test_data/*.db
 
 ```
 ╭───────────────────────────────────╮
-│ Meta-Autonomous Framework         │
+│ Temper AI         │
 │ Workflow Execution Demo           │
 ╰───────────────────────────────────╯
 
@@ -453,7 +453,7 @@ Once M2 is complete, try:
    - Run with `run_workflow.py`
 
 5. **Build custom tools:**
-   - See `src/tools/` for examples
+   - See `temper_ai/tools/` for examples
    - Implement `BaseTool` interface
    - Register in tool registry
 
@@ -464,7 +464,7 @@ Once M2 is complete, try:
 - **Codebase Reference:** `docs/CODEBASE_REFERENCE.md`
 - **M2 Completion Report:** `docs/milestones/milestone2_completion.md`
 - **Configuration Guide:** `configs/README.md` (if exists)
-- **Tool Development:** `src/tools/README.md` (if exists)
+- **Tool Development:** `temper_ai/tools/README.md` (if exists)
 
 ---
 

@@ -1,22 +1,23 @@
-# VCS Suggestion Pipeline v5 — P0+P1 Optimized
-# Purpose: Triage, design, task-plan, git-snapshot, code, static-check, quality-gate
+# VCS Suggestion Pipeline v6 — Full Git Workflow
+# Purpose: Triage, design, task-plan, git-setup, code, static-check, quality-gate, git-commit
 #
 # Usage:
 #   maf run configs/workflows/vcs_suggestion.yaml --input examples/vcs_suggestion_input.yaml --show-details
 #
-# Pipeline (7 stages, 18 agents — down from 8/25 via merge):
+# Pipeline (8 stages, 19 agents):
 #   vcs_triage (leader: 4 perspectives + 1 decider)
 #   → vcs_design (leader: arch + impl + safety + decider)       [conditional: APPROVE only]
 #   → vcs_task_planning (sequential: foundation → integration)
-#   → vcs_git_snapshot (snapshot before code writes)
+#   → vcs_git_setup (pull latest + create feature branch)
 #   → vcs_code_execute
 #   → vcs_static_check (generic: syntax, lint, imports — loops to code_execute)
 #   → vcs_quality_gate (leader: correctness + regression + security_runtime + decider — loops to code_execute)
+#   → vcs_git_commit (commit + push — conditional on quality gate PASS)
 
 workflow:
   name: vcs_suggestion
   description: "Multi-perspective triage, design, code, and quality-gate pipeline for The Vibe Coding Squad"
-  version: "5.0"
+  version: "6.0"
   engine: dynamic
   product_type: api
 
@@ -35,9 +36,9 @@ workflow:
       depends_on:
         - vcs_design
 
-    - name: vcs_git_snapshot
-      stage_ref: configs/stages/vcs_git_snapshot.yaml
-      description: "Create git snapshot for rollback safety"
+    - name: vcs_git_setup
+      stage_ref: configs/stages/vcs_git_setup.yaml
+      description: "Pull latest from default branch and create feature branch"
       depends_on:
         - vcs_task_planning
 
@@ -45,7 +46,7 @@ workflow:
       stage_ref: configs/stages/vcs_code_execute.yaml
       description: "Coder writes files following exact task specs"
       depends_on:
-        - vcs_git_snapshot
+        - vcs_git_setup
 
     - name: vcs_static_check
       stage_ref: configs/stages/vcs_static_check.yaml
@@ -64,6 +65,13 @@ workflow:
       loops_back_to: vcs_code_execute
       max_loops: 3
       loop_condition: "{{ 'OVERALL: FAIL' in (stage_outputs.vcs_quality_gate.output | default('') | upper) or 'OVERALL:FAIL' in (stage_outputs.vcs_quality_gate.output | default('') | upper) }}"
+
+    - name: vcs_git_commit
+      stage_ref: configs/stages/vcs_git_commit.yaml
+      description: "Commit and push feature branch (only on quality gate PASS)"
+      depends_on:
+        - vcs_quality_gate
+      condition: "{{ 'OVERALL: PASS' in (stage_outputs.vcs_quality_gate.output | default('') | upper) or 'OVERALL:PASS' in (stage_outputs.vcs_quality_gate.output | default('') | upper) }}"
 
   inputs:
     required:
@@ -84,6 +92,9 @@ workflow:
     - name: gate_output
       description: "Quality gate verdict"
       source: vcs_quality_gate.gate_output
+    - name: git_commit_output
+      description: "Git commit and push result"
+      source: vcs_git_commit.git_commit_output
 
   error_handling:
     on_stage_failure: halt

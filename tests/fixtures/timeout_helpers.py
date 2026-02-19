@@ -10,15 +10,15 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from src.agent.base_agent import AgentResponse
-from src.storage.schemas.agent_config import (
+from temper_ai.agent.base_agent import AgentResponse
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
     InferenceConfig,
     PromptConfig,
 )
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 
 
 @dataclass

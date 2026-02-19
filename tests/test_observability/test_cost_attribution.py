@@ -7,8 +7,8 @@ import pytest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-from src.observability.backend import WorkflowStartData
-from src.observability.cost_rollup import StageCostSummary
+from temper_ai.observability.backend import WorkflowStartData
+from temper_ai.observability.cost_rollup import StageCostSummary
 
 
 class TestCostAttributionTags:
@@ -36,7 +36,7 @@ class TestCostAttributionSQLRoundTrip:
 
     def test_sql_backend_passes_tags(self) -> None:
         """SQL backend stores cost_attribution_tags on WorkflowExecution."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
 
         backend = MagicMock(spec=SQLObservabilityBackend)
         tags = {"tenant": "acme", "env": "prod"}
@@ -53,7 +53,7 @@ class TestCostAttributionOTEL:
     def test_otel_backend_sets_span_attributes(self) -> None:
         """OTEL backend converts tags to span attributes."""
         try:
-            from src.observability.backends.otel_backend import OTELObservabilityBackend
+            from temper_ai.observability.backends.otel_backend import OTELObservabilityBackend
         except ImportError:
             pytest.skip("opentelemetry not installed")
 
@@ -89,7 +89,7 @@ class TestCostAttributionCostRollup:
 
     def test_cost_rollup_compute_preserves_tags(self) -> None:
         """compute_stage_cost_summary produces summary without tags (tags are set separately)."""
-        from src.observability.cost_rollup import compute_stage_cost_summary
+        from temper_ai.observability.cost_rollup import compute_stage_cost_summary
 
         agent_metrics = {
             "agent1": {"cost_usd": 0.05, "tokens": 100, "duration_seconds": 1.0},
@@ -105,7 +105,7 @@ class TestCostAttributionBackwardCompat:
 
     def test_noop_backend_unchanged(self) -> None:
         """NoOp backend works without cost_attribution_tags."""
-        from src.observability.backends.noop_backend import NoOpBackend
+        from temper_ai.observability.backends.noop_backend import NoOpBackend
 
         backend = NoOpBackend()
         # Should not raise — no-op returns None
@@ -119,8 +119,8 @@ class TestCostAttributionBackwardCompat:
 
     def test_composite_backend_passes_tags(self) -> None:
         """Composite backend fans out cost_attribution_tags."""
-        from src.observability.backends.composite_backend import CompositeBackend
-        from src.observability.backends.noop_backend import NoOpBackend
+        from temper_ai.observability.backends.composite_backend import CompositeBackend
+        from temper_ai.observability.backends.noop_backend import NoOpBackend
 
         primary = MagicMock(spec=NoOpBackend)
         secondary = MagicMock(spec=NoOpBackend)

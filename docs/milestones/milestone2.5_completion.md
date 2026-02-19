@@ -14,12 +14,12 @@
 
 ```python
 # Before M2.5 (direct LangGraph usage):
-from src.compiler.langgraph_compiler import LangGraphCompiler
+from temper_ai.compiler.langgraph_compiler import LangGraphCompiler
 compiler = LangGraphCompiler(tool_registry, config_loader)
 graph = compiler.compile(workflow_config)
 
 # After M2.5 (abstraction layer):
-from src.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.engine_registry import EngineRegistry
 registry = EngineRegistry()
 engine = registry.get_engine_from_config(workflow_config)
 compiled = engine.compile(workflow_config)
@@ -137,18 +137,18 @@ classDiagram
 
 ### Files Created
 
-1. **src/compiler/execution_engine.py** (~224 lines)
+1. **temper_ai/compiler/execution_engine.py** (~224 lines)
    - `ExecutionEngine` abstract base class
    - `CompiledWorkflow` abstract base class
    - `ExecutionMode` enum
    - Complete interface contracts with docstrings
 
-2. **src/compiler/langgraph_engine.py** (~150 lines)
+2. **temper_ai/compiler/langgraph_engine.py** (~150 lines)
    - `LangGraphExecutionEngine` adapter
    - `LangGraphCompiledWorkflow` wrapper
    - Wraps existing `LangGraphCompiler` (no changes to M2 code)
 
-3. **src/compiler/engine_registry.py** (~100 lines)
+3. **temper_ai/compiler/engine_registry.py** (~100 lines)
    - `EngineRegistry` factory class
    - Runtime engine selection
    - Config-based and programmatic APIs
@@ -308,8 +308,8 @@ if engine.supports_feature("parallel_stages"):
 ### Before M2.5 (Direct LangGraph)
 
 ```python
-from src.compiler.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
+from temper_ai.compiler.config_loader import ConfigLoader
 
 # Create compiler
 compiler = LangGraphCompiler(tool_registry, config_loader)
@@ -323,8 +323,8 @@ result = executor.execute(input_data)
 ### After M2.5 (Abstraction Layer)
 
 ```python
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
 
 # Get engine from registry
 registry = EngineRegistry()
@@ -342,8 +342,8 @@ result = engine.execute(compiled, input_data)
 ### What Changed
 
 **Imports:**
-- ❌ `from src.compiler.langgraph_compiler import LangGraphCompiler`
-- ✅ `from src.compiler.engine_registry import EngineRegistry`
+- ❌ `from temper_ai.compiler.langgraph_compiler import LangGraphCompiler`
+- ✅ `from temper_ai.compiler.engine_registry import EngineRegistry`
 
 **Compilation:**
 - ❌ `graph = compiler.compile(config)`

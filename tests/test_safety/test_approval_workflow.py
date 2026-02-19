@@ -4,8 +4,8 @@ from time import sleep
 
 import pytest
 
-from src.safety.approval import ApprovalRequest, ApprovalStatus, ApprovalWorkflow
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
+from temper_ai.safety.approval import ApprovalRequest, ApprovalStatus, ApprovalWorkflow
+from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 
 
 class TestApprovalRequest:

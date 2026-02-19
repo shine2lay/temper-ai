@@ -6,13 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from src.workflow.checkpoint import (
+from temper_ai.workflow.checkpoint import (
     CheckpointManager,
     CheckpointMetadata,
     FileCheckpointStorage,
 )
-from src.workflow.domain_state import WorkflowDomainState
-from src.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.stage.executors.state_keys import StateKeys
 
 
 class TestCheckpointMetadata:

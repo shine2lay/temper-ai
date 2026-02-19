@@ -157,11 +157,11 @@ workflow:
 
 ## Action Policy Engine
 
-The framework includes a policy engine (`src/safety/action_policy_engine.py`) that validates actions at runtime:
+The framework includes a policy engine (`temper_ai/safety/action_policy_engine.py`) that validates actions at runtime:
 
 - Validates tool calls against configured policies
 - Supports sync and async validation
-- Built-in policies in `src/safety/stub_policies.py`
+- Built-in policies in `temper_ai/safety/stub_policies.py`
 - Custom policies via `config/safety/action_policies.yaml`
 
 ## Security Checklist

@@ -12,8 +12,8 @@ This replaces over-mocking in integration tests with realistic fixtures that:
 
 from typing import Optional
 
-from src.llm.providers import LLMResponse
-from src.shared.utils.exceptions import (
+from temper_ai.llm.providers import LLMResponse
+from temper_ai.shared.utils.exceptions import (
     LLMAuthenticationError,
     LLMError,
     LLMRateLimitError,

@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.autonomy._schemas import (
+from temper_ai.autonomy._schemas import (
     AutonomousLoopConfig,
     PostExecutionReport,
     WorkflowRunContext,

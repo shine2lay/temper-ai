@@ -7,14 +7,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.engines.workflow_executor import (
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.engines.workflow_executor import (
     _normalize_dict_signal,
     _normalize_next_stage_signal,
     _run_parallel_stage_batch,
     _run_stage_node,
 )
-from src.workflow.engines._dynamic_edge_helpers import (
+from temper_ai.workflow.engines._dynamic_edge_helpers import (
     _dedup_targets,
     _execute_convergence,
     _follow_parallel_targets,
@@ -281,7 +281,7 @@ class TestExecuteConvergence:
         stage_nodes = {"D": MagicMock()}
         state = {StateKeys.STAGE_OUTPUTS: {}}
 
-        from src.workflow.engines._dynamic_edge_helpers import DEFAULT_MAX_DYNAMIC_HOPS
+        from temper_ai.workflow.engines._dynamic_edge_helpers import DEFAULT_MAX_DYNAMIC_HOPS
         state, hop_count = _execute_convergence(
             {"name": "D"},
             ["B"],
@@ -402,7 +402,7 @@ class TestConvergencePredecessorIntegration:
 
     def test_predecessor_resolver_uses_convergence(self):
         """PredecessorResolver picks up _convergence_predecessors."""
-        from src.workflow.context_provider import PredecessorResolver
+        from temper_ai.workflow.context_provider import PredecessorResolver
 
         resolver = PredecessorResolver()
         dag = MagicMock()

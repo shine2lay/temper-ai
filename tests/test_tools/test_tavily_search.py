@@ -9,7 +9,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from src.tools.tavily_search import TavilySearch, TavilySearchParams
+from temper_ai.tools.tavily_search import TavilySearch, TavilySearchParams
 
 
 # ---------------------------------------------------------------------------

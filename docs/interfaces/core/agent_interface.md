@@ -259,9 +259,9 @@ agent:
 ## Usage Example
 
 ```python
-from src.compiler.config_loader import init_config_loader
-from src.agents.agent_factory import AgentFactory
-from src.observability.tracker import ExecutionTracker
+from temper_ai.compiler.config_loader import init_config_loader
+from temper_ai.agents.agent_factory import AgentFactory
+from temper_ai.observability.tracker import ExecutionTracker
 
 # Load config
 loader = init_config_loader("configs")

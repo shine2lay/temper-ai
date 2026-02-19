@@ -6,8 +6,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.experimentation.dashboard_routes import create_experimentation_router
-from src.experimentation.dashboard_service import ExperimentDataService
+from temper_ai.experimentation.dashboard_routes import create_experimentation_router
+from temper_ai.experimentation.dashboard_service import ExperimentDataService
 
 
 @pytest.fixture

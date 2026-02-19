@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.llm.service import LLMService
+from temper_ai.llm.service import LLMService
 
 
 def _make_llm_service():
@@ -86,7 +86,7 @@ class TestStandardAgentFailedLLMTracking:
 
     def test_track_failed_call_with_llm_error(self):
         """_track_failed_call works with LLMError."""
-        from src.shared.utils.exceptions import LLMError
+        from temper_ai.shared.utils.exceptions import LLMError
 
         service = _make_llm_service()
         observer = MagicMock()

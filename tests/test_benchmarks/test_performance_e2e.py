@@ -18,7 +18,7 @@ from unittest.mock import Mock, patch
 import psutil
 import pytest
 
-from src.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 from tests.fixtures.realistic_data import REALISTIC_RESEARCH_WORKFLOW_AGENTS
 
 from tests.test_benchmarks.conftest import PERFORMANCE_BUDGETS
@@ -35,7 +35,7 @@ def test_e2e_simple_m2_workflow(simple_workflow_config, benchmark):
     Target: <2s
     Measures: Complete sequential workflow execution
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -60,7 +60,7 @@ def test_e2e_medium_m3_workflow_parallel(medium_workflow_config, benchmark):
     Target: <5s
     Measures: Parallel workflow execution
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -91,7 +91,7 @@ def test_e2e_workflow_with_checkpointing(simple_workflow_config, benchmark):
     Target: <3s
     Measures: Checkpoint overhead in workflow
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -100,7 +100,7 @@ def test_e2e_workflow_with_checkpointing(simple_workflow_config, benchmark):
         compiler.config_loader = mock_loader
 
         # Compile with checkpointing
-        from src.workflow.checkpoint import CheckpointManager
+        from temper_ai.workflow.checkpoint import CheckpointManager
         checkpoint_manager = CheckpointManager()
 
         graph = compiler.compile(simple_workflow_config)
@@ -156,7 +156,7 @@ def test_e2e_workflow_memory_baseline(simple_workflow_config):
     Target: <100MB for workflow compilation
     Measures: Memory usage baseline
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -187,7 +187,7 @@ def test_e2e_adaptive_workflow_execution(simple_workflow_config, benchmark):
     Target: <2.5s
     Measures: Adaptive executor overhead
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()

@@ -1,4 +1,4 @@
-# Meta-Autonomous Agent Framework
+# Temper AI
 
 **A self-improving, fully observable autonomous agent system that can run entire product companies.**
 
@@ -6,7 +6,7 @@
 
 This framework enables AI agents to autonomously execute complete product lifecycles -- from market research to deployment to iterative improvement -- with minimal human intervention. The system learns from outcomes, experiments with approaches, and continuously optimizes itself.
 
-See [META_AUTONOMOUS_FRAMEWORK_VISION.md](./docs/VISION.md) for the complete vision.
+See [VISION.md](./docs/VISION.md) for the complete vision.
 
 ## Current Status: Milestone 8 COMPLETE
 
@@ -17,7 +17,7 @@ The autonomous self-improving loop is now functional: workflows can learn from t
 ## Architecture
 
 ```
-src/
+temper_ai/
   workflow/        # LangGraph compiler/engine, config_loader, DAG/node builders
   stage/           # Stage compiler, executors (sequential, parallel, adaptive)
   agent/           # StandardAgent, BaseAgent, LLM providers, strategies
@@ -34,7 +34,7 @@ src/
   autonomy/        # Post-execution loop, feedback application, audit
   storage/         # Database models, schemas
   shared/          # Core utilities, constants, circuit breaker
-  interfaces/      # CLI (maf), dashboard, HTTP server
+  interfaces/      # CLI (temper-ai), dashboard, HTTP server
 
 configs/
   agents/          # Agent definitions (YAML)
@@ -70,24 +70,24 @@ pip install -e ".[dev]"
 
 ```bash
 # Simple workflow
-maf run configs/workflows/quick_decision_demo.yaml --input examples/demo_input.yaml --show-details
+temper-ai run configs/workflows/quick_decision_demo.yaml --input examples/demo_input.yaml --show-details
 
 # With autonomous learning loop
-maf run configs/workflows/quick_decision_demo.yaml --input examples/demo_input.yaml --autonomous --show-details
+temper-ai run configs/workflows/quick_decision_demo.yaml --input examples/demo_input.yaml --autonomous --show-details
 ```
 
 ### Validate a Workflow
 
 ```bash
-maf validate configs/workflows/quick_decision_demo.yaml --check-refs
+temper-ai validate configs/workflows/quick_decision_demo.yaml --check-refs
 ```
 
 ### List Resources
 
 ```bash
-maf list workflows
-maf list agents
-maf list stages
+temper-ai list workflows
+temper-ai list agents
+temper-ai list stages
 ```
 
 ### Autonomous Mode
@@ -104,40 +104,40 @@ workflow:
     portfolio_enabled: true
 ```
 
-Or: `maf run workflow.yaml --autonomous`
+Or: `temper-ai run workflow.yaml --autonomous`
 
 See [Autonomous Mode Guide](./docs/guides/autonomous_mode.md) for details.
 
 ### Learning & Goals
 
 ```bash
-maf learning mine          # Mine patterns from execution history
-maf learning patterns      # View discovered patterns
-maf learning recommend     # Generate recommendations
-maf goals propose          # Propose improvement goals
-maf goals list             # List proposals
+temper-ai learning mine          # Mine patterns from execution history
+temper-ai learning patterns      # View discovered patterns
+temper-ai learning recommend     # Generate recommendations
+temper-ai goals propose          # Propose improvement goals
+temper-ai goals list             # List proposals
 ```
 
 ### Experimentation
 
 ```bash
-maf experiment list                    # List experiments
-maf experiment create --name X ...     # Create experiment
-maf experiment start <id>             # Start experiment
-maf experiment results <id>           # View analysis
+temper-ai experiment list                    # List experiments
+temper-ai experiment create --name X ...     # Create experiment
+temper-ai experiment start <id>             # Start experiment
+temper-ai experiment results <id>           # View analysis
 ```
 
 ### Templates
 
 ```bash
-maf template list                     # List product types
-maf template create --type api --name my-api  # Scaffold new project
+temper-ai template list                     # List product types
+temper-ai template create --type api --name my-api  # Scaffold new project
 ```
 
 ### Dashboard
 
 ```bash
-maf dashboard                         # Launch web UI on port 8420
+temper-ai dashboard                         # Launch web UI on port 8420
 ```
 
 ## Development
@@ -162,7 +162,7 @@ python3 scripts/architecture_scan.py
 ```bash
 black .           # Format
 ruff check .      # Lint
-mypy src/         # Type check
+mypy temper_ai/   # Type check
 ```
 
 ## Milestone History

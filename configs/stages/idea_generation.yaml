@@ -9,7 +9,7 @@ stage:
     - customer_advocate
 
   collaboration:
-    strategy: src.strategies.dialogue.DialogueOrchestrator
+    strategy: temper_ai.strategies.dialogue.DialogueOrchestrator
     max_rounds: 4
     consensus_threshold: 0.6
     enable_summarization: true

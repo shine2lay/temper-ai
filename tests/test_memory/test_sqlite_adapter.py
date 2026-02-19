@@ -5,9 +5,9 @@ import threading
 
 import pytest
 
-from src.memory._schemas import MemoryScope
-from src.memory.adapters.sqlite_adapter import SQLiteAdapter
-from src.memory.constants import (
+from temper_ai.memory._schemas import MemoryScope
+from temper_ai.memory.adapters.sqlite_adapter import SQLiteAdapter
+from temper_ai.memory.constants import (
     MEMORY_TYPE_CROSS_SESSION,
     MEMORY_TYPE_EPISODIC,
     MEMORY_TYPE_PROCEDURAL,

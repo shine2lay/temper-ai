@@ -11,8 +11,8 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.observability.database import DatabaseManager
-from src.observability.migrations import (
+from temper_ai.observability.database import DatabaseManager
+from temper_ai.observability.migrations import (
     MigrationSecurityError,
     check_schema_version,
     create_schema,
@@ -56,7 +56,7 @@ class TestCreateSchema:
 
     def test_create_schema_without_url(self):
         """Test creating schema without URL uses existing database."""
-        with patch('src.observability.migrations.get_database') as mock_get_db:
+        with patch('temper_ai.observability.migrations.get_database') as mock_get_db:
             mock_db = Mock(spec=DatabaseManager)
             mock_get_db.return_value = mock_db
 
@@ -98,7 +98,7 @@ class TestDropSchema:
 
     def test_drop_schema_without_url(self):
         """Test dropping schema without URL uses existing database."""
-        with patch('src.observability.migrations.get_database') as mock_get_db:
+        with patch('temper_ai.observability.migrations.get_database') as mock_get_db:
             mock_db = Mock(spec=DatabaseManager)
             mock_get_db.return_value = mock_db
 
@@ -114,8 +114,8 @@ class TestResetSchema:
 
     def test_reset_schema_drops_and_creates(self):
         """Test that reset_schema drops then creates tables."""
-        with patch('src.observability.migrations.drop_schema') as mock_drop, \
-             patch('src.observability.migrations.create_schema') as mock_create:
+        with patch('temper_ai.observability.migrations.drop_schema') as mock_drop, \
+             patch('temper_ai.observability.migrations.create_schema') as mock_create:
 
             reset_schema("sqlite:///:memory:")
 
@@ -125,8 +125,8 @@ class TestResetSchema:
 
     def test_reset_schema_without_url(self):
         """Test reset_schema without URL."""
-        with patch('src.observability.migrations.drop_schema') as mock_drop, \
-             patch('src.observability.migrations.create_schema') as mock_create:
+        with patch('temper_ai.observability.migrations.drop_schema') as mock_drop, \
+             patch('temper_ai.observability.migrations.create_schema') as mock_create:
 
             reset_schema()
 
@@ -235,21 +235,21 @@ class TestDeprecatedFunctionsRemoved:
 
     def test_apply_migration_removed(self):
         """apply_migration should no longer exist."""
-        import src.observability.migrations as mig
+        import temper_ai.observability.migrations as mig
         assert not hasattr(mig, "apply_migration"), (
             "apply_migration was removed; use Alembic instead"
         )
 
     def test_validate_migration_sql_removed(self):
         """_validate_migration_sql should no longer exist."""
-        import src.observability.migrations as mig
+        import temper_ai.observability.migrations as mig
         assert not hasattr(mig, "_validate_migration_sql"), (
             "_validate_migration_sql was removed; use Alembic instead"
         )
 
     def test_normalize_sql_removed(self):
         """_normalize_sql should no longer exist."""
-        import src.observability.migrations as mig
+        import temper_ai.observability.migrations as mig
         assert not hasattr(mig, "_normalize_sql"), (
             "_normalize_sql was removed; use Alembic instead"
         )

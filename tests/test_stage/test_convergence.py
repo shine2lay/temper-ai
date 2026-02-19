@@ -9,8 +9,8 @@ Verifies:
 import pytest
 from pydantic import ValidationError
 
-from src.stage._schemas import ConvergenceConfig
-from src.stage.convergence import StageConvergenceDetector
+from temper_ai.stage._schemas import ConvergenceConfig
+from temper_ai.stage.convergence import StageConvergenceDetector
 
 
 # ── Exact Hash Comparison ──

@@ -173,7 +173,7 @@ execution:
 
 ### 1. Implement Interface
 ```python
-from src.compiler.execution_engine import ExecutionEngine
+from temper_ai.compiler.execution_engine import ExecutionEngine
 
 class MyCustomEngine(ExecutionEngine):
     def compile(self, workflow_config):
@@ -191,7 +191,7 @@ class MyCustomEngine(ExecutionEngine):
 
 ### 2. Register Engine
 ```python
-from src.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.engine_registry import EngineRegistry
 
 EngineRegistry.register("my_custom_engine", MyCustomEngine)
 ```
@@ -227,7 +227,7 @@ def test_custom_engine():
 
 ### Using LangGraph Engine (Default)
 ```python
-from src.compiler import WorkflowCompiler
+from temper_ai.compiler import WorkflowCompiler
 
 # Automatically uses LangGraph
 workflow = WorkflowCompiler.from_file("workflow.yaml")
@@ -236,7 +236,7 @@ result = workflow.execute({"task": "Research TypeScript"})
 
 ### Switching to Custom Engine
 ```python
-from src.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.engine_registry import EngineRegistry
 from my_engines import DistributedEngine
 
 # Register custom engine
@@ -252,7 +252,7 @@ result = workflow.execute({"task": "Large-scale analysis"})
 
 ### Mock Engine for Testing
 ```python
-from src.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.engine_registry import EngineRegistry
 from tests.mocks import MockEngine
 
 # Use mock engine (no real LLM calls)
@@ -282,7 +282,7 @@ See execution engine tests:
 ### From Direct LangGraph Usage
 **Before:**
 ```python
-from src.compiler.langgraph_compiler import LangGraphCompiler
+from temper_ai.compiler.langgraph_compiler import LangGraphCompiler
 
 compiler = LangGraphCompiler(workflow_config)
 result = compiler.compile_and_run(input_data)
@@ -290,7 +290,7 @@ result = compiler.compile_and_run(input_data)
 
 **After:**
 ```python
-from src.compiler import WorkflowCompiler
+from temper_ai.compiler import WorkflowCompiler
 
 # Uses LangGraph via abstraction
 workflow = WorkflowCompiler.from_config(workflow_config)
@@ -301,7 +301,7 @@ result = workflow.execute(input_data)
 Old code continues to work but shows deprecation warning:
 ```python
 # Still works, with warning
-from src.compiler.langgraph_compiler import LangGraphCompiler
+from temper_ai.compiler.langgraph_compiler import LangGraphCompiler
 # DeprecationWarning: Use WorkflowCompiler instead
 ```
 

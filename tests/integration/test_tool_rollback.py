@@ -9,16 +9,16 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.safety.action_policy_engine import (
+from temper_ai.safety.action_policy_engine import (
     ActionPolicyEngine,
     EnforcementResult,
 )
-from src.safety.approval import ApprovalWorkflow
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
-from src.safety.rollback import RollbackManager, RollbackStatus
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.tools.executor import ToolExecutor
-from src.tools.registry import ToolRegistry
+from temper_ai.safety.approval import ApprovalWorkflow
+from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
+from temper_ai.safety.rollback import RollbackManager, RollbackStatus
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.registry import ToolRegistry
 
 
 class FileWriteTool(BaseTool):

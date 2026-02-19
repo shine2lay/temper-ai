@@ -5,8 +5,8 @@ Tests quality gate validation after synthesis.
 """
 from unittest.mock import Mock
 
-from src.workflow.langgraph_compiler import LangGraphCompiler
-from src.agent.strategies.base import SynthesisResult
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.agent.strategies.base import SynthesisResult
 
 
 class TestQualityGateValidation:
@@ -305,7 +305,7 @@ class TestQualityGateRetry:
 
     def test_retry_state_initialization(self):
         """Test that retry state is properly initialized."""
-        from src.stage.executors.parallel import ParallelStageExecutor
+        from temper_ai.stage.executors.parallel import ParallelStageExecutor
 
         executor = ParallelStageExecutor()
         state = {"stage_outputs": {}}

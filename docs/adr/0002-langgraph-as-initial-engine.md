@@ -230,8 +230,8 @@ class LangGraphCompiler:
 ```
 
 **Key Implementation Files:**
-- `src/compiler/langgraph_compiler.py` - YAML → LangGraph compilation
-- `src/compiler/langgraph_engine.py` - M2.5 adapter wrapper (see ADR-0001)
+- `temper_ai/compiler/langgraph_compiler.py` - YAML → LangGraph compilation
+- `temper_ai/compiler/langgraph_engine.py` - M2.5 adapter wrapper (see ADR-0001)
 - `configs/workflows/*.yaml` - YAML workflow definitions
 
 **Action Items:**

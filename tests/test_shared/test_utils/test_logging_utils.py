@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.shared.utils.logging import (
+from temper_ai.shared.utils.logging import (
     ConsoleFormatter,
     LogContext,
     SecretRedactingFormatter,

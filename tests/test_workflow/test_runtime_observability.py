@@ -7,14 +7,14 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 import yaml
 
-from src.observability.constants import (
+from temper_ai.observability.constants import (
     EVENT_CONFIG_LOADED,
     EVENT_LIFECYCLE_ADAPTED,
     EVENT_WORKFLOW_COMPILED,
     EVENT_WORKFLOW_COMPILING,
 )
-from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
-from src.workflow.runtime import (
+from temper_ai.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
+from temper_ai.workflow.runtime import (
     InfrastructureBundle,
     RuntimeConfig,
     WorkflowRuntime,
@@ -100,10 +100,10 @@ class TestAdaptLifecycleEvents:
         ]
         assert len(lifecycle_events) == 0
 
-    @patch("src.workflow.runtime.LifecycleAdapter", create=True)
-    @patch("src.workflow.runtime.ProjectClassifier", create=True)
-    @patch("src.workflow.runtime.ProfileRegistry", create=True)
-    @patch("src.workflow.runtime.LifecycleStore", create=True)
+    @patch("temper_ai.workflow.runtime.LifecycleAdapter", create=True)
+    @patch("temper_ai.workflow.runtime.ProjectClassifier", create=True)
+    @patch("temper_ai.workflow.runtime.ProfileRegistry", create=True)
+    @patch("temper_ai.workflow.runtime.LifecycleStore", create=True)
     def test_emits_lifecycle_adapted(
         self, _store, _registry, _classifier, _adapter,
         event_bus, captured_events,
@@ -127,7 +127,7 @@ class TestAdaptLifecycleEvents:
 class TestCompileEvents:
     """Test lifecycle events from compile."""
 
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_emits_compiling_and_compiled(
         self, mock_registry_cls, event_bus, captured_events,
     ):
@@ -157,7 +157,7 @@ class TestCompileEvents:
         assert captured_events[1].event_type == EVENT_WORKFLOW_COMPILED
         assert isinstance(captured_events[1].data["engine"], str)
 
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_no_events_without_bus(self, mock_registry_cls):
         """No events emitted when event_bus is None."""
         mock_engine = MagicMock()

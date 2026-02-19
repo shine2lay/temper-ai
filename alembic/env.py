@@ -21,10 +21,10 @@ if config.config_file_name is not None:
 
 # Import all SQLModel models so metadata is populated
 from sqlmodel import SQLModel
-import src.observability.models  # noqa: F401
-import src.experimentation.models  # noqa: F401
-import src.interfaces.server.models  # noqa: F401
-import src.learning.models  # noqa: F401
+import temper_ai.observability.models  # noqa: F401
+import temper_ai.experimentation.models  # noqa: F401
+import temper_ai.interfaces.server.models  # noqa: F401
+import temper_ai.learning.models  # noqa: F401
 
 target_metadata = SQLModel.metadata
 

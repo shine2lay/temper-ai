@@ -73,7 +73,7 @@ cd meta-autonomous-framework
 pip install -e .
 
 # Verify installation
-python -c "from src.safety import PolicyComposer; print('M4 installed successfully')"
+python -c "from temper_ai.safety import PolicyComposer; print('M4 installed successfully')"
 
 # Run tests
 pytest tests/test_safety/ -v
@@ -89,7 +89,7 @@ pip install meta-autonomous-framework
 pip install meta_autonomous_framework-1.0.0-py3-none-any.whl
 
 # Verify installation
-python -c "from src.safety import *; print('M4 ready for production')"
+python -c "from temper_ai.safety import *; print('M4 ready for production')"
 ```
 
 ### Method 3: Docker Installation
@@ -104,7 +104,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src/ src/
+COPY temper_ai/ temper_ai/
 COPY examples/ examples/
 
 # Run example
@@ -157,7 +157,7 @@ docker run m4-safety
 
 ```python
 # main.py - Single-process deployment
-from src.safety import (
+from temper_ai.safety import (
     PolicyComposer,
     ApprovalWorkflow,
     RollbackManager,
@@ -247,7 +247,7 @@ def execute_action(action, context):
 ```python
 # m4_service.py - Centralized M4 service
 from flask import Flask, request, jsonify
-from src.safety import PolicyComposer, ApprovalWorkflow
+from temper_ai.safety import PolicyComposer, ApprovalWorkflow
 
 app = Flask(__name__)
 
@@ -595,7 +595,7 @@ def load_m4_config(config_path: str = None):
 # Initialize M4 with configuration
 config = load_m4_config()
 
-from src.safety import RollbackManager, ApprovalWorkflow, CircuitBreakerManager
+from temper_ai.safety import RollbackManager, ApprovalWorkflow, CircuitBreakerManager
 
 rollback_mgr = RollbackManager(
     storage_path=Path(config['m4']['storage']['path'])
@@ -620,7 +620,7 @@ for breaker_config in config['m4']['circuit_breakers']['default_breakers']:
 ```python
 # middleware.py - Flask middleware
 from flask import Flask, request, g
-from src.safety import SafetyGate, PolicyComposer, CircuitBreaker
+from temper_ai.safety import SafetyGate, PolicyComposer, CircuitBreaker
 
 app = Flask(__name__)
 
@@ -666,7 +666,7 @@ def m4_record_success(response):
 ```python
 # decorators.py - M4 decorators
 from functools import wraps
-from src.safety import SafetyGate, RollbackManager
+from temper_ai.safety import SafetyGate, RollbackManager
 
 def with_m4_safety(gate: SafetyGate, rollback_mgr: RollbackManager):
     """Decorator for M4 safety checks."""
@@ -710,7 +710,7 @@ def risky_operation(file_path: str):
 ```python
 # context_managers.py - M4 context managers
 from contextlib import contextmanager
-from src.safety import SafetyGate, RollbackManager, ApprovalWorkflow
+from temper_ai.safety import SafetyGate, RollbackManager, ApprovalWorkflow
 
 @contextmanager
 def m4_protected_operation(
@@ -804,7 +804,7 @@ with m4_protected_operation(action, context, gate, approval, rollback_mgr):
 
 ```python
 # performance_config.py
-from src.safety import PolicyComposer, RollbackManager
+from temper_ai.safety import PolicyComposer, RollbackManager
 
 # 1. Enable fail-fast for faster validation
 composer = PolicyComposer(fail_fast=True)
@@ -835,7 +835,7 @@ redis_client = redis.Redis(connection_pool=redis_pool)
 ```python
 # metrics.py - Prometheus metrics
 from prometheus_client import Counter, Gauge, Histogram, start_http_server
-from src.safety import PolicyComposer, CircuitBreakerManager
+from temper_ai.safety import PolicyComposer, CircuitBreakerManager
 
 # Policy metrics
 policy_validations = Counter('m4_policy_validations_total', 'Total policy validations', ['result'])
@@ -920,7 +920,7 @@ logger.info('Policy validation failed', extra={
 ```python
 # health.py - Health check endpoints
 from flask import Flask, jsonify
-from src.safety import PolicyComposer, ApprovalWorkflow, CircuitBreakerManager
+from temper_ai.safety import PolicyComposer, ApprovalWorkflow, CircuitBreakerManager
 
 app = Flask(__name__)
 
@@ -1095,7 +1095,7 @@ print(f"Metrics: {breaker.metrics}")
 du -sh /var/m4/snapshots
 
 # Count snapshots
-python -c "from src.safety import RollbackManager; mgr = RollbackManager(); print(mgr.snapshot_count())"
+python -c "from temper_ai.safety import RollbackManager; mgr = RollbackManager(); print(mgr.snapshot_count())"
 ```
 
 **Solutions:**
@@ -1121,7 +1121,7 @@ tail -f /var/log/m4/m4.log
 python -c "from config_loader import load_m4_config; print(load_m4_config())"
 
 # Verify dependencies
-python -c "from src.safety import *; print('OK')"
+python -c "from temper_ai.safety import *; print('OK')"
 ```
 
 **Solutions:**

@@ -6,7 +6,7 @@ from datetime import datetime
 
 import pytest
 
-from src.observability.performance import (
+from temper_ai.observability.performance import (
     LatencyMetrics,
     PerformanceTracker,
     SlowOperation,

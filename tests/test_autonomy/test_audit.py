@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from src.autonomy.audit import AuditEntry, AuditLogger, DEFAULT_ENTRY_LIMIT
+from temper_ai.autonomy.audit import AuditEntry, AuditLogger, DEFAULT_ENTRY_LIMIT
 
 
 def _make_entry(**overrides: object) -> AuditEntry:

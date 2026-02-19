@@ -87,7 +87,7 @@ The M4 Safety System is a comprehensive, multi-layered security framework that v
 
 ### 1. ActionPolicyEngine
 
-**Location:** `src/safety/action_policy_engine.py`
+**Location:** `temper_ai/safety/action_policy_engine.py`
 
 Central enforcement layer that orchestrates policy validation.
 
@@ -136,7 +136,7 @@ config: Dict[str, Any] = {
 
 ### 2. PolicyRegistry
 
-**Location:** `src/safety/policy_registry.py`
+**Location:** `temper_ai/safety/policy_registry.py`
 
 Manages policy registration and lookup by action type.
 
@@ -150,10 +150,10 @@ Manages policy registration and lookup by action type.
 **Example:**
 ```python
 from typing import List
-from src.safety.policy_registry import PolicyRegistry
-from src.safety.file_access import FileAccessPolicy
-from src.safety.circuit_breaker import CircuitBreakerPolicy
-from src.safety.interfaces import SafetyPolicy
+from temper_ai.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.file_access import FileAccessPolicy
+from temper_ai.safety.circuit_breaker import CircuitBreakerPolicy
+from temper_ai.safety.interfaces import SafetyPolicy
 
 registry = PolicyRegistry()
 
@@ -173,7 +173,7 @@ policies: List[SafetyPolicy] = registry.get_policies_for_action("file_write")
 
 ### 3. PolicyComposer
 
-**Location:** `src/safety/composition.py`
+**Location:** `temper_ai/safety/composition.py`
 
 Composes multiple policies for unified validation.
 
@@ -187,9 +187,9 @@ Composes multiple policies for unified validation.
 **Example:**
 ```python
 from typing import Dict, Any
-from src.safety.composition import PolicyComposer
-from src.safety.file_access import FileAccessPolicy
-from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+from temper_ai.safety.composition import PolicyComposer
+from temper_ai.safety.file_access import FileAccessPolicy
+from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
 composer = PolicyComposer(fail_fast=True, enable_reporting=True)
 composer.add_policy(FileAccessPolicy())
@@ -212,7 +212,7 @@ if not result.valid:
 ### P0 Policies (CRITICAL - Priority 90-200)
 
 #### ForbiddenOperationsPolicy
-**Location:** `src/safety/forbidden_operations.py`
+**Location:** `temper_ai/safety/forbidden_operations.py`
 
 Blocks dangerous bash operations and forbidden patterns.
 
@@ -227,7 +227,7 @@ Blocks dangerous bash operations and forbidden patterns.
 **Example:**
 ```python
 from typing import Dict, Any
-from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
 policy = ForbiddenOperationsPolicy()
 
@@ -254,7 +254,7 @@ config: Dict[str, Any] = {
 ```
 
 #### FileAccessPolicy
-**Location:** `src/safety/file_access.py`
+**Location:** `temper_ai/safety/file_access.py`
 
 Enforces file and directory access restrictions.
 
@@ -265,7 +265,7 @@ Enforces file and directory access restrictions.
 - Path traversal prevention
 
 #### SecretDetectionPolicy
-**Location:** `src/safety/secret_detection.py`
+**Location:** `temper_ai/safety/secret_detection.py`
 
 Detects secrets (API keys, passwords, tokens) in code and commands.
 
@@ -279,7 +279,7 @@ Detects secrets (API keys, passwords, tokens) in code and commands.
 ### P1 Policies (IMPORTANT - Priority 80-89)
 
 #### RateLimitPolicy
-**Location:** `src/safety/rate_limiter.py`
+**Location:** `temper_ai/safety/rate_limiter.py`
 
 Rate limiting for various operations.
 
@@ -291,7 +291,7 @@ Rate limiting for various operations.
 - LLM calls: 1000/hour
 
 #### ResourceLimitPolicy
-**Location:** `src/safety/policies/resource_limit_policy.py`
+**Location:** `temper_ai/safety/policies/resource_limit_policy.py`
 
 Resource consumption limits.
 
@@ -302,7 +302,7 @@ Resource consumption limits.
 - Concurrent operation limits
 
 #### BlastRadiusPolicy
-**Location:** `src/safety/blast_radius.py`
+**Location:** `temper_ai/safety/blast_radius.py`
 
 Limits commit size to reduce blast radius.
 
@@ -312,7 +312,7 @@ Limits commit size to reduce blast radius.
 - Max 2000 total lines per commit
 
 #### ApprovalWorkflowPolicy
-**Location:** `src/safety/approval.py`
+**Location:** `temper_ai/safety/approval.py`
 
 Requires approval for sensitive operations.
 
@@ -325,7 +325,7 @@ Requires approval for sensitive operations.
 ### P2 Policies (OPTIMIZATION - Priority 50-79)
 
 #### CircuitBreakerPolicy
-**Location:** `src/safety/circuit_breaker.py`
+**Location:** `temper_ai/safety/circuit_breaker.py`
 
 Circuit breaker for external API calls.
 
@@ -477,7 +477,7 @@ See [POLICY_CONFIGURATION_GUIDE.md](./POLICY_CONFIGURATION_GUIDE.md) for complet
 
 ```python
 from typing import Dict, Any
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 
 class AgentExecutor:
     def __init__(self, policy_engine: ActionPolicyEngine, ...) -> None:
@@ -512,8 +512,8 @@ class AgentExecutor:
 
 ```python
 from typing import Dict, Any
-from src.safety.action_policy_engine import ActionPolicyEngine
-from src.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine
+from temper_ai.safety.policy_registry import PolicyRegistry
 
 # Create policy registry
 registry = PolicyRegistry()
@@ -627,7 +627,7 @@ metrics: Dict[str, Any] = {
 
 #### Exception Hierarchy
 
-**Module:** `src.safety.exceptions`
+**Module:** `temper_ai.safety.exceptions`
 
 All safety violations can be raised as exceptions for flow control:
 
@@ -647,7 +647,7 @@ SafetyViolationException (base)
 
 ```python
 from typing import Any
-from src.safety.exceptions import SafetyViolationException
+from temper_ai.safety.exceptions import SafetyViolationException
 
 try:
     # Execute action
@@ -665,7 +665,7 @@ except SafetyViolationException as e:
 
 ```python
 from typing import Dict, Any, List
-from src.safety.exceptions import BlastRadiusViolation
+from temper_ai.safety.exceptions import BlastRadiusViolation
 
 try:
     modify_files(large_file_list)
@@ -680,7 +680,7 @@ except BlastRadiusViolation as e:
 
 ```python
 from typing import Dict, Any
-from src.safety.exceptions import ActionPolicyViolation
+from temper_ai.safety.exceptions import ActionPolicyViolation
 
 try:
     execute_tool("forbidden_shell_command")
@@ -696,7 +696,7 @@ except ActionPolicyViolation as e:
 ```python
 import time
 from typing import Dict, Any
-from src.safety.exceptions import RateLimitViolation
+from temper_ai.safety.exceptions import RateLimitViolation
 
 try:
     make_api_call()
@@ -711,7 +711,7 @@ except RateLimitViolation as e:
 
 ```python
 from typing import Dict, Any, Optional
-from src.safety.exceptions import ResourceLimitViolation
+from temper_ai.safety.exceptions import ResourceLimitViolation
 
 try:
     load_large_dataset()
@@ -727,7 +727,7 @@ except ResourceLimitViolation as e:
 
 ```python
 from typing import Dict, Any, Optional
-from src.safety.exceptions import ForbiddenOperationViolation
+from temper_ai.safety.exceptions import ForbiddenOperationViolation
 
 try:
     access_secrets()
@@ -742,7 +742,7 @@ except ForbiddenOperationViolation as e:
 
 ```python
 from typing import Dict, Any, List, Optional
-from src.safety.exceptions import AccessDeniedViolation
+from temper_ai.safety.exceptions import AccessDeniedViolation
 
 try:
     read_file("/etc/passwd")
@@ -759,8 +759,8 @@ For policy execution errors (not violations):
 
 ```python
 from typing import Dict, Any
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
-from src.safety.exceptions import SafetyViolationException
+from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
+from temper_ai.safety.exceptions import SafetyViolationException
 
 try:
     result = await policy.validate_async(action, context)
@@ -843,7 +843,7 @@ Test individual policies:
 
 ```python
 from typing import Dict, Any
-from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
 def test_forbidden_operations_blocks_cat_redirect() -> None:
     policy = ForbiddenOperationsPolicy()
@@ -864,9 +864,9 @@ Test policy engine with multiple policies:
 ```python
 from typing import Dict, Any
 import pytest
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
-from src.safety.policy_registry import PolicyRegistry
-from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from temper_ai.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
 @pytest.mark.asyncio
 async def test_engine_blocks_on_critical_violation() -> None:
@@ -979,10 +979,10 @@ async def test_agent_executor_blocks_unsafe_action() -> None:
 - [Safety Examples](./SAFETY_EXAMPLES.md) - Common patterns and examples
 
 ### Source Code
-- `src/safety/action_policy_engine.py` - Central enforcement engine
-- `src/safety/policy_registry.py` - Policy registration and lookup
-- `src/safety/composition.py` - Policy composition layer
-- `src/safety/forbidden_operations.py` - Forbidden operations policy
+- `temper_ai/safety/action_policy_engine.py` - Central enforcement engine
+- `temper_ai/safety/policy_registry.py` - Policy registration and lookup
+- `temper_ai/safety/composition.py` - Policy composition layer
+- `temper_ai/safety/forbidden_operations.py` - Forbidden operations policy
 - `config/safety/action_policies.yaml` - Policy configuration
 
 ### Tests

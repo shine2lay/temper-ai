@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from src.shared.utils.path_safety import (
+from temper_ai.shared.utils.path_safety import (
     PathSafetyError,
     PathSafetyValidator,
 )

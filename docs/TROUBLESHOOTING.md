@@ -1,6 +1,6 @@
 # Troubleshooting Guide
 
-Solutions to common issues when using the Meta-Autonomous Agent Framework.
+Solutions to common issues when using the Temper AI.
 
 ---
 
@@ -11,7 +11,7 @@ Solutions to common issues when using the Meta-Autonomous Agent Framework.
 python --version  # Should be 3.11+
 
 # Check installation
-python -c "from src.agents.standard_agent import StandardAgent; print('OK')"
+python -c "from temper_ai.agents.standard_agent import StandardAgent; print('OK')"
 
 # Run tests
 pytest tests/test_agents/ -v

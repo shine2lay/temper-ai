@@ -3,7 +3,7 @@
 A workflow is a pipeline of stages with dependencies, inputs, outputs, and global settings.
 
 **Location:** `configs/workflows/*.yaml`
-**Schema:** `src/compiler/schemas.py` (WorkflowConfig)
+**Schema:** `temper_ai/compiler/schemas.py` (WorkflowConfig)
 
 ## Minimal Workflow
 

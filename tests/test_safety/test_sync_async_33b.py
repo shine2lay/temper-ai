@@ -8,9 +8,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.safety.base import BaseSafetyPolicy
-from src.safety.composition import CompositeValidationResult, PolicyComposer
-from src.safety.interfaces import (
+from temper_ai.safety.base import BaseSafetyPolicy
+from temper_ai.safety.composition import CompositeValidationResult, PolicyComposer
+from temper_ai.safety.interfaces import (
     SafetyPolicy,
     SafetyViolation,
     ValidationResult,

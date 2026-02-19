@@ -3,7 +3,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.safety.circuit_breaker import (
+from temper_ai.safety.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerManager,
     CircuitBreakerMetrics,
@@ -145,7 +145,7 @@ class TestCircuitBreaker:
 
         # Mock time.time to advance past timeout (no flaky sleep)
         original_time = breaker._last_failure_time
-        with patch('src.shared.core.circuit_breaker.time') as mock_time:
+        with patch('temper_ai.shared.core.circuit_breaker.time') as mock_time:
             mock_time.time.return_value = original_time + 1.1
             # Check state (should transition to HALF_OPEN)
             assert breaker.state == CircuitBreakerState.HALF_OPEN
@@ -165,7 +165,7 @@ class TestCircuitBreaker:
 
         # Mock time.time to advance past timeout (no flaky sleep)
         original_time = breaker._last_failure_time
-        with patch('src.shared.core.circuit_breaker.time') as mock_time:
+        with patch('temper_ai.shared.core.circuit_breaker.time') as mock_time:
             mock_time.time.return_value = original_time + 1.1
             # Now in HALF_OPEN
             assert breaker.state == CircuitBreakerState.HALF_OPEN
@@ -191,7 +191,7 @@ class TestCircuitBreaker:
 
         # Mock time.time to advance past timeout (no flaky sleep)
         original_time = breaker._last_failure_time
-        with patch('src.shared.core.circuit_breaker.time') as mock_time:
+        with patch('temper_ai.shared.core.circuit_breaker.time') as mock_time:
             mock_time.time.return_value = original_time + 1.1
             # Now in HALF_OPEN
             assert breaker.state == CircuitBreakerState.HALF_OPEN
@@ -370,7 +370,7 @@ class TestSafetyGate:
 
     def test_can_pass_with_policy_composer(self):
         """Test can_pass with policy composer."""
-        from src.safety.interfaces import ValidationResult
+        from temper_ai.safety.interfaces import ValidationResult
 
         # Mock policy composer
         mock_composer = Mock()
@@ -723,7 +723,7 @@ class TestIntegration:
 
     def test_safety_gate_with_multiple_checks(self):
         """Test safety gate coordinates multiple safety checks."""
-        from src.safety.interfaces import ValidationResult
+        from temper_ai.safety.interfaces import ValidationResult
 
         # Create circuit breaker
         breaker = CircuitBreaker("test", failure_threshold=2)

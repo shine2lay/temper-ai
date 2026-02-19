@@ -130,8 +130,8 @@ observability:
 
 ### Console Visualization
 ```python
-from src.observability.tracker import ExecutionTracker
-from src.observability.console import print_workflow_tree
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.observability.console import print_workflow_tree
 
 tracker = ExecutionTracker()
 workflow_id = tracker.start_workflow(...)
@@ -161,7 +161,7 @@ Output:
 
 ### Gantt Chart Generation
 ```python
-from src.observability.visualization import generate_gantt
+from temper_ai.observability.visualization import generate_gantt
 
 with get_session() as session:
     workflow = session.get(WorkflowExecution, workflow_id)
@@ -175,8 +175,8 @@ with get_session() as session:
 
 ### Querying Execution Data
 ```python
-from src.observability.database import get_session
-from src.observability.models import WorkflowExecution, AgentExecution
+from temper_ai.observability.database import get_session
+from temper_ai.observability.models import WorkflowExecution, AgentExecution
 from sqlalchemy import func
 
 with get_session() as session:
@@ -303,7 +303,7 @@ CREATE INDEX idx_tool_agent_id ON tool_executions(agent_id);
 
 ### Basic Execution Tracking
 ```python
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.tracker import ExecutionTracker
 
 tracker = ExecutionTracker()
 
@@ -332,7 +332,7 @@ tracker.end_workflow(workflow_id)
 
 ### Performance Analysis
 ```python
-from src.observability.analytics import analyze_workflow
+from temper_ai.observability.analytics import analyze_workflow
 
 analysis = analyze_workflow(workflow_id)
 

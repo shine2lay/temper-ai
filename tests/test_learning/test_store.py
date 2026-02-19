@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.learning.models import (
+from temper_ai.learning.models import (
     PATTERN_AGENT_PERFORMANCE,
     PATTERN_COST,
     STATUS_APPLIED,
@@ -11,7 +11,7 @@ from src.learning.models import (
     MiningRun,
     TuneRecommendation,
 )
-from src.learning.store import LearningStore
+from temper_ai.learning.store import LearningStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

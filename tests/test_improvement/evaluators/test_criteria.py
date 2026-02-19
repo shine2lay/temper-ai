@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock, patch
 
-from src.improvement._schemas import CheckConfig, EvaluatorConfig
-from src.improvement.evaluators.criteria import CriteriaEvaluator
+from temper_ai.improvement._schemas import CheckConfig, EvaluatorConfig
+from temper_ai.improvement.evaluators.criteria import CriteriaEvaluator
 
 
 class TestCriteriaEvaluator:

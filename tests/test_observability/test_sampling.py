@@ -1,7 +1,7 @@
 """Tests for observability sampling strategies."""
 import pytest
 
-from src.observability.sampling import (
+from temper_ai.observability.sampling import (
     AlwaysSample,
     CompositeSampler,
     NeverSample,

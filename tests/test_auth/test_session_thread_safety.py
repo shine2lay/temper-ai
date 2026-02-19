@@ -9,8 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from src.auth.models import Session, User
-from src.auth.session import SessionStore, UserStore
+from temper_ai.auth.models import Session, User
+from temper_ai.auth.session import SessionStore, UserStore
 
 
 def _make_user(idx: int) -> User:

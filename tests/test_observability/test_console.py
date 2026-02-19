@@ -6,8 +6,8 @@ from io import StringIO
 import pytest
 from rich.console import Console
 
-from src.observability.console import WorkflowVisualizer
-from src.observability.formatters import (
+from temper_ai.observability.console import WorkflowVisualizer
+from temper_ai.observability.formatters import (
     format_bytes,
     format_cost,
     format_duration,
@@ -18,7 +18,7 @@ from src.observability.formatters import (
     status_to_icon,
     truncate_text,
 )
-from src.observability.models import (
+from temper_ai.observability.models import (
     AgentExecution,
     CollaborationEvent,
     LLMCall,

@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from src.safety.forbidden_operations import ForbiddenOperationsPolicy
+from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
 
 
 class TestReDoSFix:

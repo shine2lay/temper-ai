@@ -30,12 +30,12 @@ from rich.tree import Tree
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.workflow.langgraph_compiler import LangGraphCompiler
-from src.agent.strategies.base import AgentOutput, SynthesisResult
-from src.agent.strategies.consensus import ConsensusStrategy
-from src.agent.strategies.debate import DebateAndSynthesize
-from src.agent.strategies.merit_weighted import AgentMerit, MeritWeightedResolver, ResolutionContext
-from src.agent.strategies.registry import StrategyRegistry
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.agent.strategies.base import AgentOutput, SynthesisResult
+from temper_ai.agent.strategies.consensus import ConsensusStrategy
+from temper_ai.agent.strategies.debate import DebateAndSynthesize
+from temper_ai.agent.strategies.merit_weighted import AgentMerit, MeritWeightedResolver, ResolutionContext
+from temper_ai.agent.strategies.registry import StrategyRegistry
 
 console = Console()
 
@@ -385,7 +385,7 @@ def demo_3_merit_weighted_resolution():
     })
 
     # Create context
-    from src.agent.strategies.base import Conflict
+    from temper_ai.agent.strategies.base import Conflict
     conflict = Conflict(
         agents=list(agent_outputs_conflict.keys()),
         decisions=["Option A", "Option B"],
@@ -433,7 +433,7 @@ def demo_3_merit_weighted_resolution():
     console.print("\n[bold yellow]═══ Weighted Voting Calculation ═══[/bold yellow]\n")
 
     # Calculate weights for each agent
-    from src.agent.strategies.conflict_resolution import calculate_merit_weighted_votes
+    from temper_ai.agent.strategies.conflict_resolution import calculate_merit_weighted_votes
 
     decision_scores = calculate_merit_weighted_votes(conflict, context, merit_weights)
 

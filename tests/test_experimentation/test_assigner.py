@@ -6,7 +6,7 @@ Tests the VariantAssigner coordinator that delegates to assignment strategies.
 
 import pytest
 
-from src.experimentation.assignment import (
+from temper_ai.experimentation.assignment import (
     AssignmentStrategy,
     BanditAssignment,
     HashAssignment,
@@ -14,7 +14,7 @@ from src.experimentation.assignment import (
     StratifiedAssignment,
     VariantAssigner,
 )
-from src.experimentation.models import (
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ConfigType,
     Experiment,

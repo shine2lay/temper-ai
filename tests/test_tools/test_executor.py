@@ -4,9 +4,9 @@ Tests for tool executor.
 import time
 from unittest.mock import MagicMock
 
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.tools.executor import ToolExecutor
-from src.tools.registry import ToolRegistry
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.registry import ToolRegistry
 
 # ============================================
 # MOCK TOOLS FOR TESTING

@@ -4,7 +4,7 @@ from importlib.util import find_spec
 
 import pytest
 
-from src.auth.oauth.state_store import InMemoryStateStore, RedisStateStore, create_state_store
+from temper_ai.auth.oauth.state_store import InMemoryStateStore, RedisStateStore, create_state_store
 
 # Check if redis is available
 REDIS_AVAILABLE = find_spec("redis.asyncio") is not None

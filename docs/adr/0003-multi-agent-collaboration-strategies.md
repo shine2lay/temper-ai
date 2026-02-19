@@ -228,22 +228,22 @@ class MeritWeightedResolver(CollaborationStrategy):
 
 **Key Components:**
 
-1. **State Management** (`src/compiler/langgraph_compiler.py`)
+1. **State Management** (`temper_ai/compiler/langgraph_compiler.py`)
    - Annotated state fields with custom dict merger
    - Preserves agent outputs for synthesis
 
-2. **Strategies** (`src/strategies/`)
+2. **Strategies** (`temper_ai/strategies/`)
    - `consensus.py` - Democratic voting (<10ms)
    - `debate.py` - Multi-round argumentation with convergence
    - `merit_weighted.py` - Expertise-weighted voting
    - `registry.py` - Strategy registration and selection
 
-3. **Parallel Execution** (`src/compiler/langgraph_compiler.py`)
+3. **Parallel Execution** (`temper_ai/compiler/langgraph_compiler.py`)
    - LangGraph nested subgraphs for concurrent agents
    - Configurable max_concurrent limit
    - Minimum success threshold
 
-4. **Convergence Detection** (`src/strategies/debate.py`)
+4. **Convergence Detection** (`temper_ai/strategies/debate.py`)
    - Stop when 80% of agents unchanged
    - Position tracking across rounds
    - Cost savings through early termination

@@ -1,0 +1,31 @@
+# VCS Git Commit Stage
+# Commits and pushes changes, then cleans up the worktree
+
+stage:
+  name: vcs_git_commit
+  description: "Commit and push changes on the feature branch, clean up worktree"
+  version: "2.0"
+
+  agents:
+    - vcs_git_commit
+
+  execution:
+    agent_mode: sequential
+    timeout_seconds: 120
+
+  inputs:
+    workspace_path:
+      source: vcs_git_setup.structured.worktree_path
+      required: true
+    repo_path:
+      source: workflow.workspace_path
+      required: true
+    suggestion_text:
+      source: workflow.suggestion_text
+      required: true
+
+  error_handling:
+    on_agent_failure: continue_with_remaining
+    min_successful_agents: 1
+    retry_failed_agents: true
+    max_agent_retries: 1

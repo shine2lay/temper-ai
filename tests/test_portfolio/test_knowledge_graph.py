@@ -7,10 +7,10 @@ import uuid
 import pytest
 import yaml
 
-from src.portfolio._schemas import KGConceptType, KGRelation, PortfolioConfig, ProductDefinition
-from src.portfolio.knowledge_graph import KnowledgePopulator, KnowledgeQuery
-from src.portfolio.models import ProductRunRecord
-from src.portfolio.store import PortfolioStore
+from temper_ai.portfolio._schemas import KGConceptType, KGRelation, PortfolioConfig, ProductDefinition
+from temper_ai.portfolio.knowledge_graph import KnowledgePopulator, KnowledgeQuery
+from temper_ai.portfolio.models import ProductRunRecord
+from temper_ai.portfolio.store import PortfolioStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

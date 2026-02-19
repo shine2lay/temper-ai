@@ -9,7 +9,7 @@ Tests cover:
 from unittest.mock import MagicMock
 
 
-from src.agent.utils.agent_observer import AgentObserver
+from temper_ai.agent.utils.agent_observer import AgentObserver
 
 
 class TestAgentObserverInit:

@@ -9,7 +9,7 @@ Tests for:
 """
 import time
 
-from src.safety.security.llm_security import (
+from temper_ai.safety.security.llm_security import (
     LLMSecurityRateLimiter,
     OutputSanitizer,
     PromptInjectionDetector,
@@ -287,7 +287,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_specific_provider_api_keys(self):
         """Test redaction of provider-specific API keys."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -314,7 +314,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_pii_redaction_comprehensive(self):
         """Test redaction of various PII types."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -338,7 +338,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_multiple_secrets_same_output(self):
         """Test redaction of multiple different secrets in same output."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -368,7 +368,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_secrets_in_code_blocks(self):
         """Test redaction of secrets within code blocks."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -392,7 +392,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_secrets_in_json_xml_yaml(self):
         """Test redaction preserves structure in structured formats."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -429,7 +429,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_partial_secret_redaction_preserves_context(self):
         """Test that partial redaction doesn't break surrounding context."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -446,7 +446,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_unicode_and_emoji_in_context(self):
         """Test sanitizer handles Unicode and emoji correctly."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -463,7 +463,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_url_encoded_secrets(self):
         """Test detection of URL-encoded secrets."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -479,7 +479,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_case_variations_in_secrets(self):
         """Test that secret detection is case-insensitive where appropriate."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -497,7 +497,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_false_positive_minimization(self):
         """Test that common non-secrets are not flagged."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -516,7 +516,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_sanitizer_performance_10kb(self):
         """Test sanitizer performs well on 10KB output."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -536,7 +536,7 @@ class TestOutputSanitizationComprehensive:
         """Test sanitizer is memory efficient for large outputs."""
         import sys
 
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -552,7 +552,7 @@ class TestOutputSanitizationComprehensive:
 
     def test_contains_secrets_quick_check(self):
         """Test the quick contains_secrets() method."""
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -591,7 +591,7 @@ class TestSecretSanitizationBypass:
         - Generic secret: (token|key|secret)\\s*[=:]\\s*['\"]?([...]{16,})
         - API key: (sk|pk|api[_-]?key)[_-]?[a-zA-Z0-9]{20,}
         """
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -620,7 +620,7 @@ class TestSecretSanitizationBypass:
 
         Prevents: Redacting only inner pattern, leaving outer context exposed.
         """
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -643,7 +643,7 @@ class TestSecretSanitizationBypass:
 
         Prevents: Redacting password but leaving username/host exposed.
         """
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -668,7 +668,7 @@ class TestSecretSanitizationBypass:
         Scenario: Long generic secret, medium API key, short password all overlap.
         Expected: Only longest pattern is redacted, others skipped.
         """
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -697,7 +697,7 @@ class TestSecretSanitizationBypass:
         This is the control test: ensures our longest-match strategy doesn't
         accidentally skip non-overlapping patterns.
         """
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -723,7 +723,7 @@ class TestSecretSanitizationBypass:
 
         These patterns shouldn't overlap but should both be caught.
         """
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 
@@ -751,7 +751,7 @@ class TestSecretSanitizationBypass:
         - "secret" (position 8-14)
         - "token123secret" (position 0-14) - longest, should win
         """
-        from src.safety.security.llm_security import OutputSanitizer
+        from temper_ai.safety.security.llm_security import OutputSanitizer
 
         sanitizer = OutputSanitizer()
 

@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.observability.backends.prometheus_backend import PrometheusObservabilityBackend
+from temper_ai.observability.backends.prometheus_backend import PrometheusObservabilityBackend
 
 
 @pytest.fixture
@@ -401,7 +401,7 @@ def test_get_stats_no_gateway(prometheus_backend_no_gateway: PrometheusObservabi
 # ========== Logging Tests ==========
 
 
-@patch("src.observability.backends.prometheus_backend.logger")
+@patch("temper_ai.observability.backends.prometheus_backend.logger")
 def test_track_workflow_start_logs(mock_logger, prometheus_backend: PrometheusObservabilityBackend):
     """Test that workflow start logs debug message."""
     workflow_id = make_workflow_id()
@@ -417,7 +417,7 @@ def test_track_workflow_start_logs(mock_logger, prometheus_backend: PrometheusOb
     assert mock_logger.debug.called
 
 
-@patch("src.observability.backends.prometheus_backend.logger")
+@patch("temper_ai.observability.backends.prometheus_backend.logger")
 def test_track_safety_violation_logs_warning(mock_logger, prometheus_backend: PrometheusObservabilityBackend):
     """Test that safety violation logs warning."""
     prometheus_backend.track_safety_violation(

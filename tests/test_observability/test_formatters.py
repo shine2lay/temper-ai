@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.observability.formatters import (
+from temper_ai.observability.formatters import (
     format_bytes,
     format_cost,
     format_duration,

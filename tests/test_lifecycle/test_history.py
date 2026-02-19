@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.lifecycle._schemas import StageMetrics, WorkflowMetrics
-from src.lifecycle.history import HistoryAnalyzer
+from temper_ai.lifecycle._schemas import StageMetrics, WorkflowMetrics
+from temper_ai.lifecycle.history import HistoryAnalyzer
 
 
 class TestHistoryAnalyzer:

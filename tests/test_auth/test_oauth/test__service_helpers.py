@@ -14,7 +14,7 @@ from typing import Dict, Any
 from unittest.mock import AsyncMock, Mock, patch
 import httpx
 
-from src.auth.oauth._service_helpers import (
+from temper_ai.auth.oauth._service_helpers import (
     generate_state,
     generate_code_verifier,
     generate_code_challenge,
@@ -29,11 +29,11 @@ from src.auth.oauth._service_helpers import (
     HTTP_OK,
     HTTP_UNAUTHORIZED,
 )
-from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig
-from src.auth.oauth.rate_limiter import RateLimitExceeded, OAuthRateLimiter
-from src.auth.oauth.service import OAuthError, OAuthProviderError, OAuthStateError
-from src.auth.oauth.token_store import SecureTokenStore
-from src.shared.constants.durations import SECONDS_PER_10_MINUTES
+from temper_ai.auth.oauth.config import OAuthConfig, OAuthProviderConfig
+from temper_ai.auth.oauth.rate_limiter import RateLimitExceeded, OAuthRateLimiter
+from temper_ai.auth.oauth.service import OAuthError, OAuthProviderError, OAuthStateError
+from temper_ai.auth.oauth.token_store import SecureTokenStore
+from temper_ai.shared.constants.durations import SECONDS_PER_10_MINUTES
 
 
 # ==================== FIXTURES ====================

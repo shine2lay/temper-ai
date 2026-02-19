@@ -22,10 +22,10 @@ M3 successfully delivers comprehensive multi-agent collaboration capabilities to
 | Task ID | Name | Status | Deliverables |
 |---------|------|--------|--------------|
 | **m3-01** | State Management | ✅ Complete | Multi-agent state with Annotated fields |
-| **m3-02** | Consensus Strategy | ✅ Complete | `src/strategies/consensus.py` |
-| **m3-03** | Debate Strategy | ✅ Complete | `src/strategies/debate.py` |
-| **m3-04** | Merit-Weighted Resolver | ✅ Complete | `src/strategies/merit_weighted.py` |
-| **m3-05** | Strategy Registry | ✅ Complete | `src/strategies/registry.py` |
+| **m3-02** | Consensus Strategy | ✅ Complete | `temper_ai/strategies/consensus.py` |
+| **m3-03** | Debate Strategy | ✅ Complete | `temper_ai/strategies/debate.py` |
+| **m3-04** | Merit-Weighted Resolver | ✅ Complete | `temper_ai/strategies/merit_weighted.py` |
+| **m3-05** | Strategy Registry | ✅ Complete | `temper_ai/strategies/registry.py` |
 | **m3-06** | Convergence Detection | ✅ Complete | Integrated in debate strategy |
 | **m3-07** | Parallel Execution | ✅ Complete | LangGraph compiler support |
 | **m3-08** | Multi-Agent State | ✅ Complete | Shared state management for workflows |
@@ -47,7 +47,7 @@ M3 successfully delivers comprehensive multi-agent collaboration capabilities to
 **Description**: Multiple agents execute concurrently using LangGraph nested subgraphs.
 
 **Implementation**:
-- `src/compiler/langgraph_compiler.py`: `_execute_parallel_stage()`
+- `temper_ai/compiler/langgraph_compiler.py`: `_execute_parallel_stage()`
 - Annotated state fields with custom dict merger
 - Concurrent branch execution with synthesis
 

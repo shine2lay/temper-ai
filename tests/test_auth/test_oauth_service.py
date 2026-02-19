@@ -15,17 +15,17 @@ from datetime import datetime, timezone
 import httpx
 from cryptography.fernet import Fernet
 
-from src.auth.oauth.service import (
+from temper_ai.auth.oauth.service import (
     OAuthService,
     OAuthError,
     OAuthProviderError,
     OAuthStateError,
 )
-from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig
-from src.auth.oauth.state_store import InMemoryStateStore
-from src.auth.oauth.token_store import SecureTokenStore
-from src.auth.oauth.callback_validator import CallbackURLValidator
-from src.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
+from temper_ai.auth.oauth.config import OAuthConfig, OAuthProviderConfig
+from temper_ai.auth.oauth.state_store import InMemoryStateStore
+from temper_ai.auth.oauth.token_store import SecureTokenStore
+from temper_ai.auth.oauth.callback_validator import CallbackURLValidator
+from temper_ai.auth.oauth.rate_limiter import OAuthRateLimiter, RateLimitExceeded
 
 
 class TestOAuthServiceInitialization:

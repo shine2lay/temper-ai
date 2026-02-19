@@ -9,9 +9,9 @@ import time
 
 import pytest
 
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.tools.executor import ToolExecutor
-from src.tools.registry import ToolRegistry
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.registry import ToolRegistry
 
 
 class SlowTestTool(BaseTool):
@@ -71,7 +71,7 @@ class TestAtomicConcurrentSlot:
             executor._acquire_concurrent_slot()
             assert executor.get_concurrent_execution_count() == 2
 
-            from src.tools.executor import RateLimitError
+            from temper_ai.tools.executor import RateLimitError
             with pytest.raises(RateLimitError, match="Concurrent execution limit"):
                 executor._acquire_concurrent_slot()
 

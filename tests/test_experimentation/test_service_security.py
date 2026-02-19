@@ -6,8 +6,8 @@ Tests for SQL injection prevention, input validation, and timing attack mitigati
 
 import pytest
 
-from src.experimentation.service import ExperimentService
-from src.experimentation.validators import (
+from temper_ai.experimentation.service import ExperimentService
+from temper_ai.experimentation.validators import (
     validate_experiment_name,
     validate_variant_name,
 )

@@ -1,6 +1,6 @@
 # Glossary
 
-Comprehensive terminology reference for the Meta-Autonomous Agent Framework.
+Comprehensive terminology reference for the Temper AI.
 
 ---
 

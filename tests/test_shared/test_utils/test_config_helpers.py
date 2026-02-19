@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.shared.utils.config_helpers import (
+from temper_ai.shared.utils.config_helpers import (
     extract_required_fields,
     get_nested_value,
     merge_configs,

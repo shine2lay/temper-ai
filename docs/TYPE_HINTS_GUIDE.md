@@ -1,8 +1,8 @@
-# Type Hints Guide for Meta-Autonomous Framework
+# Type Hints Guide for Temper AI
 
 ## Overview
 
-This guide covers type hints best practices, benefits, and recommendations for the Meta-Autonomous Framework codebase.
+This guide covers type hints best practices, benefits, and recommendations for the Temper AI codebase.
 
 ---
 
@@ -423,13 +423,13 @@ def execute_workflow(
 pip install mypy
 
 # Run type checker
-mypy src/
+mypy temper_ai/
 
 # With strict mode
-mypy --strict src/
+mypy --strict temper_ai/
 
 # Check specific file
-mypy src/agents/standard_agent.py
+mypy temper_ai/agents/standard_agent.py
 ```
 
 **Configuration** (`pyproject.toml`):
@@ -448,7 +448,7 @@ disallow_untyped_defs = true
 npm install -g pyright
 
 # Run
-pyright src/
+pyright temper_ai/
 ```
 
 ### 3. **Pydantic for Runtime Validation**
@@ -503,7 +503,7 @@ def _internal_helper(input):  # OK to leave untyped initially
 
 ```bash
 # Track progress
-mypy --strict src/ 2>&1 | wc -l
+mypy --strict temper_ai/ 2>&1 | wc -l
 
 # Goal: Reduce errors to zero over time
 ```

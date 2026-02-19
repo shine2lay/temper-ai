@@ -7,13 +7,13 @@ import uuid
 import pytest
 import yaml
 
-from src.portfolio._schemas import PortfolioConfig, ProductDefinition
-from src.portfolio.component_analyzer import ComponentAnalyzer
-from src.portfolio.knowledge_graph import KnowledgePopulator, KnowledgeQuery
-from src.portfolio.models import PortfolioRecord, ProductRunRecord
-from src.portfolio.optimizer import PortfolioOptimizer
-from src.portfolio.scheduler import ResourceScheduler
-from src.portfolio.store import PortfolioStore
+from temper_ai.portfolio._schemas import PortfolioConfig, ProductDefinition
+from temper_ai.portfolio.component_analyzer import ComponentAnalyzer
+from temper_ai.portfolio.knowledge_graph import KnowledgePopulator, KnowledgeQuery
+from temper_ai.portfolio.models import PortfolioRecord, ProductRunRecord
+from temper_ai.portfolio.optimizer import PortfolioOptimizer
+from temper_ai.portfolio.scheduler import ResourceScheduler
+from temper_ai.portfolio.store import PortfolioStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

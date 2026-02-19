@@ -5,8 +5,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.memory._schemas import MemoryEntry, MemoryScope, MemorySearchResult
-from src.memory.constants import DEFAULT_TENANT_ID, SCOPE_SEPARATOR
+from temper_ai.memory._schemas import MemoryEntry, MemoryScope, MemorySearchResult
+from temper_ai.memory.constants import DEFAULT_TENANT_ID, SCOPE_SEPARATOR
 
 
 class TestMemoryScope:

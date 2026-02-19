@@ -20,7 +20,7 @@ class TestHealthCheck:
     """Test server health models."""
 
     def test_check_health_returns_healthy(self) -> None:
-        from src.interfaces.server.health import check_health
+        from temper_ai.interfaces.server.health import check_health
 
         result = check_health()
         assert result.status == "healthy"
@@ -28,7 +28,7 @@ class TestHealthCheck:
         assert result.timestamp is not None
 
     def test_check_readiness_ready(self) -> None:
-        from src.interfaces.server.health import check_readiness
+        from temper_ai.interfaces.server.health import check_readiness
 
         result = check_readiness(execution_service=None, readiness_gate=True)
         # status depends on DB availability; just check it returns
@@ -36,7 +36,7 @@ class TestHealthCheck:
         assert isinstance(result.active_runs, int)
 
     def test_check_readiness_draining(self) -> None:
-        from src.interfaces.server.health import check_readiness
+        from temper_ai.interfaces.server.health import check_readiness
 
         result = check_readiness(execution_service=None, readiness_gate=False)
         assert result.status == "draining"
@@ -46,13 +46,13 @@ class TestGracefulShutdownManager:
     """Test lifecycle manager."""
 
     def test_readiness_gate_default_true(self) -> None:
-        from src.interfaces.server.lifecycle import GracefulShutdownManager
+        from temper_ai.interfaces.server.lifecycle import GracefulShutdownManager
 
         mgr = GracefulShutdownManager()
         assert mgr.readiness_gate is True
 
     def test_handle_signal_flips_gate(self) -> None:
-        from src.interfaces.server.lifecycle import GracefulShutdownManager
+        from temper_ai.interfaces.server.lifecycle import GracefulShutdownManager
 
         mgr = GracefulShutdownManager()
         mgr._handle_signal()
@@ -68,7 +68,7 @@ class TestSanitizeWorkflowResult:
     """Test that non-serializable workflow state is stripped."""
 
     def test_strips_non_serializable_keys(self) -> None:
-        from src.interfaces.dashboard.execution_service import _sanitize_workflow_result
+        from temper_ai.interfaces.dashboard.execution_service import _sanitize_workflow_result
 
         result = {
             "stage_outputs": {"research": {"summary": "hello"}},
@@ -85,7 +85,7 @@ class TestSanitizeWorkflowResult:
         assert sanitized["workflow_id"] == "wf-123"
 
     def test_strips_non_json_safe_values(self) -> None:
-        from src.interfaces.dashboard.execution_service import _sanitize_workflow_result
+        from temper_ai.interfaces.dashboard.execution_service import _sanitize_workflow_result
 
         result = {
             "good_key": "simple string",
@@ -96,7 +96,7 @@ class TestSanitizeWorkflowResult:
         assert "bad_key" not in sanitized
 
     def test_returns_none_for_non_dict(self) -> None:
-        from src.interfaces.dashboard.execution_service import _sanitize_workflow_result
+        from temper_ai.interfaces.dashboard.execution_service import _sanitize_workflow_result
 
         assert _sanitize_workflow_result("not a dict") is None
         assert _sanitize_workflow_result(None) is None
@@ -111,7 +111,7 @@ class TestWorkspacePathValidation:
     """Test workspace isolation in tool executor helpers."""
 
     def test_valid_path_within_workspace(self, tmp_path: Path) -> None:
-        from src.tools._executor_helpers import validate_workspace_path
+        from temper_ai.tools._executor_helpers import validate_workspace_path
 
         inner = tmp_path / "subdir"
         inner.mkdir()
@@ -120,13 +120,13 @@ class TestWorkspacePathValidation:
         assert result is None  # validate_workspace_path returns None on success
 
     def test_path_outside_workspace_rejected(self, tmp_path: Path) -> None:
-        from src.tools._executor_helpers import validate_workspace_path
+        from temper_ai.tools._executor_helpers import validate_workspace_path
 
         with pytest.raises(ValueError, match="outside workspace"):
             validate_workspace_path("/etc/passwd", tmp_path)
 
     def test_null_byte_rejected(self, tmp_path: Path) -> None:
-        from src.tools._executor_helpers import validate_workspace_path
+        from temper_ai.tools._executor_helpers import validate_workspace_path
 
         with pytest.raises(ValueError, match="null bytes"):
             validate_workspace_path("/tmp/foo\x00bar", tmp_path)
@@ -135,7 +135,7 @@ class TestWorkspacePathValidation:
         """ToolExecutor.execute() rejects paths outside workspace."""
         from unittest.mock import MagicMock
 
-        from src.tools.executor import ToolExecutor
+        from temper_ai.tools.executor import ToolExecutor
 
         registry = MagicMock()
         executor = ToolExecutor(registry=registry, workspace_root=str(tmp_path))
@@ -150,13 +150,13 @@ class TestWorkspacePathValidation:
 
 
 class TestConfigCheckCommand:
-    """Test maf config check."""
+    """Test temper-ai config check."""
 
     def test_config_check_valid(self) -> None:
-        """maf config check exits 0 on valid configs."""
+        """temper-ai config check exits 0 on valid configs."""
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["config", "check", "--config-root", "configs"])
@@ -164,10 +164,10 @@ class TestConfigCheckCommand:
         assert result.exit_code in (0, 1)  # 1 if real config has broken refs
 
     def test_config_check_missing_dir(self) -> None:
-        """maf config check exits 1 if config dir missing."""
+        """temper-ai config check exits 1 if config dir missing."""
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["config", "check", "--config-root", "/nonexistent"])
@@ -184,7 +184,7 @@ class TestMafConfigRootEnv:
 
     def test_env_var_overrides_default(self) -> None:
         """ConfigLoader uses MAF_CONFIG_ROOT when set."""
-        from src.workflow.config_loader import ConfigLoader
+        from temper_ai.workflow.config_loader import ConfigLoader
 
         real_configs = str(Path("configs").resolve())
         with patch.dict(os.environ, {"MAF_CONFIG_ROOT": real_configs}):
@@ -192,10 +192,10 @@ class TestMafConfigRootEnv:
             assert str(loader.config_root) == real_configs
 
     def test_cli_envvar_in_list_workflows(self) -> None:
-        """maf list workflows respects MAF_CONFIG_ROOT env."""
+        """temper-ai list workflows respects MAF_CONFIG_ROOT env."""
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         result = runner.invoke(
@@ -212,13 +212,13 @@ class TestMafConfigRootEnv:
 
 
 class TestValidateEnhanced:
-    """Test maf validate with --format and --check-refs."""
+    """Test temper-ai validate with --format and --check-refs."""
 
     def test_validate_json_format(self) -> None:
-        """maf validate --format=json returns valid JSON."""
+        """temper-ai validate --format=json returns valid JSON."""
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         # Use a known valid workflow
@@ -233,10 +233,10 @@ class TestValidateEnhanced:
         assert "errors" in data
 
     def test_validate_check_refs(self) -> None:
-        """maf validate --check-refs validates agent references."""
+        """temper-ai validate --check-refs validates agent references."""
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         wf_path = "configs/workflows/simple_research.yaml"
@@ -257,7 +257,7 @@ class TestEventOutputHandler:
     """Test event output routing."""
 
     def test_format_json(self) -> None:
-        from src.interfaces.cli.event_output import EventOutputHandler
+        from temper_ai.interfaces.cli.event_output import EventOutputHandler
 
         handler = EventOutputHandler(mode="stdout", fmt="jsonl")
         event = MagicMock()
@@ -274,7 +274,7 @@ class TestEventOutputHandler:
         assert parsed["workflow_id"] == "wf-1"
 
     def test_format_text(self) -> None:
-        from src.interfaces.cli.event_output import EventOutputHandler
+        from temper_ai.interfaces.cli.event_output import EventOutputHandler
 
         handler = EventOutputHandler(mode="stderr", fmt="text")
         event = MagicMock()
@@ -290,9 +290,9 @@ class TestEventOutputHandler:
         assert "research" in line
 
     def test_file_mode_creates_file(self, tmp_path: Path) -> None:
-        from src.interfaces.cli.event_output import EventOutputHandler
+        from temper_ai.interfaces.cli.event_output import EventOutputHandler
 
-        with patch("src.interfaces.cli.event_output.Path") as mock_path_cls:
+        with patch("temper_ai.interfaces.cli.event_output.Path") as mock_path_cls:
             # Just check it doesn't crash with file mode
             handler = EventOutputHandler(mode="stderr", fmt="text")
             assert handler.mode == "stderr"
@@ -311,7 +311,7 @@ class TestServerRoutes:
         """Create test client with mocked services."""
         from fastapi.testclient import TestClient
 
-        from src.interfaces.server.routes import create_server_router
+        from temper_ai.interfaces.server.routes import create_server_router
 
         from fastapi import FastAPI
 
@@ -400,7 +400,7 @@ class TestDashboardIncludesServerRouter:
         """Dashboard app should serve /api/health from the server router."""
         from fastapi.testclient import TestClient
 
-        from src.interfaces.dashboard.app import create_app
+        from temper_ai.interfaces.dashboard.app import create_app
 
         app = create_app(backend=None, mode="dashboard")
         c = TestClient(app)
@@ -413,7 +413,7 @@ class TestDashboardIncludesServerRouter:
         """Dashboard app should serve POST /api/runs from the server router."""
         from fastapi.testclient import TestClient
 
-        from src.interfaces.dashboard.app import create_app
+        from temper_ai.interfaces.dashboard.app import create_app
 
         app = create_app(backend=None, mode="dashboard")
         c = TestClient(app)
@@ -433,7 +433,7 @@ class TestRunCommandFlags:
     def test_run_help_shows_new_flags(self) -> None:
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["run", "--help"])
@@ -446,7 +446,7 @@ class TestRunCommandFlags:
     def test_serve_help(self) -> None:
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["serve", "--help"])

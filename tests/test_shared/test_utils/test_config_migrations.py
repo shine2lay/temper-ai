@@ -4,7 +4,7 @@ Tests configuration schema versioning and migrations.
 """
 import pytest
 
-from src.shared.utils.config_migrations import (
+from temper_ai.shared.utils.config_migrations import (
     ConfigMigrationRegistry,
     MigrationStep,
     agent_migration_registry,

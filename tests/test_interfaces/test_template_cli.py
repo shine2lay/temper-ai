@@ -6,13 +6,13 @@ from unittest.mock import patch
 import yaml
 from click.testing import CliRunner
 
-from src.interfaces.cli.template_commands import template_group
+from temper_ai.interfaces.cli.template_commands import template_group
 
 CONFIGS_DIR = Path(__file__).resolve().parent.parent.parent / "configs"
 
 
 class TestTemplateList:
-    """Tests for `maf template list`."""
+    """Tests for `temper-ai template list`."""
 
     def test_list_shows_templates(self):
         runner = CliRunner()
@@ -33,7 +33,7 @@ class TestTemplateList:
 
 
 class TestTemplateInfo:
-    """Tests for `maf template info`."""
+    """Tests for `temper-ai template info`."""
 
     def test_info_shows_details(self):
         runner = CliRunner()
@@ -56,7 +56,7 @@ class TestTemplateInfo:
 
 
 class TestTemplateCreate:
-    """Tests for `maf template create`."""
+    """Tests for `temper-ai template create`."""
 
     def test_create_generates_files(self, tmp_path):
         output = tmp_path / "output"

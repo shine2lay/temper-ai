@@ -1,6 +1,6 @@
 # OAuth Setup Guide
 
-This guide walks through setting up Google OAuth authentication for the Meta-Autonomous Framework.
+This guide walks through setting up Google OAuth authentication for the Temper AI.
 
 ## Table of Contents
 
@@ -38,7 +38,7 @@ This guide walks through setting up Google OAuth authentication for the Meta-Aut
 ### Step 1.2: Configure OAuth Client
 
 1. Application type: **Web application**
-2. Name: `Meta-Autonomous Framework OAuth Client`
+2. Name: `Temper AI OAuth Client`
 3. Authorized JavaScript origins (optional):
    - `https://yourdomain.com`
    - `http://localhost:8000` (for development)
@@ -142,7 +142,7 @@ grep -r "GOCSPX-" . --exclude-dir=.git --exclude-dir=venv --exclude=".env"
 
 ```bash
 python -c "
-from src.safety.secret_detection import SecretDetectionPolicy
+from temper_ai.safety.secret_detection import SecretDetectionPolicy
 from pathlib import Path
 
 policy = SecretDetectionPolicy({'allow_test_secrets': False})

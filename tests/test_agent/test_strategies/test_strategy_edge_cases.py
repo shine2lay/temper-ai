@@ -10,10 +10,10 @@ These tests verify graceful handling of unusual or extreme inputs.
 
 import pytest
 
-from src.agent.strategies.base import AgentOutput, Conflict, SynthesisResult
-from src.agent.strategies.conflict_resolution import AgentMerit, ResolutionContext
-from src.agent.strategies.consensus import ConsensusStrategy
-from src.agent.strategies.merit_weighted import MeritWeightedResolver
+from temper_ai.agent.strategies.base import AgentOutput, Conflict, SynthesisResult
+from temper_ai.agent.strategies.conflict_resolution import AgentMerit, ResolutionContext
+from temper_ai.agent.strategies.consensus import ConsensusStrategy
+from temper_ai.agent.strategies.merit_weighted import MeritWeightedResolver
 
 
 class TestConsensusEdgeCases:

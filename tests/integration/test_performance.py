@@ -33,8 +33,8 @@ class TestThroughputBenchmarks:
     @pytest.fixture
     def execution_tracker(self):
         """Create execution tracker for benchmarks."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         return ExecutionTracker()
@@ -106,7 +106,7 @@ class TestThroughputBenchmarks:
 
     def test_database_write_throughput(self, db_session):
         """Measure database write throughput."""
-        from src.observability.models import Event
+        from temper_ai.observability.models import Event
 
         record_count = 5000
         start_time = time.perf_counter()
@@ -148,8 +148,8 @@ class TestLatencyBenchmarks:
     @pytest.fixture
     def execution_tracker(self):
         """Create execution tracker for latency tests."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         return ExecutionTracker()
@@ -220,7 +220,7 @@ class TestLatencyBenchmarks:
 
     def test_database_query_latency(self, db_session):
         """Measure database query latency percentiles."""
-        from src.observability.models import Event
+        from temper_ai.observability.models import Event
 
         # Insert test data
         events = [
@@ -276,8 +276,8 @@ class TestConcurrencyStress:
     @pytest.fixture
     def execution_tracker(self):
         """Create execution tracker for concurrency tests."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         return ExecutionTracker()
@@ -358,7 +358,7 @@ class TestConcurrencyStress:
 
     def test_database_concurrent_writes(self, db_session):
         """Test concurrent database writes."""
-        from src.observability.models import Event
+        from temper_ai.observability.models import Event
 
         writer_count = 20
         writes_per_worker = 50
@@ -413,8 +413,8 @@ class TestMemoryLeaks:
     @pytest.fixture
     def execution_tracker(self):
         """Create execution tracker for memory tests."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         return ExecutionTracker()
@@ -501,7 +501,7 @@ class TestMemoryLeaks:
 
     def test_database_connection_cleanup(self):
         """Database connections should be properly cleaned up."""
-        from src.observability.database import init_database, get_session
+        from temper_ai.observability.database import init_database, get_session
 
         process = psutil.Process()
         gc.collect()
@@ -541,7 +541,7 @@ class TestDatabasePerformance:
     @pytest.fixture
     def populated_db(self, db_session):
         """Create database with test data."""
-        from src.observability.models import WorkflowRun, Event
+        from temper_ai.observability.models import WorkflowRun, Event
 
         # Create workflows
         workflow_ids = []
@@ -575,7 +575,7 @@ class TestDatabasePerformance:
 
     def test_workflow_query_performance(self, populated_db):
         """Test workflow query performance."""
-        from src.observability.models import WorkflowRun
+        from temper_ai.observability.models import WorkflowRun
 
         query_count = 50
         latencies = []
@@ -604,7 +604,7 @@ class TestDatabasePerformance:
 
     def test_event_aggregation_performance(self, populated_db):
         """Test event aggregation query performance."""
-        from src.observability.models import Event
+        from temper_ai.observability.models import Event
         from sqlalchemy import func
 
         query_count = 30
@@ -635,7 +635,7 @@ class TestDatabasePerformance:
 
     def test_join_query_performance(self, populated_db):
         """Test join query performance."""
-        from src.observability.models import WorkflowRun, Event
+        from temper_ai.observability.models import WorkflowRun, Event
 
         query_count = 20
         latencies = []

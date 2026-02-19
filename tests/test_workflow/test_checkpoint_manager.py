@@ -11,13 +11,13 @@ import tempfile
 
 import pytest
 
-from src.workflow.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
-from src.workflow.checkpoint_manager import (
+from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
+from temper_ai.workflow.checkpoint_manager import (
     CheckpointManager,
     CheckpointStrategy,
     create_checkpoint_manager,
 )
-from src.workflow.domain_state import WorkflowDomainState
+from temper_ai.workflow.domain_state import WorkflowDomainState
 
 
 class TestCheckpointManager:

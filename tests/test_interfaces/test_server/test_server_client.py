@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from src.interfaces.cli.server_client import DEFAULT_SERVER_URL, MAFServerClient
+from temper_ai.interfaces.cli.server_client import DEFAULT_SERVER_URL, MAFServerClient
 
 
 class TestMAFServerClient:
@@ -28,7 +28,7 @@ class TestMAFServerClient:
         headers = client._headers()
         assert "X-API-Key" not in headers
 
-    @patch("src.interfaces.cli.server_client.httpx.Client")
+    @patch("temper_ai.interfaces.cli.server_client.httpx.Client")
     def test_health_check(self, mock_client_cls) -> None:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
@@ -42,7 +42,7 @@ class TestMAFServerClient:
         assert result["status"] == "healthy"
         mock_client.get.assert_called_once_with("/api/health")
 
-    @patch("src.interfaces.cli.server_client.httpx.Client")
+    @patch("temper_ai.interfaces.cli.server_client.httpx.Client")
     def test_trigger_run(self, mock_client_cls) -> None:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
@@ -55,7 +55,7 @@ class TestMAFServerClient:
         result = client.trigger_run("workflows/test.yaml", inputs={"key": "val"})
         assert result["execution_id"] == "exec-123"
 
-    @patch("src.interfaces.cli.server_client.httpx.Client")
+    @patch("temper_ai.interfaces.cli.server_client.httpx.Client")
     def test_get_status(self, mock_client_cls) -> None:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
@@ -68,7 +68,7 @@ class TestMAFServerClient:
         result = client.get_status("exec-1")
         assert result["status"] == "completed"
 
-    @patch("src.interfaces.cli.server_client.httpx.Client")
+    @patch("temper_ai.interfaces.cli.server_client.httpx.Client")
     def test_list_runs(self, mock_client_cls) -> None:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
@@ -81,7 +81,7 @@ class TestMAFServerClient:
         result = client.list_runs(status="completed", limit=10)
         assert result["total"] == 0
 
-    @patch("src.interfaces.cli.server_client.httpx.Client")
+    @patch("temper_ai.interfaces.cli.server_client.httpx.Client")
     def test_cancel_run(self, mock_client_cls) -> None:
         mock_client = MagicMock()
         mock_client_cls.return_value.__enter__ = MagicMock(return_value=mock_client)
@@ -101,7 +101,7 @@ class TestCLICommands:
     def test_trigger_help(self) -> None:
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["trigger", "--help"])
@@ -114,7 +114,7 @@ class TestCLICommands:
     def test_status_help(self) -> None:
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["status", "--help"])
@@ -126,7 +126,7 @@ class TestCLICommands:
     def test_logs_help(self) -> None:
         from click.testing import CliRunner
 
-        from src.interfaces.cli.main import main
+        from temper_ai.interfaces.cli.main import main
 
         runner = CliRunner()
         result = runner.invoke(main, ["logs", "--help"])

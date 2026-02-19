@@ -5,7 +5,7 @@ Tests the three main safety policies:
 - SecretDetectionPolicy
 - RateLimiterPolicy
 """
-from src.safety import (
+from temper_ai.safety import (
     BlastRadiusPolicy,
     RateLimiterPolicy,
     SecretDetectionPolicy,

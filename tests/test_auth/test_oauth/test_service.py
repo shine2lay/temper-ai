@@ -16,10 +16,10 @@ import pytest
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 from pathlib import Path
 
-from src.auth.oauth.service import OAuthService, OAuthError, OAuthProviderError, OAuthStateError
-from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig
-from src.auth.oauth.token_store import SecureTokenStore
-from src.auth.oauth.callback_validator import CallbackURLValidator
+from temper_ai.auth.oauth.service import OAuthService, OAuthError, OAuthProviderError, OAuthStateError
+from temper_ai.auth.oauth.config import OAuthConfig, OAuthProviderConfig
+from temper_ai.auth.oauth.token_store import SecureTokenStore
+from temper_ai.auth.oauth.callback_validator import CallbackURLValidator
 
 
 @pytest.fixture
@@ -144,7 +144,7 @@ class TestOAuthServiceAuthorization:
     """Test OAuth authorization flow."""
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._build_authorization_url')
+    @patch('temper_ai.auth.oauth.service._build_authorization_url')
     async def test_get_authorization_url(self, mock_build_url, oauth_service):
         """Test get_authorization_url delegates to helper."""
         mock_build_url.return_value = ("https://auth.url?state=abc", "abc")
@@ -159,7 +159,7 @@ class TestOAuthServiceAuthorization:
         mock_build_url.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._build_authorization_url')
+    @patch('temper_ai.auth.oauth.service._build_authorization_url')
     async def test_get_authorization_url_with_params(self, mock_build_url, oauth_service):
         """Test get_authorization_url with extra params and IP."""
         mock_build_url.return_value = ("https://auth.url", "state123")
@@ -180,7 +180,7 @@ class TestOAuthServiceTokenExchange:
     """Test OAuth token exchange."""
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._exchange_code')
+    @patch('temper_ai.auth.oauth.service._exchange_code')
     async def test_exchange_code_for_tokens(self, mock_exchange, oauth_service):
         """Test exchange_code_for_tokens delegates to helper."""
         mock_exchange.return_value = {
@@ -200,7 +200,7 @@ class TestOAuthServiceTokenExchange:
         mock_exchange.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._exchange_code')
+    @patch('temper_ai.auth.oauth.service._exchange_code')
     async def test_exchange_code_with_redirect_uri(self, mock_exchange, oauth_service):
         """Test exchange_code_for_tokens with redirect URI."""
         mock_exchange.return_value = {"access_token": "test"}
@@ -221,7 +221,7 @@ class TestOAuthServiceTokenRefresh:
     """Test OAuth token refresh."""
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._refresh_token')
+    @patch('temper_ai.auth.oauth.service._refresh_token')
     async def test_refresh_access_token(self, mock_refresh, oauth_service):
         """Test refresh_access_token delegates to helper."""
         mock_refresh.return_value = {
@@ -245,7 +245,7 @@ class TestOAuthServiceUserInfo:
     """Test OAuth user info fetching."""
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._fetch_user_info')
+    @patch('temper_ai.auth.oauth.service._fetch_user_info')
     async def test_get_user_info(self, mock_fetch, oauth_service):
         """Test get_user_info delegates to helper."""
         mock_fetch.return_value = {
@@ -264,7 +264,7 @@ class TestOAuthServiceUserInfo:
         mock_fetch.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._fetch_user_info')
+    @patch('temper_ai.auth.oauth.service._fetch_user_info')
     async def test_get_user_info_no_auto_refresh(self, mock_fetch, oauth_service):
         """Test get_user_info without auto refresh."""
         mock_fetch.return_value = {"id": "12345"}
@@ -283,7 +283,7 @@ class TestOAuthServiceTokenRevocation:
     """Test OAuth token revocation."""
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._revoke_tokens')
+    @patch('temper_ai.auth.oauth.service._revoke_tokens')
     async def test_revoke_tokens(self, mock_revoke, oauth_service):
         """Test revoke_tokens delegates to helper."""
         mock_revoke.return_value = True
@@ -294,7 +294,7 @@ class TestOAuthServiceTokenRevocation:
         mock_revoke.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._revoke_at_provider')
+    @patch('temper_ai.auth.oauth.service._revoke_at_provider')
     async def test_revoke_at_provider(self, mock_revoke_provider, oauth_service):
         """Test _revoke_at_provider delegates to helper."""
         mock_revoke_provider.return_value = True
@@ -312,7 +312,7 @@ class TestOAuthServiceStateManagement:
     """Test OAuth state management."""
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._validate_state')
+    @patch('temper_ai.auth.oauth.service._validate_state')
     async def test_validate_state(self, mock_validate, oauth_service):
         """Test _validate_state delegates to helper."""
         mock_validate.return_value = {
@@ -478,7 +478,7 @@ class TestOAuthSecurityScenarios:
     """
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._build_authorization_url')
+    @patch('temper_ai.auth.oauth.service._build_authorization_url')
     async def test_csrf_state_generation(self, mock_build_url, oauth_service):
         """Test that state parameter is cryptographically random for CSRF protection."""
         # Generate multiple states to ensure randomness
@@ -492,7 +492,7 @@ class TestOAuthSecurityScenarios:
         assert len(set(states)) == 10, "State tokens must be unique"
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth._service_helpers.validate_state')
+    @patch('temper_ai.auth.oauth._service_helpers.validate_state')
     async def test_state_validation_csrf_protection(self, mock_validate, oauth_service):
         """Test state validation prevents CSRF attacks."""
         # Simulate state mismatch
@@ -508,7 +508,7 @@ class TestOAuthSecurityScenarios:
         assert "Invalid state" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth._service_helpers.validate_state')
+    @patch('temper_ai.auth.oauth._service_helpers.validate_state')
     async def test_state_provider_mismatch(self, mock_validate, oauth_service):
         """Test state validation detects provider mismatch."""
         # State was created for google but used with github
@@ -527,7 +527,7 @@ class TestOAuthSecurityScenarios:
         assert "mismatch" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._build_authorization_url')
+    @patch('temper_ai.auth.oauth.service._build_authorization_url')
     async def test_pkce_code_challenge_generation(self, mock_build_url, oauth_service):
         """Test PKCE code challenge is generated from verifier."""
         verifier = "test_code_verifier_12345"
@@ -543,7 +543,7 @@ class TestOAuthSecurityScenarios:
         assert challenge == challenge2
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._exchange_code')
+    @patch('temper_ai.auth.oauth.service._exchange_code')
     async def test_token_exchange_invalid_grant_error(self, mock_exchange, oauth_service):
         """Test handling of invalid_grant error from provider."""
         mock_exchange.side_effect = OAuthProviderError(
@@ -561,7 +561,7 @@ class TestOAuthSecurityScenarios:
         assert "invalid_grant" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._exchange_code')
+    @patch('temper_ai.auth.oauth.service._exchange_code')
     async def test_token_exchange_network_error(self, mock_exchange, oauth_service):
         """Test handling of network errors during token exchange."""
         mock_exchange.side_effect = OAuthProviderError(
@@ -579,7 +579,7 @@ class TestOAuthSecurityScenarios:
         assert "HTTP error" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._exchange_code')
+    @patch('temper_ai.auth.oauth.service._exchange_code')
     async def test_token_response_missing_access_token(self, mock_exchange, oauth_service):
         """Test handling of malformed token response."""
         mock_exchange.side_effect = OAuthProviderError(
@@ -597,7 +597,7 @@ class TestOAuthSecurityScenarios:
         assert "access_token" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._refresh_token')
+    @patch('temper_ai.auth.oauth.service._refresh_token')
     async def test_token_refresh_no_refresh_token(self, mock_refresh, oauth_service):
         """Test token refresh fails when no refresh token available."""
         mock_refresh.side_effect = OAuthError(
@@ -611,7 +611,7 @@ class TestOAuthSecurityScenarios:
         assert "refresh token" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._refresh_token')
+    @patch('temper_ai.auth.oauth.service._refresh_token')
     async def test_token_refresh_expired_token(self, mock_refresh, oauth_service):
         """Test token refresh handles expired refresh token."""
         mock_refresh.side_effect = OAuthProviderError(
@@ -625,7 +625,7 @@ class TestOAuthSecurityScenarios:
         assert "refresh failed" in str(exc_info.value).lower()
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._fetch_user_info')
+    @patch('temper_ai.auth.oauth.service._fetch_user_info')
     async def test_userinfo_auto_refresh_on_401(self, mock_fetch, oauth_service):
         """Test user info fetch auto-refreshes on 401 Unauthorized."""
         # First call returns 401, triggers refresh, second call succeeds
@@ -639,7 +639,7 @@ class TestOAuthSecurityScenarios:
         assert user_info["email"] == "user@example.com"
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._fetch_user_info')
+    @patch('temper_ai.auth.oauth.service._fetch_user_info')
     async def test_userinfo_no_tokens_error(self, mock_fetch, oauth_service):
         """Test user info fetch fails when no tokens stored."""
         mock_fetch.side_effect = OAuthError(
@@ -653,10 +653,10 @@ class TestOAuthSecurityScenarios:
         assert "No tokens" in str(exc_info.value)
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._build_authorization_url')
+    @patch('temper_ai.auth.oauth.service._build_authorization_url')
     async def test_rate_limiting_oauth_init(self, mock_build_url, oauth_service):
         """Test rate limiting on OAuth initialization."""
-        from src.auth.oauth.rate_limiter import RateLimitExceeded
+        from temper_ai.auth.oauth.rate_limiter import RateLimitExceeded
 
         mock_build_url.side_effect = RateLimitExceeded("Rate limit exceeded", retry_after=60)
 
@@ -666,10 +666,10 @@ class TestOAuthSecurityScenarios:
             )
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._exchange_code')
+    @patch('temper_ai.auth.oauth.service._exchange_code')
     async def test_rate_limiting_token_exchange(self, mock_exchange, oauth_service):
         """Test rate limiting on token exchange."""
-        from src.auth.oauth.rate_limiter import RateLimitExceeded
+        from temper_ai.auth.oauth.rate_limiter import RateLimitExceeded
 
         mock_exchange.side_effect = RateLimitExceeded("Rate limit exceeded", retry_after=60)
 
@@ -679,10 +679,10 @@ class TestOAuthSecurityScenarios:
             )
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._fetch_user_info')
+    @patch('temper_ai.auth.oauth.service._fetch_user_info')
     async def test_rate_limiting_userinfo(self, mock_fetch, oauth_service):
         """Test rate limiting on user info fetch."""
-        from src.auth.oauth.rate_limiter import RateLimitExceeded
+        from temper_ai.auth.oauth.rate_limiter import RateLimitExceeded
 
         mock_fetch.side_effect = RateLimitExceeded("Rate limit exceeded", retry_after=60)
 
@@ -690,7 +690,7 @@ class TestOAuthSecurityScenarios:
             await oauth_service.get_user_info("user123", "google")
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._build_authorization_url')
+    @patch('temper_ai.auth.oauth.service._build_authorization_url')
     async def test_scope_validation(self, mock_build_url, oauth_service):
         """Test that scopes are properly validated."""
         mock_build_url.return_value = ("https://auth.url?scope=openid+email", "state123")
@@ -701,7 +701,7 @@ class TestOAuthSecurityScenarios:
         mock_build_url.assert_called_once()
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._build_authorization_url')
+    @patch('temper_ai.auth.oauth.service._build_authorization_url')
     async def test_redirect_uri_validation(self, mock_build_url, oauth_service):
         """Test redirect URI validation."""
         # This would normally fail in the helper if redirect_uri not in allowed list
@@ -723,7 +723,7 @@ class TestOAuthSecurityScenarios:
         # The actual verification happens in httpx.AsyncClient
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._revoke_tokens')
+    @patch('temper_ai.auth.oauth.service._revoke_tokens')
     async def test_token_revocation_best_effort(self, mock_revoke, oauth_service):
         """Test token revocation is best-effort (doesn't fail on provider errors)."""
         # Even if provider revocation fails, local deletion should succeed
@@ -734,7 +734,7 @@ class TestOAuthSecurityScenarios:
         assert result is True
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._revoke_at_provider')
+    @patch('temper_ai.auth.oauth.service._revoke_at_provider')
     async def test_provider_revocation_timeout(self, mock_revoke_provider, oauth_service):
         """Test provider revocation handles timeouts gracefully."""
         # Provider revocation should not fail the entire flow
@@ -746,7 +746,7 @@ class TestOAuthSecurityScenarios:
         assert result is False
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._build_authorization_url')
+    @patch('temper_ai.auth.oauth.service._build_authorization_url')
     async def test_state_storage_ttl(self, mock_build_url, oauth_service):
         """Test state tokens have appropriate TTL (10 minutes)."""
         mock_build_url.return_value = ("https://auth.url", "state123")
@@ -773,7 +773,7 @@ class TestOAuthSecurityScenarios:
         assert isinstance(state, str)
 
     @pytest.mark.asyncio
-    @patch('src.auth.oauth.service._exchange_code')
+    @patch('temper_ai.auth.oauth.service._exchange_code')
     async def test_token_storage_encryption(self, mock_exchange, oauth_service):
         """Test tokens are stored encrypted."""
         mock_exchange.return_value = {

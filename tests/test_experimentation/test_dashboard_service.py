@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.experimentation.dashboard_service import ExperimentDataService, _experiment_to_dict
+from temper_ai.experimentation.dashboard_service import ExperimentDataService, _experiment_to_dict
 
 
 @pytest.fixture
@@ -32,7 +32,7 @@ def mock_experiment():
 @pytest.fixture
 def service():
     """Create ExperimentDataService with mocked internals."""
-    with patch("src.experimentation.dashboard_service.ExperimentDataService.__init__", return_value=None):
+    with patch("temper_ai.experimentation.dashboard_service.ExperimentDataService.__init__", return_value=None):
         svc = ExperimentDataService.__new__(ExperimentDataService)
         svc._service = MagicMock()
         return svc

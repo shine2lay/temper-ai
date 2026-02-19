@@ -21,5 +21,5 @@ def _reset_globals_after_test():
     resets modules that were actually loaded.
     """
     yield
-    from src.shared.core.test_support import reset_all_globals
+    from temper_ai.shared.core.test_support import reset_all_globals
     reset_all_globals()

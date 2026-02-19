@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.shared.utils.logging import (
+from temper_ai.shared.utils.logging import (
     ConsoleFormatter,
     LogContext,
     SecretRedactingFormatter,
@@ -562,7 +562,7 @@ class TestLogInjectionPrevention:
 
     def test_url_encoded_newline_blocked(self):
         """Test that URL-encoded newlines (%0A) are blocked."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "username=admin%0A[ERROR] Fake security violation"
         sanitized = _sanitize_for_logging(malicious)
@@ -573,7 +573,7 @@ class TestLogInjectionPrevention:
 
     def test_url_encoded_carriage_return_blocked(self):
         """Test that URL-encoded carriage returns (%0D) are blocked."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "username=admin%0D[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
@@ -583,7 +583,7 @@ class TestLogInjectionPrevention:
 
     def test_double_url_encoded_newline_blocked(self):
         """Test that double URL-encoded newlines are blocked."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         # %25 = %, so %250A = %0A, which decodes to \n
         malicious = "admin%250A[ERROR] Fake"
@@ -595,7 +595,7 @@ class TestLogInjectionPrevention:
 
     def test_triple_url_encoded_newline_blocked(self):
         """Test that deeply nested URL encoding is handled."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         # Triple encoding: %252525...
         malicious = "admin%25252540A[ERROR] Fake"  # %2540A → %40A → @A (partial decode)
@@ -607,7 +607,7 @@ class TestLogInjectionPrevention:
 
     def test_unicode_line_separator_blocked(self):
         """Test that Unicode line separators (U+2028) are blocked."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\u2028[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
@@ -617,7 +617,7 @@ class TestLogInjectionPrevention:
 
     def test_unicode_paragraph_separator_blocked(self):
         """Test that Unicode paragraph separators (U+2029) are blocked."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\u2029[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
@@ -627,7 +627,7 @@ class TestLogInjectionPrevention:
 
     def test_unicode_next_line_blocked(self):
         """Test that Unicode NEL (U+0085) is blocked."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\u0085[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
@@ -638,7 +638,7 @@ class TestLogInjectionPrevention:
 
     def test_vertical_tab_blocked(self):
         """Test that vertical tab (U+000B) is blocked."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\u000B[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
@@ -649,7 +649,7 @@ class TestLogInjectionPrevention:
 
     def test_form_feed_blocked(self):
         """Test that form feed (U+000C) is blocked."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\u000C[ERROR] Fake log"
         sanitized = _sanitize_for_logging(malicious)
@@ -660,7 +660,7 @@ class TestLogInjectionPrevention:
 
     def test_ansi_escape_sequences_stripped(self):
         """Test that ANSI escape codes are removed (terminal injection)."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         # ANSI escape to make text invisible (black on black)
         malicious = "admin\033[0;30m[ERROR] Hidden breach\033[0m"
@@ -675,7 +675,7 @@ class TestLogInjectionPrevention:
 
     def test_zero_width_space_removed(self):
         """Test that zero-width spaces (U+200B) are removed."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\u200B\u200B[ERROR] Obfuscated"
         sanitized = _sanitize_for_logging(malicious)
@@ -686,7 +686,7 @@ class TestLogInjectionPrevention:
 
     def test_zero_width_non_joiner_removed(self):
         """Test that zero-width non-joiners (U+200C) are removed."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\u200C[ERROR] Hidden"
         sanitized = _sanitize_for_logging(malicious)
@@ -695,7 +695,7 @@ class TestLogInjectionPrevention:
 
     def test_zero_width_joiner_removed(self):
         """Test that zero-width joiners (U+200D) are removed."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\u200D[ERROR] Hidden"
         sanitized = _sanitize_for_logging(malicious)
@@ -704,7 +704,7 @@ class TestLogInjectionPrevention:
 
     def test_zero_width_no_break_space_removed(self):
         """Test that zero-width no-break spaces (U+FEFF) are removed."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\uFEFF[ERROR] Hidden"
         sanitized = _sanitize_for_logging(malicious)
@@ -713,7 +713,7 @@ class TestLogInjectionPrevention:
 
     def test_crlf_injection_blocked(self):
         """Test that Windows CRLF sequences are escaped."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "admin\r\n[ERROR] Fake log\r\n[CRITICAL] Breach"
         sanitized = _sanitize_for_logging(malicious)
@@ -724,7 +724,7 @@ class TestLogInjectionPrevention:
 
     def test_mixed_encoding_attack(self):
         """Test combination of URL encoding and control chars."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         malicious = "test%0A\r\nFAKE\x00NULL"
         sanitized = _sanitize_for_logging(malicious)
@@ -736,7 +736,7 @@ class TestLogInjectionPrevention:
 
     def test_legitimate_logs_preserved(self):
         """Test that normal log messages work correctly."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         normal = "User logged in successfully from IP 192.168.1.1"
         sanitized = _sanitize_for_logging(normal)
@@ -746,7 +746,7 @@ class TestLogInjectionPrevention:
 
     def test_international_characters_preserved(self):
         """Test that legitimate international text is readable."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         international = "用户: José García (日本語)"
         sanitized = _sanitize_for_logging(international)
@@ -758,13 +758,13 @@ class TestLogInjectionPrevention:
 
     def test_empty_string_handled(self):
         """Test that empty string is handled safely."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         assert _sanitize_for_logging("") == ""
 
     def test_oversized_input_truncated(self):
         """Test that huge inputs are truncated (DoS prevention)."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         huge = "A" * 20000
         sanitized = _sanitize_for_logging(huge, max_length=10000)
@@ -775,7 +775,7 @@ class TestLogInjectionPrevention:
 
     def test_mixed_safe_and_unsafe_chars(self):
         """Test handling of mixed safe/unsafe characters."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         mixed = "Safe text\nUnsafe\rMore\x00Data"
         sanitized = _sanitize_for_logging(mixed)
@@ -790,7 +790,7 @@ class TestLogInjectionPrevention:
         """Test that large inputs don't cause DoS."""
         import time
 
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         # 50KB input with injection attempts
         large_input = "A" * 50000 + "%0A[ERROR]" * 1000
@@ -805,7 +805,7 @@ class TestLogInjectionPrevention:
 
     def test_unicode_normalization_applied(self):
         """Test that Unicode normalization (NFKC) is applied."""
-        from src.shared.utils.logging import _sanitize_for_logging
+        from temper_ai.shared.utils.logging import _sanitize_for_logging
 
         # Cyrillic 'e' (U+0435) looks like Latin 'e' (U+0065)
         # After normalization, behavior should be consistent

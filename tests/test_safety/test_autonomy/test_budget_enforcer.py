@@ -2,9 +2,9 @@
 
 import pytest
 
-from src.safety.autonomy.budget_enforcer import BudgetEnforcer, BudgetCheckResult, BudgetStatus
-from src.safety.autonomy.constants import STATUS_ACTIVE, STATUS_EXHAUSTED, STATUS_WARNING
-from src.safety.autonomy.store import AutonomyStore
+from temper_ai.safety.autonomy.budget_enforcer import BudgetEnforcer, BudgetCheckResult, BudgetStatus
+from temper_ai.safety.autonomy.constants import STATUS_ACTIVE, STATUS_EXHAUSTED, STATUS_WARNING
+from temper_ai.safety.autonomy.store import AutonomyStore
 
 
 @pytest.fixture

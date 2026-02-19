@@ -14,7 +14,7 @@ Security issues prevented:
 """
 import pytest
 
-from src.safety.blast_radius import BlastRadiusPolicy
+from temper_ai.safety.blast_radius import BlastRadiusPolicy
 
 
 class TestBlastRadiusPolicyValidation:

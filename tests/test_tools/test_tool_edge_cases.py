@@ -11,10 +11,10 @@ import shutil
 import tempfile
 from unittest.mock import MagicMock, Mock, patch
 
-from src.tools.base import ToolResult
-from src.tools.calculator import Calculator
-from src.tools.file_writer import FileWriter
-from src.tools.web_scraper import WebScraper, validate_url_safety
+from temper_ai.tools.base import ToolResult
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.file_writer import FileWriter
+from temper_ai.tools.web_scraper import WebScraper, validate_url_safety
 
 
 class TestCalculatorEdgeCases:
@@ -351,7 +351,7 @@ class TestWebScraperEdgeCases:
         scraper = WebScraper()
 
         # Mock httpx to avoid actual network calls
-        with patch('src.tools.web_scraper.httpx.Client') as mock_client:
+        with patch('temper_ai.tools.web_scraper.httpx.Client') as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.headers = {"content-type": "text/html"}
@@ -376,7 +376,7 @@ class TestWebScraperEdgeCases:
         """Test timeout is handled gracefully."""
         scraper = WebScraper()
 
-        with patch('src.tools.web_scraper.httpx.Client') as mock_client:
+        with patch('temper_ai.tools.web_scraper.httpx.Client') as mock_client:
             # Simulate timeout
             import httpx
             mock_client.return_value.__enter__.return_value.get.side_effect = httpx.TimeoutException("Timeout")
@@ -390,7 +390,7 @@ class TestWebScraperEdgeCases:
         """Test HTTP errors are handled gracefully."""
         scraper = WebScraper()
 
-        with patch('src.tools.web_scraper.httpx.Client') as mock_client:
+        with patch('temper_ai.tools.web_scraper.httpx.Client') as mock_client:
             # Simulate 404 error
             import httpx
             mock_response = MagicMock()
@@ -413,7 +413,7 @@ class TestWebScraperEdgeCases:
         """Test unsupported content type is rejected."""
         scraper = WebScraper()
 
-        with patch('src.tools.web_scraper.httpx.Client') as mock_client:
+        with patch('temper_ai.tools.web_scraper.httpx.Client') as mock_client:
             mock_response = MagicMock()
             mock_response.status_code = 200
             mock_response.headers = {"content-type": "application/pdf"}
@@ -431,8 +431,8 @@ class TestWebScraperEdgeCases:
         scraper = WebScraper()
 
         # Mock SSRF validation to pass for example.com
-        with patch('src.tools.web_scraper.validate_url_safety', return_value=(True, None)), \
-             patch('src.tools.web_scraper.httpx.Client') as mock_client:
+        with patch('temper_ai.tools.web_scraper.validate_url_safety', return_value=(True, None)), \
+             patch('temper_ai.tools.web_scraper.httpx.Client') as mock_client:
             # 6MB content (exceeds 5MB limit)
             large_content = b"x" * (6 * 1024 * 1024)
 

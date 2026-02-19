@@ -21,8 +21,8 @@ from unittest.mock import Mock, patch, MagicMock
 import pytest
 from cryptography.fernet import Fernet, InvalidToken
 
-from src.auth.oauth.token_store import SecureTokenStore
-from src.shared.utils.exceptions import SecurityError
+from temper_ai.auth.oauth.token_store import SecureTokenStore
+from temper_ai.shared.utils.exceptions import SecurityError
 
 
 @pytest.fixture
@@ -82,11 +82,11 @@ class TestSecureTokenStoreInitialization:
         mock_keyring.set_password = MagicMock(return_value=None)
 
         with patch.dict('sys.modules', {'keyring': mock_keyring, 'keyring.errors': MagicMock()}):
-            with patch('src.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', True):
+            with patch('temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', True):
                 # Re-import to pick up mocked keyring
                 import importlib
-                import src.auth.oauth._token_store_helpers
-                importlib.reload(src.auth.oauth._token_store_helpers)
+                import temper_ai.auth.oauth._token_store_helpers
+                importlib.reload(temper_ai.auth.oauth._token_store_helpers)
 
                 store = SecureTokenStore(use_keyring=True, require_keyring=False)
 
@@ -103,10 +103,10 @@ class TestSecureTokenStoreInitialization:
         mock_keyring.set_password = MagicMock(return_value=None)
 
         with patch.dict('sys.modules', {'keyring': mock_keyring, 'keyring.errors': MagicMock()}):
-            with patch('src.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', True):
+            with patch('temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', True):
                 import importlib
-                import src.auth.oauth._token_store_helpers
-                importlib.reload(src.auth.oauth._token_store_helpers)
+                import temper_ai.auth.oauth._token_store_helpers
+                importlib.reload(temper_ai.auth.oauth._token_store_helpers)
 
                 store = SecureTokenStore(use_keyring=True, require_keyring=False)
 
@@ -120,7 +120,7 @@ class TestSecureTokenStoreInitialization:
         monkeypatch.delenv("OAUTH_TOKEN_ENCRYPTION_KEY", raising=False)
 
         # Patch KEYRING_AVAILABLE to simulate missing keyring
-        with patch('src.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', False):
+        with patch('temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', False):
             # Should raise error because keyring is required but not available
             # The exact exception type depends on the environment
             with pytest.raises(Exception):
@@ -140,11 +140,11 @@ class TestSecureTokenStoreInitialization:
         mock_keyring_errors.KeyringError = MockKeyringError
 
         with patch.dict('sys.modules', {'keyring': mock_keyring, 'keyring.errors': mock_keyring_errors}):
-            with patch('src.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', True):
-                with patch('src.auth.oauth._token_store_helpers.KeyringError', MockKeyringError):
+            with patch('temper_ai.auth.oauth._token_store_helpers.KEYRING_AVAILABLE', True):
+                with patch('temper_ai.auth.oauth._token_store_helpers.KeyringError', MockKeyringError):
                     import importlib
-                    import src.auth.oauth._token_store_helpers
-                    importlib.reload(src.auth.oauth._token_store_helpers)
+                    import temper_ai.auth.oauth._token_store_helpers
+                    importlib.reload(temper_ai.auth.oauth._token_store_helpers)
 
                     store = SecureTokenStore(use_keyring=True, require_keyring=False)
 
@@ -391,10 +391,10 @@ class TestKeyRotation:
 
         with patch.dict('sys.modules', {'keyring': mock_keyring}):
             import importlib
-            import src.auth.oauth.token_store
-            importlib.reload(src.auth.oauth.token_store)
+            import temper_ai.auth.oauth.token_store
+            importlib.reload(temper_ai.auth.oauth.token_store)
 
-            store = src.auth.oauth.token_store.SecureTokenStore(encryption_key=encryption_key, use_keyring=False)
+            store = temper_ai.auth.oauth.token_store.SecureTokenStore(encryption_key=encryption_key, use_keyring=False)
             store.using_keyring = True  # Force keyring mode for test
             store.keyring_service = "test_service"
             store.keyring_key_name = "test_key"

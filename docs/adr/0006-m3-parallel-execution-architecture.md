@@ -221,24 +221,24 @@ START → init → [agent1, agent2, agent3] (parallel) → collect → synthesis
 
 **Key Components:**
 
-1. **ParallelStageExecutor** (`src/compiler/executors/parallel.py` - 677 lines)
+1. **ParallelStageExecutor** (`temper_ai/compiler/executors/parallel.py` - 677 lines)
    - Creates nested StateGraph for parallel stage
    - Configures parallel agent nodes
    - Implements collect node for aggregation
    - Integrates with synthesis coordinator
 
-2. **State Management** (`src/compiler/langgraph_compiler.py`)
+2. **State Management** (`temper_ai/compiler/langgraph_compiler.py`)
    - ParallelStageState with Annotated fields
    - Custom merge_dicts reducer
    - Preserves individual agent outputs
 
-3. **Quality Gates** (`src/compiler/quality_gates.py`)
+3. **Quality Gates** (`temper_ai/compiler/quality_gates.py`)
    - Post-synthesis validation
    - Configurable thresholds
    - Retry logic (max_retries: 2)
    - Failure modes: escalate, proceed_with_warning, retry_stage
 
-4. **Metrics Collection** (`src/compiler/executors/parallel.py`)
+4. **Metrics Collection** (`temper_ai/compiler/executors/parallel.py`)
    - Per-agent token usage
    - Per-agent cost tracking
    - Per-agent duration
@@ -302,7 +302,7 @@ stages:
 - [Milestone 3 Completion Report](../milestones/milestone3_completion.md)
 - [LangGraph Documentation - Nested Graphs](https://langchain-ai.github.io/langgraph/)
 - [LangGraph Documentation - Annotated State](https://langchain-ai.github.io/langgraph/concepts/low_level/#annotated)
-- [Implementation: ParallelStageExecutor](../../src/compiler/executors/parallel.py)
+- [Implementation: ParallelStageExecutor](../../temper_ai/compiler/executors/parallel.py)
 - [Multi-Agent Collaboration Guide](../features/collaboration/multi_agent_collaboration.md)
 - [TECHNICAL_SPECIFICATION.md](../../TECHNICAL_SPECIFICATION.md) - M3 specification
 

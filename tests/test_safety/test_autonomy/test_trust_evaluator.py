@@ -2,8 +2,8 @@
 
 from unittest.mock import MagicMock
 
-from src.safety.autonomy.schemas import AutonomyLevel
-from src.safety.autonomy.trust_evaluator import TrustEvaluator
+from temper_ai.safety.autonomy.schemas import AutonomyLevel
+from temper_ai.safety.autonomy.trust_evaluator import TrustEvaluator
 
 
 def _mock_merit(

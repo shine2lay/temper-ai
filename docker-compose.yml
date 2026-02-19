@@ -1,5 +1,5 @@
 services:
-  maf-server:
+  temper-ai-server:
     build:
       context: .
       target: server
@@ -7,11 +7,11 @@ services:
       - "8420:8420"
     volumes:
       - ./configs:/app/configs:ro
-      - maf-data:/app/.meta-autonomous
+      - temper-ai-data:/app/.temper-ai
     environment:
       - MAF_CONFIG_ROOT=/app/configs
-      - MAF_DB_PATH=/app/.meta-autonomous/observability.db
+      - MAF_DB_PATH=/app/.temper-ai/observability.db
     restart: unless-stopped
 
 volumes:
-  maf-data:
+  temper-ai-data:

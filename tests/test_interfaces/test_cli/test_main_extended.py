@@ -16,7 +16,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from src.interfaces.cli.main import (
+from temper_ai.interfaces.cli.main import (
     _cleanup_tool_executor,
     _load_and_validate_workflow,
     _print_run_summary,
@@ -59,10 +59,10 @@ def _minimal_workflow(tmp_path: Path, name: str = "test_wf", stages=None) -> Pat
 class TestWorkflowExecutionWithDetails:
     """Test workflow execution with --show-details flag."""
 
-    @patch("src.workflow.config_loader.ConfigLoader")
-    @patch("src.tools.registry.ToolRegistry")
-    @patch("src.observability.tracker.ExecutionTracker")
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    @patch("temper_ai.tools.registry.ToolRegistry")
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_run_with_show_details_flag(
         self, mock_engine_registry, mock_tracker, mock_tool_registry,
         mock_config_loader, runner, tmp_path
@@ -94,10 +94,10 @@ class TestWorkflowExecutionWithDetails:
         assert call_args["show_details"] is True
         assert "detail_console" in call_args
 
-    @patch("src.workflow.config_loader.ConfigLoader")
-    @patch("src.tools.registry.ToolRegistry")
-    @patch("src.observability.tracker.ExecutionTracker")
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    @patch("temper_ai.tools.registry.ToolRegistry")
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_run_multiple_stages_workflow(
         self, mock_engine_registry, mock_tracker, mock_tool_registry,
         mock_config_loader, runner, tmp_path
@@ -184,10 +184,10 @@ class TestYAMLValidationErrors:
 class TestRuntimeErrorHandling:
     """Test runtime error handling during workflow execution."""
 
-    @patch("src.workflow.config_loader.ConfigLoader")
-    @patch("src.tools.registry.ToolRegistry")
-    @patch("src.observability.tracker.ExecutionTracker")
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    @patch("temper_ai.tools.registry.ToolRegistry")
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_run_handles_compilation_error(
         self, mock_engine_registry, mock_tracker, mock_tool_registry,
         mock_config_loader, runner, tmp_path
@@ -212,10 +212,10 @@ class TestRuntimeErrorHandling:
         assert "compilation error" in result.output.lower()
         assert "Invalid workflow structure" in result.output
 
-    @patch("src.workflow.config_loader.ConfigLoader")
-    @patch("src.tools.registry.ToolRegistry")
-    @patch("src.observability.tracker.ExecutionTracker")
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    @patch("temper_ai.tools.registry.ToolRegistry")
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_run_handles_execution_error(
         self, mock_engine_registry, mock_tracker, mock_tool_registry,
         mock_config_loader, runner, tmp_path
@@ -247,10 +247,10 @@ class TestRuntimeErrorHandling:
 class TestKeyboardInterruptHandling:
     """Test Ctrl+C (KeyboardInterrupt) handling."""
 
-    @patch("src.workflow.config_loader.ConfigLoader")
-    @patch("src.tools.registry.ToolRegistry")
-    @patch("src.observability.tracker.ExecutionTracker")
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    @patch("temper_ai.tools.registry.ToolRegistry")
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_keyboard_interrupt_during_execution(
         self, mock_engine_registry, mock_tracker, mock_tool_registry,
         mock_config_loader, runner, tmp_path
@@ -282,7 +282,7 @@ class TestKeyboardInterruptHandling:
 class TestDatabaseInitialization:
     """Test database initialization error handling."""
 
-    @patch("src.observability.tracker.ExecutionTracker")
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
     def test_run_handles_database_permission_error(
         self, mock_tracker, runner, tmp_path
     ):
@@ -308,10 +308,10 @@ class TestDatabaseInitialization:
 class TestInputValidation:
     """Test input file and required input validation."""
 
-    @patch("src.workflow.config_loader.ConfigLoader")
-    @patch("src.tools.registry.ToolRegistry")
-    @patch("src.observability.tracker.ExecutionTracker")
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    @patch("temper_ai.tools.registry.ToolRegistry")
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_run_with_missing_required_inputs(
         self, mock_engine_registry, mock_tracker, mock_tool_registry,
         mock_config_loader, runner, tmp_path
@@ -345,10 +345,10 @@ class TestInputValidation:
         assert "Missing required inputs" in result.output
         assert "user_id" in result.output
 
-    @patch("src.workflow.config_loader.ConfigLoader")
-    @patch("src.tools.registry.ToolRegistry")
-    @patch("src.observability.tracker.ExecutionTracker")
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.config_loader.ConfigLoader")
+    @patch("temper_ai.tools.registry.ToolRegistry")
+    @patch("temper_ai.observability.tracker.ExecutionTracker")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_run_with_valid_inputs(
         self, mock_engine_registry, mock_tracker, mock_tool_registry,
         mock_config_loader, runner, tmp_path

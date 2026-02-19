@@ -3,7 +3,7 @@
 An agent wraps an LLM with a prompt, optional tools, and safety/observability settings.
 
 **Location:** `configs/agents/*.yaml`
-**Schema:** `src/schemas/agent_config.py`
+**Schema:** `temper_ai/schemas/agent_config.py`
 
 ## Minimal Agent
 

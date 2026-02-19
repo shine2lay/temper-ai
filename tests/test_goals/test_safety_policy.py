@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.goals._schemas import (
+from temper_ai.goals._schemas import (
     EffortLevel,
     GoalProposal,
     GoalType,
@@ -12,8 +12,8 @@ from src.goals._schemas import (
     RiskAssessment,
     GoalRiskLevel,
 )
-from src.goals.safety_policy import GoalSafetyPolicy
-from src.goals.store import GoalStore
+from temper_ai.goals.safety_policy import GoalSafetyPolicy
+from temper_ai.goals.store import GoalStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

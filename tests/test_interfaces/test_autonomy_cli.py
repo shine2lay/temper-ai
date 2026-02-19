@@ -5,10 +5,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from src.interfaces.cli.autonomy_commands import autonomy_group
-from src.safety.autonomy.emergency_stop import reset_emergency_state
-from src.safety.autonomy.models import AutonomyState, AutonomyTransition, BudgetRecord
-from src.safety.autonomy.store import AutonomyStore
+from temper_ai.interfaces.cli.autonomy_commands import autonomy_group
+from temper_ai.safety.autonomy.emergency_stop import reset_emergency_state
+from temper_ai.safety.autonomy.models import AutonomyState, AutonomyTransition, BudgetRecord
+from temper_ai.safety.autonomy.store import AutonomyStore
 
 
 @pytest.fixture(autouse=True)
@@ -22,12 +22,12 @@ def _make_store() -> AutonomyStore:
 
 
 class TestStatusCommand:
-    """Tests for 'maf autonomy status'."""
+    """Tests for 'temper-ai autonomy status'."""
 
     def test_no_states(self) -> None:
         """Shows message when no states exist."""
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = _make_store()
             result = runner.invoke(autonomy_group, ["status"])
         assert result.exit_code == 0
@@ -41,7 +41,7 @@ class TestStatusCommand:
         ))
 
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = store
             result = runner.invoke(autonomy_group, ["status"])
         assert result.exit_code == 0
@@ -54,7 +54,7 @@ class TestStatusCommand:
         store.save_state(AutonomyState(id="as-2", agent_name="b", domain="d"))
 
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = store
             result = runner.invoke(autonomy_group, ["status", "--agent", "a"])
         assert result.exit_code == 0
@@ -62,12 +62,12 @@ class TestStatusCommand:
 
 
 class TestEscalateCommand:
-    """Tests for 'maf autonomy escalate'."""
+    """Tests for 'temper-ai autonomy escalate'."""
 
     def test_escalation(self) -> None:
         """Escalates agent level."""
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = _make_store()
             result = runner.invoke(
                 autonomy_group, ["escalate", "--agent", "agent-a"],
@@ -81,7 +81,7 @@ class TestEscalateCommand:
         # Set max_level to SUPERVISED by escalating twice with max_level=RISK_GATED
         # Actually the easiest is to set it up so escalation fails
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock_store:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock_store:
             mock_store.return_value = store
             # First escalation succeeds
             runner.invoke(autonomy_group, ["escalate", "--agent", "a"])
@@ -92,12 +92,12 @@ class TestEscalateCommand:
 
 
 class TestDeescalateCommand:
-    """Tests for 'maf autonomy deescalate'."""
+    """Tests for 'temper-ai autonomy deescalate'."""
 
     def test_no_deescalate_at_supervised(self) -> None:
         """Shows message when already at SUPERVISED."""
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = _make_store()
             result = runner.invoke(
                 autonomy_group, ["deescalate", "--agent", "agent-a"],
@@ -112,9 +112,9 @@ class TestEmergencyStopCommand:
     def test_activate(self) -> None:
         """Activates emergency stop."""
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = _make_store()
-            with patch("src.interfaces.cli.autonomy_commands.reset_emergency_state", create=True):
+            with patch("temper_ai.interfaces.cli.autonomy_commands.reset_emergency_state", create=True):
                 result = runner.invoke(
                     autonomy_group, ["emergency-stop", "--reason", "test stop"],
                 )
@@ -124,7 +124,7 @@ class TestEmergencyStopCommand:
     def test_resume_not_active(self) -> None:
         """Shows message when stop not active."""
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = _make_store()
             result = runner.invoke(
                 autonomy_group, ["resume", "--reason", "all clear"],
@@ -134,12 +134,12 @@ class TestEmergencyStopCommand:
 
 
 class TestBudgetCommand:
-    """Tests for 'maf autonomy budget'."""
+    """Tests for 'temper-ai autonomy budget'."""
 
     def test_no_budgets(self) -> None:
         """Shows message when no budgets exist."""
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = _make_store()
             result = runner.invoke(autonomy_group, ["budget"])
         assert result.exit_code == 0
@@ -148,7 +148,7 @@ class TestBudgetCommand:
     def test_scope_budget(self) -> None:
         """Shows budget for specific scope."""
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = _make_store()
             result = runner.invoke(
                 autonomy_group, ["budget", "--scope", "agent-a"],
@@ -158,12 +158,12 @@ class TestBudgetCommand:
 
 
 class TestHistoryCommand:
-    """Tests for 'maf autonomy history'."""
+    """Tests for 'temper-ai autonomy history'."""
 
     def test_no_transitions(self) -> None:
         """Shows message when no transitions exist."""
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = _make_store()
             result = runner.invoke(autonomy_group, ["history"])
         assert result.exit_code == 0
@@ -178,7 +178,7 @@ class TestHistoryCommand:
         ))
 
         runner = CliRunner()
-        with patch("src.interfaces.cli.autonomy_commands._get_store") as mock:
+        with patch("temper_ai.interfaces.cli.autonomy_commands._get_store") as mock:
             mock.return_value = store
             result = runner.invoke(autonomy_group, ["history"])
         assert result.exit_code == 0

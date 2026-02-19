@@ -2,11 +2,11 @@
 
 import pytest
 
-from src.memory._schemas import MemoryScope
-from src.memory.adapters.in_memory import InMemoryAdapter
-from src.memory.constants import DEFAULT_TENANT_ID
-from src.memory.registry import MemoryProviderRegistry
-from src.memory.service import MemoryService
+from temper_ai.memory._schemas import MemoryScope
+from temper_ai.memory.adapters.in_memory import InMemoryAdapter
+from temper_ai.memory.constants import DEFAULT_TENANT_ID
+from temper_ai.memory.registry import MemoryProviderRegistry
+from temper_ai.memory.service import MemoryService
 
 
 @pytest.fixture

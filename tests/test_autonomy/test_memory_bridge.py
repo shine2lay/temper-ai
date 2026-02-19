@@ -4,16 +4,16 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.autonomy.memory_bridge import (
+from temper_ai.autonomy.memory_bridge import (
     APPROVED_STATUS,
     DEFAULT_MIN_CONFIDENCE,
     GOALS_NAMESPACE,
     LearningToMemoryBridge,
     PROCEDURAL_NAMESPACE,
 )
-from src.memory.constants import MEMORY_TYPE_PROCEDURAL
-from src.memory.registry import MemoryProviderRegistry
-from src.memory.service import MemoryService
+from temper_ai.memory.constants import MEMORY_TYPE_PROCEDURAL
+from temper_ai.memory.registry import MemoryProviderRegistry
+from temper_ai.memory.service import MemoryService
 
 
 @pytest.fixture(autouse=True)

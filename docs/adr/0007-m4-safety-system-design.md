@@ -232,24 +232,24 @@ ValidationResult (allow/block + violations)
 
 **Core Components:**
 
-1. **SafetyPolicy Interface** (`src/safety/interfaces.py` - 100 lines)
+1. **SafetyPolicy Interface** (`temper_ai/safety/interfaces.py` - 100 lines)
    - Abstract base class for all policies
    - Severity levels: CRITICAL, HIGH, MEDIUM, LOW, INFO
    - ValidationResult with allow/block + violation details
 
-2. **PolicyRegistry** (`src/safety/policy_registry.py` - 100+ lines)
+2. **PolicyRegistry** (`temper_ai/safety/policy_registry.py` - 100+ lines)
    - Register policies by action type
    - Global policies (apply to all actions)
    - Priority-based ordering
    - Policy lookup by action type
 
-3. **PolicyComposer** (`src/safety/composition.py` - 80+ lines)
+3. **PolicyComposer** (`temper_ai/safety/composition.py` - 80+ lines)
    - Execute multiple policies in priority order
    - Fail-fast mode: stop on first CRITICAL violation
    - Complete mode: run all policies, aggregate violations
    - Short-circuit optimization
 
-4. **ActionPolicyEngine** (`src/safety/action_policy_engine.py` - 150+ lines)
+4. **ActionPolicyEngine** (`temper_ai/safety/action_policy_engine.py` - 150+ lines)
    - Orchestration layer
    - Result caching (60s TTL)
    - Short-circuit on CRITICAL violations
@@ -259,12 +259,12 @@ ValidationResult (allow/block + violations)
 
 | Policy | Purpose | Priority | Files |
 |--------|---------|----------|-------|
-| FileAccessPolicy | Path traversal protection | 100 | src/safety/file_access.py |
-| ForbiddenOperationsPolicy | Block dangerous commands | 90 | src/safety/forbidden_ops.py |
-| SecretDetectionPolicy | Credential scanning | 80 | src/safety/secret_detection.py |
-| RateLimitPolicy | Token bucket rate limiting | 70 | src/safety/rate_limit.py |
-| CircuitBreakerPolicy | Failure rate thresholds | 60 | src/safety/circuit_breaker.py |
-| BlastRadiusPolicy | Scope limiting | 50 | src/safety/blast_radius.py |
+| FileAccessPolicy | Path traversal protection | 100 | temper_ai/safety/file_access.py |
+| ForbiddenOperationsPolicy | Block dangerous commands | 90 | temper_ai/safety/forbidden_ops.py |
+| SecretDetectionPolicy | Credential scanning | 80 | temper_ai/safety/secret_detection.py |
+| RateLimitPolicy | Token bucket rate limiting | 70 | temper_ai/safety/rate_limit.py |
+| CircuitBreakerPolicy | Failure rate thresholds | 60 | temper_ai/safety/circuit_breaker.py |
+| BlastRadiusPolicy | Scope limiting | 50 | temper_ai/safety/blast_radius.py |
 
 **Severity Levels:**
 
@@ -345,8 +345,8 @@ safety:
 - [Milestone 4 Completion Report](../milestones/milestone4_completion.md)
 - [Safety System Guide](../features/safety/safety_system_guide.md)
 - [Policy Development Guide](../features/safety/policy_development_guide.md)
-- [Safety Policy Interface](../../src/safety/interfaces.py)
-- [Implementation: src/safety/](../../src/safety/)
+- [Safety Policy Interface](../../temper_ai/safety/interfaces.py)
+- [Implementation: temper_ai/safety/](../../temper_ai/safety/)
 - [TECHNICAL_SPECIFICATION.md](../../TECHNICAL_SPECIFICATION.md) - M4 specification
 - [Design Patterns: Strategy Pattern](https://refactoring.guru/design-patterns/strategy)
 - [Design Patterns: Composite Pattern](https://refactoring.guru/design-patterns/composite)

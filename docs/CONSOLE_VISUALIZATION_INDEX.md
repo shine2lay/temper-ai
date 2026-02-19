@@ -300,9 +300,9 @@ This index provides quick access to all console visualization documentation.
 - [ ] Understand the three verbosity levels
 - [ ] Familiarize yourself with color scheme
 - [ ] Review existing codebase files:
-  - `src/observability/console.py`
-  - `src/observability/formatters.py`
-  - `src/observability/models.py`
+  - `temper_ai/observability/console.py`
+  - `temper_ai/observability/formatters.py`
+  - `temper_ai/observability/models.py`
 
 ### During Implementation
 - [ ] Reference the Design Specification for guidelines
@@ -408,4 +408,4 @@ All documentation is:
 
 **Last Updated**: 2024-01-30
 **Maintained By**: Development Team
-**Related Files**: `/home/shinelay/meta-autonomous-framework/src/observability/`
+**Related Files**: `/home/shinelay/meta-autonomous-framework/temper_ai/observability/`

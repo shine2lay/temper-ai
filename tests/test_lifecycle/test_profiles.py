@@ -5,16 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from src.lifecycle._schemas import (
+from temper_ai.lifecycle._schemas import (
     AdaptationAction,
     AdaptationRule,
     LifecycleProfile,
     ProjectCharacteristics,
     ProjectSize,
 )
-from src.lifecycle.models import LifecycleProfileRecord
-from src.lifecycle.profiles import ProfileRegistry, _matches_product_type
-from src.lifecycle.store import LifecycleStore
+from temper_ai.lifecycle.models import LifecycleProfileRecord
+from temper_ai.lifecycle.profiles import ProfileRegistry, _matches_product_type
+from temper_ai.lifecycle.store import LifecycleStore
 
 
 @pytest.fixture

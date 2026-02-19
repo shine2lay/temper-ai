@@ -1,6 +1,6 @@
 # API Reference
 
-Complete API documentation for the Meta-Autonomous Agent Framework.
+Complete API documentation for the Temper AI.
 
 ---
 
@@ -25,7 +25,7 @@ Complete API documentation for the Meta-Autonomous Agent Framework.
 
 ## Overview
 
-The Meta-Autonomous Framework is organized into several core modules:
+The Temper AI is organized into several core modules:
 
 - **agents**: Agent execution and LLM providers
 - **tools**: Tool registry, executor, and base classes
@@ -45,8 +45,8 @@ The Meta-Autonomous Framework is organized into several core modules:
 The primary agent implementation for executing tasks with LLM support.
 
 ```python
-from src.agents import StandardAgent
-from src.compiler.schemas import AgentConfigInner
+from temper_ai.agents import StandardAgent
+from temper_ai.compiler.schemas import AgentConfigInner
 
 agent = StandardAgent(config: AgentConfigInner)
 response = agent.execute(input_data: Dict[str, Any]) -> AgentResponse
@@ -80,7 +80,7 @@ agent:
 Abstract base class for all agents.
 
 ```python
-from src.agents import BaseAgent, AgentResponse, ExecutionContext
+from temper_ai.agents import BaseAgent, AgentResponse, ExecutionContext
 
 class CustomAgent(BaseAgent):
     def execute(self, input_data: Dict[str, Any]) -> AgentResponse:
@@ -97,7 +97,7 @@ class CustomAgent(BaseAgent):
 Factory for creating agents from configuration.
 
 ```python
-from src.agents import AgentFactory
+from temper_ai.agents import AgentFactory
 
 factory = AgentFactory()
 agent = factory.create_agent(config: AgentConfigInner)
@@ -115,7 +115,7 @@ agent = factory.create_agent(config: AgentConfigInner)
 ### Base Classes
 
 ```python
-from src.agents import BaseLLM, LLMProvider, LLMResponse, LLMStreamChunk
+from temper_ai.agents import BaseLLM, LLMProvider, LLMResponse, LLMStreamChunk
 ```
 
 ### OllamaLLM
@@ -123,7 +123,7 @@ from src.agents import BaseLLM, LLMProvider, LLMResponse, LLMStreamChunk
 Local LLM provider using Ollama.
 
 ```python
-from src.agents import OllamaLLM
+from temper_ai.agents import OllamaLLM
 
 llm = OllamaLLM(
     model="llama3.2:3b",
@@ -149,7 +149,7 @@ inference:
 OpenAI API provider.
 
 ```python
-from src.agents import OpenAILLM
+from temper_ai.agents import OpenAILLM
 
 llm = OpenAILLM(
     model="gpt-4",
@@ -173,7 +173,7 @@ inference:
 Anthropic Claude API provider.
 
 ```python
-from src.agents import AnthropicLLM
+from temper_ai.agents import AnthropicLLM
 
 llm = AnthropicLLM(
     model="claude-3-sonnet-20240229",
@@ -197,7 +197,7 @@ inference:
 vLLM provider for self-hosted models.
 
 ```python
-from src.agents import vLLMLLM
+from temper_ai.agents import vLLMLLM
 
 llm = vLLMLLM(
     model="meta-llama/Llama-2-7b-chat-hf",
@@ -211,8 +211,8 @@ llm = vLLMLLM(
 Factory function for creating LLM clients.
 
 ```python
-from src.agents import create_llm_client
-from src.compiler.schemas import InferenceConfig
+from temper_ai.agents import create_llm_client
+from temper_ai.compiler.schemas import InferenceConfig
 
 config = InferenceConfig(provider="ollama", model="llama3.2:3b")
 llm = create_llm_client(config)
@@ -221,7 +221,7 @@ llm = create_llm_client(config)
 ### LLM Exceptions
 
 ```python
-from src.agents import (
+from temper_ai.agents import (
     LLMError,              # Base exception
     LLMTimeoutError,       # Timeout errors
     LLMRateLimitError,     # Rate limit errors
@@ -244,8 +244,8 @@ Automatic failover between multiple LLM providers for high availability.
 **Basic Usage:**
 
 ```python
-from src.agents.llm_providers import OllamaLLM, OpenAILLM
-from src.agents.llm_failover import FailoverProvider, FailoverConfig
+from temper_ai.agents.llm_providers import OllamaLLM, OpenAILLM
+from temper_ai.agents.llm_failover import FailoverProvider, FailoverConfig
 
 # Create providers
 primary = OllamaLLM(model="llama3.2")
@@ -264,7 +264,7 @@ response = await failover.acomplete("What is 2+2?")
 **Advanced Configuration:**
 
 ```python
-from src.agents.llm_failover import FailoverConfig
+from temper_ai.agents.llm_failover import FailoverConfig
 
 config = FailoverConfig(
     sticky_session=True,           # Use last successful provider first
@@ -290,7 +290,7 @@ failover = FailoverProvider(providers=[primary, backup, tertiary], config=config
 **Error Handling:**
 
 ```python
-from src.agents.llm_providers import LLMError
+from temper_ai.agents.llm_providers import LLMError
 
 try:
     response = failover.complete("Hello")
@@ -332,7 +332,7 @@ Circuit breaker pattern to prevent cascading failures when providers are down.
 **Basic Usage:**
 
 ```python
-from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError
+from temper_ai.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitBreakerError
 
 # Create circuit breaker for a provider
 breaker = CircuitBreaker(name="ollama")
@@ -387,8 +387,8 @@ Circuit breaker only counts **transient** errors that may recover:
 **Example with LLM Provider:**
 
 ```python
-from src.agents.llm_providers import OllamaLLM
-from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerError
+from temper_ai.agents.llm_providers import OllamaLLM
+from temper_ai.llm.circuit_breaker import CircuitBreaker, CircuitBreakerError
 
 llm = OllamaLLM(model="llama3.2")
 breaker = CircuitBreaker(name="ollama")
@@ -407,8 +407,8 @@ result = safe_complete("What is 2+2?")
 **Combining with FailoverProvider:**
 
 ```python
-from src.agents.llm_failover import FailoverProvider
-from src.llm.circuit_breaker import CircuitBreaker
+from temper_ai.agents.llm_failover import FailoverProvider
+from temper_ai.llm.circuit_breaker import CircuitBreaker
 
 # Wrap each provider with circuit breaker
 primary_breaker = CircuitBreaker("primary")
@@ -429,7 +429,7 @@ failover = FailoverProvider(providers=[primary, backup])
 Abstract base class for all tools.
 
 ```python
-from src.tools import BaseTool, ToolParameter, ToolMetadata, ToolResult
+from temper_ai.tools import BaseTool, ToolParameter, ToolMetadata, ToolResult
 
 class CustomTool(BaseTool):
     @property
@@ -465,7 +465,7 @@ class CustomTool(BaseTool):
 Registry for discovering and managing tools.
 
 ```python
-from src.tools import ToolRegistry
+from temper_ai.tools import ToolRegistry
 
 registry = ToolRegistry(auto_discover=True)
 
@@ -551,7 +551,7 @@ print(registry.get_registration_report())
 Executor for running tools safely.
 
 ```python
-from src.tools import ToolExecutor
+from temper_ai.tools import ToolExecutor
 
 executor = ToolExecutor(registry)
 result = executor.execute(
@@ -568,7 +568,7 @@ result = executor.execute(
 ### Tool Exceptions
 
 ```python
-from src.tools import ToolRegistryError, ToolExecutionError
+from temper_ai.tools import ToolRegistryError, ToolExecutionError
 ```
 
 ---
@@ -580,7 +580,7 @@ from src.tools import ToolRegistryError, ToolExecutionError
 Loads and validates YAML/JSON configurations.
 
 ```python
-from src.compiler import ConfigLoader
+from temper_ai.compiler import ConfigLoader
 
 loader = ConfigLoader()
 
@@ -600,13 +600,13 @@ workflow_config = loader.load_workflow("my_workflow")
 ### Configuration Exceptions
 
 ```python
-from src.compiler import ConfigNotFoundError, ConfigValidationError
+from temper_ai.compiler import ConfigNotFoundError, ConfigValidationError
 ```
 
 ### Configuration Schemas
 
 ```python
-from src.compiler.schemas import (
+from temper_ai.compiler.schemas import (
     # Agent config
     AgentConfigInner,
     InferenceConfig,
@@ -676,7 +676,7 @@ MemoryConfig(
 Compiles workflow configurations into executable LangGraph graphs.
 
 ```python
-from src.compiler.langgraph_compiler import LangGraphCompiler
+from temper_ai.compiler.langgraph_compiler import LangGraphCompiler
 
 compiler = LangGraphCompiler()
 graph = compiler.compile(workflow_config: WorkflowConfig)
@@ -739,7 +739,7 @@ The execution engine abstraction layer decouples workflow execution from specifi
 Abstract base class for workflow execution engines.
 
 ```python
-from src.compiler.execution_engine import ExecutionEngine, ExecutionMode
+from temper_ai.compiler.execution_engine import ExecutionEngine, ExecutionMode
 
 class CustomEngine(ExecutionEngine):
     """Custom execution engine implementation."""
@@ -785,7 +785,7 @@ class CustomEngine(ExecutionEngine):
 Default execution engine using LangGraph.
 
 ```python
-from src.compiler.langgraph_engine import LangGraphExecutionEngine
+from temper_ai.compiler.langgraph_engine import LangGraphExecutionEngine
 
 # Create engine instance
 engine = LangGraphExecutionEngine(config_loader=config_loader)
@@ -814,8 +814,8 @@ print(result)  # Final workflow state
 Factory for managing and creating execution engines.
 
 ```python
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.execution_engine import ExecutionEngine
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.execution_engine import ExecutionEngine
 
 # Get registry instance (singleton)
 registry = EngineRegistry()
@@ -845,7 +845,7 @@ Stage executors control how agents within a stage are executed in multi-agent wo
 Executes agents one at a time in order (default M2 behavior).
 
 ```python
-from src.compiler.executors.sequential import SequentialStageExecutor
+from temper_ai.compiler.executors.sequential import SequentialStageExecutor
 
 # Create sequential executor
 executor = SequentialStageExecutor()
@@ -881,8 +881,8 @@ stages:
 Executes multiple agents concurrently using nested LangGraph subgraphs (M3 feature).
 
 ```python
-from src.compiler.executors.parallel import ParallelStageExecutor
-from src.strategies.registry import StrategyRegistry
+from temper_ai.compiler.executors.parallel import ParallelStageExecutor
+from temper_ai.strategies.registry import StrategyRegistry
 
 # Get collaboration strategy
 strategy_registry = StrategyRegistry()
@@ -932,7 +932,7 @@ stages:
 Starts with parallel execution, switches to sequential if disagreement is high (M3 advanced feature).
 
 ```python
-from src.compiler.executors.adaptive import AdaptiveStageExecutor
+from temper_ai.compiler.executors.adaptive import AdaptiveStageExecutor
 
 # Create adaptive executor
 executor = AdaptiveStageExecutor(
@@ -1003,7 +1003,7 @@ stages:
 Abstract compiled workflow representation.
 
 ```python
-from src.compiler.execution_engine import CompiledWorkflow
+from temper_ai.compiler.execution_engine import CompiledWorkflow
 
 # Execute compiled workflow
 result = compiled_workflow.invoke({"input": "data"})
@@ -1029,7 +1029,7 @@ if compiled_workflow.is_cancelled():
 ### Execution Modes
 
 ```python
-from src.compiler.execution_engine import ExecutionMode
+from temper_ai.compiler.execution_engine import ExecutionMode
 
 # Synchronous execution (blocking)
 result = engine.execute(compiled, input_data, mode=ExecutionMode.SYNC)
@@ -1044,7 +1044,7 @@ result = engine.execute(compiled, input_data, mode=ExecutionMode.STREAM)
 ### Creating Custom Engines
 
 ```python
-from src.compiler.execution_engine import (
+from temper_ai.compiler.execution_engine import (
     ExecutionEngine,
     CompiledWorkflow,
     ExecutionMode,
@@ -1141,7 +1141,7 @@ class MyCustomEngine(ExecutionEngine):
         return feature in {"sequential_stages", "checkpointing"}
 
 # Register custom engine
-from src.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.engine_registry import EngineRegistry
 registry = EngineRegistry()
 registry.register_engine("my_custom_engine", MyCustomEngine)
 ```
@@ -1156,15 +1156,15 @@ Checkpoint and resume support for long-running workflows, enabling recovery from
 
 High-level checkpoint management for workflows.
 
-**Note:** Use `src.compiler.checkpoint_manager.CheckpointManager` (current implementation). The class in `src.compiler.checkpoint` is deprecated and maintained only for backward compatibility with existing tests.
+**Note:** Use `temper_ai.compiler.checkpoint_manager.CheckpointManager` (current implementation). The class in `temper_ai.compiler.checkpoint` is deprecated and maintained only for backward compatibility with existing tests.
 
 ```python
-from src.compiler.checkpoint_manager import (
+from temper_ai.compiler.checkpoint_manager import (
     CheckpointManager,
     CheckpointStrategy
 )
-from src.compiler.checkpoint_backends import FileCheckpointBackend
-from src.compiler.domain_state import WorkflowDomainState
+from temper_ai.compiler.checkpoint_backends import FileCheckpointBackend
+from temper_ai.compiler.domain_state import WorkflowDomainState
 
 # Create manager with file backend (default)
 manager = CheckpointManager()
@@ -1202,7 +1202,7 @@ manager.delete_checkpoint("wf-123", checkpoint_id)
 **Checkpoint Strategies:**
 
 ```python
-from src.compiler.checkpoint_manager import CheckpointStrategy
+from temper_ai.compiler.checkpoint_manager import CheckpointStrategy
 
 # Save after every stage (default)
 manager = CheckpointManager(strategy=CheckpointStrategy.EVERY_STAGE)
@@ -1255,13 +1255,13 @@ Abstract base class for checkpoint storage backends.
 **FileCheckpointBackend** - Store checkpoints as JSON files (default, no dependencies):
 
 ```python
-from src.compiler.checkpoint_backends import FileCheckpointBackend
+from temper_ai.compiler.checkpoint_backends import FileCheckpointBackend
 
 # Create file backend
 backend = FileCheckpointBackend(checkpoint_dir="./checkpoints")
 
 # Save checkpoint
-from src.compiler.domain_state import WorkflowDomainState
+from temper_ai.compiler.domain_state import WorkflowDomainState
 domain = WorkflowDomainState(workflow_id="wf-123", input="test")
 checkpoint_id = backend.save_checkpoint(
     workflow_id="wf-123",
@@ -1285,7 +1285,7 @@ backend.delete_checkpoint("wf-123", checkpoint_id)
 **RedisCheckpointBackend** - Store checkpoints in Redis (for distributed systems):
 
 ```python
-from src.compiler.checkpoint_backends import RedisCheckpointBackend
+from temper_ai.compiler.checkpoint_backends import RedisCheckpointBackend
 
 # Create Redis backend
 backend = RedisCheckpointBackend(
@@ -1301,8 +1301,8 @@ loaded_domain = backend.load_checkpoint("wf-123", checkpoint_id)
 **Custom Backend:**
 
 ```python
-from src.compiler.checkpoint_backends import CheckpointBackend
-from src.compiler.domain_state import WorkflowDomainState
+from temper_ai.compiler.checkpoint_backends import CheckpointBackend
+from temper_ai.compiler.domain_state import WorkflowDomainState
 from typing import Dict, Any, Optional, List
 
 class S3CheckpointBackend(CheckpointBackend):
@@ -1353,7 +1353,7 @@ class S3CheckpointBackend(CheckpointBackend):
         checkpoint_id: Optional[str] = None
     ) -> WorkflowDomainState:
         import json
-        from src.compiler.checkpoint_backends import CheckpointNotFoundError
+        from temper_ai.compiler.checkpoint_backends import CheckpointNotFoundError
 
         # Get latest if checkpoint_id not specified
         if not checkpoint_id:
@@ -1396,7 +1396,7 @@ class S3CheckpointBackend(CheckpointBackend):
         """Get the most recent checkpoint ID from S3."""
         checkpoints = self.list_checkpoints(workflow_id)
         if not checkpoints:
-            from src.compiler.checkpoint_backends import CheckpointNotFoundError
+            from temper_ai.compiler.checkpoint_backends import CheckpointNotFoundError
             raise CheckpointNotFoundError(f"No checkpoints found for {workflow_id}")
         return checkpoints[0]['checkpoint_id']
 
@@ -1423,7 +1423,7 @@ manager = CheckpointManager(backend=backend)
 State container for workflow execution, used with checkpoints.
 
 ```python
-from src.compiler.domain_state import WorkflowDomainState
+from temper_ai.compiler.domain_state import WorkflowDomainState
 
 # Create domain state
 domain = WorkflowDomainState(
@@ -1458,8 +1458,8 @@ restored_domain = WorkflowDomainState.from_dict(state_dict)
 Complete example showing checkpoint and resume:
 
 ```python
-from src.compiler.checkpoint_manager import CheckpointManager, CheckpointStrategy
-from src.compiler.domain_state import WorkflowDomainState
+from temper_ai.compiler.checkpoint_manager import CheckpointManager, CheckpointStrategy
+from temper_ai.compiler.domain_state import WorkflowDomainState
 
 # Initialize checkpoint manager
 manager = CheckpointManager(strategy=CheckpointStrategy.EVERY_STAGE)
@@ -1511,7 +1511,7 @@ print("Workflow completed!")
 Track workflow, stage, and agent executions.
 
 ```python
-from src.observability import ExecutionTracker, ExecutionContext
+from temper_ai.observability import ExecutionTracker, ExecutionContext
 
 tracker = ExecutionTracker()
 
@@ -1528,7 +1528,7 @@ with tracker.track_workflow("workflow_id", "my_workflow"):
 ### Database Models
 
 ```python
-from src.observability import (
+from temper_ai.observability import (
     WorkflowExecution,
     StageExecution,
     AgentExecution,
@@ -1544,7 +1544,7 @@ from src.observability import (
 ### Database Access
 
 ```python
-from src.observability import (
+from temper_ai.observability import (
     DatabaseManager,
     init_database,
     get_database,
@@ -1565,7 +1565,7 @@ with get_session() as session:
 ### Visualizers
 
 ```python
-from src.observability import (
+from temper_ai.observability import (
     WorkflowVisualizer,
     StreamingVisualizer,
     print_workflow_tree,
@@ -1583,7 +1583,7 @@ visualizer.on_agent_complete(agent_id, result)
 ### Formatters
 
 ```python
-from src.observability import (
+from temper_ai.observability import (
     format_duration,
     format_timestamp,
     format_tokens,
@@ -1605,7 +1605,7 @@ cost_str = format_cost(amount)
 ### Hooks
 
 ```python
-from src.observability import (
+from temper_ai.observability import (
     get_tracker,
     set_tracker,
     reset_tracker,
@@ -1632,7 +1632,7 @@ set_tracker(tracker)
 
 ### ObservabilityBuffer
 
-**Module:** `src.observability.buffer`
+**Module:** `temper_ai.observability.buffer`
 
 **Description:** Batches observability operations to reduce database queries and improve performance.
 
@@ -1644,7 +1644,7 @@ set_tracker(tracker)
 - Reduces N+1 query problem (100 calls: 200 queries → 2-4 queries)
 
 ```python
-from src.observability.buffer import ObservabilityBuffer
+from temper_ai.observability.buffer import ObservabilityBuffer
 
 # Create buffer with custom settings
 buffer = ObservabilityBuffer(
@@ -1708,8 +1708,8 @@ All public methods are thread-safe using `threading.Lock`. Safe to use from mult
 **Example with Backend Integration:**
 
 ```python
-from src.observability.buffer import ObservabilityBuffer
-from src.observability.postgres_backend import PostgresBackend
+from temper_ai.observability.buffer import ObservabilityBuffer
+from temper_ai.observability.postgres_backend import PostgresBackend
 
 # Create backend
 backend = PostgresBackend(connection_string="postgresql://...")
@@ -1736,7 +1736,7 @@ The framework supports pluggable storage backends for observability data.
 Base interface that all backends must implement.
 
 ```python
-from src.observability.backend import ObservabilityBackend
+from temper_ai.observability.backend import ObservabilityBackend
 ```
 
 **Core Tracking Methods:**
@@ -1776,8 +1776,8 @@ Production-ready SQL backend supporting SQLite (dev/test) and PostgreSQL (produc
 **Basic Usage:**
 
 ```python
-from src.observability.backends.sql_backend import SQLObservabilityBackend
-from src.observability import ExecutionTracker
+from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+from temper_ai.observability import ExecutionTracker
 
 # Create SQL backend
 backend = SQLObservabilityBackend()
@@ -1789,8 +1789,8 @@ tracker = ExecutionTracker(backend=backend)
 **With Buffering (Performance Optimization):**
 
 ```python
-from src.observability.backends.sql_backend import SQLObservabilityBackend
-from src.observability.buffer import ObservabilityBuffer
+from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+from temper_ai.observability.buffer import ObservabilityBuffer
 
 # Create buffer (batches LLM/tool calls)
 buffer = ObservabilityBuffer(
@@ -1823,7 +1823,7 @@ observability:
 **Maintenance Operations:**
 
 ```python
-from src.observability.backends.sql_backend import SQLObservabilityBackend
+from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
 
 backend = SQLObservabilityBackend()
 
@@ -1874,7 +1874,7 @@ Metrics-focused backend for Prometheus time-series monitoring (planned for M6).
 **Example Usage (Future):**
 
 ```python
-from src.observability.backends.prometheus_backend import PrometheusObservabilityBackend
+from temper_ai.observability.backends.prometheus_backend import PrometheusObservabilityBackend
 
 backend = PrometheusObservabilityBackend(
     push_gateway_url="http://localhost:9091"
@@ -1918,7 +1918,7 @@ Object storage backend for long-term archival and analytics (planned for M6).
 **Example Usage (Future):**
 
 ```python
-from src.observability.backends.s3_backend import S3ObservabilityBackend
+from temper_ai.observability.backends.s3_backend import S3ObservabilityBackend
 
 backend = S3ObservabilityBackend(
     bucket_name="my-observability-bucket",
@@ -1987,9 +1987,9 @@ GROUP BY workflow_name;
 Use multiple backends simultaneously (e.g., SQL for querying + S3 for archival):
 
 ```python
-from src.observability.backends.sql_backend import SQLObservabilityBackend
-from src.observability.backends.s3_backend import S3ObservabilityBackend
-from src.observability import ExecutionTracker
+from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+from temper_ai.observability.backends.s3_backend import S3ObservabilityBackend
+from temper_ai.observability import ExecutionTracker
 
 # Create multiple backends
 sql_backend = SQLObservabilityBackend()
@@ -2017,7 +2017,7 @@ observability:
 Implement `ObservabilityBackend` interface for custom storage:
 
 ```python
-from src.observability.backend import ObservabilityBackend
+from temper_ai.observability.backend import ObservabilityBackend
 from contextlib import contextmanager
 from typing import Optional, Dict, Any
 from datetime import datetime
@@ -2062,7 +2062,7 @@ tracker = ExecutionTracker(backend=CustomBackend())
 ### Collaboration Strategies
 
 ```python
-from src.strategies import (
+from temper_ai.strategies import (
     CollaborationStrategy,
     AgentOutput,
     SynthesisResult,
@@ -2074,7 +2074,7 @@ from src.strategies import (
 Simple majority voting strategy.
 
 ```python
-from src.strategies.consensus import ConsensusStrategy
+from temper_ai.strategies.consensus import ConsensusStrategy
 
 strategy = ConsensusStrategy(min_consensus=0.6)
 
@@ -2094,7 +2094,7 @@ result = strategy.synthesize(outputs, context={})
 Multi-round argumentation strategy.
 
 ```python
-from src.strategies.debate import DebateAndSynthesize
+from temper_ai.strategies.debate import DebateAndSynthesize
 
 strategy = DebateAndSynthesize(
     max_rounds=3,
@@ -2108,7 +2108,7 @@ result = strategy.synthesize(outputs, context={})
 ### Conflict Resolution
 
 ```python
-from src.strategies import (
+from temper_ai.strategies import (
     ConflictResolutionStrategy,
     ResolutionResult,
     HighestConfidenceResolver,
@@ -2129,7 +2129,7 @@ resolver = RandomTiebreakerResolver()
 ### Utility Functions
 
 ```python
-from src.strategies import (
+from temper_ai.strategies import (
     calculate_consensus_confidence,
     extract_majority_decision,
     calculate_vote_distribution,
@@ -2153,7 +2153,7 @@ distribution = calculate_vote_distribution(outputs)
 ### Safety Policies
 
 ```python
-from src.safety import (
+from temper_ai.safety import (
     SafetyPolicy,
     BaseSafetyPolicy,
     SafetyViolation,
@@ -2167,13 +2167,13 @@ from src.safety import (
 Limits scope of file changes to prevent large-scale damage.
 
 ```python
-from src.safety import BlastRadiusPolicy
+from temper_ai.safety import BlastRadiusPolicy
 
 policy = BlastRadiusPolicy(
     max_files_per_commit=5,
     max_lines_per_file=200,
     forbidden_paths=[
-        "src/safety/",
+        "temper_ai/safety/",
         "config/",
         ".github/workflows/"
     ]
@@ -2182,7 +2182,7 @@ policy = BlastRadiusPolicy(
 result = policy.validate(
     action={
         "type": "file_change",
-        "files": ["src/agents/custom.py"],
+        "files": ["temper_ai/agents/custom.py"],
         "lines_changed": 150
     },
     context={}
@@ -2198,7 +2198,7 @@ if not result.valid:
 Detects secrets and credentials in code/config.
 
 ```python
-from src.safety import SecretDetectionPolicy
+from temper_ai.safety import SecretDetectionPolicy
 
 policy = SecretDetectionPolicy(
     patterns=[
@@ -2224,7 +2224,7 @@ result = policy.validate(
 Rate limiting for operations.
 
 ```python
-from src.safety import RateLimiterPolicy
+from temper_ai.safety import RateLimiterPolicy
 
 policy = RateLimiterPolicy(
     limits={
@@ -2243,7 +2243,7 @@ result = policy.validate(
 ### Custom Safety Policy
 
 ```python
-from src.safety import BaseSafetyPolicy, ValidationResult, SafetyViolation, ViolationSeverity
+from temper_ai.safety import BaseSafetyPolicy, ValidationResult, SafetyViolation, ViolationSeverity
 
 class CustomPolicy(BaseSafetyPolicy):
     @property
@@ -2275,7 +2275,7 @@ class CustomPolicy(BaseSafetyPolicy):
 ### Violation Severity
 
 ```python
-from src.safety import ViolationSeverity
+from temper_ai.safety import ViolationSeverity
 
 ViolationSeverity.INFO       # Informational
 ViolationSeverity.LOW        # Low severity
@@ -2291,7 +2291,7 @@ ViolationSeverity.CRITICAL   # Critical severity
 ### LLM Cache
 
 ```python
-from src.cache import LLMCache, InMemoryCache, RedisCache, CacheStats
+from temper_ai.cache import LLMCache, InMemoryCache, RedisCache, CacheStats
 
 # In-memory cache
 cache = InMemoryCache(max_size=1000, ttl_seconds=3600)
@@ -2325,7 +2325,7 @@ print(f"Hit rate: {stats.hit_rate:.2%}")
 ### Cache Backends
 
 ```python
-from src.cache import CacheBackend
+from temper_ai.cache import CacheBackend
 
 class CustomCache(CacheBackend):
     def get(self, key: str):
@@ -2365,7 +2365,7 @@ Response object returned from agent execution.
 - `confidence: Optional[float]` - Confidence score (0.0 to 1.0), auto-calculated if not provided
 
 ```python
-from src.agents import AgentResponse
+from temper_ai.agents import AgentResponse
 
 # Create response with all fields
 response = AgentResponse(
@@ -2417,7 +2417,7 @@ response = AgentResponse(output="Analysis complete", tokens=200)
 ### Tool Result
 
 ```python
-from src.tools import ToolResult
+from temper_ai.tools import ToolResult
 
 result = ToolResult(
     success=True,
@@ -2433,7 +2433,7 @@ result = ToolResult(
 ### LLM Response
 
 ```python
-from src.agents import LLMResponse
+from temper_ai.agents import LLMResponse
 
 response = LLMResponse(
     text="Generated text",
@@ -2451,8 +2451,8 @@ response = LLMResponse(
 ### Simple Agent
 
 ```python
-from src.agents import StandardAgent
-from src.compiler.schemas import AgentConfigInner, InferenceConfig
+from temper_ai.agents import StandardAgent
+from temper_ai.compiler.schemas import AgentConfigInner, InferenceConfig
 
 config = AgentConfigInner(
     name="simple_agent",
@@ -2470,9 +2470,9 @@ print(response.output)
 ### Agent with Tools
 
 ```python
-from src.agents import StandardAgent
-from src.tools import ToolRegistry, BaseTool, ToolMetadata, ToolResult
-from src.compiler.schemas import AgentConfigInner, InferenceConfig
+from temper_ai.agents import StandardAgent
+from temper_ai.tools import ToolRegistry, BaseTool, ToolMetadata, ToolResult
+from temper_ai.compiler.schemas import AgentConfigInner, InferenceConfig
 
 # Custom tool
 class Calculator(BaseTool):
@@ -2511,8 +2511,8 @@ response = agent.execute({"query": "Calculate 123 * 456"})
 ### Multi-Agent Workflow
 
 ```python
-from src.compiler import ConfigLoader
-from src.compiler.langgraph_compiler import LangGraphCompiler
+from temper_ai.compiler import ConfigLoader
+from temper_ai.compiler.langgraph_compiler import LangGraphCompiler
 
 # Load workflow config
 loader = ConfigLoader()
@@ -2534,8 +2534,8 @@ print(result["final_output"])
 ### With Observability
 
 ```python
-from src.agents import StandardAgent
-from src.observability import ExecutionTracker, init_database
+from temper_ai.agents import StandardAgent
+from temper_ai.observability import ExecutionTracker, init_database
 
 # Initialize database
 init_database("sqlite:///workflow.db")
@@ -2549,7 +2549,7 @@ with tracker.track_agent("agent_1", "researcher", None):
     response = agent.execute(input_data)
 
 # Query execution history
-from src.observability import get_session, AgentExecution
+from temper_ai.observability import get_session, AgentExecution
 
 with get_session() as session:
     executions = session.query(AgentExecution).all()
@@ -2560,8 +2560,8 @@ with get_session() as session:
 ### With Safety Policies
 
 ```python
-from src.agents import StandardAgent
-from src.safety import BlastRadiusPolicy, SecretDetectionPolicy
+from temper_ai.agents import StandardAgent
+from temper_ai.safety import BlastRadiusPolicy, SecretDetectionPolicy
 
 # Create policies
 blast_radius = BlastRadiusPolicy(max_files_per_commit=5)
@@ -2570,7 +2570,7 @@ secret_detection = SecretDetectionPolicy()
 # Validate actions
 action = {
     "type": "file_change",
-    "files": ["src/agents/custom.py"],
+    "files": ["temper_ai/agents/custom.py"],
     "content": "..."
 }
 

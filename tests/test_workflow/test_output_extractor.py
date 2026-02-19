@@ -1,8 +1,8 @@
 """Tests for output extraction and two-compartment store format."""
 import pytest
 
-from src.workflow.context_schemas import StageOutputDeclaration
-from src.workflow.output_extractor import (
+from temper_ai.workflow.context_schemas import StageOutputDeclaration
+from temper_ai.workflow.output_extractor import (
     LLMOutputExtractor,
     NoopExtractor,
     get_extractor,
@@ -117,7 +117,7 @@ class TestTwoCompartmentFormat:
         """Verify _store_stage_output produces two-compartment format."""
         from unittest.mock import MagicMock
 
-        from src.stage.executors.sequential import (
+        from temper_ai.stage.executors.sequential import (
             SequentialStageExecutor,
             StageOutputData,
         )
@@ -151,7 +151,7 @@ class TestTwoCompartmentFormat:
 
     def test_sequential_store_no_structured(self):
         """Without structured, compartment should be empty dict."""
-        from src.stage.executors.sequential import (
+        from temper_ai.stage.executors.sequential import (
             SequentialStageExecutor,
             StageOutputData,
         )
@@ -175,7 +175,7 @@ class TestTwoCompartmentFormat:
         """Verify update_state_with_results produces two-compartment format."""
         from unittest.mock import MagicMock
 
-        from src.stage.executors._parallel_helpers import (
+        from temper_ai.stage.executors._parallel_helpers import (
             update_state_with_results,
         )
 

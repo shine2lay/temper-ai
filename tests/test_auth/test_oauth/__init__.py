@@ -1,9 +1,9 @@
-"""Tests for src.auth.oauth module."""
+"""Tests for temper_ai.auth.oauth module."""
 
 
 def test_oauth_module_imports():
-    """Test that all expected exports from src.auth.oauth are available."""
-    from src.auth.oauth import (
+    """Test that all expected exports from temper_ai.auth.oauth are available."""
+    from temper_ai.auth.oauth import (
         CallbackURLValidator,
         InMemoryStateStore,
         OAuthConfig,
@@ -43,7 +43,7 @@ def test_oauth_module_imports():
 
 def test_oauth_module_all_exports():
     """Test that __all__ contains all expected exports."""
-    import src.auth.oauth
+    import temper_ai.auth.oauth
 
     expected_exports = [
         "CallbackURLValidator",
@@ -64,14 +64,14 @@ def test_oauth_module_all_exports():
         "OAuthRateLimiter",
     ]
 
-    assert hasattr(src.auth.oauth, "__all__")
-    assert set(src.auth.oauth.__all__) == set(expected_exports)
+    assert hasattr(temper_ai.auth.oauth, "__all__")
+    assert set(temper_ai.auth.oauth.__all__) == set(expected_exports)
 
 
 def test_oauth_callback_validator_reexport():
     """Test that CallbackURLValidator is correctly re-exported."""
-    from src.auth.oauth import CallbackURLValidator
-    from src.auth.oauth.callback_validator import (
+    from temper_ai.auth.oauth import CallbackURLValidator
+    from temper_ai.auth.oauth.callback_validator import (
         CallbackURLValidator as OrigValidator,
     )
 
@@ -80,13 +80,13 @@ def test_oauth_callback_validator_reexport():
 
 def test_oauth_config_reexport():
     """Test that config components are correctly re-exported."""
-    from src.auth.oauth import (
+    from temper_ai.auth.oauth import (
         OAuthConfig,
         OAuthConfigurationError,
         OAuthProviderConfig,
         get_provider_endpoints,
     )
-    from src.auth.oauth.config import (
+    from temper_ai.auth.oauth.config import (
         OAuthConfig as OrigConfig,
         OAuthConfigurationError as OrigError,
         OAuthProviderConfig as OrigProviderConfig,
@@ -101,8 +101,8 @@ def test_oauth_config_reexport():
 
 def test_oauth_rate_limiter_reexport():
     """Test that rate limiter components are correctly re-exported."""
-    from src.auth.oauth import OAuthRateLimiter, RateLimitExceeded
-    from src.auth.oauth.rate_limiter import (
+    from temper_ai.auth.oauth import OAuthRateLimiter, RateLimitExceeded
+    from temper_ai.auth.oauth.rate_limiter import (
         OAuthRateLimiter as OrigLimiter,
         RateLimitExceeded as OrigException,
     )
@@ -113,13 +113,13 @@ def test_oauth_rate_limiter_reexport():
 
 def test_oauth_service_reexport():
     """Test that service components are correctly re-exported."""
-    from src.auth.oauth import (
+    from temper_ai.auth.oauth import (
         OAuthError,
         OAuthProviderError,
         OAuthService,
         OAuthStateError,
     )
-    from src.auth.oauth.service import (
+    from temper_ai.auth.oauth.service import (
         OAuthError as OrigError,
         OAuthProviderError as OrigProviderError,
         OAuthService as OrigService,
@@ -134,13 +134,13 @@ def test_oauth_service_reexport():
 
 def test_oauth_state_store_reexport():
     """Test that state store components are correctly re-exported."""
-    from src.auth.oauth import (
+    from temper_ai.auth.oauth import (
         InMemoryStateStore,
         RedisStateStore,
         StateStore,
         create_state_store,
     )
-    from src.auth.oauth.state_store import (
+    from temper_ai.auth.oauth.state_store import (
         InMemoryStateStore as OrigInMemory,
         RedisStateStore as OrigRedis,
         StateStore as OrigStore,
@@ -155,56 +155,56 @@ def test_oauth_state_store_reexport():
 
 def test_oauth_token_store_reexport():
     """Test that SecureTokenStore is correctly re-exported."""
-    from src.auth.oauth import SecureTokenStore
-    from src.auth.oauth.token_store import SecureTokenStore as OrigStore
+    from temper_ai.auth.oauth import SecureTokenStore
+    from temper_ai.auth.oauth.token_store import SecureTokenStore as OrigStore
 
     assert SecureTokenStore is OrigStore
 
 
 def test_oauth_no_side_effects():
-    """Test that importing src.auth.oauth doesn't cause side effects."""
+    """Test that importing temper_ai.auth.oauth doesn't cause side effects."""
     import importlib
     import sys
 
     # Remove module if already imported
-    module_name = "src.auth.oauth"
+    module_name = "temper_ai.auth.oauth"
     if module_name in sys.modules:
         # Store original for restoration
         original_module = sys.modules[module_name]
         del sys.modules[module_name]
 
         # Import should not raise or create globals
-        import src.auth.oauth
+        import temper_ai.auth.oauth
 
-        assert src.auth.oauth is not None
+        assert temper_ai.auth.oauth is not None
         # Restore original
         sys.modules[module_name] = original_module
     else:
         # Import should not raise
-        import src.auth.oauth
+        import temper_ai.auth.oauth
 
-        assert src.auth.oauth is not None
+        assert temper_ai.auth.oauth is not None
 
 
 def test_oauth_module_docstring():
     """Test that the oauth module has a proper docstring with security notes."""
-    import src.auth.oauth
+    import temper_ai.auth.oauth
 
-    assert src.auth.oauth.__doc__ is not None
-    assert len(src.auth.oauth.__doc__.strip()) > 0
-    assert "oauth" in src.auth.oauth.__doc__.lower()
-    assert "security" in src.auth.oauth.__doc__.lower()
+    assert temper_ai.auth.oauth.__doc__ is not None
+    assert len(temper_ai.auth.oauth.__doc__.strip()) > 0
+    assert "oauth" in temper_ai.auth.oauth.__doc__.lower()
+    assert "security" in temper_ai.auth.oauth.__doc__.lower()
 
 
 def test_oauth_star_import():
-    """Test that 'from src.auth.oauth import *' works correctly."""
+    """Test that 'from temper_ai.auth.oauth import *' works correctly."""
     import sys
 
     # Create a clean namespace
     namespace = {}
 
     # Execute star import in clean namespace
-    exec("from src.auth.oauth import *", namespace)
+    exec("from temper_ai.auth.oauth import *", namespace)
 
     # Verify all __all__ exports are present
     expected = [
@@ -233,13 +233,13 @@ def test_oauth_star_import():
 def test_oauth_import_no_exceptions():
     """Test that importing oauth submodules does not raise any exceptions."""
     try:
-        import src.auth.oauth
-        import src.auth.oauth.callback_validator
-        import src.auth.oauth.config
-        import src.auth.oauth.rate_limiter
-        import src.auth.oauth.service
-        import src.auth.oauth.state_store
-        import src.auth.oauth.token_store
+        import temper_ai.auth.oauth
+        import temper_ai.auth.oauth.callback_validator
+        import temper_ai.auth.oauth.config
+        import temper_ai.auth.oauth.rate_limiter
+        import temper_ai.auth.oauth.service
+        import temper_ai.auth.oauth.state_store
+        import temper_ai.auth.oauth.token_store
 
         assert True  # All imports succeeded
     except Exception as e:
@@ -248,7 +248,7 @@ def test_oauth_import_no_exceptions():
 
 def test_oauth_exception_hierarchy():
     """Test that OAuth exceptions are properly structured."""
-    from src.auth.oauth import (
+    from temper_ai.auth.oauth import (
         OAuthError,
         OAuthProviderError,
         OAuthStateError,
@@ -263,7 +263,7 @@ def test_oauth_exception_hierarchy():
 
 def test_oauth_security_components_available():
     """Test that all security-critical components are exported."""
-    from src.auth.oauth import (
+    from temper_ai.auth.oauth import (
         CallbackURLValidator,
         OAuthRateLimiter,
         SecureTokenStore,

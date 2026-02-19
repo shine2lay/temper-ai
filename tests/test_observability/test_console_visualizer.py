@@ -7,12 +7,12 @@ from unittest.mock import Mock, patch
 import pytest
 from rich.console import Console
 
-from src.observability.console import (
+from temper_ai.observability.console import (
     StreamingVisualizer,
     WorkflowVisualizer,
     print_workflow_tree,
 )
-from src.observability.models import (
+from temper_ai.observability.models import (
     AgentExecution,
     CollaborationEvent,
     LLMCall,
@@ -389,7 +389,7 @@ class TestWorkflowVisualizer:
     def test_print_workflow_tree_function(self, simple_workflow):
         """Test convenience function print_workflow_tree."""
         # Should not raise any errors
-        with patch("src.observability.console.WorkflowVisualizer") as mock_viz:
+        with patch("temper_ai.observability.console.WorkflowVisualizer") as mock_viz:
             mock_instance = Mock()
             mock_viz.return_value = mock_instance
 
@@ -436,7 +436,7 @@ class TestStreamingVisualizer:
         assert visualizer.verbosity == "standard"
         assert visualizer.poll_interval == 0.25
 
-    @patch("src.storage.database.get_session")
+    @patch("temper_ai.storage.database.get_session")
     def test_start_workflow_not_found(self, mock_session):
         """Test start method when workflow not found."""
         # Mock session to return None
@@ -507,8 +507,8 @@ class TestStreamingVisualizer:
 
                 mock_stop.assert_called_once()
 
-    @patch("src.storage.database.get_session")
-    @patch("src.observability.console.Thread")
+    @patch("temper_ai.storage.database.get_session")
+    @patch("temper_ai.observability.console.Thread")
     def test_start_creates_update_thread(self, mock_thread, mock_session):
         """Test start method creates update thread."""
         # Mock workflow retrieval

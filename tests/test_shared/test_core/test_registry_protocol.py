@@ -5,11 +5,11 @@ satisfy the Registry Protocol interface.
 """
 import pytest
 
-from src.shared.core.protocols import Registry, ToolRegistryProtocol as DomainToolRegistryProtocol
-from src.tools.registry import ToolRegistry
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.safety.policy_registry import PolicyRegistry
-from src.safety.interfaces import ValidationResult
+from temper_ai.shared.core.protocols import Registry, ToolRegistryProtocol as DomainToolRegistryProtocol
+from temper_ai.tools.registry import ToolRegistry
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.interfaces import ValidationResult
 
 
 class MockTool(BaseTool):

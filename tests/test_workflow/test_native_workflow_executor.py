@@ -8,8 +8,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.workflow.condition_evaluator import ConditionEvaluator
-from src.workflow.engines.workflow_executor import (
+from temper_ai.workflow.condition_evaluator import ConditionEvaluator
+from temper_ai.workflow.engines.workflow_executor import (
     DEFAULT_MAX_DYNAMIC_HOPS,
     DEFAULT_MAX_DYNAMIC_TARGETS,
     WorkflowExecutor,
@@ -318,7 +318,7 @@ class TestWorkflowExecutor:
             "current_stage": "new_stage",
         }
 
-        from src.workflow.engines.workflow_executor import _merge_stage_result
+        from temper_ai.workflow.engines.workflow_executor import _merge_stage_result
         merged = _merge_stage_result(state, result)
         assert "existing" in merged["stage_outputs"]
         assert "new_stage" in merged["stage_outputs"]
@@ -404,7 +404,7 @@ class TestWorkflowExecutor:
 
     def test_negotiation_disabled_raises(self):
         """Test that without negotiation, ContextResolutionError propagates."""
-        from src.workflow.context_provider import ContextResolutionError
+        from temper_ai.workflow.context_provider import ContextResolutionError
 
         builder = MagicMock()
         builder.extract_stage_name.side_effect = lambda ref: (
@@ -427,7 +427,7 @@ class TestWorkflowExecutor:
 
     def test_negotiation_enabled_reruns_producer(self):
         """Test that with negotiation enabled, producer is re-run on ContextResolutionError."""
-        from src.workflow.context_provider import ContextResolutionError
+        from temper_ai.workflow.context_provider import ContextResolutionError
 
         call_log = []
 

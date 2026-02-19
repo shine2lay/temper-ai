@@ -1,6 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-This directory contains Architecture Decision Records (ADRs) for the Meta-Autonomous Framework.
+This directory contains Architecture Decision Records (ADRs) for the Temper AI.
 
 ---
 

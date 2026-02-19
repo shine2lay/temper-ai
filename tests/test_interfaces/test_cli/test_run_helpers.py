@@ -20,7 +20,7 @@ from unittest.mock import MagicMock, Mock, PropertyMock, mock_open, patch
 import pytest
 import yaml
 
-from src.interfaces.cli.main import (
+from temper_ai.interfaces.cli.main import (
     _execute_workflow,
     _handle_dashboard_keepalive,
     _handle_post_execution,
@@ -29,7 +29,7 @@ from src.interfaces.cli.main import (
     _setup_logging,
     _start_dashboard_server,
 )
-from src.shared.utils.exceptions import WorkflowStageError
+from temper_ai.shared.utils.exceptions import WorkflowStageError
 
 
 @pytest.fixture
@@ -41,7 +41,7 @@ def tmp_dir(tmp_path):
 @pytest.fixture
 def mock_console():
     """Mock Rich Console."""
-    with patch("src.interfaces.cli.main.console") as mock_console:
+    with patch("temper_ai.interfaces.cli.main.console") as mock_console:
         yield mock_console
 
 
@@ -94,7 +94,7 @@ class TestSetupLogging:
         """Test that show_details=True attaches RichHandler to src logger."""
         with patch("logging.basicConfig"), \
              patch("logging.getLogger") as mock_get_logger, \
-             patch("src.interfaces.cli.main.console") as mock_console:
+             patch("temper_ai.interfaces.cli.main.console") as mock_console:
 
             mock_logger = Mock()
             mock_logger.handlers = []
@@ -111,7 +111,7 @@ class TestSetupLogging:
         """Test that RichHandler is not added twice."""
         with patch("logging.basicConfig"), \
              patch("logging.getLogger") as mock_get_logger, \
-             patch("src.interfaces.cli.main.console"):
+             patch("temper_ai.interfaces.cli.main.console"):
 
             from rich.logging import RichHandler
             existing_handler = Mock(spec=RichHandler)
@@ -221,7 +221,7 @@ class TestStartDashboardServer:
         mock_event_bus = Mock()
         port = 8420
 
-        with patch("src.interfaces.dashboard.app.create_app") as mock_create_app, \
+        with patch("temper_ai.interfaces.dashboard.app.create_app") as mock_create_app, \
              patch("uvicorn.Config") as mock_config, \
              patch("uvicorn.Server") as mock_server_class, \
              patch("threading.Thread") as mock_thread:
@@ -257,7 +257,7 @@ class TestStartDashboardServer:
 
     def test_start_dashboard_server_custom_port(self, mock_console):
         """Test dashboard server with custom port."""
-        with patch("src.interfaces.dashboard.app.create_app"), \
+        with patch("temper_ai.interfaces.dashboard.app.create_app"), \
              patch("uvicorn.Config") as mock_config, \
              patch("uvicorn.Server"), \
              patch("threading.Thread"):
@@ -279,9 +279,9 @@ class TestInitializeInfrastructure:
         """Test infrastructure initialization without dashboard."""
         db_path = str(tmp_path / "test.db")
 
-        with patch("src.workflow.config_loader.ConfigLoader") as mock_config_loader, \
-             patch("src.tools.registry.ToolRegistry") as mock_tool_registry, \
-             patch("src.observability.tracker.ExecutionTracker") as mock_tracker:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader") as mock_config_loader, \
+             patch("temper_ai.tools.registry.ToolRegistry") as mock_tool_registry, \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_tracker:
 
             mock_tracker_instance = Mock()
             mock_tracker.return_value = mock_tracker_instance
@@ -304,11 +304,11 @@ class TestInitializeInfrastructure:
         """Test infrastructure initialization with dashboard."""
         db_path = str(tmp_path / "test.db")
 
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry"), \
-             patch("src.observability.tracker.ExecutionTracker") as mock_tracker_class, \
-             patch("src.observability.event_bus.ObservabilityEventBus") as mock_event_bus_class, \
-             patch("src.interfaces.cli.main._start_dashboard_server") as mock_start_dashboard:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry"), \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_tracker_class, \
+             patch("temper_ai.observability.event_bus.ObservabilityEventBus") as mock_event_bus_class, \
+             patch("temper_ai.interfaces.cli.main._start_dashboard_server") as mock_start_dashboard:
 
             mock_event_bus = Mock()
             mock_event_bus_class.return_value = mock_event_bus
@@ -333,9 +333,9 @@ class TestInitializeInfrastructure:
 
     def test_initialize_infrastructure_db_error(self, tmp_path, mock_console):
         """Test that database initialization errors raise SystemExit."""
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry"), \
-             patch("src.observability.tracker.ExecutionTracker") as mock_tracker, \
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry"), \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_tracker, \
              patch("pathlib.Path.mkdir", side_effect=PermissionError("Access denied")):
 
             mock_tracker.ensure_database = Mock()
@@ -355,10 +355,10 @@ class TestInitializeInfrastructure:
 
     def test_initialize_infrastructure_event_bus_import_error(self, tmp_path, mock_console):
         """Test that event bus import error is handled gracefully."""
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry"), \
-             patch("src.observability.tracker.ExecutionTracker") as mock_tracker_class, \
-             patch("src.observability.event_bus.ObservabilityEventBus", side_effect=ImportError("Event bus unavailable")):
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry"), \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_tracker_class, \
+             patch("temper_ai.observability.event_bus.ObservabilityEventBus", side_effect=ImportError("Event bus unavailable")):
 
             mock_tracker = Mock()
             mock_tracker_class.return_value = mock_tracker
@@ -380,9 +380,9 @@ class TestInitializeInfrastructure:
         """Test that database parent directory is created."""
         db_path = tmp_path / "subdir" / "another" / "test.db"
 
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry"), \
-             patch("src.observability.tracker.ExecutionTracker") as mock_tracker:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry"), \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_tracker:
 
             mock_tracker.ensure_database = Mock()
 
@@ -399,7 +399,7 @@ class TestInitializeInfrastructure:
     def test_initialize_infrastructure_verbose_mode(self, tmp_path, mock_console):
         """Test infrastructure initialization in verbose mode."""
         with patch("builtins.__import__", side_effect=ImportError("test error")), \
-             patch("src.interfaces.cli.main.logger") as mock_logger:
+             patch("temper_ai.interfaces.cli.main.logger") as mock_logger:
 
             with pytest.raises(SystemExit):
                 _initialize_infrastructure("configs", "test.db", None, verbose=True)
@@ -409,9 +409,9 @@ class TestInitializeInfrastructure:
 
     def test_initialize_infrastructure_auto_discover_tools(self, tmp_path):
         """Test that tools are auto-discovered."""
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry") as mock_tool_registry, \
-             patch("src.observability.tracker.ExecutionTracker") as mock_tracker:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry") as mock_tool_registry, \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_tracker:
 
             mock_tracker.ensure_database = Mock()
 
@@ -428,7 +428,7 @@ class TestExecuteWorkflow:
 
     def test_execute_workflow_success(self, mock_console):
         """Test successful workflow execution."""
-        from src.interfaces.cli.main import WorkflowExecutionParams
+        from temper_ai.interfaces.cli.main import WorkflowExecutionParams
 
         mock_compiled = Mock()
         mock_compiled.invoke.return_value = {"status": "completed", "result": "success"}
@@ -452,12 +452,12 @@ class TestExecuteWorkflow:
 
     def test_execute_workflow_with_stream_display(self, mock_console):
         """Test workflow execution with stream display enabled."""
-        from src.interfaces.cli.main import WorkflowExecutionParams
+        from temper_ai.interfaces.cli.main import WorkflowExecutionParams
 
         mock_compiled = Mock()
         mock_compiled.invoke.return_value = {"status": "completed"}
 
-        with patch("src.interfaces.cli.stream_display.StreamDisplay") as mock_stream_display_class:
+        with patch("temper_ai.interfaces.cli.stream_display.StreamDisplay") as mock_stream_display_class:
             mock_stream_display = Mock()
             mock_stream_display_class.return_value = mock_stream_display
 
@@ -483,13 +483,13 @@ class TestExecuteWorkflow:
 
     def test_execute_workflow_stage_error(self, mock_console):
         """Test workflow execution with stage error."""
-        from src.interfaces.cli.main import WorkflowExecutionParams
+        from temper_ai.interfaces.cli.main import WorkflowExecutionParams
 
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = WorkflowStageError("stage1", "Test error")
         mock_engine = Mock()
 
-        with patch("src.interfaces.cli.main._cleanup_tool_executor") as mock_cleanup:
+        with patch("temper_ai.interfaces.cli.main._cleanup_tool_executor") as mock_cleanup:
             with pytest.raises(SystemExit) as exc_info:
                 params = WorkflowExecutionParams(
                     compiled=mock_compiled,
@@ -510,13 +510,13 @@ class TestExecuteWorkflow:
 
     def test_execute_workflow_runtime_error(self, mock_console):
         """Test workflow execution with runtime error."""
-        from src.interfaces.cli.main import WorkflowExecutionParams
+        from temper_ai.interfaces.cli.main import WorkflowExecutionParams
 
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = RuntimeError("Execution failed")
         mock_engine = Mock()
 
-        with patch("src.interfaces.cli.main._cleanup_tool_executor") as mock_cleanup:
+        with patch("temper_ai.interfaces.cli.main._cleanup_tool_executor") as mock_cleanup:
             with pytest.raises(SystemExit) as exc_info:
                 params = WorkflowExecutionParams(
                     compiled=mock_compiled,
@@ -537,12 +537,12 @@ class TestExecuteWorkflow:
 
     def test_execute_workflow_value_error(self, mock_console):
         """Test workflow execution with value error."""
-        from src.interfaces.cli.main import WorkflowExecutionParams
+        from temper_ai.interfaces.cli.main import WorkflowExecutionParams
 
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = ValueError("Invalid value")
 
-        with patch("src.interfaces.cli.main._cleanup_tool_executor"):
+        with patch("temper_ai.interfaces.cli.main._cleanup_tool_executor"):
             with pytest.raises(SystemExit) as exc_info:
                 params = WorkflowExecutionParams(
                     compiled=mock_compiled,
@@ -562,14 +562,14 @@ class TestExecuteWorkflow:
 
     def test_execute_workflow_keyboard_interrupt(self, mock_console):
         """Test workflow execution handles keyboard interrupt."""
-        from src.interfaces.cli.main import WorkflowExecutionParams
+        from temper_ai.interfaces.cli.main import WorkflowExecutionParams
 
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = KeyboardInterrupt()
         mock_engine = Mock()
 
-        with patch("src.interfaces.cli.main._cleanup_tool_executor") as mock_cleanup, \
-             patch("src.interfaces.cli.main.EXIT_CODE_KEYBOARD_INTERRUPT", 130):
+        with patch("temper_ai.interfaces.cli.main._cleanup_tool_executor") as mock_cleanup, \
+             patch("temper_ai.interfaces.cli.main.EXIT_CODE_KEYBOARD_INTERRUPT", 130):
             with pytest.raises(SystemExit) as exc_info:
                 params = WorkflowExecutionParams(
                     compiled=mock_compiled,
@@ -590,7 +590,7 @@ class TestExecuteWorkflow:
 
     def test_execute_workflow_system_exit_passthrough(self):
         """Test that SystemExit is passed through."""
-        from src.interfaces.cli.main import WorkflowExecutionParams
+        from temper_ai.interfaces.cli.main import WorkflowExecutionParams
 
         mock_compiled = Mock()
         mock_compiled.invoke.side_effect = SystemExit(42)
@@ -623,7 +623,7 @@ class TestHandlePostExecution:
         """Test basic post-execution handling."""
         result = {"status": "completed", "result": "test"}
 
-        with patch("src.interfaces.cli.main._print_run_summary") as mock_summary:
+        with patch("temper_ai.interfaces.cli.main._print_run_summary") as mock_summary:
             _handle_post_execution(
                 result=result,
                 show_details=False,
@@ -639,8 +639,8 @@ class TestHandlePostExecution:
         """Test post-execution with detailed report."""
         result = {"status": "completed", "stages": []}
 
-        with patch("src.interfaces.cli.main._print_run_summary"), \
-             patch("src.interfaces.cli.detail_report.print_detailed_report") as mock_detailed:
+        with patch("temper_ai.interfaces.cli.main._print_run_summary"), \
+             patch("temper_ai.interfaces.cli.detail_report.print_detailed_report") as mock_detailed:
 
             _handle_post_execution(
                 result=result,
@@ -657,8 +657,8 @@ class TestHandlePostExecution:
         """Test that import error in detailed report is handled gracefully."""
         result = {"status": "completed"}
 
-        with patch("src.interfaces.cli.main._print_run_summary"), \
-             patch("src.interfaces.cli.main.logger") as mock_logger:
+        with patch("temper_ai.interfaces.cli.main._print_run_summary"), \
+             patch("temper_ai.interfaces.cli.main.logger") as mock_logger:
 
             # Mock the import to fail
             def mock_import(name, *args, **kwargs):
@@ -683,9 +683,9 @@ class TestHandlePostExecution:
         """Test post-execution with gantt chart display."""
         result = {"status": "completed"}
 
-        with patch("src.interfaces.cli.main._print_run_summary"), \
+        with patch("temper_ai.interfaces.cli.main._print_run_summary"), \
              patch("examples.export_waterfall.export_waterfall_trace") as mock_export, \
-             patch("src.observability.visualize_trace.print_console_gantt") as mock_gantt, \
+             patch("temper_ai.observability.visualize_trace.print_console_gantt") as mock_gantt, \
              patch("sys.path", []):
 
             mock_export.return_value = {"workflow_id": "wf-123", "stages": []}
@@ -706,9 +706,9 @@ class TestHandlePostExecution:
         """Test that gantt chart errors are handled gracefully."""
         result = {"status": "completed"}
 
-        with patch("src.interfaces.cli.main._print_run_summary"), \
+        with patch("temper_ai.interfaces.cli.main._print_run_summary"), \
              patch("examples.export_waterfall.export_waterfall_trace", return_value={"error": "trace error"}), \
-             patch("src.observability.visualize_trace.print_console_gantt") as mock_gantt:
+             patch("temper_ai.observability.visualize_trace.print_console_gantt") as mock_gantt:
 
             _handle_post_execution(
                 result=result,
@@ -727,7 +727,7 @@ class TestHandlePostExecution:
         result = {"status": "completed", "result": "test"}
         output_path = tmp_path / "output.json"
 
-        with patch("src.interfaces.cli.main._print_run_summary"):
+        with patch("temper_ai.interfaces.cli.main._print_run_summary"):
             _handle_post_execution(
                 result=result,
                 show_details=False,
@@ -747,7 +747,7 @@ class TestHandlePostExecution:
         result = {"status": "completed"}
         output_path = tmp_path / "subdir" / "another" / "output.json"
 
-        with patch("src.interfaces.cli.main._print_run_summary"):
+        with patch("temper_ai.interfaces.cli.main._print_run_summary"):
             _handle_post_execution(
                 result=result,
                 show_details=False,
@@ -764,7 +764,7 @@ class TestHandlePostExecution:
         """Test that output save errors are handled gracefully."""
         result = {"status": "completed"}
 
-        with patch("src.interfaces.cli.main._print_run_summary"), \
+        with patch("temper_ai.interfaces.cli.main._print_run_summary"), \
              patch("builtins.open", side_effect=PermissionError("Access denied")):
 
             # Should not raise exception
@@ -783,8 +783,8 @@ class TestHandlePostExecution:
         """Test post-execution with non-dict result."""
         result = "simple string result"
 
-        with patch("src.interfaces.cli.main._print_run_summary") as mock_summary, \
-             patch("src.interfaces.cli.detail_report.print_detailed_report") as mock_detailed:
+        with patch("temper_ai.interfaces.cli.main._print_run_summary") as mock_summary, \
+             patch("temper_ai.interfaces.cli.detail_report.print_detailed_report") as mock_detailed:
 
             _handle_post_execution(
                 result=result,
@@ -892,9 +892,9 @@ class TestIntegration:
         """Test infrastructure initialization followed by execution."""
         db_path = str(tmp_path / "test.db")
 
-        with patch("src.workflow.config_loader.ConfigLoader") as mock_config_loader, \
-             patch("src.tools.registry.ToolRegistry") as mock_tool_registry, \
-             patch("src.observability.tracker.ExecutionTracker") as mock_tracker_class:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader") as mock_config_loader, \
+             patch("temper_ai.tools.registry.ToolRegistry") as mock_tool_registry, \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_tracker_class:
 
             mock_tracker = Mock()
             mock_tracker_class.return_value = mock_tracker
@@ -910,7 +910,7 @@ class TestIntegration:
                 )
 
             # Execute workflow
-            from src.interfaces.cli.main import WorkflowExecutionParams
+            from temper_ai.interfaces.cli.main import WorkflowExecutionParams
 
             mock_compiled = Mock()
             mock_compiled.invoke.return_value = {"status": "completed"}
@@ -933,7 +933,7 @@ class TestIntegration:
 
     def test_execute_and_post_execution_with_output(self, tmp_path, mock_console):
         """Test workflow execution followed by post-execution handling with output."""
-        from src.interfaces.cli.main import WorkflowExecutionParams
+        from temper_ai.interfaces.cli.main import WorkflowExecutionParams
 
         # Execute
         mock_compiled = Mock()
@@ -956,7 +956,7 @@ class TestIntegration:
 
         # Post-execution
         output_path = tmp_path / "result.json"
-        with patch("src.interfaces.cli.main._print_run_summary"):
+        with patch("temper_ai.interfaces.cli.main._print_run_summary"):
             _handle_post_execution(
                 result=exec_result,
                 show_details=False,

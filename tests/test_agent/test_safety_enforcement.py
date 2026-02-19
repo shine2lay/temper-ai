@@ -6,9 +6,9 @@ max_execution_time_seconds) are actually enforced during tool execution.
 import time
 from unittest.mock import MagicMock, patch
 
-from src.llm.providers import LLMResponse
-from src.agent.standard_agent import StandardAgent
-from src.storage.schemas.agent_config import (
+from temper_ai.llm.providers import LLMResponse
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
@@ -16,9 +16,9 @@ from src.storage.schemas.agent_config import (
     PromptConfig,
     SafetyConfig,
 )
-from src.llm.service import LLMService
-from src.llm._tool_execution import check_safety_mode as _check_safety_mode
-from src.tools.base import ToolResult
+from temper_ai.llm.service import LLMService
+from temper_ai.llm._tool_execution import check_safety_mode as _check_safety_mode
+from temper_ai.tools.base import ToolResult
 
 
 def _make_config(safety: SafetyConfig = None) -> AgentConfig:
@@ -49,7 +49,7 @@ def _make_config(safety: SafetyConfig = None) -> AgentConfig:
 
 def _make_agent(safety: SafetyConfig = None) -> StandardAgent:
     """Create a StandardAgent with mocked dependencies and custom safety."""
-    with patch('src.agent.base_agent.ToolRegistry'):
+    with patch('temper_ai.agent.base_agent.ToolRegistry'):
         agent = StandardAgent(_make_config(safety))
 
     # Build a mock tool with all methods LLMService needs for schema building
@@ -83,7 +83,7 @@ def _make_llm_service_and_execute_single(
     tool_call: dict,
 ) -> dict:
     """Execute a single tool call with given safety config via module-level function."""
-    from src.llm._tool_execution import execute_single_tool
+    from temper_ai.llm._tool_execution import execute_single_tool
 
     mock_executor = MagicMock()
     mock_executor.execute.return_value = ToolResult(success=True, result="tool output")
@@ -119,7 +119,7 @@ class TestRequireApprovalMode:
 
     def test_require_approval_does_not_execute(self):
         """Tool.execute() is never called in require_approval mode."""
-        from src.llm._tool_execution import execute_single_tool
+        from temper_ai.llm._tool_execution import execute_single_tool
 
         mock_executor = MagicMock()
         execute_single_tool(
@@ -145,7 +145,7 @@ class TestDryRunMode:
 
     def test_dry_run_does_not_execute(self):
         """Tool.execute() is never called in dry_run mode."""
-        from src.llm._tool_execution import execute_single_tool
+        from temper_ai.llm._tool_execution import execute_single_tool
 
         mock_executor = MagicMock()
         execute_single_tool(
@@ -186,7 +186,7 @@ class TestRequireApprovalForTools:
 
     def test_approval_list_checked_in_execute_mode(self):
         """Tool-specific approval is checked even in normal execute mode."""
-        from src.llm._tool_execution import execute_single_tool
+        from temper_ai.llm._tool_execution import execute_single_tool
 
         mock_executor = MagicMock()
         result = execute_single_tool(
@@ -199,7 +199,7 @@ class TestRequireApprovalForTools:
 
     def test_approval_list_does_not_execute_tool(self):
         """Blocked tools are not executed."""
-        from src.llm._tool_execution import execute_single_tool
+        from temper_ai.llm._tool_execution import execute_single_tool
 
         mock_executor = MagicMock()
         execute_single_tool(
@@ -262,8 +262,8 @@ class TestMaxExecutionTimeEnforcement:
             # After first iteration (~4 calls), time exceeds limit
             return base_time + (call_count[0] * 0.5)
 
-        with patch('src.agent.base_agent.time') as mock_base_time, \
-             patch('src.llm.service.time') as mock_service_time:
+        with patch('temper_ai.agent.base_agent.time') as mock_base_time, \
+             patch('temper_ai.llm.service.time') as mock_service_time:
             mock_base_time.time = mock_time
             mock_service_time.time = mock_time
 

@@ -293,9 +293,9 @@ class ToolRegistry:
 
     def auto_discover(self):
         """Auto-discover and register built-in tools."""
-        from src.tools.calculator import Calculator
-        from src.tools.file_writer import FileWriter
-        from src.tools.web_scraper import WebScraper
+        from temper_ai.tools.calculator import Calculator
+        from temper_ai.tools.file_writer import FileWriter
+        from temper_ai.tools.web_scraper import WebScraper
 
         for tool_class in [Calculator, FileWriter, WebScraper]:
             self.register(tool_class())
@@ -328,7 +328,7 @@ BaseTool instance
 ## Usage Example
 
 ```python
-from src.tools.registry import ToolRegistry
+from temper_ai.tools.registry import ToolRegistry
 
 # Initialize registry
 registry = ToolRegistry()

@@ -10,8 +10,8 @@ Covers:
 import pytest
 from unittest.mock import MagicMock, patch
 
-from src.observability.backend import ErrorFingerprintData
-from src.observability._tracker_helpers import (
+from temper_ai.observability.backend import ErrorFingerprintData
+from temper_ai.observability._tracker_helpers import (
     _alert_new_error_type,
     _record_fingerprint_safe,
     handle_agent_error,

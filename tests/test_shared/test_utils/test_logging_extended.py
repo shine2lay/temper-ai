@@ -15,7 +15,7 @@ from io import StringIO
 from pathlib import Path
 import pytest
 
-from src.shared.utils.logging import (
+from temper_ai.shared.utils.logging import (
     setup_logging,
     get_logger,
     LogContext,

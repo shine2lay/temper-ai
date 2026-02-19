@@ -5,7 +5,7 @@ from unittest.mock import Mock, call, patch
 
 import pytest
 
-from src.observability.alerting import (
+from temper_ai.observability.alerting import (
     Alert,
     AlertAction,
     AlertManager,
@@ -295,7 +295,7 @@ class TestAlertManagerAdvanced:
         for i in range(len(history) - 1):
             assert history[i].timestamp <= history[i + 1].timestamp
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_webhook_action_with_no_url(self, mock_logger, clean_manager):
         """Test webhook action logs warning when URL not configured."""
         rule = AlertRule(
@@ -314,7 +314,7 @@ class TestAlertManagerAdvanced:
         mock_logger.warning.assert_called()
         assert "No webhook URL" in str(mock_logger.warning.call_args)
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_email_action_with_no_recipient(self, mock_logger, clean_manager):
         """Test email action logs warning when recipient not configured."""
         rule = AlertRule(
@@ -492,7 +492,7 @@ class TestAlertManagerAdvanced:
         # Cooldown timers also cleared
         assert len(clean_manager._last_alert_times) == 0
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_action_execution_continues_after_error(self, mock_logger, clean_manager):
         """Test remaining actions execute even if one fails."""
         rule = AlertRule(

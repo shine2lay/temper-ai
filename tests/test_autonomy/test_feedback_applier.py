@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.autonomy.feedback_applier import FeedbackApplier, _parse_action
+from temper_ai.autonomy.feedback_applier import FeedbackApplier, _parse_action
 
 
 # ── Helpers ────────────────────────────────────────────────────────────
@@ -79,8 +79,8 @@ def _make_applier(
 class TestApplyLearningRecommendations:
     """Tests for apply_learning_recommendations."""
 
-    @patch("src.autonomy.feedback_applier.AuditLogger")
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.autonomy.feedback_applier.AuditLogger")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_applies_eligible_recommendations(
         self, MockEngine: MagicMock, MockAudit: MagicMock
     ) -> None:
@@ -100,7 +100,7 @@ class TestApplyLearningRecommendations:
         assert len(results) == 1
         assert results[0]["status"] == "applied"
 
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_filters_low_confidence(self, MockEngine: MagicMock) -> None:
         store = MagicMock()
         rec = _mock_recommendation(pattern_id="pat-low")
@@ -115,7 +115,7 @@ class TestApplyLearningRecommendations:
         assert results == []
         MockEngine.return_value.apply_recommendations.assert_not_called()
 
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_filters_missing_pattern(self, MockEngine: MagicMock) -> None:
         store = MagicMock()
         rec = _mock_recommendation(pattern_id="pat-gone")
@@ -127,7 +127,7 @@ class TestApplyLearningRecommendations:
 
         assert results == []
 
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_respects_max_auto_apply(self, MockEngine: MagicMock) -> None:
         store = MagicMock()
         recs = [_mock_recommendation(rec_id=f"rec-{i}", pattern_id=f"pat-{i}") for i in range(10)]
@@ -146,7 +146,7 @@ class TestApplyLearningRecommendations:
         call_args = MockEngine.return_value.apply_recommendations.call_args
         assert len(call_args[0][0]) == 2
 
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_dry_run_uses_preview(self, MockEngine: MagicMock) -> None:
         store = MagicMock()
         rec = _mock_recommendation()
@@ -165,7 +165,7 @@ class TestApplyLearningRecommendations:
         assert results[0]["status"] == "preview"
         MockEngine.return_value.apply_recommendations.assert_not_called()
 
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_no_pending_returns_empty(self, MockEngine: MagicMock) -> None:
         store = MagicMock()
         store.list_recommendations.return_value = []
@@ -175,8 +175,8 @@ class TestApplyLearningRecommendations:
 
         assert results == []
 
-    @patch("src.autonomy.feedback_applier.AuditLogger")
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.autonomy.feedback_applier.AuditLogger")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_mixed_confidence_filters_correctly(
         self, MockEngine: MagicMock, MockAudit: MagicMock
     ) -> None:
@@ -203,7 +203,7 @@ class TestApplyLearningRecommendations:
         call_args = MockEngine.return_value.apply_recommendations.call_args
         assert call_args[0][0] == ["high"]
 
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_custom_confidence_threshold(self, MockEngine: MagicMock) -> None:
         store = MagicMock()
         rec = _mock_recommendation()
@@ -221,7 +221,7 @@ class TestApplyLearningRecommendations:
         results = applier.apply_learning_recommendations(min_confidence=0.5)
         assert len(results) == 1
 
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_exact_confidence_boundary(self, MockEngine: MagicMock) -> None:
         store = MagicMock()
         rec = _mock_recommendation()
@@ -324,7 +324,7 @@ class TestApplyApprovedGoals:
         results = applier.apply_approved_goals()
         assert results == []
 
-    @patch("src.autonomy.feedback_applier.AuditLogger")
+    @patch("temper_ai.autonomy.feedback_applier.AuditLogger")
     def test_applies_approved_goals(self, MockAudit: MagicMock) -> None:
         goal_store = MagicMock()
         goal = _mock_goal(
@@ -340,7 +340,7 @@ class TestApplyApprovedGoals:
         assert len(results) == 1
         assert results[0]["status"] == "applied"
 
-    @patch("src.autonomy.feedback_applier.AuditLogger")
+    @patch("temper_ai.autonomy.feedback_applier.AuditLogger")
     def test_respects_max_auto_apply(self, MockAudit: MagicMock) -> None:
         goal_store = MagicMock()
         goals = [
@@ -400,7 +400,7 @@ class TestApplyApprovedGoals:
         assert len(results) == 1
         assert results[0]["status"] == "blocked_by_safety"
 
-    @patch("src.autonomy.feedback_applier.AuditLogger")
+    @patch("temper_ai.autonomy.feedback_applier.AuditLogger")
     def test_safety_policy_allows_low_risk(self, MockAudit: MagicMock) -> None:
         goal_store = MagicMock()
         low_risk_goal = _mock_goal(
@@ -420,7 +420,7 @@ class TestApplyApprovedGoals:
         assert len(results) == 1
         assert results[0]["status"] == "applied"
 
-    @patch("src.autonomy.feedback_applier.AuditLogger")
+    @patch("temper_ai.autonomy.feedback_applier.AuditLogger")
     def test_safety_policy_allows_medium_risk(self, MockAudit: MagicMock) -> None:
         goal_store = MagicMock()
         goal = _mock_goal(
@@ -480,7 +480,7 @@ class TestApplyApprovedGoals:
 class TestFeedbackApplierAudit:
     """Tests for audit logging in FeedbackApplier."""
 
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_learning_apply_creates_audit_entries(
         self, MockEngine: MagicMock, tmp_path
     ) -> None:
@@ -503,7 +503,7 @@ class TestFeedbackApplierAudit:
 
         applier = FeedbackApplier(learning_store=store)
         # Replace internal audit logger with one using tmp_path
-        from src.autonomy.audit import AuditLogger
+        from temper_ai.autonomy.audit import AuditLogger
         applier._audit = AuditLogger(base_dir=str(tmp_path / "audit"))
 
         results = applier.apply_learning_recommendations()
@@ -524,7 +524,7 @@ class TestFeedbackApplierAudit:
         applier = FeedbackApplier(
             learning_store=MagicMock(), goal_store=goal_store
         )
-        from src.autonomy.audit import AuditLogger
+        from temper_ai.autonomy.audit import AuditLogger
         applier._audit = AuditLogger(base_dir=str(tmp_path / "audit"))
 
         applier.apply_approved_goals()
@@ -540,7 +540,7 @@ class TestFeedbackApplierAudit:
 class TestFeedbackApplierErrorHandling:
     """Tests for graceful degradation."""
 
-    @patch("src.learning.auto_tune.AutoTuneEngine")
+    @patch("temper_ai.learning.auto_tune.AutoTuneEngine")
     def test_engine_exception_propagates(self, MockEngine: MagicMock) -> None:
         store = MagicMock()
         rec = _mock_recommendation()
@@ -568,7 +568,7 @@ class TestFeedbackApplierErrorHandling:
 class TestGoalCompletionAfterApply:
     """Tests that goals are marked as completed after successful application."""
 
-    @patch("src.autonomy.feedback_applier.AuditLogger")
+    @patch("temper_ai.autonomy.feedback_applier.AuditLogger")
     def test_goal_marked_completed_after_apply(self, MockAudit: MagicMock) -> None:
         goal_store = MagicMock()
         goal = _mock_goal(
@@ -604,7 +604,7 @@ class TestGoalCompletionAfterApply:
         assert results[0]["status"] == "unparseable"
         goal_store.update_proposal_status.assert_not_called()
 
-    @patch("src.autonomy.feedback_applier.AuditLogger")
+    @patch("temper_ai.autonomy.feedback_applier.AuditLogger")
     def test_goal_completion_failure_does_not_crash(self, MockAudit: MagicMock) -> None:
         goal_store = MagicMock()
         goal = _mock_goal(

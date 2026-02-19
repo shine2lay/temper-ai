@@ -5,9 +5,9 @@ from io import StringIO
 import pytest
 from rich.console import Console
 
-from src.observability.console import StreamingVisualizer
-from src.observability.database import DatabaseManager
-from src.observability.models import (
+from temper_ai.observability.console import StreamingVisualizer
+from temper_ai.observability.database import DatabaseManager
+from temper_ai.observability.models import (
     AgentExecution,
     StageExecution,
     WorkflowExecution,
@@ -26,8 +26,8 @@ def db_manager():
 @pytest.fixture
 def sample_workflow(db_manager):
     """Create a sample workflow in database."""
-    import src.observability.database as db_module
-    from src.observability.database import get_session
+    import temper_ai.observability.database as db_module
+    from temper_ai.observability.database import get_session
 
     # Set db_manager as the global database
     db_module._db_manager = db_manager
@@ -172,7 +172,7 @@ def test_streaming_visualizer_context_manager(db_manager, sample_workflow):
 
 def test_streaming_visualizer_handles_missing_workflow(db_manager):
     """Test streaming visualizer handles non-existent workflow gracefully."""
-    import src.observability.database as db_module
+    import temper_ai.observability.database as db_module
 
     # Set db_manager as the global database
     db_module._db_manager = db_manager
@@ -332,7 +332,7 @@ def test_double_stop_is_safe(db_manager, sample_workflow):
 
 def test_streaming_visualizer_inherits_from_workflow_visualizer():
     """Test that StreamingVisualizer inherits from WorkflowVisualizer."""
-    from src.observability.console import WorkflowVisualizer
+    from temper_ai.observability.console import WorkflowVisualizer
 
     visualizer = StreamingVisualizer("wf-001")
 

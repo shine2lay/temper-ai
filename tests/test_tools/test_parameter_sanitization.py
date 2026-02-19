@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from src.tools.base import ParameterSanitizer, SecurityError
+from temper_ai.tools.base import ParameterSanitizer, SecurityError
 
 
 class TestPathTraversalPrevention:

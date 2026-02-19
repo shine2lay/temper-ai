@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from src.workflow.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
-from src.workflow.domain_state import WorkflowDomainState
+from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
+from temper_ai.workflow.domain_state import WorkflowDomainState
 
 
 class TestFileCheckpointBackend:
@@ -401,7 +401,7 @@ class TestRedisCheckpointBackend:
     def backend(self):
         """Create Redis backend."""
         try:
-            from src.workflow.checkpoint_backends import RedisCheckpointBackend
+            from temper_ai.workflow.checkpoint_backends import RedisCheckpointBackend
             backend = RedisCheckpointBackend(redis_url="redis://localhost:6379")
             # Clean up any existing test data
             backend.redis_client.flushdb()

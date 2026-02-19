@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.portfolio.loader import PortfolioLoader
+from temper_ai.portfolio.loader import PortfolioLoader
 
 
 class TestPortfolioLoader:

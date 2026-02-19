@@ -16,8 +16,8 @@ Target Coverage: 95%+ for blast_radius.py
 """
 import time
 
-from src.safety.blast_radius import BlastRadiusPolicy
-from src.safety.interfaces import ViolationSeverity
+from temper_ai.safety.blast_radius import BlastRadiusPolicy
+from temper_ai.safety.interfaces import ViolationSeverity
 
 
 class TestBlastRadiusPolicyBasics:

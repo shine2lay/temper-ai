@@ -36,7 +36,7 @@ This document provides comprehensive API documentation for all M4 Safety System 
 
 ### PolicyComposer
 
-**Module:** `src.safety.composition`
+**Module:** `temper_ai.safety.composition`
 
 **Description:** Combines multiple safety policies and validates actions against all of them. Supports priority-based execution and fail-fast mode.
 
@@ -58,7 +58,7 @@ def __init__(
 
 **Example:**
 ```python
-from src.safety import PolicyComposer, FileAccessPolicy, BlastRadiusPolicy
+from temper_ai.safety import PolicyComposer, FileAccessPolicy, BlastRadiusPolicy
 
 composer = PolicyComposer(fail_fast=False)
 composer.add_policy(FileAccessPolicy({...}))
@@ -198,7 +198,7 @@ composer.fail_fast = False
 
 ### CompositeValidationResult
 
-**Module:** `src.safety.composition`
+**Module:** `temper_ai.safety.composition`
 
 **Description:** Result of validating an action against multiple policies.
 
@@ -257,7 +257,7 @@ json.dumps(result_dict)  # Serialize to JSON
 
 ### ApprovalWorkflow
 
-**Module:** `src.safety.approval`
+**Module:** `temper_ai.safety.approval`
 
 **Description:** Manages human approval workflow for high-risk actions. Supports multi-approver consensus, timeouts, and callbacks.
 
@@ -277,7 +277,7 @@ def __init__(
 
 **Example:**
 ```python
-from src.safety import ApprovalWorkflow
+from temper_ai.safety import ApprovalWorkflow
 
 workflow = ApprovalWorkflow(
     default_timeout_minutes=30,
@@ -483,7 +483,7 @@ workflow.on_rejected(on_rejection)
 
 ### ApprovalRequest
 
-**Module:** `src.safety.approval`
+**Module:** `temper_ai.safety.approval`
 
 **Description:** Represents a single approval request.
 
@@ -565,7 +565,7 @@ Check if more approvals are needed.
 
 ### ApprovalStatus
 
-**Module:** `src.safety.approval`
+**Module:** `temper_ai.safety.approval`
 
 **Description:** Status of an approval request.
 
@@ -584,7 +584,7 @@ class ApprovalStatus(Enum):
 
 ### RollbackManager
 
-**Module:** `src.safety.rollback`
+**Module:** `temper_ai.safety.rollback`
 
 **Description:** Manages state snapshots and rollback operations. Supports file rollback, state rollback, and composite strategies.
 
@@ -604,7 +604,7 @@ def __init__(
 
 **Example:**
 ```python
-from src.safety import RollbackManager, FileRollbackStrategy
+from temper_ai.safety import RollbackManager, FileRollbackStrategy
 
 # Use default composite strategy
 manager = RollbackManager()
@@ -727,7 +727,7 @@ Get number of snapshots.
 
 ### RollbackSnapshot
 
-**Module:** `src.safety.rollback`
+**Module:** `temper_ai.safety.rollback`
 
 **Description:** Represents a state snapshot.
 
@@ -749,7 +749,7 @@ class RollbackSnapshot:
 
 ### RollbackResult
 
-**Module:** `src.safety.rollback`
+**Module:** `temper_ai.safety.rollback`
 
 **Description:** Result of a rollback operation.
 
@@ -779,7 +779,7 @@ Check if rollback was successful.
 
 ### RollbackStatus
 
-**Module:** `src.safety.rollback`
+**Module:** `temper_ai.safety.rollback`
 
 **Description:** Status of a rollback operation.
 
@@ -795,7 +795,7 @@ class RollbackStatus(Enum):
 
 ### RollbackStrategy
 
-**Module:** `src.safety.rollback`
+**Module:** `temper_ai.safety.rollback`
 
 **Description:** Abstract base class for rollback strategies.
 
@@ -830,7 +830,7 @@ Execute rollback. Must be implemented by subclasses.
 
 **Example:**
 ```python
-from src.safety.rollback import (
+from temper_ai.safety.rollback import (
     CompositeRollbackStrategy,
     FileRollbackStrategy,
     StateRollbackStrategy
@@ -850,7 +850,7 @@ manager = RollbackManager(strategy=composite)
 
 ### CircuitBreaker
 
-**Module:** `src.safety.circuit_breaker`
+**Module:** `temper_ai.safety.circuit_breaker`
 
 **Description:** Implements circuit breaker pattern to prevent cascading failures. Three states: CLOSED, OPEN, HALF_OPEN.
 
@@ -874,7 +874,7 @@ def __init__(
 
 **Example:**
 ```python
-from src.safety import CircuitBreaker
+from temper_ai.safety import CircuitBreaker
 
 breaker = CircuitBreaker(
     name="database_operations",
@@ -1037,7 +1037,7 @@ Get current metrics.
 
 ### CircuitBreakerState
 
-**Module:** `src.safety.circuit_breaker`
+**Module:** `temper_ai.safety.circuit_breaker`
 
 **Description:** Circuit breaker states.
 
@@ -1052,7 +1052,7 @@ class CircuitBreakerState(Enum):
 
 ### CircuitBreakerMetrics
 
-**Module:** `src.safety.circuit_breaker`
+**Module:** `temper_ai.safety.circuit_breaker`
 
 **Description:** Metrics for circuit breaker.
 
@@ -1097,7 +1097,7 @@ Calculate failure rate.
 
 ### SafetyGate
 
-**Module:** `src.safety.circuit_breaker`
+**Module:** `temper_ai.safety.circuit_breaker`
 
 **Description:** Coordinates multiple safety mechanisms (circuit breaker + policy validation). Provides unified entry point for safety checks.
 
@@ -1119,7 +1119,7 @@ def __init__(
 
 **Example:**
 ```python
-from src.safety import SafetyGate, CircuitBreaker, PolicyComposer
+from temper_ai.safety import SafetyGate, CircuitBreaker, PolicyComposer
 
 gate = SafetyGate(
     name="database_gate",
@@ -1194,7 +1194,7 @@ except SafetyGateBlocked as e:
 
 ### CircuitBreakerManager
 
-**Module:** `src.safety.circuit_breaker`
+**Module:** `temper_ai.safety.circuit_breaker`
 
 **Description:** Manages multiple circuit breakers. Provides centralized control and monitoring.
 
@@ -1206,7 +1206,7 @@ def __init__(self)
 
 **Example:**
 ```python
-from src.safety import CircuitBreakerManager
+from temper_ai.safety import CircuitBreakerManager
 
 manager = CircuitBreakerManager()
 ```
@@ -1369,7 +1369,7 @@ gate = manager.create_gate(
 
 ### CircuitBreakerOpen
 
-**Module:** `src.safety.circuit_breaker`
+**Module:** `temper_ai.safety.circuit_breaker`
 
 **Description:** Raised when circuit breaker is open.
 
@@ -1391,7 +1391,7 @@ except CircuitBreakerOpen as e:
 
 ### SafetyGateBlocked
 
-**Module:** `src.safety.circuit_breaker`
+**Module:** `temper_ai.safety.circuit_breaker`
 
 **Description:** Raised when safety gate blocks an action.
 
@@ -1414,7 +1414,7 @@ except SafetyGateBlocked as e:
 ## Complete Example
 
 ```python
-from src.safety import (
+from temper_ai.safety import (
     PolicyComposer,
     FileAccessPolicy,
     ApprovalWorkflow,

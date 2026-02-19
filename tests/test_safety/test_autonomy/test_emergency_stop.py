@@ -2,12 +2,12 @@
 
 import pytest
 
-from src.safety.autonomy.emergency_stop import (
+from temper_ai.safety.autonomy.emergency_stop import (
     EmergencyStopController,
     EmergencyStopError,
     reset_emergency_state,
 )
-from src.safety.autonomy.store import AutonomyStore
+from temper_ai.safety.autonomy.store import AutonomyStore
 
 
 @pytest.fixture(autouse=True)

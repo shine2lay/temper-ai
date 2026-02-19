@@ -30,7 +30,7 @@ Complete reference for all M3 collaboration strategies, conflict resolvers, and 
 All strategies implement the `CollaborationStrategy` interface:
 
 ```python
-from src.strategies.base import CollaborationStrategy, AgentOutput, SynthesisResult
+from temper_ai.strategies.base import CollaborationStrategy, AgentOutput, SynthesisResult
 
 class MyStrategy(CollaborationStrategy):
     def synthesize(
@@ -54,7 +54,7 @@ class MyStrategy(CollaborationStrategy):
 
 ## ConsensusStrategy
 
-**File**: `src/strategies/consensus.py`
+**File**: `temper_ai/strategies/consensus.py`
 
 ### Description
 
@@ -86,8 +86,8 @@ collaboration:
 ### Python API
 
 ```python
-from src.strategies.consensus import ConsensusStrategy
-from src.strategies.base import AgentOutput
+from temper_ai.strategies.consensus import ConsensusStrategy
+from temper_ai.strategies.base import AgentOutput
 
 strategy = ConsensusStrategy()
 
@@ -135,7 +135,7 @@ print(result.votes)  # {"Option A": 2, "Option B": 1}
 
 ## DebateAndSynthesize
 
-**File**: `src/strategies/debate.py`
+**File**: `temper_ai/strategies/debate.py`
 
 ### Description
 
@@ -171,7 +171,7 @@ collaboration:
 ### Python API
 
 ```python
-from src.strategies.debate import DebateAndSynthesize
+from temper_ai.strategies.debate import DebateAndSynthesize
 
 strategy = DebateAndSynthesize()
 
@@ -259,7 +259,7 @@ config:
 
 ## MeritWeightedResolver
 
-**File**: `src/strategies/merit_weighted.py`
+**File**: `temper_ai/strategies/merit_weighted.py`
 
 ### Description
 
@@ -309,8 +309,8 @@ collaboration:
 ### Python API
 
 ```python
-from src.strategies.merit_weighted import MeritWeightedResolver
-from src.strategies.conflict_resolution import AgentMerit, ResolutionContext
+from temper_ai.strategies.merit_weighted import MeritWeightedResolver
+from temper_ai.strategies.conflict_resolution import AgentMerit, ResolutionContext
 
 resolver = MeritWeightedResolver(config={
     "auto_resolve_threshold": 0.85,
@@ -358,7 +358,7 @@ print(resolution.confidence)  # ~0.76
 
 ## HumanEscalationResolver
 
-**File**: `src/strategies/merit_weighted.py`
+**File**: `temper_ai/strategies/merit_weighted.py`
 
 ### Description
 
@@ -371,7 +371,7 @@ Always raises `RuntimeError` with escalation message. In M4+, will integrate wit
 ### Python API
 
 ```python
-from src.strategies.merit_weighted import HumanEscalationResolver
+from temper_ai.strategies.merit_weighted import HumanEscalationResolver
 
 resolver = HumanEscalationResolver()
 
@@ -427,7 +427,7 @@ Q: Are conflicts common?
 
 ```python
 # my_custom_strategy.py
-from src.strategies.base import CollaborationStrategy, SynthesisResult
+from temper_ai.strategies.base import CollaborationStrategy, SynthesisResult
 from typing import List, Dict, Any
 
 class WeightedAverageStrategy(CollaborationStrategy):
@@ -454,7 +454,7 @@ class WeightedAverageStrategy(CollaborationStrategy):
         # Detect conflicts
         conflicts = self.detect_conflicts(agent_outputs, threshold=0.3)
 
-        from src.strategies.base import calculate_vote_distribution
+        from temper_ai.strategies.base import calculate_vote_distribution
         votes = calculate_vote_distribution(agent_outputs)
 
         return SynthesisResult(
@@ -480,7 +480,7 @@ class WeightedAverageStrategy(CollaborationStrategy):
 
 ```python
 # Register with strategy registry
-from src.strategies.registry import StrategyRegistry
+from temper_ai.strategies.registry import StrategyRegistry
 
 registry = StrategyRegistry()
 registry.register("weighted_average", WeightedAverageStrategy)

@@ -21,7 +21,7 @@ response = agent.execute({"input": "What is Python?"})
 
 ## Overview
 
-Milestone 2 (M2) delivers the core agent execution system for the Meta-Autonomous Framework. It builds on M1's observability and configuration foundation to enable autonomous agents that can:
+Milestone 2 (M2) delivers the core agent execution system for the Temper AI. It builds on M1's observability and configuration foundation to enable autonomous agents that can:
 
 - ✅ Call LLM providers (Ollama, OpenAI, Anthropic, vLLM) - **WORKS WITH OLLAMA**
 - ✅ Execute tools with safety controls - **Calculator tested**
@@ -80,7 +80,7 @@ class BaseLLM(ABC):
 - **AnthropicLLM**: Claude 3 Opus, Sonnet, Haiku
 - **vLLMLLM**: Self-hosted vLLM server
 
-**File:** `src/agents/llm_providers.py` (465 lines)
+**File:** `temper_ai/agents/llm_providers.py` (465 lines)
 **Tests:** `tests/test_agents/test_llm_providers.py` (34 tests, 100% passing)
 **Change Log:** `changes/0002-llm-providers-implementation.md`
 
@@ -112,9 +112,9 @@ class ToolRegistry:
 - **WebScraper**: HTTP client with rate limiting and BeautifulSoup
 
 **Files:**
-- `src/tools/base.py` (BaseTool interface)
-- `src/tools/registry.py` (ToolRegistry implementation)
-- `src/tools/calculator.py`, `file_writer.py`, `web_scraper.py`
+- `temper_ai/tools/base.py` (BaseTool interface)
+- `temper_ai/tools/registry.py` (ToolRegistry implementation)
+- `temper_ai/tools/calculator.py`, `file_writer.py`, `web_scraper.py`
 
 **Tests:** 100+ tests (31 Calculator, 28 FileWriter, 30 WebScraper, registry tests)
 **Change Logs:**
@@ -157,7 +157,7 @@ prompt = engine.render(
 )
 ```
 
-**File:** `src/agents/prompt_engine.py` (165 lines)
+**File:** `temper_ai/agents/prompt_engine.py` (165 lines)
 **Tests:** `tests/test_agents/test_prompt_engine.py` (21 tests, 100% passing)
 **Change Log:** `changes/000X-prompt-engine-implementation.md`
 
@@ -198,8 +198,8 @@ class AgentFactory:
 
 **Status:** 🚧 IN PROGRESS (agent-e5ac6f working on m2-04, m2-04b)
 
-**File:** `src/agents/base_agent.py` (143 lines - interface complete)
-**Pending:** `src/agents/standard_agent.py`, `src/agents/agent_factory.py`
+**File:** `temper_ai/agents/base_agent.py` (143 lines - interface complete)
+**Pending:** `temper_ai/agents/standard_agent.py`, `temper_ai/agents/agent_factory.py`
 
 ---
 
@@ -222,7 +222,7 @@ class LangGraphCompiler:
 
 **Status:** 🚧 IN PROGRESS
 
-**Pending:** `src/compiler/langgraph_compiler.py`
+**Pending:** `temper_ai/compiler/langgraph_compiler.py`
 
 ---
 
@@ -240,9 +240,9 @@ class LangGraphCompiler:
 **Status:** 🚧 IN PROGRESS
 
 **Implementation:** Integration between:
-- `src/agents/standard_agent.py` (agent execution)
-- `src/observability/tracker.py` (tracking API - COMPLETE)
-- `src/compiler/langgraph_compiler.py` (workflow execution)
+- `temper_ai/agents/standard_agent.py` (agent execution)
+- `temper_ai/observability/tracker.py` (tracking API - COMPLETE)
+- `temper_ai/compiler/langgraph_compiler.py` (workflow execution)
 
 ---
 
@@ -259,7 +259,7 @@ class LangGraphCompiler:
 - Color-coded status (running, success, failed)
 - Live token and cost tracking
 
-**File:** `src/observability/console.py`
+**File:** `temper_ai/observability/console.py`
 **Change Log:** `changes/000Y-console-streaming-implementation.md`
 
 ---
@@ -268,12 +268,12 @@ class LangGraphCompiler:
 
 ```python
 # Initialize systems
-from src.compiler.config_loader import ConfigLoader
-from src.tools.registry import ToolRegistry
-from src.agents.agent_factory import AgentFactory
-from src.compiler.langgraph_compiler import LangGraphCompiler
-from src.observability.tracker import ExecutionTracker
-from src.observability.console import StreamingVisualizer
+from temper_ai.compiler.config_loader import ConfigLoader
+from temper_ai.tools.registry import ToolRegistry
+from temper_ai.agents.agent_factory import AgentFactory
+from temper_ai.compiler.langgraph_compiler import LangGraphCompiler
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.observability.console import StreamingVisualizer
 
 # Load configuration
 loader = ConfigLoader("configs")

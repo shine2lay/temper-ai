@@ -1,12 +1,12 @@
 """Tests for memory context formatter."""
 
-from src.memory._schemas import MemoryEntry, MemoryScope, MemorySearchResult
-from src.memory.constants import (
+from temper_ai.memory._schemas import MemoryEntry, MemoryScope, MemorySearchResult
+from temper_ai.memory.constants import (
     MEMORY_TYPE_CROSS_SESSION,
     MEMORY_TYPE_EPISODIC,
     MEMORY_TYPE_PROCEDURAL,
 )
-from src.memory.formatter import format_memory_context
+from temper_ai.memory.formatter import format_memory_context
 
 
 def _make_entry(content, memory_type=MEMORY_TYPE_EPISODIC, score=0.5):

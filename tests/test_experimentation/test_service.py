@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 import pytest
 from sqlmodel import Session
 
-from src.experimentation.models import (
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ExecutionStatus,
     Experiment,
@@ -15,7 +15,7 @@ from src.experimentation.models import (
     Variant,
     VariantAssignment,
 )
-from src.experimentation.service import ExperimentService
+from temper_ai.experimentation.service import ExperimentService
 
 
 @pytest.fixture
@@ -121,7 +121,7 @@ class TestExperimentServiceInitialization:
 class TestCreateExperiment:
     """Test experiment creation."""
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_create_experiment_success(self, mock_get_session, experiment_service, mock_session):
         """Test successful experiment creation."""
         mock_get_session.return_value = mock_session
@@ -141,7 +141,7 @@ class TestCreateExperiment:
         mock_session.add.assert_called()
         mock_session.commit.assert_called_once()
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_create_experiment_with_optional_params(self, mock_get_session, experiment_service, mock_session):
         """Test experiment creation with optional parameters."""
         mock_get_session.return_value = mock_session
@@ -202,7 +202,7 @@ class TestCreateExperiment:
                 primary_metric="duration_seconds",
             )
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_create_experiment_duplicate_name(self, mock_get_session, experiment_service, mock_session):
         """Test experiment creation with duplicate name."""
         from sqlalchemy.exc import IntegrityError
@@ -225,7 +225,7 @@ class TestCreateExperiment:
 class TestGetExperiment:
     """Test experiment retrieval."""
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_get_experiment_from_database(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test getting experiment from database."""
         mock_session.exec.return_value.first.return_value = sample_experiment
@@ -237,7 +237,7 @@ class TestGetExperiment:
         assert result.id == sample_experiment.id
         assert result.name == "test_experiment"
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_get_experiment_not_found(self, mock_get_session, experiment_service, mock_session):
         """Test getting non-existent experiment."""
         mock_session.exec.return_value.first.return_value = None
@@ -247,7 +247,7 @@ class TestGetExperiment:
 
         assert result is None
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_list_experiments_all(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test listing all experiments."""
         mock_session.exec.return_value.all.return_value = [sample_experiment]
@@ -258,7 +258,7 @@ class TestGetExperiment:
         assert len(results) == 1
         assert results[0].id == sample_experiment.id
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_list_experiments_by_status(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test listing experiments filtered by status."""
         mock_session.exec.return_value.all.return_value = [sample_experiment]
@@ -273,7 +273,7 @@ class TestGetExperiment:
 class TestExperimentLifecycle:
     """Test experiment lifecycle operations."""
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_start_experiment_success(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test starting an experiment."""
         sample_experiment.status = ExperimentStatus.DRAFT
@@ -286,7 +286,7 @@ class TestExperimentLifecycle:
         assert sample_experiment.started_at is not None
         mock_session.commit.assert_called_once()
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_start_experiment_not_found(self, mock_get_session, experiment_service, mock_session):
         """Test starting non-existent experiment."""
         mock_session.get.return_value = None
@@ -295,7 +295,7 @@ class TestExperimentLifecycle:
         with pytest.raises(ValueError, match="not found"):
             experiment_service.start_experiment("nonexistent_id")
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_start_experiment_invalid_status(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test starting experiment in invalid status."""
         sample_experiment.status = ExperimentStatus.STOPPED
@@ -305,7 +305,7 @@ class TestExperimentLifecycle:
         with pytest.raises(ValueError, match="Cannot start"):
             experiment_service.start_experiment(sample_experiment.id)
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_pause_experiment(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test pausing an experiment."""
         mock_session.get.return_value = sample_experiment
@@ -316,7 +316,7 @@ class TestExperimentLifecycle:
         assert sample_experiment.status == ExperimentStatus.PAUSED
         mock_session.commit.assert_called_once()
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_stop_experiment_without_winner(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test stopping experiment without declaring winner."""
         mock_session.get.return_value = sample_experiment
@@ -329,7 +329,7 @@ class TestExperimentLifecycle:
         assert sample_experiment.winner_variant_id is None
         mock_session.commit.assert_called_once()
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_stop_experiment_with_winner(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test stopping experiment with winner."""
         winner_id = "variant_123"
@@ -346,7 +346,7 @@ class TestExperimentLifecycle:
 class TestVariantAssignment:
     """Test variant assignment operations."""
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_assign_variant_success(self, mock_get_session, experiment_service, mock_session, sample_experiment, sample_variants):
         """Test successful variant assignment."""
         mock_session.get.return_value = sample_experiment
@@ -366,7 +366,7 @@ class TestVariantAssignment:
         mock_session.add.assert_called()
         mock_session.commit.assert_called_once()
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_assign_variant_with_context(self, mock_get_session, experiment_service, mock_session, sample_experiment, sample_variants):
         """Test variant assignment with context."""
         mock_session.get.return_value = sample_experiment
@@ -384,7 +384,7 @@ class TestVariantAssignment:
 
         assert assignment.assignment_context == context
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_assign_variant_experiment_not_found(self, mock_get_session, experiment_service, mock_session):
         """Test variant assignment for non-existent experiment."""
         mock_session.get.return_value = None
@@ -393,7 +393,7 @@ class TestVariantAssignment:
         with pytest.raises(ValueError, match="not found"):
             experiment_service.assign_variant("wf_123", "nonexistent_id")
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_assign_variant_experiment_not_running(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test variant assignment for non-running experiment."""
         sample_experiment.status = ExperimentStatus.PAUSED
@@ -403,7 +403,7 @@ class TestVariantAssignment:
         with pytest.raises(ValueError, match="not running"):
             experiment_service.assign_variant("wf_123", sample_experiment.id)
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_assign_variant_no_variants(self, mock_get_session, experiment_service, mock_session, sample_experiment):
         """Test variant assignment when no variants exist."""
         mock_session.get.return_value = sample_experiment
@@ -413,7 +413,7 @@ class TestVariantAssignment:
         with pytest.raises(ValueError, match="No variants found"):
             experiment_service.assign_variant("wf_123", sample_experiment.id)
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_get_variant_config(self, mock_get_session, experiment_service, mock_session, sample_variants):
         """Test getting variant configuration."""
         variant = sample_variants[0]
@@ -425,7 +425,7 @@ class TestVariantAssignment:
 
         assert config == {"temperature": 0.9}
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_get_variant_config_not_found(self, mock_get_session, experiment_service, mock_session):
         """Test getting config for non-existent variant."""
         mock_session.get.return_value = None
@@ -438,7 +438,7 @@ class TestVariantAssignment:
 class TestTracking:
     """Test execution tracking."""
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_track_execution_complete_success(self, mock_get_session, experiment_service, mock_session, sample_experiment, sample_variants):
         """Test tracking completed execution."""
         assignment = VariantAssignment(
@@ -464,7 +464,7 @@ class TestTracking:
         mock_session.execute.assert_called()
         mock_session.commit.assert_called_once()
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_track_execution_complete_failed(self, mock_get_session, experiment_service, mock_session, sample_experiment, sample_variants):
         """Test tracking failed execution."""
         assignment = VariantAssignment(
@@ -487,7 +487,7 @@ class TestTracking:
         assert assignment.execution_status == ExecutionStatus.FAILED
         mock_session.execute.assert_called()
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_track_execution_complete_no_assignment(self, mock_get_session, experiment_service, mock_session, caplog):
         """Test tracking execution with no assignment found."""
         mock_session.exec.return_value.first.return_value = None
@@ -504,7 +504,7 @@ class TestTracking:
 class TestAnalysis:
     """Test experiment analysis."""
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_get_experiment_results(self, mock_get_session, experiment_service, mock_session, sample_experiment, sample_variants):
         """Test getting experiment analysis results."""
         mock_session.get.return_value = sample_experiment
@@ -528,7 +528,7 @@ class TestAnalysis:
         mock_session.add.assert_called()
         mock_session.commit.assert_called_once()
 
-    @patch('src.experimentation.service.get_session')
+    @patch('temper_ai.experimentation.service.get_session')
     def test_get_experiment_results_not_found(self, mock_get_session, experiment_service, mock_session):
         """Test getting results for non-existent experiment."""
         mock_session.get.return_value = None

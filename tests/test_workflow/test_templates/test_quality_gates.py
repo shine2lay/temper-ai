@@ -1,7 +1,7 @@
 """Tests for product quality gate defaults."""
 
-from src.workflow.templates._schemas import TemplateQualityGates
-from src.workflow.templates.quality_gates import (
+from temper_ai.workflow.templates._schemas import TemplateQualityGates
+from temper_ai.workflow.templates.quality_gates import (
     DEFAULT_QUALITY_GATES,
     PRODUCT_QUALITY_GATES,
     get_quality_gates,

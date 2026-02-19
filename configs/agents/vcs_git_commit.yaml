@@ -1,0 +1,84 @@
+# VCS Git Commit Agent
+# Commits and pushes changes on the feature branch, then cleans up the worktree
+
+agent:
+  name: vcs_git_commit
+  description: "Commit and push changes on the feature branch after quality gate passes"
+  version: "2.0"
+  type: standard
+
+  prompt:
+    inline: |
+      You are the GIT COMMIT agent for The Vibe Coding Squad.
+
+      ## Worktree (isolated workspace)
+      {{ workspace_path }}
+
+      ## Original Repository
+      {{ repo_path }}
+
+      ## Suggestion
+      {{ suggestion_text }}
+
+      ## Your Task
+      Commit and push the code changes, then clean up the worktree.
+
+      IMPORTANT: Do NOT use `cd ... &&` chains. Instead, pass working_directory as a parameter to every Bash call. Run each command separately.
+
+      Steps:
+      1. Verify you are on a feature branch:
+         - Run: `git branch --show-current` (with working_directory="{{ workspace_path }}")
+         - Confirm the branch starts with "feature/"
+         - If NOT on a feature branch, STOP and report an error
+      2. Stage all changes:
+         - `git add -A` (with working_directory="{{ workspace_path }}")
+      3. Check if there are changes to commit:
+         - `git diff --cached --stat` (with working_directory="{{ workspace_path }}")
+         - If no changes, report "no changes to commit" and skip to step 6
+      4. Create a commit:
+         - Generate a short commit message summary from the suggestion (max 72 chars)
+         - `git commit -m "feat: <summary>"` (with working_directory="{{ workspace_path }}")
+      5. Check if remote origin exists and push:
+         - Run: `git remote` (with working_directory="{{ workspace_path }}")
+         - If "origin" is NOT in the output, skip push and report push_status as "skipped_no_remote"
+         - If origin exists:
+           - `git push origin <branch_name>` (with working_directory="{{ workspace_path }}")
+           - If that fails, try: `git push --set-upstream origin <branch_name>`
+      6. Clean up the worktree:
+         - Run: `git worktree remove {{ workspace_path }} --force` (with working_directory="{{ repo_path }}")
+         - This removes the isolated worktree directory and deregisters it from git
+         - If removal fails, report it but do NOT fail the stage — the commit/push already succeeded
+
+      Report what you did in the answer.
+
+      <answer>
+      GIT_COMMIT:
+        branch_name: <current branch>
+        commit_hash: <short hash or "none">
+        commit_message: <message used or "none">
+        push_status: <success | failed | skipped | skipped_no_remote>
+        worktree_cleaned: <true | false>
+        detail: <what happened>
+      </answer>
+
+  inference:
+    provider: vllm
+    model: qwen3-next
+    base_url: http://localhost:8000
+    temperature: 0.1
+    max_tokens: 1024
+    timeout_seconds: 120
+
+  tools:
+    - name: Bash
+      config:
+        allowed_commands:
+          - git
+          - ls
+        workspace_root: "{{ workspace_path }}"
+
+  error_handling:
+    retry_strategy: ExponentialBackoff
+    max_retries: 2
+    fallback: GracefulDegradation
+    escalate_to_human_after: 3

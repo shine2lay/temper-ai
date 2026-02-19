@@ -9,8 +9,8 @@ from typing import Any, Dict
 
 import pytest
 
-from src.workflow.engine_registry import EngineRegistry
-from src.workflow.execution_engine import CompiledWorkflow, ExecutionEngine, ExecutionMode
+from temper_ai.workflow.engine_registry import EngineRegistry
+from temper_ai.workflow.execution_engine import CompiledWorkflow, ExecutionEngine, ExecutionMode
 
 
 # Mock engine for testing

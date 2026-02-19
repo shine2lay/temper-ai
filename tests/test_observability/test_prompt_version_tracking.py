@@ -7,9 +7,9 @@ and backward compatibility.
 import pytest
 from datetime import datetime, timezone
 
-from src.observability.backend import LLMCallData
-from src.observability._tracker_helpers import LLMCallTrackingData
-from src.observability.buffer import LLMCallBufferParams, BufferedLLMCall
+from temper_ai.observability.backend import LLMCallData
+from temper_ai.observability._tracker_helpers import LLMCallTrackingData
+from temper_ai.observability.buffer import LLMCallBufferParams, BufferedLLMCall
 
 
 class TestLLMCallDataPromptFields:

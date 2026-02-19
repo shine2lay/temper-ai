@@ -21,7 +21,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import select
 
-from src.storage.database import (
+from temper_ai.storage.database import (
     AgentExecution,
     LLMCall,
     StageExecution,
@@ -30,8 +30,8 @@ from src.storage.database import (
     get_session,
     init_database,
 )
-from src.storage.database.datetime_utils import utcnow
-from src.observability.backends.sql_backend import SQLObservabilityBackend
+from temper_ai.storage.database.datetime_utils import utcnow
+from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
 
 
 @pytest.fixture

@@ -3,9 +3,9 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.storage.database import init_database
-from src.observability.constants import ObservabilityFields
-from src.storage.database.models import (
+from temper_ai.storage.database import init_database
+from temper_ai.observability.constants import ObservabilityFields
+from temper_ai.storage.database.models import (
     AgentExecution,
     CollaborationEvent,
     LLMCall,
@@ -13,14 +13,14 @@ from src.storage.database.models import (
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.backends.sql_backend import SQLObservabilityBackend
+from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
-    import src.storage.database.manager as db_module
-    from src.storage.database.manager import _db_lock
+    import temper_ai.storage.database.manager as db_module
+    from temper_ai.storage.database.manager import _db_lock
 
     with _db_lock:
         db_module._db_manager = None
@@ -445,7 +445,7 @@ class TestNoOpBackendReadStubs:
     """Verify NoOp backend read stubs return expected defaults."""
 
     def test_noop_read_stubs(self):
-        from src.observability.backends.noop_backend import NoOpBackend
+        from temper_ai.observability.backends.noop_backend import NoOpBackend
 
         backend = NoOpBackend()
         assert backend.get_workflow("any-id") is None
@@ -460,7 +460,7 @@ class TestPrometheusBackendReadStubs:
     """Verify Prometheus backend read stubs return expected defaults."""
 
     def test_prometheus_read_stubs(self):
-        from src.observability.backends.prometheus_backend import PrometheusObservabilityBackend
+        from temper_ai.observability.backends.prometheus_backend import PrometheusObservabilityBackend
 
         backend = PrometheusObservabilityBackend()
         assert backend.get_workflow("any-id") is None
@@ -475,7 +475,7 @@ class TestS3BackendReadStubs:
     """Verify S3 backend read stubs return expected defaults."""
 
     def test_s3_read_stubs(self):
-        from src.observability.backends.s3_backend import S3ObservabilityBackend
+        from temper_ai.observability.backends.s3_backend import S3ObservabilityBackend
 
         backend = S3ObservabilityBackend()
         assert backend.get_workflow("any-id") is None

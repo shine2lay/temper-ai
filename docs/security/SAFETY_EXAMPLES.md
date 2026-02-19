@@ -22,10 +22,10 @@ This document provides practical examples of using the M4 safety system in real-
 
 ```python
 from typing import Dict, Any
-from src.safety.policy_registry import PolicyRegistry
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
-from src.safety.forbidden_operations import ForbiddenOperationsPolicy
-from src.safety.file_access import FileAccessPolicy
+from temper_ai.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
+from temper_ai.safety.file_access import FileAccessPolicy
 
 # Setup
 registry = PolicyRegistry()
@@ -73,8 +73,8 @@ else:
 ### Example 2: Registering Global Policies
 
 ```python
-from src.safety.circuit_breaker import CircuitBreakerPolicy
-from src.safety.rate_limit import RateLimitPolicy
+from temper_ai.safety.circuit_breaker import CircuitBreakerPolicy
+from temper_ai.safety.rate_limit import RateLimitPolicy
 
 # Global policies apply to ALL actions
 registry.register_policy(CircuitBreakerPolicy())  # No action_types = global
@@ -89,7 +89,7 @@ registry.register_policy(RateLimitPolicy())
 ```python
 from typing import Dict, Any, List
 from datetime import datetime
-from src.safety.base import BaseSafetyPolicy, ViolationSeverity, SafetyViolation
+from temper_ai.safety.base import BaseSafetyPolicy, ViolationSeverity, SafetyViolation
 
 class BusinessHoursPolicy(BaseSafetyPolicy):
     """Only allow deployments during business hours."""
@@ -173,7 +173,7 @@ result = await engine.validate_action(action, context)
 
 ```python
 from typing import Dict, Any
-from src.safety.approval_workflow import request_approval
+from temper_ai.safety.approval_workflow import request_approval
 
 # 1. Use Write() tool instead of cat
 # 2. Remove hardcoded secret
@@ -239,7 +239,7 @@ result = await engine.validate_action(action, context)
 ```python
 import asyncio
 from typing import Dict, Any
-from src.safety.approval_workflow import ApprovalRequest
+from temper_ai.safety.approval_workflow import ApprovalRequest
 
 # Step 1: Submit approval request
 approval_request = ApprovalRequest(
@@ -284,7 +284,7 @@ action: Dict[str, Any] = {
     "type": "git_commit",
     "command": "git add . && git commit -m 'Update config'",
     "files": [
-        "src/app.py",
+        "temper_ai/app.py",
         "config/database.yaml",
         ".env",  # Oops!
         "requirements.txt"
@@ -329,8 +329,8 @@ from typing import Dict, Any
 # Fixed action - first commit
 action_1: Dict[str, Any] = {
     "type": "git_commit",
-    "command": "git add src/app.py requirements.txt && git commit -m 'Update app dependencies'",
-    "files": ["src/app.py", "requirements.txt"]
+    "command": "git add temper_ai/app.py requirements.txt && git commit -m 'Update app dependencies'",
+    "files": ["temper_ai/app.py", "requirements.txt"]
 }
 
 result_1 = await engine.validate_action(action_1, context)
@@ -590,7 +590,7 @@ global_policies:
 
 ```python
 from typing import Dict, Any
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 
 class AgentExecutor:
     """Agent executor with integrated safety validation."""
@@ -661,7 +661,7 @@ class AgentExecutor:
 ```python
 from typing import Callable, Any
 from langgraph.graph import StateGraph
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 
 class SafeWorkflowBuilder:
     """Build LangGraph workflows with safety validation."""
@@ -726,8 +726,8 @@ class SafeWorkflowBuilder:
 ```python
 from typing import Any, Dict, List
 from datetime import datetime, timezone
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 
 class ObservabilityIntegration:
     """Integrate policy violations with observability system."""
@@ -829,7 +829,7 @@ async def execute_with_fallback(action: Dict[str, Any], context: PolicyExecution
 ```python
 import asyncio
 from typing import Dict, Any
-from src.safety.action_policy_engine import PolicyExecutionContext, EnforcementResult
+from temper_ai.safety.action_policy_engine import PolicyExecutionContext, EnforcementResult
 
 async def validate_with_retry(
     action: Dict[str, Any],
@@ -860,7 +860,7 @@ async def validate_with_retry(
 
 ```python
 from typing import Dict, Any, List
-from src.safety.action_policy_engine import PolicyExecutionContext, EnforcementResult
+from temper_ai.safety.action_policy_engine import PolicyExecutionContext, EnforcementResult
 
 async def validate_batch_actions(
     actions: List[Dict[str, Any]],
@@ -897,10 +897,10 @@ async def validate_batch_actions(
 ```python
 from typing import Dict, Any
 import pytest
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
-from src.safety.policy_registry import PolicyRegistry
-from src.safety.forbidden_operations import ForbiddenOperationsPolicy
-from src.safety.interfaces import ViolationSeverity
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from temper_ai.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
+from temper_ai.safety.interfaces import ViolationSeverity
 
 @pytest.fixture
 def engine() -> ActionPolicyEngine:
@@ -961,8 +961,8 @@ async def test_safe_command_allowed(engine: ActionPolicyEngine) -> None:
 ```python
 from typing import Dict, Any
 import pytest
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
-from src.safety.interfaces import ViolationSeverity
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from temper_ai.safety.interfaces import ViolationSeverity
 
 @pytest.mark.asyncio
 async def test_agent_executor_blocks_unsafe_action(policy_engine: ActionPolicyEngine) -> None:
@@ -995,7 +995,7 @@ async def test_agent_executor_blocks_unsafe_action(policy_engine: ActionPolicyEn
 from typing import Dict, Any
 import time
 import pytest
-from src.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine, PolicyExecutionContext
 
 @pytest.mark.asyncio
 async def test_policy_engine_performance(engine: ActionPolicyEngine) -> None:
@@ -1038,7 +1038,7 @@ async def test_policy_engine_performance(engine: ActionPolicyEngine) -> None:
 ```python
 # Enable debug logging
 import logging
-logging.getLogger("src.safety").setLevel(logging.DEBUG)
+logging.getLogger("temper_ai.safety").setLevel(logging.DEBUG)
 
 # Run validation
 result = await engine.validate_action(action, context)
@@ -1069,7 +1069,7 @@ print(f"Policies checked: {[p.name for p in policies]}")
 print(engine.registry.get_action_types_for_policy("file_access_policy"))
 
 # 2. Check policy configuration
-from src.utils.config_loader import load_config
+from temper_ai.utils.config_loader import load_config
 config = load_config("config/safety/action_policies.yaml")
 print(config["policy_config"]["file_access_policy"])
 
@@ -1226,7 +1226,7 @@ print(f"Policy priority: {MyPolicy().priority}")
 - **Architecture**: [M4_SAFETY_SYSTEM.md](./M4_SAFETY_SYSTEM.md)
 - **Configuration**: [POLICY_CONFIGURATION_GUIDE.md](./POLICY_CONFIGURATION_GUIDE.md)
 - **Custom Policies**: [CUSTOM_POLICY_DEVELOPMENT.md](./CUSTOM_POLICY_DEVELOPMENT.md)
-- **API Reference**: See inline docstrings in `src/safety/`
+- **API Reference**: See inline docstrings in `temper_ai/safety/`
 - **Change Logs**: `changes/0131-action-policy-engine.md`
 
 ---

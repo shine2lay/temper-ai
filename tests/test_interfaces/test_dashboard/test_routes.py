@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from src.interfaces.dashboard.app import create_app
-from src.observability.constants import ObservabilityFields
+from temper_ai.interfaces.dashboard.app import create_app
+from temper_ai.observability.constants import ObservabilityFields
 
 # ---------------------------------------------------------------------------
 # Fixtures

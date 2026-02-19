@@ -1,6 +1,6 @@
 # Interface Documentation
 
-This directory contains comprehensive documentation for all public interfaces in the Meta-Autonomous Framework.
+This directory contains comprehensive documentation for all public interfaces in the Temper AI.
 
 ## Organization
 

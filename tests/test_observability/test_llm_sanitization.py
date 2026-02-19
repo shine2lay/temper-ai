@@ -6,18 +6,18 @@ PII and secret exposure in the observability database.
 """
 import pytest
 
-from src.observability.backends import SQLObservabilityBackend
-from src.observability.database import init_database
-from src.observability.models import LLMCall
-from src.observability.sanitization import SanitizationConfig
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.backends import SQLObservabilityBackend
+from temper_ai.observability.database import init_database
+from temper_ai.observability.models import LLMCall
+from temper_ai.observability.sanitization import SanitizationConfig
+from temper_ai.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture
 def sql_backend():
     """Create SQL backend for testing."""
-    import src.observability.database as db_module
-    from src.observability.database import _db_lock
+    import temper_ai.observability.database as db_module
+    from temper_ai.observability.database import _db_lock
 
     # Clean up any existing instance
     with _db_lock:

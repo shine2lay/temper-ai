@@ -322,7 +322,7 @@ class WorkflowConfig(BaseModel):
 **Loading and Validation:**
 
 ```python
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.config_loader import ConfigLoader
 
 loader = ConfigLoader("configs")
 workflow_config = loader.load_workflow("simple_research")

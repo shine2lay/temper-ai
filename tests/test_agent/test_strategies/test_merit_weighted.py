@@ -11,9 +11,9 @@ Tests weighted voting based on agent merit scores:
 
 import pytest
 
-from src.agent.strategies.base import AgentOutput, Conflict
-from src.agent.strategies.conflict_resolution import AgentMerit, Resolution, ResolutionContext
-from src.agent.strategies.merit_weighted import HumanEscalationResolver, MeritWeightedResolver
+from temper_ai.agent.strategies.base import AgentOutput, Conflict
+from temper_ai.agent.strategies.conflict_resolution import AgentMerit, Resolution, ResolutionContext
+from temper_ai.agent.strategies.merit_weighted import HumanEscalationResolver, MeritWeightedResolver
 
 
 class TestMeritWeightedResolver:

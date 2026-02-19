@@ -3,8 +3,8 @@ import asyncio
 
 import pytest
 
-from src.observability.backends.noop_backend import NoOpBackend
-from src.observability.tracker import ExecutionTracker, WorkflowTrackingParams
+from temper_ai.observability.backends.noop_backend import NoOpBackend
+from temper_ai.observability.tracker import ExecutionTracker, WorkflowTrackingParams
 
 
 @pytest.fixture
@@ -113,7 +113,7 @@ class TestAsyncLLMAndToolCalls:
 
     @pytest.mark.asyncio
     async def test_atrack_llm_call(self, tracker):
-        from src.observability._tracker_helpers import LLMCallTrackingData
+        from temper_ai.observability._tracker_helpers import LLMCallTrackingData
         data = LLMCallTrackingData(
             agent_id="agent-1", provider="test", model="test-model",
             prompt="hello", response="world",
@@ -125,7 +125,7 @@ class TestAsyncLLMAndToolCalls:
 
     @pytest.mark.asyncio
     async def test_atrack_tool_call(self, tracker):
-        from src.observability._tracker_helpers import ToolCallTrackingData
+        from temper_ai.observability._tracker_helpers import ToolCallTrackingData
         data = ToolCallTrackingData(
             agent_id="agent-1", tool_name="bash",
             input_params={"cmd": "ls"}, output_data={"stdout": "file.txt"},

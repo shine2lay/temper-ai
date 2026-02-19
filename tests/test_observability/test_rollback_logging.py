@@ -7,14 +7,14 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from src.observability.models import RollbackEvent, RollbackSnapshotDB
-from src.observability.rollback_logger import (
+from temper_ai.observability.models import RollbackEvent, RollbackSnapshotDB
+from temper_ai.observability.rollback_logger import (
     get_rollback_events,
     get_rollback_snapshots,
     log_rollback_event,
     log_rollback_snapshot,
 )
-from src.safety.rollback import RollbackResult, RollbackSnapshot, RollbackStatus
+from temper_ai.safety.rollback import RollbackResult, RollbackSnapshot, RollbackStatus
 
 
 class TestRollbackLogging:
@@ -180,7 +180,7 @@ class TestRollbackLogging:
         assert len(added_obj.failed_items) == 2
         assert len(added_obj.errors) == 2
 
-    @patch('src.observability.rollback_logger.DatabaseManager')
+    @patch('temper_ai.observability.rollback_logger.DatabaseManager')
     def test_log_rollback_snapshot_creates_db_manager(self, mock_db_class, sample_snapshot):
         """Test that DatabaseManager is created if not provided."""
         mock_db_instance = Mock()
@@ -202,7 +202,7 @@ class TestRollbackLogging:
         mock_session.commit.assert_called_once()
         assert mock_db_class.call_count == 1
 
-    @patch('src.observability.rollback_logger.DatabaseManager')
+    @patch('temper_ai.observability.rollback_logger.DatabaseManager')
     def test_log_rollback_event_error_handling(self, mock_db_class, sample_result):
         """Test error handling in log_rollback_event."""
         # Setup mock to raise exception

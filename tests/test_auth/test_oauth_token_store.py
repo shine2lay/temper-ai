@@ -7,8 +7,8 @@ from unittest.mock import Mock, patch
 import pytest
 from cryptography.fernet import Fernet, InvalidToken
 
-from src.auth.oauth.token_store import SecureTokenStore
-from src.shared.utils.exceptions import SecurityError
+from temper_ai.auth.oauth.token_store import SecureTokenStore
+from temper_ai.shared.utils.exceptions import SecurityError
 
 
 @pytest.fixture
@@ -52,28 +52,28 @@ class TestSecureTokenStoreInitialization:
 
     def test_initialization_with_keyring_unavailable(self):
         """Test initialization when keyring unavailable."""
-        with patch('src.auth.oauth.token_store.KEYRING_AVAILABLE', False):
+        with patch('temper_ai.auth.oauth.token_store.KEYRING_AVAILABLE', False):
             with patch.dict('os.environ', {}, clear=True):
                 with pytest.raises(ValueError, match="encryption key"):
                     SecureTokenStore(use_keyring=True, require_keyring=False)
 
     def test_initialization_require_keyring_unavailable(self):
         """Test initialization fails when keyring required but unavailable."""
-        with patch('src.auth.oauth.token_store.KEYRING_AVAILABLE', False):
+        with patch('temper_ai.auth.oauth.token_store.KEYRING_AVAILABLE', False):
             with pytest.raises(SecurityError, match="keyring"):
                 SecureTokenStore(require_keyring=True)
 
     def test_initialization_with_env_key(self, encryption_key):
         """Test initialization from environment variable."""
         with patch.dict('os.environ', {'OAUTH_TOKEN_ENCRYPTION_KEY': encryption_key}):
-            with patch('src.auth.oauth.token_store.KEYRING_AVAILABLE', False):
+            with patch('temper_ai.auth.oauth.token_store.KEYRING_AVAILABLE', False):
                 store = SecureTokenStore(use_keyring=False)
 
                 assert store.cipher is not None
                 assert store.using_keyring is False
 
     @pytest.mark.skipif(True, reason="keyring not installed")
-    @patch('src.auth.oauth.token_store.KEYRING_AVAILABLE', True)
+    @patch('temper_ai.auth.oauth.token_store.KEYRING_AVAILABLE', True)
     @patch('keyring.get_password')
     def test_initialization_with_keyring(self, mock_get_password, encryption_key):
         """Test initialization with keyring."""
@@ -86,7 +86,7 @@ class TestSecureTokenStoreInitialization:
         mock_get_password.assert_called_once()
 
     @pytest.mark.skipif(True, reason="keyring not installed")
-    @patch('src.auth.oauth.token_store.KEYRING_AVAILABLE', True)
+    @patch('temper_ai.auth.oauth.token_store.KEYRING_AVAILABLE', True)
     @patch('keyring.get_password')
     @patch('keyring.set_password')
     def test_initialization_generates_new_keyring_key(self, mock_set_password, mock_get_password):
@@ -322,7 +322,7 @@ class TestKeyRotation:
         assert token_store._access_log[0]["tokens_re_encrypted"] == 1
 
     @pytest.mark.skipif(True, reason="keyring not installed")
-    @patch('src.auth.oauth.token_store.KEYRING_AVAILABLE', True)
+    @patch('temper_ai.auth.oauth.token_store.KEYRING_AVAILABLE', True)
     @patch('keyring.set_password')
     @patch('keyring.get_password')
     def test_rotate_key_from_keyring(self, mock_get_password, mock_set_password, encryption_key):

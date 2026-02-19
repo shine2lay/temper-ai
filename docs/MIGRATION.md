@@ -1,6 +1,6 @@
 # Migration Guide
 
-Guide for migrating between versions of the Meta-Autonomous Agent Framework.
+Guide for migrating between versions of the Temper AI.
 
 ---
 
@@ -53,13 +53,13 @@ agent:
 
 **Old:**
 ```python
-from src.agents import Agent
+from temper_ai.agents import Agent
 agent = Agent.from_config(config)
 ```
 
 **New:**
 ```python
-from src.agents.standard_agent import StandardAgent
+from temper_ai.agents.standard_agent import StandardAgent
 agent = StandardAgent(config)
 ```
 
@@ -114,8 +114,8 @@ agent:
 ```
 
 ```python
-from src.compiler.config_loader import ConfigLoader
-from src.agents.standard_agent import StandardAgent
+from temper_ai.compiler.config_loader import ConfigLoader
+from temper_ai.agents.standard_agent import StandardAgent
 
 loader = ConfigLoader()
 config = loader.load_agent("my_agent")

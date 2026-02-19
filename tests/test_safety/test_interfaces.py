@@ -11,8 +11,8 @@ Tests cover:
 
 import pytest
 
-from src.shared.core.service import Service
-from src.safety import (
+from temper_ai.shared.core.service import Service
+from temper_ai.safety import (
     BaseSafetyPolicy,
     SafetyPolicy,
     SafetyViolation,
@@ -20,7 +20,7 @@ from src.safety import (
     Validator,
     ViolationSeverity,
 )
-from src.safety.service_mixin import SafetyServiceMixin
+from temper_ai.safety.service_mixin import SafetyServiceMixin
 
 # ============================================
 # VIOLATION SEVERITY TESTS

@@ -8,7 +8,7 @@ graph TB
         WF[Workflow Execution] --> PE[PostExecutionOrchestrator]
     end
 
-    subgraph "Autonomous Loop (src/autonomy/)"
+    subgraph "Autonomous Loop (temper_ai/autonomy/)"
         PE --> L[Learning Mining]
         PE --> G[Goal Analysis]
         PE --> P[Portfolio Update]
@@ -19,7 +19,7 @@ graph TB
         FB --> CFG[Config Files]
     end
 
-    subgraph "Learning (src/learning/)"
+    subgraph "Learning (temper_ai/learning/)"
         L --> MO[MiningOrchestrator]
         MO --> M1[AgentPerformanceMiner]
         MO --> M2[ModelEffectivenessMiner]
@@ -31,7 +31,7 @@ graph TB
         RE --> LS
     end
 
-    subgraph "Goals (src/goals/)"
+    subgraph "Goals (temper_ai/goals/)"
         G --> AO[AnalysisOrchestrator]
         AO --> A1[PerformanceAnalyzer]
         AO --> A2[CostAnalyzer]
@@ -40,13 +40,13 @@ graph TB
         AO --> GS[GoalStore]
     end
 
-    subgraph "Portfolio (src/portfolio/)"
+    subgraph "Portfolio (temper_ai/portfolio/)"
         P --> PO[PortfolioOptimizer]
         PO --> PS[PortfolioStore]
         PS --> KG[KnowledgeGraph]
     end
 
-    subgraph "Memory (src/memory/)"
+    subgraph "Memory (temper_ai/memory/)"
         L --> MB[LearningToMemoryBridge]
         MB --> MS[MemoryService]
         KG --> KGA[KnowledgeGraphAdapter]
@@ -59,7 +59,7 @@ graph TB
 
 ### 1. Post-Execution Trigger
 ```
-maf run workflow.yaml --autonomous
+temper-ai run workflow.yaml --autonomous
     --> _handle_post_execution()
     --> _run_autonomous_loop()
     --> PostExecutionOrchestrator.run(context)
@@ -96,11 +96,11 @@ FeedbackApplier.apply_learning_recommendations(min_confidence=0.8)
 ## Module Dependencies (One-Directional)
 
 ```
-src/autonomy/ imports from:
-    ├── src/learning/    (MiningOrchestrator, RecommendationEngine, LearningStore)
-    ├── src/goals/       (AnalysisOrchestrator, GoalStore)
-    ├── src/portfolio/   (PortfolioOptimizer, PortfolioStore)
-    └── src/memory/      (MemoryService)
+temper_ai/autonomy/ imports from:
+    ├── temper_ai/learning/    (MiningOrchestrator, RecommendationEngine, LearningStore)
+    ├── temper_ai/goals/       (AnalysisOrchestrator, GoalStore)
+    ├── temper_ai/portfolio/   (PortfolioOptimizer, PortfolioStore)
+    └── temper_ai/memory/      (MemoryService)
 
 Never the reverse. No circular dependencies.
 ```

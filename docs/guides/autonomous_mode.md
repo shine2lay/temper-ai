@@ -14,7 +14,7 @@ Autonomous mode enables your workflows to learn from their own execution and imp
 ### Option 1: CLI Flag
 
 ```bash
-maf run configs/workflows/my_workflow.yaml --autonomous --show-details
+temper-ai run configs/workflows/my_workflow.yaml --autonomous --show-details
 ```
 
 ### Option 2: YAML Configuration
@@ -81,10 +81,10 @@ All auto-applied changes are logged to `.meta-autonomous/audit_log.jsonl` for fu
 
 ```bash
 # View audit trail of auto-applied changes
-maf autonomy audit
+temper-ai autonomy audit
 
 # Manually apply pending recommendations
-maf autonomy apply-pending
+temper-ai autonomy apply-pending
 ```
 
 ## Memory Integration
@@ -102,12 +102,12 @@ Run A/B tests on workflow variants:
 
 ```bash
 # Create an experiment
-maf experiment create --name "temperature_test" --description "Test temp impact" --variants variants.yaml
+temper-ai experiment create --name "temperature_test" --description "Test temp impact" --variants variants.yaml
 
 # Start and monitor
-maf experiment start <experiment_id>
-maf experiment results <experiment_id>
-maf experiment stop <experiment_id>
+temper-ai experiment start <experiment_id>
+temper-ai experiment results <experiment_id>
+temper-ai experiment stop <experiment_id>
 ```
 
 ## Safety
@@ -115,4 +115,4 @@ maf experiment stop <experiment_id>
 - All auto-applied changes go through `GoalSafetyPolicy` (rate limits, autonomy checks)
 - Maximum changes per run capped by `max_auto_apply_per_run`
 - Full audit trail in JSONL format
-- Emergency stop via `maf autonomy emergency-stop --reason "..."` halts all autonomous operations
+- Emergency stop via `temper-ai autonomy emergency-stop --reason "..."` halts all autonomous operations

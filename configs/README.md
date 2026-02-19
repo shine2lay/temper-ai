@@ -143,7 +143,7 @@ Tool configurations specify external tools and integrations.
 name: web_scraper
 description: Extract content from web pages
 
-class: src.tools.web.WebScraperTool
+class: temper_ai.tools.web.WebScraperTool
 
 parameters:
   timeout: 30
@@ -391,7 +391,7 @@ configs/
 Configurations are validated against JSON schemas:
 
 ```python
-from src.compiler.config_loader import load_workflow_config
+from temper_ai.compiler.config_loader import load_workflow_config
 
 # Automatically validates against schema
 config = load_workflow_config("workflows/my_workflow.yaml")
@@ -404,7 +404,7 @@ config = load_workflow_config("workflows/my_workflow.yaml")
 yamllint configs/workflows/my_workflow.yaml
 
 # Validate against framework schema
-python -m src.tools.validate_config configs/workflows/my_workflow.yaml
+python -m temper_ai.tools.validate_config configs/workflows/my_workflow.yaml
 ```
 
 ---

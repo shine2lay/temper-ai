@@ -167,7 +167,7 @@ Returns AgentPerformanceProfile
 #### Step 1: After Each Execution (Real-time Metric Collection)
 
 ```python
-# src/observability/execution_tracker.py
+# temper_ai/observability/execution_tracker.py
 
 class ExecutionTracker:
     def __init__(self, metric_registry: MetricRegistry):
@@ -209,7 +209,7 @@ class ExecutionTracker:
 #### Step 2: During Analysis (Query Database)
 
 ```python
-# src/self_improvement/performance_analyzer.py
+# temper_ai/self_improvement/performance_analyzer.py
 
 class PerformanceAnalyzer:
     def __init__(self, db):
@@ -1015,7 +1015,7 @@ class AnalysisTriggerManager:
 #### Integration Point
 
 ```python
-# src/observability/execution_tracker.py
+# temper_ai/observability/execution_tracker.py
 
 class ExecutionTracker:
     def __init__(

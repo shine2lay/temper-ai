@@ -9,7 +9,7 @@ tool:
   # Tool implementation
   implementation:
     type: builtin  # Built into the framework
-    module: src.tools.calculator
+    module: temper_ai.tools.calculator
     class: CalculatorTool
 
   # Tool capabilities

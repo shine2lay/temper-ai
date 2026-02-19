@@ -28,7 +28,7 @@ from typing import Any, Dict, Optional
 
 # Check dependencies
 try:
-    from src.workflow.engine_registry import EngineRegistry  # m2.5-03
+    from temper_ai.workflow.engine_registry import EngineRegistry  # m2.5-03
     COMPONENTS_READY = True
 except ImportError as e:
     COMPONENTS_READY = False
@@ -39,15 +39,15 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
-from src.workflow.config_loader import ConfigLoader
-from src.observability.console import StreamingVisualizer
-from src.observability.database import get_session, init_database
-from src.observability.models import WorkflowExecution
-from src.observability.tracker import ExecutionTracker
-from src.tools.calculator import Calculator
-from src.tools.file_writer import FileWriter
-from src.tools.registry import ToolRegistry
-from src.tools.web_scraper import WebScraper
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.observability.console import StreamingVisualizer
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import WorkflowExecution
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.file_writer import FileWriter
+from temper_ai.tools.registry import ToolRegistry
+from temper_ai.tools.web_scraper import WebScraper
 
 console = Console()
 
@@ -213,7 +213,7 @@ def create_gantt_chart(workflow_id: str, auto_open: bool = True) -> bool:
         console.print("[cyan]📊 Creating hierarchical Gantt chart...[/cyan]")
 
         from examples.export_waterfall import export_waterfall_trace
-        from src.observability.visualize_trace import visualize_trace
+        from temper_ai.observability.visualize_trace import visualize_trace
 
         # Export trace data
         trace = export_waterfall_trace(workflow_id)

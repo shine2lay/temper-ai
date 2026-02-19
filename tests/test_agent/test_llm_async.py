@@ -9,14 +9,14 @@ from unittest.mock import AsyncMock, Mock, patch
 import httpx
 import pytest
 
-from src.llm.providers import (
+from temper_ai.llm.providers import (
     AnthropicLLM,
     LLMProvider,
     LLMResponse,
     OllamaLLM,
     OpenAILLM,
 )
-from src.shared.utils.exceptions import (
+from temper_ai.shared.utils.exceptions import (
     LLMAuthenticationError,
     LLMRateLimitError,
     LLMTimeoutError,

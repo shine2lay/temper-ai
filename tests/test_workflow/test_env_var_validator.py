@@ -22,7 +22,7 @@ import os
 
 import pytest
 
-from src.workflow.env_var_validator import EnvVarValidator, ValidationLevel
+from temper_ai.workflow.env_var_validator import EnvVarValidator, ValidationLevel
 
 # ============================================================================
 # Test Class 1: EXECUTABLE Level (Command Injection Prevention)

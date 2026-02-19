@@ -13,7 +13,7 @@ Scenario: Production database schema migration with full safety checks
 import tempfile
 from pathlib import Path
 
-from src.safety import (
+from temper_ai.safety import (
     ApprovalWorkflow,
     CircuitBreakerManager,
     CircuitBreakerOpen,

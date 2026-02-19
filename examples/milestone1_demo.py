@@ -17,13 +17,13 @@ from pathlib import Path
 from sqlmodel import select
 
 from examples.demo_utils import print_section, print_warning
-from src.workflow.config_loader import ConfigLoader
-from src.workflow._schemas import WorkflowConfig
-from src.observability.console import WorkflowVisualizer
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow._schemas import WorkflowConfig
+from temper_ai.observability.console import WorkflowVisualizer
 
 # Import M1 components
-from src.observability.database import get_session, init_database
-from src.observability.models import (
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
@@ -280,7 +280,7 @@ def demo_gantt_chart(workflow_id):
 
     try:
         from examples.export_waterfall import export_waterfall_trace
-        from src.observability.visualize_trace import print_console_gantt, visualize_trace
+        from temper_ai.observability.visualize_trace import print_console_gantt, visualize_trace
 
         # Export trace data
         print("   Exporting execution trace...")

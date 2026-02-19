@@ -20,9 +20,9 @@ Key test coverage:
 import pytest
 import yaml
 
-from src.workflow.config_loader import ConfigLoader
-from src.workflow.env_var_validator import EnvVarValidator, ValidationLevel
-from src.shared.utils.exceptions import ConfigValidationError
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.env_var_validator import EnvVarValidator, ValidationLevel
+from temper_ai.shared.utils.exceptions import ConfigValidationError
 
 
 class TestCommandInjectionPrevention:

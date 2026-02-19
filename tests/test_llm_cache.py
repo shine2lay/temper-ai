@@ -18,7 +18,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.llm.cache.llm_cache import CacheStats, InMemoryCache, LLMCache, RedisCache
+from temper_ai.llm.cache.llm_cache import CacheStats, InMemoryCache, LLMCache, RedisCache
 
 # Check if redis is available
 REDIS_AVAILABLE = find_spec("redis") is not None

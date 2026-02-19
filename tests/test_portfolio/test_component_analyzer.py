@@ -7,9 +7,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.portfolio._schemas import PortfolioConfig, ProductDefinition
-from src.portfolio.component_analyzer import ComponentAnalyzer
-from src.portfolio.store import PortfolioStore
+from temper_ai.portfolio._schemas import PortfolioConfig, ProductDefinition
+from temper_ai.portfolio.component_analyzer import ComponentAnalyzer
+from temper_ai.portfolio.store import PortfolioStore
 
 MEMORY_DB = "sqlite:///:memory:"
 
@@ -125,7 +125,7 @@ class TestAnalyzePortfolio:
 class TestFindSimilarStages:
     def test_find_similar_stages(self, analyzer, store):
         """Insert shared component records and find similar stages."""
-        from src.portfolio.models import SharedComponentRecord
+        from temper_ai.portfolio.models import SharedComponentRecord
 
         store.save_shared_component(
             SharedComponentRecord(
@@ -144,7 +144,7 @@ class TestFindSimilarStages:
         assert results[0].similarity >= 0.5
 
     def test_min_similarity_filter(self, analyzer, store):
-        from src.portfolio.models import SharedComponentRecord
+        from temper_ai.portfolio.models import SharedComponentRecord
 
         store.save_shared_component(
             SharedComponentRecord(

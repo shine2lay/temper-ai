@@ -788,10 +788,10 @@ Expected output: Dialogue transcript showing multiple rounds, agent position cha
 
 ## References
 
-- **Consensus Implementation**: `src/strategies/consensus.py`
-- **Debate Implementation**: `src/strategies/debate.py`
-- **Dialogue Implementation**: `src/strategies/dialogue.py`
-- **Base Classes**: `src/strategies/base.py`
+- **Consensus Implementation**: `temper_ai/strategies/consensus.py`
+- **Debate Implementation**: `temper_ai/strategies/debate.py`
+- **Dialogue Implementation**: `temper_ai/strategies/dialogue.py`
+- **Base Classes**: `temper_ai/strategies/base.py`
 - **Test Coverage**:
   - `tests/test_strategies/test_consensus.py`
   - `tests/test_strategies/test_debate.py`

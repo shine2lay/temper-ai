@@ -15,12 +15,12 @@ import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
-from src.auth.oauth.rate_limiter import (
+from temper_ai.auth.oauth.rate_limiter import (
     RateLimitExceeded,
     SlidingWindowRateLimiter,
     OAuthRateLimiter,
 )
-from src.shared.constants.durations import SECONDS_PER_MINUTE, SECONDS_PER_HOUR
+from temper_ai.shared.constants.durations import SECONDS_PER_MINUTE, SECONDS_PER_HOUR
 
 
 # ==================== FIXTURES ====================
@@ -107,7 +107,7 @@ def test_sliding_window_resets_after_window(rate_limiter):
     """Test rate limit resets after time window expires."""
     base_time = datetime.now(timezone.utc)
 
-    with patch('src.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Fill up limit
@@ -129,7 +129,7 @@ def test_sliding_window_partial_reset(rate_limiter):
     """Test sliding window allows partial resets."""
     base_time = datetime.now(timezone.utc)
 
-    with patch('src.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
         # Make 3 requests at T=0
         mock_datetime.now.return_value = base_time
         for i in range(3):
@@ -159,7 +159,7 @@ def test_sliding_window_retry_after_calculation(rate_limiter):
     """Test retry-after correctly calculated."""
     base_time = datetime.now(timezone.utc)
 
-    with patch('src.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Fill limit
@@ -178,7 +178,7 @@ def test_sliding_window_retry_after_decreases(rate_limiter):
     """Test retry-after decreases as time passes."""
     base_time = datetime.now(timezone.utc)
 
-    with patch('src.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Fill limit
@@ -251,7 +251,7 @@ def test_cleanup_removes_old_data(rate_limiter):
     """Test cleanup removes expired data."""
     base_time = datetime.now(timezone.utc)
 
-    with patch('src.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Make some requests
@@ -274,7 +274,7 @@ def test_cleanup_keeps_recent_data(rate_limiter):
     """Test cleanup keeps recent data."""
     base_time = datetime.now(timezone.utc)
 
-    with patch('src.auth.oauth.rate_limiter.datetime') as mock_datetime:
+    with patch('temper_ai.auth.oauth.rate_limiter.datetime') as mock_datetime:
         mock_datetime.now.return_value = base_time
 
         # Make request

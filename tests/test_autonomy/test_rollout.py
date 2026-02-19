@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.autonomy.constants import DEFAULT_ROLLOUT_PHASES
-from src.autonomy.rollout import (
+from temper_ai.autonomy.constants import DEFAULT_ROLLOUT_PHASES
+from temper_ai.autonomy.rollout import (
     STATUS_ACTIVE,
     STATUS_COMPLETED,
     STATUS_PENDING,

@@ -23,8 +23,8 @@ import time
 
 import pytest
 
-from src.tools.base import ParameterSanitizer, ValidationError
-from src.shared.utils.path_safety import PathSafetyError, PathSafetyValidator
+from temper_ai.tools.base import ParameterSanitizer, ValidationError
+from temper_ai.shared.utils.path_safety import PathSafetyError, PathSafetyValidator
 
 # ============================================================================
 # Test Fixtures

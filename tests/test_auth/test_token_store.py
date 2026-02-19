@@ -12,7 +12,7 @@ import time
 import pytest
 from cryptography.fernet import Fernet
 
-from src.auth.oauth.token_store import SecureTokenStore, SecurityError
+from temper_ai.auth.oauth.token_store import SecureTokenStore, SecurityError
 
 # Try importing keyring for keyring tests
 try:

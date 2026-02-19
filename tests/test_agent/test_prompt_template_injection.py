@@ -9,8 +9,8 @@ Verifies that template injection attacks are blocked by:
 
 import pytest
 
-from src.llm.prompts.engine import PromptEngine, PromptRenderError
-from src.llm.prompts.validation import TemplateVariableValidator
+from temper_ai.llm.prompts.engine import PromptEngine, PromptRenderError
+from temper_ai.llm.prompts.validation import TemplateVariableValidator
 
 
 class TestVariableTypeValidation:

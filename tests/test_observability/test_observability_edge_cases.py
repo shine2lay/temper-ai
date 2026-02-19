@@ -13,14 +13,14 @@ from datetime import datetime
 
 import pytest
 
-from src.observability.database import get_session, init_database
-from src.observability.hooks import (
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.hooks import (
     ExecutionHook,
     get_tracker,
     reset_tracker,
     track_workflow,
 )
-from src.observability.models import (
+from temper_ai.observability.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
@@ -39,8 +39,8 @@ def reset_global_tracker():
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
-    import src.observability.database as db_module
-    from src.observability.database import _db_lock
+    import temper_ai.observability.database as db_module
+    from temper_ai.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 
@@ -62,7 +62,7 @@ class TestHookFailureResilience:
             return "workflow_success"
 
         # Close database to simulate failure
-        from src.observability.database import _db_lock, _db_manager
+        from temper_ai.observability.database import _db_lock, _db_manager
         with _db_lock:
             if _db_manager:
                 _db_manager.engine.dispose()

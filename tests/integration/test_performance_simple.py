@@ -252,7 +252,7 @@ class TestDatabasePerformanceSimple:
 
     def test_database_connection_creation(self):
         """Measure database connection creation time."""
-        from src.storage.database import init_database
+        from temper_ai.storage.database import init_database
 
         connection_count = 10
         latencies = []
@@ -276,7 +276,7 @@ class TestDatabasePerformanceSimple:
 
     def test_session_context_overhead(self):
         """Measure session context manager overhead."""
-        from src.storage.database import init_database, get_session
+        from temper_ai.storage.database import init_database, get_session
 
         init_database("sqlite:///:memory:")
 

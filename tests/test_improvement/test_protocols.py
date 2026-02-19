@@ -1,14 +1,14 @@
 """Tests for improvement module protocols."""
 
-from src.improvement.evaluators.comparative import ComparativeEvaluator
-from src.improvement.evaluators.criteria import CriteriaEvaluator
-from src.improvement.evaluators.human import HumanEvaluator
-from src.improvement.evaluators.scored import ScoredEvaluator
-from src.improvement.optimizers.refinement import RefinementOptimizer
-from src.improvement.optimizers.selection import SelectionOptimizer
-from src.improvement.optimizers.tuning import TuningOptimizer
-from src.improvement.protocols import EvaluatorProtocol, OptimizerProtocol
-from src.improvement._schemas import EvaluatorConfig
+from temper_ai.improvement.evaluators.comparative import ComparativeEvaluator
+from temper_ai.improvement.evaluators.criteria import CriteriaEvaluator
+from temper_ai.improvement.evaluators.human import HumanEvaluator
+from temper_ai.improvement.evaluators.scored import ScoredEvaluator
+from temper_ai.improvement.optimizers.refinement import RefinementOptimizer
+from temper_ai.improvement.optimizers.selection import SelectionOptimizer
+from temper_ai.improvement.optimizers.tuning import TuningOptimizer
+from temper_ai.improvement.protocols import EvaluatorProtocol, OptimizerProtocol
+from temper_ai.improvement._schemas import EvaluatorConfig
 
 
 class TestEvaluatorProtocol:

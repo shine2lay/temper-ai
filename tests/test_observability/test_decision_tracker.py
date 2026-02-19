@@ -8,17 +8,17 @@ sanitization, and edge cases like missing fields.
 import pytest
 from sqlmodel import select
 
-from src.observability.database import get_session, init_database
-from src.observability.decision_tracker import DecisionTracker
-from src.observability.models import AgentMeritScore, DecisionOutcome
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.decision_tracker import DecisionTracker
+from temper_ai.observability.models import AgentMeritScore, DecisionOutcome
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import src.observability.database as db_module
-    from src.observability.database import _db_lock
+    import temper_ai.observability.database as db_module
+    from temper_ai.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 
@@ -513,8 +513,8 @@ class TestErrorHandling:
     def test_track_failure_returns_empty_string(self, db, tracker):
         """Test track returns empty string on database error."""
         # Close the database to force error
-        import src.observability.database as db_module
-        from src.observability.database import _db_lock
+        import temper_ai.observability.database as db_module
+        from temper_ai.observability.database import _db_lock
         with _db_lock:
             db_module._db_manager = None
 

@@ -11,7 +11,7 @@ Covers:
 
 import pytest
 
-from src.experimentation.validators import (
+from temper_ai.experimentation.validators import (
     validate_experiment_name,
     validate_variant_name,
     validate_variant_list,

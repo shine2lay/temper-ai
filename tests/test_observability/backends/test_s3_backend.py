@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.observability.backends.s3_backend import S3ObservabilityBackend
+from temper_ai.observability.backends.s3_backend import S3ObservabilityBackend
 
 
 @pytest.fixture
@@ -440,7 +440,7 @@ def test_get_stats_minimal(s3_backend_minimal: S3ObservabilityBackend):
 # ========== Logging Tests ==========
 
 
-@patch("src.observability.backends.s3_backend.logger")
+@patch("temper_ai.observability.backends.s3_backend.logger")
 def test_track_workflow_start_logs(mock_logger, s3_backend: S3ObservabilityBackend):
     """Test that workflow start logs debug message."""
     workflow_id = make_workflow_id()
@@ -456,7 +456,7 @@ def test_track_workflow_start_logs(mock_logger, s3_backend: S3ObservabilityBacke
     assert mock_logger.debug.called
 
 
-@patch("src.observability.backends.s3_backend.logger")
+@patch("temper_ai.observability.backends.s3_backend.logger")
 def test_track_safety_violation_logs_warning(mock_logger, s3_backend: S3ObservabilityBackend):
     """Test that safety violation logs warning."""
     s3_backend.track_safety_violation(

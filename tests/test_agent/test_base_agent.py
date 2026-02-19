@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
-from src.storage.schemas.agent_config import AgentConfig
+from temper_ai.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
+from temper_ai.storage.schemas.agent_config import AgentConfig
 
 
 def test_agent_response_creation():
@@ -96,7 +96,7 @@ class MockAgent(BaseAgent):
 
 def _make_mock_agent(config):
     """Create MockAgent with LLM creation patched out."""
-    with patch("src.agent.base_agent.create_llm_from_config"):
+    with patch("temper_ai.agent.base_agent.create_llm_from_config"):
         return MockAgent(config)
 
 
@@ -178,7 +178,7 @@ def test_base_agent_validate_config(minimal_agent_config):
 
 def test_base_agent_validate_config_missing_name():
     """Test validation fails with missing name."""
-    from src.storage.schemas.agent_config import AgentConfigInner, ErrorHandlingConfig, InferenceConfig, PromptConfig
+    from temper_ai.storage.schemas.agent_config import AgentConfigInner, ErrorHandlingConfig, InferenceConfig, PromptConfig
 
     config = AgentConfig(
         agent=AgentConfigInner(
@@ -218,7 +218,7 @@ class TestContextPropagation:
             """Agent that calls child agent."""
             def __init__(self, config):
                 super().__init__(config)
-                with patch("src.agent.base_agent.create_llm_from_config"):
+                with patch("temper_ai.agent.base_agent.create_llm_from_config"):
                     self.child = ChildAgent(config)
 
             def _run(self, input_data, context=None, start_time=0.0):
@@ -228,7 +228,7 @@ class TestContextPropagation:
 
         parent = _make_mock_agent.__wrapped__(minimal_agent_config) if hasattr(_make_mock_agent, '__wrapped__') else None
         # Create parent with patched LLM
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             parent = ParentAgent(minimal_agent_config)
 
         parent_context = ExecutionContext(
@@ -259,7 +259,7 @@ class TestContextPropagation:
 
         agent = _make_mock_agent(minimal_agent_config)
         # Replace with capturing agent
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = ContextCapturingAgent(minimal_agent_config)
         ContextCapturingAgent.captured_contexts = []
 
@@ -310,7 +310,7 @@ class TestContextPropagation:
                         context.metadata["parent_chain"] = context.metadata.get("parent_chain", []) + [parent_id]
                 return AgentResponse(output="tracked")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent1 = TrackedAgent(minimal_agent_config)
         agent1.name = "agent-1"
 
@@ -348,7 +348,7 @@ class TestContextPropagation:
                 else:
                     return AgentResponse(output=f"max depth {depth}")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = DepthTrackingAgent(minimal_agent_config)
         context = ExecutionContext(metadata={"depth": 0})
 
@@ -372,7 +372,7 @@ class TestContextPropagation:
 
                 return AgentResponse(output=output)
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = ContextAwareAgent(minimal_agent_config)
 
         # Execute with context
@@ -420,7 +420,7 @@ class TestContextPropagation:
                     metadata={"session_id": session_id}
                 )
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = SessionAwareAgent(minimal_agent_config)
         context = ExecutionContext(
             workflow_id="wf-001",
@@ -475,7 +475,7 @@ class TestContextImmutability:
                     context.metadata["original_value"] = "changed"
                 return AgentResponse(output="attempted mutation")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = MutatingAgent(minimal_agent_config)
 
         # Create context with original values
@@ -504,7 +504,7 @@ class TestContextImmutability:
                         context.metadata["nested"]["new_key"] = "added"
                 return AgentResponse(output="attempted nested mutation")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = NestedMutatingAgent(minimal_agent_config)
 
         # Create context with nested structure
@@ -540,7 +540,7 @@ class TestContextImmutability:
                     context.metadata["call_count"] = context.metadata.get("call_count", 0) + 1
                 return AgentResponse(output=f"call {context.metadata.get('call_count', 0)}")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent1 = SequentialAgent(minimal_agent_config)
             agent2 = SequentialAgent(minimal_agent_config)
 
@@ -568,7 +568,7 @@ class TestContextImmutability:
                     context.metadata["items"].append("new_item")
                 return AgentResponse(output="list mutated")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = ListMutatingAgent(minimal_agent_config)
 
         context = ExecutionContext(
@@ -592,7 +592,7 @@ class TestContextImmutability:
                     context.metadata["config"]["new_setting"] = "value"
                 return AgentResponse(output="dict mutated")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = DictMutatingAgent(minimal_agent_config)
 
         context = ExecutionContext(
@@ -621,7 +621,7 @@ class TestContextThreadSafety:
                     context.metadata["counter"] = current + 1
                 return AgentResponse(output=f"count: {context.metadata.get('counter', 0)}")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = CountingAgent(minimal_agent_config)
 
         shared_context = ExecutionContext(
@@ -656,7 +656,7 @@ class TestContextThreadSafety:
                     context.metadata["items"].append(thread_id)
                 return AgentResponse(output="appended")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = ListAppendingAgent(minimal_agent_config)
 
         shared_context = ExecutionContext(
@@ -692,7 +692,7 @@ class TestContextThreadSafety:
                     context.metadata["data"][f"thread_{thread_id}"] = "value"
                 return AgentResponse(output="modified")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = DictModifyingAgent(minimal_agent_config)
 
         shared_context = ExecutionContext(
@@ -727,7 +727,7 @@ class TestContextThreadSafety:
                     context.metadata["value"] = input_data.get("value", 0)
                 return AgentResponse(output=f"value: {context.metadata.get('value', 0)}")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = IsolatedAgent(minimal_agent_config)
 
         results = {}
@@ -774,7 +774,7 @@ class TestContextThreadSafety:
                     items = len(context.metadata.get("items", []))
                 return AgentResponse(output=f"read: {value}, {name}, {items}")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = ReadOnlyAgent(minimal_agent_config)
 
         shared_context = ExecutionContext(
@@ -831,7 +831,7 @@ class TestContextThreadSafety:
 
                 return AgentResponse(output="context valid")
 
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             agent = CorruptionDetectingAgent(minimal_agent_config)
 
         # Valid context

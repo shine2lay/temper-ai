@@ -6,7 +6,7 @@ Tests deep merge logic, security validation, and Pydantic schema validation.
 
 import pytest
 
-from src.experimentation.config_manager import (
+from temper_ai.experimentation.config_manager import (
     PROTECTED_CONFIG_FIELDS,
     ConfigManager,
     ExperimentConfigValidationError,
@@ -481,7 +481,7 @@ class TestExtractOverrides:
 
     def test_extract_config_overrides_key(self):
         """Test extracting from config_overrides key."""
-        from src.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
 
         variant = {
             "name": "variant_a",
@@ -493,7 +493,7 @@ class TestExtractOverrides:
 
     def test_extract_config_key(self):
         """Test extracting from config key."""
-        from src.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
 
         variant = {
             "name": "variant_a",
@@ -505,7 +505,7 @@ class TestExtractOverrides:
 
     def test_extract_overrides_key(self):
         """Test extracting from overrides key."""
-        from src.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
 
         variant = {
             "name": "variant_a",
@@ -517,7 +517,7 @@ class TestExtractOverrides:
 
     def test_extract_no_known_key(self):
         """Test extracting when no known key exists - returns entire dict."""
-        from src.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
 
         variant = {
             "temperature": 0.9,
@@ -529,7 +529,7 @@ class TestExtractOverrides:
 
     def test_extract_priority(self):
         """Test that config_overrides has priority over other keys."""
-        from src.experimentation.config_manager import extract_overrides_from_variant
+        from temper_ai.experimentation.config_manager import extract_overrides_from_variant
 
         variant = {
             "name": "variant_a",

@@ -27,32 +27,32 @@ from pathlib import Path
 import pytest
 from sqlmodel import select
 
-from src.agent.utils.agent_factory import AgentFactory
+from temper_ai.agent.utils.agent_factory import AgentFactory
 
 # Agent components (should be ready after m2-04 + m2-04b)
-from src.agent.base_agent import AgentResponse, ExecutionContext
-from src.agent.standard_agent import StandardAgent
+from temper_ai.agent.base_agent import AgentResponse, ExecutionContext
+from temper_ai.agent.standard_agent import StandardAgent
 
 # Check for optional engine registry (m2.5-03)
-ENGINE_REGISTRY_READY = find_spec("src.workflow.engine_registry") is not None
+ENGINE_REGISTRY_READY = find_spec("temper_ai.workflow.engine_registry") is not None
 
 # Check for observability hooks (m2-06)
-TRACKER_READY = find_spec("src.observability.tracker") is not None
+TRACKER_READY = find_spec("temper_ai.observability.tracker") is not None
 
 FULL_WORKFLOW_READY = ENGINE_REGISTRY_READY and TRACKER_READY
 
-from src.workflow.config_loader import ConfigLoader
-from src.observability.console import StreamingVisualizer, WorkflowVisualizer
-from src.observability.database import get_session, init_database
-from src.observability.models import (
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.observability.console import StreamingVisualizer, WorkflowVisualizer
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import (
     AgentExecution,
     StageExecution,
     WorkflowExecution,
 )
-from src.tools.calculator import Calculator
-from src.tools.file_writer import FileWriter
-from src.tools.registry import ToolRegistry
-from src.tools.web_scraper import WebScraper
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.file_writer import FileWriter
+from temper_ai.tools.registry import ToolRegistry
+from temper_ai.tools.web_scraper import WebScraper
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def tool_registry():
 def tracker(db_fixture):
     """Create execution tracker (if available)."""
     if TRACKER_READY:
-        from src.observability.tracker import ExecutionTracker
+        from temper_ai.observability.tracker import ExecutionTracker
         return ExecutionTracker()
     return None
 
@@ -111,7 +111,7 @@ def test_config_loading(config_loader):
 
     This ensures configs are valid and loadable.
     """
-    from src.storage.schemas.agent_config import AgentConfig
+    from temper_ai.storage.schemas.agent_config import AgentConfig
 
     # Test agent config
     agent_config_dict = config_loader.load_agent("simple_researcher")
@@ -150,7 +150,7 @@ def test_agent_factory_creation(config_loader, tool_registry):
 
     Validates m2-04b agent factory implementation.
     """
-    from src.storage.schemas.agent_config import AgentConfig
+    from temper_ai.storage.schemas.agent_config import AgentConfig
 
     # Load agent config
     agent_config_dict = config_loader.load_agent("simple_researcher")
@@ -177,15 +177,15 @@ def test_agent_execution_mocked(config_loader):
     """
     from unittest.mock import Mock, patch
 
-    from src.agent.llm_providers import LLMResponse
-    from src.storage.schemas.agent_config import AgentConfig
+    from temper_ai.agent.llm_providers import LLMResponse
+    from temper_ai.storage.schemas.agent_config import AgentConfig
 
     # Load agent config
     agent_config_dict = config_loader.load_agent("simple_researcher")
     agent_config = AgentConfig(**agent_config_dict)
 
     # Create agent with mocked components
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(agent_config)
@@ -222,7 +222,7 @@ def test_agent_execution_real_ollama(config_loader, ollama_available):
     if not ollama_available:
         pytest.skip("Ollama not running. Start with: ollama serve")
 
-    from src.storage.schemas.agent_config import AgentConfig
+    from temper_ai.storage.schemas.agent_config import AgentConfig
 
     # Load agent config
     agent_config_dict = config_loader.load_agent("simple_researcher")
@@ -230,7 +230,7 @@ def test_agent_execution_real_ollama(config_loader, ollama_available):
 
     # Create agent
     from unittest.mock import patch
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
         mock_registry.return_value.get.return_value = None
 
@@ -520,7 +520,7 @@ def test_agent_with_calculator(
     agent_config_dict = config_loader.load_agent("calculator_agent")
 
     # Parse into AgentConfig schema
-    from src.storage.schemas.agent_config import AgentConfig
+    from temper_ai.storage.schemas.agent_config import AgentConfig
     agent_config = AgentConfig.model_validate(agent_config_dict)
 
     # Create agent

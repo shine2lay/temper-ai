@@ -11,7 +11,7 @@ This document provides a comprehensive audit trail specification for data saniti
 ## What Gets Sanitized
 
 ### 1. LLM Prompts and Responses
-**Location:** `src/observability/tracker.py:542-586`
+**Location:** `temper_ai/observability/tracker.py:542-586`
 
 **Sanitization Applied:**
 - Secrets detection (API keys, tokens, passwords, private keys)
@@ -34,7 +34,7 @@ prompt_sanitized = "Use this API key: [OPENAI_API_KEY_REDACTED] to access the se
 ```
 
 ### 2. Tool Parameters and Outputs
-**Location:** `src/observability/tracker.py:596-656`
+**Location:** `temper_ai/observability/tracker.py:596-656`
 
 **Sanitization Applied:**
 - Recursive dictionary sanitization
@@ -65,7 +65,7 @@ params_sanitized = {
 ```
 
 ### 3. Safety Violation Contexts
-**Location:** `src/safety/secret_detection.py:300-302`
+**Location:** `temper_ai/safety/secret_detection.py:300-302`
 
 **Sanitization Applied:**
 - Configuration sanitization (removes secret keys)
@@ -94,7 +94,7 @@ context_sanitized = {
 ```
 
 ### 4. Configuration Snapshots
-**Location:** `src/utils/config_helpers.py:sanitize_config_for_display()`
+**Location:** `temper_ai/utils/config_helpers.py:sanitize_config_for_display()`
 
 **Sanitization Applied:**
 - Key-based secret detection (`api_key`, `password`, `token`, etc.)
@@ -287,7 +287,7 @@ violation_id = hmac.new(
 
 **Current Status:** Retention periods are currently hardcoded in implementation files. Future versions will externalize to configuration files.
 
-**Implementation Location:** `src/observability/backends/sql_backend.py:744-787`
+**Implementation Location:** `temper_ai/observability/backends/sql_backend.py:744-787`
 
 **Current Hardcoded Values:**
 - Default retention: 90 days (configurable via method parameter)
@@ -320,7 +320,7 @@ retention:
 
 ### Cleanup Implementation
 
-**Current Status:** ✅ Implemented in `src/observability/backends/sql_backend.py:744-787`
+**Current Status:** ✅ Implemented in `temper_ai/observability/backends/sql_backend.py:744-787`
 
 **Method:** `cleanup_old_records(retention_days: int)`
 
@@ -329,7 +329,7 @@ retention:
 - **Planned:** Daily cron job at 2 AM UTC
 - **Manual Execution:**
   ```python
-  from src.observability.backends.sql_backend import SQLObservabilityBackend
+  from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
   backend = SQLObservabilityBackend()
   result = backend.cleanup_old_records(retention_days=90)
   print(f"Deleted {result.get('workflows', 0)} workflows")
@@ -341,7 +341,7 @@ retention:
 
 ### Secret Patterns Detected
 
-**Note:** Patterns shown are simplified for readability. See `src/observability/sanitization.py:115-126` for exact regex implementations.
+**Note:** Patterns shown are simplified for readability. See `temper_ai/observability/sanitization.py:115-126` for exact regex implementations.
 
 1. **OpenAI API Keys:** `sk-proj-[a-zA-Z0-9]{20,}` and `sk-[A-Za-z0-9]{20,60}`
 2. **Anthropic API Keys:** `sk-ant-api\d+-[a-zA-Z0-9_-]{20,}`
@@ -441,7 +441,7 @@ COPY (
 ) TO '/tmp/sanitization_compliance_report.csv' WITH CSV HEADER;
 ```
 
-**Planned:** Automated report generation via `src.observability.reports.sanitization_audit` module
+**Planned:** Automated report generation via `temper_ai.observability.reports.sanitization_audit` module
 
 ### For Security Investigations
 
@@ -480,7 +480,7 @@ ORDER BY occurrences DESC;
 - GDPR: https://gdpr-info.eu/
 - CCPA: https://oag.ca.gov/privacy/ccpa
 - SOC2: https://www.aicpa.org/soc4so
-- `src/observability/sanitization.py` - Core sanitization implementation
-- `src/observability/tracker.py` - Observability integration
-- `src/safety/secret_detection.py` - Secret detection policy
-- `src/utils/config_helpers.py` - Configuration sanitization
+- `temper_ai/observability/sanitization.py` - Core sanitization implementation
+- `temper_ai/observability/tracker.py` - Observability integration
+- `temper_ai/safety/secret_detection.py` - Secret detection policy
+- `temper_ai/utils/config_helpers.py` - Configuration sanitization

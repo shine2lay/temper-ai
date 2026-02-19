@@ -2,7 +2,7 @@
 
 ## Context
 
-We want a real-world demo product that showcases the Meta-Autonomous Framework in production. Rather than a throwaway demo, this is a product that **is** the use case: a platform where anyone can submit a suggestion for a product, and a squad of AI agents triages it against the product's vision doc, and if approved, generates the actual code changes and pushes them through CI/CD.
+We want a real-world demo product that showcases the Temper AI in production. Rather than a throwaway demo, this is a product that **is** the use case: a platform where anyone can submit a suggestion for a product, and a squad of AI agents triages it against the product's vision doc, and if approved, generates the actual code changes and pushes them through CI/CD.
 
 The product dog-foods itself - once live, users submit suggestions about The Vibe Coding Squad itself, and the pipeline processes them.
 

@@ -125,8 +125,8 @@ All models support multiple formats:
 
 ### Querying
 ```python
-from src.observability.database import get_session
-from src.observability.models import WorkflowExecution
+from temper_ai.observability.database import get_session
+from temper_ai.observability.models import WorkflowExecution
 
 with get_session() as session:
     workflow = session.get(WorkflowExecution, workflow_id)

@@ -1,6 +1,6 @@
 """Tests for src/observability/aggregation/period.py."""
 import pytest
-from src.observability.aggregation.period import AggregationPeriod
+from temper_ai.observability.aggregation.period import AggregationPeriod
 
 
 def test_aggregation_period_values():

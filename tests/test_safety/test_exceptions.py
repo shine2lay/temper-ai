@@ -10,7 +10,7 @@ Tests cover:
 
 import pytest
 
-from src.safety.exceptions import (
+from temper_ai.safety.exceptions import (
     AccessDeniedViolation,
     ActionPolicyViolation,
     BlastRadiusViolation,
@@ -19,7 +19,7 @@ from src.safety.exceptions import (
     ResourceLimitViolation,
     SafetyViolationException,
 )
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
+from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 
 
 class TestSafetyViolationException:

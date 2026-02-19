@@ -15,12 +15,12 @@ from pathlib import Path
 from typing import Dict, Any
 from unittest.mock import AsyncMock, Mock, patch
 
-from src.auth.models import User, Session
-from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig
-from src.auth.oauth.rate_limiter import RateLimitExceeded, OAuthRateLimiter
-from src.auth.oauth.service import OAuthError, OAuthProviderError, OAuthStateError, OAuthService
-from src.auth.routes import OAuthRouteHandlers, _get_allowed_redirects
-from src.auth.session import SessionStore, UserStore
+from temper_ai.auth.models import User, Session
+from temper_ai.auth.oauth.config import OAuthConfig, OAuthProviderConfig
+from temper_ai.auth.oauth.rate_limiter import RateLimitExceeded, OAuthRateLimiter
+from temper_ai.auth.oauth.service import OAuthError, OAuthProviderError, OAuthStateError, OAuthService
+from temper_ai.auth.routes import OAuthRouteHandlers, _get_allowed_redirects
+from temper_ai.auth.session import SessionStore, UserStore
 
 
 # ==================== FIXTURES ====================

@@ -2,11 +2,11 @@
 
 from unittest.mock import MagicMock
 
-from src.safety.autonomy.approval_router import ApprovalDecision
-from src.safety.autonomy.schemas import AutonomyLevel
-from src.safety.autonomy.shadow_mode import ShadowMode
-from src.safety.autonomy.store import AutonomyStore
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
+from temper_ai.safety.autonomy.approval_router import ApprovalDecision
+from temper_ai.safety.autonomy.schemas import AutonomyLevel
+from temper_ai.safety.autonomy.shadow_mode import ShadowMode
+from temper_ai.safety.autonomy.store import AutonomyStore
+from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 
 
 def _violation(severity: ViolationSeverity) -> SafetyViolation:
@@ -95,7 +95,7 @@ class TestCheckPromotionReady:
         store = AutonomyStore(database_url="sqlite:///:memory:")
         shadow = ShadowMode(store=store)
 
-        from src.safety.autonomy.models import AutonomyState
+        from temper_ai.safety.autonomy.models import AutonomyState
         state = AutonomyState(
             id="as-test", agent_name="a", domain="d",
             shadow_runs=10, shadow_agreements=10,
@@ -108,7 +108,7 @@ class TestCheckPromotionReady:
         store = AutonomyStore(database_url="sqlite:///:memory:")
         shadow = ShadowMode(store=store)
 
-        from src.safety.autonomy.models import AutonomyState
+        from temper_ai.safety.autonomy.models import AutonomyState
         state = AutonomyState(
             id="as-test", agent_name="a", domain="d",
             shadow_runs=50, shadow_agreements=49,
@@ -121,7 +121,7 @@ class TestCheckPromotionReady:
         store = AutonomyStore(database_url="sqlite:///:memory:")
         shadow = ShadowMode(store=store)
 
-        from src.safety.autonomy.models import AutonomyState
+        from temper_ai.safety.autonomy.models import AutonomyState
         state = AutonomyState(
             id="as-test", agent_name="a", domain="d",
             shadow_runs=50, shadow_agreements=45,
@@ -138,7 +138,7 @@ class TestResetShadow:
         store = AutonomyStore(database_url="sqlite:///:memory:")
         shadow = ShadowMode(store=store)
 
-        from src.safety.autonomy.models import AutonomyState
+        from temper_ai.safety.autonomy.models import AutonomyState
         state = AutonomyState(
             id="as-test", agent_name="a", domain="d",
             shadow_runs=25, shadow_agreements=24, shadow_level=2,

@@ -7,7 +7,7 @@ is properly isolated per-thread using contextvars and threading.local().
 import threading
 from unittest.mock import MagicMock
 
-from src.observability.tracker import ExecutionContext, ExecutionTracker
+from temper_ai.observability.tracker import ExecutionContext, ExecutionTracker
 
 
 def _make_mock_backend():
@@ -159,7 +159,7 @@ class TestSQLBackendSessionRemoved:
 
     def test_backend_no_session_stack(self):
         """SQL backend should not have _session_stack after C-02 refactor."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
 
         backend = SQLObservabilityBackend(buffer=False)
         assert not hasattr(backend, "_session_stack")

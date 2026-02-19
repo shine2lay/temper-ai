@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.observability.backend import (
+from temper_ai.observability.backend import (
     AgentOutputData,
     CollaborationEventData,
     SafetyViolationData,
@@ -23,9 +23,9 @@ def otel_backend():
     mock_span = MagicMock()
     mock_tracer.start_span.return_value = mock_span
 
-    with patch("src.observability.backends.otel_backend.otel_trace") as mock_trace:
+    with patch("temper_ai.observability.backends.otel_backend.otel_trace") as mock_trace:
         mock_trace.set_span_in_context.return_value = MagicMock()
-        from src.observability.backends.otel_backend import OTelBackend
+        from temper_ai.observability.backends.otel_backend import OTelBackend
 
         backend = OTelBackend.__new__(OTelBackend)
         backend._tracer = mock_tracer

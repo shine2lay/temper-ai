@@ -10,9 +10,9 @@ Verifies:
 
 from unittest.mock import Mock, patch
 
-from src.agent.base_agent import AgentResponse
-from src.stage.executors import SequentialStageExecutor
-from src.stage.executors.state_keys import StateKeys
+from temper_ai.agent.base_agent import AgentResponse
+from temper_ai.stage.executors import SequentialStageExecutor
+from temper_ai.stage.executors.state_keys import StateKeys
 
 
 def _make_agent_response(output="test output", reasoning="test reasoning",
@@ -68,8 +68,8 @@ def _setup_factory_and_config(mock_agent_config_cls, mock_factory, agents_or_res
 
 # Both AgentFactory (module-level import) and AgentConfig (local import in _run_agent)
 # need patching to isolate the executor from Pydantic validation and real agent creation.
-FACTORY_PATCH = "src.stage.executors.sequential.AgentFactory"
-CONFIG_PATCH = "src.storage.schemas.agent_config.AgentConfig"
+FACTORY_PATCH = "temper_ai.stage.executors.sequential.AgentFactory"
+CONFIG_PATCH = "temper_ai.storage.schemas.agent_config.AgentConfig"
 
 
 class TestSequentialOutputAccumulation:
@@ -305,7 +305,7 @@ class TestAgentFailureHandling:
     @patch(FACTORY_PATCH)
     def test_error_type_from_base_error(self, mock_factory, mock_config_cls):
         """Error type is derived from BaseError.error_code when available."""
-        from src.shared.utils.exceptions import BaseError, ErrorCode
+        from temper_ai.shared.utils.exceptions import BaseError, ErrorCode
 
         class CustomLLMError(BaseError):
             def __init__(self):
@@ -442,7 +442,7 @@ class TestConvergenceLoop:
 
         executor._execute_once = mock_execute_once
 
-        from src.stage._schemas import ConvergenceConfig
+        from temper_ai.stage._schemas import ConvergenceConfig
         convergence_cfg = ConvergenceConfig(
             enabled=True, max_iterations=10, method="exact_hash",
         )
@@ -474,7 +474,7 @@ class TestConvergenceLoop:
 
         executor._execute_once = mock_execute_once
 
-        from src.stage._schemas import ConvergenceConfig
+        from temper_ai.stage._schemas import ConvergenceConfig
         convergence_cfg = ConvergenceConfig(
             enabled=True, max_iterations=3, method="exact_hash",
         )
@@ -498,7 +498,7 @@ class TestConvergenceLoop:
 
         executor._execute_with_convergence = mock_convergence
 
-        from src.stage._schemas import ConvergenceConfig, StageConfig, StageConfigInner
+        from temper_ai.stage._schemas import ConvergenceConfig, StageConfig, StageConfigInner
         inner = StageConfigInner(
             name="conv_stage",
             description="test",
@@ -535,7 +535,7 @@ class TestConvergenceLoop:
 
         executor._execute_once = mock_execute_once
 
-        from src.stage._schemas import ConvergenceConfig
+        from temper_ai.stage._schemas import ConvergenceConfig
         convergence_cfg = ConvergenceConfig(
             enabled=True, max_iterations=5, method="exact_hash",
         )

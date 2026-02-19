@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.observability import init_database
-from src.observability.backends.sql_backend import SQLObservabilityBackend
+from temper_ai.observability import init_database
+from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
 
 
 @pytest.fixture

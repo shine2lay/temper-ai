@@ -11,7 +11,7 @@ operations are handled during workflow execution.
 import pytest
 from pydantic import ValidationError
 
-from src.storage.schemas.agent_config import SafetyConfig
+from temper_ai.storage.schemas.agent_config import SafetyConfig
 
 
 class TestSafetyModeValidation:

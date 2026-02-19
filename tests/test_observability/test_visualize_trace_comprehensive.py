@@ -6,7 +6,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.observability.visualize_trace import (
+from temper_ai.observability.visualize_trace import (
     _flatten_trace_with_tree,
     create_hierarchical_gantt,
     print_console_gantt,
@@ -288,7 +288,7 @@ class TestCreateHierarchicalGantt:
     def test_missing_plotly_raises_error(self, minimal_trace):
         """Test error when plotly not available."""
         with patch.dict('sys.modules', {'plotly.graph_objects': None}):
-            with patch('src.observability.visualize_trace.PLOTLY_AVAILABLE', False):
+            with patch('temper_ai.observability.visualize_trace.PLOTLY_AVAILABLE', False):
                 with pytest.raises(ImportError, match="Plotly required"):
                     create_hierarchical_gantt(minimal_trace)
 
@@ -422,7 +422,7 @@ class TestMainCLI:
             json.dump(minimal_trace, f)
 
         with patch('sys.argv', ['visualize_trace', '--file', str(trace_file), '--no-open']):
-            from src.observability.visualize_trace import main
+            from temper_ai.observability.visualize_trace import main
 
             if PLOTLY_AVAILABLE:
                 result = main()
@@ -440,8 +440,8 @@ class TestMainCLI:
             mock_session_ctx.__enter__ = Mock(return_value=mock_session_obj)
             mock_session_ctx.__exit__ = Mock(return_value=None)
 
-            with patch('src.storage.database.get_session', return_value=mock_session_ctx):
-                from src.observability.visualize_trace import main
+            with patch('temper_ai.storage.database.get_session', return_value=mock_session_ctx):
+                from temper_ai.observability.visualize_trace import main
 
                 result = main()
                 assert result == 1

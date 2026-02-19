@@ -7,8 +7,8 @@ Verifies that:
 """
 
 
-from src.safety.approval import ApprovalWorkflow
-from src.safety.rollback import RollbackManager
+from temper_ai.safety.approval import ApprovalWorkflow
+from temper_ai.safety.rollback import RollbackManager
 
 # ── ApprovalWorkflow eviction tests ──────────────────────────────────────
 

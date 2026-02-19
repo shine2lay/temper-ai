@@ -27,18 +27,18 @@ from typing import Optional
 import pytest
 from sqlmodel import select
 
-from src.observability.database import (
+from temper_ai.observability.database import (
     IsolationLevel,
     init_database,
     reset_database,
 )
-from src.observability.models import (
+from temper_ai.observability.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
     WorkflowExecution,
 )
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.tracker import ExecutionTracker
 
 # ========================================
 # Test Fixtures

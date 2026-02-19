@@ -12,8 +12,8 @@ This test module verifies:
 
 import pytest
 
-from src.agent.strategies.base import AgentOutput
-from src.agent.strategies.consensus import ConsensusStrategy
+from temper_ai.agent.strategies.base import AgentOutput
+from temper_ai.agent.strategies.consensus import ConsensusStrategy
 
 # Realistic metadata for agent outputs (replacing empty dicts)
 REALISTIC_METADATA_RESEARCH = {

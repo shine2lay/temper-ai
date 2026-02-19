@@ -30,7 +30,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.tools.web_scraper import (
+from temper_ai.tools.web_scraper import (
     DNSCache,
     _dns_cache,
     resolve_hostname_with_timeout,

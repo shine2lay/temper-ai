@@ -7,7 +7,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.shared.utils.error_handling import (
+from temper_ai.shared.utils.error_handling import (
     DEFAULT_BACKOFF_MULTIPLIER,
     DEFAULT_MAX_RETRIES,
     ErrorHandler,

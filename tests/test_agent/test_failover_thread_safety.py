@@ -7,8 +7,8 @@ backup_success_count is properly synchronized.
 import threading
 from unittest.mock import MagicMock
 
-from src.llm.failover import FailoverConfig, FailoverProvider
-from src.llm.providers import LLMResponse
+from temper_ai.llm.failover import FailoverConfig, FailoverProvider
+from temper_ai.llm.providers import LLMResponse
 
 
 def _make_mock_provider(name: str, succeed: bool = True):

@@ -3,14 +3,14 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "meta-autonomous-framework"
+name = "temper-ai"
 version = "0.1.0"
-description = "Meta-autonomous agent framework with self-improvement and full observability"
+description = "Temper AI agent framework with self-improvement and full observability"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
-    {name = "Meta Autonomous Framework Team"}
+    {name = "Temper AI Team"}
 ]
 keywords = ["ai", "agents", "autonomous", "langgraph", "observability", "self-improvement"]
 
@@ -94,16 +94,16 @@ memory = ["mem0ai>=1.0.0"]
 
 # TODO: Replace 'yourusername' with actual GitHub username/organization
 [project.urls]
-Homepage = "https://github.com/yourusername/meta-autonomous-framework"
-Documentation = "https://github.com/yourusername/meta-autonomous-framework/docs"
-Repository = "https://github.com/yourusername/meta-autonomous-framework"
+Homepage = "https://github.com/yourusername/temper-ai"
+Documentation = "https://github.com/yourusername/temper-ai/docs"
+Repository = "https://github.com/yourusername/temper-ai"
 
 [project.scripts]
-maf = "src.interfaces.cli.main:main"
+temper-ai = "temper_ai.interfaces.cli.main:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["src*"]
+include = ["temper_ai*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

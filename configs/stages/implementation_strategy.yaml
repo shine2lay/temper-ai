@@ -9,7 +9,7 @@ stage:
     - devops_engineer_tech
 
   collaboration:
-    strategy: src.strategies.dialogue.DialogueOrchestrator
+    strategy: temper_ai.strategies.dialogue.DialogueOrchestrator
     max_rounds: 3
     consensus_threshold: 0.7
     enable_summarization: true

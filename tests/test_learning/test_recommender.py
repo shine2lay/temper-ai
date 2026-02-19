@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.learning.models import (
+from temper_ai.learning.models import (
     PATTERN_AGENT_PERFORMANCE,
     PATTERN_COLLABORATION,
     PATTERN_COST,
@@ -10,8 +10,8 @@ from src.learning.models import (
     PATTERN_MODEL_EFFECTIVENESS,
     LearnedPattern,
 )
-from src.learning.recommender import RecommendationEngine
-from src.learning.store import LearningStore
+from temper_ai.learning.recommender import RecommendationEngine
+from temper_ai.learning.store import LearningStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

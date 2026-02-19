@@ -4,7 +4,7 @@ import uuid
 
 import pytest
 
-from src.portfolio.models import (
+from temper_ai.portfolio.models import (
     KGConceptRecord,
     KGEdgeRecord,
     PortfolioRecord,
@@ -13,8 +13,8 @@ from src.portfolio.models import (
     SharedComponentRecord,
     TechCompatibilityRecord,
 )
-from src.portfolio.store import PortfolioStore
-from src.storage.database.datetime_utils import utcnow
+from temper_ai.portfolio.store import PortfolioStore
+from temper_ai.storage.database.datetime_utils import utcnow
 
 MEMORY_DB = "sqlite:///:memory:"
 
@@ -71,7 +71,7 @@ class TestPortfolioCRUD:
         store.save_portfolio(
             PortfolioRecord(id="1", name="my-portfolio", enabled=True)
         )
-        from src.portfolio.store import update_portfolio_status
+        from temper_ai.portfolio.store import update_portfolio_status
         updated = update_portfolio_status(store, "my-portfolio", enabled=False)
         assert updated is True
         record = store.get_portfolio("my-portfolio")

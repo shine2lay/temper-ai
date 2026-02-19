@@ -22,18 +22,18 @@ try:
 except ImportError:
     pytest.skip("psutil not installed (optional for memory leak tests)", allow_module_level=True)
 
-from src.llm.providers import LLMResponse
-from src.agent.standard_agent import StandardAgent
-from src.workflow.langgraph_compiler import LangGraphCompiler
-from src.storage.schemas.agent_config import (
+from temper_ai.llm.providers import LLMResponse
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
     InferenceConfig,
     PromptConfig,
 )
-from src.observability.database import DatabaseManager
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.database import DatabaseManager
+from temper_ai.observability.tracker import ExecutionTracker
 
 # ============================================================================
 # Constants
@@ -188,7 +188,7 @@ def test_agent_execution_no_memory_leak(minimal_agent_config, mock_llm_response)
     - Memory growth <10MB per 100 executions
     - Memory usage stabilizes after warmup
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -235,7 +235,7 @@ def test_workflow_compilation_no_memory_leak(simple_workflow_config):
     - Memory growth <10MB per 100 compilations
     - Compiled workflows are properly garbage collected
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         # Setup
         mock_loader_instance = Mock()
         mock_stage_config = Mock()
@@ -285,7 +285,7 @@ def test_llm_provider_no_memory_leak(minimal_agent_config):
     - Memory growth <10MB per 100 calls
     - Connection pooling doesn't accumulate
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -401,7 +401,7 @@ def test_long_running_agent_session_stability(minimal_agent_config, mock_llm_res
     - Memory growth <50MB over 500 executions
     - No continuous memory increase trend
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_tool_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_tool_registry:
         # Setup
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -546,7 +546,7 @@ async def test_concurrent_workflows_no_memory_leak(simple_workflow_config):
     - Memory growth <20MB per 100 concurrent workflow executions
     - Concurrent resources properly cleaned up
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         # Setup
         mock_loader_instance = Mock()
         mock_stage_config = Mock()
@@ -617,7 +617,7 @@ def test_database_connection_pool_no_memory_leak(leak_db):
     - Memory growth <10MB per 100 connection cycles
     - Connections properly returned to pool
     """
-    from src.observability.models import WorkflowExecution
+    from temper_ai.observability.models import WorkflowExecution
 
     # Define operation
     db_counter = count()

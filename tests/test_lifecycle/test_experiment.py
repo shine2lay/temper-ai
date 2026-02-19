@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.lifecycle._schemas import LifecycleProfile
-from src.lifecycle.experiment import LifecycleExperimenter
+from temper_ai.lifecycle._schemas import LifecycleProfile
+from temper_ai.lifecycle.experiment import LifecycleExperimenter
 
 
 @pytest.fixture

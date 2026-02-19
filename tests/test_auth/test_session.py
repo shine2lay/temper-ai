@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from src.auth.models import Session, User
-from src.auth.session import (
+from temper_ai.auth.models import Session, User
+from temper_ai.auth.session import (
     InMemorySessionStore,
     RedisSessionStore,
     SessionStoreProtocol,

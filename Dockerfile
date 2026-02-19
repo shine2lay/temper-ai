@@ -1,9 +1,9 @@
-# Meta-Autonomous Framework — Multi-stage Docker build
+# Temper AI — Multi-stage Docker build
 # Targets: server (HTTP API) | runner (CLI workflow execution)
 #
 # Build:
-#   docker build --target server -t maf-server:latest .
-#   docker build --target runner -t maf-runner:latest .
+#   docker build --target server -t temper-ai-server:latest .
+#   docker build --target runner -t temper-ai-runner:latest .
 
 # ── base ──────────────────────────────────────────────────────────────
 FROM python:3.11.11-slim-bookworm AS base
@@ -22,7 +22,7 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY pyproject.toml ./
-COPY src/ ./src/
+COPY temper_ai/ ./temper_ai/
 COPY configs/ ./configs/
 COPY alembic/ ./alembic/
 COPY alembic.ini ./
@@ -32,16 +32,16 @@ RUN pip install --no-cache-dir -e ".[dashboard]"
 # ── server ────────────────────────────────────────────────────────────
 FROM base AS server
 
-LABEL org.opencontainers.image.title="MAF Server" \
-      org.opencontainers.image.description="Meta-Autonomous Framework HTTP API server" \
+LABEL org.opencontainers.image.title="Temper AI Server" \
+      org.opencontainers.image.description="Temper AI HTTP API server" \
       org.opencontainers.image.version="${MAF_VERSION}" \
       org.opencontainers.image.revision="${MAF_COMMIT}" \
-      org.opencontainers.image.source="https://github.com/meta-autonomous-framework/maf"
+      org.opencontainers.image.source="https://github.com/temper-ai/temper-ai"
 
 # Non-root user
-RUN groupadd -r maf && useradd -r -g maf -d /app maf
-RUN mkdir -p /app/.meta-autonomous && chown -R maf:maf /app
-USER maf
+RUN groupadd -r temperai && useradd -r -g temperai -d /app temperai
+RUN mkdir -p /app/.temper-ai && chown -R temperai:temperai /app
+USER temperai
 
 ENV MAF_CONFIG_ROOT=/app/configs
 EXPOSE 8420
@@ -49,22 +49,22 @@ EXPOSE 8420
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8420/api/health || exit 1
 
-CMD ["maf", "serve", "--host", "0.0.0.0", "--port", "8420"]
+CMD ["temper-ai", "serve", "--host", "0.0.0.0", "--port", "8420"]
 
 # ── runner ────────────────────────────────────────────────────────────
 FROM base AS runner
 
-LABEL org.opencontainers.image.title="MAF Runner" \
-      org.opencontainers.image.description="Meta-Autonomous Framework CLI workflow runner" \
+LABEL org.opencontainers.image.title="Temper AI Runner" \
+      org.opencontainers.image.description="Temper AI CLI workflow runner" \
       org.opencontainers.image.version="${MAF_VERSION}" \
       org.opencontainers.image.revision="${MAF_COMMIT}"
 
 # Non-root user with workspace dir
-RUN groupadd -r maf && useradd -r -g maf -d /workspace -m maf
-RUN mkdir -p /workspace && chown -R maf:maf /workspace
-USER maf
+RUN groupadd -r temperai && useradd -r -g temperai -d /workspace -m temperai
+RUN mkdir -p /workspace && chown -R temperai:temperai /workspace
+USER temperai
 
 ENV MAF_CONFIG_ROOT=/app/configs
 WORKDIR /workspace
 
-ENTRYPOINT ["maf", "run"]
+ENTRYPOINT ["temper-ai", "run"]

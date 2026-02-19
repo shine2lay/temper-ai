@@ -4,9 +4,9 @@ import threading
 
 import pytest
 
-from src.memory.adapters.in_memory import InMemoryAdapter
-from src.memory.constants import PROVIDER_IN_MEMORY
-from src.memory.registry import MemoryProviderRegistry
+from temper_ai.memory.adapters.in_memory import InMemoryAdapter
+from temper_ai.memory.constants import PROVIDER_IN_MEMORY
+from temper_ai.memory.registry import MemoryProviderRegistry
 
 
 class TestMemoryProviderRegistry:

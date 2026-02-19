@@ -1,0 +1,610 @@
+"""Approval workflow system for high-risk actions.
+
+This module provides an approval workflow that intercepts high-risk actions,
+requests human approval, and manages approval/rejection decisions.
+
+Key Features:
+- Approval request creation and tracking
+- Multiple approval strategies (single, multi-approver, consensus)
+- Timeout handling with automatic rejection
+- Integration with safety policy violations
+- Approval history and audit trail
+
+Example:
+    >>> workflow = ApprovalWorkflow()
+    >>> request = workflow.request_approval(
+    ...     action={"tool": "deploy", "environment": "production"},
+    ...     reason="Production deployment requires approval",
+    ...     context={"agent": "deployer", "severity": ViolationSeverity.HIGH}
+    ... )
+    >>> # Later, after human review
+    >>> workflow.approve(request.id, approver="alice")
+    >>> result = workflow.get_result(request.id)
+"""
+import logging
+import threading
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
+from enum import Enum
+from typing import Any, Callable, Dict, List, Optional
+from uuid import uuid4
+
+logger = logging.getLogger(__name__)
+
+from temper_ai.shared.constants.durations import SECONDS_PER_MINUTE
+from temper_ai.safety.constants import DEFAULT_APPROVAL_TIMEOUT_SECONDS
+from temper_ai.safety.interfaces import SafetyViolation
+
+
+class ApprovalStatus(Enum):
+    """Status of an approval request.
+
+    States:
+        PENDING: Awaiting approval
+        APPROVED: Approved by required number of approvers
+        REJECTED: Rejected by an approver
+        EXPIRED: Timeout reached without approval
+        CANCELLED: Request was cancelled
+    """
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    CANCELLED = "cancelled"
+
+
+@dataclass
+class ApprovalRequestParams:
+    """Parameters for creating an approval request.
+
+    Bundles the multiple parameters needed to create an approval request,
+    reducing function parameter count from 8 to 1.
+    """
+    action: Dict[str, Any]
+    reason: str
+    context: Optional[Dict[str, Any]] = None
+    violations: Optional[List[SafetyViolation]] = None
+    required_approvers: int = 1
+    timeout_minutes: Optional[int] = None
+    metadata: Optional[Dict[str, Any]] = None
+    requester: Optional[str] = None
+
+
+@dataclass
+class ApprovalRequest:
+    """Represents a request for approval of a high-risk action.
+
+    Attributes:
+        id: Unique request identifier
+        action: Action requiring approval
+        reason: Why approval is required
+        context: Execution context (agent, stage, workflow, etc.)
+        violations: Safety violations that triggered this request
+        status: Current approval status
+        created_at: When request was created
+        expires_at: When request expires (auto-reject)
+        required_approvers: Number of approvals needed
+        approvers: List of users who approved
+        rejecters: List of users who rejected
+        decision_reason: Reason for approval/rejection
+        metadata: Additional request metadata
+    """
+    id: str = field(default_factory=lambda: str(uuid4()))
+    action: Dict[str, Any] = field(default_factory=dict)
+    reason: str = ""
+    requester: Optional[str] = None
+    context: Dict[str, Any] = field(default_factory=dict)
+    violations: List[SafetyViolation] = field(default_factory=list)
+    status: ApprovalStatus = ApprovalStatus.PENDING
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    expires_at: Optional[datetime] = None
+    required_approvers: int = 1
+    approvers: List[str] = field(default_factory=list)
+    rejecters: List[str] = field(default_factory=list)
+    decision_reason: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def is_pending(self) -> bool:
+        """Check if request is still pending."""
+        return self.status == ApprovalStatus.PENDING
+
+    def is_approved(self) -> bool:
+        """Check if request was approved."""
+        return self.status == ApprovalStatus.APPROVED
+
+    def is_rejected(self) -> bool:
+        """Check if request was rejected."""
+        return self.status == ApprovalStatus.REJECTED
+
+    def is_expired(self) -> bool:
+        """Check if request expired."""
+        return self.status == ApprovalStatus.EXPIRED
+
+    def has_expired(self) -> bool:
+        """Check if request has passed expiration time."""
+        if self.expires_at is None:
+            return False
+        return datetime.now(UTC) >= self.expires_at
+
+    def approval_count(self) -> int:
+        """Get number of approvals received."""
+        return len(self.approvers)
+
+    def needs_more_approvals(self) -> bool:
+        """Check if more approvals are needed."""
+        return self.approval_count() < self.required_approvers
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "id": self.id,
+            "action": self.action,
+            "reason": self.reason,
+            "context": self.context,
+            "violations": [v.to_dict() for v in self.violations],
+            "status": self.status.value,
+            "created_at": self.created_at.isoformat(),
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "required_approvers": self.required_approvers,
+            "approvers": self.approvers,
+            "rejecters": self.rejecters,
+            "decision_reason": self.decision_reason,
+            "metadata": self.metadata
+        }
+
+
+# Import helpers after ApprovalStatus/ApprovalRequest are defined (avoids circular import)
+from temper_ai.safety._approval_helpers import (  # noqa: E402
+    check_approver_authorized,
+    evict_oldest_completed,
+    expire_request,
+    trigger_approved_callbacks,
+    trigger_rejected_callbacks,
+)
+
+
+class ApprovalWorkflow:
+    """Manages approval workflow for high-risk actions.
+
+    Handles creation, tracking, and resolution of approval requests.
+    Supports timeout, multiple approvers, and approval callbacks.
+
+    Example:
+        >>> workflow = ApprovalWorkflow(default_timeout_minutes=30)
+        >>>
+        >>> # Request approval
+        >>> request = workflow.request_approval(
+        ...     action={"tool": "delete_database", "database": "production"},
+        ...     reason="Database deletion requires approval",
+        ...     required_approvers=2
+        ... )
+        >>>
+        >>> # Approve
+        >>> workflow.approve(request.id, approver="alice")
+        >>> workflow.approve(request.id, approver="bob")
+        >>>
+        >>> # Check result
+        >>> if workflow.is_approved(request.id):
+        ...     print("Action approved, proceeding...")
+    """
+
+    # Maximum stored requests to prevent unbounded memory growth
+    MAX_REQUESTS = 10000
+
+    def __init__(
+        self,
+        default_timeout_minutes: int = DEFAULT_APPROVAL_TIMEOUT_SECONDS // SECONDS_PER_MINUTE,
+        auto_reject_on_timeout: bool = True,
+        max_requests: int = MAX_REQUESTS,
+        authorized_approvers: Optional[List[str]] = None,
+    ):
+        """Initialize approval workflow.
+
+        Args:
+            default_timeout_minutes: Default timeout for approval requests
+            auto_reject_on_timeout: Automatically reject expired requests
+            max_requests: Maximum stored requests before oldest are evicted
+            authorized_approvers: List of authorized approver identifiers.
+                If None, no authorization checks are performed (backward compat).
+                If set, only listed approvers can approve/reject, and
+                self-approval (requester == approver) is blocked.
+        """
+        self.default_timeout_minutes = default_timeout_minutes
+        self.auto_reject_on_timeout = auto_reject_on_timeout
+        self._max_requests = max_requests
+        self._authorized_approvers: Optional[frozenset[str]] = (
+            frozenset(authorized_approvers) if authorized_approvers is not None else None
+        )
+        self._lock = threading.Lock()  # C-02: Protect _requests dict from race conditions
+        self._requests: Dict[str, ApprovalRequest] = {}
+        self._on_approved_callbacks: List[Callable[[ApprovalRequest], None]] = []
+        self._on_rejected_callbacks: List[Callable[[ApprovalRequest], None]] = []
+
+    def request_approval(  # noqa: params — legacy compat wrapper
+        self,
+        params: Optional[ApprovalRequestParams] = None,
+        # Legacy positional parameters for backward compatibility
+        action: Optional[Dict[str, Any]] = None,
+        reason: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+        violations: Optional[List[SafetyViolation]] = None,
+        required_approvers: int = 1,
+        timeout_minutes: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        requester: Optional[str] = None,
+    ) -> ApprovalRequest:
+        """Create a new approval request.
+
+        Args:
+            params: ApprovalRequestParams object (recommended)
+            action: (deprecated) Action requiring approval
+            reason: (deprecated) Why approval is required
+            context: (deprecated) Execution context
+            violations: (deprecated) Safety violations
+            required_approvers: (deprecated) Number of approvals needed
+            timeout_minutes: (deprecated) Custom timeout
+            metadata: (deprecated) Additional request metadata
+            requester: (deprecated) Request identity
+
+        Returns:
+            ApprovalRequest object
+
+        Example:
+            >>> # Recommended usage
+            >>> params = ApprovalRequestParams(
+            ...     action={"tool": "deploy", "env": "prod"},
+            ...     reason="Production deployment",
+            ...     required_approvers=2,
+            ...     timeout_minutes=30
+            ... )
+            >>> request = workflow.request_approval(params=params)
+            >>>
+            >>> # Legacy usage (still supported)
+            >>> request = workflow.request_approval(
+            ...     action={"tool": "deploy"},
+            ...     reason="Production deployment"
+            ... )
+        """
+        # Support both new and legacy calling styles
+        if params is None:
+            if action is None or reason is None:
+                raise ValueError("Either params or (action, reason) must be provided")
+            params = ApprovalRequestParams(
+                action=action,
+                reason=reason,
+                context=context,
+                violations=violations,
+                required_approvers=required_approvers,
+                timeout_minutes=timeout_minutes,
+                metadata=metadata,
+                requester=requester
+            )
+
+        timeout = params.timeout_minutes if params.timeout_minutes is not None else self.default_timeout_minutes
+        expires_at = datetime.now(UTC) + timedelta(minutes=timeout)
+
+        request = ApprovalRequest(
+            action=params.action,
+            reason=params.reason,
+            requester=params.requester,
+            context=params.context or {},
+            violations=params.violations or [],
+            expires_at=expires_at,
+            required_approvers=params.required_approvers,
+            metadata=params.metadata or {}
+        )
+
+        with self._lock:
+            self._requests[request.id] = request
+
+            # Evict oldest completed requests when over limit
+            if len(self._requests) > self._max_requests:
+                evict_oldest_completed(self._requests, self._max_requests)
+
+        return request
+
+    def approve(
+        self,
+        request_id: str,
+        approver: str,
+        reason: Optional[str] = None
+    ) -> bool:
+        """Approve a request.
+
+        Args:
+            request_id: ID of request to approve
+            approver: Name/ID of approver
+            reason: Optional reason for approval
+
+        Returns:
+            True if approval was accepted, False if request not found/not pending
+
+        Raises:
+            PermissionError: If approver is not authorized or is self-approving
+
+        Example:
+            >>> workflow.approve("req-123", approver="alice", reason="Looks good")
+        """
+        with self._lock:
+            request = self._requests.get(request_id)
+            if not request:
+                return False
+
+            # Check if expired
+            if self.auto_reject_on_timeout and request.has_expired():
+                expire_request(request)
+                trigger_rejected_callbacks(request, self._on_rejected_callbacks)
+                return False
+
+            # Can only approve pending requests
+            if not request.is_pending():
+                return False
+
+            # Authorization check
+            error = check_approver_authorized(approver, request, self._authorized_approvers)
+            if error:
+                raise PermissionError(error)
+
+            # Add approver (avoid duplicates)
+            if approver not in request.approvers:
+                request.approvers.append(approver)
+
+            # Check if we have enough approvals
+            if not request.needs_more_approvals():
+                request.status = ApprovalStatus.APPROVED
+                request.decision_reason = reason
+                trigger_approved_callbacks(request, self._on_approved_callbacks)
+
+            return True
+
+    def reject(
+        self,
+        request_id: str,
+        rejecter: str,
+        reason: Optional[str] = None
+    ) -> bool:
+        """Reject a request.
+
+        Args:
+            request_id: ID of request to reject
+            rejecter: Name/ID of rejecter
+            reason: Optional reason for rejection
+
+        Returns:
+            True if rejection was accepted, False if request not found/not pending
+
+        Raises:
+            PermissionError: If rejecter is not authorized
+
+        Example:
+            >>> workflow.reject("req-123", rejecter="bob", reason="Too risky")
+        """
+        with self._lock:
+            request = self._requests.get(request_id)
+            if not request:
+                return False
+
+            # Can only reject pending requests
+            if not request.is_pending():
+                return False
+
+            # Authorization check (self-rejection is allowed — rejecting your own
+            # request is not a security risk, unlike self-approval)
+            if self._authorized_approvers is not None:
+                if rejecter not in self._authorized_approvers:
+                    raise PermissionError(
+                        f"Unauthorized rejecter: '{rejecter}' is not in the authorized approvers list"
+                    )
+
+            # Add rejecter
+            if rejecter not in request.rejecters:
+                request.rejecters.append(rejecter)
+
+            # One rejection is enough to reject the request
+            request.status = ApprovalStatus.REJECTED
+            request.decision_reason = reason
+            trigger_rejected_callbacks(request, self._on_rejected_callbacks)
+
+            return True
+
+    def cancel(self, request_id: str, reason: Optional[str] = None) -> bool:
+        """Cancel a pending request.
+
+        Args:
+            request_id: ID of request to cancel
+            reason: Optional reason for cancellation
+
+        Returns:
+            True if request was cancelled, False if not found/not pending
+        """
+        with self._lock:
+            request = self._requests.get(request_id)
+            if not request:
+                return False
+
+            if not request.is_pending():
+                return False
+
+            request.status = ApprovalStatus.CANCELLED
+            request.decision_reason = reason
+            return True
+
+    def get_request(self, request_id: str) -> Optional[ApprovalRequest]:
+        """Get an approval request by ID.
+
+        Args:
+            request_id: Request ID
+
+        Returns:
+            ApprovalRequest if found, None otherwise
+        """
+        with self._lock:
+            return self._requests.get(request_id)
+
+    def is_approved(self, request_id: str) -> bool:
+        """Check if request is approved.
+
+        Args:
+            request_id: Request ID
+
+        Returns:
+            True if approved, False otherwise
+        """
+        with self._lock:
+            request = self._requests.get(request_id)
+            return request.is_approved() if request else False
+
+    def is_rejected(self, request_id: str) -> bool:
+        """Check if request is rejected.
+
+        Args:
+            request_id: Request ID
+
+        Returns:
+            True if rejected, False otherwise
+        """
+        with self._lock:
+            request = self._requests.get(request_id)
+            return request.is_rejected() if request else False
+
+    def is_pending(self, request_id: str) -> bool:
+        """Check if request is still pending.
+
+        Args:
+            request_id: Request ID
+
+        Returns:
+            True if pending, False otherwise
+        """
+        with self._lock:
+            request = self._requests.get(request_id)
+            if not request:
+                return False
+
+            # Check expiration
+            if self.auto_reject_on_timeout and request.has_expired():
+                expire_request(request)
+                trigger_rejected_callbacks(request, self._on_rejected_callbacks)
+                return False
+
+            return request.is_pending()
+
+    def list_pending_requests(self) -> List[ApprovalRequest]:
+        """Get all pending approval requests.
+
+        Returns:
+            List of pending ApprovalRequest objects
+        """
+        with self._lock:
+            pending = []
+            for request in self._requests.values():
+                if request.is_pending():
+                    # Check expiration
+                    if self.auto_reject_on_timeout and request.has_expired():
+                        expire_request(request)
+                        trigger_rejected_callbacks(request, self._on_rejected_callbacks)
+                    else:
+                        pending.append(request)
+            return pending
+
+    def cleanup_expired_requests(self) -> int:
+        """Expire all requests past their timeout.
+
+        Returns:
+            Number of requests expired
+        """
+        if not self.auto_reject_on_timeout:
+            return 0
+
+        with self._lock:
+            expired_count = 0
+            for request in list(self._requests.values()):
+                if request.is_pending() and request.has_expired():
+                    expire_request(request)
+                    trigger_rejected_callbacks(request, self._on_rejected_callbacks)
+                    expired_count += 1
+
+            return expired_count
+
+    def on_approved(self, callback: Callable[[ApprovalRequest], None]) -> None:
+        """Register callback for when requests are approved.
+
+        Args:
+            callback: Function to call when request is approved
+
+        Example:
+            >>> def notify_approved(request):
+            ...     print(f"Request {request.id} approved")
+            >>> workflow.on_approved(notify_approved)
+        """
+        self._on_approved_callbacks.append(callback)
+
+    def on_rejected(self, callback: Callable[[ApprovalRequest], None]) -> None:
+        """Register callback for when requests are rejected.
+
+        Args:
+            callback: Function to call when request is rejected
+
+        Example:
+            >>> def notify_rejected(request):
+            ...     print(f"Request {request.id} rejected: {request.decision_reason}")
+            >>> workflow.on_rejected(notify_rejected)
+        """
+        self._on_rejected_callbacks.append(callback)
+
+    def clear_requests(self) -> None:
+        """Clear all approval requests. Use with caution!"""
+        with self._lock:
+            self._requests.clear()
+
+    def request_count(self) -> int:
+        """Get total number of requests."""
+        with self._lock:
+            return len(self._requests)
+
+    def __repr__(self) -> str:
+        """String representation."""
+        with self._lock:
+            return (
+                f"ApprovalWorkflow("
+                f"requests={len(self._requests)}, "
+                f"timeout={self.default_timeout_minutes}min, "
+                f"auto_reject={self.auto_reject_on_timeout})"
+            )
+
+
+class NoOpApprover(ApprovalWorkflow):
+    """Auto-approving workflow for development environments.
+
+    Immediately approves all requests upon creation, bypassing
+    human review. Suitable only for development and testing.
+    """
+
+    def request_approval(  # noqa: params — override of legacy compat interface
+        self,
+        params: Optional[ApprovalRequestParams] = None,
+        action: Optional[Dict[str, Any]] = None,
+        reason: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None,
+        violations: Optional[List[SafetyViolation]] = None,
+        required_approvers: int = 1,
+        timeout_minutes: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        requester: Optional[str] = None,
+    ) -> ApprovalRequest:
+        """Create and immediately approve an approval request."""
+        request = super().request_approval(
+            params=params,
+            action=action,
+            reason=reason,
+            context=context,
+            violations=violations,
+            required_approvers=required_approvers,
+            timeout_minutes=timeout_minutes,
+            metadata=metadata,
+            requester=requester,
+        )
+        request.status = ApprovalStatus.APPROVED
+        request.decision_reason = "Auto-approved by NoOpApprover"
+        request.approvers = ["NoOpApprover"]
+        return request

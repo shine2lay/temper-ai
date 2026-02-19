@@ -187,7 +187,7 @@ collaboration:
 
 ### Research Collaboration
 ```python
-from src.compiler import WorkflowCompiler
+from temper_ai.compiler import WorkflowCompiler
 
 workflow = WorkflowCompiler.from_file("configs/workflows/research.yaml")
 result = workflow.execute({

@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.workflow.templates._schemas import (
+from temper_ai.workflow.templates._schemas import (
     TemplateDefaultInference,
     TemplateManifest,
     TemplateQualityGates,

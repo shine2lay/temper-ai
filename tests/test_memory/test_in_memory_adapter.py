@@ -2,9 +2,9 @@
 
 import threading
 
-from src.memory._schemas import MemoryScope
-from src.memory.adapters.in_memory import InMemoryAdapter
-from src.memory.constants import (
+from temper_ai.memory._schemas import MemoryScope
+from temper_ai.memory.adapters.in_memory import InMemoryAdapter
+from temper_ai.memory.constants import (
     MEMORY_TYPE_CROSS_SESSION,
     MEMORY_TYPE_EPISODIC,
     MEMORY_TYPE_PROCEDURAL,

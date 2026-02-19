@@ -9,10 +9,10 @@ Tests the new modular aggregation pipeline:
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
-from src.observability.aggregation import AggregationOrchestrator, AggregationPeriod
-from src.observability.aggregation.time_window import TimeWindowCalculator
-from src.observability.aggregation.query_builder import AggregationQueryBuilder
-from src.observability.aggregation.metric_creator import MetricRecordCreator
+from temper_ai.observability.aggregation import AggregationOrchestrator, AggregationPeriod
+from temper_ai.observability.aggregation.time_window import TimeWindowCalculator
+from temper_ai.observability.aggregation.query_builder import AggregationQueryBuilder
+from temper_ai.observability.aggregation.metric_creator import MetricRecordCreator
 
 
 class TestTimeWindowCalculator:
@@ -330,7 +330,7 @@ class TestBackwardCompatibility:
         import warnings
         warnings.simplefilter("ignore")
 
-        from src.observability import aggregation
+        from temper_ai.observability import aggregation
 
         # Verify the classes are accessible
         assert hasattr(aggregation, 'AggregationOrchestrator')
@@ -341,7 +341,7 @@ class TestBackwardCompatibility:
         import warnings
         warnings.simplefilter("ignore")
 
-        from src.observability import aggregation
+        from temper_ai.observability import aggregation
 
         assert hasattr(aggregation, 'AggregationOrchestrator')
         assert hasattr(aggregation, 'AggregationPeriod')

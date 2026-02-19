@@ -4,7 +4,7 @@ Tests for secret sanitization in violation messages.
 Ensures that detected secrets are never exposed in logs, violation messages,
 or metadata. This is a CRITICAL security requirement.
 """
-from src.safety.secret_detection import SecretDetectionPolicy
+from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
 
 class TestSecretSanitizationInViolations:

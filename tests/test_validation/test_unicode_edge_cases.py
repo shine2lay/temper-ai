@@ -16,7 +16,7 @@ import unicodedata
 
 import pytest
 
-from src.safety.validation import ValidationMixin
+from temper_ai.safety.validation import ValidationMixin
 
 
 class TestEmojiHandling:

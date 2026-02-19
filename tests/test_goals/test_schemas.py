@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.goals._schemas import (
+from temper_ai.goals._schemas import (
     EffortLevel,
     GoalEvidence,
     GoalProposal,

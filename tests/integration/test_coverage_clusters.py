@@ -29,7 +29,7 @@ class TestAuthObservabilityIntegration:
     @pytest.fixture
     def session_store(self):
         """Create in-memory session store."""
-        from src.auth.session import InMemorySessionStore
+        from temper_ai.auth.session import InMemorySessionStore
         return InMemorySessionStore()
 
     @pytest.mark.asyncio
@@ -51,7 +51,7 @@ class TestAuthObservabilityIntegration:
     @pytest.mark.asyncio
     async def test_session_expiry_detection(self, session_store):
         """Expired sessions should be detected and tracked."""
-        from src.auth.models import User
+        from temper_ai.auth.models import User
 
         # Create user with short-lived session
         user = User(
@@ -84,7 +84,7 @@ class TestAuthObservabilityIntegration:
     @pytest.mark.asyncio
     async def test_multi_user_session_tracking(self, session_store):
         """Multiple user sessions should be tracked independently."""
-        from src.auth.models import User
+        from temper_ai.auth.models import User
 
         users = [
             User(
@@ -204,7 +204,7 @@ class TestCLISystemsIntegration:
     def test_cli_loads_all_systems(self):
         """CLI should initialize all system components."""
         # Test that CLI module can be imported
-        from src.interfaces.cli import main
+        from temper_ai.interfaces.cli import main
 
         # Verify main function exists
         assert hasattr(main, 'main')
@@ -212,7 +212,7 @@ class TestCLISystemsIntegration:
 
     def test_cli_config_validation(self, tmp_path):
         """CLI should validate configuration before execution."""
-        from src.workflow.config_loader import ConfigLoader
+        from temper_ai.workflow.config_loader import ConfigLoader
 
         # Create invalid config
         invalid_config = tmp_path / "invalid.yaml"
@@ -225,13 +225,13 @@ class TestCLISystemsIntegration:
 
     def test_cli_observability_integration(self):
         """CLI execution should be tracked in observability system."""
-        from src.storage.database import init_database
+        from temper_ai.storage.database import init_database
 
         # Initialize observability database
         init_database("sqlite:///:memory:")
 
         # Verify database initialized
-        from src.storage.database import get_session
+        from temper_ai.storage.database import get_session
         with get_session() as session:
             assert session is not None
 
@@ -258,7 +258,7 @@ class TestCrossModuleDataFlow:
 
     def test_workflow_to_observability_flow(self):
         """Workflow execution data should flow to observability system."""
-        from src.storage.database import init_database, get_session
+        from temper_ai.storage.database import init_database, get_session
 
         init_database("sqlite:///:memory:")
 
@@ -278,7 +278,7 @@ class TestCrossModuleDataFlow:
     @pytest.mark.asyncio
     async def test_auth_to_experiment_flow(self, sample_user):
         """User authentication should enable experiment assignment."""
-        from src.auth.session import InMemorySessionStore
+        from temper_ai.auth.session import InMemorySessionStore
 
         session_store = InMemorySessionStore()
 

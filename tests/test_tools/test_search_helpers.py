@@ -4,7 +4,7 @@ Tests SearchResultItem, SearchResponse, and format_results_for_llm.
 """
 import pytest
 
-from src.tools._search_helpers import (
+from temper_ai.tools._search_helpers import (
     SearchResultItem,
     SearchResponse,
     format_results_for_llm,

@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.safety.autonomy.schemas import AutonomyConfig, AutonomyLevel
+from temper_ai.safety.autonomy.schemas import AutonomyConfig, AutonomyLevel
 
 
 class TestAutonomyLevel:
@@ -65,7 +65,7 @@ class TestAutonomyConfig:
 
     def test_backward_compat_agent_config(self) -> None:
         """AgentConfigInner works without autonomy key."""
-        from src.storage.schemas.agent_config import AgentConfigInner
+        from temper_ai.storage.schemas.agent_config import AgentConfigInner
 
         config = AgentConfigInner(
             name="test",
@@ -78,7 +78,7 @@ class TestAutonomyConfig:
 
     def test_agent_config_with_autonomy(self) -> None:
         """AgentConfigInner parses autonomy dict."""
-        from src.storage.schemas.agent_config import AgentConfigInner
+        from temper_ai.storage.schemas.agent_config import AgentConfigInner
 
         config = AgentConfigInner(
             name="test",

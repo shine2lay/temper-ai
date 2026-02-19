@@ -5,15 +5,15 @@ from uuid import uuid4
 
 import pytest
 
-from src.storage.database import DatabaseManager
-from src.storage.database.models import RollbackEvent, RollbackSnapshotDB
-from src.observability.rollback_logger import (
+from temper_ai.storage.database import DatabaseManager
+from temper_ai.storage.database.models import RollbackEvent, RollbackSnapshotDB
+from temper_ai.observability.rollback_logger import (
     get_rollback_events,
     get_rollback_snapshots,
     log_rollback_event,
     log_rollback_snapshot,
 )
-from src.observability.rollback_types import (
+from temper_ai.observability.rollback_types import (
     RollbackResult,
     RollbackSnapshot,
     RollbackStatus,
@@ -167,7 +167,7 @@ class TestLogRollbackSnapshot:
             assert snapshot.created_at is not None
             assert snapshot.expires_at is not None
 
-    @patch('src.observability.rollback_logger.get_database')
+    @patch('temper_ai.observability.rollback_logger.get_database')
     def test_log_snapshot_uses_singleton_db(self, mock_get_db, rollback_snapshot):
         """Test logging uses singleton database when db_manager is None."""
         mock_db = Mock(spec=DatabaseManager)
@@ -322,7 +322,7 @@ class TestLogRollbackEvent:
 
                 assert event.trigger == trigger
 
-    @patch('src.observability.rollback_logger.get_database')
+    @patch('temper_ai.observability.rollback_logger.get_database')
     def test_log_event_uses_singleton_db(self, mock_get_db, rollback_result):
         """Test logging uses singleton database when db_manager is None."""
         mock_db = Mock(spec=DatabaseManager)
@@ -384,7 +384,7 @@ class TestGetRollbackEvents:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.storage.database.models import RollbackEvent
+            from temper_ai.storage.database.models import RollbackEvent
             events_query = session.query(RollbackEvent).filter_by(
                 snapshot_id=rollback_result.snapshot_id
             ).all()
@@ -405,7 +405,7 @@ class TestGetRollbackEvents:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.storage.database.models import RollbackEvent
+            from temper_ai.storage.database.models import RollbackEvent
             events_query = session.query(RollbackEvent).filter_by(
                 trigger="manual"
             ).all()
@@ -441,7 +441,7 @@ class TestGetRollbackEvents:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.storage.database.models import RollbackEvent
+            from temper_ai.storage.database.models import RollbackEvent
             events_query = session.query(RollbackEvent).order_by(
                 RollbackEvent.executed_at.desc()
             ).all()
@@ -502,7 +502,7 @@ class TestGetRollbackSnapshots:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.storage.database.models import RollbackSnapshotDB
+            from temper_ai.storage.database.models import RollbackSnapshotDB
             snapshots_query = session.query(RollbackSnapshotDB).filter_by(
                 workflow_execution_id=workflow_id
             ).all()
@@ -530,7 +530,7 @@ class TestGetRollbackSnapshots:
 
         # Access within session context
         with db_manager.session() as session:
-            from src.storage.database.models import RollbackSnapshotDB
+            from temper_ai.storage.database.models import RollbackSnapshotDB
             snapshots_query = session.query(RollbackSnapshotDB).order_by(
                 RollbackSnapshotDB.created_at.desc()
             ).all()
@@ -575,7 +575,7 @@ class TestIntegration:
 
         # Query both within session context
         with db_manager.session() as session:
-            from src.storage.database.models import RollbackEvent, RollbackSnapshotDB
+            from temper_ai.storage.database.models import RollbackEvent, RollbackSnapshotDB
 
             snapshots_query = session.query(RollbackSnapshotDB).filter_by(
                 workflow_execution_id="wf-123"

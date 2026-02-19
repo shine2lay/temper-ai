@@ -2,13 +2,13 @@
 
 import pytest
 
-from src.safety.autonomy.models import (
+from temper_ai.safety.autonomy.models import (
     AutonomyState,
     AutonomyTransition,
     BudgetRecord,
     EmergencyStopEvent,
 )
-from src.safety.autonomy.store import AutonomyStore
+from temper_ai.safety.autonomy.store import AutonomyStore
 
 
 @pytest.fixture

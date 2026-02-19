@@ -4,13 +4,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.learning.models import (
+from temper_ai.learning.models import (
     PATTERN_AGENT_PERFORMANCE,
     STATUS_COMPLETED,
     LearnedPattern,
 )
-from src.learning.orchestrator import MiningOrchestrator, _calc_novelty, _pattern_key
-from src.learning.store import LearningStore
+from temper_ai.learning.orchestrator import MiningOrchestrator, _calc_novelty, _pattern_key
+from temper_ai.learning.store import LearningStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import MagicMock
 
-from src.improvement._schemas import EvaluationResult
-from src.improvement.optimizers.refinement import RefinementOptimizer
+from temper_ai.improvement._schemas import EvaluationResult
+from temper_ai.improvement.optimizers.refinement import RefinementOptimizer
 
 
 class TestRefinementOptimizer:

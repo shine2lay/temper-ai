@@ -23,7 +23,7 @@ from typing import Any, Dict
 
 import pytest
 
-from src.safety import RateLimiterPolicy
+from temper_ai.safety import RateLimiterPolicy
 
 # Try to import redis, but mark as optional dependency
 try:

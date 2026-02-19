@@ -516,6 +516,6 @@ PYTHONPATH=/home/shinelay/meta-autonomous-framework \
 ## Related Files
 
 - `examples/m3_llm_debate_demo.py` - LLM-powered debate implementation
-- `src/agents/llm_providers.py` - OllamaLLM client
-- `src/strategies/debate.py` - Debate strategy (framework)
+- `temper_ai/agents/llm_providers.py` - OllamaLLM client
+- `temper_ai/strategies/debate.py` - Debate strategy (framework)
 - `examples/m3_comprehensive_demo.py` - Simulated debate (educational)

@@ -10,7 +10,7 @@ This test module verifies:
 
 import pytest
 
-from src.agent.strategies.base import (
+from temper_ai.agent.strategies.base import (
     AgentOutput,
     CollaborationStrategy,
     Conflict,

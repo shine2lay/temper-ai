@@ -1,8 +1,8 @@
 """Tests for async hooks (decorators and ExecutionHook)."""
 import pytest
 
-from src.observability.backends.noop_backend import NoOpBackend
-from src.observability.hooks import (
+from temper_ai.observability.backends.noop_backend import NoOpBackend
+from temper_ai.observability.hooks import (
     ExecutionHook,
     LLMCallParams,
     atrack_agent,
@@ -11,7 +11,7 @@ from src.observability.hooks import (
     set_tracker,
     reset_tracker,
 )
-from src.observability.tracker import ExecutionTracker, WorkflowTrackingParams
+from temper_ai.observability.tracker import ExecutionTracker, WorkflowTrackingParams
 
 
 @pytest.fixture

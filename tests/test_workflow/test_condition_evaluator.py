@@ -1,7 +1,7 @@
 """Tests for ConditionEvaluator and helper functions."""
 import pytest
 
-from src.workflow.condition_evaluator import (
+from temper_ai.workflow.condition_evaluator import (
     ConditionEvaluator,
     get_default_condition,
     get_default_loop_condition,

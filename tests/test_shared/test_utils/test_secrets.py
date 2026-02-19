@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.shared.utils.secrets import (
+from temper_ai.shared.utils.secrets import (
     ObfuscatedCredential,
     SecretReference,
     SecureCredential,
@@ -111,7 +111,7 @@ class TestSecretReference:
     def test_resolve_env_null_bytes(self):
         """Test that secret with null bytes raises error."""
         # Cannot set env vars with null bytes, so we mock the validation instead
-        with patch('src.shared.utils.secrets.os.environ.get', return_value="test\x00value"):
+        with patch('temper_ai.shared.utils.secrets.os.environ.get', return_value="test\x00value"):
             with pytest.raises(ValueError, match="contains null bytes"):
                 SecretReference.resolve("${env:NULL_KEY}")
 

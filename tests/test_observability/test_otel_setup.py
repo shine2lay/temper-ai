@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.observability.otel_setup import is_otel_configured
+from temper_ai.observability.otel_setup import is_otel_configured
 
 
 class TestIsOtelConfigured:
@@ -35,14 +35,14 @@ class TestInitOtel:
     """Test init_otel graceful failure when packages are missing."""
 
     def test_init_otel_noop_when_not_configured(self) -> None:
-        from src.observability.otel_setup import init_otel
+        from temper_ai.observability.otel_setup import init_otel
 
         with patch.dict(os.environ, {}, clear=True):
             result = init_otel()
             assert result is None  # noop when not configured
 
     def test_create_otel_backend_returns_none_when_not_configured(self) -> None:
-        from src.observability.otel_setup import create_otel_backend
+        from temper_ai.observability.otel_setup import create_otel_backend
 
         with patch.dict(os.environ, {}, clear=True):
             assert create_otel_backend() is None

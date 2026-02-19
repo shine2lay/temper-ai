@@ -2,24 +2,24 @@
 
 ## Implementation Status
 
-**Current Implementation:** [`src/observability/console.py`](../src/observability/console.py)
+**Current Implementation:** [`temper_ai/observability/console.py`](../temper_ai/observability/console.py)
 
 ### Implemented Features
 
 | Feature | Status | Location |
 |---------|--------|----------|
-| **WorkflowVisualizer** | ✅ Implemented | `src/observability/console.py:13-279` |
-| 3 Verbosity Levels (minimal/standard/verbose) | ✅ Implemented | `src/observability/console.py:16-118` |
-| Color Scheme & Status Icons | ✅ Implemented | `src/observability/console.py:213-231` |
-| Tree Structure & Hierarchy | ✅ Implemented | `src/observability/console.py:80-137` |
-| Panel Layout with Borders | ✅ Implemented | `src/observability/console.py:46-54` |
-| Summary Line Formatting | ✅ Implemented | `src/observability/console.py:252-278` |
-| Duration Formatting | ✅ Implemented | `src/observability/console.py:233-250` |
-| **StreamingVisualizer** | ✅ Implemented | `src/observability/console.py:302-462` |
-| Real-Time Streaming Updates | ✅ Implemented | `src/observability/console.py:326-434` |
-| Poll-Based Database Updates | ✅ Implemented | `src/observability/console.py:388-434` |
-| Context Manager Support | ✅ Implemented | `src/observability/console.py:454-461` |
-| Dynamic Border Colors | ✅ Implemented | `src/observability/console.py:436-452` |
+| **WorkflowVisualizer** | ✅ Implemented | `temper_ai/observability/console.py:13-279` |
+| 3 Verbosity Levels (minimal/standard/verbose) | ✅ Implemented | `temper_ai/observability/console.py:16-118` |
+| Color Scheme & Status Icons | ✅ Implemented | `temper_ai/observability/console.py:213-231` |
+| Tree Structure & Hierarchy | ✅ Implemented | `temper_ai/observability/console.py:80-137` |
+| Panel Layout with Borders | ✅ Implemented | `temper_ai/observability/console.py:46-54` |
+| Summary Line Formatting | ✅ Implemented | `temper_ai/observability/console.py:252-278` |
+| Duration Formatting | ✅ Implemented | `temper_ai/observability/console.py:233-250` |
+| **StreamingVisualizer** | ✅ Implemented | `temper_ai/observability/console.py:302-462` |
+| Real-Time Streaming Updates | ✅ Implemented | `temper_ai/observability/console.py:326-434` |
+| Poll-Based Database Updates | ✅ Implemented | `temper_ai/observability/console.py:388-434` |
+| Context Manager Support | ✅ Implemented | `temper_ai/observability/console.py:454-461` |
+| Dynamic Border Colors | ✅ Implemented | `temper_ai/observability/console.py:436-452` |
 
 ### Planned Features (Design Only)
 
@@ -33,10 +33,10 @@
 
 **Basic Static Display:**
 ```python
-from src.observability.console import print_workflow_tree
-from src.observability.database import get_session
+from temper_ai.observability.console import print_workflow_tree
+from temper_ai.observability.database import get_session
 from sqlmodel import select
-from src.observability.models import WorkflowExecution
+from temper_ai.observability.models import WorkflowExecution
 
 with get_session() as session:
     workflow = session.exec(
@@ -47,7 +47,7 @@ with get_session() as session:
 
 **Real-Time Streaming:**
 ```python
-from src.observability.console import StreamingVisualizer
+from temper_ai.observability.console import StreamingVisualizer
 
 visualizer = StreamingVisualizer("wf-001", verbosity="verbose")
 visualizer.start()

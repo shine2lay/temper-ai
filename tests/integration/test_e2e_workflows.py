@@ -15,16 +15,16 @@ from pathlib import Path
 
 import pytest
 
-from src.workflow.config_loader import ConfigLoader
-from src.observability.database import get_session, init_database
-from src.observability.models import (
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.tracker import ExecutionTracker
 
 pytestmark = [pytest.mark.integration, pytest.mark.critical_path]
 
@@ -36,7 +36,7 @@ class TestThreeStageWorkflow:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -46,7 +46,7 @@ class TestThreeStageWorkflow:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
@@ -433,7 +433,7 @@ class TestWorkflowWithToolExecution:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -442,7 +442,7 @@ class TestWorkflowWithToolExecution:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
@@ -557,7 +557,7 @@ class TestSingleAgentWorkflows:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -566,7 +566,7 @@ class TestSingleAgentWorkflows:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 

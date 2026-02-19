@@ -14,13 +14,13 @@ from pathlib import Path
 import pytest
 from sqlmodel import delete, select
 
-from src.workflow.config_loader import ConfigLoader
-from src.storage.schemas.agent_config import AgentConfig
-from src.tools._schemas import ToolConfig
-from src.workflow._schemas import WorkflowConfig
-from src.observability.console import WorkflowVisualizer
-from src.observability.database import get_session, init_database
-from src.observability.models import (
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.storage.schemas.agent_config import AgentConfig
+from temper_ai.tools._schemas import ToolConfig
+from temper_ai.workflow._schemas import WorkflowConfig
+from temper_ai.observability.console import WorkflowVisualizer
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
@@ -37,7 +37,7 @@ class TestMilestone1Integration:
         """Create/initialize database for testing."""
         # Initialize database if not already done
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")

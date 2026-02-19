@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.observability.buffer import BufferedLifecycleEvent, ObservabilityBuffer
+from temper_ai.observability.buffer import BufferedLifecycleEvent, ObservabilityBuffer
 
 
 def _make_event(event_type: str = "agent_end", entity_id: str = "agent-1") -> BufferedLifecycleEvent:
@@ -155,7 +155,7 @@ class TestBufferLifecycleShouldFlush:
         # Add 1 lifecycle event (count=1, below flush_size=2)
         buf.buffer_lifecycle_event(_make_event())
 
-        from src.observability.buffer import LLMCallBufferParams
+        from temper_ai.observability.buffer import LLMCallBufferParams
 
         # Adding 1 LLM call makes total=2 (lifecycle+llm), triggers flush
         buf.buffer_llm_call(LLMCallBufferParams(

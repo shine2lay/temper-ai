@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.agent.strategies.base import AgentOutput, Conflict
-from src.agent.strategies.conflict_resolution import (
+from temper_ai.agent.strategies.base import AgentOutput, Conflict
+from temper_ai.agent.strategies.conflict_resolution import (
     ConflictResolutionStrategy,
     HighestConfidenceResolver,
     MeritWeightedResolver,

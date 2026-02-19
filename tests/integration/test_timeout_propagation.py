@@ -14,8 +14,8 @@ import time
 
 import pytest
 
-from src.observability.database import get_database, init_database
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.database import get_database, init_database
+from temper_ai.observability.tracker import ExecutionTracker
 
 # ============================================================================
 # Fixtures
@@ -36,7 +36,7 @@ def sample_database():
 @pytest.fixture
 def execution_tracker(sample_database):
     """Execution tracker with test database."""
-    from src.observability.backends.sql_backend import SQLObservabilityBackend
+    from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
     backend = SQLObservabilityBackend()
     return ExecutionTracker(backend=backend)
 

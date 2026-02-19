@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.memory._schemas import MemoryScope
-from src.memory.adapters.knowledge_graph_adapter import (
+from temper_ai.memory._schemas import MemoryScope
+from temper_ai.memory.adapters.knowledge_graph_adapter import (
     MEMORY_TYPE_SEMANTIC,
     KnowledgeGraphMemoryAdapter,
 )
@@ -191,8 +191,8 @@ class TestLazyInit:
         assert adapter._store is None
         assert adapter._query is None
 
-    @patch("src.portfolio.store.PortfolioStore")
-    @patch("src.portfolio.knowledge_graph.KnowledgeQuery")
+    @patch("temper_ai.portfolio.store.PortfolioStore")
+    @patch("temper_ai.portfolio.knowledge_graph.KnowledgeQuery")
     def test_ensure_initialized_creates_store(self, mock_query_cls, mock_store_cls):
         mock_store = MagicMock()
         mock_store_cls.return_value = mock_store

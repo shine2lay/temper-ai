@@ -13,7 +13,7 @@ import time
 import httpx
 import pytest
 
-from src.shared.core.circuit_breaker import (
+from temper_ai.shared.core.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitBreakerError,

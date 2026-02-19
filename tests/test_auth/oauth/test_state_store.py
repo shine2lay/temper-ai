@@ -18,7 +18,7 @@ from unittest.mock import AsyncMock, Mock, patch, MagicMock
 
 import pytest
 
-from src.auth.oauth.state_store import (
+from temper_ai.auth.oauth.state_store import (
     InMemoryStateStore,
     RedisStateStore,
     StateStore,
@@ -285,7 +285,7 @@ class TestRedisStateStore:
 
     def test_initialization_no_redis_installed(self):
         """Test initialization when redis package not installed."""
-        with patch('src.auth.oauth.state_store.RedisStateStore.__init__') as mock_init:
+        with patch('temper_ai.auth.oauth.state_store.RedisStateStore.__init__') as mock_init:
             mock_init.return_value = None
             store = RedisStateStore()
             # Should create instance but not be available
@@ -476,14 +476,14 @@ class TestStateStoreFactory:
         store = create_state_store()
 
         # Should return a StateStore instance (either type is valid)
-        from src.auth.oauth.state_store import StateStore
+        from temper_ai.auth.oauth.state_store import StateStore
         assert isinstance(store, StateStore)
         # In our test environment, it will likely be InMemoryStateStore
         # but we can't force this without complex sys.modules manipulation
 
     def test_create_state_store_fallback_on_connection_error(self):
         """Test factory falls back to InMemory on Redis connection error."""
-        with patch('src.auth.oauth.state_store.RedisStateStore', side_effect=ConnectionError("Connection failed")):
+        with patch('temper_ai.auth.oauth.state_store.RedisStateStore', side_effect=ConnectionError("Connection failed")):
             store = create_state_store()
 
             assert isinstance(store, InMemoryStateStore)

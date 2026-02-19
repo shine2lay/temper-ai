@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.safety.rollback import (
+from temper_ai.safety.rollback import (
     CompositeRollbackStrategy,
     FileRollbackStrategy,
     RollbackManager,

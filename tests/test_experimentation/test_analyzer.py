@@ -7,8 +7,8 @@ Tests hypothesis testing, confidence intervals, guardrail checks, and winner det
 import numpy as np
 import pytest
 
-from src.experimentation.analyzer import StatisticalAnalyzer
-from src.experimentation.models import (
+from temper_ai.experimentation.analyzer import StatisticalAnalyzer
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ConfigType,
     ExecutionStatus,

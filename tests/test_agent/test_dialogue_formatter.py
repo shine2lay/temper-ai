@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.llm.prompts.dialogue_formatter import (
+from temper_ai.llm.prompts.dialogue_formatter import (
     format_dialogue_history,
     format_stage_agent_outputs,
 )

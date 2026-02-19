@@ -15,8 +15,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.workflow.checkpoint_backends import FileCheckpointBackend
-from src.workflow.domain_state import WorkflowDomainState
+from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+from temper_ai.workflow.domain_state import WorkflowDomainState
 
 
 @pytest.fixture
@@ -49,7 +49,7 @@ class TestAtomicWritePattern:
 
     def test_uses_os_replace(self, backend, domain_state):
         """save_checkpoint should call os.replace for atomic rename."""
-        with patch("src.workflow.checkpoint_backends.os.replace", wraps=os.replace) as mock_replace:
+        with patch("temper_ai.workflow.checkpoint_backends.os.replace", wraps=os.replace) as mock_replace:
             cp_id = backend.save_checkpoint("wf-lock-test", domain_state)
 
             mock_replace.assert_called_once()
@@ -59,7 +59,7 @@ class TestAtomicWritePattern:
 
     def test_uses_tempfile(self, backend, domain_state):
         """save_checkpoint should write to a temp file first."""
-        with patch("src.workflow.checkpoint_backends.tempfile.mkstemp", wraps=tempfile.mkstemp) as mock_mkstemp:
+        with patch("temper_ai.workflow.checkpoint_backends.tempfile.mkstemp", wraps=tempfile.mkstemp) as mock_mkstemp:
             cp_id = backend.save_checkpoint("wf-lock-test", domain_state)
 
             mock_mkstemp.assert_called_once()
@@ -172,7 +172,7 @@ class TestCrashRecovery:
             f.write("{corrupted")
             raise IOError("Simulated disk failure")
 
-        with patch("src.workflow.checkpoint_backends.json.dump", side_effect=crashing_dump):
+        with patch("temper_ai.workflow.checkpoint_backends.json.dump", side_effect=crashing_dump):
             with pytest.raises(IOError):
                 new_ds = WorkflowDomainState(workflow_id="wf-crash", input="bad data")
                 backend.save_checkpoint("wf-crash", new_ds, checkpoint_id="cp-good")
@@ -185,7 +185,7 @@ class TestCrashRecovery:
         """Temp file should be removed if write fails."""
         ds = WorkflowDomainState(workflow_id="wf-cleanup", input="test")
 
-        with patch("src.workflow.checkpoint_backends.json.dump", side_effect=IOError("disk full")):
+        with patch("temper_ai.workflow.checkpoint_backends.json.dump", side_effect=IOError("disk full")):
             with pytest.raises(IOError):
                 backend.save_checkpoint("wf-cleanup", ds)
 
@@ -214,8 +214,8 @@ class TestFsyncCalled:
             call_order.append("replace")
             return original_replace(src, dst)
 
-        with patch("src.workflow.checkpoint_backends.os.fsync", side_effect=tracking_fsync):
-            with patch("src.workflow.checkpoint_backends.os.replace", side_effect=tracking_replace):
+        with patch("temper_ai.workflow.checkpoint_backends.os.fsync", side_effect=tracking_fsync):
+            with patch("temper_ai.workflow.checkpoint_backends.os.replace", side_effect=tracking_replace):
                 backend.save_checkpoint("wf-lock-test", domain_state)
 
         assert "fsync" in call_order, "os.fsync was not called"

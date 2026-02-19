@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from src.tools.file_writer import FileWriter
+from temper_ai.tools.file_writer import FileWriter
 
 
 @pytest.fixture

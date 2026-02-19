@@ -16,8 +16,8 @@ waiting, completed, failed, retry) for better observability and control.
 from typing import Any, Dict, Optional
 from unittest.mock import patch
 
-from src.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
-from src.storage.schemas.agent_config import AgentConfig
+from temper_ai.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
+from temper_ai.storage.schemas.agent_config import AgentConfig
 
 
 def create_mock_config(name: str = "test_agent", **kwargs) -> AgentConfig:
@@ -79,7 +79,7 @@ class MockAgent(BaseAgent):
 
 def _make_mock_agent(config):
     """Create MockAgent with LLM creation patched out."""
-    with patch("src.agent.base_agent.create_llm_from_config"):
+    with patch("temper_ai.agent.base_agent.create_llm_from_config"):
         return MockAgent(config)
 
 

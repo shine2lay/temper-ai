@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.observability.dialogue_metrics import (
+from temper_ai.observability.dialogue_metrics import (
     EVENT_TYPE_DIALOGUE_METRICS,
     EVENT_TYPE_QUALITY_GATE_DETAIL,
     QualityGateViolationDetail,

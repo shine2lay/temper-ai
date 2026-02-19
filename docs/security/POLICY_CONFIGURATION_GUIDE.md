@@ -685,8 +685,8 @@ print("Configuration valid!")
 ### Test Policy Execution
 
 ```python
-from src.safety.action_policy_engine import ActionPolicyEngine
-from src.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine
+from temper_ai.safety.policy_registry import PolicyRegistry
 
 # Load configuration
 # ... (load config from YAML)

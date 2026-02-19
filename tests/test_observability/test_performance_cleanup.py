@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
-from src.observability.performance import LatencyMetrics, PerformanceTracker
+from temper_ai.observability.performance import LatencyMetrics, PerformanceTracker
 
 
 class TestMemoryCleanup:
@@ -41,18 +41,18 @@ class TestMemoryCleanup:
         # Create metrics with different ages
         # Operation 1: 25 hours old (should be removed with 24h threshold)
         old_time = now - timedelta(hours=25)
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = old_time
             tracker.record("old_operation", 100.0)
 
         # Operation 2: 12 hours old (should be kept)
         recent_time = now - timedelta(hours=12)
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = recent_time
             tracker.record("recent_operation", 200.0)
 
         # Operation 3: Current (should be kept)
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = now
             tracker.record("current_operation", 300.0)
 
@@ -63,7 +63,7 @@ class TestMemoryCleanup:
         assert "current_operation" in tracker.metrics
 
         # Run cleanup with current time
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = now
             removed = tracker.cleanup_expired_metrics(expiration_hours=24)
 
@@ -88,26 +88,26 @@ class TestMemoryCleanup:
         ]
 
         for op_name, op_time in times:
-            with patch('src.observability.performance.datetime') as mock_datetime:
+            with patch('temper_ai.observability.performance.datetime') as mock_datetime:
                 mock_datetime.utcnow.return_value = op_time
                 tracker.record(op_name, 100.0)
 
         # Cleanup with 48 hour threshold - should remove 1 (50h)
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = now
             removed = tracker.cleanup_expired_metrics(expiration_hours=48)
         assert removed == 1
         assert len(tracker.metrics) == 3
 
         # Cleanup with 24 hour threshold - should remove 1 more (30h)
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = now
             removed = tracker.cleanup_expired_metrics(expiration_hours=24)
         assert removed == 1
         assert len(tracker.metrics) == 2
 
         # Cleanup with 6 hour threshold - should remove 1 more (10h)
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = now
             removed = tracker.cleanup_expired_metrics(expiration_hours=6)
         assert removed == 1
@@ -138,7 +138,7 @@ class TestMemoryCleanup:
 
         # Create an old operation that should be cleaned up
         old_time = now - timedelta(hours=25)
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = old_time
             tracker.record("old_op", 100.0)
 
@@ -146,7 +146,7 @@ class TestMemoryCleanup:
         tracker._record_count = 0
 
         # Record operations up to cleanup interval
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = now
 
             # First 19 records shouldn't trigger cleanup
@@ -192,7 +192,7 @@ class TestMemoryCleanup:
         for hour in range(30):
             op_time = now - timedelta(hours=30-hour)
 
-            with patch('src.observability.performance.datetime') as mock_datetime:
+            with patch('temper_ai.observability.performance.datetime') as mock_datetime:
                 mock_datetime.utcnow.return_value = op_time
 
                 # Create multiple operations per hour
@@ -205,7 +205,7 @@ class TestMemoryCleanup:
         assert initial_count == 300
 
         # Run cleanup with 24h threshold
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = now
             removed = tracker.cleanup_expired_metrics(expiration_hours=24)
 
@@ -224,12 +224,12 @@ class TestMemoryCleanup:
         ages = [30, 28, 26, 20, 18, 12, 6, 2]
         for i, hours_old in enumerate(ages):
             op_time = now - timedelta(hours=hours_old)
-            with patch('src.observability.performance.datetime') as mock_datetime:
+            with patch('temper_ai.observability.performance.datetime') as mock_datetime:
                 mock_datetime.utcnow.return_value = op_time
                 tracker.record(f"op_{i}", 100.0)
 
         # Cleanup with 24h threshold should remove 3 operations (30h, 28h, 26h)
-        with patch('src.observability.performance.datetime') as mock_datetime:
+        with patch('temper_ai.observability.performance.datetime') as mock_datetime:
             mock_datetime.utcnow.return_value = now
             removed = tracker.cleanup_expired_metrics(expiration_hours=24)
 

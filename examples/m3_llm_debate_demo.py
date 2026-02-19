@@ -24,7 +24,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.tree import Tree
 
-from src.agent.llm_providers import LLMResponse, OllamaLLM
+from temper_ai.agent.llm_providers import LLMResponse, OllamaLLM
 
 console = Console()
 

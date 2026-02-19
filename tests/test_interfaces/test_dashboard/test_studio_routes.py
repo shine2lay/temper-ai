@@ -4,8 +4,8 @@ import yaml
 from fastapi import FastAPI
 from starlette.testclient import TestClient
 
-from src.interfaces.dashboard.studio_routes import create_studio_router
-from src.interfaces.dashboard.studio_service import StudioService
+from temper_ai.interfaces.dashboard.studio_routes import create_studio_router
+from temper_ai.interfaces.dashboard.studio_service import StudioService
 
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,7 @@ VALID_TOOL_DATA = {
         "name": "test_tool",
         "description": "A test tool",
         "version": "1.0",
-        "implementation": "src.tools.calculator.CalculatorTool",
+        "implementation": "temper_ai.tools.calculator.CalculatorTool",
     }
 }
 

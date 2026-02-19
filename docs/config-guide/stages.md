@@ -3,7 +3,7 @@
 A stage groups one or more agents and defines **how** they execute and collaborate.
 
 **Location:** `configs/stages/*.yaml`
-**Schema:** `src/compiler/schemas.py` (StageConfigInner)
+**Schema:** `temper_ai/compiler/schemas.py` (StageConfigInner)
 
 ## Minimal Stage
 

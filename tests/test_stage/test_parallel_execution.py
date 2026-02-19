@@ -13,15 +13,15 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.agent.base_agent import AgentResponse
-from src.workflow.domain_state import WorkflowDomainState
-from src.stage.executors import (
+from temper_ai.agent.base_agent import AgentResponse
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.stage.executors import (
     AdaptiveStageExecutor,
     ParallelStageExecutor,
     SequentialStageExecutor,
 )
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 
 
 class TestAgentModeDetection:
@@ -156,8 +156,8 @@ class TestSequentialExecutor:
             "stage_outputs": {}
         }
 
-        with patch('src.storage.schemas.agent_config.AgentConfig') as mock_config_class:
-            with patch('src.stage.executors.sequential.AgentFactory.create') as mock_create:
+        with patch('temper_ai.storage.schemas.agent_config.AgentConfig') as mock_config_class:
+            with patch('temper_ai.stage.executors.sequential.AgentFactory.create') as mock_create:
                 mock_config_class.return_value = mock_agent_config
                 mock_create.return_value = mock_agent
 
@@ -235,8 +235,8 @@ class TestBackwardCompatibility:
         }
 
         with patch.object(compiler.config_loader, 'load_agent') as mock_load:
-            with patch('src.storage.schemas.agent_config.AgentConfig') as mock_config_class:
-                with patch('src.stage.executors.sequential.AgentFactory.create') as mock_create:
+            with patch('temper_ai.storage.schemas.agent_config.AgentConfig') as mock_config_class:
+                with patch('temper_ai.stage.executors.sequential.AgentFactory.create') as mock_create:
                     mock_load.return_value = {"name": "agent1"}
                     mock_config_class.return_value = mock_agent_config
                     mock_create.return_value = mock_agent

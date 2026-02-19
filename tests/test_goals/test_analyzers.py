@@ -5,12 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.goals._schemas import GoalType
-from src.goals.analyzers.cost import CostAnalyzer
-from src.goals.analyzers.cross_product import CrossProductAnalyzer
-from src.goals.analyzers.performance import PerformanceAnalyzer
-from src.goals.analyzers.reliability import ReliabilityAnalyzer
-from src.storage.database.datetime_utils import utcnow
+from temper_ai.goals._schemas import GoalType
+from temper_ai.goals.analyzers.cost import CostAnalyzer
+from temper_ai.goals.analyzers.cross_product import CrossProductAnalyzer
+from temper_ai.goals.analyzers.performance import PerformanceAnalyzer
+from temper_ai.goals.analyzers.reliability import ReliabilityAnalyzer
+from temper_ai.storage.database.datetime_utils import utcnow
 
 
 def _mock_stage(name, duration, workflow_id="wf-1", status="completed"):
@@ -75,7 +75,7 @@ class TestPerformanceAnalyzer:
         engine = MagicMock()
         analyzer = PerformanceAnalyzer(engine=engine)
         stages = [_mock_stage("slow_stage", 400) for _ in range(3)]
-        with patch("src.goals.analyzers.performance.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.performance.Session") as mock_session:
             mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = stages
             results = analyzer.analyze()
         assert len(results) >= 1
@@ -86,7 +86,7 @@ class TestPerformanceAnalyzer:
         engine = MagicMock()
         analyzer = PerformanceAnalyzer(engine=engine)
         stages = [_mock_stage("fast_stage", 50) for _ in range(3)]
-        with patch("src.goals.analyzers.performance.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.performance.Session") as mock_session:
             mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = stages
             results = analyzer.analyze()
         slow_proposals = [r for r in results if "slow" in r.title.lower()]
@@ -100,7 +100,7 @@ class TestPerformanceAnalyzer:
             [_mock_stage("degrading", 100) for _ in range(4)]
             + [_mock_stage("degrading", 200) for _ in range(4)]
         )
-        with patch("src.goals.analyzers.performance.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.performance.Session") as mock_session:
             mock_session.return_value.__enter__.return_value.exec.return_value.all.return_value = stages
             results = analyzer.analyze()
         degradation = [r for r in results if "degradation" in r.title.lower()]
@@ -119,7 +119,7 @@ class TestCostAnalyzer:
             _mock_agent("expensive", 9.0),
             _mock_agent("cheap", 1.0),
         ]
-        with patch("src.goals.analyzers.cost.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.cost.Session") as mock_session:
             session = mock_session.return_value.__enter__.return_value
             session.exec.return_value.all.side_effect = [agents, []]
             results = analyzer.analyze()
@@ -136,7 +136,7 @@ class TestCostAnalyzer:
             _mock_llm_call("expensive-model", 0.10),
             _mock_llm_call("expensive-model", 0.10),
         ]
-        with patch("src.goals.analyzers.cost.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.cost.Session") as mock_session:
             session = mock_session.return_value.__enter__.return_value
             session.exec.return_value.all.side_effect = [[], calls]
             results = analyzer.analyze()
@@ -153,7 +153,7 @@ class TestReliabilityAnalyzer:
         engine = MagicMock()
         analyzer = ReliabilityAnalyzer(engine=engine)
         fps = [_mock_error_fp("timeout", 5)]
-        with patch("src.goals.analyzers.reliability.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.reliability.Session") as mock_session:
             session = mock_session.return_value.__enter__.return_value
             session.exec.return_value.all.side_effect = [fps, []]
             results = analyzer.analyze()
@@ -168,7 +168,7 @@ class TestReliabilityAnalyzer:
             _mock_agent("flaky", 0, status="failed"),
             _mock_agent("flaky", 0, status="completed"),
         ]
-        with patch("src.goals.analyzers.reliability.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.reliability.Session") as mock_session:
             session = mock_session.return_value.__enter__.return_value
             session.exec.return_value.all.side_effect = [[], agents]
             results = analyzer.analyze()
@@ -190,7 +190,7 @@ class TestCrossProductAnalyzer:
             _mock_workflow("web_app", duration=300),
             _mock_workflow("web_app", duration=350),
         ]
-        with patch("src.goals.analyzers.cross_product.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.cross_product.Session") as mock_session:
             session = mock_session.return_value.__enter__.return_value
             session.exec.return_value.all.return_value = workflows
             results = analyzer.analyze()
@@ -201,7 +201,7 @@ class TestCrossProductAnalyzer:
         engine = MagicMock()
         analyzer = CrossProductAnalyzer(engine=engine)
         workflows = [_mock_workflow("api", duration=100)]
-        with patch("src.goals.analyzers.cross_product.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.cross_product.Session") as mock_session:
             session = mock_session.return_value.__enter__.return_value
             session.exec.return_value.all.return_value = workflows
             results = analyzer.analyze()
@@ -222,10 +222,10 @@ class TestCrossProductAnalyzer:
             _mock_workflow("web_app", duration=100),
         ]
         # Patch isinstance check
-        with patch("src.goals.analyzers.cross_product.Session") as mock_session:
+        with patch("temper_ai.goals.analyzers.cross_product.Session") as mock_session:
             session = mock_session.return_value.__enter__.return_value
             session.exec.return_value.all.return_value = workflows
-            with patch("src.goals.analyzers.cross_product.isinstance", return_value=True):
+            with patch("temper_ai.goals.analyzers.cross_product.isinstance", return_value=True):
                 results = analyzer.analyze()
         # Should include cross-product opportunities (at least from _analyze_learned_patterns)
         assert isinstance(results, list)

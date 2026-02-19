@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.llm.response_parser import sanitize_tool_output
-from src.agent.standard_agent import StandardAgent
-from src.llm.service import LLMService
+from temper_ai.llm.response_parser import sanitize_tool_output
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.llm.service import LLMService
 
 
 @pytest.fixture
@@ -110,7 +110,7 @@ class TestInjectToolResults:
 
     def test_malicious_result_escaped(self, llm_service):
         """Tool result with tool_call tags is escaped in the injected prompt."""
-        from src.llm._prompt import inject_results
+        from temper_ai.llm._prompt import inject_results
 
         tool_results = [{
             "name": "web_search",
@@ -131,7 +131,7 @@ class TestInjectToolResults:
 
     def test_malicious_error_escaped(self, llm_service):
         """Tool error with tool_call tags is escaped."""
-        from src.llm._prompt import inject_results
+        from temper_ai.llm._prompt import inject_results
 
         tool_results = [{
             "name": "web_search",
@@ -151,7 +151,7 @@ class TestInjectToolResults:
 
     def test_clean_result_preserved(self, llm_service):
         """Normal tool results are preserved correctly."""
-        from src.llm._prompt import inject_results
+        from temper_ai.llm._prompt import inject_results
 
         tool_results = [{
             "name": "calculator",

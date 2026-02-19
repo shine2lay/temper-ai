@@ -6,8 +6,8 @@ of collaboration strategies and conflict resolvers.
 
 import pytest
 
-from src.agent.strategies.base import CollaborationStrategy, SynthesisResult
-from src.agent.strategies.registry import (
+from temper_ai.agent.strategies.base import CollaborationStrategy, SynthesisResult
+from temper_ai.agent.strategies.registry import (
     ResolverMetadata,
     StrategyMetadata,
     StrategyRegistry,
@@ -363,7 +363,7 @@ class TestDebateAliases:
         registry = StrategyRegistry()
         strategy = registry.get_strategy("debate_and_synthesize")
         assert strategy is not None
-        from src.agent.strategies.debate import DebateAndSynthesize
+        from temper_ai.agent.strategies.debate import DebateAndSynthesize
         assert isinstance(strategy, DebateAndSynthesize)
 
     def test_llm_debate_and_synthesize_alias_registered(self):
@@ -371,7 +371,7 @@ class TestDebateAliases:
         registry = StrategyRegistry()
         strategy = registry.get_strategy("llm_debate_and_synthesize")
         assert strategy is not None
-        from src.agent.strategies.debate import DebateAndSynthesize
+        from temper_ai.agent.strategies.debate import DebateAndSynthesize
         assert isinstance(strategy, DebateAndSynthesize)
 
     def test_aliases_are_default_strategies(self):

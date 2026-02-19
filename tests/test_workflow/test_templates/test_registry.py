@@ -3,8 +3,8 @@
 import pytest
 import yaml
 
-from src.workflow.templates._schemas import TemplateManifest
-from src.workflow.templates.registry import (
+from temper_ai.workflow.templates._schemas import TemplateManifest
+from temper_ai.workflow.templates.registry import (
     MANIFEST_FILENAME,
     TemplateNotFoundError,
     TemplateRegistry,

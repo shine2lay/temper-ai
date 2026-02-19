@@ -8,12 +8,12 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.workflow.condition_evaluator import ConditionEvaluator
-from src.workflow.config_loader import ConfigLoader
-from src.workflow.node_builder import NodeBuilder
-from src.stage.executors.state_keys import StateKeys
-from src.stage.stage_compiler import StageCompiler
-from src.tools.registry import ToolRegistry
+from temper_ai.workflow.condition_evaluator import ConditionEvaluator
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.stage.stage_compiler import StageCompiler
+from temper_ai.tools.registry import ToolRegistry
 
 
 def _make_compiler():

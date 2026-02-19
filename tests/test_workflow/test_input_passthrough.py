@@ -5,10 +5,10 @@ survive LangGraph dataclass coercion and reach agents.
 """
 import pytest
 
-from src.workflow.domain_state import WorkflowDomainState
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.langgraph_state import LangGraphWorkflowState
-from src.workflow.state_manager import initialize_state
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.langgraph_state import LangGraphWorkflowState
+from temper_ai.workflow.state_manager import initialize_state
 
 
 class TestInputPassthrough:

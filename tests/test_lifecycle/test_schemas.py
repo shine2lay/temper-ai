@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.lifecycle._schemas import (
+from temper_ai.lifecycle._schemas import (
     AdaptationAction,
     AdaptationRecord,
     AdaptationRule,

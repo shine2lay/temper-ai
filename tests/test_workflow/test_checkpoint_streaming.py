@@ -3,9 +3,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.workflow.checkpoint import CheckpointManager
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.workflow_executor import WorkflowExecutor
+from temper_ai.workflow.checkpoint import CheckpointManager
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.workflow_executor import WorkflowExecutor
 
 
 def test_checkpoint_saved_after_each_stage(tmp_path):

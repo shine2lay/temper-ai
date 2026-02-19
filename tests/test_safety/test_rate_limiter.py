@@ -17,8 +17,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.safety.interfaces import ViolationSeverity
-from src.safety.rate_limiter import RateLimiterPolicy
+from temper_ai.safety.interfaces import ViolationSeverity
+from temper_ai.safety.rate_limiter import RateLimiterPolicy
 
 
 class TestRateLimiterBasics:

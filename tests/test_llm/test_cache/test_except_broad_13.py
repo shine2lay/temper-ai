@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.llm.cache.llm_cache import LLMCache
+from temper_ai.llm.cache.llm_cache import LLMCache
 
 
 class TestLLMCacheSpecificExceptions:
@@ -194,7 +194,7 @@ class TestNoExceptException:
         """The llm_cache module should not contain 'except Exception'."""
         import inspect
 
-        import src.llm.cache.llm_cache as mod
+        import temper_ai.llm.cache.llm_cache as mod
 
         source = inspect.getsource(mod)
         # Count occurrences of 'except Exception' (not preceded by specific types)
@@ -211,7 +211,7 @@ class TestNoExceptException:
         """The llm_cache module should not contain bare 'except:'."""
         import inspect
 
-        import src.llm.cache.llm_cache as mod
+        import temper_ai.llm.cache.llm_cache as mod
 
         source = inspect.getsource(mod)
         lines = source.split('\n')

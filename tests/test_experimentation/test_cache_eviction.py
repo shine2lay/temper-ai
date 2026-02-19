@@ -8,7 +8,7 @@ Verifies that:
 
 from collections import OrderedDict
 
-from src.experimentation.service import ExperimentService
+from temper_ai.experimentation.service import ExperimentService
 
 
 class TestExperimentServiceCacheEviction:

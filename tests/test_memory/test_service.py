@@ -2,14 +2,14 @@
 
 import pytest
 
-from src.memory._schemas import MemoryScope
-from src.memory.constants import (
+from temper_ai.memory._schemas import MemoryScope
+from temper_ai.memory.constants import (
     DEFAULT_TENANT_ID,
     MEMORY_TYPE_CROSS_SESSION,
     MEMORY_TYPE_EPISODIC,
     MEMORY_TYPE_PROCEDURAL,
 )
-from src.memory.service import MemoryService
+from temper_ai.memory.service import MemoryService
 
 
 class TestMemoryServiceInit:

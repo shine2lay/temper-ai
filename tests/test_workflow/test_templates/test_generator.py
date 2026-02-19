@@ -3,13 +3,13 @@
 import yaml
 import pytest
 
-from src.workflow.templates._schemas import TemplateManifest, TemplateQualityGates
-from src.workflow.templates.generator import (
+from temper_ai.workflow.templates._schemas import TemplateManifest, TemplateQualityGates
+from temper_ai.workflow.templates.generator import (
     TemplateGenerator,
     _replace_placeholder,
     _apply_inference_overrides,
 )
-from src.workflow.templates.registry import TemplateRegistry
+from temper_ai.workflow.templates.registry import TemplateRegistry
 
 # ── Helpers ──────────────────────────────────────────────────────────
 

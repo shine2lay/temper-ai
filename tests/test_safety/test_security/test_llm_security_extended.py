@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Barrier
 import pytest
 
-from src.safety.security.llm_security import (
+from temper_ai.safety.security.llm_security import (
     LLMSecurityRateLimiter,
     OutputSanitizer,
     PromptInjectionDetector,

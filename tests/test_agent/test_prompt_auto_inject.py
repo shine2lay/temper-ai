@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.standard_agent import StandardAgent
-from src.storage.schemas.agent_config import (
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
@@ -47,7 +47,7 @@ def _make_config(
 
 def _make_agent(config: AgentConfig) -> StandardAgent:
     """Create agent with mocked ToolRegistry."""
-    with patch("src.agent.base_agent.ToolRegistry"):
+    with patch("temper_ai.agent.base_agent.ToolRegistry"):
         return StandardAgent(config)
 
 

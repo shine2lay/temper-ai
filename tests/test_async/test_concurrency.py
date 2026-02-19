@@ -9,17 +9,17 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.llm.providers import LLMResponse
-from src.agent.standard_agent import StandardAgent
-from src.workflow.langgraph_engine import LangGraphExecutionEngine
-from src.storage.schemas.agent_config import (
+from temper_ai.llm.providers import LLMResponse
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
     InferenceConfig,
     PromptConfig,
 )
-from src.observability.database import DatabaseManager
+from temper_ai.observability.database import DatabaseManager
 
 # ============================================================================
 # Fixtures
@@ -80,7 +80,7 @@ def workflow_config():
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.workflow.langgraph_compiler.ConfigLoader')
+@patch('temper_ai.workflow.langgraph_compiler.ConfigLoader')
 async def test_async_workflow_execution(mock_config_loader, workflow_config):
     """Test end-to-end async workflow execution.
 
@@ -121,7 +121,7 @@ async def test_async_workflow_execution(mock_config_loader, workflow_config):
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.workflow.langgraph_compiler.ConfigLoader')
+@patch('temper_ai.workflow.langgraph_compiler.ConfigLoader')
 async def test_concurrent_workflow_execution(mock_config_loader, workflow_config):
     """Test 10+ parallel workflow executions.
 
@@ -174,7 +174,7 @@ async def test_concurrent_workflow_execution(mock_config_loader, workflow_config
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.agent.base_agent.ToolRegistry')
+@patch('temper_ai.agent.base_agent.ToolRegistry')
 async def test_async_llm_streaming(mock_tool_registry, minimal_agent_config):
     """Test streaming LLM responses asynchronously.
 
@@ -207,7 +207,7 @@ async def test_async_llm_streaming(mock_tool_registry, minimal_agent_config):
 # ============================================================================
 
 @pytest.mark.asyncio
-@patch('src.agent.base_agent.ToolRegistry')
+@patch('temper_ai.agent.base_agent.ToolRegistry')
 async def test_parallel_agent_execution(mock_tool_registry, minimal_agent_config):
     """Test multiple agents executing in parallel.
 

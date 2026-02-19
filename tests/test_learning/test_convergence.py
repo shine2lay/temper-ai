@@ -2,9 +2,9 @@
 
 import pytest
 
-from src.learning.convergence import ConvergenceDetector
-from src.learning.models import MiningRun
-from src.learning.store import LearningStore
+from temper_ai.learning.convergence import ConvergenceDetector
+from temper_ai.learning.models import MiningRun
+from temper_ai.learning.store import LearningStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

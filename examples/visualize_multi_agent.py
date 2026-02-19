@@ -497,7 +497,7 @@ def main():
 
     try:
         # Use the new general-purpose visualizer
-        from src.observability.visualize_trace import visualize_trace
+        from temper_ai.observability.visualize_trace import visualize_trace
 
         output_file = "multi_agent_gantt.html"
         visualize_trace(trace, output_file=output_file, show_tree_lines=True, auto_open=True)
@@ -529,13 +529,13 @@ def main():
     print("To visualize YOUR actual execution traces:")
     print()
     print("1. Use the general-purpose visualizer:")
-    print("   python -m src.observability.visualize_trace <workflow-id>")
+    print("   python -m temper_ai.observability.visualize_trace <workflow-id>")
     print()
     print("2. Or get latest workflow:")
-    print("   python -m src.observability.visualize_trace --latest")
+    print("   python -m temper_ai.observability.visualize_trace --latest")
     print()
     print("3. Or from JSON file:")
-    print("   python -m src.observability.visualize_trace --file trace.json")
+    print("   python -m temper_ai.observability.visualize_trace --file trace.json")
     print()
 
 

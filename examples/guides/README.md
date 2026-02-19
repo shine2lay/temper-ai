@@ -1,6 +1,6 @@
 # Example Guides
 
-Comprehensive guides and tutorials for using the Meta-Autonomous Framework.
+Comprehensive guides and tutorials for using the Temper AI.
 
 ## Getting Started Guides
 

@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
-from src.auth.oauth.state_store import (
+from temper_ai.auth.oauth.state_store import (
     InMemoryStateStore,
     RedisStateStore,
     StateStore,
@@ -461,7 +461,7 @@ class TestCreateStateStoreFactory:
         if not REDIS_AVAILABLE:
             pytest.skip("redis package not installed")
 
-        with patch("src.auth.oauth.state_store.RedisStateStore") as mock_redis:
+        with patch("temper_ai.auth.oauth.state_store.RedisStateStore") as mock_redis:
             mock_instance = Mock()
             mock_redis.return_value = mock_instance
 
@@ -472,7 +472,7 @@ class TestCreateStateStoreFactory:
 
     def test_falls_back_to_inmemory_on_import_error(self):
         """Test factory falls back to InMemoryStateStore on import error."""
-        with patch("src.auth.oauth.state_store.RedisStateStore") as mock_redis:
+        with patch("temper_ai.auth.oauth.state_store.RedisStateStore") as mock_redis:
             mock_redis.side_effect = ImportError("redis not installed")
 
             store = create_state_store()
@@ -481,7 +481,7 @@ class TestCreateStateStoreFactory:
 
     def test_falls_back_to_inmemory_on_connection_error(self):
         """Test factory falls back on connection errors."""
-        with patch("src.auth.oauth.state_store.RedisStateStore") as mock_redis:
+        with patch("temper_ai.auth.oauth.state_store.RedisStateStore") as mock_redis:
             mock_redis.side_effect = ConnectionError("Cannot connect")
 
             store = create_state_store()

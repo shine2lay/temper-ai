@@ -5,14 +5,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.observability.backend import (
+from temper_ai.observability.backend import (
     LLMCallData,
     ObservabilityBackend,
     ToolCallData,
     WorkflowStartData,
 )
-from src.observability.backends.composite_backend import CompositeBackend
-from src.observability.backends.noop_backend import NoOpBackend
+from temper_ai.observability.backends.composite_backend import CompositeBackend
+from temper_ai.observability.backends.noop_backend import NoOpBackend
 
 
 def _utcnow() -> datetime:
@@ -78,7 +78,7 @@ class TestCompositeBackendErrorIsolation:
         secondary.track_stage_start.side_effect = RuntimeError("oops")
 
         backend = CompositeBackend(primary=primary, secondaries=[secondary])
-        with patch("src.observability.backends.composite_backend.logger") as mock_logger:
+        with patch("temper_ai.observability.backends.composite_backend.logger") as mock_logger:
             backend.track_stage_start("s1", "wf-1", "stage", {}, _utcnow())
             mock_logger.warning.assert_called_once()
 

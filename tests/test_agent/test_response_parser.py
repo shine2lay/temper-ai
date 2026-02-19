@@ -9,7 +9,7 @@ Tests cover:
 
 import json
 
-from src.llm.response_parser import (
+from temper_ai.llm.response_parser import (
     extract_final_answer,
     extract_reasoning,
     parse_tool_calls,

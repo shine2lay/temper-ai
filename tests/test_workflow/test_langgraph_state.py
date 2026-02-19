@@ -4,7 +4,7 @@ Verifies that to_dict() returns independent copies so callers
 cannot corrupt the internal cache by mutating the returned dict.
 """
 
-from src.workflow.langgraph_state import LangGraphWorkflowState
+from temper_ai.workflow.langgraph_state import LangGraphWorkflowState
 
 
 class TestToDictCacheMutationSafety:

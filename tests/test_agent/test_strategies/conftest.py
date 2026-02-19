@@ -10,7 +10,7 @@ def reset_strategy_registry():
     Prevents parallel test race conditions where one test's registry
     modifications leak into another test.
     """
-    from src.agent.strategies.registry import StrategyRegistry
+    from temper_ai.agent.strategies.registry import StrategyRegistry
 
     StrategyRegistry.reset_for_testing()
     yield

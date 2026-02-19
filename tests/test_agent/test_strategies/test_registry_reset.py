@@ -8,9 +8,9 @@ import time
 
 import pytest
 
-from src.agent.strategies.base import CollaborationStrategy
-from src.agent.strategies.conflict_resolution import ConflictResolutionStrategy
-from src.agent.strategies.registry import StrategyRegistry
+from temper_ai.agent.strategies.base import CollaborationStrategy
+from temper_ai.agent.strategies.conflict_resolution import ConflictResolutionStrategy
+from temper_ai.agent.strategies.registry import StrategyRegistry
 
 
 class CustomTestStrategy(CollaborationStrategy):

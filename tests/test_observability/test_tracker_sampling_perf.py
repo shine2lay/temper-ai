@@ -4,8 +4,8 @@ import pytest
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.observability.tracker import ExecutionTracker
-from src.observability.sampling import SamplingContext, SamplingDecision
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.observability.sampling import SamplingContext, SamplingDecision
 
 # ========== Fixtures ==========
 
@@ -265,9 +265,9 @@ class TestPerfTrackerLLMTool:
 
     def test_llm_perf_recorded(self, tracker_no_strategy):
         """Performance tracker records llm_call latency."""
-        from src.observability._tracker_helpers import LLMCallTrackingData
+        from temper_ai.observability._tracker_helpers import LLMCallTrackingData
 
-        with patch("src.observability.performance.get_performance_tracker") as mock_get:
+        with patch("temper_ai.observability.performance.get_performance_tracker") as mock_get:
             mock_pt = MagicMock()
             mock_get.return_value = mock_pt
 
@@ -294,9 +294,9 @@ class TestPerfTrackerLLMTool:
 
     def test_tool_perf_recorded(self, tracker_no_strategy):
         """Performance tracker records tool_execution latency."""
-        from src.observability._tracker_helpers import ToolCallTrackingData
+        from temper_ai.observability._tracker_helpers import ToolCallTrackingData
 
-        with patch("src.observability.performance.get_performance_tracker") as mock_get:
+        with patch("temper_ai.observability.performance.get_performance_tracker") as mock_get:
             mock_pt = MagicMock()
             mock_get.return_value = mock_pt
 
@@ -336,9 +336,9 @@ class TestPerfRecordingResilience:
 
     def test_llm_perf_failure_does_not_break_tracking(self, tracker_no_strategy):
         """LLM tracking returns call ID even if perf recording fails."""
-        from src.observability._tracker_helpers import LLMCallTrackingData
+        from temper_ai.observability._tracker_helpers import LLMCallTrackingData
 
-        with patch("src.observability.performance.get_performance_tracker") as mock_get:
+        with patch("temper_ai.observability.performance.get_performance_tracker") as mock_get:
             mock_pt = MagicMock()
             mock_pt.record.side_effect = RuntimeError("perf boom")
             mock_get.return_value = mock_pt
@@ -361,9 +361,9 @@ class TestPerfRecordingResilience:
 
     def test_tool_perf_failure_does_not_break_tracking(self, tracker_no_strategy):
         """Tool tracking returns execution ID even if perf recording fails."""
-        from src.observability._tracker_helpers import ToolCallTrackingData
+        from temper_ai.observability._tracker_helpers import ToolCallTrackingData
 
-        with patch("src.observability.performance.get_performance_tracker") as mock_get:
+        with patch("temper_ai.observability.performance.get_performance_tracker") as mock_get:
             mock_pt = MagicMock()
             mock_pt.record.side_effect = RuntimeError("perf boom")
             mock_get.return_value = mock_pt

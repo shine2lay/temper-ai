@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.improvement._schemas import (
+from temper_ai.improvement._schemas import (
     CheckConfig,
     EvaluationResult,
     EvaluatorConfig,

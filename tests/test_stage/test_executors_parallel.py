@@ -11,9 +11,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.agent.base_agent import AgentResponse
-from src.stage.executors.parallel import ParallelStageExecutor
-from src.stage.executors.state_keys import StateKeys
+from temper_ai.agent.base_agent import AgentResponse
+from temper_ai.stage.executors.parallel import ParallelStageExecutor
+from temper_ai.stage.executors.state_keys import StateKeys
 
 # ============================================================================
 # Test Fixtures
@@ -152,9 +152,9 @@ class TestParallelExecution:
         executor = ParallelStageExecutor()
 
         # Mock AgentFactory and agent execution
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             # Configure mock agent
             mock_agent = Mock()
@@ -218,9 +218,9 @@ class TestParallelExecution:
             response.tool_calls = []
             return response
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.base.SynthesisResult') as mock_synthesis_class:
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.base.SynthesisResult') as mock_synthesis_class:
 
             # Configure mock agent with delay
             mock_agent = Mock()
@@ -279,8 +279,8 @@ class TestErrorHandling:
 
         executor = ParallelStageExecutor()
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'):
 
             # All agents fail
             mock_agent = Mock()
@@ -326,9 +326,9 @@ class TestErrorHandling:
             response.tool_calls = []
             return response
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             mock_agent = Mock()
             mock_agent.execute.side_effect = selective_execute
@@ -382,9 +382,9 @@ class TestErrorHandling:
             response.tool_calls = []
             return response
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.base.SynthesisResult'):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.base.SynthesisResult'):
 
             mock_agent = Mock()
             mock_agent.execute.side_effect = selective_execute
@@ -430,8 +430,8 @@ class TestErrorHandling:
 
         executor = ParallelStageExecutor()
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'):
 
             # Agent fails
             mock_agent = Mock()
@@ -464,8 +464,8 @@ class TestErrorHandling:
 
         executor = ParallelStageExecutor()
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'):
 
             # Agent fails
             mock_agent = Mock()
@@ -525,9 +525,9 @@ class TestAggregateMetrics:
             agent_name = context.metadata[StateKeys.AGENT_NAME]
             return agent_responses[agent_name]
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             mock_agent = Mock()
             mock_agent.execute.side_effect = get_agent_response
@@ -586,9 +586,9 @@ class TestAggregateMetrics:
             response.tool_calls = []
             return response
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             mock_agent = Mock()
             mock_agent.execute.side_effect = selective_execute
@@ -645,8 +645,8 @@ class TestSynthesisIntegration:
             "quality_gates": {"enabled": False}
         }
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'):
 
             mock_agent = Mock()
             mock_agent.execute.return_value = mock_agent_response
@@ -686,9 +686,9 @@ class TestSynthesisIntegration:
             "quality_gates": {"enabled": False}
         }
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.registry.get_strategy_from_config') as mock_get_strategy:
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.registry.get_strategy_from_config') as mock_get_strategy:
 
             # Configure mock strategy with required attributes
             mock_strategy = Mock()
@@ -749,9 +749,9 @@ class TestQualityGates:
             "quality_gates": {"enabled": False}
         }
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.base.SynthesisResult', return_value=mock_synthesis_result):
 
             mock_agent = Mock()
             mock_agent.execute.return_value = mock_agent_response
@@ -789,9 +789,9 @@ class TestQualityGates:
             }
         }
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.base.SynthesisResult') as mock_synthesis_class:
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.base.SynthesisResult') as mock_synthesis_class:
 
             # Low confidence synthesis result
             synthesis_result = Mock()
@@ -860,9 +860,9 @@ class TestQualityGates:
             result.metadata = {}
             return result
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.registry.get_strategy_from_config') as mock_get_strategy:
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.registry.get_strategy_from_config') as mock_get_strategy:
 
             # Mock strategy to return synthesis result
             mock_strategy = Mock()
@@ -915,9 +915,9 @@ class TestQualityGates:
             }
         }
 
-        with patch('src.stage.executors.parallel.AgentFactory.create') as mock_factory, \
-             patch('src.storage.schemas.agent_config.AgentConfig'), \
-             patch('src.agent.strategies.base.SynthesisResult') as mock_synthesis_class:
+        with patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_factory, \
+             patch('temper_ai.storage.schemas.agent_config.AgentConfig'), \
+             patch('temper_ai.agent.strategies.base.SynthesisResult') as mock_synthesis_class:
 
             # Always low confidence
             synthesis_result = Mock()

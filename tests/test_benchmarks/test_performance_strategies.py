@@ -9,14 +9,14 @@ Run with: pytest tests/test_benchmarks/test_performance_strategies.py --benchmar
 
 import pytest
 
-from src.safety.action_policy_engine import ActionPolicyEngine
-from src.safety.rollback import RollbackManager
-from src.agent.strategies.base import AgentOutput
-from src.agent.strategies.conflict_resolution import MeritWeightedResolver
-from src.agent.strategies.consensus import ConsensusStrategy
-from src.agent.strategies.debate import DebateAndSynthesize
-from src.tools.calculator import Calculator
-from src.tools.executor import ToolExecutor
+from temper_ai.safety.action_policy_engine import ActionPolicyEngine
+from temper_ai.safety.rollback import RollbackManager
+from temper_ai.agent.strategies.base import AgentOutput
+from temper_ai.agent.strategies.conflict_resolution import MeritWeightedResolver
+from temper_ai.agent.strategies.consensus import ConsensusStrategy
+from temper_ai.agent.strategies.debate import DebateAndSynthesize
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.executor import ToolExecutor
 
 # ============================================================================
 # CATEGORY 6: Collaboration Strategies (6 benchmarks)
@@ -121,7 +121,7 @@ def test_strategy_conflict_resolution(benchmark):
     Target: <100ms
     Measures: Conflict detection and resolution overhead
     """
-    from src.agent.strategies.conflict_resolution import MeritWeightedConflictResolution
+    from temper_ai.agent.strategies.conflict_resolution import MeritWeightedConflictResolution
 
     resolver = MeritWeightedConflictResolution()
 
@@ -152,7 +152,7 @@ def test_strategy_quality_gate_validation(benchmark):
     Target: <50ms
     Measures: Quality check overhead
     """
-    from src.agent.strategies.base import SynthesisResult
+    from temper_ai.agent.strategies.base import SynthesisResult
 
     synthesis_result = SynthesisResult(
         final_decision="test result",
@@ -184,7 +184,7 @@ def test_safety_action_policy_validation(benchmark):
     """
     policy_engine = ActionPolicyEngine()
 
-    from src.safety.action_policy_engine import PolicyExecutionContext
+    from temper_ai.safety.action_policy_engine import PolicyExecutionContext
     context = PolicyExecutionContext(
         action_type="tool_execution",
         tool_name="calculator",
@@ -227,7 +227,7 @@ def test_safety_circuit_breaker_overhead(benchmark):
     Target: <5ms
     Measures: Circuit breaker check overhead
     """
-    from src.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
+    from temper_ai.llm.circuit_breaker import CircuitBreaker, CircuitBreakerConfig
 
     config = CircuitBreakerConfig(
         failure_threshold=5,

@@ -4,10 +4,10 @@ import uuid
 
 import pytest
 
-from src.portfolio._schemas import PortfolioConfig, ProductDefinition
-from src.portfolio.models import ProductRunRecord
-from src.portfolio.scheduler import ResourceScheduler
-from src.portfolio.store import PortfolioStore
+from temper_ai.portfolio._schemas import PortfolioConfig, ProductDefinition
+from temper_ai.portfolio.models import ProductRunRecord
+from temper_ai.portfolio.scheduler import ResourceScheduler
+from temper_ai.portfolio.store import PortfolioStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

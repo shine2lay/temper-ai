@@ -11,9 +11,9 @@ import warnings
 
 import pytest
 
-from src.agent.strategies.base import AgentOutput
-from src.agent.strategies.debate import DebateAndSynthesize, DebateHistory, DebateRound
-from src.agent.strategies.multi_round import (
+from temper_ai.agent.strategies.base import AgentOutput
+from temper_ai.agent.strategies.debate import DebateAndSynthesize, DebateHistory, DebateRound
+from temper_ai.agent.strategies.multi_round import (
     CommunicationHistory,
     CommunicationRound,
     MultiRoundStrategy,

@@ -20,7 +20,7 @@ This document provides ready-to-use code snippets and patterns for implementing 
 ### Status Colors and Icons
 
 ```python
-# /home/shinelay/meta-autonomous-framework/src/observability/console_config.py
+# /home/shinelay/meta-autonomous-framework/temper_ai/observability/console_config.py
 
 """Configuration constants for console visualization."""
 
@@ -630,8 +630,8 @@ class OptimizedStreamingVisualizer:
 
     def _fetch_workflow_optimized(self):
         """Fetch workflow with optimized queries."""
-        from src.observability.database import get_session
-        from src.observability.models import WorkflowExecution
+        from temper_ai.observability.database import get_session
+        from temper_ai.observability.models import WorkflowExecution
         from sqlalchemy.orm import joinedload
 
         try:
@@ -776,8 +776,8 @@ class BatchStreamingVisualizer:
 
     def _fetch_batch_updates(self) -> List[WorkflowUpdate]:
         """Fetch updates for all workflows in single query."""
-        from src.observability.database import get_session
-        from src.observability.models import WorkflowExecution
+        from temper_ai.observability.database import get_session
+        from temper_ai.observability.models import WorkflowExecution
 
         updates = []
 
@@ -841,8 +841,8 @@ def fetch_workflow_efficient(
 
     Uses different loading strategies based on detail level to minimize queries.
     """
-    from src.observability.database import get_session
-    from src.observability.models import WorkflowExecution
+    from temper_ai.observability.database import get_session
+    from temper_ai.observability.models import WorkflowExecution
 
     with get_session() as session:
         query = session.query(WorkflowExecution)
@@ -940,7 +940,7 @@ class CachedVisualizer:
 
 ```python
 from datetime import datetime, timezone, timedelta
-from src.observability.models import (
+from temper_ai.observability.models import (
     WorkflowExecution,
     StageExecution,
     AgentExecution,
@@ -1146,6 +1146,6 @@ This reference provides:
 6. **Testing utilities** for easy test development
 
 All code is production-ready and follows the existing codebase patterns found in:
-- `/home/shinelay/meta-autonomous-framework/src/observability/console.py`
-- `/home/shinelay/meta-autonomous-framework/src/observability/formatters.py`
-- `/home/shinelay/meta-autonomous-framework/src/observability/models.py`
+- `/home/shinelay/meta-autonomous-framework/temper_ai/observability/console.py`
+- `/home/shinelay/meta-autonomous-framework/temper_ai/observability/formatters.py`
+- `/home/shinelay/meta-autonomous-framework/temper_ai/observability/models.py`

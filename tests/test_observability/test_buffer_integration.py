@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.observability.buffer import (
+from temper_ai.observability.buffer import (
     LLMCallBufferParams,
     ObservabilityBuffer,
     ToolCallBufferParams,

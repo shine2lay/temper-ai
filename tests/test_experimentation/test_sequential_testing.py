@@ -6,7 +6,7 @@ Tests SPRT boundaries, sample size calculations, and Bayesian analysis.
 
 import numpy as np
 
-from src.experimentation.sequential_testing import (
+from temper_ai.experimentation.sequential_testing import (
     BayesianAnalyzer,
     SequentialTester,
     calculate_sample_size,

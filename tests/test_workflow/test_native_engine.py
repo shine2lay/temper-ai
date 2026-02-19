@@ -9,11 +9,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.workflow.engines.native_engine import (
+from temper_ai.workflow.engines.native_engine import (
     NativeCompiledWorkflow,
     NativeExecutionEngine,
 )
-from src.workflow.execution_engine import (
+from temper_ai.workflow.execution_engine import (
     ExecutionMode,
     WorkflowCancelledError,
 )
@@ -112,7 +112,7 @@ class TestNativeExecutionEngine:
 
     def _make_engine(self):
         """Create engine with mocked safety stack."""
-        with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock_safety:
+        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock_safety:
             mock_safety.return_value = MagicMock()
             engine = NativeExecutionEngine()
         return engine
@@ -239,29 +239,29 @@ class TestEngineRegistration:
 
     def test_native_in_registry(self):
         """Test native engine is available via registry."""
-        from src.workflow.engine_registry import EngineRegistry
+        from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
         assert "native" in registry.list_engines()
 
     def test_get_native_engine(self):
         """Test creating native engine via registry."""
-        from src.workflow.engine_registry import EngineRegistry
+        from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
-        with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine("native")
         assert isinstance(engine, NativeExecutionEngine)
 
     def test_config_based_selection(self):
         """Test engine selection from workflow config."""
-        from src.workflow.engine_registry import EngineRegistry
+        from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
         config = {"workflow": {"engine": "native", "stages": ["s1"]}}
 
-        with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine_from_config(config)
         assert isinstance(engine, NativeExecutionEngine)

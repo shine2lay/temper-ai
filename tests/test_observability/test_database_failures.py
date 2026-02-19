@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from src.observability.database import DatabaseManager
-from src.observability.models import (
+from temper_ai.observability.database import DatabaseManager
+from temper_ai.observability.models import (
     StageExecution,
     WorkflowExecution,
 )

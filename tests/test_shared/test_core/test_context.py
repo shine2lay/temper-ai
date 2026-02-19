@@ -4,7 +4,7 @@ Verifies the unified ExecutionContext class covers all fields from the
 previously separate definitions and maintains backward compatibility.
 """
 
-from src.shared.core.context import ExecutionContext
+from temper_ai.shared.core.context import ExecutionContext
 
 
 class TestExecutionContext:
@@ -145,7 +145,7 @@ class TestExecutionContext:
 
     def test_no_import_shadowing(self):
         """Verify the canonical import path doesn't collide."""
-        from src.shared.core.context import ExecutionContext as EC
+        from temper_ai.shared.core.context import ExecutionContext as EC
         assert EC is ExecutionContext
 
 

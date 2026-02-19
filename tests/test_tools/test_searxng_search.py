@@ -9,7 +9,7 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from src.tools.searxng_search import SearXNGSearch, SearXNGSearchParams
+from temper_ai.tools.searxng_search import SearXNGSearch, SearXNGSearchParams
 
 
 # ---------------------------------------------------------------------------

@@ -7,15 +7,15 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from src.agent.llm_providers import BaseLLM, LLMResponse
-from src.storage.schemas.agent_config import (
+from temper_ai.agent.llm_providers import BaseLLM, LLMResponse
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
     InferenceConfig,
     PromptConfig,
 )
-from src.observability.database import DatabaseManager
+from temper_ai.observability.database import DatabaseManager
 
 # ============================================================================
 # Test Configuration Constants

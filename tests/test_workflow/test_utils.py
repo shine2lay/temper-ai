@@ -1,5 +1,5 @@
 """Tests for compiler utility functions."""
-from src.workflow.utils import extract_agent_name
+from temper_ai.workflow.utils import extract_agent_name
 
 
 class MockAgent:

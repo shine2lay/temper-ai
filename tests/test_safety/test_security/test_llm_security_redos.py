@@ -11,7 +11,7 @@ import time
 
 import pytest
 
-from src.safety.security.llm_security import PromptInjectionDetector
+from temper_ai.safety.security.llm_security import PromptInjectionDetector
 
 
 class TestReDoSProtection:

@@ -12,8 +12,8 @@ import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
-from src.observability.aggregation.metric_creator import MetricRecordCreator
-from src.observability.aggregation.period import AggregationPeriod
+from temper_ai.observability.aggregation.metric_creator import MetricRecordCreator
+from temper_ai.observability.aggregation.period import AggregationPeriod
 
 
 @pytest.fixture
@@ -59,7 +59,7 @@ class TestWorkflowMetricCreation:
         mock_result.total_cost = 0.25
         mock_result.p95_duration = 8.0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             metric_ids = creator.create_workflow_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -81,7 +81,7 @@ class TestWorkflowMetricCreation:
         mock_result.total_cost = 0
         mock_result.p95_duration = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             mock_metric_instance = Mock()
             MockMetric.return_value = mock_metric_instance
 
@@ -112,7 +112,7 @@ class TestWorkflowMetricCreation:
         mock_result.total_cost = 0
         mock_result.p95_duration = 0
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             metric_ids = creator.create_workflow_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -132,7 +132,7 @@ class TestWorkflowMetricCreation:
         mock_result.total_cost = 0  # Zero - should not create
         mock_result.p95_duration = 0  # Zero - should not create
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             metric_ids = creator.create_workflow_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -152,7 +152,7 @@ class TestWorkflowMetricCreation:
         mock_result.total_cost = None
         mock_result.p95_duration = None
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             metric_ids = creator.create_workflow_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -172,7 +172,7 @@ class TestWorkflowMetricCreation:
         mock_result.total_cost = 0
         mock_result.p95_duration = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator.create_workflow_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -193,7 +193,7 @@ class TestWorkflowMetricCreation:
         mock_result.p95_duration = 7.0
 
         for period in [AggregationPeriod.MINUTE, AggregationPeriod.HOUR, AggregationPeriod.DAY]:
-            with patch('src.storage.database.models.SystemMetric') as MockMetric:
+            with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
                 creator.create_workflow_metrics(mock_result, period, timestamp)
 
                 call_kwargs = MockMetric.call_args[1]
@@ -213,7 +213,7 @@ class TestAgentMetricCreation:
         mock_result.total_cost = 0.15
         mock_result.avg_tokens = 150.0
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             metric_ids = creator.create_agent_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -233,7 +233,7 @@ class TestAgentMetricCreation:
         mock_result.total_cost = 0
         mock_result.avg_tokens = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator.create_agent_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -256,7 +256,7 @@ class TestAgentMetricCreation:
         mock_result.total_cost = 0  # Zero
         mock_result.avg_tokens = 0  # Zero
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             metric_ids = creator.create_agent_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -276,7 +276,7 @@ class TestAgentMetricCreation:
         mock_result.total_cost = 0
         mock_result.avg_tokens = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator.create_agent_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -296,7 +296,7 @@ class TestAgentMetricCreation:
         mock_result.total_cost = 0
         mock_result.avg_tokens = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator.create_agent_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -324,7 +324,7 @@ class TestLLMMetricCreation:
         mock_result.p99_latency = 950.0
         mock_result.total_cost = 0.50
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             metric_ids = creator.create_llm_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -346,7 +346,7 @@ class TestLLMMetricCreation:
         mock_result.p99_latency = 0
         mock_result.total_cost = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator.create_llm_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -371,7 +371,7 @@ class TestLLMMetricCreation:
         mock_result.p99_latency = 850.0
         mock_result.total_cost = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator.create_llm_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -404,7 +404,7 @@ class TestLLMMetricCreation:
         mock_result.p99_latency = 0  # Zero
         mock_result.total_cost = 0  # Zero
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             metric_ids = creator.create_llm_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -426,7 +426,7 @@ class TestLLMMetricCreation:
         mock_result.p99_latency = 0
         mock_result.total_cost = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator.create_llm_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -443,7 +443,7 @@ class TestCreateMetricHelper:
 
     def test_create_metric_basic(self, creator, mock_session, timestamp):
         """Creates metric with basic parameters."""
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             mock_metric = Mock()
             MockMetric.return_value = mock_metric
 
@@ -470,7 +470,7 @@ class TestCreateMetricHelper:
 
     def test_create_metric_with_dimensions(self, creator, mock_session, timestamp):
         """Creates metric with workflow/stage/agent dimensions."""
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator._create_metric(
                 metric_name="test_metric",
                 metric_value=10.0,
@@ -491,7 +491,7 @@ class TestCreateMetricHelper:
         """Creates metric with custom tags."""
         tags = {'provider': 'openai', 'model': 'gpt-4', 'total': 100}
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator._create_metric(
                 metric_name="test_metric",
                 metric_value=0.95,
@@ -506,7 +506,7 @@ class TestCreateMetricHelper:
 
     def test_create_metric_no_commit(self, creator, mock_session, timestamp):
         """Does not commit - caller must commit."""
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             creator._create_metric(
                 metric_name="test_metric",
                 metric_value=1.0,
@@ -522,7 +522,7 @@ class TestCreateMetricHelper:
         """Generates unique IDs for each metric."""
         metric_ids = []
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             for _ in range(10):
                 metric_id = creator._create_metric(
                     metric_name="test_metric",
@@ -550,7 +550,7 @@ class TestEdgeCases:
         mock_result.total_cost = 0
         mock_result.p95_duration = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator.create_workflow_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -570,7 +570,7 @@ class TestEdgeCases:
         mock_result.total_cost = 0
         mock_result.avg_tokens = 0
 
-        with patch('src.storage.database.models.SystemMetric') as MockMetric:
+        with patch('temper_ai.storage.database.models.SystemMetric') as MockMetric:
             creator.create_agent_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -590,7 +590,7 @@ class TestEdgeCases:
         mock_result.total_cost = 0.0001  # $0.0001
         mock_result.p95_duration = 0.002
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             metric_ids = creator.create_workflow_metrics(
                 mock_result,
                 AggregationPeriod.HOUR,
@@ -612,7 +612,7 @@ class TestEdgeCases:
         mock_result.p99_latency = 15000.0
         mock_result.total_cost = 10000.0
 
-        with patch('src.storage.database.models.SystemMetric'):
+        with patch('temper_ai.storage.database.models.SystemMetric'):
             metric_ids = creator.create_llm_metrics(
                 mock_result,
                 AggregationPeriod.DAY,

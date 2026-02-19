@@ -1,12 +1,12 @@
 """Tests for autonomy SQLModel tables."""
 
-from src.safety.autonomy.models import (
+from temper_ai.safety.autonomy.models import (
     AutonomyState,
     AutonomyTransition,
     BudgetRecord,
     EmergencyStopEvent,
 )
-from src.storage.database.datetime_utils import utcnow
+from temper_ai.storage.database.datetime_utils import utcnow
 
 
 class TestAutonomyState:

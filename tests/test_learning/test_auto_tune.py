@@ -3,9 +3,9 @@
 import pytest
 import yaml
 
-from src.learning.auto_tune import AutoTuneEngine
-from src.learning.models import STATUS_APPLIED, TuneRecommendation
-from src.learning.store import LearningStore
+from temper_ai.learning.auto_tune import AutoTuneEngine
+from temper_ai.learning.models import STATUS_APPLIED, TuneRecommendation
+from temper_ai.learning.store import LearningStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

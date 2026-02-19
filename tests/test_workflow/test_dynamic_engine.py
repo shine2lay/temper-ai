@@ -7,11 +7,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.workflow.engines.dynamic_engine import (
+from temper_ai.workflow.engines.dynamic_engine import (
     DynamicCompiledWorkflow,
     DynamicExecutionEngine,
 )
-from src.workflow.execution_engine import (
+from temper_ai.workflow.execution_engine import (
     ExecutionMode,
     WorkflowCancelledError,
 )
@@ -110,7 +110,7 @@ class TestDynamicExecutionEngine:
 
     def _make_engine(self):
         """Create engine with mocked safety stack."""
-        with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock_safety:
+        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock_safety:
             mock_safety.return_value = MagicMock()
             engine = DynamicExecutionEngine()
         return engine
@@ -241,46 +241,46 @@ class TestEngineRegistration:
 
     def test_dynamic_in_registry(self):
         """Test dynamic engine is available via registry."""
-        from src.workflow.engine_registry import EngineRegistry
+        from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
         assert "dynamic" in registry.list_engines()
 
     def test_native_alias_in_registry(self):
         """Test native alias still works via registry."""
-        from src.workflow.engine_registry import EngineRegistry
+        from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
         assert "native" in registry.list_engines()
 
     def test_get_dynamic_engine(self):
         """Test creating dynamic engine via registry."""
-        from src.workflow.engine_registry import EngineRegistry
+        from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
-        with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine("dynamic")
         assert isinstance(engine, DynamicExecutionEngine)
 
     def test_native_alias_returns_dynamic(self):
         """Test that 'native' alias returns DynamicExecutionEngine."""
-        from src.workflow.engine_registry import EngineRegistry
+        from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
-        with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine("native")
         assert isinstance(engine, DynamicExecutionEngine)
 
     def test_config_based_selection(self):
         """Test engine selection from workflow config."""
-        from src.workflow.engine_registry import EngineRegistry
+        from temper_ai.workflow.engine_registry import EngineRegistry
 
         registry = EngineRegistry()
         config = {"workflow": {"engine": "dynamic", "stages": ["s1"]}}
 
-        with patch("src.workflow.engines.dynamic_engine.create_safety_stack") as mock:
+        with patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack") as mock:
             mock.return_value = MagicMock()
             engine = registry.get_engine_from_config(config)
         assert isinstance(engine, DynamicExecutionEngine)
@@ -291,7 +291,7 @@ class TestBackwardCompatibility:
 
     def test_native_names_importable(self):
         """Test NativeExecutionEngine and NativeCompiledWorkflow still importable."""
-        from src.workflow.engines.native_engine import (
+        from temper_ai.workflow.engines.native_engine import (
             NativeCompiledWorkflow,
             NativeExecutionEngine,
         )
@@ -300,7 +300,7 @@ class TestBackwardCompatibility:
 
     def test_native_from_init(self):
         """Test old names from engines __init__."""
-        from src.workflow.engines import (
+        from temper_ai.workflow.engines import (
             NativeCompiledWorkflow,
             NativeExecutionEngine,
         )

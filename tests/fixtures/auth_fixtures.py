@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 @pytest.fixture
 def sample_user():
     """Sample user for auth tests."""
-    from src.auth.models import User
+    from temper_ai.auth.models import User
     return User(
         user_id="test_user_123",
         email="test@example.com",
@@ -19,7 +19,7 @@ def sample_user():
 @pytest.fixture
 def sample_session(sample_user):
     """Sample session for session management tests."""
-    from src.auth.models import Session
+    from temper_ai.auth.models import Session
     return Session(
         session_id="sess_123",
         user_id=sample_user.user_id,
@@ -34,7 +34,7 @@ def sample_session(sample_user):
 @pytest.fixture
 def oauth_config():
     """Sample OAuth configuration."""
-    from src.auth.oauth.config import OAuthProviderConfig
+    from temper_ai.auth.oauth.config import OAuthProviderConfig
     return OAuthProviderConfig(
         provider="google",
         client_id="test_client",

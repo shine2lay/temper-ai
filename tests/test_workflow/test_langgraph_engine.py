@@ -8,8 +8,8 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.workflow.execution_engine import ExecutionMode
-from src.workflow.langgraph_engine import LangGraphCompiledWorkflow, LangGraphExecutionEngine
+from temper_ai.workflow.execution_engine import ExecutionMode
+from temper_ai.workflow.langgraph_engine import LangGraphCompiledWorkflow, LangGraphExecutionEngine
 
 # Sample workflow configs for testing
 SIMPLE_WORKFLOW_CONFIG = {
@@ -296,7 +296,7 @@ class TestLangGraphExecutionEngine:
         assert engine.tool_registry == mock_registry
         assert engine.config_loader == mock_loader
 
-    @patch('src.workflow.engines.langgraph_engine.LangGraphCompiler')
+    @patch('temper_ai.workflow.engines.langgraph_engine.LangGraphCompiler')
     def test_compile(self, mock_compiler_class):
         """Test workflow compilation."""
         # Setup mock
@@ -486,8 +486,8 @@ class TestIntegration:
         }
 
         # Compile
-        with patch('src.stage.executors.sequential.AgentFactory.create') as mock_create, \
-             patch('src.stage.executors.parallel.AgentFactory.create') as mock_create_p:
+        with patch('temper_ai.stage.executors.sequential.AgentFactory.create') as mock_create, \
+             patch('temper_ai.stage.executors.parallel.AgentFactory.create') as mock_create_p:
             # Mock agent execution
             mock_agent = Mock()
             mock_agent.execute = Mock(return_value=Mock(
@@ -530,7 +530,7 @@ class TestIntegration:
             }
         }
 
-        with patch('src.workflow.langgraph_compiler.LangGraphCompiler.compile') as mock_compile:
+        with patch('temper_ai.workflow.langgraph_compiler.LangGraphCompiler.compile') as mock_compile:
             mock_graph = Mock()
             mock_compile.return_value = mock_graph
 

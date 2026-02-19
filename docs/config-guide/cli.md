@@ -1,18 +1,18 @@
 # CLI Commands
 
-The `maf` CLI is the primary interface for running, validating, and listing configurations.
+The `temper-ai` CLI is the primary interface for running, validating, and listing configurations.
 
-**Binary:** `~/.local/bin/maf`
-**Source:** `src/cli/main.py`
+**Binary:** `~/.local/bin/temper-ai`
+**Source:** `temper_ai/cli/main.py`
 
-> Always use `maf` instead of `python -m` to avoid RuntimeWarning.
+> Always use `temper-ai` instead of `python -m` to avoid RuntimeWarning.
 
 ## Commands
 
-### `maf run` — Execute a Workflow
+### `temper-ai run` — Execute a Workflow
 
 ```bash
-maf run <workflow> [options]
+temper-ai run <workflow> [options]
 ```
 
 **Arguments:**
@@ -37,41 +37,41 @@ maf run <workflow> [options]
 
 ```bash
 # Basic run
-maf run configs/workflows/simple_research.yaml \
+temper-ai run configs/workflows/simple_research.yaml \
   --input examples/research_input.yaml
 
 # With real-time details
-maf run configs/workflows/quick_decision_demo.yaml \
+temper-ai run configs/workflows/quick_decision_demo.yaml \
   --input examples/demo_input.yaml \
   --show-details
 
 # Save output to file
-maf run configs/workflows/simple_research.yaml \
+temper-ai run configs/workflows/simple_research.yaml \
   --input examples/research_input.yaml \
   --output results.json
 
 # With live dashboard
-maf run configs/workflows/llm_debate_demo.yaml \
+temper-ai run configs/workflows/llm_debate_demo.yaml \
   --input examples/debate_demo_input.yaml \
   --dashboard
 
 # Dashboard on custom port
-maf run configs/workflows/llm_debate_demo.yaml \
+temper-ai run configs/workflows/llm_debate_demo.yaml \
   --input examples/debate_demo_input.yaml \
   --dashboard 9000
 
 # Verbose logging
-maf run configs/workflows/simple_research.yaml \
+temper-ai run configs/workflows/simple_research.yaml \
   --input examples/research_input.yaml \
   -v
 ```
 
 ---
 
-### `maf validate` — Validate Config
+### `temper-ai validate` — Validate Config
 
 ```bash
-maf validate <workflow> [--config-root DIR]
+temper-ai validate <workflow> [--config-root DIR]
 ```
 
 Validates a workflow config without running it. Checks:
@@ -82,15 +82,15 @@ Validates a workflow config without running it. Checks:
 **Example:**
 
 ```bash
-maf validate configs/workflows/quick_decision_demo.yaml
+temper-ai validate configs/workflows/quick_decision_demo.yaml
 ```
 
 ---
 
-### `maf dashboard` — Standalone Dashboard
+### `temper-ai dashboard` — Standalone Dashboard
 
 ```bash
-maf dashboard [--port PORT] [--db PATH]
+temper-ai dashboard [--port PORT] [--db PATH]
 ```
 
 Launches the web dashboard to browse past workflow executions.
@@ -98,17 +98,17 @@ Launches the web dashboard to browse past workflow executions.
 **Example:**
 
 ```bash
-maf dashboard --port 8420
+temper-ai dashboard --port 8420
 ```
 
 ---
 
-### `maf list` — List Available Configs
+### `temper-ai list` — List Available Configs
 
 ```bash
-maf list workflows [--config-root DIR]
-maf list agents [--config-root DIR]
-maf list stages [--config-root DIR]
+temper-ai list workflows [--config-root DIR]
+temper-ai list agents [--config-root DIR]
+temper-ai list stages [--config-root DIR]
 ```
 
 Lists available configuration files.
@@ -116,9 +116,9 @@ Lists available configuration files.
 **Examples:**
 
 ```bash
-maf list workflows
-maf list agents
-maf list stages
+temper-ai list workflows
+temper-ai list agents
+temper-ai list stages
 ```
 
 ---

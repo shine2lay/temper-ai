@@ -3,9 +3,9 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.workflow.domain_state import WorkflowDomainState
-from src.workflow.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
-from src.workflow.state_manager import create_init_node
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
+from temper_ai.workflow.state_manager import create_init_node
 from tests.fixtures.realistic_data import REALISTIC_CONFIG_LOADER
 
 

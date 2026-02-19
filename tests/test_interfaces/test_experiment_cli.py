@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from src.interfaces.cli.experiment_commands import experiment_group
+from temper_ai.interfaces.cli.experiment_commands import experiment_group
 
 
 @pytest.fixture
@@ -25,13 +25,13 @@ def mock_service():
 def _patch_service(mock_svc):
     """Return a patch context for _get_service."""
     return patch(
-        "src.interfaces.cli.experiment_commands._get_service",
+        "temper_ai.interfaces.cli.experiment_commands._get_service",
         return_value=mock_svc,
     )
 
 
 class TestListCommand:
-    """Tests for `maf experiment list`."""
+    """Tests for `temper-ai experiment list`."""
 
     def test_list_empty(self, runner, mock_service):
         with _patch_service(mock_service):
@@ -65,7 +65,7 @@ class TestListCommand:
 
 
 class TestCreateCommand:
-    """Tests for `maf experiment create`."""
+    """Tests for `temper-ai experiment create`."""
 
     def test_create_success(self, runner, mock_service, tmp_path):
         variants_file = tmp_path / "variants.yaml"
@@ -106,7 +106,7 @@ class TestCreateCommand:
 
 
 class TestStartCommand:
-    """Tests for `maf experiment start`."""
+    """Tests for `temper-ai experiment start`."""
 
     def test_start_success(self, runner, mock_service):
         with _patch_service(mock_service):
@@ -123,7 +123,7 @@ class TestStartCommand:
 
 
 class TestStopCommand:
-    """Tests for `maf experiment stop`."""
+    """Tests for `temper-ai experiment stop`."""
 
     def test_stop_success(self, runner, mock_service):
         with _patch_service(mock_service):
@@ -139,7 +139,7 @@ class TestStopCommand:
 
 
 class TestResultsCommand:
-    """Tests for `maf experiment results`."""
+    """Tests for `temper-ai experiment results`."""
 
     def test_results_success(self, runner, mock_service):
         mock_service.get_experiment_results.return_value = {

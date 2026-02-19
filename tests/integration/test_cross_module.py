@@ -20,18 +20,18 @@ from pathlib import Path
 
 import pytest
 
-from src.workflow.config_loader import ConfigLoader
-from src.workflow.langgraph_compiler import LangGraphCompiler
-from src.observability.database import DatabaseManager, get_session
-from src.observability.models import (
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.observability.database import DatabaseManager, get_session
+from temper_ai.observability.models import (
     AgentExecution,
     StageExecution,
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.tracker import ExecutionTracker
-from src.tools.calculator import Calculator
-from src.tools.registry import ToolRegistry
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.registry import ToolRegistry
 
 # ============================================================================
 # Fixtures

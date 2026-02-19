@@ -3,11 +3,11 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.workflow.checkpoint import CheckpointManager
-from src.workflow.checkpoint_backends import CheckpointNotFoundError
-from src.workflow.domain_state import WorkflowDomainState
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.workflow_executor import WorkflowExecutor
+from temper_ai.workflow.checkpoint import CheckpointManager
+from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.workflow_executor import WorkflowExecutor
 
 
 def test_resume_from_checkpoint_continues_execution(tmp_path):

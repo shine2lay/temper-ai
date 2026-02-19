@@ -13,14 +13,14 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.observability.database import get_session, init_database
-from src.observability.models import (
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import (
     AgentExecution,
     StageExecution,
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.tracker import ExecutionTracker
 
 pytestmark = [pytest.mark.integration, pytest.mark.critical_path]
 
@@ -32,7 +32,7 @@ class TestToolToAgentErrorPropagation:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -41,7 +41,7 @@ class TestToolToAgentErrorPropagation:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
@@ -203,7 +203,7 @@ class TestAgentToStageErrorPropagation:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -212,7 +212,7 @@ class TestAgentToStageErrorPropagation:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
@@ -493,7 +493,7 @@ class TestStageToWorkflowErrorPropagation:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -588,7 +588,7 @@ class TestTimeoutCascading:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -597,7 +597,7 @@ class TestTimeoutCascading:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 

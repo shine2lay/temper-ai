@@ -9,7 +9,7 @@ stage:
     - editor_structural
 
   collaboration:
-    strategy: src.strategies.dialogue.DialogueOrchestrator
+    strategy: temper_ai.strategies.dialogue.DialogueOrchestrator
     max_rounds: 3
     consensus_threshold: 0.65
     enable_summarization: true

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.llm.prompts.engine import PromptEngine, PromptRenderError
+from temper_ai.llm.prompts.engine import PromptEngine, PromptRenderError
 
 
 class TestBasicRendering:

@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 
 
 class SlowTool(BaseTool):
@@ -84,8 +84,8 @@ class TestToolExecutionTimeouts:
         Tool sleeps for 60s but timeout is 2s.
         Must verify execution stops at ~2s, NOT at 60s.
         """
-        from src.tools.executor import ToolExecutor
-        from src.tools.registry import ToolRegistry
+        from temper_ai.tools.executor import ToolExecutor
+        from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
         tool = SlowTool(sleep_seconds=60)  # Tool would take 60s
@@ -140,8 +140,8 @@ class TestToolExecutionTimeouts:
 
     def test_tool_timeout_cleanup(self):
         """Test that resources are cleaned up on tool timeout."""
-        from src.tools.executor import ToolExecutor
-        from src.tools.registry import ToolRegistry
+        from temper_ai.tools.executor import ToolExecutor
+        from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
         tool = SlowTool(sleep_seconds=10)
@@ -158,8 +158,8 @@ class TestToolExecutionTimeouts:
     @pytest.mark.asyncio
     async def test_multiple_tool_timeouts_no_resource_leak(self):
         """Test that multiple timeouts don't leak resources."""
-        from src.tools.executor import ToolExecutor
-        from src.tools.registry import ToolRegistry
+        from temper_ai.tools.executor import ToolExecutor
+        from temper_ai.tools.registry import ToolRegistry
 
         registry = ToolRegistry()
         tool = SlowTool(sleep_seconds=60)

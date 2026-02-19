@@ -1,6 +1,6 @@
 # Contributing Guide
 
-Thank you for your interest in contributing to the Meta-Autonomous Agent Framework! This guide will help you get started.
+Thank you for your interest in contributing to the Temper AI! This guide will help you get started.
 
 ---
 
@@ -71,8 +71,8 @@ git checkout -b fix/issue-123
 pytest
 
 # Check code style
-black src/ tests/
-ruff check src/ tests/
+black temper_ai/ tests/
+ruff check temper_ai/ tests/
 ```
 
 ### 4. Commit and Push
@@ -215,7 +215,7 @@ pre-commit install
 pytest
 
 # Check import works
-python -c "from src.agents.standard_agent import StandardAgent; print('OK')"
+python -c "from temper_ai.agents.standard_agent import StandardAgent; print('OK')"
 ```
 
 ---
@@ -236,10 +236,10 @@ We use **Black** for automatic formatting:
 
 ```bash
 # Format all code
-black src/ tests/
+black temper_ai/ tests/
 
 # Check formatting
-black --check src/ tests/
+black --check temper_ai/ tests/
 ```
 
 **Configuration:** `pyproject.toml`
@@ -255,13 +255,13 @@ We use **ruff** for linting (modern, faster replacement for flake8):
 
 ```bash
 # Lint code
-ruff check src/ tests/
+ruff check temper_ai/ tests/
 
 # Auto-fix issues where possible
-ruff check --fix src/ tests/
+ruff check --fix temper_ai/ tests/
 
 # Check specific rules
-ruff check --select E,F,W src/
+ruff check --select E,F,W temper_ai/
 ```
 
 **Configuration:** `pyproject.toml` under `[tool.ruff]`
@@ -721,7 +721,7 @@ Traceback (most recent call last):
 ### Scenario 2: Add a New Tool
 
 **Steps:**
-1. Create tool class in `src/tools/your_tool.py`
+1. Create tool class in `temper_ai/tools/your_tool.py`
 2. Inherit from `BaseTool`
 3. Implement required methods
 4. Add tests in `tests/test_tools/test_your_tool.py`
@@ -730,7 +730,7 @@ Traceback (most recent call last):
 
 **Example:**
 ```python
-from src.tools.base import BaseTool, ToolResult
+from temper_ai.tools.base import BaseTool, ToolResult
 
 class MyTool(BaseTool):
     @property
@@ -782,10 +782,10 @@ git checkout -b feature/new-feature
 pytest tests/test_relevant_module.py -v
 
 # 4. Format code
-black src/ tests/
+black temper_ai/ tests/
 
 # 5. Check linting
-ruff check src/ tests/
+ruff check temper_ai/ tests/
 
 # 6. Run full test suite
 pytest --cov=src tests/
@@ -879,7 +879,7 @@ Regular contributors may be invited to become maintainers.
 
 ## Thank You!
 
-Thank you for contributing to the Meta-Autonomous Agent Framework. Every contribution, no matter how small, helps make this project better for everyone.
+Thank you for contributing to the Temper AI. Every contribution, no matter how small, helps make this project better for everyone.
 
 **Questions?** Open an issue or discussion on GitHub!
 

@@ -5,12 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.autonomy._schemas import (
+from temper_ai.autonomy._schemas import (
     AutonomousLoopConfig,
     PostExecutionReport,
     WorkflowRunContext,
 )
-from src.autonomy.orchestrator import PostExecutionOrchestrator
+from temper_ai.autonomy.orchestrator import PostExecutionOrchestrator
 
 
 def _make_context(**overrides: object) -> WorkflowRunContext:
@@ -51,9 +51,9 @@ class TestOrchestratorDisabled:
 class TestOrchestratorEnabled:
     """Tests when subsystems are enabled."""
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
     def test_all_subsystems_called(
         self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
     ) -> None:
@@ -74,9 +74,9 @@ class TestOrchestratorEnabled:
         assert report.portfolio_result == {"scorecards": 1}
         assert report.duration_ms >= 0
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
     def test_selective_disable_learning(
         self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
     ) -> None:
@@ -94,9 +94,9 @@ class TestOrchestratorEnabled:
         mock_portfolio.assert_called_once()
         assert report.learning_result is None
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
     def test_selective_disable_goals(
         self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
     ) -> None:
@@ -112,9 +112,9 @@ class TestOrchestratorEnabled:
         mock_goals.assert_not_called()
         assert report.goals_result is None
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
     def test_selective_disable_portfolio(
         self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
     ) -> None:
@@ -134,9 +134,9 @@ class TestOrchestratorEnabled:
 class TestOrchestratorGracefulDegradation:
     """Tests for graceful degradation when subsystems fail."""
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
     def test_learning_failure_doesnt_crash(
         self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
     ) -> None:
@@ -153,9 +153,9 @@ class TestOrchestratorGracefulDegradation:
         assert report.goals_result is not None
         assert report.portfolio_result is not None
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
     def test_all_subsystems_fail(
         self, mock_learning: MagicMock, mock_goals: MagicMock, mock_portfolio: MagicMock
     ) -> None:
@@ -182,14 +182,14 @@ class TestOrchestratorLearningIntegration:
         ctx = _make_context()
 
         with patch(
-            "src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning",
+            "temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning",
             side_effect=None,
         ):
             # Simulate import error in the actual method
             pass
 
         # Direct test of _run_learning with import mock
-        with patch.dict("sys.modules", {"src.learning.orchestrator": None}):
+        with patch.dict("sys.modules", {"temper_ai.learning.orchestrator": None}):
             result = orch._run_learning(ctx, report)
             assert result is None
             assert len(report.errors) == 1
@@ -206,9 +206,9 @@ class TestOrchestratorLearningIntegration:
         mock_mining_run.patterns_new = 1
         mock_mining_run.status = "completed"
 
-        with patch("src.learning.store.LearningStore") as MockStore, \
-             patch("src.learning.orchestrator.MiningOrchestrator") as MockMining, \
-             patch("src.learning.recommender.RecommendationEngine") as MockEngine:
+        with patch("temper_ai.learning.store.LearningStore") as MockStore, \
+             patch("temper_ai.learning.orchestrator.MiningOrchestrator") as MockMining, \
+             patch("temper_ai.learning.recommender.RecommendationEngine") as MockEngine:
             MockStore.return_value = MagicMock()
             MockMining.return_value.run_mining.return_value = mock_mining_run
             MockEngine.return_value.generate_recommendations.return_value = ["rec1"]
@@ -237,8 +237,8 @@ class TestOrchestratorGoalsIntegration:
         mock_analysis_run.proposals_generated = 2
         mock_analysis_run.status = "completed"
 
-        with patch("src.goals.store.GoalStore") as MockStore, \
-             patch("src.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch:
+        with patch("temper_ai.goals.store.GoalStore") as MockStore, \
+             patch("temper_ai.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch:
             MockStore.return_value = MagicMock()
             MockOrch.return_value.run_analysis.return_value = mock_analysis_run
 
@@ -255,7 +255,7 @@ class TestOrchestratorGoalsIntegration:
         report = PostExecutionReport()
         ctx = _make_context()
 
-        with patch("src.goals.store.GoalStore", side_effect=RuntimeError("db error")):
+        with patch("temper_ai.goals.store.GoalStore", side_effect=RuntimeError("db error")):
             result = orch._run_goals(ctx, report)
 
         assert result is None
@@ -279,8 +279,8 @@ class TestOrchestratorPortfolioIntegration:
             "products": [{"name": "api"}],
         }
 
-        with patch("src.portfolio.store.PortfolioStore") as MockStore, \
-             patch("src.portfolio.optimizer.PortfolioOptimizer") as MockOpt:
+        with patch("temper_ai.portfolio.store.PortfolioStore") as MockStore, \
+             patch("temper_ai.portfolio.optimizer.PortfolioOptimizer") as MockOpt:
             MockStore.return_value.list_portfolios.return_value = [mock_record]
             MockOpt.return_value.compute_scorecards.return_value = [MagicMock()]
             MockOpt.return_value.recommend.return_value = [MagicMock()]
@@ -298,7 +298,7 @@ class TestOrchestratorPortfolioIntegration:
         report = PostExecutionReport()
         ctx = _make_context(product_type=None)
 
-        with patch("src.portfolio.store.PortfolioStore") as MockStore:
+        with patch("temper_ai.portfolio.store.PortfolioStore") as MockStore:
             MockStore.return_value = MagicMock()
             result = orch._run_portfolio(ctx, report)
 
@@ -311,7 +311,7 @@ class TestOrchestratorPortfolioIntegration:
         report = PostExecutionReport()
         ctx = _make_context()
 
-        with patch("src.portfolio.store.PortfolioStore", side_effect=RuntimeError("db error")):
+        with patch("temper_ai.portfolio.store.PortfolioStore", side_effect=RuntimeError("db error")):
             result = orch._run_portfolio(ctx, report)
 
         assert result is None
@@ -323,7 +323,7 @@ class TestWorkflowSchemaBackwardCompat:
     """Tests that existing workflow YAMLs still parse with the new field."""
 
     def test_workflow_schema_without_autonomous_loop(self) -> None:
-        from src.workflow._schemas import WorkflowConfig
+        from temper_ai.workflow._schemas import WorkflowConfig
 
         config_data = {
             "workflow": {
@@ -342,7 +342,7 @@ class TestWorkflowSchemaBackwardCompat:
         assert parsed.workflow.autonomous_loop.enabled is False
 
     def test_workflow_schema_with_autonomous_loop(self) -> None:
-        from src.workflow._schemas import WorkflowConfig
+        from temper_ai.workflow._schemas import WorkflowConfig
 
         config_data = {
             "workflow": {
@@ -372,10 +372,10 @@ class TestWorkflowSchemaBackwardCompat:
 class TestOrchestratorFeedbackWiring:
     """Tests for feedback subsystem wiring in the orchestrator."""
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_feedback")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_feedback")
     def test_feedback_called_when_auto_apply_learning(
         self,
         mock_feedback: MagicMock,
@@ -397,10 +397,10 @@ class TestOrchestratorFeedbackWiring:
         mock_feedback.assert_called_once()
         assert report.feedback_result == {"learning": []}
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_feedback")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_feedback")
     def test_feedback_called_when_auto_apply_goals(
         self,
         mock_feedback: MagicMock,
@@ -422,9 +422,9 @@ class TestOrchestratorFeedbackWiring:
         mock_feedback.assert_called_once()
         assert report.feedback_result == {"goals": []}
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
     def test_feedback_not_called_when_disabled(
         self,
         mock_learning: MagicMock,
@@ -461,10 +461,10 @@ class TestOrchestratorMemoryBridge:
         mock_mining_run.patterns_new = 1
         mock_mining_run.status = "completed"
 
-        with patch("src.learning.store.LearningStore") as MockStore, \
-             patch("src.learning.orchestrator.MiningOrchestrator") as MockMining, \
-             patch("src.learning.recommender.RecommendationEngine") as MockEngine, \
-             patch("src.autonomy.memory_bridge.LearningToMemoryBridge") as MockBridge:
+        with patch("temper_ai.learning.store.LearningStore") as MockStore, \
+             patch("temper_ai.learning.orchestrator.MiningOrchestrator") as MockMining, \
+             patch("temper_ai.learning.recommender.RecommendationEngine") as MockEngine, \
+             patch("temper_ai.autonomy.memory_bridge.LearningToMemoryBridge") as MockBridge:
             MockStore.return_value = MagicMock()
             MockMining.return_value.run_mining.return_value = mock_mining_run
             MockEngine.return_value.generate_recommendations.return_value = []
@@ -487,10 +487,10 @@ class TestOrchestratorMemoryBridge:
         mock_mining_run.patterns_new = 0
         mock_mining_run.status = "completed"
 
-        with patch("src.learning.store.LearningStore") as MockStore, \
-             patch("src.learning.orchestrator.MiningOrchestrator") as MockMining, \
-             patch("src.learning.recommender.RecommendationEngine") as MockEngine, \
-             patch("src.autonomy.memory_bridge.LearningToMemoryBridge") as MockBridge:
+        with patch("temper_ai.learning.store.LearningStore") as MockStore, \
+             patch("temper_ai.learning.orchestrator.MiningOrchestrator") as MockMining, \
+             patch("temper_ai.learning.recommender.RecommendationEngine") as MockEngine, \
+             patch("temper_ai.autonomy.memory_bridge.LearningToMemoryBridge") as MockBridge:
             MockStore.return_value = MagicMock()
             MockMining.return_value.run_mining.return_value = mock_mining_run
             MockEngine.return_value.generate_recommendations.return_value = []
@@ -507,9 +507,9 @@ class TestOrchestratorMemoryBridge:
 class TestOrchestratorTimeout:
     """Tests for timeout enforcement in the orchestrator."""
 
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
-    @patch("src.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_portfolio")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_goals")
+    @patch("temper_ai.autonomy.orchestrator.PostExecutionOrchestrator._run_learning")
     def test_timeout_skips_remaining_subsystems(
         self,
         mock_learning: MagicMock,
@@ -534,7 +534,7 @@ class TestOrchestratorTimeout:
         config = AutonomousLoopConfig(enabled=True)
         orch = PostExecutionOrchestrator(config)
 
-        with patch("src.autonomy.orchestrator.time.monotonic", side_effect=fake_monotonic):
+        with patch("temper_ai.autonomy.orchestrator.time.monotonic", side_effect=fake_monotonic):
             report = orch.run(_make_context())
 
         # Learning was called
@@ -567,13 +567,13 @@ class TestOrchestratorGoalAnalyzers:
         mock_analysis_run.proposals_generated = 0
         mock_analysis_run.status = "completed"
 
-        with patch("src.goals.store.GoalStore") as MockGoalStore, \
-             patch("src.learning.store.LearningStore") as MockLearningStore, \
-             patch("src.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch, \
-             patch("src.goals.analyzers.performance.PerformanceAnalyzer"), \
-             patch("src.goals.analyzers.reliability.ReliabilityAnalyzer"), \
-             patch("src.goals.analyzers.cost.CostAnalyzer"), \
-             patch("src.goals.analyzers.cross_product.CrossProductAnalyzer"):
+        with patch("temper_ai.goals.store.GoalStore") as MockGoalStore, \
+             patch("temper_ai.learning.store.LearningStore") as MockLearningStore, \
+             patch("temper_ai.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch, \
+             patch("temper_ai.goals.analyzers.performance.PerformanceAnalyzer"), \
+             patch("temper_ai.goals.analyzers.reliability.ReliabilityAnalyzer"), \
+             patch("temper_ai.goals.analyzers.cost.CostAnalyzer"), \
+             patch("temper_ai.goals.analyzers.cross_product.CrossProductAnalyzer"):
             MockGoalStore.return_value = MagicMock()
             MockLearningStore.return_value = MagicMock()
             MockOrch.return_value.run_analysis.return_value = mock_analysis_run

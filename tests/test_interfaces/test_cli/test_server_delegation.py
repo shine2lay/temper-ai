@@ -1,4 +1,4 @@
-"""Tests for server delegation (maf run → server auto-detection)."""
+"""Tests for server delegation (temper-ai run → server auto-detection)."""
 import json
 from pathlib import Path
 from typing import Any
@@ -7,8 +7,8 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from src.interfaces.cli.server_client import MAFServerClient
-from src.interfaces.cli.server_delegation import (
+from temper_ai.interfaces.cli.server_client import MAFServerClient
+from temper_ai.interfaces.cli.server_delegation import (
     MAX_POLL_SECONDS,
     POLL_INTERVAL,
     _poll_with_progress,
@@ -88,8 +88,8 @@ class TestDetectServer:
 class TestDelegateToServer:
     """Tests for delegate_to_server()."""
 
-    @patch("src.interfaces.cli.server_delegation._save_output")
-    @patch("src.interfaces.cli.server_delegation._poll_with_progress")
+    @patch("temper_ai.interfaces.cli.server_delegation._save_output")
+    @patch("temper_ai.interfaces.cli.server_delegation._poll_with_progress")
     def test_success_flow(
         self, mock_poll: MagicMock, mock_save: MagicMock
     ) -> None:
@@ -109,8 +109,8 @@ class TestDelegateToServer:
         mock_poll.assert_called_once_with(mock_client, "exec-123", False)
         mock_save.assert_not_called()
 
-    @patch("src.interfaces.cli.server_delegation._save_output")
-    @patch("src.interfaces.cli.server_delegation._poll_with_progress")
+    @patch("temper_ai.interfaces.cli.server_delegation._save_output")
+    @patch("temper_ai.interfaces.cli.server_delegation._poll_with_progress")
     def test_failure_raises_system_exit(
         self, mock_poll: MagicMock, mock_save: MagicMock
     ) -> None:
@@ -125,8 +125,8 @@ class TestDelegateToServer:
             )
         assert exc_info.value.code == 1
 
-    @patch("src.interfaces.cli.server_delegation._save_output")
-    @patch("src.interfaces.cli.server_delegation._poll_with_progress")
+    @patch("temper_ai.interfaces.cli.server_delegation._save_output")
+    @patch("temper_ai.interfaces.cli.server_delegation._poll_with_progress")
     def test_resolves_absolute_path(
         self, mock_poll: MagicMock, mock_save: MagicMock
     ) -> None:
@@ -143,8 +143,8 @@ class TestDelegateToServer:
         sent_path = call_kwargs.kwargs["workflow"]
         assert Path(sent_path).is_absolute()
 
-    @patch("src.interfaces.cli.server_delegation._save_output")
-    @patch("src.interfaces.cli.server_delegation._poll_with_progress")
+    @patch("temper_ai.interfaces.cli.server_delegation._save_output")
+    @patch("temper_ai.interfaces.cli.server_delegation._poll_with_progress")
     def test_saves_output_when_file_specified(
         self, mock_poll: MagicMock, mock_save: MagicMock
     ) -> None:
@@ -162,8 +162,8 @@ class TestDelegateToServer:
             {"status": "completed", "result": "data"}, "/tmp/out.json"
         )
 
-    @patch("src.interfaces.cli.server_delegation._save_output")
-    @patch("src.interfaces.cli.server_delegation._poll_with_progress")
+    @patch("temper_ai.interfaces.cli.server_delegation._save_output")
+    @patch("temper_ai.interfaces.cli.server_delegation._poll_with_progress")
     def test_missing_execution_id_raises_system_exit(
         self, mock_poll: MagicMock, mock_save: MagicMock
     ) -> None:
@@ -185,8 +185,8 @@ class TestDelegateToServer:
 class TestPollWithProgress:
     """Tests for _poll_with_progress()."""
 
-    @patch("src.interfaces.cli.server_delegation.time.sleep")
-    @patch("src.interfaces.cli.server_delegation.time.monotonic")
+    @patch("temper_ai.interfaces.cli.server_delegation.time.sleep")
+    @patch("temper_ai.interfaces.cli.server_delegation.time.monotonic")
     def test_polls_until_complete(
         self, mock_monotonic: MagicMock, mock_sleep: MagicMock
     ) -> None:
@@ -205,8 +205,8 @@ class TestPollWithProgress:
         assert result["status"] == "completed"
         assert mock_client.get_status.call_count == 3
 
-    @patch("src.interfaces.cli.server_delegation.time.sleep")
-    @patch("src.interfaces.cli.server_delegation.time.monotonic")
+    @patch("temper_ai.interfaces.cli.server_delegation.time.sleep")
+    @patch("temper_ai.interfaces.cli.server_delegation.time.monotonic")
     def test_shows_stage_transitions_when_detailed(
         self, mock_monotonic: MagicMock, mock_sleep: MagicMock
     ) -> None:
@@ -228,8 +228,8 @@ class TestPollWithProgress:
 
         assert result["status"] == "completed"
 
-    @patch("src.interfaces.cli.server_delegation.time.sleep")
-    @patch("src.interfaces.cli.server_delegation.time.monotonic")
+    @patch("temper_ai.interfaces.cli.server_delegation.time.sleep")
+    @patch("temper_ai.interfaces.cli.server_delegation.time.monotonic")
     def test_times_out_after_deadline(
         self, mock_monotonic: MagicMock, mock_sleep: MagicMock
     ) -> None:

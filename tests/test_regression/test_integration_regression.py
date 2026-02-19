@@ -7,17 +7,17 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.utils.agent_factory import AgentFactory
-from src.agent.standard_agent import StandardAgent
-from src.storage.schemas.agent_config import (
+from temper_ai.agent.utils.agent_factory import AgentFactory
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
     InferenceConfig,
     PromptConfig,
 )
-from src.tools.calculator import Calculator
-from src.tools.registry import ToolRegistry
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.registry import ToolRegistry
 
 
 class TestAgentToolIntegration:
@@ -71,7 +71,7 @@ class TestConfigAgentIntegration:
         Severity: HIGH (incorrect agent behavior)
         Fixed: AgentFactory now properly maps all config fields
         """
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             agent = AgentFactory.create(minimal_agent_config)
 
             # Verify all config fields mapped correctly
@@ -96,7 +96,7 @@ class TestToolExecutorIntegration:
         registry = ToolRegistry()
         registry.register(Calculator())
 
-        from src.tools.executor import ToolExecutor
+        from temper_ai.tools.executor import ToolExecutor
         executor = ToolExecutor(registry)
 
         result = executor.execute(
@@ -128,7 +128,7 @@ class TestAgentFactory:
         if hasattr(minimal_agent_config.agent, 'type'):
             delattr(minimal_agent_config.agent, 'type')
 
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             agent = AgentFactory.create(minimal_agent_config)
 
             # Should default to StandardAgent
@@ -151,7 +151,7 @@ class TestErrorHandlingIntegration:
         registry = ToolRegistry()
         registry.register(Calculator())
 
-        from src.tools.executor import ToolExecutor
+        from temper_ai.tools.executor import ToolExecutor
         executor = ToolExecutor(registry)
 
         # Execute with invalid params
@@ -184,7 +184,7 @@ class TestConcurrency:
 
         import concurrent.futures
 
-        from src.tools.executor import ToolExecutor
+        from temper_ai.tools.executor import ToolExecutor
 
         executor = ToolExecutor(registry, max_workers=4)
 

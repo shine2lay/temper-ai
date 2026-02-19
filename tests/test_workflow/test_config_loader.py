@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from src.workflow.config_loader import (
+from temper_ai.workflow.config_loader import (
     ConfigLoader,
     ConfigNotFoundError,
     ConfigValidationError,

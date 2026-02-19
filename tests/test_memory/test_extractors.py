@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.memory.extractors import (
+from temper_ai.memory.extractors import (
     MAX_PATTERN_LENGTH,
     MAX_PATTERNS_PER_EXTRACTION,
     extract_procedural_patterns,

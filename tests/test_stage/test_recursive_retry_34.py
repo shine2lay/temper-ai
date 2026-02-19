@@ -10,10 +10,10 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.stage.executors.base import ParallelRunner
-from src.stage.executors.parallel import ParallelStageExecutor
-from src.stage.executors.state_keys import StateKeys
-from src.agent.strategies.base import SynthesisResult
+from temper_ai.stage.executors.base import ParallelRunner
+from temper_ai.stage.executors.parallel import ParallelStageExecutor
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.agent.strategies.base import SynthesisResult
 
 
 # ---------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 """Tests for MemoryStoreProtocol."""
 
-from src.memory.adapters.in_memory import InMemoryAdapter
-from src.memory.protocols import MemoryStoreProtocol
+from temper_ai.memory.adapters.in_memory import InMemoryAdapter
+from temper_ai.memory.protocols import MemoryStoreProtocol
 
 
 class TestMemoryStoreProtocol:

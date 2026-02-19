@@ -4,7 +4,7 @@ Covers normalization, hashing, classification, and compute_error_fingerprint().
 """
 import pytest
 
-from src.observability.error_fingerprinting import (
+from temper_ai.observability.error_fingerprinting import (
     ErrorClassification,
     ErrorFingerprintResult,
     classify_error,
@@ -15,7 +15,7 @@ from src.observability.error_fingerprinting import (
     FINGERPRINT_LENGTH,
     MAX_NORMALIZED_MESSAGE_LENGTH,
 )
-from src.shared.utils.exceptions import BaseError, ErrorCode, LLMError
+from temper_ai.shared.utils.exceptions import BaseError, ErrorCode, LLMError
 
 
 # ============================================================================

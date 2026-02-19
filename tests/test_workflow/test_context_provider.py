@@ -1,13 +1,13 @@
 """Tests for stage-level context management: schemas, provider, and resolver."""
 import pytest
 
-from src.workflow.context_schemas import (
+from temper_ai.workflow.context_schemas import (
     StageInputDeclaration,
     StageOutputDeclaration,
     parse_stage_inputs,
     parse_stage_outputs,
 )
-from src.workflow.context_provider import (
+from temper_ai.workflow.context_provider import (
     ContextResolutionError,
     PassthroughResolver,
     SourceResolver,

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, AsyncMock
 
 import pytest
 
-from src.goals.background import BackgroundAnalysisJob
+from temper_ai.goals.background import BackgroundAnalysisJob
 
 
 class TestBackgroundAnalysisJob:

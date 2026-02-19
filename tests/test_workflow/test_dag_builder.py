@@ -1,7 +1,7 @@
 """Tests for DAG builder — stage dependency graph construction."""
 import pytest
 
-from src.workflow.dag_builder import (
+from temper_ai.workflow.dag_builder import (
     StageDAG,
     build_stage_dag,
     compute_depths,

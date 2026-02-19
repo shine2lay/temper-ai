@@ -12,7 +12,7 @@ coordinate to protect the system.
 
 import pytest
 
-from src.safety import (
+from temper_ai.safety import (
     ApprovalWorkflow,
     CircuitBreaker,
     CircuitBreakerManager,

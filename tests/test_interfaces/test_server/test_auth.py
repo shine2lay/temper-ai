@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.interfaces.server.auth import APIKeyMiddleware
+from temper_ai.interfaces.server.auth import APIKeyMiddleware
 
 
 def _create_app(api_key: str | None = None) -> FastAPI:

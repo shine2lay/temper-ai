@@ -18,7 +18,7 @@ stage:
 
   inputs:
     workspace_path:
-      source: workflow.workspace_path
+      source: vcs_git_setup.structured.worktree_path
       required: true
     coder_output:
       source: vcs_code_execute.output

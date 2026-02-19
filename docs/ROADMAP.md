@@ -32,7 +32,7 @@ The framework has a solid foundation. Thirteen milestones are complete (M1-M4 + 
 | M5.1: Optimization Engine | Composable evaluators + optimizers, CLI integration, 3 demo workflows, 85 tests |
 | M5.2: Agent Memory | SQLite persistence, decay/pruning, LLM procedural extraction, cross-agent sharing, 163 tests |
 | M5.3: Continuous Learning | Background pattern mining (5 miners), recommendation engine, auto-tune, learning dashboard, convergence detection, 58 tests |
-| M6.2: MAF Server | WorkflowRunner API, persistent run history (SQLite), CLI client (trigger/status/logs), API key auth, 74 tests |
+| M6.2: Temper AI Server | WorkflowRunner API, persistent run history (SQLite), CLI client (trigger/status/logs), API key auth, 74 tests |
 | M6.1: Progressive Autonomy | Trust-based agent escalation (5 levels), approval routing matrix, budget enforcement, emergency stop, shadow mode, 136 tests |
 | M6.3: Multi-Product Templates | Copy-and-stamp template system (4 product types, 42 YAML configs), template registry/generator, CLI commands, quality gate presets, 63 tests |
 | M7.1: Self-Modifying Lifecycle | Pre-compilation workflow adaptation (project classifier, profile registry, lifecycle adapter), A/B testing, rollback monitoring, 103 tests |
@@ -46,17 +46,17 @@ The framework has a solid foundation. Thirteen milestones are complete (M1-M4 + 
 - LLMService extraction (clean separation of LLM call lifecycle)
 - Observability: structured logging, OpenTelemetry, error fingerprinting, resilience tracking, cost rollup, data lineage, prompt versioning; async support, sampling, health monitoring, span cleanup (9 gaps closed)
 - Parallel test execution (pytest-xdist), architecture scanner v2.4.0
-- ExperimentService wired into optimization engine — Selection, Refinement, and Tuning optimizers now track experiments via `src/experimentation/` A/B testing engine
+- ExperimentService wired into optimization engine — Selection, Refinement, and Tuning optimizers now track experiments via `temper_ai/experimentation/` A/B testing engine
 - Conversation history for stage:agent re-invocations — agents retain multi-turn context when re-invoked in workflow loops/branches
 
 **Available Foundation:**
 
-- `src/experimentation/` — production-ready A/B testing engine (v1.0.0, 101 tests): experiment lifecycle, variant assignment (hash/random), statistical analysis (t-test, SPRT, Bayesian), guardrails, config merging with security validation
-- `src/observability/merit_score_service.py` — agent merit scoring (not connected to safety)
+- `temper_ai/experimentation/` — production-ready A/B testing engine (v1.0.0, 101 tests): experiment lifecycle, variant assignment (hash/random), statistical analysis (t-test, SPRT, Bayesian), guardrails, config merging with security validation
+- `temper_ai/observability/merit_score_service.py` — agent merit scoring (not connected to safety)
 
 **Completed and Removed:**
 
-- `src/self_improvement/` — deleted (~50 files of speculative M5 loop code). Replaced by `src/improvement/` (composable optimization engine, ~750 lines, 85 tests)
+- `temper_ai/self_improvement/` — deleted (~50 files of speculative M5 loop code). Replaced by `temper_ai/improvement/` (composable optimization engine, ~750 lines, 85 tests)
 
 ---
 
@@ -68,7 +68,7 @@ The framework has a solid foundation. Thirteen milestones are complete (M1-M4 + 
 - Composable evaluators: criteria (pass/fail), comparative (A vs B), scored (0-1), human-in-the-loop
 - Composable optimizers: iterative refinement (critique loop), best-of-N selection, statistical config tuning
 - Any optimizer can use any evaluator — radical modularity via configuration
-- Config tuning delegates to the proven `src/experimentation/` A/B testing engine
+- Config tuning delegates to the proven `temper_ai/experimentation/` A/B testing engine
 - Agents have episodic, procedural, and cross-session memory
 - Background pattern mining surfaces actionable heuristics
 
@@ -86,13 +86,13 @@ The framework has a solid foundation. Thirteen milestones are complete (M1-M4 + 
 
 **Key Capabilities:**
 - Progressive autonomy — agents earn trust, human intervention decreases
-- MAF Server — REST/WebSocket API for external integration
+- Temper AI Server — REST/WebSocket API for external integration
 - Multi-product templates — pre-built workflow configs per product type
 - Runtime budget enforcement and emergency stop
 
 **How It Changes User Experience:**
 - Low-risk operations run without approval; high-risk operations require it
-- Products trigger MAF workflows via HTTP instead of CLI
+- Products trigger Temper AI workflows via HTTP instead of CLI
 - Start a new project from a proven template, customize from there
 - Trust is visible — see exactly why an agent has its autonomy level
 
@@ -121,28 +121,28 @@ The framework has a solid foundation. Thirteen milestones are complete (M1-M4 + 
 
 ### M5.1: Optimization Engine — COMPLETE
 
-Deleted `src/self_improvement/` (untested, speculative) and built a composable optimization engine in `src/improvement/`. Users configure evaluators (how to judge quality) and optimizers (how to improve) as a pipeline in workflow YAML. Engine is wired into `maf run` — workflows with an `optimization:` block automatically invoke the pipeline.
+Deleted `temper_ai/self_improvement/` (untested, speculative) and built a composable optimization engine in `temper_ai/improvement/`. Users configure evaluators (how to judge quality) and optimizers (how to improve) as a pipeline in workflow YAML. Engine is wired into `temper-ai run` — workflows with an `optimization:` block automatically invoke the pipeline.
 
 **What Was Built:**
 
 | Component | File(s) | Status |
 |-----------|---------|--------|
-| `OptimizationEngine` | `src/improvement/engine.py` | Done — pipeline orchestrator |
-| `OptimizationConfig` / schemas | `src/improvement/_schemas.py` | Done — Pydantic models |
-| `EvaluatorProtocol` / `OptimizerProtocol` | `src/improvement/protocols.py` | Done |
-| `CriteriaEvaluator` | `src/improvement/evaluators/criteria.py` | Done — programmatic + LLM checks |
-| `ComparativeEvaluator` | `src/improvement/evaluators/comparative.py` | Done |
-| `ScoredEvaluator` | `src/improvement/evaluators/scored.py` | Done |
-| `HumanEvaluator` | `src/improvement/evaluators/human.py` | Done |
-| `SelectionOptimizer` | `src/improvement/optimizers/selection.py` | Done — best of N re-rolls |
-| `RefinementOptimizer` | `src/improvement/optimizers/refinement.py` | Done — LLM critique loop |
-| `TuningOptimizer` | `src/improvement/optimizers/tuning.py` | Done — strategy search (ExperimentService optional) |
-| `OptimizationRegistry` | `src/improvement/registry.py` | Done |
-| CLI wiring | `src/interfaces/cli/main.py` | Done — `_CLIWorkflowRunner`, `_CritiqueLLM` adapter |
-| Workflow schema | `src/workflow/_schemas.py` | Done — `optimization: Optional[OptimizationConfig]` |
+| `OptimizationEngine` | `temper_ai/improvement/engine.py` | Done — pipeline orchestrator |
+| `OptimizationConfig` / schemas | `temper_ai/improvement/_schemas.py` | Done — Pydantic models |
+| `EvaluatorProtocol` / `OptimizerProtocol` | `temper_ai/improvement/protocols.py` | Done |
+| `CriteriaEvaluator` | `temper_ai/improvement/evaluators/criteria.py` | Done — programmatic + LLM checks |
+| `ComparativeEvaluator` | `temper_ai/improvement/evaluators/comparative.py` | Done |
+| `ScoredEvaluator` | `temper_ai/improvement/evaluators/scored.py` | Done |
+| `HumanEvaluator` | `temper_ai/improvement/evaluators/human.py` | Done |
+| `SelectionOptimizer` | `temper_ai/improvement/optimizers/selection.py` | Done — best of N re-rolls |
+| `RefinementOptimizer` | `temper_ai/improvement/optimizers/refinement.py` | Done — LLM critique loop |
+| `TuningOptimizer` | `temper_ai/improvement/optimizers/tuning.py` | Done — strategy search (ExperimentService optional) |
+| `OptimizationRegistry` | `temper_ai/improvement/registry.py` | Done |
+| CLI wiring | `temper_ai/interfaces/cli/main.py` | Done — `_CLIWorkflowRunner`, `_CritiqueLLM` adapter |
+| Workflow schema | `temper_ai/workflow/_schemas.py` | Done — `optimization: Optional[OptimizationConfig]` |
 | Unit tests | `tests/test_improvement/` | Done — 85 tests |
 
-**Demo Workflows (all tested end-to-end with `maf run`):**
+**Demo Workflows (all tested end-to-end with `temper-ai run`):**
 
 | Workflow | Optimizer | What It Does |
 |----------|-----------|-------------|
@@ -176,7 +176,7 @@ All 3 optimizers work by modifying `input_data` (workflow inputs). The existing 
 - **M5-specific DB tables:** `m5_experiments`, `m5_experiment_results`, `m5_loop_state` may still exist in Alembic migrations
 - ~~**ExperimentService not exercised:** Optimizers had optional ExperimentService but it was never wired in~~ ✓ Resolved — ExperimentService wired into all 3 optimizers (Selection, Refinement, Tuning) for variant assignment, early stopping, and experiment tracking
 
-**Dependencies:** None (builds on M4 foundation + existing `src/experimentation/`)
+**Dependencies:** None (builds on M4 foundation + existing `temper_ai/experimentation/`)
 
 ---
 
@@ -188,20 +188,20 @@ Persistent memory across sessions and workflow runs with pluggable backends.
 
 | Component | File(s) | Status |
 |-----------|---------|--------|
-| `MemoryService` | `src/memory/service.py` | Done — retrieve_context, retrieve_with_shared, store_episodic/procedural/cross_session, decay, pruning |
-| `MemoryScope` / schemas | `src/memory/_schemas.py` | Done — scope model (tenant, workflow, agent, namespace) |
-| Memory constants | `src/memory/constants.py` | Done — providers, types, limits |
-| `InMemoryAdapter` | `src/memory/adapters/in_memory.py` | Done — dict-based, thread-safe (testing/fallback) |
-| `SQLiteAdapter` | `src/memory/adapters/sqlite_adapter.py` | Done — zero-dependency persistent backend, LIKE + FTS5 opt-in |
-| `Mem0Adapter` | `src/memory/adapters/mem0_adapter.py` | Done — vector search via Mem0 (optional dependency) |
-| `MemoryStoreProtocol` | `src/memory/protocols.py` | Done — runtime-checkable adapter contract |
-| `MemoryProviderRegistry` | `src/memory/registry.py` | Done — thread-safe singleton, lazy loading |
-| Procedural extraction | `src/memory/extractors.py` | Done — LLM-based pattern extraction from agent output |
-| Agent memory injection | `src/agent/standard_agent.py` | Done — `_inject_memory_context()`, `_on_after_run()`, shared scope retrieval, procedural extraction |
-| Agent memory config | `src/storage/schemas/agent_config.py` | Done — `MemoryConfig` (enabled, provider, decay_factor, max_episodes, auto_extract_procedural, shared_namespace) |
-| CLI memory commands | `src/interfaces/cli/memory_commands.py` | Done — list/add/search/clear/seed with `--db-path` for SQLite |
-| Decay & pruning | `src/memory/service.py` | Done — exponential time-decay (`_apply_decay`), max-episodes pruning (`_enforce_max_episodes`) |
-| Cross-agent sharing | `src/memory/service.py` | Done — `build_shared_scope()`, `retrieve_with_shared()` (dual-scope search with dedup) |
+| `MemoryService` | `temper_ai/memory/service.py` | Done — retrieve_context, retrieve_with_shared, store_episodic/procedural/cross_session, decay, pruning |
+| `MemoryScope` / schemas | `temper_ai/memory/_schemas.py` | Done — scope model (tenant, workflow, agent, namespace) |
+| Memory constants | `temper_ai/memory/constants.py` | Done — providers, types, limits |
+| `InMemoryAdapter` | `temper_ai/memory/adapters/in_memory.py` | Done — dict-based, thread-safe (testing/fallback) |
+| `SQLiteAdapter` | `temper_ai/memory/adapters/sqlite_adapter.py` | Done — zero-dependency persistent backend, LIKE + FTS5 opt-in |
+| `Mem0Adapter` | `temper_ai/memory/adapters/mem0_adapter.py` | Done — vector search via Mem0 (optional dependency) |
+| `MemoryStoreProtocol` | `temper_ai/memory/protocols.py` | Done — runtime-checkable adapter contract |
+| `MemoryProviderRegistry` | `temper_ai/memory/registry.py` | Done — thread-safe singleton, lazy loading |
+| Procedural extraction | `temper_ai/memory/extractors.py` | Done — LLM-based pattern extraction from agent output |
+| Agent memory injection | `temper_ai/agent/standard_agent.py` | Done — `_inject_memory_context()`, `_on_after_run()`, shared scope retrieval, procedural extraction |
+| Agent memory config | `temper_ai/storage/schemas/agent_config.py` | Done — `MemoryConfig` (enabled, provider, decay_factor, max_episodes, auto_extract_procedural, shared_namespace) |
+| CLI memory commands | `temper_ai/interfaces/cli/memory_commands.py` | Done — list/add/search/clear/seed with `--db-path` for SQLite |
+| Decay & pruning | `temper_ai/memory/service.py` | Done — exponential time-decay (`_apply_decay`), max-episodes pruning (`_enforce_max_episodes`) |
+| Cross-agent sharing | `temper_ai/memory/service.py` | Done — `build_shared_scope()`, `retrieve_with_shared()` (dual-scope search with dedup) |
 | Demo configs | `configs/agents/memory_researcher.yaml`, `configs/workflows/memory_demo.yaml` | Done |
 | Tests | `tests/test_memory/` | Done — 163 tests |
 
@@ -212,10 +212,10 @@ Persistent memory across sessions and workflow runs with pluggable backends.
 - **Cross-agent sharing:** Agents store/retrieve from both private and shared namespaces (opt-in via `shared_namespace`)
 
 **Key Files:**
-- `src/memory/` module (service, adapters, extractors, schemas, protocols, registry)
-- `src/agent/standard_agent.py` (memory injection, extraction, sharing)
-- `src/storage/schemas/agent_config.py` (`MemoryConfig` in `AgentConfig`)
-- `src/interfaces/cli/memory_commands.py` (CLI management)
+- `temper_ai/memory/` module (service, adapters, extractors, schemas, protocols, registry)
+- `temper_ai/agent/standard_agent.py` (memory injection, extraction, sharing)
+- `temper_ai/storage/schemas/agent_config.py` (`MemoryConfig` in `AgentConfig`)
+- `temper_ai/interfaces/cli/memory_commands.py` (CLI management)
 
 **Remaining Gaps (for future work):**
 - **Vector search via embeddings:** Mem0 adapter exists but requires `pip install -e ".[memory]"`; no built-in embedding backend
@@ -233,22 +233,22 @@ Background pattern mining and proactive recommendations from execution history.
 
 | Component | File(s) | Status |
 |-----------|---------|--------|
-| `AgentPerformanceMiner` | `src/learning/miners/agent_performance.py` | Done — detects slow/unreliable agents |
-| `ModelEffectivenessMiner` | `src/learning/miners/model_effectiveness.py` | Done — identifies error-prone/expensive models |
-| `FailurePatternMiner` | `src/learning/miners/failure_patterns.py` | Done — finds recurring error signatures |
-| `CostPatternMiner` | `src/learning/miners/cost_patterns.py` | Done — detects cost-dominant agents |
-| `CollaborationPatternMiner` | `src/learning/miners/collaboration_patterns.py` | Done — finds debate inefficiencies |
-| `MiningOrchestrator` | `src/learning/orchestrator.py` | Done — runs all miners, deduplicates, publishes to MemoryService |
-| `BackgroundMiningJob` | `src/learning/background.py` | Done — 6-hour async loop with convergence-aware skip |
-| `RecommendationEngine` | `src/learning/recommender.py` | Done — pattern→config change mapping (model, timeout, tokens, retries, debate rounds) |
-| `AutoTuneEngine` | `src/learning/auto_tune.py` | Done — preview + apply YAML config changes |
-| `ConvergenceDetector` | `src/learning/convergence.py` | Done — moving avg novelty (10-run window, 0.1 threshold) |
-| `LearningDataService` | `src/learning/dashboard_service.py` | Done — API data aggregation |
-| Dashboard routes | `src/learning/dashboard_routes.py` | Done — 6 endpoints (`/api/learning/`) |
-| Dashboard UI | `src/interfaces/dashboard/static/learning.html` | Done — Plotly charts, pattern/convergence/recommendations |
-| `LearningStore` | `src/learning/store.py` | Done — SQLite persistence (WAL mode) |
-| Learning models | `src/learning/models.py` | Done — `LearnedPattern`, `MiningRun`, `TuneRecommendation` (SQLModel) |
-| CLI commands | `src/interfaces/cli/learning_commands.py` | Done — `maf learning mine\|patterns\|recommend\|tune\|stats` |
+| `AgentPerformanceMiner` | `temper_ai/learning/miners/agent_performance.py` | Done — detects slow/unreliable agents |
+| `ModelEffectivenessMiner` | `temper_ai/learning/miners/model_effectiveness.py` | Done — identifies error-prone/expensive models |
+| `FailurePatternMiner` | `temper_ai/learning/miners/failure_patterns.py` | Done — finds recurring error signatures |
+| `CostPatternMiner` | `temper_ai/learning/miners/cost_patterns.py` | Done — detects cost-dominant agents |
+| `CollaborationPatternMiner` | `temper_ai/learning/miners/collaboration_patterns.py` | Done — finds debate inefficiencies |
+| `MiningOrchestrator` | `temper_ai/learning/orchestrator.py` | Done — runs all miners, deduplicates, publishes to MemoryService |
+| `BackgroundMiningJob` | `temper_ai/learning/background.py` | Done — 6-hour async loop with convergence-aware skip |
+| `RecommendationEngine` | `temper_ai/learning/recommender.py` | Done — pattern→config change mapping (model, timeout, tokens, retries, debate rounds) |
+| `AutoTuneEngine` | `temper_ai/learning/auto_tune.py` | Done — preview + apply YAML config changes |
+| `ConvergenceDetector` | `temper_ai/learning/convergence.py` | Done — moving avg novelty (10-run window, 0.1 threshold) |
+| `LearningDataService` | `temper_ai/learning/dashboard_service.py` | Done — API data aggregation |
+| Dashboard routes | `temper_ai/learning/dashboard_routes.py` | Done — 6 endpoints (`/api/learning/`) |
+| Dashboard UI | `temper_ai/interfaces/dashboard/static/learning.html` | Done — Plotly charts, pattern/convergence/recommendations |
+| `LearningStore` | `temper_ai/learning/store.py` | Done — SQLite persistence (WAL mode) |
+| Learning models | `temper_ai/learning/models.py` | Done — `LearnedPattern`, `MiningRun`, `TuneRecommendation` (SQLModel) |
+| CLI commands | `temper_ai/interfaces/cli/learning_commands.py` | Done — `temper-ai learning mine\|patterns\|recommend\|tune\|stats` |
 | Alembic migration | `alembic/versions/f7a8b9012345_add_learning_tables.py` | Done — 3 tables |
 | Tests | `tests/test_learning/` | Done — 58 tests |
 
@@ -277,19 +277,19 @@ Agents earn trust incrementally based on track record. Safety policies adapt to 
 
 | Component | File(s) | Status |
 |-----------|---------|--------|
-| `AutonomyLevel` enum + `AutonomyConfig` | `src/safety/autonomy/schemas.py` | Done — 5 levels (Supervised→Strategic), config with enabled=False default |
-| `AutonomyState/Transition/Budget/Emergency` models | `src/safety/autonomy/models.py` | Done — 4 SQLModel tables |
-| `AutonomyStore` | `src/safety/autonomy/store.py` | Done — SQLite/WAL CRUD for all 4 tables |
-| `TrustEvaluator` | `src/safety/autonomy/trust_evaluator.py` | Done — reads AgentMeritScore, checks thresholds |
-| `AutonomyManager` | `src/safety/autonomy/manager.py` | Done — state machine with cooldown, max-level cap, threading.Lock |
-| `BudgetEnforcer` | `src/safety/autonomy/budget_enforcer.py` | Done — per-scope spending tracking, cost estimation from model_pricing.yaml |
-| `ApprovalRouter` | `src/safety/autonomy/approval_router.py` | Done — severity × level decision matrix, spot-check sampling |
-| `AutonomyPolicy` | `src/safety/autonomy/policy.py` | Done — BaseSafetyPolicy subclass, emergency/budget/approval checks |
-| `MeritSafetyBridge` | `src/safety/autonomy/merit_bridge.py` | Done — rate-limited bridge from merit updates to autonomy evaluation |
-| `EmergencyStopController` | `src/safety/autonomy/emergency_stop.py` | Done — O(1) threading.Event, activate/deactivate, check_or_raise |
-| `ShadowMode` | `src/safety/autonomy/shadow_mode.py` | Done — non-blocking shadow validation, agreement tracking, promotion readiness |
-| CLI commands | `src/interfaces/cli/autonomy_commands.py` | Done — status, escalate, deescalate, emergency-stop, resume, budget, history |
-| Dashboard routes + UI | `src/safety/autonomy/dashboard_routes.py`, `autonomy.html` | Done — 8 endpoints, Plotly charts |
+| `AutonomyLevel` enum + `AutonomyConfig` | `temper_ai/safety/autonomy/schemas.py` | Done — 5 levels (Supervised→Strategic), config with enabled=False default |
+| `AutonomyState/Transition/Budget/Emergency` models | `temper_ai/safety/autonomy/models.py` | Done — 4 SQLModel tables |
+| `AutonomyStore` | `temper_ai/safety/autonomy/store.py` | Done — SQLite/WAL CRUD for all 4 tables |
+| `TrustEvaluator` | `temper_ai/safety/autonomy/trust_evaluator.py` | Done — reads AgentMeritScore, checks thresholds |
+| `AutonomyManager` | `temper_ai/safety/autonomy/manager.py` | Done — state machine with cooldown, max-level cap, threading.Lock |
+| `BudgetEnforcer` | `temper_ai/safety/autonomy/budget_enforcer.py` | Done — per-scope spending tracking, cost estimation from model_pricing.yaml |
+| `ApprovalRouter` | `temper_ai/safety/autonomy/approval_router.py` | Done — severity × level decision matrix, spot-check sampling |
+| `AutonomyPolicy` | `temper_ai/safety/autonomy/policy.py` | Done — BaseSafetyPolicy subclass, emergency/budget/approval checks |
+| `MeritSafetyBridge` | `temper_ai/safety/autonomy/merit_bridge.py` | Done — rate-limited bridge from merit updates to autonomy evaluation |
+| `EmergencyStopController` | `temper_ai/safety/autonomy/emergency_stop.py` | Done — O(1) threading.Event, activate/deactivate, check_or_raise |
+| `ShadowMode` | `temper_ai/safety/autonomy/shadow_mode.py` | Done — non-blocking shadow validation, agreement tracking, promotion readiness |
+| CLI commands | `temper_ai/interfaces/cli/autonomy_commands.py` | Done — status, escalate, deescalate, emergency-stop, resume, budget, history |
+| Dashboard routes + UI | `temper_ai/safety/autonomy/dashboard_routes.py`, `autonomy.html` | Done — 8 endpoints, Plotly charts |
 | Alembic migration | `alembic/versions/g8b9c0123456_add_autonomy_tables.py` | Done — 4 tables |
 | Tests | `tests/test_safety/test_autonomy/`, `tests/test_interfaces/test_autonomy_cli.py` | Done — 136 tests |
 
@@ -305,7 +305,7 @@ Agents earn trust incrementally based on track record. Safety policies adapt to 
 
 ---
 
-### M6.2: MAF Server — COMPLETE
+### M6.2: Temper AI Server — COMPLETE
 
 Expose the framework as an API service that external products can integrate with.
 
@@ -313,15 +313,15 @@ Expose the framework as an API service that external products can integrate with
 
 | Component | File(s) | Status |
 |-----------|---------|--------|
-| `WorkflowRunner` API | `src/interfaces/server/workflow_runner.py` | Done — sync `run()` with `on_event` callback, typed `WorkflowRunResult` |
-| `ServerRun` model | `src/interfaces/server/models.py` | Done — SQLModel with JSON columns for input/result |
-| `RunStore` persistence | `src/interfaces/server/run_store.py` | Done — SQLite-backed CRUD, WAL mode, status filtering |
-| `APIKeyMiddleware` | `src/interfaces/server/auth.py` | Done — env-var controlled, health/WebSocket bypass |
-| `MAFServerClient` | `src/interfaces/cli/server_client.py` | Done — httpx-based HTTP client |
-| CLI: `maf trigger` | `src/interfaces/cli/main.py` | Done — POST /api/runs, `--wait` polls until complete |
-| CLI: `maf status` | `src/interfaces/cli/main.py` | Done — single run detail or list table |
-| CLI: `maf logs` | `src/interfaces/cli/main.py` | Done — HTTP events or `--follow` WebSocket stream |
-| GET /api/runs | `src/interfaces/server/routes.py` | Done — list with status filter, pagination |
+| `WorkflowRunner` API | `temper_ai/interfaces/server/workflow_runner.py` | Done — sync `run()` with `on_event` callback, typed `WorkflowRunResult` |
+| `ServerRun` model | `temper_ai/interfaces/server/models.py` | Done — SQLModel with JSON columns for input/result |
+| `RunStore` persistence | `temper_ai/interfaces/server/run_store.py` | Done — SQLite-backed CRUD, WAL mode, status filtering |
+| `APIKeyMiddleware` | `temper_ai/interfaces/server/auth.py` | Done — env-var controlled, health/WebSocket bypass |
+| `TemperAIServerClient` | `temper_ai/interfaces/cli/server_client.py` | Done — httpx-based HTTP client |
+| CLI: `temper-ai trigger` | `temper_ai/interfaces/cli/main.py` | Done — POST /api/runs, `--wait` polls until complete |
+| CLI: `temper-ai status` | `temper_ai/interfaces/cli/main.py` | Done — single run detail or list table |
+| CLI: `temper-ai logs` | `temper_ai/interfaces/cli/main.py` | Done — HTTP events or `--follow` WebSocket stream |
+| GET /api/runs | `temper_ai/interfaces/server/routes.py` | Done — list with status filter, pagination |
 | Alembic migration | `alembic/versions/e6f7a8b90123_add_server_runs.py` | Done — `server_runs` table |
 | Tests | `tests/test_interfaces/test_server/` | Done — 74 tests |
 
@@ -329,7 +329,7 @@ Expose the framework as an API service that external products can integrate with
 - `WorkflowRunner` library API for programmatic embedding (any Python program)
 - Persistent run history survives server restarts (SQLite)
 - CLI client commands (`trigger`, `status`, `logs`) talk to running server via HTTP
-- API key authentication via `MAF_API_KEY` env var (disabled in dev mode)
+- API key authentication via `TEMPER_AI_API_KEY` env var (disabled in dev mode)
 - `ExecutionService` delegates to `WorkflowRunner`, persists status transitions to `RunStore`
 
 **Remaining Gaps (for future work):**
@@ -343,28 +343,28 @@ Expose the framework as an API service that external products can integrate with
 
 ### M6.3: Multi-Product Templates — COMPLETE
 
-Copy-and-stamp template system: users run `maf template create --type api --name my-api` and get a complete set of workflow/stage/agent configs generated from a proven template. No runtime merge complexity — configs are standalone once created.
+Copy-and-stamp template system: users run `temper-ai template create --type api --name my-api` and get a complete set of workflow/stage/agent configs generated from a proven template. No runtime merge complexity — configs are standalone once created.
 
 **What Was Built:**
 
 | Component | File(s) | Status |
 |-----------|---------|--------|
-| Template schemas | `src/workflow/templates/_schemas.py` | Done — TemplateManifest, TemplateQualityGates, TemplateDefaultInference |
-| Template registry | `src/workflow/templates/registry.py` | Done — discover, validate, cache manifests |
-| Template generator | `src/workflow/templates/generator.py` | Done — copy-and-stamp with `{{project_name}}`, inference overrides, quality gates |
-| Quality gate presets | `src/workflow/templates/quality_gates.py` | Done — per-product defaults (web_app, api, data_pipeline, cli_tool) |
+| Template schemas | `temper_ai/workflow/templates/_schemas.py` | Done — TemplateManifest, TemplateQualityGates, TemplateDefaultInference |
+| Template registry | `temper_ai/workflow/templates/registry.py` | Done — discover, validate, cache manifests |
+| Template generator | `temper_ai/workflow/templates/generator.py` | Done — copy-and-stamp with `{{project_name}}`, inference overrides, quality gates |
+| Quality gate presets | `temper_ai/workflow/templates/quality_gates.py` | Done — per-product defaults (web_app, api, data_pipeline, cli_tool) |
 | Template YAML configs | `configs/templates/{web_app,api,data_pipeline,cli_tool}/` | Done — 42 files (4 manifests + 4 workflows + 17 stages + 17 agents) |
-| CLI commands | `src/interfaces/cli/template_commands.py` | Done — `maf template list\|info\|create` |
-| Product type expansion | `src/workflow/_schemas.py` | Done — added `data_pipeline`, `cli_tool` to Literal |
+| CLI commands | `temper_ai/interfaces/cli/template_commands.py` | Done — `temper-ai template list\|info\|create` |
+| Product type expansion | `temper_ai/workflow/_schemas.py` | Done — added `data_pipeline`, `cli_tool` to Literal |
 | Unit + integration tests | `tests/test_workflow/test_templates/`, `tests/test_interfaces/test_template_cli.py` | Done — 63 tests |
 
 **CLI Commands:**
 
 ```bash
-maf template list                                    # List available templates
-maf template info api                                # Show template details + quality gates
-maf template create --type api --name my-api         # Generate project configs
-maf template create --type web_app --name mysite \
+temper-ai template list                                    # List available templates
+temper-ai template info api                                # Show template details + quality gates
+temper-ai template create --type api --name my-api         # Generate project configs
+temper-ai template create --type web_app --name mysite \
     --provider ollama --model llama3 --output /tmp/out  # With inference overrides
 ```
 
@@ -391,20 +391,20 @@ Pre-compilation workflow adaptation based on project characteristics and histori
 
 | Component | File(s) | Status |
 |-----------|---------|--------|
-| `ProjectClassifier` | `src/lifecycle/classifier.py` | Done — LLM-based + explicit-input fallback classification |
-| `ProfileRegistry` | `src/lifecycle/profiles.py` | Done — YAML + DB merge, profile matching |
-| `LifecycleAdapter` | `src/lifecycle/adapter.py` | Done — classify → match → autonomy gate → apply rules (SKIP/ADD/REORDER/MODIFY) → audit |
-| `HistoryAnalyzer` | `src/lifecycle/history.py` | Done — historical outcome analysis for adaptation decisions |
-| `LifecycleExperimenter` | `src/lifecycle/experiment.py` | Done — wraps ExperimentService for A/B testing lifecycle variants |
-| `RollbackMonitor` | `src/lifecycle/rollback.py` | Done — degradation detection, automatic rollback |
-| `LifecycleStore` | `src/lifecycle/store.py` | Done — SQLite/WAL persistence |
-| Lifecycle models | `src/lifecycle/models.py` | Done — SQLModel tables |
-| Lifecycle schemas | `src/lifecycle/_schemas.py` | Done — Pydantic models, LifecycleConfig in WorkflowConfigInner |
-| CLI commands | `src/interfaces/cli/lifecycle_commands.py` | Done — `maf lifecycle profiles\|classify\|preview\|history\|check` |
-| Dashboard routes | `src/lifecycle/dashboard_routes.py` | Done — 4 API endpoints |
+| `ProjectClassifier` | `temper_ai/lifecycle/classifier.py` | Done — LLM-based + explicit-input fallback classification |
+| `ProfileRegistry` | `temper_ai/lifecycle/profiles.py` | Done — YAML + DB merge, profile matching |
+| `LifecycleAdapter` | `temper_ai/lifecycle/adapter.py` | Done — classify → match → autonomy gate → apply rules (SKIP/ADD/REORDER/MODIFY) → audit |
+| `HistoryAnalyzer` | `temper_ai/lifecycle/history.py` | Done — historical outcome analysis for adaptation decisions |
+| `LifecycleExperimenter` | `temper_ai/lifecycle/experiment.py` | Done — wraps ExperimentService for A/B testing lifecycle variants |
+| `RollbackMonitor` | `temper_ai/lifecycle/rollback.py` | Done — degradation detection, automatic rollback |
+| `LifecycleStore` | `temper_ai/lifecycle/store.py` | Done — SQLite/WAL persistence |
+| Lifecycle models | `temper_ai/lifecycle/models.py` | Done — SQLModel tables |
+| Lifecycle schemas | `temper_ai/lifecycle/_schemas.py` | Done — Pydantic models, LifecycleConfig in WorkflowConfigInner |
+| CLI commands | `temper_ai/interfaces/cli/lifecycle_commands.py` | Done — `temper-ai lifecycle profiles\|classify\|preview\|history\|check` |
+| Dashboard routes | `temper_ai/lifecycle/dashboard_routes.py` | Done — 4 API endpoints |
 | Profile configs | `configs/lifecycle/{lean_small_projects,security_aware}.yaml` | Done |
 | Demo workflow | `configs/workflows/lifecycle_demo.yaml` | Done |
-| CLI wiring | `src/interfaces/cli/main.py` | Done — `_maybe_adapt_lifecycle()` between load and compile |
+| CLI wiring | `temper_ai/interfaces/cli/main.py` | Done — `_maybe_adapt_lifecycle()` between load and compile |
 | Tests | `tests/test_lifecycle/` | Done — 103 tests |
 
 **Key Capabilities:**
@@ -427,24 +427,24 @@ The system proposes improvements and opportunities, not just executes instructio
 
 | Component | File(s) | Status |
 |-----------|---------|--------|
-| Goal schemas | `src/goals/_schemas.py` | Done — GoalType, GoalStatus, GoalRiskLevel, GoalProposal, RiskAssessment, ImpactEstimate, GoalEvidence |
-| Goal models | `src/goals/models.py` | Done — GoalProposalRecord, AnalysisRun (SQLModel) |
-| `GoalStore` | `src/goals/store.py` | Done — SQLite/WAL CRUD, filtering, counting |
-| `PerformanceAnalyzer` | `src/goals/analyzers/performance.py` | Done — slow stages, degradation detection |
-| `CostAnalyzer` | `src/goals/analyzers/cost.py` | Done — high-cost agents, expensive model detection |
-| `ReliabilityAnalyzer` | `src/goals/analyzers/reliability.py` | Done — recurring errors, high failure rate agents |
-| `CrossProductAnalyzer` | `src/goals/analyzers/cross_product.py` | Done — cross-product performance gaps, pattern transfer |
-| `GoalProposer` | `src/goals/proposer.py` | Done — orchestrates analyzers, deduplicates, scores (weighted formula), persists |
-| `AnalysisOrchestrator` | `src/goals/analysis_orchestrator.py` | Done — runs proposer, records analysis run metadata |
-| `BackgroundAnalysisJob` | `src/goals/background.py` | Done — periodic async loop for server mode |
-| `GoalSafetyPolicy` | `src/goals/safety_policy.py` | Done — rate limits, risk validation, auto-approve matrix by autonomy level |
-| `GoalReviewWorkflow` | `src/goals/review_workflow.py` | Done — state machine (proposed→approved/rejected/deferred), acceptance rate tracking |
-| `GoalDataService` | `src/goals/dashboard_service.py` | Done — dashboard data aggregation |
-| Dashboard routes | `src/goals/dashboard_routes.py` | Done — 8 endpoints (list, detail, stats, runs, analyze, approve, reject, defer) |
-| CLI commands | `src/interfaces/cli/goal_commands.py` | Done — `maf goals list\|propose\|review\|approve\|reject\|status` |
-| CLI wiring | `src/interfaces/cli/main.py` | Done — `goals_group` mounted |
-| Dashboard wiring | `src/interfaces/dashboard/app.py` | Done — goals router mounted |
-| Constants | `src/goals/constants.py` | Done — thresholds, weights, limits |
+| Goal schemas | `temper_ai/goals/_schemas.py` | Done — GoalType, GoalStatus, GoalRiskLevel, GoalProposal, RiskAssessment, ImpactEstimate, GoalEvidence |
+| Goal models | `temper_ai/goals/models.py` | Done — GoalProposalRecord, AnalysisRun (SQLModel) |
+| `GoalStore` | `temper_ai/goals/store.py` | Done — SQLite/WAL CRUD, filtering, counting |
+| `PerformanceAnalyzer` | `temper_ai/goals/analyzers/performance.py` | Done — slow stages, degradation detection |
+| `CostAnalyzer` | `temper_ai/goals/analyzers/cost.py` | Done — high-cost agents, expensive model detection |
+| `ReliabilityAnalyzer` | `temper_ai/goals/analyzers/reliability.py` | Done — recurring errors, high failure rate agents |
+| `CrossProductAnalyzer` | `temper_ai/goals/analyzers/cross_product.py` | Done — cross-product performance gaps, pattern transfer |
+| `GoalProposer` | `temper_ai/goals/proposer.py` | Done — orchestrates analyzers, deduplicates, scores (weighted formula), persists |
+| `AnalysisOrchestrator` | `temper_ai/goals/analysis_orchestrator.py` | Done — runs proposer, records analysis run metadata |
+| `BackgroundAnalysisJob` | `temper_ai/goals/background.py` | Done — periodic async loop for server mode |
+| `GoalSafetyPolicy` | `temper_ai/goals/safety_policy.py` | Done — rate limits, risk validation, auto-approve matrix by autonomy level |
+| `GoalReviewWorkflow` | `temper_ai/goals/review_workflow.py` | Done — state machine (proposed→approved/rejected/deferred), acceptance rate tracking |
+| `GoalDataService` | `temper_ai/goals/dashboard_service.py` | Done — dashboard data aggregation |
+| Dashboard routes | `temper_ai/goals/dashboard_routes.py` | Done — 8 endpoints (list, detail, stats, runs, analyze, approve, reject, defer) |
+| CLI commands | `temper_ai/interfaces/cli/goal_commands.py` | Done — `temper-ai goals list\|propose\|review\|approve\|reject\|status` |
+| CLI wiring | `temper_ai/interfaces/cli/main.py` | Done — `goals_group` mounted |
+| Dashboard wiring | `temper_ai/interfaces/dashboard/app.py` | Done — goals router mounted |
+| Constants | `temper_ai/goals/constants.py` | Done — thresholds, weights, limits |
 | Tests | `tests/test_goals/` | Done — 101 tests |
 
 **Key Capabilities:**
@@ -455,7 +455,7 @@ The system proposes improvements and opportunities, not just executes instructio
 - **Review workflow:** State machine with PROPOSED→UNDER_REVIEW→APPROVED/REJECTED/DEFERRED transitions
 - **Cross-product learning:** CrossProductAnalyzer cross-references LearnedPattern data with product-type execution metrics
 - **Budget integration:** Read-only checks against BudgetEnforcer for cost-impacting proposals
-- **CLI:** `maf goals propose` runs analysis, `maf goals list` shows results, `maf goals approve/reject` applies decisions
+- **CLI:** `temper-ai goals propose` runs analysis, `temper-ai goals list` shows results, `temper-ai goals approve/reject` applies decisions
 
 **Remaining Gaps (for future work):**
 - **Empirical acceptance rate:** Framework tracks acceptance rate but needs 50+ proposals to validate 50%+ target
@@ -473,19 +473,19 @@ Multi-product orchestration with autonomous resource allocation, component shari
 
 | Component | File(s) | Status |
 |-----------|---------|--------|
-| Portfolio schemas | `src/portfolio/_schemas.py` | Done — PortfolioConfig, ProductConfig, AllocationStatus, ProductScorecard, Recommendation |
-| Portfolio models | `src/portfolio/models.py` | Done — 7 SQLModel tables (portfolios, product_runs, shared_components, kg_concepts, kg_edges, tech_compatibility, snapshots) |
-| `PortfolioStore` | `src/portfolio/store.py` | Done — SQLite/WAL CRUD for all 7 tables |
-| `PortfolioLoader` | `src/portfolio/loader.py` | Done — YAML config loading and validation |
-| `ResourceScheduler` | `src/portfolio/scheduler.py` | Done — WFQ scheduling (virtual_time = completed/weight), concurrency + budget gates, record_start/complete lifecycle |
-| `ComponentAnalyzer` | `src/portfolio/component_analyzer.py` | Done — Jaccard similarity (|A∩B|/|A∪B|) for cross-product stage config reuse, MIN_SIMILARITY=0.6 |
-| `PortfolioOptimizer` | `src/portfolio/optimizer.py` | Done — 4-metric scorecard (success_rate, cost_efficiency, trend, utilization) → composite_score → invest/maintain/reduce/sunset |
-| `KnowledgePopulator` + `KnowledgeQuery` | `src/portfolio/knowledge_graph.py` | Done — SQLite graph (concepts, edges, tech_compatibility), BFS traversal, concept_stats |
-| Portfolio constants | `src/portfolio/constants.py` | Done — thresholds, weights, limits |
-| Dashboard routes | `src/portfolio/dashboard_routes.py` | Done — 6 API endpoints via create_portfolio_router() |
-| CLI commands | `src/interfaces/cli/portfolio_commands.py` | Done — `maf portfolio list\|show\|run\|scorecards\|recommend\|components\|graph stats\|graph query` |
-| CLI wiring | `src/interfaces/cli/main.py` | Done — `portfolio_group` mounted |
-| Dashboard wiring | `src/interfaces/dashboard/app.py` | Done — portfolio router mounted |
+| Portfolio schemas | `temper_ai/portfolio/_schemas.py` | Done — PortfolioConfig, ProductConfig, AllocationStatus, ProductScorecard, Recommendation |
+| Portfolio models | `temper_ai/portfolio/models.py` | Done — 7 SQLModel tables (portfolios, product_runs, shared_components, kg_concepts, kg_edges, tech_compatibility, snapshots) |
+| `PortfolioStore` | `temper_ai/portfolio/store.py` | Done — SQLite/WAL CRUD for all 7 tables |
+| `PortfolioLoader` | `temper_ai/portfolio/loader.py` | Done — YAML config loading and validation |
+| `ResourceScheduler` | `temper_ai/portfolio/scheduler.py` | Done — WFQ scheduling (virtual_time = completed/weight), concurrency + budget gates, record_start/complete lifecycle |
+| `ComponentAnalyzer` | `temper_ai/portfolio/component_analyzer.py` | Done — Jaccard similarity (|A∩B|/|A∪B|) for cross-product stage config reuse, MIN_SIMILARITY=0.6 |
+| `PortfolioOptimizer` | `temper_ai/portfolio/optimizer.py` | Done — 4-metric scorecard (success_rate, cost_efficiency, trend, utilization) → composite_score → invest/maintain/reduce/sunset |
+| `KnowledgePopulator` + `KnowledgeQuery` | `temper_ai/portfolio/knowledge_graph.py` | Done — SQLite graph (concepts, edges, tech_compatibility), BFS traversal, concept_stats |
+| Portfolio constants | `temper_ai/portfolio/constants.py` | Done — thresholds, weights, limits |
+| Dashboard routes | `temper_ai/portfolio/dashboard_routes.py` | Done — 6 API endpoints via create_portfolio_router() |
+| CLI commands | `temper_ai/interfaces/cli/portfolio_commands.py` | Done — `temper-ai portfolio list\|show\|run\|scorecards\|recommend\|components\|graph stats\|graph query` |
+| CLI wiring | `temper_ai/interfaces/cli/main.py` | Done — `portfolio_group` mounted |
+| Dashboard wiring | `temper_ai/interfaces/dashboard/app.py` | Done — portfolio router mounted |
 | Portfolio config | `configs/portfolios/example_portfolio.yaml` | Done — 3 products (web_app, api, data_pipeline) |
 | Tests | `tests/test_portfolio/` | Done — 114 tests (9 test files) |
 
@@ -516,10 +516,10 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 ### V2: Web Application (~3-4 weeks)
 
 - Complete FastAPI app (routes, models, frontend) for VCS
-- Embedded MAF `WorkflowRunner` or MAF Server client for pipeline execution
+- Embedded Temper AI `WorkflowRunner` or Temper AI Server client for pipeline execution
 - Pipeline event storage and activity feed UI
 - WebSocket live updates during triage
-- **Dependencies:** M6.2 (MAF Server) or embedded `WorkflowRunner` approach
+- **Dependencies:** M6.2 (Temper AI Server) or embedded `WorkflowRunner` approach
 
 ### V3: Self-Improving VCS (~2-3 weeks)
 
@@ -544,7 +544,7 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 | M5.1 Optimization Engine | V3 | VCS can optimize triage accuracy via evaluator pipeline |
 | M5.2 Agent Memory | V3 | Agents remember past triage patterns |
 | M6.1 Progressive Autonomy | V4 | VCS earns trust for auto-implementation |
-| M6.2 MAF Server | V2 | VCS web app triggers pipelines via API |
+| M6.2 Temper AI Server | V2 | VCS web app triggers pipelines via API |
 | M7.2 Strategic Autonomy | V4 | VCS proposes features autonomously |
 
 ---
@@ -554,7 +554,7 @@ The Vibe Coding Squad (VCS) pipeline runs as a parallel effort, with integration
 ```
 2026 Q1            M5.1 Optimization Engine ✓ COMPLETE
 2026 Q1            M5.2 Agent Memory ✓ COMPLETE
-2026 Q1            M6.2 MAF Server ✓ COMPLETE
+2026 Q1            M6.2 Temper AI Server ✓ COMPLETE
 2026 Q1            M5.3 Continuous Learning ✓ COMPLETE
 2026 Q1            M6.1 Progressive Autonomy ✓ COMPLETE
 2026 Q1            M6.3 Multi-Product Templates ✓ COMPLETE
@@ -576,7 +576,7 @@ M5.1 Optimization Engine ✓ COMPLETE
  └──→ M6.1 Progressive Autonomy ✓ COMPLETE
        └──→ M7.1 Self-Modifying Lifecycle ✓ COMPLETE
 
-M6.2 MAF Server ✓ COMPLETE
+M6.2 Temper AI Server ✓ COMPLETE
  └──→ M6.3 Multi-Product Templates ✓ COMPLETE ──→ M7.3 Portfolio Management ✓ COMPLETE
 ```
 
@@ -607,7 +607,7 @@ Items from the [Vision Document](./VISION.md) explicitly deferred:
 | Risk | Impact | Likelihood | Mitigation |
 |------|--------|------------|------------|
 | SQLite bottleneck at scale | Performance degradation under concurrent load | Medium | PostgreSQL migration path planned in M6.2 |
-| ~~Speculative M5 code as tech debt~~ | ~~50 files of untested code blocking fresh design~~ | ~~High~~ | ~~Resolved: `src/self_improvement/` deleted, `src/improvement/` built and tested (85 tests)~~ |
+| ~~Speculative M5 code as tech debt~~ | ~~50 files of untested code blocking fresh design~~ | ~~High~~ | ~~Resolved: `temper_ai/self_improvement/` deleted, `temper_ai/improvement/` built and tested (85 tests)~~ |
 | Vector search adds new dependency | Increased complexity, deployment friction | Medium | Start with simple embedding (numpy), upgrade to dedicated vector DB later |
 | Progressive autonomy safety gaps | Trust erosion if agent causes harm | Medium | Shadow mode, conservative defaults, feature flags, emergency stop |
 | Runtime DAG modification complexity | Workflow instability, hard-to-debug failures | High | Extensive testing, rollback mechanisms, shadow execution |
@@ -633,7 +633,7 @@ Items from the [Vision Document](./VISION.md) explicitly deferred:
 ### M6 Success
 
 - Human intervention rate decreases 30%+ for trusted agents
-- MAF Server handles 10+ concurrent workflow runs
+- Temper AI Server handles 10+ concurrent workflow runs
 - 3+ product type templates with end-to-end workflows
 - Emergency stop halts all operations within 5 seconds
 - Budget enforcement prevents cost overruns in 100% of cases

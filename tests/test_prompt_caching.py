@@ -10,8 +10,8 @@ Tests cover:
 import time
 from unittest.mock import Mock, patch
 
-from src.agent.standard_agent import StandardAgent
-from src.storage.schemas.agent_config import (
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
@@ -19,8 +19,8 @@ from src.storage.schemas.agent_config import (
     PromptConfig,
     SafetyConfig,
 )
-from src.llm.service import LLMService
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.llm.service import LLMService
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 
 
 class DummyTool(BaseTool):
@@ -97,10 +97,10 @@ class TestPromptCaching:
             )
         )
 
-        with patch('src.agent.base_agent.create_llm_from_config') as mock_llm, \
+        with patch('temper_ai.agent.base_agent.create_llm_from_config') as mock_llm, \
              patch.object(StandardAgent, '_create_tool_registry') as mock_registry:
             mock_llm.return_value = Mock()
-            from src.tools.registry import ToolRegistry
+            from temper_ai.tools.registry import ToolRegistry
             mock_registry.return_value = ToolRegistry(auto_discover=False)
             agent = StandardAgent(config)
 

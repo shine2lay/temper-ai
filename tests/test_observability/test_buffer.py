@@ -5,19 +5,19 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.observability.backends import SQLObservabilityBackend
-from src.observability.buffer import ObservabilityBuffer
-from src.observability.database import get_session, init_database
-from src.observability.models import AgentExecution, LLMCall, ToolExecution
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.backends import SQLObservabilityBackend
+from temper_ai.observability.buffer import ObservabilityBuffer
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import AgentExecution, LLMCall, ToolExecution
+from temper_ai.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import src.observability.database as db_module
-    from src.observability.database import _db_lock
+    import temper_ai.observability.database as db_module
+    from temper_ai.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 
@@ -41,7 +41,7 @@ class TestObservabilityBuffer:
 
     def test_buffer_llm_call(self):
         """Test buffering LLM calls."""
-        from src.observability.buffer import LLMCallBufferParams
+        from temper_ai.observability.buffer import LLMCallBufferParams
         buffer = ObservabilityBuffer(flush_size=10, auto_flush=False)
 
         buffer.buffer_llm_call(LLMCallBufferParams(
@@ -64,7 +64,7 @@ class TestObservabilityBuffer:
 
     def test_buffer_tool_call(self):
         """Test buffering tool calls."""
-        from src.observability.buffer import ToolCallBufferParams
+        from temper_ai.observability.buffer import ToolCallBufferParams
         buffer = ObservabilityBuffer(flush_size=10, auto_flush=False)
 
         buffer.buffer_tool_call(ToolCallBufferParams(
@@ -83,7 +83,7 @@ class TestObservabilityBuffer:
 
     def test_buffer_agent_metrics_accumulation(self):
         """Test agent metrics accumulate correctly."""
-        from src.observability.buffer import LLMCallBufferParams
+        from temper_ai.observability.buffer import LLMCallBufferParams
         buffer = ObservabilityBuffer(flush_size=10, auto_flush=False)
 
         # Buffer multiple LLM calls for same agent
@@ -112,7 +112,7 @@ class TestObservabilityBuffer:
 
     def test_buffer_size_flush(self):
         """Test buffer flushes when size limit reached."""
-        from src.observability.buffer import LLMCallBufferParams
+        from temper_ai.observability.buffer import LLMCallBufferParams
         flush_called = []
 
         def mock_flush(llm_calls, tool_calls, agent_metrics):
@@ -143,7 +143,7 @@ class TestObservabilityBuffer:
 
     def test_buffer_manual_flush(self):
         """Test manual flush."""
-        from src.observability.buffer import LLMCallBufferParams
+        from temper_ai.observability.buffer import LLMCallBufferParams
         flush_called = []
 
         def mock_flush(llm_calls, tool_calls, agent_metrics):
@@ -180,7 +180,7 @@ class TestObservabilityBuffer:
 
     def test_buffer_stats(self):
         """Test buffer statistics."""
-        from src.observability.buffer import LLMCallBufferParams
+        from temper_ai.observability.buffer import LLMCallBufferParams
         buffer = ObservabilityBuffer(flush_size=10, auto_flush=False)
 
         buffer.buffer_llm_call(LLMCallBufferParams(
@@ -326,7 +326,7 @@ class TestBufferContextManager:
 
     def test_buffer_context_manager(self, db):
         """Test buffer auto-flushes on context exit."""
-        from src.observability.buffer import LLMCallBufferParams
+        from temper_ai.observability.buffer import LLMCallBufferParams
         flush_called = []
 
         def mock_flush(llm_calls, tool_calls, agent_metrics):

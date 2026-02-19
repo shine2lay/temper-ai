@@ -2,9 +2,9 @@
 
 import pytest
 
-from src.agent.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
-from src.agent.strategies.leader import LeaderCollaborationStrategy
-from src.agent.strategies.registry import StrategyRegistry, get_strategy_from_config
+from temper_ai.agent.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
+from temper_ai.agent.strategies.leader import LeaderCollaborationStrategy
+from temper_ai.agent.strategies.registry import StrategyRegistry, get_strategy_from_config
 
 
 # -- Fixtures ---------------------------------------------------------------

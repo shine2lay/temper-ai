@@ -6,12 +6,12 @@ and the _record_fingerprint_safe() tracker hook.
 import pytest
 from unittest.mock import MagicMock, patch
 
-from src.observability.backend import ErrorFingerprintData
-from src.observability.error_fingerprinting import (
+from temper_ai.observability.backend import ErrorFingerprintData
+from temper_ai.observability.error_fingerprinting import (
     ErrorClassification,
     compute_error_fingerprint,
 )
-from src.observability._tracker_helpers import _record_fingerprint_safe
+from temper_ai.observability._tracker_helpers import _record_fingerprint_safe
 
 
 # ============================================================================
@@ -56,7 +56,7 @@ class TestRecordFingerprintSafe:
         backend = MagicMock()
         backend.record_error_fingerprint = MagicMock(return_value=True)
 
-        from src.shared.utils.exceptions import LLMError, ErrorCode
+        from temper_ai.shared.utils.exceptions import LLMError, ErrorCode
         error = LLMError("Timed out", error_code=ErrorCode.LLM_TIMEOUT)
         _record_fingerprint_safe(backend, error)
 
@@ -73,7 +73,7 @@ class TestCompositeBackendFingerprinting:
     """Tests for CompositeBackend error fingerprint delegation."""
 
     def test_record_error_fingerprint_fans_out(self):
-        from src.observability.backends.composite_backend import CompositeBackend
+        from temper_ai.observability.backends.composite_backend import CompositeBackend
 
         primary = MagicMock()
         primary.record_error_fingerprint = MagicMock(return_value=True)
@@ -96,7 +96,7 @@ class TestCompositeBackendFingerprinting:
         secondary.record_error_fingerprint.assert_called_once()
 
     def test_get_top_errors_from_primary(self):
-        from src.observability.backends.composite_backend import CompositeBackend
+        from temper_ai.observability.backends.composite_backend import CompositeBackend
 
         primary = MagicMock()
         primary.get_top_errors = MagicMock(return_value=[{"fingerprint": "abc"}])
@@ -110,7 +110,7 @@ class TestCompositeBackendFingerprinting:
         primary.get_top_errors.assert_called_once_with(5, None, None)
 
     def test_secondary_failure_does_not_propagate(self):
-        from src.observability.backends.composite_backend import CompositeBackend
+        from temper_ai.observability.backends.composite_backend import CompositeBackend
 
         primary = MagicMock()
         primary.record_error_fingerprint = MagicMock(return_value=True)
@@ -142,7 +142,7 @@ class TestNoOpBackendFingerprinting:
     """Tests for NoOpBackend error fingerprint methods."""
 
     def test_record_returns_false(self):
-        from src.observability.backends.noop_backend import NoOpBackend
+        from temper_ai.observability.backends.noop_backend import NoOpBackend
 
         backend = NoOpBackend()
         fp_data = ErrorFingerprintData(
@@ -157,7 +157,7 @@ class TestNoOpBackendFingerprinting:
         assert result is False
 
     def test_get_top_errors_returns_empty(self):
-        from src.observability.backends.noop_backend import NoOpBackend
+        from temper_ai.observability.backends.noop_backend import NoOpBackend
 
         backend = NoOpBackend()
         result = backend.get_top_errors()
@@ -173,7 +173,7 @@ class TestBuildErrorResultFingerprint:
     """Tests that _build_error_result includes error fingerprint."""
 
     def test_build_error_result_includes_fingerprint(self):
-        from src.stage.executors._sequential_helpers import _build_error_result
+        from temper_ai.stage.executors._sequential_helpers import _build_error_result
 
         error = ValueError("Invalid agent config")
         result = _build_error_result("test_agent", error, 1.5)
@@ -183,7 +183,7 @@ class TestBuildErrorResultFingerprint:
         assert len(result["output_data"]["error_fingerprint"]) == 16
 
     def test_build_error_result_deterministic(self):
-        from src.stage.executors._sequential_helpers import _build_error_result
+        from temper_ai.stage.executors._sequential_helpers import _build_error_result
 
         error1 = ValueError("Invalid agent config")
         error2 = ValueError("Invalid agent config")
@@ -203,22 +203,22 @@ class TestAlertingErrorTypes:
     """Tests for new MetricType entries in alerting."""
 
     def test_new_error_type_metric_exists(self):
-        from src.observability.alerting import MetricType
+        from temper_ai.observability.alerting import MetricType
         assert MetricType.NEW_ERROR_TYPE == "new_error_type"
 
     def test_error_spike_metric_exists(self):
-        from src.observability.alerting import MetricType
+        from temper_ai.observability.alerting import MetricType
         assert MetricType.ERROR_SPIKE == "error_spike"
 
     def test_default_rules_include_new_error_type(self):
-        from src.observability.alerting import AlertManager
+        from temper_ai.observability.alerting import AlertManager
         manager = AlertManager()
         assert "new_error_type_detected" in manager.rules
         rule = manager.rules["new_error_type_detected"]
         assert rule.threshold == 0
 
     def test_default_rules_include_error_spike(self):
-        from src.observability.alerting import AlertManager
+        from temper_ai.observability.alerting import AlertManager
         manager = AlertManager()
         assert "error_spike" in manager.rules
         rule = manager.rules["error_spike"]

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useExecutionStore } from '@/store/executionStore';
 import {
   Collapsible,
@@ -16,12 +16,25 @@ interface StreamingPanelProps {
 
 export function StreamingPanel({ agentId }: StreamingPanelProps) {
   const stream = useExecutionStore((s) => s.streamingContent.get(agentId));
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [thinkingOpen, setThinkingOpen] = useState(false);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+
+  const scrollToBottom = useCallback(() => {
+    const el = containerRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, []);
+
+  const handleScroll = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 30;
+    setIsAtBottom(atBottom);
+  }, []);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [stream?.content, stream?.thinking]);
+    if (isAtBottom) scrollToBottom();
+  }, [stream?.content, stream?.thinking, isAtBottom, scrollToBottom]);
 
   if (!stream) {
     return (
@@ -57,20 +70,19 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
       )}
 
       {stream.done ? (
-        <div className="relative">
+        <div ref={containerRef} onScroll={handleScroll} className="relative max-h-80 overflow-auto">
           {stream.content && (
             <div className="absolute top-2 right-2 z-10">
               <CopyButton text={stream.content} />
             </div>
           )}
-          <MarkdownDisplay content={stream.content} className="max-h-80 overflow-auto" />
+          <MarkdownDisplay content={stream.content} />
           <div className="mt-2 text-xs text-maf-completed">
             Stream complete
           </div>
-          <div ref={bottomRef} />
         </div>
       ) : (
-        <div className="relative max-h-80 overflow-auto rounded-md bg-maf-panel p-3">
+        <div ref={containerRef} onScroll={handleScroll} className="relative max-h-80 overflow-auto rounded-md bg-maf-panel p-3">
           {stream.content && (
             <div className="absolute top-2 right-2">
               <CopyButton text={stream.content} />
@@ -81,7 +93,17 @@ export function StreamingPanel({ agentId }: StreamingPanelProps) {
             {stream.content}
             <span className="animate-pulse-streaming text-maf-accent">|</span>
           </pre>
-          <div ref={bottomRef} />
+          {!isAtBottom && (
+            <button
+              onClick={() => {
+                scrollToBottom();
+                setIsAtBottom(true);
+              }}
+              className="sticky bottom-2 left-1/2 -translate-x-1/2 rounded-full bg-maf-accent/90 px-3 py-1 text-xs font-medium text-white shadow-md backdrop-blur-sm hover:bg-maf-accent"
+            >
+              Jump to bottom
+            </button>
+          )}
         </div>
       )}
     </div>

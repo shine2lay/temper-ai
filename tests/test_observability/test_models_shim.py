@@ -12,13 +12,13 @@ def test_models_import_raises_deprecation_warning():
 
     # Since the module may already be imported, we check that the deprecation
     # warning is in the module source code
-    import src.observability.models as models_module
+    import temper_ai.observability.models as models_module
     import inspect
 
     source = inspect.getsource(models_module)
     assert "DeprecationWarning" in source
-    assert "src.observability.models is deprecated" in source
-    assert "src.storage.database.models" in source
+    assert "temper_ai.observability.models is deprecated" in source
+    assert "temper_ai.storage.database.models" in source
 
 
 def test_models_re_exports_work():
@@ -27,7 +27,7 @@ def test_models_re_exports_work():
         warnings.simplefilter("ignore")  # Suppress warnings for this test
 
         # Import from the deprecated location
-        from src.observability.models import WorkflowExecution
+        from temper_ai.observability.models import WorkflowExecution
 
         # Verify the class exists
         assert WorkflowExecution is not None
@@ -40,7 +40,7 @@ def test_models_new_import_location():
         warnings.simplefilter("always")
 
         # Import from the new location
-        from src.storage.database.models import WorkflowExecution
+        from temper_ai.storage.database.models import WorkflowExecution
 
         # Verify no deprecation warnings were raised
         deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning)]

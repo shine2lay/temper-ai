@@ -16,7 +16,7 @@ stage:
 
   inputs:
     workspace_path:
-      source: workflow.workspace_path
+      source: vcs_git_setup.structured.worktree_path
       required: true
     task_specs:
       source: vcs_task_planning.output

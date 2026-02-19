@@ -4,24 +4,24 @@ Tests for ExecutionTracker.
 
 import pytest
 
-from src.storage.database import get_session, init_database
-from src.storage.database.models import (
+from temper_ai.storage.database import get_session, init_database
+from temper_ai.storage.database.models import (
     AgentExecution,
     LLMCall,
     StageExecution,
     ToolExecution,
     WorkflowExecution,
 )
-from src.observability.tracker import ExecutionTracker
-from src.shared.core.context import ExecutionContext
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.shared.core.context import ExecutionContext
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import src.storage.database as db_module
-    from src.storage.database.manager import _db_lock
+    import temper_ai.storage.database as db_module
+    from temper_ai.storage.database.manager import _db_lock
     with _db_lock:
         db_module._db_manager = None
 

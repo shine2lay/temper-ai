@@ -78,8 +78,8 @@ class WorkflowExecution(SQLModel, table=True):
 
 **Usage:**
 ```python
-from src.observability.models import WorkflowExecution
-from src.observability.database import get_session
+from temper_ai.observability.models import WorkflowExecution
+from temper_ai.observability.database import get_session
 
 with get_session() as session:
     workflow = WorkflowExecution(
@@ -518,7 +518,7 @@ class SystemMetric(SQLModel, table=True):
 ### Initialization
 
 ```python
-from src.observability.database import init_database
+from temper_ai.observability.database import init_database
 
 # SQLite (development)
 db = init_database("sqlite:///workflow_execution.db")
@@ -533,7 +533,7 @@ db = init_database()  # Uses DATABASE_URL env var
 ### Session Management
 
 ```python
-from src.observability.database import get_session
+from temper_ai.observability.database import get_session
 
 # Context manager (recommended)
 with get_session() as session:
@@ -543,7 +543,7 @@ with get_session() as session:
     # Auto-rollback on exception
 
 # Manual session
-from src.observability.database import get_database
+from temper_ai.observability.database import get_database
 
 db = get_database()
 with db.session() as session:
@@ -554,8 +554,8 @@ with db.session() as session:
 ### Querying
 
 ```python
-from src.observability.models import WorkflowExecution, AgentExecution
-from src.observability.database import get_session
+from temper_ai.observability.models import WorkflowExecution, AgentExecution
+from temper_ai.observability.database import get_session
 from sqlalchemy import func
 
 with get_session() as session:

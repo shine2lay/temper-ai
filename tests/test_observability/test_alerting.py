@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.observability.alerting import (
+from temper_ai.observability.alerting import (
     Alert,
     AlertAction,
     AlertManager,
@@ -208,7 +208,7 @@ class TestAlertManager:
         assert manager.alert_history[0].metric_value == 15.0
         assert manager.alert_history[1].metric_value == 20.0
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_execute_log_warning_action(self, mock_logger, manager):
         """Test LOG_WARNING action execution."""
         rule = AlertRule(
@@ -227,7 +227,7 @@ class TestAlertManager:
         assert "ALERT" in call_args[0][0]
         assert "test_rule" in call_args[1]["extra"]["rule_name"]
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_execute_log_error_action(self, mock_logger, manager):
         """Test LOG_ERROR action execution."""
         rule = AlertRule(
@@ -246,7 +246,7 @@ class TestAlertManager:
         call_args = mock_logger.error.call_args
         assert "ALERT" in call_args[0][0]
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_execute_halt_workflow_action(self, mock_logger, manager):
         """Test HALT_WORKFLOW action execution."""
         rule = AlertRule(
@@ -266,7 +266,7 @@ class TestAlertManager:
         assert "HALTING WORKFLOW" in call_args[0][0]
         assert "wf-123" in call_args[0][0]
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_halt_workflow_without_workflow_id(self, mock_logger, manager):
         """Test HALT_WORKFLOW logs warning when no workflow_id in context."""
         rule = AlertRule(
@@ -296,7 +296,7 @@ class TestAlertManager:
         )
         manager.add_rule(rule)
 
-        with patch("src.observability.alerting.logger") as mock_logger:
+        with patch("temper_ai.observability.alerting.logger") as mock_logger:
             manager.check_metric("cost_usd", 15.0)
             mock_logger.info.assert_called()
             assert mock_logger.info.call_count > 0
@@ -424,7 +424,7 @@ class TestAlertManager:
         assert len(alerts) == 2
         assert {a.rule_name for a in alerts} == {"warning_threshold", "critical_threshold"}
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_action_execution_error_handling(self, mock_logger, manager):
         """Test error handling in action execution."""
         rule = AlertRule(

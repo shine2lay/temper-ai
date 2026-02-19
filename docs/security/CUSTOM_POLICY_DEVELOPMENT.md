@@ -22,7 +22,7 @@ This guide teaches you how to create custom safety policies for domain-specific 
 
 ```python
 from typing import Dict, Any
-from src.safety.interfaces import (
+from temper_ai.safety.interfaces import (
     SafetyPolicy,
     ValidationResult,
     SafetyViolation,
@@ -296,7 +296,7 @@ def _get_remediation_hint(self, message: str) -> str:
 # tests/safety/test_my_custom_policy.py
 import pytest
 from my_module import MyCustomPolicy
-from src.safety.interfaces import ViolationSeverity
+from temper_ai.safety.interfaces import ViolationSeverity
 
 class TestMyCustomPolicy:
     """Tests for MyCustomPolicy."""
@@ -337,7 +337,7 @@ class TestMyCustomPolicy:
 ### Step 6: Register Policy
 
 ```python
-from src.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.policy_registry import PolicyRegistry
 from my_module import MyCustomPolicy
 
 registry = PolicyRegistry()
@@ -383,8 +383,8 @@ from typing import Dict, Any
 from datetime import datetime, time
 import pytz
 
-from src.safety.base import BaseSafetyPolicy
-from src.safety.interfaces import (
+from temper_ai.safety.base import BaseSafetyPolicy
+from temper_ai.safety.interfaces import (
     ValidationResult,
     SafetyViolation,
     ViolationSeverity
@@ -522,7 +522,7 @@ from unittest.mock import patch
 import pytz
 
 from business_hours_policy import BusinessHoursPolicy
-from src.safety.interfaces import ViolationSeverity
+from temper_ai.safety.interfaces import ViolationSeverity
 
 class TestBusinessHoursPolicy:
     """Tests for BusinessHoursPolicy."""
@@ -704,7 +704,7 @@ class RateLimitPolicy(SafetyPolicy):
 Extend `BaseSafetyPolicy` for built-in composition support:
 
 ```python
-from src.safety.base import BaseSafetyPolicy
+from temper_ai.safety.base import BaseSafetyPolicy
 
 class ComposablePolicy(BaseSafetyPolicy):
     """Policy with composition support."""
@@ -934,6 +934,6 @@ def test_remediation_hint(self, policy):
 - [M4 Safety System Architecture](./M4_SAFETY_SYSTEM.md)
 - [Policy Configuration Guide](./POLICY_CONFIGURATION_GUIDE.md)
 - [Safety Examples](./SAFETY_EXAMPLES.md)
-- `src/safety/interfaces.py` - Interface definitions
-- `src/safety/base.py` - Base policy implementation
+- `temper_ai/safety/interfaces.py` - Interface definitions
+- `temper_ai/safety/base.py` - Base policy implementation
 - `tests/safety/test_*.py` - Test examples

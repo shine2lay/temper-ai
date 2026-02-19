@@ -12,8 +12,8 @@ from typing import Any, Dict
 
 import pytest
 
-from src.safety.interfaces import SafetyPolicy, ValidationResult
-from src.safety.policy_registry import PolicyRegistry
+from temper_ai.safety.interfaces import SafetyPolicy, ValidationResult
+from temper_ai.safety.policy_registry import PolicyRegistry
 
 # ============================================================================
 # Mock Policies for Testing

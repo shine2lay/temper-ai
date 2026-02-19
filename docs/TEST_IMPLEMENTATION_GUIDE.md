@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide provides best practices, patterns, and strategies for writing effective tests in the Meta-Autonomous Framework.
+This guide provides best practices, patterns, and strategies for writing effective tests in the Temper AI.
 
 ## Test Organization
 
@@ -69,7 +69,7 @@ def test_llm_client(monkeypatch):
     def mock_call(*args, **kwargs):
         return {"response": "mocked"}
 
-    monkeypatch.setattr("src.llm.client.OpenAIClient.call", mock_call)
+    monkeypatch.setattr("temper_ai.llm.client.OpenAIClient.call", mock_call)
     # Test logic
 ```
 
@@ -466,4 +466,4 @@ jobs:
 ---
 
 **Last Updated:** 2026-02-01
-**Maintained by:** Meta-Autonomous Framework Team
+**Maintained by:** Temper AI Team

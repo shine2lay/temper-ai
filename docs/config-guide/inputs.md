@@ -7,7 +7,7 @@ Input files provide data to workflows at runtime. They are simple YAML key-value
 ## Usage
 
 ```bash
-maf run configs/workflows/simple_research.yaml --input examples/research_input.yaml
+temper-ai run configs/workflows/simple_research.yaml --input examples/research_input.yaml
 ```
 
 ## Examples

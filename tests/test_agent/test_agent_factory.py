@@ -3,10 +3,10 @@ import threading
 
 import pytest
 
-from src.agent.utils.agent_factory import AgentFactory
-from src.agent.base_agent import AgentResponse, BaseAgent
-from src.agent.standard_agent import StandardAgent
-from src.storage.schemas.agent_config import AgentConfig
+from temper_ai.agent.utils.agent_factory import AgentFactory
+from temper_ai.agent.base_agent import AgentResponse, BaseAgent
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.storage.schemas.agent_config import AgentConfig
 
 
 def test_agent_factory_create_standard_agent(minimal_agent_config):
@@ -31,7 +31,7 @@ def test_agent_factory_create_default_type(minimal_agent_config):
 
 def test_agent_factory_unknown_type():
     """Test factory raises error for unknown agent type."""
-    from src.storage.schemas.agent_config import AgentConfigInner, ErrorHandlingConfig, InferenceConfig, PromptConfig
+    from temper_ai.storage.schemas.agent_config import AgentConfigInner, ErrorHandlingConfig, InferenceConfig, PromptConfig
 
     config = AgentConfig(
         agent=AgentConfigInner(
@@ -122,7 +122,7 @@ def test_agent_factory_creates_working_agent(minimal_agent_config):
     """Test factory-created agent can execute."""
     from unittest.mock import patch
 
-    with patch('src.agent.base_agent.ToolRegistry'):
+    with patch('temper_ai.agent.base_agent.ToolRegistry'):
         agent = AgentFactory.create(minimal_agent_config)
 
         # Agent should have all required methods
@@ -152,7 +152,7 @@ class TestAgentFactoryThreadSafety:
             return AgentFactory.create(config_copy)
 
         # Mock ToolRegistry to avoid actual tool initialization
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 # Create 100 agents concurrently
                 futures = [
@@ -180,7 +180,7 @@ class TestAgentFactoryThreadSafety:
         def create_agent():
             return AgentFactory.create(minimal_agent_config)
 
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                 futures = [executor.submit(create_agent) for _ in range(200)]
                 results = [f.result() for f in futures]
@@ -231,7 +231,7 @@ class TestAgentFactoryThreadSafety:
                 with lock:
                     creation_results.append(e)
 
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
                 futures = []
 
@@ -277,7 +277,7 @@ class TestAgentFactoryThreadSafety:
 
             return agent
 
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 futures = [
                     executor.submit(create_and_track_agent, i)
@@ -324,7 +324,7 @@ class TestAgentFactoryThreadSafety:
             with lock:
                 creation_results.append(agent)
 
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
                 futures = []
 
@@ -352,7 +352,7 @@ class TestAgentFactoryThreadSafety:
         import concurrent.futures
         from unittest.mock import patch
 
-        from src.storage.schemas.agent_config import (
+        from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
@@ -379,7 +379,7 @@ class TestAgentFactoryThreadSafety:
             )
             return AgentFactory.create(config)
 
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
                 futures = [
                     executor.submit(create_agent_with_config, i)
@@ -415,7 +415,7 @@ class TestAgentFactoryThreadSafety:
                 with lock:
                     errors.append(e)
 
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 # 10 threads, each creating 10 agents = 100 total
                 futures = [executor.submit(create_agents_batch) for _ in range(10)]
@@ -438,7 +438,7 @@ class TestAgentFactoryThreadSafety:
             # Don't hold reference, let GC clean up
             return agent.name
 
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             # Create many agents to test memory safety
             with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
                 futures = [

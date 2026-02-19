@@ -1,6 +1,6 @@
 # YAML Configuration Guide
 
-The Meta-Autonomous Framework uses a **3-layer YAML hierarchy** to define multi-agent workflows:
+Temper AI uses a **3-layer YAML hierarchy** to define multi-agent workflows:
 
 ```
 Workflow  -->  Stage(s)  -->  Agent(s)
@@ -39,15 +39,15 @@ examples/         # Input files for workflows
 
 ```bash
 # Run a workflow
-maf run configs/workflows/simple_research.yaml \
+temper-ai run configs/workflows/simple_research.yaml \
   --input examples/research_input.yaml \
   --show-details
 
 # Validate config without running
-maf validate configs/workflows/quick_decision_demo.yaml
+temper-ai validate configs/workflows/quick_decision_demo.yaml
 
 # List available configs
-maf list workflows
-maf list agents
-maf list stages
+temper-ai list workflows
+temper-ai list agents
+temper-ai list stages
 ```

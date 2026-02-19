@@ -28,12 +28,12 @@ from rich.table import Table
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.workflow.config_loader import ConfigLoader
-from src.workflow.langgraph_compiler import LangGraphCompiler
-from src.observability.database import init_database
-from src.observability.tracker import ExecutionTracker
-from src.observability.visualize_trace import create_hierarchical_gantt as create_gantt_chart
-from src.observability.visualize_trace import print_console_gantt
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.observability.database import init_database
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.observability.visualize_trace import create_hierarchical_gantt as create_gantt_chart
+from temper_ai.observability.visualize_trace import print_console_gantt
 
 console = Console()
 

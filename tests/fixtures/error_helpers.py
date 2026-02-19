@@ -10,7 +10,7 @@ Provides:
 import time
 from typing import Any, Dict, List, Type
 
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
 
 
 class FailingTool(BaseTool):

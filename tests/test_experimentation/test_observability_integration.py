@@ -10,27 +10,27 @@ Tests end-to-end workflow:
 
 import pytest
 
-from src.experimentation.analyzer import StatisticalAnalyzer
-from src.experimentation.assignment import VariantAssigner
-from src.experimentation.metrics_collector import ExperimentMetricsCollector
-from src.experimentation.models import (
+from temper_ai.experimentation.analyzer import StatisticalAnalyzer
+from temper_ai.experimentation.assignment import VariantAssigner
+from temper_ai.experimentation.metrics_collector import ExperimentMetricsCollector
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ConfigType,
     Experiment,
     ExperimentStatus,
     Variant,
 )
-from src.observability.backends.sql_backend import SQLObservabilityBackend
-from src.observability.database import init_database
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
+from temper_ai.observability.database import init_database
+from temper_ai.observability.tracker import ExecutionTracker
 
 
 @pytest.fixture
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import src.observability.database as db_module
-    from src.observability.database import _db_lock
+    import temper_ai.observability.database as db_module
+    from temper_ai.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 
@@ -115,7 +115,7 @@ class TestObservabilityIntegration:
 
         # Verify workflow was created with experiment metadata
         with obs_backend.get_session_context() as session:
-            from src.observability.models import WorkflowExecution
+            from temper_ai.observability.models import WorkflowExecution
             workflow = session.get(WorkflowExecution, workflow_id)
 
             assert workflow is not None
@@ -169,7 +169,7 @@ class TestObservabilityIntegration:
 
         # Collect experiment metrics from observability DB
         # Use a fresh session from get_session() instead of backend's session stack
-        from src.observability.database import get_session
+        from temper_ai.observability.database import get_session
         with get_session() as session:
             collector = ExperimentMetricsCollector(session=session)
 
@@ -410,7 +410,7 @@ class TestBackwardsCompatibility:
 
         # Verify workflow was created without experiment metadata
         with obs_backend.get_session_context() as session:
-            from src.observability.models import WorkflowExecution
+            from temper_ai.observability.models import WorkflowExecution
             workflow = session.get(WorkflowExecution, workflow_id)
 
             assert workflow is not None
@@ -428,7 +428,7 @@ class TestBackwardsCompatibility:
             assert workflow_id is not None
 
         with obs_backend.get_session_context() as session:
-            from src.observability.models import WorkflowExecution
+            from temper_ai.observability.models import WorkflowExecution
             workflow = session.get(WorkflowExecution, workflow_id)
 
             assert workflow.extra_metadata["experiment_id"] == "exp-001"

@@ -5,7 +5,7 @@ Tests FailoverEventData, emit_failover_event helper, and None tracker safety.
 import pytest
 from unittest.mock import MagicMock, patch
 
-from src.observability.failover_events import (
+from temper_ai.observability.failover_events import (
     EVENT_TYPE_FAILOVER,
     FailoverEventData,
     emit_failover_event,

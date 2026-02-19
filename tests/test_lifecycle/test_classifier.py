@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.lifecycle._schemas import ProjectCharacteristics, ProjectSize, RiskLevel
-from src.lifecycle.classifier import (
+from temper_ai.lifecycle._schemas import ProjectCharacteristics, ProjectSize, RiskLevel
+from temper_ai.lifecycle.classifier import (
     ProjectClassifier,
     _extract_explicit,
     _has_all_explicit,

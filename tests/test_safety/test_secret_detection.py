@@ -12,8 +12,8 @@ Target: >95% code coverage
 """
 import time
 
-from src.safety.interfaces import ViolationSeverity
-from src.safety.secret_detection import SecretDetectionPolicy
+from temper_ai.safety.interfaces import ViolationSeverity
+from temper_ai.safety.secret_detection import SecretDetectionPolicy
 
 # ============================================================================
 # Test Class 1: AWS Access Key Detection (CRITICAL)

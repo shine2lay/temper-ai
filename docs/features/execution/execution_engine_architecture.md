@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Meta-Autonomous Framework uses an abstraction layer to decouple workflow execution from specific graph libraries. This enables:
+The Temper AI uses an abstraction layer to decouple workflow execution from specific graph libraries. This enables:
 
 - **Vendor independence:** Switch from LangGraph to alternatives with minimal effort
 - **M5+ features:** Convergence detection, self-modifying workflows, meta-loops
@@ -92,7 +92,7 @@ classDiagram
 
 Abstract base class for all execution engines.
 
-**Location:** `src/compiler/execution_engine.py:115`
+**Location:** `temper_ai/compiler/execution_engine.py:115`
 
 **Methods:**
 
@@ -109,8 +109,8 @@ Compiles workflow configuration into executable form.
 
 **Example:**
 ```python
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
 
 loader = ConfigLoader()
 config = loader.load_workflow("simple_research")
@@ -142,7 +142,7 @@ Executes compiled workflow with given input.
 result = engine.execute(compiled, {"topic": "Python typing"})
 
 # Asynchronous execution
-from src.compiler.execution_engine import ExecutionMode
+from temper_ai.compiler.execution_engine import ExecutionMode
 result = engine.execute(compiled, {"topic": "Python typing"}, mode=ExecutionMode.ASYNC)
 ```
 
@@ -181,7 +181,7 @@ else:
 
 Abstract base class for compiled workflow representations.
 
-**Location:** `src/compiler/execution_engine.py:33`
+**Location:** `temper_ai/compiler/execution_engine.py:33`
 
 **Methods:**
 
@@ -256,7 +256,7 @@ print(graph_viz)  # Mermaid diagram
 
 Enum for execution modes.
 
-**Location:** `src/compiler/execution_engine.py:20`
+**Location:** `temper_ai/compiler/execution_engine.py:20`
 
 **Values:**
 - `SYNC`: Synchronous blocking execution
@@ -265,7 +265,7 @@ Enum for execution modes.
 
 **Example:**
 ```python
-from src/compiler.execution_engine import ExecutionMode
+from temper_ai/compiler.execution_engine import ExecutionMode
 
 # Sync mode (default)
 result = engine.execute(compiled, input_data, mode=ExecutionMode.SYNC)
@@ -361,8 +361,8 @@ def execute(self, compiled_workflow, input_data, mode=ExecutionMode.SYNC):
 ### Basic Usage
 
 ```python
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
 
 # Load workflow config
 loader = ConfigLoader()
@@ -431,7 +431,7 @@ if engine.supports_feature("parallel_stages"):
 
 ```python
 import asyncio
-from src.compiler.execution_engine import ExecutionMode
+from temper_ai.compiler.execution_engine import ExecutionMode
 
 async def run_workflow():
     registry = EngineRegistry()
@@ -475,9 +475,9 @@ The execution engine abstraction maintains **100% backward compatibility** with 
 
 **OLD (M2 - Direct LangGraphCompiler):**
 ```python
-from src.compiler.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
-from src.compiler.config_loader import ConfigLoader
-from src.tools.registry import ToolRegistry
+from temper_ai.compiler.langgraph_compiler import LangGraphCompiler, WorkflowExecutor
+from temper_ai.compiler.config_loader import ConfigLoader
+from temper_ai.tools.registry import ToolRegistry
 
 # Create compiler
 compiler = LangGraphCompiler(
@@ -493,9 +493,9 @@ result = executor.execute(input_data)
 
 **NEW (M2.5 - EngineRegistry):**
 ```python
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
-from src.tools.registry import ToolRegistry
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
+from temper_ai.tools.registry import ToolRegistry
 
 # Get engine from registry
 registry = EngineRegistry()
@@ -513,8 +513,8 @@ result = engine.execute(compiled, input_data)
 ### What Changed
 
 **File imports:**
-- ❌ `from src.compiler.langgraph_compiler import LangGraphCompiler`
-- ✅ `from src.compiler.engine_registry import EngineRegistry`
+- ❌ `from temper_ai.compiler.langgraph_compiler import LangGraphCompiler`
+- ✅ `from temper_ai.compiler.engine_registry import EngineRegistry`
 
 **Compilation:**
 - ❌ `graph = compiler.compile(config)`
@@ -697,7 +697,7 @@ def test_feature_detection():
 - [Milestone 2 Completion Report](./milestone2_completion.md) - Analysis that led to abstraction
 - [Custom Engine Guide](./custom_engine_guide.md) - How to implement custom engines
 - [Technical Specification](../TECHNICAL_SPECIFICATION.md) - Complete framework specification
-- [Interface Source Code](../src/compiler/execution_engine.py) - Abstract base classes
+- [Interface Source Code](../temper_ai/compiler/execution_engine.py) - Abstract base classes
 
 ## Appendix: Feature Support Matrix
 

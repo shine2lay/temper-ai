@@ -5,14 +5,14 @@ from importlib.util import find_spec
 import pytest
 from sqlmodel import select
 
-from src.observability.database import (
+from temper_ai.observability.database import (
     DatabaseManager,
     _mask_database_url,
     get_database,
     get_session,
     init_database,
 )
-from src.observability.models import WorkflowExecution
+from temper_ai.observability.models import WorkflowExecution
 
 # Check if psycopg2 is available
 PSYCOPG2_AVAILABLE = find_spec("psycopg2") is not None
@@ -128,7 +128,7 @@ def test_session_rollback_on_error():
 def test_init_database():
     """Test init_database function."""
     # Reset global state (use actual module location after package extraction)
-    import src.storage.database.manager as db_module
+    import temper_ai.storage.database.manager as db_module
     db_module._db_manager = None
 
     manager = init_database("sqlite:///:memory:")
@@ -145,7 +145,7 @@ def test_init_database():
 def test_get_database():
     """Test get_database function."""
     # Reset global state
-    import src.observability.database as db_module
+    import temper_ai.observability.database as db_module
     db_module._db_manager = None
 
     # Should raise error if not initialized
@@ -165,7 +165,7 @@ def test_get_database():
 def test_get_session_context():
     """Test get_session convenience function."""
     # Reset and initialize
-    import src.observability.database as db_module
+    import temper_ai.observability.database as db_module
     db_module._db_manager = None
     init_database("sqlite:///:memory:")
 

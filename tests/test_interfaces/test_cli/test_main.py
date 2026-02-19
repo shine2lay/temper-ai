@@ -14,7 +14,7 @@ import pytest
 import yaml
 from click.testing import CliRunner
 
-from src.interfaces.cli.main import (
+from temper_ai.interfaces.cli.main import (
     _load_and_validate_workflow,
     _print_run_summary,
     main,
@@ -59,7 +59,7 @@ class TestRootGroup:
     def test_help(self, runner):
         result = runner.invoke(main, ["--help"])
         assert result.exit_code == 0
-        assert "Meta-Autonomous Framework CLI" in result.output
+        assert "Temper AI CLI" in result.output
 
     def test_version(self, runner):
         result = runner.invoke(main, ["--version"])
@@ -235,10 +235,10 @@ class TestRunCommand:
 
         # Mock the execution pipeline to avoid needing real infrastructure.
         # These are imported locally in run(), so patch at their source modules.
-        with patch("src.workflow.config_loader.ConfigLoader") as mock_cl, \
-             patch("src.tools.registry.ToolRegistry") as mock_tr, \
-             patch("src.observability.tracker.ExecutionTracker") as mock_et, \
-             patch("src.workflow.engine_registry.EngineRegistry") as mock_er:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader") as mock_cl, \
+             patch("temper_ai.tools.registry.ToolRegistry") as mock_tr, \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_et, \
+             patch("temper_ai.workflow.engine_registry.EngineRegistry") as mock_er:
             mock_engine = MagicMock()
             mock_compiled = MagicMock()
             mock_compiled.invoke.return_value = {"status": "completed", "duration": 1.0}
@@ -342,10 +342,10 @@ class TestRunCommandAdvanced:
         }
         wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
 
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry"), \
-             patch("src.observability.tracker.ExecutionTracker") as mock_et, \
-             patch("src.workflow.engine_registry.EngineRegistry") as mock_er:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry"), \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_et, \
+             patch("temper_ai.workflow.engine_registry.EngineRegistry") as mock_er:
             mock_engine = MagicMock()
             mock_compiled = MagicMock()
             mock_compiled.invoke.return_value = {"status": "completed"}
@@ -369,10 +369,10 @@ class TestRunCommandAdvanced:
         wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
         output_path = tmp_path / "output.json"
 
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry"), \
-             patch("src.observability.tracker.ExecutionTracker") as mock_et, \
-             patch("src.workflow.engine_registry.EngineRegistry") as mock_er:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry"), \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_et, \
+             patch("temper_ai.workflow.engine_registry.EngineRegistry") as mock_er:
             mock_engine = MagicMock()
             mock_compiled = MagicMock()
             mock_compiled.invoke.return_value = {"status": "completed", "result": "test"}
@@ -396,9 +396,9 @@ class TestRunCommandAdvanced:
         }
         wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
 
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry"), \
-             patch("src.observability.tracker.ExecutionTracker") as mock_et:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry"), \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_et:
             mock_et.ensure_database.side_effect = PermissionError("Cannot create database")
 
             result = runner.invoke(main, ["run", str(wf_path), "--local"])
@@ -415,10 +415,10 @@ class TestRunCommandAdvanced:
         }
         wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
 
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry"), \
-             patch("src.observability.tracker.ExecutionTracker") as mock_et, \
-             patch("src.workflow.engine_registry.EngineRegistry") as mock_er:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry"), \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_et, \
+             patch("temper_ai.workflow.engine_registry.EngineRegistry") as mock_er:
             mock_engine = MagicMock()
             mock_engine.compile.side_effect = ValueError("Invalid workflow structure")
             mock_er.return_value.get_engine_from_config.return_value = mock_engine
@@ -438,10 +438,10 @@ class TestRunCommandAdvanced:
         }
         wf_path = _write_yaml(tmp_path / "workflow.yaml", wf)
 
-        with patch("src.workflow.config_loader.ConfigLoader"), \
-             patch("src.tools.registry.ToolRegistry"), \
-             patch("src.observability.tracker.ExecutionTracker") as mock_et, \
-             patch("src.workflow.engine_registry.EngineRegistry") as mock_er:
+        with patch("temper_ai.workflow.config_loader.ConfigLoader"), \
+             patch("temper_ai.tools.registry.ToolRegistry"), \
+             patch("temper_ai.observability.tracker.ExecutionTracker") as mock_et, \
+             patch("temper_ai.workflow.engine_registry.EngineRegistry") as mock_er:
             mock_engine = MagicMock()
             mock_compiled = MagicMock()
             mock_compiled.invoke.side_effect = RuntimeError("Execution failed")
@@ -459,7 +459,7 @@ class TestCleanupToolExecutor:
     """Test the _cleanup_tool_executor helper function."""
 
     def test_cleanup_with_tool_executor_direct(self):
-        from src.interfaces.cli.main import _cleanup_tool_executor
+        from temper_ai.interfaces.cli.main import _cleanup_tool_executor
 
         mock_engine = MagicMock()
         mock_tool_executor = MagicMock()
@@ -469,7 +469,7 @@ class TestCleanupToolExecutor:
         mock_tool_executor.shutdown.assert_called_once()
 
     def test_cleanup_with_tool_executor_via_compiler(self):
-        from src.interfaces.cli.main import _cleanup_tool_executor
+        from temper_ai.interfaces.cli.main import _cleanup_tool_executor
 
         mock_engine = MagicMock()
         mock_tool_executor = MagicMock()
@@ -480,7 +480,7 @@ class TestCleanupToolExecutor:
         mock_tool_executor.shutdown.assert_called_once()
 
     def test_cleanup_with_no_tool_executor(self):
-        from src.interfaces.cli.main import _cleanup_tool_executor
+        from temper_ai.interfaces.cli.main import _cleanup_tool_executor
 
         mock_engine = MagicMock()
         del mock_engine.tool_executor
@@ -492,7 +492,7 @@ class TestCleanupToolExecutor:
         assert result is None
 
     def test_cleanup_with_shutdown_error(self):
-        from src.interfaces.cli.main import _cleanup_tool_executor
+        from temper_ai.interfaces.cli.main import _cleanup_tool_executor
 
         mock_engine = MagicMock()
         mock_tool_executor = MagicMock()

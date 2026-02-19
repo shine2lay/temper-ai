@@ -3,8 +3,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.workflow.checkpoint import CheckpointManager
-from src.workflow.domain_state import WorkflowDomainState
+from temper_ai.workflow.checkpoint import CheckpointManager
+from temper_ai.workflow.domain_state import WorkflowDomainState
 
 
 @pytest.fixture

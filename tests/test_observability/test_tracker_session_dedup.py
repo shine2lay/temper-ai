@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.observability.tracker import ExecutionTracker, WorkflowTrackingParams
+from temper_ai.observability.tracker import ExecutionTracker, WorkflowTrackingParams
 
 
 @pytest.fixture
@@ -112,7 +112,7 @@ class TestTrackStageSessionDedup:
         assert len(tracker._session_stack) == 0
 
         with patch(
-            "src.observability.tracker._handle_stage_error"
+            "temper_ai.observability.tracker._handle_stage_error"
         ) as mock_err:
             with pytest.raises(RuntimeError, match="stage_fail"):
                 with tracker.track_stage("s", {}, "wf-1"):
@@ -162,7 +162,7 @@ class TestTrackAgentSessionDedup:
         assert len(tracker._session_stack) == 0
 
         with patch(
-            "src.observability.tracker._handle_agent_error"
+            "temper_ai.observability.tracker._handle_agent_error"
         ) as mock_err:
             with pytest.raises(RuntimeError, match="agent_fail"):
                 with tracker.track_agent("a", {}, "s-1"):

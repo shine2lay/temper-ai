@@ -5,23 +5,23 @@ from datetime import timedelta
 
 import pytest
 
-from src.portfolio._schemas import (
+from temper_ai.portfolio._schemas import (
     OptimizationAction,
     PortfolioConfig,
     ProductDefinition,
     ProductScorecard,
 )
-from src.portfolio.constants import (
+from temper_ai.portfolio.constants import (
     TREND_OFFSET,
     WEIGHT_COST_EFFICIENCY,
     WEIGHT_SUCCESS_RATE,
     WEIGHT_TREND,
     WEIGHT_UTILIZATION,
 )
-from src.portfolio.models import ProductRunRecord
-from src.portfolio.optimizer import PortfolioOptimizer
-from src.portfolio.store import PortfolioStore
-from src.storage.database.datetime_utils import utcnow
+from temper_ai.portfolio.models import ProductRunRecord
+from temper_ai.portfolio.optimizer import PortfolioOptimizer
+from temper_ai.portfolio.store import PortfolioStore
+from temper_ai.storage.database.datetime_utils import utcnow
 
 MEMORY_DB = "sqlite:///:memory:"
 

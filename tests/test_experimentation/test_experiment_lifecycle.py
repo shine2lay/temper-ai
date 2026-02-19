@@ -8,9 +8,9 @@ multi-variant experiments, config overrides, and protected field validation.
 import numpy as np
 import pytest
 
-from src.experimentation.analyzer import StatisticalAnalyzer
-from src.experimentation.config_manager import ConfigManager, SecurityViolationError
-from src.experimentation.models import (
+from temper_ai.experimentation.analyzer import StatisticalAnalyzer
+from temper_ai.experimentation.config_manager import ConfigManager, SecurityViolationError
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ConfigType,
     ExecutionStatus,

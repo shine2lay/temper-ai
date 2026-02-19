@@ -1,6 +1,6 @@
 # Testing Guide
 
-Comprehensive guide to writing, running, and maintaining tests in the Meta-Autonomous Agent Framework.
+Comprehensive guide to writing, running, and maintaining tests in the Temper AI.
 
 ---
 
@@ -283,7 +283,7 @@ pytest -m "not slow"  # Skip slow tests
 ```python
 """Tests for Calculator tool."""
 import pytest
-from src.tools.calculator import Calculator
+from temper_ai.tools.calculator import Calculator
 
 def test_calculator_addition():
     """Test basic addition."""
@@ -318,7 +318,7 @@ class TestCalculator:
 ```python
 """Example using shared test fixtures."""
 import pytest
-from src.compiler.schemas import (
+from temper_ai.compiler.schemas import (
     AgentConfig,
     AgentConfigInner,
     PromptConfig,
@@ -359,8 +359,8 @@ def test_with_fixture(minimal_agent_config):
 ```python
 """Example of parameterized tests from tests/test_validation/test_boundary_values.py"""
 import pytest
-from src.strategies.base import AgentOutput
-from src.strategies.consensus import ConsensusStrategy
+from temper_ai.strategies.base import AgentOutput
+from temper_ai.strategies.consensus import ConsensusStrategy
 
 @pytest.mark.parametrize("agent_count,should_accept", [
     (0, False),  # Below minimum
@@ -408,12 +408,12 @@ def test_agent_count_validation(agent_count, should_accept):
 ```python
 """Example mocking patterns from tests/test_memory_leaks.py"""
 from unittest.mock import Mock, patch
-from src.agents.standard_agent import StandardAgent
-from src.agents.llm_providers import LLMResponse
+from temper_ai.agents.standard_agent import StandardAgent
+from temper_ai.agents.llm_providers import LLMResponse
 
 def test_with_mock_llm(minimal_agent_config):
     """Test agent with mocked LLM."""
-    with patch('src.agents.standard_agent.ToolRegistry') as mock_tool_registry:
+    with patch('temper_ai.agents.standard_agent.ToolRegistry') as mock_tool_registry:
         # Setup mock tool registry
         mock_tool_registry.return_value.list_tools.return_value = []
 
@@ -632,7 +632,7 @@ mock_tool.execute.side_effect = [
 ]
 
 # 3. Patch classes
-@patch('src.agents.llm_providers.OllamaLLM')
+@patch('temper_ai.agents.llm_providers.OllamaLLM')
 def test_with_patch(mock_ollama):
     pass
 
@@ -989,7 +989,7 @@ pytest --cov=src --cov-report=html tests/
 pytest --cov=src --cov-report=term-missing tests/
 
 # Check specific module
-pytest --cov=src.agents --cov-report=term-missing tests/test_agents/
+pytest --cov=temper_ai.agents --cov-report=term-missing tests/test_agents/
 ```
 
 ### Coverage Report Example
@@ -997,9 +997,9 @@ pytest --cov=src.agents --cov-report=term-missing tests/test_agents/
 ```
 Name                          Stmts   Miss  Cover   Missing
 -----------------------------------------------------------
-src/agents/base_agent.py        45      2    96%   102-103
-src/agents/standard_agent.py   123      8    93%   45, 78-82
-src/agents/llm_providers.py     89      5    94%   234-238
+temper_ai/agents/base_agent.py        45      2    96%   102-103
+temper_ai/agents/standard_agent.py   123      8    93%   45, 78-82
+temper_ai/agents/llm_providers.py     89      5    94%   234-238
 -----------------------------------------------------------
 TOTAL                           257     15    94%
 ```

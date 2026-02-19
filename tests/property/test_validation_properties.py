@@ -10,8 +10,8 @@ pytest.importorskip("hypothesis")
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
-from src.storage.schemas.agent_config import InferenceConfig
-from src.agent.strategies.base import AgentOutput, Conflict
+from temper_ai.storage.schemas.agent_config import InferenceConfig
+from temper_ai.agent.strategies.base import AgentOutput, Conflict
 
 
 class TestAgentOutputValidation:

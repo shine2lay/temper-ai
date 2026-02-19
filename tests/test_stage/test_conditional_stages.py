@@ -3,11 +3,11 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.workflow.condition_evaluator import ConditionEvaluator
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.node_builder import NodeBuilder
-from src.workflow._schemas import WorkflowStageReference
-from src.stage.stage_compiler import StageCompiler
+from temper_ai.workflow.condition_evaluator import ConditionEvaluator
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.workflow._schemas import WorkflowStageReference
+from temper_ai.stage.stage_compiler import StageCompiler
 
 
 class TestConditionalStageSkip:

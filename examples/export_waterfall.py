@@ -12,8 +12,8 @@ from typing import Any, Dict, List
 
 from sqlmodel import select
 
-from src.observability.database import get_session
-from src.observability.models import (
+from temper_ai.observability.database import get_session
+from temper_ai.observability.models import (
     AgentExecution,
     LLMCall,
     StageExecution,

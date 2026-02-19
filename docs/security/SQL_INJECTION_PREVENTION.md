@@ -19,11 +19,11 @@ This document provides security guidelines for preventing SQL injection vulnerab
 ✅ **PASSED** - Codebase audit shows NO SQL injection vulnerabilities in production code.
 
 **Files Audited:**
-- `src/observability/tracker.py` - ✅ Safe (uses SQLModel ORM)
-- `src/observability/database.py` - ✅ Safe (hardcoded ping query)
-- `src/observability/migrations.py` - ⚠️ Uses `text()` but properly validated
-- `src/observability/visualize_trace.py` - ✅ Safe (uses SQLModel ORM)
-- `src/observability/console.py` - ✅ Safe (uses SQLModel ORM)
+- `temper_ai/observability/tracker.py` - ✅ Safe (uses SQLModel ORM)
+- `temper_ai/observability/database.py` - ✅ Safe (hardcoded ping query)
+- `temper_ai/observability/migrations.py` - ⚠️ Uses `text()` but properly validated
+- `temper_ai/observability/visualize_trace.py` - ✅ Safe (uses SQLModel ORM)
+- `temper_ai/observability/console.py` - ✅ Safe (uses SQLModel ORM)
 - All other database code - ✅ Safe (uses SQLModel ORM)
 
 ---
@@ -47,7 +47,7 @@ query = "SELECT * FROM users WHERE id = %s" % user_id  # SQL INJECTION!
 ✅ **CORRECT:**
 ```python
 from sqlmodel import select
-from src.observability.models import User
+from temper_ai.observability.models import User
 
 user_id = request.get("user_id")
 stmt = select(User).where(User.id == user_id)  # SAFE: Parameterized
@@ -63,7 +63,7 @@ SQLModel automatically uses parameterized queries and provides type safety.
 ✅ **CORRECT: SELECT Queries**
 ```python
 from sqlmodel import select, func
-from src.observability.models import WorkflowExecution, StageExecution
+from temper_ai.observability.models import WorkflowExecution, StageExecution
 
 # Simple select
 stmt = select(WorkflowExecution).where(WorkflowExecution.id == workflow_id)
@@ -93,7 +93,7 @@ agents = session.exec(stmt).all()
 
 ✅ **CORRECT: INSERT Queries**
 ```python
-from src.observability.models import WorkflowExecution
+from temper_ai.observability.models import WorkflowExecution
 
 # Create and insert
 workflow = WorkflowExecution(
@@ -262,7 +262,7 @@ All database code MUST include security tests:
 
 ```python
 import pytest
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.tracker import ExecutionTracker
 
 def test_sql_injection_prevention():
     """Verify parameterized queries prevent SQL injection."""

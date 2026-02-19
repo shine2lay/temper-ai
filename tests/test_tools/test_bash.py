@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.tools.bash import DANGEROUS_CHARS, DEFAULT_ALLOWED_COMMANDS, MAX_TIMEOUT_SECONDS, Bash
-from src.tools.field_names import ToolResultFields
+from temper_ai.tools.bash import DANGEROUS_CHARS, DEFAULT_ALLOWED_COMMANDS, MAX_TIMEOUT_SECONDS, Bash
+from temper_ai.tools.field_names import ToolResultFields
 
 
 @pytest.fixture
@@ -285,7 +285,7 @@ class TestTimeoutHandling:
         assert result.metadata[ToolResultFields.TIMEOUT] == 1
         assert str(workspace) in result.result
 
-    @patch("src.tools._bash_helpers.subprocess.run")
+    @patch("temper_ai.tools._bash_helpers.subprocess.run")
     def test_timeout_expired(self, mock_run, bash_tool, workspace):
         """TimeoutExpired should be caught and reported."""
         mock_run.side_effect = subprocess.TimeoutExpired(cmd="sleep", timeout=1)
@@ -365,14 +365,14 @@ class TestEdgeCases:
         assert result.success is False
         assert "non-empty string" in result.error
 
-    @patch("src.tools._bash_helpers.subprocess.run")
+    @patch("temper_ai.tools._bash_helpers.subprocess.run")
     def test_command_not_found(self, mock_run, bash_tool, workspace):
         mock_run.side_effect = FileNotFoundError()
         result = bash_tool.execute(command="ls", working_directory=str(workspace))
         assert result.success is False
         assert "not found" in result.error.lower()
 
-    @patch("src.tools._bash_helpers.subprocess.run")
+    @patch("temper_ai.tools._bash_helpers.subprocess.run")
     def test_permission_denied(self, mock_run, bash_tool, workspace):
         mock_run.side_effect = PermissionError()
         result = bash_tool.execute(command="ls", working_directory=str(workspace))
@@ -389,7 +389,7 @@ class TestEdgeCases:
         assert result.success is True
         assert "test content" in result.result
 
-    @patch("src.tools._bash_helpers.subprocess.run")
+    @patch("temper_ai.tools._bash_helpers.subprocess.run")
     def test_long_output_truncation(self, mock_run, bash_tool, workspace):
         """Very long output should be truncated."""
         long_output = "x" * 60000
@@ -801,56 +801,56 @@ class TestShellCommandParsing:
 
     def test_single_quoted_pipe_not_split(self):
         """Pipe inside single quotes should not split command."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands("echo 'hello|world'")
         assert len(result) == 1
         assert "hello|world" in result[0]
 
     def test_double_quoted_pipe_not_split(self):
         """Pipe inside double quotes should not split command."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands('echo "hello|world"')
         assert len(result) == 1
         assert "hello|world" in result[0]
 
     def test_escaped_pipe_not_split(self):
         """Escaped pipe should not split command."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands("echo hello\\|world")
         assert len(result) == 1
         assert "|" in result[0]
 
     def test_single_quote_toggle(self):
         """Single quotes toggle in/out correctly."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands("echo 'test' | cat")
         assert len(result) == 2
         assert "'test'" in result[0]
 
     def test_double_quote_toggle(self):
         """Double quotes toggle in/out correctly."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands('echo "test" | cat')
         assert len(result) == 2
         assert '"test"' in result[0]
 
     def test_escape_in_double_quotes(self):
         """Backslash escape works in double quotes."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands('echo "hello\\"world"')
         assert len(result) == 1
         assert '\\"' in result[0]
 
     def test_no_escape_in_single_quotes(self):
         """Backslash has no special meaning in single quotes."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands("echo 'hello\\nworld'")
         assert len(result) == 1
         assert "\\n" in result[0]
 
     def test_and_operator_split(self):
         """&& operator splits commands correctly."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands("ls && pwd")
         assert len(result) == 2
         assert "ls" in result[0]
@@ -858,7 +858,7 @@ class TestShellCommandParsing:
 
     def test_or_operator_split(self):
         """|| operator splits commands correctly."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands("ls || pwd")
         assert len(result) == 2
         assert "ls" in result[0]
@@ -866,7 +866,7 @@ class TestShellCommandParsing:
 
     def test_semicolon_split(self):
         """Semicolon splits commands correctly."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands("ls ; pwd")
         assert len(result) == 2
         assert "ls" in result[0]
@@ -874,7 +874,7 @@ class TestShellCommandParsing:
 
     def test_nested_quotes(self):
         """Single quotes inside double quotes preserved."""
-        from src.tools.bash import _split_shell_commands
+        from temper_ai.tools.bash import _split_shell_commands
         result = _split_shell_commands("""echo "it's working" """)
         assert len(result) == 1
         assert "it's" in result[0]

@@ -4,12 +4,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.memory._schemas import MemoryScope
-from src.memory.constants import MEMORY_TYPE_EPISODIC, MEMORY_TYPE_PROCEDURAL
+from temper_ai.memory._schemas import MemoryScope
+from temper_ai.memory.constants import MEMORY_TYPE_EPISODIC, MEMORY_TYPE_PROCEDURAL
 
 
 # All tests mock mem0 so we can test adapter logic without the dependency.
-ADAPTER_MODULE = "src.memory.adapters.mem0_adapter"
+ADAPTER_MODULE = "temper_ai.memory.adapters.mem0_adapter"
 
 
 def _make_scope():
@@ -19,7 +19,7 @@ def _make_scope():
 def _make_adapter(mock_mem0):
     """Import and create a Mem0Adapter with the module mocked."""
     with patch(f"{ADAPTER_MODULE}._ensure_mem0_available", return_value=mock_mem0):
-        from src.memory.adapters.mem0_adapter import Mem0Adapter
+        from temper_ai.memory.adapters.mem0_adapter import Mem0Adapter
 
         return Mem0Adapter()
 
@@ -37,7 +37,7 @@ class TestMem0AdapterInit:
         mock_mem0 = MagicMock()
         custom = {"vector_store": {"provider": "custom"}}
         with patch(f"{ADAPTER_MODULE}._ensure_mem0_available", return_value=mock_mem0):
-            from src.memory.adapters.mem0_adapter import Mem0Adapter
+            from temper_ai.memory.adapters.mem0_adapter import Mem0Adapter
 
             adapter = Mem0Adapter(config=custom)
         mock_mem0.Memory.from_config.assert_called_with(custom)

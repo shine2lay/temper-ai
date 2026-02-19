@@ -14,7 +14,7 @@ from datetime import datetime
 
 import pytest
 
-from src.observability.backends.noop_backend import NoOpBackend
+from temper_ai.observability.backends.noop_backend import NoOpBackend
 
 
 @pytest.fixture

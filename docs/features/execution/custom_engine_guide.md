@@ -2,7 +2,7 @@
 
 ## Overview
 
-This guide shows how to implement a custom execution engine for the Meta-Autonomous Framework. Custom engines enable:
+This guide shows how to implement a custom execution engine for the Temper AI. Custom engines enable:
 
 - Alternative execution strategies (interpreter, actor model, etc.)
 - Advanced features like convergence detection (M5+)
@@ -23,7 +23,7 @@ This guide shows how to implement a custom execution engine for the Meta-Autonom
 Create a class that implements the `CompiledWorkflow` interface:
 
 ```python
-from src.compiler.execution_engine import CompiledWorkflow
+from temper_ai.compiler.execution_engine import CompiledWorkflow
 from typing import Dict, Any
 
 class MyCompiledWorkflow(CompiledWorkflow):
@@ -121,7 +121,7 @@ class MyCompiledWorkflow(CompiledWorkflow):
 Create a class that implements the `ExecutionEngine` interface:
 
 ```python
-from src.compiler.execution_engine import ExecutionEngine, ExecutionMode
+from temper_ai.compiler.execution_engine import ExecutionEngine, ExecutionMode
 from typing import Dict, Any
 
 class MyExecutionEngine(ExecutionEngine):
@@ -260,7 +260,7 @@ class MyExecutionEngine(ExecutionEngine):
 Register your engine with the `EngineRegistry`:
 
 ```python
-from src.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.engine_registry import EngineRegistry
 
 # Get registry instance
 registry = EngineRegistry()
@@ -295,8 +295,8 @@ workflow:
 Use your engine like any other:
 
 ```python
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
 
 # Load config
 loader = ConfigLoader()
@@ -318,7 +318,7 @@ print(result["stage_outputs"])
 Here's a complete example implementing convergence detection for M5:
 
 ```python
-from src.compiler.execution_engine import ExecutionEngine, CompiledWorkflow, ExecutionMode
+from temper_ai.compiler.execution_engine import ExecutionEngine, CompiledWorkflow, ExecutionMode
 from typing import Dict, Any, List
 
 class ConvergenceCompiledWorkflow(CompiledWorkflow):
@@ -436,7 +436,7 @@ class ConvergenceEngine(ExecutionEngine):
 
 ```python
 import pytest
-from src.compiler.execution_engine import ExecutionMode
+from temper_ai.compiler.execution_engine import ExecutionMode
 
 def test_custom_engine_compile():
     """Test compilation."""
@@ -495,7 +495,7 @@ def test_async_execution():
 ```python
 def test_custom_engine_with_registry():
     """Test registration and usage."""
-    from src.compiler.engine_registry import EngineRegistry
+    from temper_ai.compiler.engine_registry import EngineRegistry
 
     # Register engine
     registry = EngineRegistry()
@@ -512,7 +512,7 @@ def test_custom_engine_with_registry():
 
 def test_engine_selection_from_config():
     """Test config-based engine selection."""
-    from src.compiler.engine_registry import EngineRegistry
+    from temper_ai.compiler.engine_registry import EngineRegistry
 
     registry = EngineRegistry()
     registry.register_engine("my_engine", MyExecutionEngine)
@@ -666,14 +666,14 @@ class MyCompiledWorkflow(CompiledWorkflow):
 ## Examples Reference
 
 See complete reference implementations:
-- **LangGraph Engine:** `src/compiler/langgraph_engine.py`
+- **LangGraph Engine:** `temper_ai/compiler/langgraph_engine.py`
 - **Convergence Engine:** (above example)
 - **Simple Interpreter:** (coming in M5)
 
 ## References
 
 - [Execution Engine Architecture](./execution_engine_architecture.md) - Design overview
-- [ExecutionEngine Interface](../src/compiler/execution_engine.py) - Abstract base classes
+- [ExecutionEngine Interface](../temper_ai/compiler/execution_engine.py) - Abstract base classes
 - [Technical Specification](../TECHNICAL_SPECIFICATION.md) - Framework specification
 - [Vision Document](../VISION.md) - Long-term vision
 

@@ -4,13 +4,13 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.improvement._schemas import (
+from temper_ai.improvement._schemas import (
     EvaluatorConfig,
     OptimizationConfig,
     PipelineStepConfig,
 )
-from src.improvement.engine import OptimizationEngine
-from src.improvement.registry import OptimizationRegistry
+from temper_ai.improvement.engine import OptimizationEngine
+from temper_ai.improvement.registry import OptimizationRegistry
 
 
 class TestOptimizationEngine:
@@ -181,7 +181,7 @@ class TestOptimizationEngine:
 
     def test_build_optimizer_kwargs_selection(self):
         """_build_optimizer_kwargs passes experiment_service to SelectionOptimizer."""
-        from src.improvement.optimizers.selection import SelectionOptimizer
+        from temper_ai.improvement.optimizers.selection import SelectionOptimizer
 
         mock_service = MagicMock()
         config = OptimizationConfig()
@@ -195,7 +195,7 @@ class TestOptimizationEngine:
 
     def test_build_optimizer_kwargs_refinement(self):
         """_build_optimizer_kwargs passes llm + experiment_service to RefinementOptimizer."""
-        from src.improvement.optimizers.refinement import RefinementOptimizer
+        from temper_ai.improvement.optimizers.refinement import RefinementOptimizer
 
         mock_service = MagicMock()
         mock_llm = MagicMock()

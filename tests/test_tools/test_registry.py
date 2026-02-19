@@ -3,8 +3,8 @@ Tests for tool registry.
 """
 import pytest
 
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.tools.registry import ToolRegistry, ToolRegistryError
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.registry import ToolRegistry, ToolRegistryError
 
 # ============================================
 # MOCK TOOLS FOR TESTING
@@ -587,11 +587,11 @@ class TestEnhancedAutoDiscovery:
         assert count >= 0
 
     def test_auto_discover_with_real_tools(self):
-        """Test auto-discover finds real tools in src.tools package."""
+        """Test auto-discover finds real tools in temper_ai.tools package."""
         registry = ToolRegistry(auto_discover=False)
 
-        # Manually discover from src.tools
-        count = registry.auto_discover("src.tools")
+        # Manually discover from temper_ai.tools
+        count = registry.auto_discover("temper_ai.tools")
 
         # Should find at least Calculator, FileWriter, WebScraper
         assert count >= 3
@@ -920,7 +920,7 @@ class TestRegistryEdgeCases:
 
     def test_unregister_specific_version_not_found(self):
         """Test unregistering a version that doesn't exist."""
-        from src.shared.utils.exceptions import ToolRegistryError
+        from temper_ai.shared.utils.exceptions import ToolRegistryError
         registry = ToolRegistry()
         calc = MockCalculator()
         registry.register(calc)
@@ -950,7 +950,7 @@ class TestRegistryEdgeCases:
 
     def test_global_registry_singleton(self):
         """Test that get_global_registry returns same instance."""
-        from src.tools.registry import get_global_registry, clear_global_cache, _GLOBAL_LOCK
+        from temper_ai.tools.registry import get_global_registry, clear_global_cache, _GLOBAL_LOCK
 
         # Clear first to ensure clean state
         with _GLOBAL_LOCK:
@@ -969,7 +969,7 @@ class TestRegistryEdgeCases:
 
     def test_clear_global_cache(self):
         """Test clearing global cache and registry."""
-        from src.tools.registry import get_global_registry, clear_global_cache, _GLOBAL_LOCK
+        from temper_ai.tools.registry import get_global_registry, clear_global_cache, _GLOBAL_LOCK
 
         # Get initial registry
         with _GLOBAL_LOCK:

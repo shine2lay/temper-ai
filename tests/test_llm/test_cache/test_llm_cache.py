@@ -20,7 +20,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.llm.cache.llm_cache import (
+from temper_ai.llm.cache.llm_cache import (
     CacheBackend,
     CacheStats,
     InMemoryCache,
@@ -388,15 +388,15 @@ class TestRedisCacheInitialization:
 
     def test_init_requires_redis_package(self):
         """Test RedisCache requires redis package."""
-        with patch("src.llm.cache.llm_cache.REDIS_AVAILABLE", False):
+        with patch("temper_ai.llm.cache.llm_cache.REDIS_AVAILABLE", False):
             with pytest.raises(ImportError, match="'redis' package"):
                 RedisCache()
 
     def test_init_with_password_env_var(self):
         """Test RedisCache loads password from environment."""
         with patch.dict(os.environ, {"REDIS_PASSWORD": "secret123"}):
-            with patch("src.llm.cache.llm_cache.REDIS_AVAILABLE", True):
-                with patch("src.llm.cache.llm_cache.redis") as mock_redis_module:
+            with patch("temper_ai.llm.cache.llm_cache.REDIS_AVAILABLE", True):
+                with patch("temper_ai.llm.cache.llm_cache.redis") as mock_redis_module:
                     mock_client = Mock()
                     mock_redis_module.Redis.return_value = mock_client
 
@@ -408,8 +408,8 @@ class TestRedisCacheInitialization:
 
     def test_init_deprecated_password_parameter(self):
         """Test deprecated password parameter shows warning."""
-        with patch("src.llm.cache.llm_cache.REDIS_AVAILABLE", True):
-            with patch("src.llm.cache.llm_cache.redis") as mock_redis_module:
+        with patch("temper_ai.llm.cache.llm_cache.REDIS_AVAILABLE", True):
+            with patch("temper_ai.llm.cache.llm_cache.redis") as mock_redis_module:
                 mock_client = Mock()
                 mock_redis_module.Redis.return_value = mock_client
 
@@ -420,8 +420,8 @@ class TestRedisCacheInitialization:
 
     def test_init_connection_test(self):
         """Test RedisCache tests connection on init."""
-        with patch("src.llm.cache.llm_cache.REDIS_AVAILABLE", True):
-            with patch("src.llm.cache.llm_cache.redis") as mock_redis_module:
+        with patch("temper_ai.llm.cache.llm_cache.REDIS_AVAILABLE", True):
+            with patch("temper_ai.llm.cache.llm_cache.redis") as mock_redis_module:
                 mock_client = Mock()
                 mock_redis_module.Redis.return_value = mock_client
 
@@ -432,8 +432,8 @@ class TestRedisCacheInitialization:
 
     def test_init_auth_failure(self):
         """Test RedisCache raises on auth failure."""
-        with patch("src.llm.cache.llm_cache.REDIS_AVAILABLE", True):
-            with patch("src.llm.cache.llm_cache.redis") as mock_redis_module:
+        with patch("temper_ai.llm.cache.llm_cache.REDIS_AVAILABLE", True):
+            with patch("temper_ai.llm.cache.llm_cache.redis") as mock_redis_module:
                 mock_client = Mock()
                 mock_redis_module.AuthenticationError = Exception
                 mock_client.ping.side_effect = mock_redis_module.AuthenticationError()
@@ -458,7 +458,7 @@ class TestRedisCacheOperations:
 
     def test_set_and_get(self):
         """Test basic set and get operations."""
-        with patch("src.llm.cache.llm_cache.redis.Redis") as mock_redis:
+        with patch("temper_ai.llm.cache.llm_cache.redis.Redis") as mock_redis:
             mock_client = Mock()
             mock_redis.return_value = mock_client
             mock_client.get.return_value = "value1"
@@ -472,7 +472,7 @@ class TestRedisCacheOperations:
 
     def test_set_with_ttl(self):
         """Test set with TTL uses setex."""
-        with patch("src.llm.cache.llm_cache.redis.Redis") as mock_redis:
+        with patch("temper_ai.llm.cache.llm_cache.redis.Redis") as mock_redis:
             mock_client = Mock()
             mock_redis.return_value = mock_client
 
@@ -483,7 +483,7 @@ class TestRedisCacheOperations:
 
     def test_delete(self):
         """Test delete operation."""
-        with patch("src.llm.cache.llm_cache.redis.Redis") as mock_redis:
+        with patch("temper_ai.llm.cache.llm_cache.redis.Redis") as mock_redis:
             mock_client = Mock()
             mock_redis.return_value = mock_client
             mock_client.delete.return_value = 1
@@ -495,7 +495,7 @@ class TestRedisCacheOperations:
 
     def test_exists(self):
         """Test exists operation."""
-        with patch("src.llm.cache.llm_cache.redis.Redis") as mock_redis:
+        with patch("temper_ai.llm.cache.llm_cache.redis.Redis") as mock_redis:
             mock_client = Mock()
             mock_redis.return_value = mock_client
             mock_client.exists.return_value = 1
@@ -507,7 +507,7 @@ class TestRedisCacheOperations:
 
     def test_clear_with_scan(self):
         """Test clear uses SCAN to avoid blocking."""
-        with patch("src.llm.cache.llm_cache.redis.Redis") as mock_redis:
+        with patch("temper_ai.llm.cache.llm_cache.redis.Redis") as mock_redis:
             mock_client = Mock()
             mock_redis.return_value = mock_client
 
@@ -525,7 +525,7 @@ class TestRedisCacheOperations:
 
     def test_error_handling(self):
         """Test Redis errors are caught gracefully."""
-        with patch("src.llm.cache.llm_cache.redis.Redis") as mock_redis:
+        with patch("temper_ai.llm.cache.llm_cache.redis.Redis") as mock_redis:
             import redis as redis_module
             mock_client = Mock()
             mock_redis.return_value = mock_client
@@ -542,8 +542,8 @@ class TestRedisCacheSafety:
 
     def test_repr_no_password_leak(self):
         """Test __repr__ doesn't expose password."""
-        with patch("src.llm.cache.llm_cache.REDIS_AVAILABLE", True):
-            with patch("src.llm.cache.llm_cache.redis") as mock_redis_module:
+        with patch("temper_ai.llm.cache.llm_cache.REDIS_AVAILABLE", True):
+            with patch("temper_ai.llm.cache.llm_cache.redis") as mock_redis_module:
                 mock_client = Mock()
                 mock_redis_module.Redis.return_value = mock_client
 
@@ -555,8 +555,8 @@ class TestRedisCacheSafety:
 
     def test_str_no_password_leak(self):
         """Test __str__ doesn't expose password."""
-        with patch("src.llm.cache.llm_cache.REDIS_AVAILABLE", True):
-            with patch("src.llm.cache.llm_cache.redis") as mock_redis_module:
+        with patch("temper_ai.llm.cache.llm_cache.REDIS_AVAILABLE", True):
+            with patch("temper_ai.llm.cache.llm_cache.redis") as mock_redis_module:
                 mock_client = Mock()
                 mock_redis_module.Redis.return_value = mock_client
 
@@ -583,8 +583,8 @@ class TestLLMCacheInitialization:
 
     def test_init_with_redis_backend(self):
         """Test initialization with redis backend."""
-        with patch("src.llm.cache.llm_cache.REDIS_AVAILABLE", True):
-            with patch("src.llm.cache.llm_cache.redis") as mock_redis_module:
+        with patch("temper_ai.llm.cache.llm_cache.REDIS_AVAILABLE", True):
+            with patch("temper_ai.llm.cache.llm_cache.redis") as mock_redis_module:
                 mock_client = Mock()
                 mock_redis_module.Redis.return_value = mock_client
 

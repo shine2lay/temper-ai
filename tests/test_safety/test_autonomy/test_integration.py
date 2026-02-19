@@ -4,20 +4,20 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.safety.autonomy.approval_router import ApprovalRouter
-from src.safety.autonomy.budget_enforcer import BudgetEnforcer
-from src.safety.autonomy.constants import STATUS_EXHAUSTED
-from src.safety.autonomy.emergency_stop import (
+from temper_ai.safety.autonomy.approval_router import ApprovalRouter
+from temper_ai.safety.autonomy.budget_enforcer import BudgetEnforcer
+from temper_ai.safety.autonomy.constants import STATUS_EXHAUSTED
+from temper_ai.safety.autonomy.emergency_stop import (
     EmergencyStopController,
     EmergencyStopError,
     reset_emergency_state,
 )
-from src.safety.autonomy.manager import AutonomyManager
-from src.safety.autonomy.policy import AutonomyPolicy
-from src.safety.autonomy.schemas import AutonomyConfig, AutonomyLevel
-from src.safety.autonomy.shadow_mode import ShadowMode
-from src.safety.autonomy.store import AutonomyStore
-from src.safety.interfaces import SafetyViolation, ViolationSeverity
+from temper_ai.safety.autonomy.manager import AutonomyManager
+from temper_ai.safety.autonomy.policy import AutonomyPolicy
+from temper_ai.safety.autonomy.schemas import AutonomyConfig, AutonomyLevel
+from temper_ai.safety.autonomy.shadow_mode import ShadowMode
+from temper_ai.safety.autonomy.store import AutonomyStore
+from temper_ai.safety.interfaces import SafetyViolation, ViolationSeverity
 
 
 @pytest.fixture(autouse=True)

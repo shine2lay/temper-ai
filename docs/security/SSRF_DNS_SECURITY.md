@@ -3,7 +3,7 @@
 **Status**: CRITICAL Security Fix
 **Severity**: High
 **Attack Vectors**: DNS Timing Attack, DNS Rebinding, DNS DoS
-**Files Modified**: `src/tools/web_scraper.py`
+**Files Modified**: `temper_ai/tools/web_scraper.py`
 **Tests Added**: `tests/test_security/test_ssrf_dns_security.py`
 
 ## Vulnerability Summary

@@ -4,7 +4,7 @@ Tests database field validators for data integrity.
 """
 import pytest
 
-from src.storage.database.validators import (
+from temper_ai.storage.database.validators import (
     JSONSizeError,
     validate_json_size,
     validate_optional_json_size,

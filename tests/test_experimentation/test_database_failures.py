@@ -22,7 +22,7 @@ import pytest
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlmodel import Session, select
 
-from src.experimentation.models import (
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ExecutionStatus,
     Experiment,
@@ -30,8 +30,8 @@ from src.experimentation.models import (
     Variant,
     VariantAssignment,
 )
-from src.experimentation.service import ExperimentService
-from src.observability.database import (
+from temper_ai.experimentation.service import ExperimentService
+from temper_ai.observability.database import (
     DatabaseManager,
     get_session,
     init_database,
@@ -80,7 +80,7 @@ def experiment_service(temp_db_file):
 @contextmanager
 def mock_connection_error():
     """Simulate database connection loss."""
-    with patch('src.observability.database.get_session') as mock:
+    with patch('temper_ai.observability.database.get_session') as mock:
         mock.side_effect = OperationalError(
             "connection to server was lost",
             params=None,
@@ -92,7 +92,7 @@ def mock_connection_error():
 @contextmanager
 def mock_pool_timeout():
     """Simulate connection pool timeout."""
-    with patch('src.observability.database.get_session') as mock:
+    with patch('temper_ai.observability.database.get_session') as mock:
         mock.side_effect = TimeoutError(
             "QueuePool limit of size 5 overflow 10 reached, connection timed out"
         )
@@ -200,7 +200,7 @@ class TestConnectionFailures:
         experiment_service.start_experiment(exp_id)
 
         # Mock connection failure at the service level
-        with patch('src.experimentation.service.get_session') as mock:
+        with patch('temper_ai.experimentation.service.get_session') as mock:
             mock.side_effect = OperationalError(
                 "connection to server was lost",
                 params=None,

@@ -12,9 +12,9 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, MagicMock, patch
 
-from src.observability.aggregation.aggregator import AggregationOrchestrator
-from src.observability.aggregation.period import AggregationPeriod
-from src.storage.database.models import WorkflowExecution, AgentExecution, LLMCall, SystemMetric
+from temper_ai.observability.aggregation.aggregator import AggregationOrchestrator
+from temper_ai.observability.aggregation.period import AggregationPeriod
+from temper_ai.storage.database.models import WorkflowExecution, AgentExecution, LLMCall, SystemMetric
 
 
 @pytest.fixture
@@ -90,7 +90,7 @@ class TestWorkflowMetricAggregation:
         """Uses default time window when not specified."""
         mock_session.exec.return_value.all.return_value = []
 
-        with patch('src.observability.aggregation.aggregator.TimeWindowCalculator.get_default_time_window') as mock_window:
+        with patch('temper_ai.observability.aggregation.aggregator.TimeWindowCalculator.get_default_time_window') as mock_window:
             mock_window.return_value = (
                 datetime(2024, 1, 15, 13, 0, 0, tzinfo=timezone.utc),
                 datetime(2024, 1, 15, 14, 0, 0, tzinfo=timezone.utc)
@@ -203,7 +203,7 @@ class TestAgentMetricAggregation:
         """Uses default time window when not specified."""
         mock_session.exec.return_value.all.return_value = []
 
-        with patch('src.observability.aggregation.aggregator.TimeWindowCalculator.get_default_time_window') as mock_window:
+        with patch('temper_ai.observability.aggregation.aggregator.TimeWindowCalculator.get_default_time_window') as mock_window:
             mock_window.return_value = (
                 datetime(2024, 1, 15, 13, 0, 0, tzinfo=timezone.utc),
                 datetime(2024, 1, 15, 14, 0, 0, tzinfo=timezone.utc)

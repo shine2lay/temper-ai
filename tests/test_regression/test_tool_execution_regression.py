@@ -10,11 +10,11 @@ import tempfile
 
 import pytest
 
-from src.tools.calculator import Calculator
-from src.tools.executor import ToolExecutor
-from src.tools.file_writer import FileWriter
-from src.tools.registry import ToolRegistry
-from src.tools.web_scraper import WebScraper
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.file_writer import FileWriter
+from temper_ai.tools.registry import ToolRegistry
+from temper_ai.tools.web_scraper import WebScraper
 
 
 class TestCalculator:

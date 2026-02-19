@@ -273,7 +273,7 @@ class TestCoverage:
     def test_fallback_no_file(self, tmp_path):
         """When no coverage.json exists and pytest not available, graceful."""
         src = tmp_path / "src"
-        src.mkdir()
+        temper_ai.mkdir()
         with patch("architecture_scan.subprocess.run", side_effect=FileNotFoundError):
             result = scanner._run_test_coverage(src)
         assert result["available"] is False

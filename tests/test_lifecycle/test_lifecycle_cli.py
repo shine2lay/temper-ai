@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from click.testing import CliRunner
 
-from src.interfaces.cli.lifecycle_commands import lifecycle_group
+from temper_ai.interfaces.cli.lifecycle_commands import lifecycle_group
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.observability.backends.otel_backend import (
+from temper_ai.observability.backends.otel_backend import (
     CLEANUP_THRESHOLD,
     MAX_ACTIVE_SPANS,
     SPAN_TTL_SECONDS,
@@ -25,9 +25,9 @@ def otel_backend():
     mock_span = MagicMock()
     mock_tracer.start_span.return_value = mock_span
 
-    with patch("src.observability.backends.otel_backend.otel_trace") as mock_trace:
+    with patch("temper_ai.observability.backends.otel_backend.otel_trace") as mock_trace:
         mock_trace.set_span_in_context.return_value = MagicMock()
-        from src.observability.backends.otel_backend import OTelBackend
+        from temper_ai.observability.backends.otel_backend import OTelBackend
 
         backend = OTelBackend.__new__(OTelBackend)
         backend._tracer = mock_tracer
@@ -287,7 +287,7 @@ class TestThreeTupleCompat:
         assert "s-1" not in backend._active_spans
 
     def test_set_agent_output_three_tuple(self, otel_backend):
-        from src.observability.backend import AgentOutputData
+        from temper_ai.observability.backend import AgentOutputData
 
         backend, mock_span = otel_backend
         backend.track_workflow_start("wf-1", "test_wf", {}, NOW)
@@ -317,7 +317,7 @@ class TestAmortizedTrigger:
 
         # Adding one more should trigger cleanup (>CLEANUP_THRESHOLD)
         with patch(
-            "src.observability.backends.otel_backend._cleanup_stale_spans",
+            "temper_ai.observability.backends.otel_backend._cleanup_stale_spans",
         ) as mock_cleanup:
             mock_cleanup.return_value = 0
             backend.track_workflow_start("trigger-wf", "test", {}, NOW)
@@ -332,7 +332,7 @@ class TestAmortizedTrigger:
             )
 
         with patch(
-            "src.observability.backends.otel_backend._cleanup_stale_spans",
+            "temper_ai.observability.backends.otel_backend._cleanup_stale_spans",
         ) as mock_cleanup:
             mock_cleanup.return_value = 0
             backend.track_workflow_start("trigger-wf", "test", {}, NOW)

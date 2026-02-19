@@ -81,10 +81,10 @@ class TestFullWorkflowExecution:
 
     def test_full_workflow_cli_to_results(self, workflow_config, mock_agent_execution):
         """Complete workflow should execute from CLI to final results."""
-        from src.workflow.config_loader import ConfigLoader
-        from src.stage.executors.sequential import SequentialExecutor
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.workflow.config_loader import ConfigLoader
+        from temper_ai.stage.executors.sequential import SequentialExecutor
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         # Initialize observability
         init_database("sqlite:///:memory:")
@@ -122,9 +122,9 @@ class TestFullWorkflowExecution:
 
     def test_workflow_with_observability_integration(self, workflow_config):
         """Workflow execution should be fully tracked in observability."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database, get_session
-        from src.observability.models import WorkflowRun
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database, get_session
+        from temper_ai.observability.models import WorkflowRun
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -164,9 +164,9 @@ class TestFullWorkflowExecution:
 
     def test_workflow_context_propagation(self, workflow_config):
         """Context should propagate through entire workflow."""
-        from src.shared.core.context import ExecutionContext
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.shared.core.context import ExecutionContext
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -207,9 +207,9 @@ class TestMultiStageWorkflows:
 
     def test_parallel_stage_execution(self):
         """Parallel stages should execute concurrently."""
-        from src.stage.executors.parallel import ParallelExecutor
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.stage.executors.parallel import ParallelExecutor
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -249,8 +249,8 @@ class TestMultiStageWorkflows:
 
     def test_conditional_stage_execution(self):
         """Stages should execute conditionally based on previous results."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -285,8 +285,8 @@ class TestMultiStageWorkflows:
 
     def test_stage_dependency_resolution(self):
         """Stages with dependencies should execute in correct order."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -333,8 +333,8 @@ class TestErrorRecoveryE2E:
 
     def test_stage_failure_recovery(self):
         """Failed stage should trigger recovery mechanism."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -372,8 +372,8 @@ class TestErrorRecoveryE2E:
 
     def test_workflow_retry_on_failure(self):
         """Entire workflow should retry on critical failure."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -413,8 +413,8 @@ class TestErrorRecoveryE2E:
 
     def test_partial_rollback_on_error(self):
         """Error should trigger partial rollback of completed stages."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -464,8 +464,8 @@ class TestRollbackIntegration:
 
     def test_transaction_rollback(self):
         """Database transactions should rollback on error."""
-        from src.observability.database import init_database, get_session
-        from src.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database, get_session
+        from temper_ai.observability.tracker import ExecutionTracker
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -497,8 +497,8 @@ class TestRollbackIntegration:
 
     def test_state_restoration_on_rollback(self):
         """System state should restore to previous checkpoint on rollback."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -541,8 +541,8 @@ class TestRollbackIntegration:
 
     def test_cascading_rollback(self):
         """Rollback should cascade through dependent stages."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -582,8 +582,8 @@ class TestWorkflowPerformance:
 
     def test_high_volume_event_tracking(self):
         """System should handle high volume of events."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
         tracker = ExecutionTracker()
@@ -616,8 +616,8 @@ class TestWorkflowPerformance:
 
     def test_concurrent_workflow_execution(self):
         """Multiple workflows should execute concurrently."""
-        from src.observability.tracker import ExecutionTracker
-        from src.observability.database import init_database
+        from temper_ai.observability.tracker import ExecutionTracker
+        from temper_ai.observability.database import init_database
 
         init_database("sqlite:///:memory:")
 

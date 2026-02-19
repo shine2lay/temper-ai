@@ -2,10 +2,10 @@
 
 from datetime import datetime, timedelta, timezone
 
-from src.memory._schemas import MemoryEntry, MemoryScope
-from src.memory.adapters.in_memory import InMemoryAdapter
-from src.memory.constants import MEMORY_TYPE_EPISODIC
-from src.memory.service import MemoryService, _apply_decay, _enforce_max_episodes
+from temper_ai.memory._schemas import MemoryEntry, MemoryScope
+from temper_ai.memory.adapters.in_memory import InMemoryAdapter
+from temper_ai.memory.constants import MEMORY_TYPE_EPISODIC
+from temper_ai.memory.service import MemoryService, _apply_decay, _enforce_max_episodes
 
 
 def _make_entry(content: str, age_days: float = 0, score: float = 1.0) -> MemoryEntry:

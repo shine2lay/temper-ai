@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.agent.utils.agent_factory import AgentFactory
-from src.agent.base_agent import AgentResponse
-from src.agent.static_checker_agent import StaticCheckerAgent
-from src.interfaces.cli.stream_events import PROGRESS, TOOL_RESULT, TOOL_START
-from src.storage.schemas.agent_config import AgentConfig
+from temper_ai.agent.utils.agent_factory import AgentFactory
+from temper_ai.agent.base_agent import AgentResponse
+from temper_ai.agent.static_checker_agent import StaticCheckerAgent
+from temper_ai.interfaces.cli.stream_events import PROGRESS, TOOL_RESULT, TOOL_START
+from temper_ai.storage.schemas.agent_config import AgentConfig
 
 
 # ============================================================================
@@ -124,8 +124,8 @@ class TestCapabilities:
 class TestExecute:
     """Test execute() with mocked subprocess and LLM."""
 
-    @patch("src.agent.utils._pre_command_helpers.subprocess.run")
-    @patch("src.agent.base_agent.create_llm_from_config")
+    @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
+    @patch("temper_ai.agent.base_agent.create_llm_from_config")
     def test_execute_happy_path(self, mock_llm_factory, mock_subproc) -> None:
         # Mock subprocess: all commands pass
         mock_subproc.return_value = MagicMock(returncode=0, stdout="OK", stderr="")
@@ -151,8 +151,8 @@ class TestExecute:
         # LLM called exactly once (no tool loop)
         mock_llm.complete.assert_called_once()
 
-    @patch("src.agent.utils._pre_command_helpers.subprocess.run")
-    @patch("src.agent.base_agent.create_llm_from_config")
+    @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
+    @patch("temper_ai.agent.base_agent.create_llm_from_config")
     def test_execute_command_failure_still_calls_llm(self, mock_llm_factory, mock_subproc) -> None:
         """Even if a pre_command fails, LLM is still called to synthesise the verdict."""
         mock_subproc.return_value = MagicMock(returncode=1, stdout="", stderr="ImportError")
@@ -173,11 +173,11 @@ class TestExecute:
         assert response.error is None
         mock_llm.complete.assert_called_once()
 
-    @patch("src.agent.utils._pre_command_helpers.subprocess.run")
-    @patch("src.agent.base_agent.create_llm_from_config")
+    @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
+    @patch("temper_ai.agent.base_agent.create_llm_from_config")
     def test_execute_llm_error(self, mock_llm_factory, mock_subproc) -> None:
         """LLM failure produces an error response (not an exception)."""
-        from src.shared.utils.exceptions import LLMError
+        from temper_ai.shared.utils.exceptions import LLMError
 
         mock_subproc.return_value = MagicMock(returncode=0, stdout="OK", stderr="")
         mock_llm = MagicMock()
@@ -191,8 +191,8 @@ class TestExecute:
         assert "connection refused" in response.error
 
     @pytest.mark.asyncio
-    @patch("src.agent.utils._pre_command_helpers.subprocess.run")
-    @patch("src.agent.base_agent.create_llm_from_config")
+    @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
+    @patch("temper_ai.agent.base_agent.create_llm_from_config")
     async def test_aexecute_happy_path(self, mock_llm_factory, mock_subproc) -> None:
         """Async execution path works correctly."""
         mock_subproc.return_value = MagicMock(returncode=0, stdout="OK", stderr="")
@@ -225,8 +225,8 @@ class TestExecute:
 class TestStreamEvents:
     """Verify TOOL_START, PROGRESS, TOOL_RESULT events via _stream_callback."""
 
-    @patch("src.agent.utils._pre_command_helpers.subprocess.run")
-    @patch("src.agent.base_agent.create_llm_from_config")
+    @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
+    @patch("temper_ai.agent.base_agent.create_llm_from_config")
     def test_stream_events_emitted(self, mock_llm_factory, mock_subproc) -> None:
         mock_subproc.return_value = MagicMock(returncode=0, stdout="check passed", stderr="")
 
@@ -267,8 +267,8 @@ class TestStreamEvents:
         assert result_evt.metadata["tool_name"] == "pre_command:syntax_check"
         assert result_evt.metadata["success"] is True
 
-    @patch("src.agent.utils._pre_command_helpers.subprocess.run")
-    @patch("src.agent.base_agent.create_llm_from_config")
+    @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
+    @patch("temper_ai.agent.base_agent.create_llm_from_config")
     def test_stream_events_on_failure(self, mock_llm_factory, mock_subproc) -> None:
         mock_subproc.return_value = MagicMock(returncode=1, stdout="", stderr="SyntaxError")
 
@@ -304,8 +304,8 @@ class TestStreamEvents:
 
 class TestObserverTracking:
 
-    @patch("src.agent.utils._pre_command_helpers.subprocess.run")
-    @patch("src.agent.base_agent.create_llm_from_config")
+    @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
+    @patch("temper_ai.agent.base_agent.create_llm_from_config")
     def test_observer_track_tool_call(self, mock_llm_factory, mock_subproc) -> None:
         mock_subproc.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
 
@@ -338,8 +338,8 @@ class TestObserverTracking:
         observer = getattr(agent, "_observer", None)
         assert observer is not None
 
-    @patch("src.agent.utils._pre_command_helpers.subprocess.run")
-    @patch("src.agent.base_agent.create_llm_from_config")
+    @patch("temper_ai.agent.utils._pre_command_helpers.subprocess.run")
+    @patch("temper_ai.agent.base_agent.create_llm_from_config")
     def test_observer_track_tool_call_with_mock(self, mock_llm_factory, mock_subproc) -> None:
         """Verify track_tool_call is invoked when observer is a mock."""
         mock_subproc.return_value = MagicMock(returncode=0, stdout="ok", stderr="")
@@ -366,7 +366,7 @@ class TestObserverTracking:
         mock_observer = MagicMock()
         agent._observer = mock_observer
 
-        from src.agent.utils._pre_command_helpers import execute_pre_commands
+        from temper_ai.agent.utils._pre_command_helpers import execute_pre_commands
         execute_pre_commands(agent, {})
 
         mock_observer.track_tool_call.assert_called_once()

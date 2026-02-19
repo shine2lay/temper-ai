@@ -11,7 +11,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from sqlmodel import Session
 
-from src.storage.database.manager import (
+from temper_ai.storage.database.manager import (
     DatabaseManager,
     IsolationLevel,
     _mask_database_url,

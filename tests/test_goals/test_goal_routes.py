@@ -6,8 +6,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.goals.dashboard_routes import create_goals_router
-from src.goals.dashboard_service import GoalDataService
+from temper_ai.goals.dashboard_routes import create_goals_router
+from temper_ai.goals.dashboard_service import GoalDataService
 
 
 @pytest.fixture
@@ -76,7 +76,7 @@ class TestAnalysisEndpoints:
         assert isinstance(resp.json(), list)
 
     def test_trigger_analysis(self, client):
-        with patch("src.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch:
+        with patch("temper_ai.goals.analysis_orchestrator.AnalysisOrchestrator") as MockOrch:
             run = MagicMock()
             run.id = "ar-1"
             run.status = "completed"

@@ -9,7 +9,7 @@ import time
 
 import pytest
 
-from src.workflow.execution_engine import (
+from temper_ai.workflow.execution_engine import (
     CompiledWorkflow,
     ExecutionEngine,
     ExecutionMode,
@@ -172,7 +172,7 @@ class TestWorkflowCancellation:
     @pytest.fixture
     def engine(self):
         """Create LangGraphExecutionEngine instance."""
-        from src.workflow.langgraph_engine import LangGraphExecutionEngine
+        from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
         return LangGraphExecutionEngine()
 
     def test_compiled_workflow_is_not_cancelled_initially(self, engine, minimal_workflow_config):

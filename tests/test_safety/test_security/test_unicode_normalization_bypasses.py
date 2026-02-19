@@ -26,7 +26,7 @@ import unicodedata
 
 import pytest
 
-from src.safety.file_access import FileAccessPolicy
+from temper_ai.safety.file_access import FileAccessPolicy
 
 # ============================================================================
 # Test Fixtures

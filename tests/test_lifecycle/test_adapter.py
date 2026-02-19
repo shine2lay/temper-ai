@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.lifecycle._schemas import (
+from temper_ai.lifecycle._schemas import (
     AdaptationAction,
     AdaptationRule,
     LifecycleProfile,
@@ -14,7 +14,7 @@ from src.lifecycle._schemas import (
     ProjectSize,
     RiskLevel,
 )
-from src.lifecycle.adapter import (
+from temper_ai.lifecycle.adapter import (
     LifecycleAdapter,
     _apply_add,
     _apply_modify,
@@ -23,9 +23,9 @@ from src.lifecycle.adapter import (
     _apply_skip,
     _evaluate_condition,
 )
-from src.lifecycle.classifier import ProjectClassifier
-from src.lifecycle.profiles import ProfileRegistry
-from src.lifecycle.store import LifecycleStore
+from temper_ai.lifecycle.classifier import ProjectClassifier
+from temper_ai.lifecycle.profiles import ProfileRegistry
+from temper_ai.lifecycle.store import LifecycleStore
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────
@@ -323,7 +323,7 @@ class TestLifecycleAdapter:
         with pytest.raises(ValueError, match="remove all stages"):
             adapter.adapt(config, {})
 
-    @patch("src.lifecycle.adapter._check_emergency_stop", return_value=False)
+    @patch("temper_ai.lifecycle.adapter._check_emergency_stop", return_value=False)
     def test_emergency_stop_returns_original(self, mock_stop, adapter, workflow_config):
         result = adapter.adapt(workflow_config, {"size": "small", "risk_level": "low"})
         # Should return original (no adaptation)

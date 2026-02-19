@@ -25,10 +25,10 @@ M4 successfully delivers a comprehensive safety and governance system for the Me
 
 | Task ID | Name | Status | Deliverables |
 |---------|------|--------|--------------|
-| **m4-01** | Safety Policy Composition | ✅ Complete | `src/safety/composition.py`, 29 tests |
-| **m4-02** | Approval Workflow System | ✅ Complete | `src/safety/approval.py`, 45 tests |
-| **m4-03** | Rollback Mechanisms | ✅ Complete | `src/safety/rollback.py`, 34 tests |
-| **m4-04** | Circuit Breakers & Safety Gates | ✅ Complete | `src/safety/circuit_breaker.py`, 54 tests |
+| **m4-01** | Safety Policy Composition | ✅ Complete | `temper_ai/safety/composition.py`, 29 tests |
+| **m4-02** | Approval Workflow System | ✅ Complete | `temper_ai/safety/approval.py`, 45 tests |
+| **m4-03** | Rollback Mechanisms | ✅ Complete | `temper_ai/safety/rollback.py`, 34 tests |
+| **m4-04** | Circuit Breakers & Safety Gates | ✅ Complete | `temper_ai/safety/circuit_breaker.py`, 54 tests |
 | **m4-05** | Integration Testing | ✅ Complete | `tests/test_safety/test_m4_integration.py`, 15 tests |
 | **m4-06** | Production Documentation | ✅ Complete | 5 comprehensive docs (3,650+ lines) |
 
@@ -41,7 +41,7 @@ M4 successfully delivers a comprehensive safety and governance system for the Me
 **Description**: Combines multiple safety policies with priority-based execution and fail-fast mode.
 
 **Implementation**:
-- `src/safety/composition.py`: `PolicyComposer` class (423 lines)
+- `temper_ai/safety/composition.py`: `PolicyComposer` class (423 lines)
 - Priority-based policy ordering (highest first)
 - Fail-fast and complete validation modes
 - Exception handling with CRITICAL violation conversion
@@ -71,7 +71,7 @@ result = composer.validate(action, context)
 **Description**: Human-in-the-loop approval for high-risk operations with multi-approver consensus.
 
 **Implementation**:
-- `src/safety/approval.py`: `ApprovalWorkflow` class (492 lines)
+- `temper_ai/safety/approval.py`: `ApprovalWorkflow` class (492 lines)
 - Multi-approver support (require N approvals)
 - Timeout-based auto-rejection
 - Approval/rejection callbacks
@@ -108,7 +108,7 @@ assert request.is_approved()
 **Description**: Automatic state capture and rollback for failure recovery.
 
 **Implementation**:
-- `src/safety/rollback.py`: `RollbackManager` class (700 lines)
+- `temper_ai/safety/rollback.py`: `RollbackManager` class (700 lines)
 - Multiple rollback strategies:
   - `FileRollbackStrategy`: Captures file contents before modification
   - `StateRollbackStrategy`: Captures arbitrary state dictionaries
@@ -146,7 +146,7 @@ except Exception:
 **Description**: Prevents cascading failures through three-state circuit breaker pattern.
 
 **Implementation**:
-- `src/safety/circuit_breaker.py`: Multiple classes (600 lines)
+- `temper_ai/safety/circuit_breaker.py`: Multiple classes (600 lines)
   - `CircuitBreaker`: Three-state pattern (CLOSED → OPEN → HALF_OPEN)
   - `SafetyGate`: Unified entry point coordinating breaker + policies
   - `CircuitBreakerManager`: Manages multiple breakers centrally
@@ -637,11 +637,11 @@ composer = PolicyComposer(fail_fast=False)  # Diagnostics mode
 
 ### Core Implementation
 
-- `src/safety/composition.py` (+423 lines)
-- `src/safety/approval.py` (+492 lines)
-- `src/safety/rollback.py` (+700 lines)
-- `src/safety/circuit_breaker.py` (+600 lines)
-- `src/safety/__init__.py` (updated exports)
+- `temper_ai/safety/composition.py` (+423 lines)
+- `temper_ai/safety/approval.py` (+492 lines)
+- `temper_ai/safety/rollback.py` (+700 lines)
+- `temper_ai/safety/circuit_breaker.py` (+600 lines)
+- `temper_ai/safety/__init__.py` (updated exports)
 
 ### Testing
 

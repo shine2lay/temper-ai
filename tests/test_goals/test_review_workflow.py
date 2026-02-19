@@ -2,10 +2,10 @@
 
 import pytest
 
-from src.goals._schemas import GoalReviewAction
-from src.goals.models import GoalProposalRecord
-from src.goals.review_workflow import GoalReviewWorkflow
-from src.goals.store import GoalStore
+from temper_ai.goals._schemas import GoalReviewAction
+from temper_ai.goals.models import GoalProposalRecord
+from temper_ai.goals.review_workflow import GoalReviewWorkflow
+from temper_ai.goals.store import GoalStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

@@ -1,4 +1,4 @@
-# Meta-Autonomous Agent Framework - Vision Document
+# Temper AI - Vision Document
 
 **Version:** 1.0
 **Date:** 2026-01-25

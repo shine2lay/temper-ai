@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from src.storage.schemas.agent_config import PromptConfig
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.tools.executor import ToolExecutor
-from src.tools.registry import ToolRegistry
-from src.shared.utils.exceptions import (
+from temper_ai.storage.schemas.agent_config import PromptConfig
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.registry import ToolRegistry
+from temper_ai.shared.utils.exceptions import (
     ValidationError,
 )
 

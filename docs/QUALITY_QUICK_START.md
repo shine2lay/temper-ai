@@ -184,13 +184,13 @@ pytest --cov=src --cov-report=term-missing
 pytest --collect-only | grep "test session"
 
 # Type checking
-mypy src/
+mypy temper_ai/
 
 # Security scanning
-bandit -r src/
+bandit -r temper_ai/
 
 # Code quality
-ruff check src/
+ruff check temper_ai/
 ```
 
 ---

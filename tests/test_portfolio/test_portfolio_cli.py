@@ -4,7 +4,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 
 from click.testing import CliRunner
-from src.interfaces.cli.portfolio_commands import portfolio_group
+from temper_ai.interfaces.cli.portfolio_commands import portfolio_group
 
 
 @pytest.fixture
@@ -13,8 +13,8 @@ def runner():
 
 
 class TestPortfolioList:
-    @patch("src.interfaces.cli.portfolio_commands._get_store")
-    @patch("src.interfaces.cli.portfolio_commands._get_loader")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_store")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_loader")
     def test_portfolio_list(self, mock_get_loader, mock_get_store, runner):
         mock_loader = MagicMock()
         mock_loader.list_available.return_value = ["example_portfolio", "prod"]
@@ -33,9 +33,9 @@ class TestPortfolioList:
 
 
 class TestPortfolioShow:
-    @patch("src.portfolio.scheduler.ResourceScheduler")
-    @patch("src.interfaces.cli.portfolio_commands._get_store")
-    @patch("src.interfaces.cli.portfolio_commands._get_loader")
+    @patch("temper_ai.portfolio.scheduler.ResourceScheduler")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_store")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_loader")
     def test_portfolio_show(self, mock_get_loader, mock_get_store, mock_sched_cls, runner):
         mock_config = MagicMock()
         mock_config.name = "example_portfolio"
@@ -58,9 +58,9 @@ class TestPortfolioShow:
 
 
 class TestPortfolioScorecards:
-    @patch("src.portfolio.optimizer.PortfolioOptimizer")
-    @patch("src.interfaces.cli.portfolio_commands._get_store")
-    @patch("src.interfaces.cli.portfolio_commands._get_loader")
+    @patch("temper_ai.portfolio.optimizer.PortfolioOptimizer")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_store")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_loader")
     def test_portfolio_scorecards(self, mock_get_loader, mock_get_store, mock_opt_cls, runner):
         mock_config = MagicMock()
         mock_config.products = []
@@ -77,9 +77,9 @@ class TestPortfolioScorecards:
 
 
 class TestPortfolioRecommend:
-    @patch("src.portfolio.optimizer.PortfolioOptimizer")
-    @patch("src.interfaces.cli.portfolio_commands._get_store")
-    @patch("src.interfaces.cli.portfolio_commands._get_loader")
+    @patch("temper_ai.portfolio.optimizer.PortfolioOptimizer")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_store")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_loader")
     def test_portfolio_recommend(self, mock_get_loader, mock_get_store, mock_opt_cls, runner):
         mock_config = MagicMock()
         mock_config.products = []
@@ -97,9 +97,9 @@ class TestPortfolioRecommend:
 
 
 class TestPortfolioComponents:
-    @patch("src.portfolio.component_analyzer.ComponentAnalyzer")
-    @patch("src.interfaces.cli.portfolio_commands._get_store")
-    @patch("src.interfaces.cli.portfolio_commands._get_loader")
+    @patch("temper_ai.portfolio.component_analyzer.ComponentAnalyzer")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_store")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_loader")
     def test_portfolio_components(self, mock_get_loader, mock_get_store, mock_analyzer_cls, runner):
         mock_config = MagicMock()
         mock_loader = MagicMock()
@@ -115,8 +115,8 @@ class TestPortfolioComponents:
 
 
 class TestPortfolioGraph:
-    @patch("src.portfolio.knowledge_graph.KnowledgeQuery")
-    @patch("src.interfaces.cli.portfolio_commands._get_store")
+    @patch("temper_ai.portfolio.knowledge_graph.KnowledgeQuery")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_store")
     def test_portfolio_graph_stats(self, mock_get_store, mock_query_cls, runner):
         mock_query = MagicMock()
         mock_query.concept_stats.return_value = {
@@ -128,8 +128,8 @@ class TestPortfolioGraph:
         result = runner.invoke(portfolio_group, ["graph", "stats"])
         assert result.exit_code == 0
 
-    @patch("src.portfolio.knowledge_graph.KnowledgeQuery")
-    @patch("src.interfaces.cli.portfolio_commands._get_store")
+    @patch("temper_ai.portfolio.knowledge_graph.KnowledgeQuery")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_store")
     def test_portfolio_graph_query(self, mock_get_store, mock_query_cls, runner):
         mock_query = MagicMock()
         mock_query.get_related_concepts.return_value = [
@@ -143,9 +143,9 @@ class TestPortfolioGraph:
 
 
 class TestPortfolioRun:
-    @patch("src.portfolio.scheduler.ResourceScheduler")
-    @patch("src.interfaces.cli.portfolio_commands._get_store")
-    @patch("src.interfaces.cli.portfolio_commands._get_loader")
+    @patch("temper_ai.portfolio.scheduler.ResourceScheduler")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_store")
+    @patch("temper_ai.interfaces.cli.portfolio_commands._get_loader")
     def test_portfolio_run(self, mock_get_loader, mock_get_store, mock_sched_cls, runner):
         mock_config = MagicMock()
         mock_config.name = "test"

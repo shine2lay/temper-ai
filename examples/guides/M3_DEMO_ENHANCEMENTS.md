@@ -195,7 +195,7 @@ python3 examples/m3_comprehensive_demo.py
 
 ## Technical Details
 
-### Debate Flow (src/strategies/debate.py)
+### Debate Flow (temper_ai/strategies/debate.py)
 
 ```python
 # Key method: _calculate_convergence
@@ -223,7 +223,7 @@ def _calculate_convergence(
 - Agents can: maintain position OR change based on new information
 - Convergence check: when >threshold% agents unchanged, stop
 
-### Merit Calculation (src/strategies/conflict_resolution.py)
+### Merit Calculation (temper_ai/strategies/conflict_resolution.py)
 
 ```python
 def calculate_merit_weighted_votes(
@@ -282,10 +282,10 @@ def calculate_merit_weighted_votes(
 ## Related Files
 
 - `examples/m3_comprehensive_demo.py` - Enhanced demo script
-- `src/strategies/debate.py` - Debate strategy implementation
-- `src/strategies/conflict_resolution.py` - Merit-weighted resolution
-- `src/strategies/consensus.py` - Simple consensus voting
-- `src/compiler/langgraph_compiler.py` - Orchestration layer
+- `temper_ai/strategies/debate.py` - Debate strategy implementation
+- `temper_ai/strategies/conflict_resolution.py` - Merit-weighted resolution
+- `temper_ai/strategies/consensus.py` - Simple consensus voting
+- `temper_ai/compiler/langgraph_compiler.py` - Orchestration layer
 
 ---
 

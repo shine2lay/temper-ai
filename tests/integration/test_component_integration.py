@@ -9,22 +9,22 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.agent.llm_providers import LLMResponse
-from src.agent.standard_agent import StandardAgent
-from src.workflow.config_loader import ConfigLoader
-from src.workflow.langgraph_engine import LangGraphExecutionEngine
-from src.storage.schemas.agent_config import (
+from temper_ai.agent.llm_providers import LLMResponse
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,
     InferenceConfig,
     PromptConfig,
 )
-from src.observability.database import DatabaseManager
-from src.observability.tracker import ExecutionTracker
-from src.tools.base import ToolResult
-from src.tools.calculator import Calculator
-from src.tools.registry import ToolRegistry
+from temper_ai.observability.database import DatabaseManager
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.tools.base import ToolResult
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.registry import ToolRegistry
 
 # ============================================================================
 # Fixtures
@@ -58,7 +58,7 @@ def execution_tracker(db_fixture):
     """Create execution tracker."""
     # ExecutionTracker uses get_session() internally
     # For tests, we need to initialize the database first
-    from src.observability.database import init_database
+    from temper_ai.observability.database import init_database
     init_database("sqlite:///:memory:")
     return ExecutionTracker()
 
@@ -93,7 +93,7 @@ def minimal_agent_config():
 # Integration Test 1: Multi-Agent Workflow
 # ============================================================================
 
-@patch('src.agent.base_agent.ToolRegistry')
+@patch('temper_ai.agent.base_agent.ToolRegistry')
 def test_multi_agent_workflow(mock_tool_registry, minimal_agent_config, execution_tracker):
     """Test workflow with multiple agents collaborating.
 
@@ -169,7 +169,7 @@ def test_multi_agent_workflow(mock_tool_registry, minimal_agent_config, executio
 # Integration Test 2: Tool Chaining Workflow
 # ============================================================================
 
-@patch('src.agent.base_agent.ToolRegistry')
+@patch('temper_ai.agent.base_agent.ToolRegistry')
 def test_tool_chaining_workflow(mock_tool_registry, minimal_agent_config, tool_registry, execution_tracker):
     """Test workflow where tool outputs feed into subsequent tool inputs.
 
@@ -240,7 +240,7 @@ def test_tool_chaining_workflow(mock_tool_registry, minimal_agent_config, tool_r
 # Integration Test 3: Error Propagation Across Stages
 # ============================================================================
 
-@patch('src.agent.base_agent.ToolRegistry')
+@patch('temper_ai.agent.base_agent.ToolRegistry')
 def test_error_propagation_across_stages(mock_tool_registry, minimal_agent_config, execution_tracker):
     """Test that errors in one stage properly propagate to subsequent stages.
 
@@ -312,7 +312,7 @@ def test_error_propagation_across_stages(mock_tool_registry, minimal_agent_confi
 # Integration Test 4: Config to Execution Pipeline
 # ============================================================================
 
-@patch('src.workflow.langgraph_compiler.ConfigLoader')
+@patch('temper_ai.workflow.langgraph_compiler.ConfigLoader')
 def test_config_to_execution_pipeline(mock_config_loader):
     """Test complete pipeline from YAML config to execution.
 
@@ -371,7 +371,7 @@ def test_config_to_execution_pipeline(mock_config_loader):
 # Integration Test 5: Database Integration Full Workflow
 # ============================================================================
 
-@patch('src.agent.base_agent.ToolRegistry')
+@patch('temper_ai.agent.base_agent.ToolRegistry')
 def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_config, db_fixture):
     """Test full workflow execution with database trace persistence.
 
@@ -404,7 +404,7 @@ def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_co
     # Verify database persistence
     from sqlalchemy import text
 
-    from src.observability.database import get_session
+    from temper_ai.observability.database import get_session
 
     with get_session() as session:
         # Check workflow record
@@ -432,7 +432,7 @@ def test_database_integration_full_workflow(mock_tool_registry, minimal_agent_co
 # Integration Test 6: Streaming Execution
 # ============================================================================
 
-@patch('src.agent.base_agent.ToolRegistry')
+@patch('temper_ai.agent.base_agent.ToolRegistry')
 def test_streaming_execution(mock_tool_registry, minimal_agent_config):
     """Test real-time streaming of execution events.
 
@@ -492,10 +492,10 @@ def test_llm_provider_switching(minimal_agent_config):
     Simulates workflow that switches from Ollama -> OpenAI -> Anthropic
     based on availability or requirements.
     """
-    from src.agent.llm_providers import LLMError
+    from temper_ai.agent.llm_providers import LLMError
 
     # Create agent
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
         mock_registry.return_value.get_all_tools.return_value = {}
         agent = StandardAgent(minimal_agent_config)
@@ -577,7 +577,7 @@ def test_tool_registry_integration():
     assert result.result == 8
 
     # Test multiple tools
-    from src.tools.file_writer import FileWriter
+    from temper_ai.tools.file_writer import FileWriter
     writer = FileWriter()
     registry.register(writer)
 

@@ -7,10 +7,10 @@ import time
 
 import pytest
 
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.tools.calculator import Calculator
-from src.tools.executor import ToolExecutor
-from src.tools.registry import ToolRegistry
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.registry import ToolRegistry
 
 
 class SlowTool(BaseTool):
@@ -405,7 +405,7 @@ class TestToolRegistryIntegration:
 
     def test_duplicate_tool_registration_error(self):
         """Test that duplicate tool registration raises error."""
-        from src.shared.utils.exceptions import ToolRegistryError
+        from temper_ai.shared.utils.exceptions import ToolRegistryError
 
         registry = ToolRegistry()
 

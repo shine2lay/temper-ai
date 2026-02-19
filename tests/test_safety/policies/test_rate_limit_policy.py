@@ -11,8 +11,8 @@ Tests cover:
 
 import pytest
 
-from src.safety.interfaces import ViolationSeverity
-from src.safety.policies.rate_limit_policy import RateLimitPolicy
+from temper_ai.safety.interfaces import ViolationSeverity
+from temper_ai.safety.policies.rate_limit_policy import RateLimitPolicy
 
 
 class TestRateLimitPolicyBasics:

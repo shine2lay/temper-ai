@@ -20,7 +20,7 @@ After completing Milestone 2 (M2), the framework had a working workflow executio
 **Current Situation (M2):**
 ```python
 # Direct LangGraph usage - tightly coupled
-from src.compiler.langgraph_compiler import LangGraphCompiler
+from temper_ai.compiler.langgraph_compiler import LangGraphCompiler
 compiler = LangGraphCompiler(tool_registry, config_loader)
 graph = compiler.compile(workflow_config)
 result = graph.invoke({"topic": "TypeScript"})
@@ -185,17 +185,17 @@ Actual Execution Backend
 
 **Key Components:**
 
-1. **ExecutionEngine Interface** (`src/compiler/execution_engine.py`)
+1. **ExecutionEngine Interface** (`temper_ai/compiler/execution_engine.py`)
    - `compile(workflow_config)` → CompiledWorkflow
    - `execute(compiled_workflow, input_data, mode)` → result
    - `supports_feature(feature)` → bool
 
-2. **LangGraph Adapter** (`src/compiler/langgraph_engine.py`)
+2. **LangGraph Adapter** (`temper_ai/compiler/langgraph_engine.py`)
    - Wraps existing LangGraphCompiler
    - Implements ExecutionEngine interface
    - Zero changes to M2 code
 
-3. **Engine Registry** (`src/compiler/engine_registry.py`)
+3. **Engine Registry** (`temper_ai/compiler/engine_registry.py`)
    - Factory pattern for engine selection
    - Config-based and programmatic APIs
    - Plugin architecture for custom engines

@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import patch, MagicMock
 from click.testing import CliRunner
-from src.interfaces.cli.main import main
+from temper_ai.interfaces.cli.main import main
 
 
 class TestDashboardFlag:
@@ -54,8 +54,8 @@ class TestDashboardCommand:
         original_import = __builtins__.__import__ if hasattr(__builtins__, '__import__') else __import__
 
         def mock_import(name, *args, **kwargs):
-            if name == "src.interfaces.dashboard.app":
-                raise ImportError("No module named 'src.interfaces.dashboard.app'")
+            if name == "temper_ai.interfaces.dashboard.app":
+                raise ImportError("No module named 'temper_ai.interfaces.dashboard.app'")
             return original_import(name, *args, **kwargs)
 
         with patch("builtins.__import__", side_effect=mock_import):

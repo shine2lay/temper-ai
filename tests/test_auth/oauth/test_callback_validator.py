@@ -12,7 +12,7 @@ Tests cover:
 """
 import pytest
 
-from src.auth.oauth.callback_validator import CallbackURLValidator
+from temper_ai.auth.oauth.callback_validator import CallbackURLValidator
 
 
 class TestCallbackURLValidatorInitialization:

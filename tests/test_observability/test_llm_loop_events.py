@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.llm.llm_loop_events import (
+from temper_ai.llm.llm_loop_events import (
     CacheEventData,
     LLMIterationEventData,
     _CACHE_KEY_PREFIX_LENGTH,
@@ -127,7 +127,7 @@ class TestEmitLLMIterationEvent:
             total_tokens_this_iteration=500,
             total_cost_this_iteration=0.001,
         )
-        with caplog.at_level(logging.INFO, logger="src.llm.llm_loop_events"):
+        with caplog.at_level(logging.INFO, logger="temper_ai.llm.llm_loop_events"):
             emit_llm_iteration_event(None, event_data)
 
         assert "LLM iteration 2" in caplog.text
@@ -172,7 +172,7 @@ class TestEmitCacheEvent:
         event_data = CacheEventData(
             event_type="hit", key_prefix="abc123", model="gpt-4", cache_size=10,
         )
-        with caplog.at_level(logging.DEBUG, logger="src.llm.llm_loop_events"):
+        with caplog.at_level(logging.DEBUG, logger="temper_ai.llm.llm_loop_events"):
             emit_cache_event(None, event_data)
 
         assert "Cache event=hit" in caplog.text

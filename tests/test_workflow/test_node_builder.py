@@ -6,10 +6,10 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.workflow.config_loader import ConfigLoader
-from src.workflow.domain_state import WorkflowDomainState
-from src.workflow.node_builder import NodeBuilder
-from src.tools.registry import ToolRegistry
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.tools.registry import ToolRegistry
 
 
 class TestNodeBuilderInitialization:

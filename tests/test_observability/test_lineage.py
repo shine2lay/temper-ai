@@ -6,7 +6,7 @@ serialization, and backward compatibility.
 import pytest
 from typing import Any, Dict
 
-from src.observability.lineage import (
+from temper_ai.observability.lineage import (
     CONTRIBUTION_FAILED,
     CONTRIBUTION_PRIMARY,
     CONTRIBUTION_SYNTHESIZED,
@@ -183,7 +183,7 @@ class TestLineageBackwardCompat:
 
     def test_noop_backend_signature(self) -> None:
         """NoOp backend accepts output_lineage param."""
-        from src.observability.backends.noop_backend import NoOpBackend
+        from temper_ai.observability.backends.noop_backend import NoOpBackend
 
         backend = NoOpBackend()
         result = backend.set_stage_output(
@@ -195,7 +195,7 @@ class TestLineageBackwardCompat:
 
     def test_noop_backend_without_lineage(self) -> None:
         """NoOp backend works without output_lineage."""
-        from src.observability.backends.noop_backend import NoOpBackend
+        from temper_ai.observability.backends.noop_backend import NoOpBackend
 
         backend = NoOpBackend()
         result = backend.set_stage_output(stage_id="s-1", output_data={"result": "test"})

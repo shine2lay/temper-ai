@@ -186,7 +186,7 @@ The design integrates with existing code at these points:
 
 ```python
 # Existing Models
-from src.observability.models import (
+from temper_ai.observability.models import (
     WorkflowExecution,    # Top-level workflow
     StageExecution,       # Workflow stages
     AgentExecution,       # Agent executions
@@ -195,10 +195,10 @@ from src.observability.models import (
 )
 
 # Existing Database
-from src.observability.database import get_session
+from temper_ai.observability.database import get_session
 
 # Existing Formatters
-from src.observability.formatters import (
+from temper_ai.observability.formatters import (
     format_duration,
     format_tokens,
     format_cost,
@@ -207,7 +207,7 @@ from src.observability.formatters import (
 )
 
 # Existing Console Visualizer
-from src.observability.console import (
+from temper_ai.observability.console import (
     WorkflowVisualizer,      # Static display
     StreamingVisualizer,     # Real-time streaming
 )
@@ -217,9 +217,9 @@ from src.observability.console import (
 
 **Static Visualization**:
 ```python
-from src.observability.console import WorkflowVisualizer
-from src.observability.database import get_session
-from src.observability.models import WorkflowExecution
+from temper_ai.observability.console import WorkflowVisualizer
+from temper_ai.observability.database import get_session
+from temper_ai.observability.models import WorkflowExecution
 
 with get_session() as session:
     workflow = session.query(WorkflowExecution).filter_by(
@@ -232,7 +232,7 @@ with get_session() as session:
 
 **Real-Time Streaming**:
 ```python
-from src.observability.console import StreamingVisualizer
+from temper_ai.observability.console import StreamingVisualizer
 
 # Monitor workflow in real-time
 with StreamingVisualizer("wf-001", verbosity="verbose") as viz:
@@ -243,7 +243,7 @@ with StreamingVisualizer("wf-001", verbosity="verbose") as viz:
 
 **Batch Monitoring**:
 ```python
-from src.observability.console import BatchStreamingVisualizer
+from temper_ai.observability.console import BatchStreamingVisualizer
 
 # Monitor multiple workflows
 visualizer = BatchStreamingVisualizer([
@@ -482,7 +482,7 @@ builder = TreeBuilder(verbosity="standard", max_depth=3)
 1. **Documentation**: Start with the design and reference docs
 2. **Examples**: Check the examples document for visual patterns
 3. **Tests**: Look at test files for usage examples
-4. **Code**: Review existing implementation in `src/observability/console.py`
+4. **Code**: Review existing implementation in `temper_ai/observability/console.py`
 
 ### Contributing
 
@@ -536,12 +536,12 @@ The design is fully compatible with the existing codebase and leverages Rich lib
 ## Related Files
 
 **Primary Implementation**:
-- `/home/shinelay/meta-autonomous-framework/src/observability/console.py`
-- `/home/shinelay/meta-autonomous-framework/src/observability/formatters.py`
-- `/home/shinelay/meta-autonomous-framework/src/observability/visualize_trace.py`
+- `/home/shinelay/meta-autonomous-framework/temper_ai/observability/console.py`
+- `/home/shinelay/meta-autonomous-framework/temper_ai/observability/formatters.py`
+- `/home/shinelay/meta-autonomous-framework/temper_ai/observability/visualize_trace.py`
 
 **Models**:
-- `/home/shinelay/meta-autonomous-framework/src/observability/models.py`
+- `/home/shinelay/meta-autonomous-framework/temper_ai/observability/models.py`
 
 **Tests**:
 - `/home/shinelay/meta-autonomous-framework/tests/test_observability/test_console.py`

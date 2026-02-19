@@ -23,9 +23,9 @@ from tests.fixtures.boundary_values import (
 
 # Import components to test
 try:
-    from src.agent.strategies.base import AgentOutput, SynthesisResult
-    from src.agent.strategies.conflict_resolution import ResolutionResult
-    from src.agent.strategies.consensus import ConsensusStrategy
+    from temper_ai.agent.strategies.base import AgentOutput, SynthesisResult
+    from temper_ai.agent.strategies.conflict_resolution import ResolutionResult
+    from temper_ai.agent.strategies.consensus import ConsensusStrategy
 except ImportError:
     pytest.skip("Strategy modules not available", allow_module_level=True)
 

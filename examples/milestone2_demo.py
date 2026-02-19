@@ -30,15 +30,15 @@ from examples.demo_utils import (
     console,
 )
 from examples.demo_utils import print_rich_section as print_section
-from src.agent.agent_factory import AgentFactory
-from src.agent.base_agent import ExecutionContext
-from src.workflow.config_loader import ConfigLoader
-from src.storage.schemas.agent_config import AgentConfig
-from src.observability.database import init_database
-from src.tools.calculator import Calculator
-from src.tools.file_writer import FileWriter
-from src.tools.registry import ToolRegistry
-from src.tools.web_scraper import WebScraper
+from temper_ai.agent.agent_factory import AgentFactory
+from temper_ai.agent.base_agent import ExecutionContext
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.storage.schemas.agent_config import AgentConfig
+from temper_ai.observability.database import init_database
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.file_writer import FileWriter
+from temper_ai.tools.registry import ToolRegistry
+from temper_ai.tools.web_scraper import WebScraper
 
 
 def check_ollama_available() -> bool:
@@ -434,14 +434,14 @@ def demo_gantt_visualization():
         from sqlmodel import select
 
         from examples.export_waterfall import export_waterfall_trace
-        from src.observability.database import get_session
-        from src.observability.models import (
+        from temper_ai.observability.database import get_session
+        from temper_ai.observability.models import (
             AgentExecution,
             LLMCall,
             StageExecution,
             WorkflowExecution,
         )
-        from src.observability.visualize_trace import visualize_trace
+        from temper_ai.observability.visualize_trace import visualize_trace
 
         # Get latest workflow execution, or create a mock one
         with get_session() as session:
@@ -544,7 +544,7 @@ def demo_gantt_visualization():
             return False
 
         # Print console version
-        from src.observability.visualize_trace import print_console_gantt
+        from temper_ai.observability.visualize_trace import print_console_gantt
         print_console_gantt(trace)
 
         # Create HTML visualization

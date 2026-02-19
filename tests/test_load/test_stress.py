@@ -13,9 +13,9 @@ import time
 import psutil
 import pytest
 
-from src.observability.database import DatabaseManager
-from src.tools.base import BaseTool, ToolResult
-from src.tools.registry import ToolRegistry
+from temper_ai.observability.database import DatabaseManager
+from temper_ai.tools.base import BaseTool, ToolResult
+from temper_ai.tools.registry import ToolRegistry
 
 # ============================================================================
 # Fixtures
@@ -40,7 +40,7 @@ def tool_registry():
         description = "Mock tool for testing"
 
         def get_metadata(self):
-            from src.tools.base import ToolMetadata
+            from temper_ai.tools.base import ToolMetadata
             return ToolMetadata(
                 name="MockTool",
                 description="Mock tool for testing",
@@ -109,7 +109,7 @@ async def test_concurrent_tool_execution():
         description = "Async mock tool"
 
         def get_metadata(self):
-            from src.tools.base import ToolMetadata
+            from temper_ai.tools.base import ToolMetadata
             return ToolMetadata(
                 name="AsyncMockTool",
                 description="Async mock tool",
@@ -303,7 +303,7 @@ def test_memory_pressure_tool_registry():
         description = "Mock tool"
 
         def get_metadata(self):
-            from src.tools.base import ToolMetadata
+            from temper_ai.tools.base import ToolMetadata
             return ToolMetadata(
                 name="MockTool",
                 description="Mock tool",
@@ -415,7 +415,7 @@ def test_tool_registry_throughput():
         description = "Fast tool"
 
         def get_metadata(self):
-            from src.tools.base import ToolMetadata
+            from temper_ai.tools.base import ToolMetadata
             return ToolMetadata(
                 name="FastTool",
                 description="Fast tool",

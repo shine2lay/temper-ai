@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from src.workflow.runtime import (
+from temper_ai.workflow.runtime import (
     InfrastructureBundle,
     RuntimeConfig,
     WorkflowRuntime,
@@ -101,7 +101,7 @@ class TestAdaptLifecycle:
         result = rt.adapt_lifecycle(config, {})
         assert result is config
 
-    @patch("src.workflow.runtime.LifecycleAdapter", create=True)
+    @patch("temper_ai.workflow.runtime.LifecycleAdapter", create=True)
     def test_lifecycle_enabled_calls_adapt(self, _mock_adapter):
         """Test lifecycle adaptation is attempted when enabled."""
         rt = WorkflowRuntime()
@@ -141,7 +141,7 @@ class TestSetupInfrastructure:
 class TestCompile:
     """Test WorkflowRuntime.compile."""
 
-    @patch("src.workflow.engine_registry.EngineRegistry")
+    @patch("temper_ai.workflow.engine_registry.EngineRegistry")
     def test_compile_returns_engine_and_compiled(self, mock_registry_cls):
         """Test compile returns (engine, compiled) tuple."""
         mock_engine = MagicMock()
@@ -296,7 +296,7 @@ class TestTrackerBackendFactory:
 
         rt = WorkflowRuntime(RuntimeConfig(tracker_backend_factory=factory))
 
-        with patch("src.observability.tracker.ExecutionTracker") as mock_et:
+        with patch("temper_ai.observability.tracker.ExecutionTracker") as mock_et:
             mock_et.return_value = MagicMock()
             bundle = rt.setup_infrastructure()
 

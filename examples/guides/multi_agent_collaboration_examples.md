@@ -89,7 +89,7 @@ python examples/run_multi_agent_workflow.py debate-decision
 
 3. **Initialize database** (first time only):
    ```python
-   from src.observability.database import init_database
+   from temper_ai.observability.database import init_database
    init_database("sqlite:///observability.db")
    ```
 
@@ -202,7 +202,7 @@ ollama serve  # Start Ollama server
 
 ### "Database not initialized"
 ```python
-from src.observability.database import init_database
+from temper_ai.observability.database import init_database
 init_database("sqlite:///observability.db")
 ```
 
@@ -220,7 +220,7 @@ The implementation includes a fallback to simple consensus if registry is unavai
 ## Learn More
 
 - [M3 Technical Specification](../TECHNICAL_SPECIFICATION.md)
-- [Collaboration Strategies](../src/strategies/README.md)
+- [Collaboration Strategies](../temper_ai/strategies/README.md)
 - [Configuration Guide](../docs/CONFIGURATION.md)
 - [Observability Guide](../docs/OBSERVABILITY.md)
 

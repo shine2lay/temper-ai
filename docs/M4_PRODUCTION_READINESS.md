@@ -93,7 +93,7 @@ This comprehensive checklist ensures the M4 Safety System is ready for productio
 python --version  # Should be 3.11+
 
 # M4 installation
-python -c "from src.safety import *; print('M4 installed')"
+python -c "from temper_ai.safety import *; print('M4 installed')"
 
 # Run tests
 pytest tests/test_safety/ -v
@@ -189,7 +189,7 @@ m4:
 pip-audit
 
 # Static analysis
-bandit -r src/safety/
+bandit -r temper_ai/safety/
 
 # Secret scanning
 detect-secrets scan
@@ -214,7 +214,7 @@ pip-licenses --summary
 ```python
 # benchmark.py
 import time
-from src.safety import PolicyComposer, CircuitBreaker, FileAccessPolicy
+from temper_ai.safety import PolicyComposer, CircuitBreaker, FileAccessPolicy
 
 def benchmark_policy_validation():
     composer = PolicyComposer()
@@ -336,7 +336,7 @@ m4:
 ```bash
 # Test circuit breaker recovery
 python -c "
-from src.safety import CircuitBreaker
+from temper_ai.safety import CircuitBreaker
 breaker = CircuitBreaker('test', failure_threshold=2, timeout_seconds=5)
 
 # Trigger failures
@@ -569,7 +569,7 @@ jobs:
 pytest tests/test_safety/ -v
 
 # With coverage
-pytest tests/test_safety/ --cov=src/safety --cov-report=html
+pytest tests/test_safety/ --cov=temper_ai/safety --cov-report=html
 
 # Coverage should be >90%
 ```
@@ -702,7 +702,7 @@ kubectl get pods -l app=m4-safety
 2. Check metrics: `curl http://m4-service:9090/metrics | grep m4_breaker`
 3. If service is healthy, force close:
    ```python
-   from src.safety import CircuitBreakerManager
+   from temper_ai.safety import CircuitBreakerManager
    mgr = CircuitBreakerManager()
    breaker = mgr.get_breaker("service_name")
    breaker.force_close()
@@ -714,7 +714,7 @@ kubectl get pods -l app=m4-safety
 1. Check disk usage: `df -h /var/m4`
 2. Clean old snapshots:
    ```python
-   from src.safety import RollbackManager
+   from temper_ai.safety import RollbackManager
    mgr = RollbackManager()
    deleted = mgr.cleanup_old_snapshots(max_age_hours=12)
    print(f"Deleted {deleted} snapshots")

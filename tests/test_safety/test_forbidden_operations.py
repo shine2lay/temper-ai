@@ -11,8 +11,8 @@ Tests cover:
 """
 import pytest
 
-from src.safety.forbidden_operations import ForbiddenOperationsPolicy
-from src.safety.interfaces import ViolationSeverity
+from temper_ai.safety.forbidden_operations import ForbiddenOperationsPolicy
+from temper_ai.safety.interfaces import ViolationSeverity
 
 # ============================================================================
 # Test File Write Detection

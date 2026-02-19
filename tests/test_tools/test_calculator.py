@@ -5,7 +5,7 @@ Tests safe mathematical expression evaluation.
 """
 import pytest
 
-from src.tools.calculator import Calculator
+from temper_ai.tools.calculator import Calculator
 
 
 class TestCalculatorMetadata:

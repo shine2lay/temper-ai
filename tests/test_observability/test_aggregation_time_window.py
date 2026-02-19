@@ -2,8 +2,8 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from src.observability.aggregation.period import AggregationPeriod
-from src.observability.aggregation.time_window import TimeWindowCalculator
+from temper_ai.observability.aggregation.period import AggregationPeriod
+from temper_ai.observability.aggregation.time_window import TimeWindowCalculator
 
 
 class TestGetPeriodStart:

@@ -11,7 +11,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.observability.cost_rollup import (
+from temper_ai.observability.cost_rollup import (
     EVENT_TYPE_COST_SUMMARY,
     AgentCostEntry,
     StageCostSummary,

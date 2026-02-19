@@ -100,7 +100,7 @@ echo ""
 
 # Check if required packages are installed
 echo "Checking dependencies..."
-python -c "import src.self_improvement; import httpx" 2>/dev/null || {
+python -c "import temper_ai.self_improvement; import httpx" 2>/dev/null || {
     echo -e "${YELLOW}⚠️  Missing dependencies. Installing...${NC}"
     pip install -e . httpx -q
 }

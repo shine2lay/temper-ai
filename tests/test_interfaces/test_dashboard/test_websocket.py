@@ -7,13 +7,13 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from src.interfaces.dashboard.app import create_app
-from src.interfaces.dashboard.websocket import (
+from temper_ai.interfaces.dashboard.app import create_app
+from temper_ai.interfaces.dashboard.websocket import (
     _workflow_fingerprint,
     TERMINAL_STATUSES,
 )
-from src.observability.constants import ObservabilityFields
-from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
+from temper_ai.observability.constants import ObservabilityFields
+from temper_ai.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 
 # ---------------------------------------------------------------------------
 # Helpers

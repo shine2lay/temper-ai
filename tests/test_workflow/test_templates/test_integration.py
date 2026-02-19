@@ -4,8 +4,8 @@ from pathlib import Path
 
 import yaml
 
-from src.workflow.templates.generator import TemplateGenerator
-from src.workflow.templates.registry import TemplateRegistry
+from temper_ai.workflow.templates.generator import TemplateGenerator
+from temper_ai.workflow.templates.registry import TemplateRegistry
 
 CONFIGS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "configs"
 TEMPLATES_DIR = CONFIGS_DIR / "templates"

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.observability.event_bus import (
+from temper_ai.observability.event_bus import (
     AsyncObservabilityEventBus,
     ObservabilityEvent,
 )

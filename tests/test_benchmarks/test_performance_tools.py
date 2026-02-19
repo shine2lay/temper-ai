@@ -22,9 +22,9 @@ from concurrent.futures import ThreadPoolExecutor, wait
 
 import pytest
 
-from src.tools.base import ToolResult
-from src.tools.calculator import Calculator
-from src.tools.executor import ToolExecutor
+from temper_ai.tools.base import ToolResult
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.executor import ToolExecutor
 
 # ============================================================================
 # CATEGORY 4: Tool Execution (8 benchmarks)

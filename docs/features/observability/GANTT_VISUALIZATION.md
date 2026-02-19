@@ -16,13 +16,13 @@ Visualize any execution trace as an interactive hierarchical Gantt chart showing
 ### Visualize Latest Workflow
 
 ```bash
-python -m src.observability.visualize_trace --latest
+python -m temper_ai.observability.visualize_trace --latest
 ```
 
 ### Visualize Specific Workflow
 
 ```bash
-python -m src.observability.visualize_trace <workflow-id>
+python -m temper_ai.observability.visualize_trace <workflow-id>
 ```
 
 ### Visualize from JSON File
@@ -32,13 +32,13 @@ python -m src.observability.visualize_trace <workflow-id>
 python examples/export_waterfall.py <workflow-id> > trace.json
 
 # Visualize
-python -m src.observability.visualize_trace --file trace.json
+python -m temper_ai.observability.visualize_trace --file trace.json
 ```
 
 ## Command-Line Options
 
 ```bash
-python -m src.observability.visualize_trace [OPTIONS] [WORKFLOW_ID]
+python -m temper_ai.observability.visualize_trace [OPTIONS] [WORKFLOW_ID]
 
 Options:
   --latest, -l          Visualize latest workflow execution
@@ -51,7 +51,7 @@ Options:
 ## Programmatic Usage
 
 ```python
-from src.observability.visualize_trace import visualize_trace, create_hierarchical_gantt
+from temper_ai.observability.visualize_trace import visualize_trace, create_hierarchical_gantt
 from examples.export_waterfall import export_waterfall_trace
 
 # Get trace data
@@ -285,7 +285,7 @@ start multi_agent_gantt.html  # Windows
 
 ### Custom Styling
 
-Modify `src/observability/visualize_trace.py` to change:
+Modify `temper_ai/observability/visualize_trace.py` to change:
 - Color scheme (line 47-53)
 - Height calculation (line 80)
 - Font and margins (line 102-103)
@@ -325,7 +325,7 @@ for i, trace in enumerate(traces):
 
 - `examples/export_waterfall.py` - Export trace data
 - `examples/show_waterfall_format.py` - Show trace format
-- `src/observability/console.py` - Console visualization
+- `temper_ai/observability/console.py` - Console visualization
 - `examples/query_trace.py` - Query execution data
 
 ## References

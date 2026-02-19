@@ -306,7 +306,7 @@ inference:
 ## Usage Example
 
 ```python
-from src.agents.llm_providers import OllamaProvider, OpenAIProvider
+from temper_ai.agents.llm_providers import OllamaProvider, OpenAIProvider
 
 # Create Ollama provider
 ollama_config = {
@@ -343,7 +343,7 @@ for chunk in ollama.generate_stream("Write a poem"):
 ## Error Handling
 
 ```python
-from src.agents.llm_providers.exceptions import (
+from temper_ai.agents.llm_providers.exceptions import (
     LLMError,
     LLMTimeoutError,
     LLMRateLimitError,

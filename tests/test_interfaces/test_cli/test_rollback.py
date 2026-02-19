@@ -14,8 +14,8 @@ from unittest.mock import Mock, patch
 import pytest
 from click.testing import CliRunner
 
-from src.interfaces.cli.rollback import execute, history, info, list, rollback
-from src.safety.rollback import RollbackSnapshot, RollbackStatus
+from temper_ai.interfaces.cli.rollback import execute, history, info, list, rollback
+from temper_ai.safety.rollback import RollbackSnapshot, RollbackStatus
 
 
 @pytest.fixture
@@ -72,8 +72,8 @@ class TestRollbackGroup:
 class TestListCommand:
     """Test the list subcommand."""
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_list_snapshots_success(self, mock_api_cls, mock_manager_cls, runner, mock_snapshot):
         """Test successful snapshot listing."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -88,8 +88,8 @@ class TestListCommand:
         assert "snap-123" in result.output
         assert "write_file" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_list_snapshots_empty(self, mock_api_cls, mock_manager_cls, runner):
         """Test listing when no snapshots found."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -103,8 +103,8 @@ class TestListCommand:
         assert result.exit_code == 0
         assert "No snapshots found" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_list_snapshots_with_workflow_filter(self, mock_api_cls, mock_manager_cls, runner, mock_snapshot):
         """Test snapshot listing with workflow_id filter."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -120,8 +120,8 @@ class TestListCommand:
         call_kwargs = mock_api.list_snapshots.call_args[1]
         assert call_kwargs["workflow_id"] == "wf-456"
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_list_snapshots_with_since_hours(self, mock_api_cls, mock_manager_cls, runner, mock_snapshot):
         """Test snapshot listing with since_hours filter."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -136,8 +136,8 @@ class TestListCommand:
         call_kwargs = mock_api.list_snapshots.call_args[1]
         assert call_kwargs["since"] is not None
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_list_snapshots_with_limit(self, mock_api_cls, mock_manager_cls, runner, mock_snapshot):
         """Test snapshot listing with custom limit."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -152,8 +152,8 @@ class TestListCommand:
         call_kwargs = mock_api.list_snapshots.call_args[1]
         assert call_kwargs["limit"] == 5
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_list_snapshots_error(self, mock_api_cls, mock_manager_cls, runner):
         """Test error handling in list command."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -171,8 +171,8 @@ class TestListCommand:
 class TestInfoCommand:
     """Test the info subcommand."""
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_info_success(self, mock_api_cls, mock_manager_cls, runner):
         """Test successful snapshot info retrieval."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -195,8 +195,8 @@ class TestInfoCommand:
         assert "snap-123" in result.output
         assert "No safety warnings" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_info_not_found(self, mock_api_cls, mock_manager_cls, runner):
         """Test info command with nonexistent snapshot."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -210,8 +210,8 @@ class TestInfoCommand:
         assert result.exit_code != 0
         assert "Snapshot not found" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_info_with_warnings(self, mock_api_cls, mock_manager_cls, runner):
         """Test info command with safety warnings."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -233,8 +233,8 @@ class TestInfoCommand:
         assert "Warnings:" in result.output
         assert "Old snapshot" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_info_error(self, mock_api_cls, mock_manager_cls, runner):
         """Test error handling in info command."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -252,8 +252,8 @@ class TestInfoCommand:
 class TestExecuteCommand:
     """Test the execute subcommand."""
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_dry_run(self, mock_api_cls, mock_manager_cls, runner, mock_rollback_result):
         """Test execute command with dry-run flag."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -273,8 +273,8 @@ class TestExecuteCommand:
         assert result.exit_code == 0
         assert "Dry run mode" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_safety_check_failed(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with failed safety check."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -292,8 +292,8 @@ class TestExecuteCommand:
         assert result.exit_code != 0
         assert "Safety check failed" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_with_force(self, mock_api_cls, mock_manager_cls, runner, mock_rollback_result):
         """Test execute command with --force flag to bypass safety checks."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -315,8 +315,8 @@ class TestExecuteCommand:
         assert result.exit_code == 0
         assert "Rollback completed" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_user_cancels(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command when user cancels confirmation."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -336,8 +336,8 @@ class TestExecuteCommand:
         assert result.exit_code == 0
         assert "Rollback cancelled" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_success(self, mock_api_cls, mock_manager_cls, runner, mock_rollback_result):
         """Test successful rollback execution."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -358,8 +358,8 @@ class TestExecuteCommand:
         assert result.exit_code == 0
         assert "Rollback completed" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_failure(self, mock_api_cls, mock_manager_cls, runner):
         """Test rollback execution failure."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -386,8 +386,8 @@ class TestExecuteCommand:
         assert result.exit_code != 0
         assert "Rollback failed" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_value_error(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with ValueError."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -405,8 +405,8 @@ class TestExecuteCommand:
         ])
         assert result.exit_code != 0
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_manager_initialization_error(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with manager initialization error."""
         mock_manager_cls.side_effect = RuntimeError("Failed to initialize manager")
@@ -419,8 +419,8 @@ class TestExecuteCommand:
         assert result.exit_code != 0
         assert "Failed to initialize" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_io_error_on_safety_check(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with IO error during safety check."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -438,8 +438,8 @@ class TestExecuteCommand:
         assert result.exit_code != 0
         assert "Error reading snapshot" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_value_error_on_snapshot_details(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with ValueError when getting snapshot details."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -458,8 +458,8 @@ class TestExecuteCommand:
         assert result.exit_code != 0
         assert "Invalid snapshot" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_io_error_on_snapshot_details(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with IOError when getting snapshot details."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -477,8 +477,8 @@ class TestExecuteCommand:
         ])
         assert result.exit_code != 0
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_value_error_on_execution(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with ValueError during execution."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -498,8 +498,8 @@ class TestExecuteCommand:
         assert result.exit_code != 0
         assert "Invalid rollback parameters" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_io_error_on_execution(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with IOError during execution."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -519,8 +519,8 @@ class TestExecuteCommand:
         assert result.exit_code != 0
         assert "File system error" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_permission_error_on_execution(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with PermissionError during execution."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -540,8 +540,8 @@ class TestExecuteCommand:
         assert result.exit_code != 0
         assert "File system error" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_execute_runtime_error_on_execution(self, mock_api_cls, mock_manager_cls, runner):
         """Test execute command with RuntimeError during execution."""
         mock_manager = Mock(spec=["execute_rollback"])
@@ -565,8 +565,8 @@ class TestExecuteCommand:
 class TestHistoryCommand:
     """Test the history subcommand."""
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_history_success(self, mock_api_cls, mock_manager_cls, runner, mock_rollback_result):
         """Test successful rollback history retrieval."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -580,8 +580,8 @@ class TestHistoryCommand:
         assert result.exit_code == 0
         assert "Rollback history" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_history_empty(self, mock_api_cls, mock_manager_cls, runner):
         """Test history command with no results."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -595,8 +595,8 @@ class TestHistoryCommand:
         assert result.exit_code == 0
         assert "No rollback history found" in result.output
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_history_with_snapshot_filter(self, mock_api_cls, mock_manager_cls, runner, mock_rollback_result):
         """Test history command with snapshot_id filter."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -611,8 +611,8 @@ class TestHistoryCommand:
         call_kwargs = mock_api.get_rollback_history.call_args[1]
         assert call_kwargs["snapshot_id"] == "snap-123"
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_history_with_limit(self, mock_api_cls, mock_manager_cls, runner, mock_rollback_result):
         """Test history command with custom limit."""
         mock_manager = Mock(spec=["list_snapshots"])
@@ -627,8 +627,8 @@ class TestHistoryCommand:
         call_kwargs = mock_api.get_rollback_history.call_args[1]
         assert call_kwargs["limit"] == 5
 
-    @patch("src.interfaces.cli.rollback.RollbackManager")
-    @patch("src.interfaces.cli.rollback.RollbackAPI")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackManager")
+    @patch("temper_ai.interfaces.cli.rollback.RollbackAPI")
     def test_history_error(self, mock_api_cls, mock_manager_cls, runner):
         """Test error handling in history command."""
         mock_manager = Mock(spec=["list_snapshots"])

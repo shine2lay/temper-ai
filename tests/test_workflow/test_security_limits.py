@@ -9,7 +9,7 @@ Tests cover:
 """
 import pytest
 
-from src.workflow.security_limits import CONFIG_SECURITY, ConfigSecurityLimits
+from temper_ai.workflow.security_limits import CONFIG_SECURITY, ConfigSecurityLimits
 
 
 class TestConfigSecurityLimits:
@@ -164,13 +164,13 @@ class TestSecurityLimitUsage:
 
     def test_can_import_singleton(self):
         """Test that CONFIG_SECURITY can be imported directly."""
-        from src.workflow.security_limits import CONFIG_SECURITY as imported_singleton
+        from temper_ai.workflow.security_limits import CONFIG_SECURITY as imported_singleton
         assert imported_singleton is CONFIG_SECURITY
         assert imported_singleton.MAX_CONFIG_SIZE == 10 * 1024 * 1024
 
     def test_can_import_class(self):
         """Test that ConfigSecurityLimits class can be imported."""
-        from src.workflow.security_limits import ConfigSecurityLimits as ImportedClass
+        from temper_ai.workflow.security_limits import ConfigSecurityLimits as ImportedClass
         assert ImportedClass is ConfigSecurityLimits
 
     def test_typical_config_size_check(self):

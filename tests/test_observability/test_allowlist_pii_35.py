@@ -4,7 +4,7 @@ Verifies that the full-text allowlist check no longer bypasses PII
 redaction when allowlisted patterns appear alongside real PII.
 """
 
-from src.observability.sanitization import DataSanitizer, SanitizationConfig
+from temper_ai.observability.sanitization import DataSanitizer, SanitizationConfig
 
 
 def _make_sanitizer(allowlist_patterns=None):

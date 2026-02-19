@@ -5,7 +5,7 @@ for session management, rate limiting, tokens, and OAuth settings.
 """
 import pytest
 
-from src.auth.constants import (
+from temper_ai.auth.constants import (
     # Session Configuration
     DEFAULT_MAX_SESSIONS_PER_USER,
     DEFAULT_SESSION_INACTIVITY_TIMEOUT,

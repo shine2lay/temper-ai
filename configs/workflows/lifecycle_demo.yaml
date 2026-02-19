@@ -18,7 +18,7 @@ workflow:
   error_handling:
     on_stage_failure: halt
     max_stage_retries: 2
-    escalation_policy: src.safety.action_policy_engine.ActionPolicyEngine
+    escalation_policy: temper_ai.safety.action_policy_engine.ActionPolicyEngine
     enable_rollback: true
   config:
     max_iterations: 10

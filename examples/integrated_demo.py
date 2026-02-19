@@ -73,21 +73,21 @@ from rich.table import Table
 from sqlalchemy import text
 
 # Framework imports
-from src.agent.llm_providers import LLMError, LLMResponse, LLMTimeoutError, OllamaLLM
-from src.observability.database import init_database, reset_database
-from src.observability.models import (
+from temper_ai.agent.llm_providers import LLMError, LLMResponse, LLMTimeoutError, OllamaLLM
+from temper_ai.observability.database import init_database, reset_database
+from temper_ai.observability.models import (
     AgentExecution,
     CollaborationEvent,
     StageExecution,
     WorkflowExecution,
 )
-from src.safety import CircuitBreaker, SecretDetectionPolicy
-from src.self_improvement.data_models import SIOptimizationConfig
-from src.self_improvement.deployment.rollback_monitor import RegressionThresholds
-from src.self_improvement.experiment_orchestrator import ExperimentOrchestrator
-from src.self_improvement.performance_analyzer import PerformanceAnalyzer
-from src.agent.strategies.base import AgentOutput
-from src.agent.strategies.consensus import ConsensusStrategy
+from temper_ai.safety import CircuitBreaker, SecretDetectionPolicy
+from temper_ai.self_improvement.data_models import SIOptimizationConfig
+from temper_ai.self_improvement.deployment.rollback_monitor import RegressionThresholds
+from temper_ai.self_improvement.experiment_orchestrator import ExperimentOrchestrator
+from temper_ai.self_improvement.performance_analyzer import PerformanceAnalyzer
+from temper_ai.agent.strategies.base import AgentOutput
+from temper_ai.agent.strategies.consensus import ConsensusStrategy
 
 console = Console()
 

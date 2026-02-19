@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.workflow.config_loader import ConfigLoader, ConfigValidationError
+from temper_ai.workflow.config_loader import ConfigLoader, ConfigValidationError
 
 
 @pytest.fixture

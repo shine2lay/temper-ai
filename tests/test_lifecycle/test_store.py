@@ -4,8 +4,8 @@ import uuid
 
 import pytest
 
-from src.lifecycle.models import LifecycleAdaptation, LifecycleProfileRecord
-from src.lifecycle.store import LifecycleStore
+from temper_ai.lifecycle.models import LifecycleAdaptation, LifecycleProfileRecord
+from temper_ai.lifecycle.store import LifecycleStore
 
 
 @pytest.fixture

@@ -12,9 +12,9 @@ from collections import deque
 import pytest
 from cryptography.fernet import Fernet
 
-from src.auth.oauth.state_store import InMemoryStateStore
-from src.auth.oauth.token_store import SecureTokenStore
-from src.observability.buffer import ObservabilityBuffer
+from temper_ai.auth.oauth.state_store import InMemoryStateStore
+from temper_ai.auth.oauth.token_store import SecureTokenStore
+from temper_ai.observability.buffer import ObservabilityBuffer
 
 # ── SecureTokenStore access log eviction ──────────────────────────────────
 

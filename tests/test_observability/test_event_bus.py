@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from src.observability.constants import ObservabilityFields
-from src.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
+from temper_ai.observability.constants import ObservabilityFields
+from temper_ai.observability.event_bus import ObservabilityEvent, ObservabilityEventBus
 
 
 # ============================================================
@@ -137,7 +137,7 @@ class TestObservabilityEventBus:
         bus = ObservabilityEventBus()
         bad_cb = Mock(side_effect=RuntimeError("fail"))
         bus.subscribe(bad_cb)
-        with patch("src.observability.event_bus.logger") as mock_logger:
+        with patch("temper_ai.observability.event_bus.logger") as mock_logger:
             bus.emit(self._make_event())
             mock_logger.warning.assert_called_once()
 
@@ -233,8 +233,8 @@ class TestTrackerEventBusIntegration:
     @pytest.fixture
     def tracker(self, event_bus, received_events):
         """Create an ExecutionTracker with NoOpBackend and event bus."""
-        from src.observability.backends.noop_backend import NoOpBackend
-        from src.observability.tracker import ExecutionTracker
+        from temper_ai.observability.backends.noop_backend import NoOpBackend
+        from temper_ai.observability.tracker import ExecutionTracker
 
         def collector(event: ObservabilityEvent):
             received_events.append(event)
@@ -348,8 +348,8 @@ class TestTrackerEventBusIntegration:
 
     def test_no_event_bus_means_no_emission(self):
         """Tracker without event_bus should work normally without errors."""
-        from src.observability.backends.noop_backend import NoOpBackend
-        from src.observability.tracker import ExecutionTracker
+        from temper_ai.observability.backends.noop_backend import NoOpBackend
+        from temper_ai.observability.tracker import ExecutionTracker
 
         tracker = ExecutionTracker(backend=NoOpBackend())
         # Should not raise

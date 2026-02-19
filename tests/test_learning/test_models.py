@@ -1,6 +1,6 @@
 """Tests for learning models."""
 
-from src.learning.models import (
+from temper_ai.learning.models import (
     ALL_PATTERN_TYPES,
     PATTERN_AGENT_PERFORMANCE,
     STATUS_ACTIVE,

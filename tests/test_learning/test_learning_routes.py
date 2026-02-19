@@ -6,8 +6,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.learning.dashboard_routes import create_learning_router
-from src.learning.dashboard_service import LearningDataService
+from temper_ai.learning.dashboard_routes import create_learning_router
+from temper_ai.learning.dashboard_service import LearningDataService
 
 HTTP_OK = 200
 HTTP_NOT_FOUND = 404

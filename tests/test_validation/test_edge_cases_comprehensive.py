@@ -9,7 +9,7 @@ from datetime import datetime
 
 import pytest
 
-from src.storage.schemas.agent_config import (
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,

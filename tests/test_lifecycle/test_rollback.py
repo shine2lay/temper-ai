@@ -4,11 +4,11 @@ import uuid
 
 import pytest
 
-from src.lifecycle._schemas import DegradationReport, WorkflowMetrics
-from src.lifecycle.history import HistoryAnalyzer
-from src.lifecycle.models import LifecycleAdaptation
-from src.lifecycle.rollback import RollbackMonitor
-from src.lifecycle.store import LifecycleStore
+from temper_ai.lifecycle._schemas import DegradationReport, WorkflowMetrics
+from temper_ai.lifecycle.history import HistoryAnalyzer
+from temper_ai.lifecycle.models import LifecycleAdaptation
+from temper_ai.lifecycle.rollback import RollbackMonitor
+from temper_ai.lifecycle.store import LifecycleStore
 
 
 @pytest.fixture
@@ -52,7 +52,7 @@ class TestRollbackMonitor:
         assert result is None
 
     def test_revert_profile_in_db(self, monitor, store):
-        from src.lifecycle.models import LifecycleProfileRecord
+        from temper_ai.lifecycle.models import LifecycleProfileRecord
         store.save_profile(LifecycleProfileRecord(
             id="p-1", name="lean", enabled=True,
         ))

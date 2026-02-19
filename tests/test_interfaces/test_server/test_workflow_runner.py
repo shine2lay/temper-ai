@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from src.interfaces.server.workflow_runner import (
+from temper_ai.interfaces.server.workflow_runner import (
     WorkflowRunner,
     WorkflowRunnerConfig,
     WorkflowRunResult,
@@ -80,8 +80,8 @@ class TestWorkflowRunner:
         with pytest.raises(FileNotFoundError):
             runner.run("nonexistent/workflow.yaml")
 
-    @patch("src.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
-    @patch("src.interfaces.server.workflow_runner.WorkflowRunner._compile")
+    @patch("temper_ai.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
+    @patch("temper_ai.interfaces.server.workflow_runner.WorkflowRunner._compile")
     def test_run_success(self, mock_compile, mock_setup, tmp_path) -> None:
         """Successful run returns completed WorkflowRunResult."""
         # Create a workflow YAML
@@ -110,8 +110,8 @@ class TestWorkflowRunner:
         assert result.workflow_name == "test-wf"
         assert result.duration_seconds >= 0
 
-    @patch("src.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
-    @patch("src.interfaces.server.workflow_runner.WorkflowRunner._compile")
+    @patch("temper_ai.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
+    @patch("temper_ai.interfaces.server.workflow_runner.WorkflowRunner._compile")
     def test_run_with_on_event(self, mock_compile, mock_setup, tmp_path) -> None:
         """on_event callback is subscribed and unsubscribed."""
         wf_file = tmp_path / "test.yaml"
@@ -143,7 +143,7 @@ class TestWorkflowRunner:
         event_bus.subscribe.assert_called_once_with(callback)
         event_bus.unsubscribe.assert_called_once_with("sub-123")
 
-    @patch("src.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
+    @patch("temper_ai.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
     def test_compilation_error_returns_failed(self, mock_setup, tmp_path) -> None:
         """Compilation failure returns a failed result (no exception)."""
         wf_file = tmp_path / "test.yaml"
@@ -159,8 +159,8 @@ class TestWorkflowRunner:
         assert result.status == "failed"
         assert "Bad config" in result.error_message
 
-    @patch("src.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
-    @patch("src.interfaces.server.workflow_runner.WorkflowRunner._compile")
+    @patch("temper_ai.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
+    @patch("temper_ai.interfaces.server.workflow_runner.WorkflowRunner._compile")
     def test_engine_cleanup_on_success(self, mock_compile, mock_setup, tmp_path) -> None:
         """Engine cleanup runs even on success."""
         wf_file = tmp_path / "test.yaml"
@@ -184,8 +184,8 @@ class TestWorkflowRunner:
 
         mock_engine.tool_executor.shutdown.assert_called_once()
 
-    @patch("src.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
-    @patch("src.interfaces.server.workflow_runner.WorkflowRunner._compile")
+    @patch("temper_ai.interfaces.server.workflow_runner.WorkflowRunner._setup_infrastructure")
+    @patch("temper_ai.interfaces.server.workflow_runner.WorkflowRunner._compile")
     def test_workspace_in_state(self, mock_compile, mock_setup, tmp_path) -> None:
         """Workspace is passed through to workflow state."""
         wf_file = tmp_path / "test.yaml"

@@ -9,9 +9,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.node_builder import NodeBuilder
-from src.shared.utils.exceptions import WorkflowStageError
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.shared.utils.exceptions import WorkflowStageError
 
 
 class TestStageStatusComputation:
@@ -19,7 +19,7 @@ class TestStageStatusComputation:
 
     def test_sequential_stage_status_completed(self):
         """All agents succeed → stage_status='completed'."""
-        from src.stage.executors.sequential import SequentialStageExecutor
+        from temper_ai.stage.executors.sequential import SequentialStageExecutor
 
         executor = SequentialStageExecutor()
 
@@ -62,7 +62,7 @@ class TestStageStatusComputation:
         state = {"stage_outputs": {}, "workflow_id": "wf-test"}
 
         with patch(
-            "src.stage.executors.sequential.AgentFactory",
+            "temper_ai.stage.executors.sequential.AgentFactory",
             mock_factory,
         ):
             result = executor.execute_stage(
@@ -77,12 +77,12 @@ class TestStageStatusComputation:
 
     def test_sequential_stage_status_failed_all_agents(self):
         """All agents fail → stage_status='failed'."""
-        from src.stage.executors._sequential_helpers import (
+        from temper_ai.stage.executors._sequential_helpers import (
             AgentExecutionContext,
             run_all_agents,
         )
-        from src.stage.executors.sequential import SequentialStageExecutor
-        from src.stage._schemas import StageErrorHandlingConfig
+        from temper_ai.stage.executors.sequential import SequentialStageExecutor
+        from temper_ai.stage._schemas import StageErrorHandlingConfig
 
         executor = SequentialStageExecutor()
 
@@ -110,7 +110,7 @@ class TestStageStatusComputation:
         )
 
         with patch(
-            "src.stage.executors._sequential_helpers.execute_agent",
+            "temper_ai.stage.executors._sequential_helpers.execute_agent",
             side_effect=mock_execute_agent,
         ):
             outputs, statuses, metrics = run_all_agents(
@@ -139,7 +139,7 @@ class TestWorkflowStageError:
 
     def test_is_subclass_of_workflow_error(self):
         """WorkflowStageError is a subclass of WorkflowError."""
-        from src.shared.utils.exceptions import WorkflowError
+        from temper_ai.shared.utils.exceptions import WorkflowError
 
         err = WorkflowStageError(
             message="fail",

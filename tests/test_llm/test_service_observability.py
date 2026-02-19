@@ -13,8 +13,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.llm.service import LLMService, LLMRunResult, _RunState
-from src.llm.llm_loop_events import (
+from temper_ai.llm.service import LLMService, LLMRunResult, _RunState
+from temper_ai.llm.llm_loop_events import (
     CacheEventData,
     LLMIterationEventData,
     emit_llm_iteration_event,
@@ -82,10 +82,10 @@ def make_llm_service(
 class TestLLMServiceIterationEvents:
     """Test that LLMService emits iteration events."""
 
-    @patch("src.llm.service.emit_llm_iteration_event")
-    @patch("src.llm.service.estimate_cost", return_value=0.001)
-    @patch("src.llm.service.call_with_retry_sync")
-    @patch("src.llm.service.track_call")
+    @patch("temper_ai.llm.service.emit_llm_iteration_event")
+    @patch("temper_ai.llm.service.estimate_cost", return_value=0.001)
+    @patch("temper_ai.llm.service.call_with_retry_sync")
+    @patch("temper_ai.llm.service.track_call")
     def test_single_iteration_emits_event(
         self, mock_track_call: MagicMock,
         mock_retry: MagicMock,
@@ -109,15 +109,15 @@ class TestLLMServiceIterationEvents:
         assert event_data.agent_name == "agent-a"
         assert event_data.tool_calls_this_iteration == 0
 
-    @patch("src.llm.service.build_text_schemas", return_value=(None, 0))
-    @patch("src.llm.service.build_native_tool_defs", return_value=(None, None))
-    @patch("src.llm.service.inject_results", return_value="injected prompt")
-    @patch("src.llm.service.execute_tools", return_value=[{"name": "bash", "result": "ok"}])
-    @patch("src.llm.service.parse_tool_calls")
-    @patch("src.llm.service.track_call")
-    @patch("src.llm.service.call_with_retry_sync")
-    @patch("src.llm.service.estimate_cost", return_value=0.001)
-    @patch("src.llm.service.emit_llm_iteration_event")
+    @patch("temper_ai.llm.service.build_text_schemas", return_value=(None, 0))
+    @patch("temper_ai.llm.service.build_native_tool_defs", return_value=(None, None))
+    @patch("temper_ai.llm.service.inject_results", return_value="injected prompt")
+    @patch("temper_ai.llm.service.execute_tools", return_value=[{"name": "bash", "result": "ok"}])
+    @patch("temper_ai.llm.service.parse_tool_calls")
+    @patch("temper_ai.llm.service.track_call")
+    @patch("temper_ai.llm.service.call_with_retry_sync")
+    @patch("temper_ai.llm.service.estimate_cost", return_value=0.001)
+    @patch("temper_ai.llm.service.emit_llm_iteration_event")
     def test_multi_iteration_emits_per_iteration(
         self,
         mock_emit: MagicMock,
@@ -159,10 +159,10 @@ class TestLLMServiceIterationEvents:
         assert second_event.iteration_number == 2
         assert second_event.tool_calls_this_iteration == 0
 
-    @patch("src.llm.service.emit_llm_iteration_event")
-    @patch("src.llm.service.estimate_cost", return_value=0.0)
-    @patch("src.llm.service.call_with_retry_sync")
-    @patch("src.llm.service.track_call")
+    @patch("temper_ai.llm.service.emit_llm_iteration_event")
+    @patch("temper_ai.llm.service.estimate_cost", return_value=0.0)
+    @patch("temper_ai.llm.service.call_with_retry_sync")
+    @patch("temper_ai.llm.service.track_call")
     def test_none_observer_still_emits(
         self, mock_track_call: MagicMock,
         mock_retry: MagicMock,
@@ -178,10 +178,10 @@ class TestLLMServiceIterationEvents:
         assert mock_emit.call_count == 1
         assert mock_emit.call_args[0][0] is None
 
-    @patch("src.llm.service.emit_llm_iteration_event")
-    @patch("src.llm.service.estimate_cost", return_value=0.005)
-    @patch("src.llm.service.call_with_retry_sync")
-    @patch("src.llm.service.track_call")
+    @patch("temper_ai.llm.service.emit_llm_iteration_event")
+    @patch("temper_ai.llm.service.estimate_cost", return_value=0.005)
+    @patch("temper_ai.llm.service.call_with_retry_sync")
+    @patch("temper_ai.llm.service.track_call")
     def test_iteration_tokens_tracked(
         self, mock_track_call: MagicMock,
         mock_retry: MagicMock,
@@ -202,10 +202,10 @@ class TestLLMServiceIterationEvents:
 class TestLLMServiceIterationEventsAsync:
     """Test async iteration event emission."""
 
-    @patch("src.llm.service.emit_llm_iteration_event")
-    @patch("src.llm.service.estimate_cost", return_value=0.0)
-    @patch("src.llm.service.call_with_retry_async")
-    @patch("src.llm.service.track_call")
+    @patch("temper_ai.llm.service.emit_llm_iteration_event")
+    @patch("temper_ai.llm.service.estimate_cost", return_value=0.0)
+    @patch("temper_ai.llm.service.call_with_retry_async")
+    @patch("temper_ai.llm.service.track_call")
     def test_arun_emits_iteration_event(
         self, mock_track_call: MagicMock,
         mock_retry: MagicMock,
@@ -258,7 +258,7 @@ class TestLLMCacheEvents:
     """Test cache event emission via on_event callback."""
 
     def test_cache_hit_fires_event(self) -> None:
-        from src.llm.cache.llm_cache import LLMCache
+        from temper_ai.llm.cache.llm_cache import LLMCache
 
         received: list = []
         cache = LLMCache(backend="memory", on_event=received.append)
@@ -275,7 +275,7 @@ class TestLLMCacheEvents:
         assert hit_events[0].key_prefix.startswith("testkey"[:16])
 
     def test_cache_miss_fires_event(self) -> None:
-        from src.llm.cache.llm_cache import LLMCache
+        from temper_ai.llm.cache.llm_cache import LLMCache
 
         received: list = []
         cache = LLMCache(backend="memory", on_event=received.append)
@@ -287,7 +287,7 @@ class TestLLMCacheEvents:
         assert len(miss_events) >= 1
 
     def test_cache_write_fires_event(self) -> None:
-        from src.llm.cache.llm_cache import LLMCache
+        from temper_ai.llm.cache.llm_cache import LLMCache
 
         received: list = []
         cache = LLMCache(backend="memory", on_event=received.append)
@@ -298,7 +298,7 @@ class TestLLMCacheEvents:
         assert len(write_events) == 1
 
     def test_cache_eviction_fires_event(self) -> None:
-        from src.llm.cache.llm_cache import LLMCache
+        from temper_ai.llm.cache.llm_cache import LLMCache
 
         received: list = []
         cache = LLMCache(backend="memory", max_size=2, on_event=received.append)
@@ -313,7 +313,7 @@ class TestLLMCacheEvents:
         assert len(eviction_events) >= 1
 
     def test_no_event_callback_no_error(self) -> None:
-        from src.llm.cache.llm_cache import LLMCache
+        from temper_ai.llm.cache.llm_cache import LLMCache
 
         cache = LLMCache(backend="memory")
         cache.set("k", "v")
@@ -321,7 +321,7 @@ class TestLLMCacheEvents:
         assert result == "v"
 
     def test_event_callback_error_handled(self) -> None:
-        from src.llm.cache.llm_cache import LLMCache
+        from temper_ai.llm.cache.llm_cache import LLMCache
 
         def bad_callback(event: Any) -> None:
             raise RuntimeError("boom")
@@ -333,7 +333,7 @@ class TestLLMCacheEvents:
         assert result == "v"
 
     def test_event_includes_cache_size(self) -> None:
-        from src.llm.cache.llm_cache import LLMCache
+        from temper_ai.llm.cache.llm_cache import LLMCache
 
         received: list = []
         cache = LLMCache(backend="memory", on_event=received.append)

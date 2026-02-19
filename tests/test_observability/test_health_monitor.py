@@ -4,12 +4,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.observability.health_monitor import (
+from temper_ai.observability.health_monitor import (
     DEFAULT_CHECK_INTERVAL_SECONDS,
     HealthStatus,
     ObservabilityHealthMonitor,
 )
-from src.shared.constants.limits import THRESHOLD_LARGE_COUNT, THRESHOLD_MEDIUM_COUNT
+from temper_ai.shared.constants.limits import THRESHOLD_LARGE_COUNT, THRESHOLD_MEDIUM_COUNT
 
 
 def _make_buffer(

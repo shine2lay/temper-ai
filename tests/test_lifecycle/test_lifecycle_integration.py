@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.lifecycle._schemas import (
+from temper_ai.lifecycle._schemas import (
     AdaptationAction,
     AdaptationRule,
     LifecycleProfile,
@@ -12,10 +12,10 @@ from src.lifecycle._schemas import (
     ProjectSize,
     RiskLevel,
 )
-from src.lifecycle.adapter import LifecycleAdapter, _apply_rules
-from src.lifecycle.classifier import ProjectClassifier
-from src.lifecycle.profiles import ProfileRegistry
-from src.lifecycle.store import LifecycleStore
+from temper_ai.lifecycle.adapter import LifecycleAdapter, _apply_rules
+from temper_ai.lifecycle.classifier import ProjectClassifier
+from temper_ai.lifecycle.profiles import ProfileRegistry
+from temper_ai.lifecycle.store import LifecycleStore
 
 
 @pytest.fixture
@@ -111,7 +111,7 @@ class TestEndToEnd:
 
     def test_lifecycle_config_schema_integration(self):
         """LifecycleConfig integrates with WorkflowConfigInner."""
-        from src.workflow._schemas import WorkflowConfigInner
+        from temper_ai.workflow._schemas import WorkflowConfigInner
 
         # Should accept lifecycle field
         config = WorkflowConfigInner(
@@ -120,7 +120,7 @@ class TestEndToEnd:
             stages=[{"name": "s1", "stage_ref": "stages/s1.yaml"}],
             error_handling={
                 "on_stage_failure": "halt",
-                "escalation_policy": "src.safety.stub",
+                "escalation_policy": "temper_ai.safety.stub",
             },
             lifecycle={"enabled": True, "profile": "lean"},
         )
@@ -129,7 +129,7 @@ class TestEndToEnd:
 
     def test_lifecycle_config_defaults(self):
         """LifecycleConfig defaults to disabled."""
-        from src.workflow._schemas import WorkflowConfigInner
+        from temper_ai.workflow._schemas import WorkflowConfigInner
 
         config = WorkflowConfigInner(
             name="test",
@@ -137,7 +137,7 @@ class TestEndToEnd:
             stages=[{"name": "s1", "stage_ref": "stages/s1.yaml"}],
             error_handling={
                 "on_stage_failure": "halt",
-                "escalation_policy": "src.safety.stub",
+                "escalation_policy": "temper_ai.safety.stub",
             },
         )
         assert config.lifecycle.enabled is False

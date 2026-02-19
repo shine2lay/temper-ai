@@ -21,13 +21,13 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import httpx
 import pytest
 
-from src.auth.models import Session, User
-from src.auth.oauth.config import OAuthConfig, OAuthProviderConfig
-from src.auth.oauth.service import OAuthService
-from src.auth.oauth.state_store import InMemoryStateStore
-from src.auth.oauth.token_store import SecureTokenStore
-from src.auth.routes import OAuthRouteHandlers
-from src.auth.session import SessionStore, UserStore
+from temper_ai.auth.models import Session, User
+from temper_ai.auth.oauth.config import OAuthConfig, OAuthProviderConfig
+from temper_ai.auth.oauth.service import OAuthService
+from temper_ai.auth.oauth.state_store import InMemoryStateStore
+from temper_ai.auth.oauth.token_store import SecureTokenStore
+from temper_ai.auth.routes import OAuthRouteHandlers
+from temper_ai.auth.session import SessionStore, UserStore
 
 # Test Fixtures
 

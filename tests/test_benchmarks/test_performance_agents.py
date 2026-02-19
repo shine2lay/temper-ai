@@ -18,10 +18,10 @@ from unittest.mock import Mock, patch
 import psutil
 import pytest
 
-from src.agent.utils.agent_factory import AgentFactory
-from src.agent.llm_providers import LLMResponse
-from src.agent.standard_agent import StandardAgent
-from src.tools.base import BaseTool, ToolResult
+from temper_ai.agent.utils.agent_factory import AgentFactory
+from temper_ai.agent.llm_providers import LLMResponse
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.tools.base import BaseTool, ToolResult
 
 from tests.test_benchmarks.conftest import check_budget
 
@@ -36,7 +36,7 @@ def test_agent_execution_overhead(minimal_agent_config, mock_llm_fast, benchmark
     Target: <100ms
     Measures: Agent framework overhead
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
@@ -54,7 +54,7 @@ def test_agent_with_tools(minimal_agent_config, mock_llm_fast, benchmark):
     Target: <150ms
     Measures: Agent + tool integration overhead
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_tool_instance = Mock(spec=BaseTool)
         mock_tool_instance.execute.return_value = ToolResult(
             success=True,
@@ -87,13 +87,13 @@ def test_agent_prompt_rendering(minimal_agent_config, benchmark):
     Target: <20ms
     Measures: Jinja2 template rendering overhead
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
 
         def render_prompt():
-            from src.llm.prompts.engine import PromptEngine
+            from temper_ai.llm.prompts.engine import PromptEngine
             engine = PromptEngine(minimal_agent_config.agent.prompt)
             return engine.render({"input": "test query"})
 
@@ -108,7 +108,7 @@ def test_agent_error_handling(minimal_agent_config, benchmark):
     Target: <50ms
     Measures: Error recovery overhead
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
@@ -149,7 +149,7 @@ def test_agent_memory_usage_100_executions(minimal_agent_config, mock_llm_fast):
     Target: <200MB growth
     Measures: Memory leak detection
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agent = StandardAgent(minimal_agent_config)
@@ -175,7 +175,7 @@ def test_agent_concurrent_execution_3_agents(minimal_agent_config, mock_llm_fast
     Target: <300ms
     Measures: Multi-agent concurrency
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agents = [StandardAgent(minimal_agent_config) for _ in range(3)]
@@ -204,7 +204,7 @@ def test_agent_concurrent_execution_10_agents(minimal_agent_config, mock_llm_fas
     Target: <500ms
     Measures: Multi-agent scalability
     """
-    with patch('src.agent.base_agent.ToolRegistry') as mock_registry:
+    with patch('temper_ai.agent.base_agent.ToolRegistry') as mock_registry:
         mock_registry.return_value.list_tools.return_value = []
 
         agents = [StandardAgent(minimal_agent_config) for _ in range(10)]

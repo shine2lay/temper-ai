@@ -7,7 +7,7 @@ class TestObservabilityInitExports:
 
     def test_eager_imports_available(self):
         """Test that eager imports are immediately available."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         # Backend ABC
         assert hasattr(obs, 'ObservabilityBackend')
@@ -43,7 +43,7 @@ class TestObservabilityInitExports:
 
     def test_lazy_backend_imports(self):
         """Test that backend implementations are lazily loaded."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         # Access lazy imports
         assert hasattr(obs, 'SQLObservabilityBackend')
@@ -60,7 +60,7 @@ class TestObservabilityInitExports:
 
     def test_lazy_buffer_imports(self):
         """Test that buffer is lazily loaded."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         assert hasattr(obs, 'ObservabilityBuffer')
         buffer_cls = obs.ObservabilityBuffer
@@ -68,7 +68,7 @@ class TestObservabilityInitExports:
 
     def test_lazy_console_imports(self):
         """Test that console utilities are lazily loaded."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         assert hasattr(obs, 'WorkflowVisualizer')
         assert hasattr(obs, 'StreamingVisualizer')
@@ -79,7 +79,7 @@ class TestObservabilityInitExports:
 
     def test_lazy_database_imports(self):
         """Test that database utilities are lazily loaded."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         assert hasattr(obs, 'DatabaseManager')
         assert hasattr(obs, 'init_database')
@@ -91,7 +91,7 @@ class TestObservabilityInitExports:
 
     def test_lazy_formatters_imports(self):
         """Test that formatters are lazily loaded."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         assert hasattr(obs, 'format_duration')
         assert hasattr(obs, 'format_timestamp')
@@ -105,7 +105,7 @@ class TestObservabilityInitExports:
 
     def test_lazy_migrations_imports(self):
         """Test that migration utilities are lazily loaded."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         assert hasattr(obs, 'create_schema')
         assert hasattr(obs, 'drop_schema')
@@ -116,7 +116,7 @@ class TestObservabilityInitExports:
 
     def test_all_exports_defined(self):
         """Test that __all__ contains all expected exports."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         assert hasattr(obs, '__all__')
         all_exports = obs.__all__
@@ -143,7 +143,7 @@ class TestObservabilityInitExports:
 
     def test_lazy_import_caching(self):
         """Test that lazy imports are cached after first access."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         # First access triggers lazy load
         first_ref = obs.SQLObservabilityBackend
@@ -156,7 +156,7 @@ class TestObservabilityInitExports:
 
     def test_invalid_lazy_import_raises_attribute_error(self):
         """Test that accessing non-existent attributes raises AttributeError."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         with pytest.raises(AttributeError) as exc_info:
             _ = obs.NonExistentAttribute
@@ -165,7 +165,7 @@ class TestObservabilityInitExports:
 
     def test_getattr_not_called_for_eager_imports(self):
         """Test that __getattr__ is not needed for eager imports."""
-        import src.observability as obs
+        import temper_ai.observability as obs
 
         # These should be in globals(), not require __getattr__
         assert 'ObservabilityBackend' in dir(obs)
@@ -178,7 +178,7 @@ class TestBackendsInitExports:
 
     def test_backends_init_exports(self):
         """Test that backends __init__ exports all backend implementations."""
-        from src.observability import backends
+        from temper_ai.observability import backends
 
         assert hasattr(backends, 'SQLObservabilityBackend')
         assert hasattr(backends, 'PrometheusObservabilityBackend')
@@ -186,7 +186,7 @@ class TestBackendsInitExports:
 
     def test_backends_all_defined(self):
         """Test that __all__ is correctly defined."""
-        from src.observability import backends
+        from temper_ai.observability import backends
 
         assert hasattr(backends, '__all__')
         assert 'SQLObservabilityBackend' in backends.__all__
@@ -195,7 +195,7 @@ class TestBackendsInitExports:
 
     def test_backends_imports_work(self):
         """Test that imports from backends work correctly."""
-        from src.observability.backends import (
+        from temper_ai.observability.backends import (
             PrometheusObservabilityBackend,
             S3ObservabilityBackend,
             SQLObservabilityBackend,
@@ -211,14 +211,14 @@ class TestAggregationInitExports:
 
     def test_aggregation_init_exports(self):
         """Test that aggregation __init__ exports the public API."""
-        from src.observability import aggregation
+        from temper_ai.observability import aggregation
 
         assert hasattr(aggregation, 'AggregationOrchestrator')
         assert hasattr(aggregation, 'AggregationPeriod')
 
     def test_aggregation_all_defined(self):
         """Test that __all__ is correctly defined."""
-        from src.observability import aggregation
+        from temper_ai.observability import aggregation
 
         assert hasattr(aggregation, '__all__')
         assert 'AggregationOrchestrator' in aggregation.__all__
@@ -226,7 +226,7 @@ class TestAggregationInitExports:
 
     def test_aggregation_imports_work(self):
         """Test that imports from aggregation work correctly."""
-        from src.observability.aggregation import AggregationOrchestrator, AggregationPeriod
+        from temper_ai.observability.aggregation import AggregationOrchestrator, AggregationPeriod
 
         assert AggregationOrchestrator is not None
         assert AggregationPeriod is not None
@@ -235,12 +235,12 @@ class TestAggregationInitExports:
         """Test that AggregationPeriod is the enum type."""
         from enum import Enum
 
-        from src.observability.aggregation import AggregationPeriod
+        from temper_ai.observability.aggregation import AggregationPeriod
 
         assert issubclass(AggregationPeriod, Enum)
 
     def test_aggregation_orchestrator_is_class(self):
         """Test that AggregationOrchestrator is a class."""
-        from src.observability.aggregation import AggregationOrchestrator
+        from temper_ai.observability.aggregation import AggregationOrchestrator
 
         assert isinstance(AggregationOrchestrator, type)

@@ -8,8 +8,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from src.safety.rollback import RollbackManager
-from src.safety.rollback_api import RollbackAPI
+from temper_ai.safety.rollback import RollbackManager
+from temper_ai.safety.rollback_api import RollbackAPI
 
 
 class TestRollbackAPI:

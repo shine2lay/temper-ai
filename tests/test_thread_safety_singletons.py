@@ -10,11 +10,11 @@ import threading
 
 import pytest
 
-from src.agent.utils.agent_factory import AgentFactory
-from src.agent.base_agent import BaseAgent
-from src.llm.pricing import PricingManager, get_pricing_manager
-from src.tools.base import BaseTool, ToolMetadata, ToolResult
-from src.tools.registry import (
+from temper_ai.agent.utils.agent_factory import AgentFactory
+from temper_ai.agent.base_agent import BaseAgent
+from temper_ai.llm.pricing import PricingManager, get_pricing_manager
+from temper_ai.tools.base import BaseTool, ToolMetadata, ToolResult
+from temper_ai.tools.registry import (
     ToolRegistry,
     clear_global_cache,
     get_global_registry,
@@ -304,13 +304,13 @@ class TestServiceSanitizerThreadSafety:
 
     @pytest.fixture(autouse=True)
     def reset_sanitizer(self):
-        import src.safety.service_mixin as svc
+        import temper_ai.safety.service_mixin as svc
         svc._sanitizer = None
         yield
         svc._sanitizer = None
 
     def test_concurrent_get_sanitizer_single_instance(self):
-        from src.safety.service_mixin import _get_sanitizer
+        from temper_ai.safety.service_mixin import _get_sanitizer
 
         instances = []
         barrier = threading.Barrier(10)

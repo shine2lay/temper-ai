@@ -9,13 +9,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from src.observability.database import get_session, init_database
-from src.observability.models import (
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import (
     AgentExecution,
     StageExecution,
     WorkflowExecution,
 )
-from src.observability.tracker import ExecutionTracker
+from temper_ai.observability.tracker import ExecutionTracker
 
 pytestmark = [pytest.mark.integration]
 
@@ -27,7 +27,7 @@ class TestAgentHandoffWorkflows:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -36,7 +36,7 @@ class TestAgentHandoffWorkflows:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
@@ -286,7 +286,7 @@ class TestConsensusWorkflows:
     def sample_database(self):
         """Initialize in-memory database for testing."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -295,7 +295,7 @@ class TestConsensusWorkflows:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker with test database."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 

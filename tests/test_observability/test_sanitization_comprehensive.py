@@ -4,7 +4,7 @@ Tests data sanitization for PII and secrets in observability logs.
 """
 import pytest
 
-from src.observability.sanitization import (
+from temper_ai.observability.sanitization import (
     DEFAULT_MAX_PROMPT_LENGTH,
     DEFAULT_MAX_RESPONSE_LENGTH,
     DataSanitizer,

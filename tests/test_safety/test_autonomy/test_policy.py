@@ -2,12 +2,12 @@
 
 from unittest.mock import MagicMock
 
-from src.safety.autonomy.approval_router import ApprovalDecision
-from src.safety.autonomy.budget_enforcer import BudgetCheckResult
-from src.safety.autonomy.constants import STATUS_ACTIVE, STATUS_EXHAUSTED
-from src.safety.autonomy.policy import AutonomyPolicy
-from src.safety.autonomy.schemas import AutonomyConfig, AutonomyLevel
-from src.safety.interfaces import ViolationSeverity
+from temper_ai.safety.autonomy.approval_router import ApprovalDecision
+from temper_ai.safety.autonomy.budget_enforcer import BudgetCheckResult
+from temper_ai.safety.autonomy.constants import STATUS_ACTIVE, STATUS_EXHAUSTED
+from temper_ai.safety.autonomy.policy import AutonomyPolicy
+from temper_ai.safety.autonomy.schemas import AutonomyConfig, AutonomyLevel
+from temper_ai.safety.interfaces import ViolationSeverity
 
 
 def _context(enabled: bool = True, agent_id: str = "agent-a") -> dict:

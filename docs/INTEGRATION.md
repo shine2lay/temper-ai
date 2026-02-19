@@ -1,6 +1,6 @@
 # Integration Guide
 
-Guide to integrating the Meta-Autonomous Agent Framework with external systems, APIs, databases, and services.
+Guide to integrating the Temper AI with external systems, APIs, databases, and services.
 
 ---
 
@@ -42,8 +42,8 @@ The framework provides multiple integration points:
 ```python
 # api/server.py
 from flask import Flask, request, jsonify
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
 
 app = Flask(__name__)
 
@@ -101,8 +101,8 @@ curl -X POST http://localhost:5000/api/workflows/simple_research/execute \
 # api/server.py
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
 
 app = FastAPI(title="Agent Framework API")
 
@@ -211,7 +211,7 @@ app.include_router(graphql_app, prefix="/graphql")
 # config/database.py
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.observability.database import Base
+from temper_ai.observability.database import Base
 
 DATABASE_URL = "postgresql://user:password@localhost:5432/agents"
 
@@ -239,7 +239,7 @@ observability:
 ```python
 # integration/redis_cache.py
 import redis
-from src.cache.llm_cache import LLMCache
+from temper_ai.cache.llm_cache import LLMCache
 
 # Create Redis-backed cache
 cache = LLMCache(
@@ -251,7 +251,7 @@ cache = LLMCache(
 )
 
 # Use in agent
-from src.agents.llm_providers import OpenAILLM
+from temper_ai.agents.llm_providers import OpenAILLM
 
 llm = OpenAILLM(
     model="gpt-4",
@@ -307,8 +307,8 @@ class MongoStorage:
 # myapp/views.py
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
 import json
 
 @csrf_exempt
@@ -402,8 +402,8 @@ app.listen(3000, () => {
 ```python
 # tasks.py
 from celery import Celery
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
 
 app = Celery('agent_tasks', broker='redis://localhost:6379/0')
 
@@ -506,7 +506,7 @@ class WorkflowConsumer:
 
 ```python
 # tools/slack_tool.py
-from src.tools.base import BaseTool, ToolResult, ToolMetadata
+from temper_ai.tools.base import BaseTool, ToolResult, ToolMetadata
 from slack_sdk import WebClient
 import os
 
@@ -585,7 +585,7 @@ agent:
 
 ```python
 # tools/github_tool.py
-from src.tools.base import BaseTool, ToolResult, ToolMetadata
+from temper_ai.tools.base import BaseTool, ToolResult, ToolMetadata
 from github import Github
 import os
 
@@ -659,7 +659,7 @@ class GitHubTool(BaseTool):
 
 ```python
 # agents/huggingface_provider.py
-from src.agents.llm_providers import BaseLLM, LLMResponse, LLMProvider
+from temper_ai.agents.llm_providers import BaseLLM, LLMResponse, LLMProvider
 from transformers import pipeline
 
 class HuggingFaceLLM(BaseLLM):
@@ -846,8 +846,8 @@ def track_workflow_execution(workflow_name, duration, status):
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from src.compiler.engine_registry import EngineRegistry
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.engine_registry import EngineRegistry
+from temper_ai.compiler.config_loader import ConfigLoader
 import jwt
 import os
 

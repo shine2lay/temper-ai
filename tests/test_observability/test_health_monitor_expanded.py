@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from src.observability.health_monitor import (
+from temper_ai.observability.health_monitor import (
     ObservabilityHealthMonitor,
     _check_backend_health,
     _check_db_health,

@@ -12,8 +12,8 @@ Tests cover:
 - Pattern matching (wildcards, recursive)
 - Case sensitivity
 """
-from src.safety.file_access import FileAccessPolicy
-from src.safety.interfaces import ViolationSeverity
+from temper_ai.safety.file_access import FileAccessPolicy
+from temper_ai.safety.interfaces import ViolationSeverity
 
 
 class TestFileAccessPolicyBasics:

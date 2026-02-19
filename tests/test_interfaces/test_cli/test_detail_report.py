@@ -16,7 +16,7 @@ import pytest
 from rich.console import Console
 from rich.text import Text
 
-from src.interfaces.cli.detail_report import (
+from temper_ai.interfaces.cli.detail_report import (
     _render_agent_detail,
     _tool_calls_count,
     _tool_calls_list,

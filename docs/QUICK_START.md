@@ -1,12 +1,12 @@
 # Quick Start Guide
 
-Get up and running with the Meta-Autonomous Agent Framework in 5 minutes.
+Get up and running with Temper AI in 5 minutes.
 
 ---
 
 ## What is This?
 
-The Meta-Autonomous Agent Framework is a self-improving autonomous agent system that can execute complete product lifecycles with minimal human intervention. It features:
+Temper AI is a self-improving autonomous agent system that can execute complete product lifecycles with minimal human intervention. It features:
 
 - **Multi-agent collaboration** with parallel execution
 - **Full observability** - every decision is traced and queryable
@@ -103,7 +103,7 @@ OPENAI_API_KEY=sk-...
 
 2. **Run a workflow**:
 ```bash
-maf run configs/workflows/simple_research.yaml \
+temper-ai run configs/workflows/simple_research.yaml \
   --input inputs.yaml --show-details
 ```
 
@@ -275,9 +275,9 @@ When you run a workflow, you'll see:
 Save and resume long-running workflows:
 
 ```python
-from src.compiler.checkpoint_manager import CheckpointManager, CheckpointStrategy
-from src.compiler.checkpoint_backends import CheckpointNotFoundError
-from src.compiler.domain_state import WorkflowDomainState
+from temper_ai.compiler.checkpoint_manager import CheckpointManager, CheckpointStrategy
+from temper_ai.compiler.checkpoint_backends import CheckpointNotFoundError
+from temper_ai.compiler.domain_state import WorkflowDomainState
 
 # Initialize checkpoint manager
 manager = CheckpointManager(strategy=CheckpointStrategy.EVERY_STAGE)
@@ -335,7 +335,7 @@ pytest
 pytest tests/integration/ -v
 
 # Run with coverage
-pytest --cov=src tests/
+pytest --cov=temper_ai tests/
 ```
 
 ---
@@ -470,7 +470,7 @@ python examples/run_workflow.py data_analysis \
 
 ## What's Next?
 
-You've successfully installed and run the Meta-Autonomous Agent Framework! Here's what to explore next:
+You've successfully installed and run Temper AI! Here's what to explore next:
 
 1. **Create custom agents** with different LLM providers
 2. **Experiment with multi-agent workflows** for parallel execution

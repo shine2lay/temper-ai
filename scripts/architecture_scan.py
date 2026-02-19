@@ -376,8 +376,8 @@ def _build_file_cache(
 def _get_top_module(import_path: str) -> str:
     """Extract top-level module from dotted import path."""
     parts = import_path.split(".")
-    # Handle 'src.X.Y' -> 'X'
-    if parts[0] == "src" and len(parts) > 1:
+    # Handle 'temper_ai.X.Y' -> 'X'
+    if parts[0] == "temper_ai" and len(parts) > 1:
         return parts[1]
     return parts[0]
 
@@ -388,7 +388,7 @@ def scan_imports(src_dir: Path, files: list[dict], *, file_cache: dict | None = 
     Skips TYPE_CHECKING blocks (type-only imports) and test_support.py
     (test helpers that intentionally cross layer boundaries).
     """
-    # module_name -> set of imported module names (top-level src modules only)
+    # module_name -> set of imported module names (top-level temper_ai modules only)
     module_graph: dict[str, set[str]] = defaultdict(set)
     # Detailed import records
     import_details: list[dict] = []
@@ -419,7 +419,7 @@ def scan_imports(src_dir: Path, files: list[dict], *, file_cache: dict | None = 
 
         # Determine this file's top-level module
         parts = Path(rel_path).parts
-        if len(parts) >= 2 and parts[0] == "src":
+        if len(parts) >= 2 and parts[0] == "temper_ai":
             from_module = parts[1]
         else:
             continue
@@ -452,7 +452,7 @@ def scan_imports(src_dir: Path, files: list[dict], *, file_cache: dict | None = 
             target_module = None
 
             if isinstance(node, ast.ImportFrom) and node.module:
-                # from src.X.Y import Z
+                # from temper_ai.X.Y import Z
                 top = _get_top_module(node.module)
                 if top in src_modules and top != from_module:
                     target_module = top
@@ -2264,7 +2264,7 @@ def scan_magic_values(src_dir: Path, files: list[dict], *, file_cache: dict | No
             # Skip formatting/log fragments (whitespace, punctuation, short prefixes)
             if len(val) <= 8 and _LOG_FRAGMENT_RE.match(val):
                 continue
-            # Skip Python import/module paths (src.module.sub)
+            # Skip Python import/module paths (temper_ai.module.sub)
             if _IMPORT_PATH_RE.match(val):
                 continue
             # Skip Rich console markup fragments ([bold], [/dim], etc.)
@@ -3063,7 +3063,7 @@ def compute_content_hash(src_dir: Path) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Deterministic Architecture Scanner")
-    parser.add_argument("src_dir", nargs="?", default="src", help="Source directory to scan")
+    parser.add_argument("src_dir", nargs="?", default="temper_ai", help="Source directory to scan")
     parser.add_argument("--output", "-o", help="Output file (default: stdout)")
     args = parser.parse_args()
 

@@ -4,9 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.safety.autonomy.manager import AutonomyManager
-from src.safety.autonomy.schemas import AutonomyLevel
-from src.safety.autonomy.store import AutonomyStore
+from temper_ai.safety.autonomy.manager import AutonomyManager
+from temper_ai.safety.autonomy.schemas import AutonomyLevel
+from temper_ai.safety.autonomy.store import AutonomyStore
 
 
 @pytest.fixture

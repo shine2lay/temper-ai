@@ -4,8 +4,8 @@ Tests enhanced exception classes with execution context and error codes.
 """
 import pytest
 
-from src.shared.core.context import ExecutionContext
-from src.shared.utils.exceptions import (
+from temper_ai.shared.core.context import ExecutionContext
+from temper_ai.shared.utils.exceptions import (
     AgentError,
     BaseError,
     ConfigNotFoundError,

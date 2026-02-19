@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.observability.metric_aggregator import MetricAggregator
+from temper_ai.observability.metric_aggregator import MetricAggregator
 
 
 class TestMetricAggregatorInitialization:
@@ -91,7 +91,7 @@ class TestCollectAgentMetrics:
             metric_registry=mock_registry
         )
 
-        with patch('src.observability.metric_aggregator.logger') as mock_logger:
+        with patch('temper_ai.observability.metric_aggregator.logger') as mock_logger:
             aggregator.collect_agent_metrics("agent-123")
 
             mock_logger.debug.assert_called_once()
@@ -133,7 +133,7 @@ class TestCollectAgentMetrics:
         )
 
         # Should not log info for empty metrics
-        with patch('src.observability.metric_aggregator.logger') as mock_logger:
+        with patch('temper_ai.observability.metric_aggregator.logger') as mock_logger:
             aggregator.collect_agent_metrics("agent-123")
 
             # Should not call info logger for empty metrics
@@ -172,7 +172,7 @@ class TestCollectAgentMetrics:
             metric_registry=mock_registry
         )
 
-        with patch('src.observability.metric_aggregator.logger') as mock_logger:
+        with patch('temper_ai.observability.metric_aggregator.logger') as mock_logger:
             # Should not crash
             aggregator.collect_agent_metrics("agent-123")
 
@@ -387,7 +387,7 @@ class TestErrorResilience:
         )
 
         # Should not crash, just log warning
-        with patch('src.observability.metric_aggregator.logger') as mock_logger:
+        with patch('temper_ai.observability.metric_aggregator.logger') as mock_logger:
             result = aggregator.collect_agent_metrics("agent-123")
 
         # Registry should not be called after exception
@@ -440,7 +440,7 @@ class TestMetricRegistryIntegration:
             metric_registry=mock_registry
         )
 
-        with patch('src.observability.metric_aggregator.logger') as mock_logger:
+        with patch('temper_ai.observability.metric_aggregator.logger') as mock_logger:
             aggregator.collect_agent_metrics("agent-123")
 
             mock_logger.info.assert_called_once()

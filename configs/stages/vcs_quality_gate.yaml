@@ -25,7 +25,7 @@ stage:
 
   inputs:
     workspace_path:
-      source: workflow.workspace_path
+      source: vcs_git_setup.structured.worktree_path
       required: true
     suggestion_text:
       source: workflow.suggestion_text

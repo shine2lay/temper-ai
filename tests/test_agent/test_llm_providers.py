@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, Mock, patch
 import httpx
 import pytest
 
-from src.llm.providers import (
+from temper_ai.llm.providers import (
     AnthropicLLM,
     LLMProvider,
     LLMResponse,
@@ -19,13 +19,13 @@ from src.llm.providers import (
     VllmLLM,
     create_llm_client,
 )
-from src.shared.utils.exceptions import (
+from temper_ai.shared.utils.exceptions import (
     LLMAuthenticationError,
     LLMError,
     LLMRateLimitError,
     LLMTimeoutError,
 )
-from src.shared.core.circuit_breaker import (
+from temper_ai.shared.core.circuit_breaker import (
     CircuitBreaker,
     CircuitBreakerConfig,
     CircuitBreakerError,
@@ -60,10 +60,10 @@ class InMemoryStorage:
 def mock_httpx_client():
     """Create a mock httpx.Client for testing."""
     # M-49: Clear shared HTTP client pool before each test for isolation
-    from src.llm.providers.base import BaseLLM
+    from temper_ai.llm.providers.base import BaseLLM
     BaseLLM.reset_shared_http_clients()
 
-    with patch('src.llm.providers.base.httpx.Client') as mock_client_class:
+    with patch('temper_ai.llm.providers.base.httpx.Client') as mock_client_class:
         mock_client = MagicMock()
         mock_client_class.return_value = mock_client
         yield mock_client
@@ -1592,7 +1592,7 @@ class TestFailoverProvider:
 
     def test_failover_init(self):
         """Test failover provider initialization."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
         backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
@@ -1605,14 +1605,14 @@ class TestFailoverProvider:
 
     def test_failover_requires_at_least_one_provider(self):
         """Test that failover requires at least one provider."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         with pytest.raises(ValueError, match="At least one provider required"):
             FailoverProvider(providers=[])
 
     def test_failover_on_connection_error(self):
         """Test failover on connection error."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
         backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
@@ -1633,7 +1633,7 @@ class TestFailoverProvider:
 
     def test_failover_on_timeout(self):
         """Test failover on timeout error."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
         backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
@@ -1654,7 +1654,7 @@ class TestFailoverProvider:
 
     def test_failover_on_rate_limit(self):
         """Test failover on rate limit error."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
         backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
@@ -1675,7 +1675,7 @@ class TestFailoverProvider:
 
     def test_failover_on_server_error(self):
         """Test failover on 5xx server error."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
         backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
@@ -1700,7 +1700,7 @@ class TestFailoverProvider:
 
     def test_failover_does_not_trigger_on_client_error(self):
         """Test that failover does NOT trigger on client errors (4xx)."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
         backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
@@ -1727,7 +1727,7 @@ class TestFailoverProvider:
 
     def test_failover_retries_all_providers(self):
         """Test failover tries all providers before failing."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         providers = [
             OllamaLLM(model="llama", base_url="http://localhost:11434"),
@@ -1752,7 +1752,7 @@ class TestFailoverProvider:
 
     def test_failover_sticky_session(self):
         """Test sticky session uses last successful provider."""
-        from src.llm.failover import FailoverConfig, FailoverProvider
+        from temper_ai.llm.failover import FailoverConfig, FailoverProvider
 
         primary = OllamaLLM(model="primary", base_url="http://localhost:11434")
         backup = OpenAILLM(model="backup", base_url="https://api.openai.com", api_key="test")
@@ -1793,7 +1793,7 @@ class TestFailoverProvider:
 
     def test_failover_retries_primary_after_threshold(self):
         """Test that primary is retried after N successful backup calls."""
-        from src.llm.failover import FailoverConfig, FailoverProvider
+        from temper_ai.llm.failover import FailoverConfig, FailoverProvider
 
         primary = OllamaLLM(model="primary", base_url="http://localhost:11434")
         backup = OpenAILLM(model="backup", base_url="https://api.openai.com", api_key="test")
@@ -1831,7 +1831,7 @@ class TestFailoverProvider:
     @pytest.mark.asyncio
     async def test_failover_async(self):
         """Test async failover."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
         backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
@@ -1858,7 +1858,7 @@ class TestFailoverProvider:
 
     def test_failover_reset(self):
         """Test resetting failover state."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="primary", base_url="http://localhost:11434")
         backup = OpenAILLM(model="backup", base_url="https://api.openai.com", api_key="test")
@@ -1877,7 +1877,7 @@ class TestFailoverProvider:
 
     def test_failover_model_property(self):
         """Test that model property returns current provider's model."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
         backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
@@ -1893,7 +1893,7 @@ class TestFailoverProvider:
 
     def test_failover_does_not_trigger_on_auth_error(self):
         """Test that failover does NOT trigger on auth errors."""
-        from src.llm.failover import FailoverProvider
+        from temper_ai.llm.failover import FailoverProvider
 
         primary = OllamaLLM(model="llama3.2", base_url="http://localhost:11434")
         backup = OpenAILLM(model="gpt-4", base_url="https://api.openai.com", api_key="test")
@@ -1916,7 +1916,7 @@ class TestFailoverProvider:
 
     def test_failover_custom_config(self):
         """Test failover with custom configuration."""
-        from src.llm.failover import FailoverConfig, FailoverProvider
+        from temper_ai.llm.failover import FailoverConfig, FailoverProvider
 
         primary = OllamaLLM(model="primary", base_url="http://localhost:11434")
         backup = OpenAILLM(model="backup", base_url="https://api.openai.com", api_key="test")

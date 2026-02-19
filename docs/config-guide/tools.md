@@ -3,7 +3,7 @@
 Tools extend agent capabilities with external functions (calculators, web search, file operations, etc.).
 
 **Location:** `configs/tools/*.yaml`
-**Schema:** `src/compiler/schemas.py` (ToolConfig)
+**Schema:** `temper_ai/compiler/schemas.py` (ToolConfig)
 
 ## Example
 
@@ -15,7 +15,7 @@ tool:
 
   implementation:
     type: builtin
-    module: src.tools.calculator
+    module: temper_ai.tools.calculator
     class: CalculatorTool
 
   safety:
@@ -63,7 +63,7 @@ tool:
 ### String Format (module path)
 
 ```yaml
-implementation: "src.tools.calculator.CalculatorTool"
+implementation: "temper_ai.tools.calculator.CalculatorTool"
 ```
 
 ### Object Format
@@ -71,7 +71,7 @@ implementation: "src.tools.calculator.CalculatorTool"
 ```yaml
 implementation:
   type: builtin
-  module: src.tools.calculator
+  module: temper_ai.tools.calculator
   class: CalculatorTool
 ```
 

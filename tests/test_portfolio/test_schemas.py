@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.portfolio._schemas import (
+from temper_ai.portfolio._schemas import (
     AllocationStatus,
     AllocationStrategy,
     ComponentMatch,

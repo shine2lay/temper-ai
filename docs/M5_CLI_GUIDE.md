@@ -559,7 +559,7 @@ m5 metrics my_agent | \
 
 - `docs/M5_LOOP_IMPLEMENTATION.md` - Loop implementation details
 - `docs/M5_MODULAR_ARCHITECTURE.md` - M5 system architecture
-- `src/self_improvement/loop/config.py` - Configuration options
+- `temper_ai/self_improvement/loop/config.py` - Configuration options
 
 ---
 

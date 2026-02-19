@@ -9,7 +9,7 @@ from unittest.mock import Mock, call, patch
 
 import pytest
 
-from src.observability.resilience_events import (
+from temper_ai.observability.resilience_events import (
     EVENT_TYPE_CIRCUIT_BREAKER,
     EVENT_TYPE_FALLBACK,
     EVENT_TYPE_RETRY,

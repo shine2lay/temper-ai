@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.workflow.engines.native_runner import ThreadPoolParallelRunner, _merge_dicts
+from temper_ai.workflow.engines.native_runner import ThreadPoolParallelRunner, _merge_dicts
 
 
 class TestMergeDicts:

@@ -40,7 +40,7 @@ echo ""
 
 # Check if required packages are installed
 echo "Checking dependencies..."
-python -c "import src.self_improvement" 2>/dev/null || {
+python -c "import temper_ai.self_improvement" 2>/dev/null || {
     echo -e "${YELLOW}⚠️  Package not installed. Installing...${NC}"
     pip install -e . -q
 }

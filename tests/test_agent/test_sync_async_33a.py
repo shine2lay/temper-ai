@@ -10,8 +10,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.llm.providers import BaseLLM, LLMResponse
-from src.shared.utils.exceptions import LLMAuthenticationError
+from temper_ai.llm.providers import BaseLLM, LLMResponse
+from temper_ai.shared.utils.exceptions import LLMAuthenticationError
 
 
 class DummyLLM(BaseLLM):
@@ -183,7 +183,7 @@ class TestSyncAsyncConsistency:
     async def test_acomplete_uses_check_cache(self, llm):
         """acomplete() uses _check_cache for cache lookup."""
         with patch.object(llm, '_check_cache', return_value=("key", None)) as mock_check, \
-             patch('src.llm.providers.base.httpx.AsyncClient') as mock_client_class:
+             patch('temper_ai.llm.providers.base.httpx.AsyncClient') as mock_client_class:
 
             mock_resp = MagicMock()
             mock_resp.status_code = 200

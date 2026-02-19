@@ -8,8 +8,8 @@ import threading
 from collections import Counter
 from unittest.mock import patch
 
-from src.experimentation.assignment import RandomAssignment
-from src.experimentation.models import AssignmentStrategyType, Experiment, Variant
+from temper_ai.experimentation.assignment import RandomAssignment
+from temper_ai.experimentation.models import AssignmentStrategyType, Experiment, Variant
 
 
 def _make_experiment():
@@ -44,7 +44,7 @@ class TestCryptographicPRNG:
         variants = _make_variants()
 
         # Patch SystemRandom to verify it's called
-        with patch("src.experimentation.assignment.secrets") as mock_secrets:
+        with patch("temper_ai.experimentation.assignment.secrets") as mock_secrets:
             mock_rng = mock_secrets.SystemRandom.return_value
             mock_rng.choices.return_value = ["variant-0"]
 
@@ -56,7 +56,7 @@ class TestCryptographicPRNG:
 
     def test_no_standard_random_import(self):
         """The module should not use the standard random module."""
-        import src.experimentation.assignment as mod
+        import temper_ai.experimentation.assignment as mod
         # 'random' should not be in the module's namespace
         assert not hasattr(mod, 'random') or mod.__name__ != 'random'
 

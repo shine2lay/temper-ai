@@ -10,8 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
-from src.storage.schemas.agent_config import AgentConfig
+from temper_ai.agent.base_agent import AgentResponse, BaseAgent, ExecutionContext
+from temper_ai.storage.schemas.agent_config import AgentConfig
 
 
 # ============================================================================
@@ -41,7 +41,7 @@ class RecordingAgent(BaseAgent):
     """Agent that records hook invocations for testing."""
 
     def __init__(self, config: AgentConfig):
-        with patch("src.agent.base_agent.create_llm_from_config"):
+        with patch("temper_ai.agent.base_agent.create_llm_from_config"):
             super().__init__(config)
         self.call_order: list[str] = []
         self._run_response = AgentResponse(output="run output")

@@ -16,9 +16,9 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.strategies.base import AgentOutput
-from src.agent.strategies.dialogue import DialogueHistory, DialogueOrchestrator, DialogueRound
-from src.agent.strategies.multi_round import (
+from temper_ai.agent.strategies.base import AgentOutput
+from temper_ai.agent.strategies.dialogue import DialogueHistory, DialogueOrchestrator, DialogueRound
+from temper_ai.agent.strategies.multi_round import (
     CommunicationHistory,
     CommunicationRound,
     MultiRoundStrategy,
@@ -322,7 +322,7 @@ class TestDialogueOrchestratorSynthesize:
         assert isinstance(result.decision, int)
         assert result.votes == {1: 2, 2: 1}
 
-    @patch("src.agent.strategies._dialogue_helpers.get_merit_weights")
+    @patch("temper_ai.agent.strategies._dialogue_helpers.get_merit_weights")
     def test_merit_weighted_synthesis(self, mock_get_weights):
         """Test merit-weighted synthesis with mocked DB."""
         mock_get_weights.return_value = {"a1": 1.0, "a2": 1.0, "a3": 1.0}
@@ -352,7 +352,7 @@ class TestDialogueOrchestratorSynthesize:
         assert result.method == "consensus"
         assert result.metadata["synthesis_method"] == "consensus_from_final_round"
 
-    @patch("src.agent.strategies._dialogue_helpers.get_merit_weights")
+    @patch("temper_ai.agent.strategies._dialogue_helpers.get_merit_weights")
     def test_merit_weighting_with_single_agent(self, mock_get_weights):
         """Test merit weighting with single agent."""
         mock_get_weights.return_value = {"a1": 1.0}
@@ -364,7 +364,7 @@ class TestDialogueOrchestratorSynthesize:
         assert result.decision == "Option A"
         assert result.method == "merit_weighted"
 
-    @patch("src.agent.strategies._dialogue_helpers.get_merit_weights")
+    @patch("temper_ai.agent.strategies._dialogue_helpers.get_merit_weights")
     def test_merit_weighting_with_tie(self, mock_get_weights):
         """Test merit weighting breaks ties by weight."""
         mock_get_weights.return_value = {"a1": 1.0, "a2": 1.0}

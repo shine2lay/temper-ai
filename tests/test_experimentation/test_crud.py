@@ -13,8 +13,8 @@ import pytest
 from sqlalchemy.exc import IntegrityError
 from sqlmodel import Session
 
-from src.experimentation.experiment_crud import ExperimentCRUD
-from src.experimentation.models import (
+from temper_ai.experimentation.experiment_crud import ExperimentCRUD
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     Experiment,
     ExperimentStatus,
@@ -96,7 +96,7 @@ class TestCRUDInitialization:
 class TestCreateExperiment:
     """Test experiment creation."""
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_create_experiment_minimal(self, mock_get_session, crud_instance, mock_session):
         """Test creating experiment with minimal parameters."""
         mock_get_session.return_value = mock_session
@@ -120,7 +120,7 @@ class TestCreateExperiment:
         assert mock_session.add.call_count == 3  # 1 experiment + 2 variants
         mock_session.commit.assert_called_once()
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_create_experiment_with_all_params(self, mock_get_session, crud_instance, mock_session):
         """Test creating experiment with all optional parameters."""
         mock_get_session.return_value = mock_session
@@ -146,7 +146,7 @@ class TestCreateExperiment:
         assert exp_id is not None
         mock_session.commit.assert_called_once()
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_create_experiment_with_custom_traffic(self, mock_get_session, crud_instance, mock_session):
         """Test creating experiment with custom traffic allocation."""
         mock_get_session.return_value = mock_session
@@ -227,7 +227,7 @@ class TestCreateExperiment:
 
     def test_create_experiment_traffic_exactly_one(self, crud_instance, mock_session):
         """Test that traffic allocation of exactly 1.0 is accepted."""
-        with patch('src.experimentation.experiment_crud.get_session', return_value=mock_session):
+        with patch('temper_ai.experimentation.experiment_crud.get_session', return_value=mock_session):
             exp_id = crud_instance.create_experiment(
                 name="test_exp",
                 description="Test",
@@ -242,7 +242,7 @@ class TestCreateExperiment:
 
     def test_create_experiment_three_variants(self, crud_instance, mock_session):
         """Test creating experiment with three variants."""
-        with patch('src.experimentation.experiment_crud.get_session', return_value=mock_session):
+        with patch('temper_ai.experimentation.experiment_crud.get_session', return_value=mock_session):
             exp_id = crud_instance.create_experiment(
                 name="three_variant_test",
                 description="Test with 3 variants",
@@ -258,7 +258,7 @@ class TestCreateExperiment:
             # 1 experiment + 3 variants = 4 adds
             assert mock_session.add.call_count == 4
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_create_experiment_duplicate_name(self, mock_get_session, crud_instance, mock_session):
         """Test that duplicate experiment name raises error."""
         mock_session.commit.side_effect = IntegrityError("", "", "")
@@ -275,7 +275,7 @@ class TestCreateExperiment:
                 primary_metric="duration_seconds",
             )
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_create_experiment_invalid_variant_name(self, mock_get_session, crud_instance, mock_session):
         """Test that invalid variant name is rejected."""
         mock_get_session.return_value = mock_session
@@ -295,7 +295,7 @@ class TestCreateExperiment:
 class TestGetExperiment:
     """Test experiment retrieval."""
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_get_experiment_from_database(self, mock_get_session, crud_instance, mock_session, sample_experiment):
         """Test getting experiment from database (cache miss)."""
         mock_session.exec.return_value.first.return_value = sample_experiment
@@ -308,7 +308,7 @@ class TestGetExperiment:
         assert result.name == "test_experiment"
         mock_session.expunge.assert_called_once()
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_get_experiment_with_cache(self, mock_get_session, crud_instance, mock_session, sample_experiment):
         """Test that cache is used on subsequent requests."""
         mock_session.exec.return_value.first.return_value = sample_experiment
@@ -326,7 +326,7 @@ class TestGetExperiment:
         # Database should only be queried once
         assert mock_session.exec.call_count == 1
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_get_experiment_cache_disabled(self, mock_get_session, crud_instance, mock_session, sample_experiment):
         """Test getting experiment with cache disabled."""
         mock_session.exec.return_value.first.return_value = sample_experiment
@@ -342,7 +342,7 @@ class TestGetExperiment:
         # Database should be queried both times
         assert mock_session.exec.call_count == 2
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_get_experiment_not_found(self, mock_get_session, crud_instance, mock_session):
         """Test getting non-existent experiment."""
         mock_session.exec.return_value.first.return_value = None
@@ -352,7 +352,7 @@ class TestGetExperiment:
 
         assert result is None
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_get_experiment_eager_loading(self, mock_get_session, crud_instance, mock_session):
         """Test that get_experiment uses eager loading for relationships."""
         mock_session.exec.return_value.first.return_value = None
@@ -368,7 +368,7 @@ class TestGetExperiment:
 class TestListExperiments:
     """Test experiment listing."""
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_list_all_experiments(self, mock_get_session, crud_instance, mock_session, sample_experiment):
         """Test listing all experiments."""
         experiments = [sample_experiment]
@@ -380,7 +380,7 @@ class TestListExperiments:
         assert len(results) == 1
         assert results[0].id == sample_experiment.id
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_list_experiments_by_status(self, mock_get_session, crud_instance, mock_session, sample_experiment):
         """Test listing experiments filtered by status."""
         sample_experiment.status = ExperimentStatus.RUNNING
@@ -393,7 +393,7 @@ class TestListExperiments:
         assert len(results) == 1
         assert results[0].status == ExperimentStatus.RUNNING
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_list_experiments_empty(self, mock_get_session, crud_instance, mock_session):
         """Test listing experiments when none exist."""
         mock_session.exec.return_value.all.return_value = []
@@ -403,7 +403,7 @@ class TestListExperiments:
 
         assert len(results) == 0
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_list_experiments_multiple_statuses(self, mock_get_session, crud_instance, mock_session):
         """Test listing experiments with different statuses."""
         exp1 = Experiment(
@@ -748,7 +748,7 @@ class TestEdgeCases:
 
     def test_get_experiment_with_none_id(self, crud_instance):
         """Test getting experiment with None ID."""
-        with patch('src.experimentation.experiment_crud.get_session') as mock_get_session:
+        with patch('temper_ai.experimentation.experiment_crud.get_session') as mock_get_session:
             mock_session = Mock(spec=Session)
             mock_session.__enter__ = Mock(return_value=mock_session)
             mock_session.__exit__ = Mock(return_value=False)
@@ -814,7 +814,7 @@ class TestEdgeCases:
         assert "exp-2" in crud_instance._experiment_cache
         assert "exp-1" not in crud_instance._experiment_cache
 
-    @patch('src.experimentation.experiment_crud.get_session')
+    @patch('temper_ai.experimentation.experiment_crud.get_session')
     def test_create_experiment_uneven_traffic_sum(self, mock_get_session, crud_instance, mock_session):
         """Test creating experiment with traffic sum < 1.0 (valid, partial allocation)."""
         mock_get_session.return_value = mock_session

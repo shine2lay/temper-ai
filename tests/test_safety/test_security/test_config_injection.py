@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from src.workflow.config_loader import ConfigLoader
-from src.shared.utils.exceptions import ConfigValidationError
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.shared.utils.exceptions import ConfigValidationError
 
 
 class TestYAMLBombPrevention:

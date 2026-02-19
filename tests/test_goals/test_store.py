@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.goals.models import AnalysisRun, GoalProposalRecord
-from src.goals.store import GoalStore
+from temper_ai.goals.models import AnalysisRun, GoalProposalRecord
+from temper_ai.goals.store import GoalStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

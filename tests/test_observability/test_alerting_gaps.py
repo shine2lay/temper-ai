@@ -12,7 +12,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytest
 
-from src.observability.alerting import (
+from temper_ai.observability.alerting import (
     Alert,
     AlertAction,
     AlertManager,
@@ -20,7 +20,7 @@ from src.observability.alerting import (
     AlertSeverity,
     MetricType,
 )
-from src.observability.constants import DEFAULT_ALERT_COOLDOWN_SECONDS, MAX_ALERT_HISTORY
+from temper_ai.observability.constants import DEFAULT_ALERT_COOLDOWN_SECONDS, MAX_ALERT_HISTORY
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -153,7 +153,7 @@ class TestAlertHistoryCap:
 class TestAlertPersistence:
     """Tests for _persist_alert and get_persisted_alerts."""
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_persist_alert_writes_to_db(self, _mock_logger):
         """_persist_alert creates an AlertRecord via get_session."""
         mgr = _make_manager_with_rule()
@@ -171,7 +171,7 @@ class TestAlertPersistence:
         mock_cm.__enter__ = Mock(return_value=mock_session)
         mock_cm.__exit__ = Mock(return_value=False)
 
-        with patch("src.storage.database.get_session", return_value=mock_cm):
+        with patch("temper_ai.storage.database.get_session", return_value=mock_cm):
             mgr._persist_alert(alert)
 
         mock_session.add.assert_called_once()
@@ -191,7 +191,7 @@ class TestAlertPersistence:
             threshold=0.5,
         )
 
-        with patch("src.storage.database.get_session", side_effect=RuntimeError("db down")):
+        with patch("temper_ai.storage.database.get_session", side_effect=RuntimeError("db down")):
             # Must not raise — best-effort persistence
             mgr._persist_alert(alert)
 
@@ -215,7 +215,7 @@ class TestAlertPersistence:
         mock_cm.__enter__ = Mock(return_value=mock_session)
         mock_cm.__exit__ = Mock(return_value=False)
 
-        with patch("src.storage.database.get_session", return_value=mock_cm):
+        with patch("temper_ai.storage.database.get_session", return_value=mock_cm):
             results = AlertManager.get_persisted_alerts(limit=10)
 
         assert len(results) == 1
@@ -223,7 +223,7 @@ class TestAlertPersistence:
 
     def test_get_persisted_alerts_handles_error(self):
         """get_persisted_alerts returns empty list on error."""
-        with patch("src.storage.database.get_session", side_effect=RuntimeError("db down")):
+        with patch("temper_ai.storage.database.get_session", side_effect=RuntimeError("db down")):
             results = AlertManager.get_persisted_alerts()
 
         assert results == []
@@ -244,7 +244,7 @@ class TestHaltCallback:
         mgr.register_halt_callback(cb)
         assert mgr._halt_callback is cb
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_halt_callback_called_on_halt_workflow(self, mock_logger):
         """Registered halt callback is invoked with workflow_id."""
         mgr = _make_manager_with_rule(
@@ -260,7 +260,7 @@ class TestHaltCallback:
         # Critical log should also fire
         mock_logger.critical.assert_called_once()
 
-    @patch("src.observability.alerting.logger")
+    @patch("temper_ai.observability.alerting.logger")
     def test_halt_logs_critical_without_callback(self, mock_logger):
         """Without a callback, _halt_workflow still logs critical."""
         mgr = _make_manager_with_rule(

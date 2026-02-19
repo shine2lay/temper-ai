@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 
-from src.experimentation.models import (
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ConfigType,
     ExecutionStatus,

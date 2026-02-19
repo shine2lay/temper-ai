@@ -4,8 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.agent.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
-from src.agent.strategies.multi_round import (
+from temper_ai.agent.strategies.base import AgentOutput, CollaborationStrategy, SynthesisResult
+from temper_ai.agent.strategies.multi_round import (
     CommunicationHistory,
     CommunicationRound,
     MultiRoundStrategy,
@@ -201,7 +201,7 @@ class TestSynthesis:
         assert result.decision == "X"
         assert "debate" in result.metadata["strategy"]
 
-    @patch("src.agent.strategies._dialogue_helpers.get_merit_weights")
+    @patch("temper_ai.agent.strategies._dialogue_helpers.get_merit_weights")
     def test_merit_weighted_synthesis(self, mock_weights):
         """Merit-weighted synthesis path (mocked DB)."""
         mock_weights.return_value = {"agent_0": 1.0, "agent_1": 1.0}
@@ -286,14 +286,14 @@ class TestCapabilities:
 class TestRegistryIntegration:
 
     def test_multi_round_registered(self):
-        from src.agent.strategies.registry import StrategyRegistry
+        from temper_ai.agent.strategies.registry import StrategyRegistry
         registry = StrategyRegistry()
         strategy = registry.get_strategy("multi_round", mode="debate")
         assert isinstance(strategy, MultiRoundStrategy)
         assert strategy.mode == "debate"
 
     def test_multi_round_with_config(self):
-        from src.agent.strategies.registry import get_strategy_from_config
+        from temper_ai.agent.strategies.registry import get_strategy_from_config
         config = {
             "collaboration": {
                 "strategy": "multi_round",

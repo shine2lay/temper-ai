@@ -2,7 +2,7 @@
 
 ## Overview
 
-All configuration in the Meta-Autonomous Framework is defined in YAML and validated using Pydantic schemas. This ensures type safety, provides clear error messages, and enables IDE autocomplete.
+All configuration in the Temper AI is defined in YAML and validated using Pydantic schemas. This ensures type safety, provides clear error messages, and enables IDE autocomplete.
 
 ## Configuration Hierarchy
 
@@ -508,7 +508,7 @@ def substitute_env_vars(config_str: str) -> str:
 ### ConfigLoader Usage
 
 ```python
-from src.compiler.config_loader import ConfigLoader
+from temper_ai.compiler.config_loader import ConfigLoader
 
 # Initialize loader
 loader = ConfigLoader(config_root="configs")
@@ -625,7 +625,7 @@ agent:
 Generate JSON Schema for external tools:
 
 ```python
-from src.compiler.schemas import WorkflowConfig, AgentConfig
+from temper_ai.compiler.schemas import WorkflowConfig, AgentConfig
 
 # Export JSON Schema
 workflow_schema = WorkflowConfig.model_json_schema()

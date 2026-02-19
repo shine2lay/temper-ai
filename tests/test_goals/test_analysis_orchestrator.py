@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.goals.analysis_orchestrator import AnalysisOrchestrator
-from src.goals.store import GoalStore
+from temper_ai.goals.analysis_orchestrator import AnalysisOrchestrator
+from temper_ai.goals.store import GoalStore
 
 MEMORY_DB = "sqlite:///:memory:"
 

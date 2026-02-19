@@ -9,7 +9,7 @@ stage:
     - final_reviewer
 
   collaboration:
-    strategy: src.strategies.dialogue.DialogueOrchestrator
+    strategy: temper_ai.strategies.dialogue.DialogueOrchestrator
     max_rounds: 2
     consensus_threshold: 0.75
     enable_summarization: true

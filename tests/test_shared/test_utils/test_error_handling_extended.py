@@ -12,7 +12,7 @@ import time
 from unittest.mock import Mock, call
 import pytest
 
-from src.shared.utils.error_handling import (
+from temper_ai.shared.utils.error_handling import (
     RetryStrategy,
     RetryParams,
     retry_with_backoff,

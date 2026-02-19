@@ -8,11 +8,11 @@ import gc
 import time
 from unittest.mock import patch
 
-from src.agent.utils.agent_factory import AgentFactory
-from src.agent.standard_agent import StandardAgent
-from src.tools.calculator import Calculator
-from src.tools.executor import ToolExecutor
-from src.tools.registry import ToolRegistry
+from temper_ai.agent.utils.agent_factory import AgentFactory
+from temper_ai.agent.standard_agent import StandardAgent
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.executor import ToolExecutor
+from temper_ai.tools.registry import ToolRegistry
 
 
 class TestAgentCreationPerformance:
@@ -29,7 +29,7 @@ class TestAgentCreationPerformance:
         Fixed: Optimized tool registry lookup
         Baseline: <100ms for standard agent
         """
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             start = time.time()
             agent = AgentFactory.create(minimal_agent_config)
             elapsed = time.time() - start
@@ -49,7 +49,7 @@ class TestAgentCreationPerformance:
         Fixed: Removed quadratic registry lookup
         Baseline: <1s for 100 agents
         """
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             start = time.time()
 
             for i in range(100):
@@ -131,7 +131,7 @@ class TestMemory:
         Fixed: Proper cleanup of tool registry references
         """
 
-        with patch('src.agent.base_agent.ToolRegistry'):
+        with patch('temper_ai.agent.base_agent.ToolRegistry'):
             # Create many agents
             agents = []
             for i in range(100):

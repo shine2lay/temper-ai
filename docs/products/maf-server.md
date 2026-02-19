@@ -1,20 +1,20 @@
-# MAF Server: Deployment Model
+# Temper AI Server: Deployment Model
 
 ## Context
 
-MAF is currently a CLI dev tool (`maf run workflow.yaml`). For any real product built on MAF, you need a way to trigger workflows programmatically, run them in isolated workspaces, and stream results in real-time. This document specifies MAF Server - the deployable runtime that makes MAF usable as infrastructure.
+Temper AI is currently a CLI dev tool (`temper-ai run workflow.yaml`). For any real product built on Temper AI, you need a way to trigger workflows programmatically, run them in isolated workspaces, and stream results in real-time. This document specifies the Temper AI Server - the deployable runtime that makes Temper AI usable as infrastructure.
 
 ## Problem
 
 Without a deployment model:
 - Can't trigger workflows from an API (only CLI)
-- Can't build products on top of MAF (no programmatic interface)
+- Can't build products on top of Temper AI (no programmatic interface)
 - Can't run workflows in CI/CD pipelines
 - No workspace isolation (agents can access anything on the system)
 - No way to run multiple workflows in parallel safely
 - Every user has to figure out their own deployment
 
-## What MAF Server Does
+## What Temper AI Server Does
 
 A deployable runtime that:
 1. Accepts workflow run requests via API
@@ -23,14 +23,14 @@ A deployable runtime that:
 4. Stores results and execution history
 
 ```bash
-maf serve --port 8080 --workspace-root /var/maf/workspaces
+temper-ai serve --port 8080 --workspace-root /var/temper-ai/workspaces
 ```
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   MAF Server                         │
+│               Temper AI Server                       │
 │                                                     │
 │  API Layer (FastAPI)                                │
 │  ┌───────────────────────────────────────────────┐  │
@@ -93,7 +93,7 @@ Each workflow run gets its own workspace. Agents can only access files within th
 
 ```
 1. Run request comes in
-2. Create workspace directory: /var/maf/workspaces/{run_id}/
+2. Create workspace directory: /var/temper-ai/workspaces/{run_id}/
 3. Clone/copy project files into workspace (or mount if persistent)
 4. Execute workflow with workspace as root
 5. Collect results
@@ -105,11 +105,11 @@ Each workflow run gets its own workspace. Agents can only access files within th
 ```bash
 docker run --rm \
   -v /projects/my-product:/workspace:rw \
-  -v /path/to/maf/configs:/configs:ro \
+  -v /path/to/temper-ai/configs:/configs:ro \
   --network=host \
   --memory=2g \
   --cpus=1 \
-  maf-runner \
+  temper-ai-runner \
   --workflow suggestion_triage \
   --workspace /workspace \
   --input '{"suggestion_text": "Add dark mode"}' \
@@ -118,10 +118,10 @@ docker run --rm \
 
 The container:
 - Mounts workspace as read-write (agents operate here)
-- Mounts MAF configs as read-only (workflow definitions)
+- Mounts Temper AI configs as read-only (workflow definitions)
 - Has network access for LLM API calls
 - Has resource limits (memory, CPU)
-- Streams events to stdout (collected by MAF Server)
+- Streams events to stdout (collected by Temper AI Server)
 
 ## API Design
 
@@ -265,7 +265,7 @@ timestamp: timestamp
 - Good for: single machine, moderate load
 
 ### Option B: Container Pool (production)
-- MAF Server manages a pool of Docker containers
+- Temper AI Server manages a pool of Docker containers
 - Each run gets its own container
 - Containers created on demand, destroyed after completion
 - Good for: isolation, resource control, scaling
@@ -305,16 +305,16 @@ class WorkflowRunner:
         # ... execute ...
 ```
 
-The `on_event` callback is what connects the MAF runtime to the MAF Server's event store and WebSocket broadcaster.
+The `on_event` callback is what connects the Temper AI runtime to the server's event store and WebSocket broadcaster.
 
 ### Implementation Path
 1. Add `on_event` callback support to `WorkflowRunner`
 2. In the sequential/parallel executors, fire callbacks after each agent completes
-3. MAF Server's run manager wires `on_event` to its event store + WebSocket
+3. Temper AI Server's run manager wires `on_event` to its event store + WebSocket
 
 ## Configuration
 
-### Server Config (maf-server.yaml)
+### Server Config (temper-ai-server.yaml)
 
 ```yaml
 server:
@@ -322,21 +322,21 @@ server:
   port: 8080
 
 workspaces:
-  root: /var/maf/workspaces
+  root: /var/temper-ai/workspaces
   cleanup_after_hours: 24
   max_concurrent_runs: 4
 
 isolation:
   level: container  # path | subprocess | container
   container:
-    image: maf-runner:latest
+    image: temper-ai-runner:latest
     memory_limit: 2g
     cpu_limit: 1
     network: host  # for LLM API access
     timeout: 600
 
 database:
-  url: sqlite:///maf-server.db  # or postgresql://...
+  url: sqlite:///temper-ai-server.db  # or postgresql://...
 
 llm:
   # LLM config inherited by all runs (or overridden per workflow)
@@ -346,17 +346,17 @@ llm:
 
 ### Per-Workspace Config
 
-Each workspace can have a `.maf/config.yaml`:
+Each workspace can have a `.temper-ai/config.yaml`:
 
 ```yaml
-# Project-specific MAF config
+# Project-specific Temper AI config
 workspace:
   name: vibe-coding-squad
   vision_doc: VISION.md
 
   # What agents can access
   allowed_paths:
-    - src/
+    - temper_ai/
     - public/
     - VISION.md
 
@@ -371,33 +371,33 @@ workspace:
 
 ```bash
 # Start the server
-maf serve --port 8080
+temper-ai serve --port 8080
 
 # Trigger a run from CLI (calls the server API)
-maf trigger suggestion_triage \
+temper-ai trigger suggestion_triage \
   --workspace /projects/vibe-coding-squad \
   --input suggestion_text="Add dark mode"
 
 # Check run status
-maf status run_abc123
+temper-ai status run_abc123
 
 # Stream events
-maf logs run_abc123 --follow
+temper-ai logs run_abc123 --follow
 
 # List runs
-maf runs --status running
+temper-ai runs --status running
 ```
 
 ## Integration with The Vibe Coding Squad
 
-With MAF Server, The Vibe Coding Squad becomes a thin client:
+With Temper AI Server, The Vibe Coding Squad becomes a thin client:
 
 ```
 ┌──────────────────────┐         ┌─────────────────────┐
-│  VCS Web App          │  HTTP   │  MAF Server          │
+│  VCS Web App          │  HTTP   │  Temper AI Server     │
 │                       │────────▶│                      │
 │  POST /suggestions    │         │  POST /api/runs      │
-│    → calls MAF Server │         │    → spawns workflow  │
+│    → calls Server     │         │    → spawns workflow  │
 │                       │◀────────│    → streams events   │
 │  WS /ws/suggestions   │  WS     │  WS /ws/runs/:id     │
 │    ← forwards events  │         │    ← pipeline events  │
@@ -407,7 +407,7 @@ With MAF Server, The Vibe Coding Squad becomes a thin client:
    ┌────────────┐                  ┌──────────────────┐
    │ VCS DB      │                  │ Workspace         │
    │ suggestions │                  │ /projects/vcs     │
-   │ pipeline    │                  │   src/            │
+   │ pipeline    │                  │   temper_ai/            │
    │ events      │                  │   VISION.md       │
    └────────────┘                  └──────────────────┘
 ```
@@ -416,12 +416,13 @@ With MAF Server, The Vibe Coding Squad becomes a thin client:
 
 ### Phase 1: WorkflowRunner (library API)
 - Extract CLI workflow execution into a `WorkflowRunner` class
+
 - Support `run(workflow, inputs, workspace)` as a Python call
 - Add `on_event` callback
 - Path-based workspace restriction (L1 isolation)
 - This alone unblocks The Vibe Coding Squad with embedded approach
 
-### Phase 2: MAF Server (HTTP API)
+### Phase 2: Temper AI Server (HTTP API)
 - FastAPI app wrapping `WorkflowRunner`
 - REST endpoints for runs, events, workflows
 - WebSocket event streaming

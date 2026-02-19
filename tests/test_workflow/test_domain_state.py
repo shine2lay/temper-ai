@@ -11,13 +11,13 @@ from datetime import datetime
 
 import pytest
 
-from src.workflow.domain_state import (
+from temper_ai.workflow.domain_state import (
     ExecutionContext,
     WorkflowDomainState,
     create_initial_domain_state,
     merge_domain_states,
 )
-from src.stage.executors.state_keys import StateKeys
+from temper_ai.stage.executors.state_keys import StateKeys
 
 
 class TestWorkflowDomainState:

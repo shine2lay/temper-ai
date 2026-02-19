@@ -8,7 +8,7 @@ and makes tests more representative of actual usage.
 import copy
 from typing import Any, Dict, List, Optional
 
-from src.storage.schemas.agent_config import (
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     AgentConfigInner,
     ErrorHandlingConfig,

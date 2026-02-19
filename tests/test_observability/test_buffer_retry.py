@@ -1,7 +1,7 @@
 """Tests for buffer retry logic and dead-letter queue."""
 from datetime import datetime, timezone
 
-from src.observability.buffer import ObservabilityBuffer
+from temper_ai.observability.buffer import ObservabilityBuffer
 
 
 class TestBufferRetryLogic:

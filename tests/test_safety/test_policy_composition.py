@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.safety.composition import CompositeValidationResult, PolicyComposer
-from src.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
+from temper_ai.safety.composition import CompositeValidationResult, PolicyComposer
+from temper_ai.safety.interfaces import SafetyPolicy, SafetyViolation, ValidationResult, ViolationSeverity
 
 
 class MockPolicy(SafetyPolicy):

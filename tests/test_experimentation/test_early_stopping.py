@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 
 import numpy as np
 
-from src.experimentation.analyzer import StatisticalAnalyzer
-from src.experimentation.assignment import VariantAssigner
-from src.experimentation.models import (
+from temper_ai.experimentation.analyzer import StatisticalAnalyzer
+from temper_ai.experimentation.assignment import VariantAssigner
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ConfigType,
     ExecutionStatus,
@@ -20,7 +20,7 @@ from src.experimentation.models import (
     Variant,
     VariantAssignment,
 )
-from src.experimentation.sequential_testing import BayesianAnalyzer, SequentialTester
+from temper_ai.experimentation.sequential_testing import BayesianAnalyzer, SequentialTester
 
 
 class TestSequentialTesting:

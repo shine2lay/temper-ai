@@ -50,7 +50,7 @@ workflow:
 
     def test_invalid_config_raises_error(self, tmp_path):
         """Invalid configuration should raise validation error."""
-        from src.workflow.config_loader import ConfigLoader
+        from temper_ai.workflow.config_loader import ConfigLoader
 
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
@@ -65,7 +65,7 @@ workflow:
 
     def test_missing_required_fields(self, tmp_path):
         """Configuration missing required fields should fail validation."""
-        from src.workflow.config_loader import ConfigLoader
+        from temper_ai.workflow.config_loader import ConfigLoader
 
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
@@ -91,7 +91,7 @@ class TestErrorHandling:
 
     def test_database_error_handling(self):
         """Database errors should be caught and handled."""
-        from src.storage.database import init_database, get_session
+        from temper_ai.storage.database import init_database, get_session
 
         # Initialize with invalid URL should raise error
         with pytest.raises(Exception):
@@ -99,7 +99,7 @@ class TestErrorHandling:
 
     def test_config_loader_error_recovery(self, tmp_path):
         """Config loader should handle malformed files gracefully."""
-        from src.workflow.config_loader import ConfigLoader
+        from temper_ai.workflow.config_loader import ConfigLoader
 
         workflows_dir = tmp_path / "workflows"
         workflows_dir.mkdir()
@@ -183,19 +183,19 @@ class TestDatabaseIntegration:
 
     def test_database_initialization(self):
         """Database should initialize correctly."""
-        from src.storage.database import init_database
+        from temper_ai.storage.database import init_database
 
         # Initialize in-memory database
         init_database("sqlite:///:memory:")
 
         # Verify connection
-        from src.storage.database import get_session
+        from temper_ai.storage.database import get_session
         with get_session() as session:
             assert session is not None
 
     def test_database_session_context(self):
         """Database sessions should work as context managers."""
-        from src.storage.database import init_database, get_session
+        from temper_ai.storage.database import init_database, get_session
 
         init_database("sqlite:///:memory:")
 
@@ -207,7 +207,7 @@ class TestDatabaseIntegration:
 
     def test_multiple_database_connections(self):
         """Multiple connections should work correctly."""
-        from src.storage.database import init_database, get_session
+        from temper_ai.storage.database import init_database, get_session
 
         init_database("sqlite:///:memory:")
 

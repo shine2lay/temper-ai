@@ -14,7 +14,7 @@ import time
 
 import pytest
 
-from src.agent.llm_providers import LLMResponse
+from temper_ai.agent.llm_providers import LLMResponse
 
 from .conftest import (
     DEFAULT_BATCH_SIZE,

@@ -10,7 +10,7 @@ def test_database_import_raises_deprecation_warning():
         warnings.simplefilter("always")
 
         # Import the module to trigger the warning
-        import src.observability.database  # noqa: F401
+        import temper_ai.observability.database  # noqa: F401
 
         # Check that a deprecation warning was raised
         assert len(w) >= 1
@@ -22,8 +22,8 @@ def test_database_import_raises_deprecation_warning():
 
         # Verify the warning message
         warning_msg = str(deprecation_warnings[0].message)
-        assert "src.observability.database is deprecated" in warning_msg
-        assert "src.storage.database" in warning_msg
+        assert "temper_ai.observability.database is deprecated" in warning_msg
+        assert "temper_ai.storage.database" in warning_msg
 
 
 def test_database_re_exports_work():
@@ -32,7 +32,7 @@ def test_database_re_exports_work():
         warnings.simplefilter("ignore")  # Suppress warnings for this test
 
         # Import from the deprecated location
-        from src.observability.database import DatabaseManager
+        from temper_ai.observability.database import DatabaseManager
 
         # Verify the class exists
         assert DatabaseManager is not None
@@ -44,7 +44,7 @@ def test_database_private_exports_work():
         warnings.simplefilter("ignore")  # Suppress warnings for this test
 
         # Import private exports from the deprecated location
-        from src.observability.database import _db_manager, _mask_database_url
+        from temper_ai.observability.database import _db_manager, _mask_database_url
 
         # _db_manager might be None initially (singleton pattern)
         # Just verify it can be imported
@@ -58,7 +58,7 @@ def test_database_new_import_location():
         warnings.simplefilter("always")
 
         # Import from the new location
-        from src.storage.database.manager import DatabaseManager
+        from temper_ai.storage.database.manager import DatabaseManager
 
         # Verify no deprecation warnings were raised
         deprecation_warnings = [warning for warning in w if issubclass(warning.category, DeprecationWarning)]

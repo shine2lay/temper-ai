@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.interfaces.server.models import ServerRun
-from src.interfaces.server.run_store import RunStore
+from temper_ai.interfaces.server.models import ServerRun
+from temper_ai.interfaces.server.run_store import RunStore
 
 
 def _make_run(

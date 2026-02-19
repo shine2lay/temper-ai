@@ -17,9 +17,9 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 import httpx
 import pytest
 
-from src.llm.providers.base import BaseLLM, LLMResponse, LLMStreamChunk, StreamCallback
-from src.llm.providers.ollama import OllamaLLM
-from src.interfaces.cli.stream_events import (
+from temper_ai.llm.providers.base import BaseLLM, LLMResponse, LLMStreamChunk, StreamCallback
+from temper_ai.llm.providers.ollama import OllamaLLM
+from temper_ai.interfaces.cli.stream_events import (
     LLM_DONE,
     LLM_TOKEN,
     PROGRESS,
@@ -294,7 +294,7 @@ class TestAgentStreamingIntegration:
 
     def test_make_stream_callback_with_user_cb(self):
         """_make_stream_callback should return combined callback when user_cb is set."""
-        from src.agent.base_agent import BaseAgent
+        from temper_ai.agent.base_agent import BaseAgent
 
         agent = MagicMock(spec=BaseAgent)
         agent._stream_callback = MagicMock()
@@ -313,7 +313,7 @@ class TestAgentStreamingIntegration:
 
     def test_make_stream_callback_no_cb_no_observer(self):
         """_make_stream_callback should return None when neither is available."""
-        from src.agent.base_agent import BaseAgent
+        from temper_ai.agent.base_agent import BaseAgent
 
         agent = MagicMock(spec=BaseAgent)
         agent._stream_callback = None
@@ -325,7 +325,7 @@ class TestAgentStreamingIntegration:
 
     def test_make_stream_callback_observer_only(self):
         """_make_stream_callback should work with only observer."""
-        from src.agent.base_agent import BaseAgent
+        from temper_ai.agent.base_agent import BaseAgent
 
         agent = MagicMock(spec=BaseAgent)
         agent._stream_callback = None
@@ -341,7 +341,7 @@ class TestAgentStreamingIntegration:
 
     def test_setup_execution_stores_stream_callback(self):
         """_setup should extract stream_callback from input_data."""
-        from src.agent.base_agent import BaseAgent
+        from temper_ai.agent.base_agent import BaseAgent
 
         agent = MagicMock(spec=BaseAgent)
         agent.name = "test"
@@ -356,7 +356,7 @@ class TestAgentStreamingIntegration:
 
     def test_setup_execution_no_stream_callback(self):
         """_setup should set None when no stream_callback provided."""
-        from src.agent.base_agent import BaseAgent
+        from temper_ai.agent.base_agent import BaseAgent
 
         agent = MagicMock(spec=BaseAgent)
         agent.name = "test"
@@ -378,13 +378,13 @@ class TestStreamDisplay:
 
     def test_stream_display_buffer_accumulation(self):
         """on_chunk should accumulate content in per-agent buffers."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
         # Mock Live to prevent actual terminal output
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             mock_live = MagicMock()
             MockLive.return_value = mock_live
 
@@ -400,12 +400,12 @@ class TestStreamDisplay:
 
     def test_stream_display_thinking_separation(self):
         """Thinking tokens should go to thinking buffer."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             think_chunk = LLMStreamChunk(content="reasoning...", chunk_type="thinking", done=False, model="test")
@@ -419,12 +419,12 @@ class TestStreamDisplay:
 
     def test_stream_display_done_stops(self):
         """Done chunk should stop the Live display."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             mock_live = MagicMock()
             MockLive.return_value = mock_live
 
@@ -440,13 +440,13 @@ class TestStreamDisplay:
 
     def test_stream_display_thread_safety(self):
         """Multiple threads should be able to call on_chunk without errors."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
         errors = []
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             def write_chunks(thread_id: int):
@@ -474,12 +474,12 @@ class TestStreamDisplay:
 
     def test_stream_display_multi_agent(self):
         """make_callback should route chunks to separate per-agent panels."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             cb_a = display.make_callback("agent_a")
@@ -495,12 +495,12 @@ class TestStreamDisplay:
 
     def test_stream_display_multi_agent_done(self):
         """Live stops only when ALL agents are done."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             mock_live = MagicMock()
             MockLive.return_value = mock_live
 
@@ -531,7 +531,7 @@ class TestAgentObserverStreaming:
 
     def test_emit_stream_chunk_calls_tracker(self):
         """emit_stream_chunk should emit event via tracker's event bus."""
-        from src.agent.utils.agent_observer import AgentObserver
+        from temper_ai.agent.utils.agent_observer import AgentObserver
 
         tracker = MagicMock()
         tracker._event_bus = MagicMock()
@@ -542,7 +542,7 @@ class TestAgentObserverStreaming:
 
         observer = AgentObserver(tracker, context)
 
-        with patch('src.observability._tracker_helpers.emit_llm_stream_chunk') as mock_emit:
+        with patch('temper_ai.observability._tracker_helpers.emit_llm_stream_chunk') as mock_emit:
             observer.emit_stream_chunk(
                 content="hello",
                 chunk_type="content",
@@ -553,7 +553,7 @@ class TestAgentObserverStreaming:
 
     def test_emit_stream_chunk_no_tracker(self):
         """emit_stream_chunk should be a no-op when tracker is None."""
-        from src.agent.utils.agent_observer import AgentObserver
+        from temper_ai.agent.utils.agent_observer import AgentObserver
 
         observer = AgentObserver(None, None)
         # Should not raise
@@ -562,7 +562,7 @@ class TestAgentObserverStreaming:
 
     def test_emit_stream_chunk_no_event_bus(self):
         """emit_stream_chunk should be a no-op when event_bus is missing."""
-        from src.agent.utils.agent_observer import AgentObserver
+        from temper_ai.agent.utils.agent_observer import AgentObserver
 
         tracker = MagicMock(spec=[])  # No _event_bus attribute
         context = MagicMock()
@@ -583,7 +583,7 @@ class TestEmitLLMStreamChunk:
 
     def test_emit_with_event_bus(self):
         """Should emit ObservabilityEvent to the event bus."""
-        from src.observability._tracker_helpers import emit_llm_stream_chunk, StreamChunkData
+        from temper_ai.observability._tracker_helpers import emit_llm_stream_chunk, StreamChunkData
 
         event_bus = MagicMock()
         data = StreamChunkData(
@@ -601,7 +601,7 @@ class TestEmitLLMStreamChunk:
 
     def test_emit_none_event_bus(self):
         """Should be a no-op when event_bus is None."""
-        from src.observability._tracker_helpers import emit_llm_stream_chunk, StreamChunkData
+        from temper_ai.observability._tracker_helpers import emit_llm_stream_chunk, StreamChunkData
 
         data = StreamChunkData(agent_id="agent-1", content="hello")
         # Should not raise and return None
@@ -610,7 +610,7 @@ class TestEmitLLMStreamChunk:
 
     def test_emit_exception_silenced(self):
         """Should silently catch exceptions."""
-        from src.observability._tracker_helpers import emit_llm_stream_chunk, StreamChunkData
+        from temper_ai.observability._tracker_helpers import emit_llm_stream_chunk, StreamChunkData
 
         event_bus = MagicMock()
         event_bus.emit.side_effect = RuntimeError("boom")
@@ -723,12 +723,12 @@ class TestStreamDisplayEvents:
 
     def test_stream_event_tool_start(self):
         """TOOL_START event should set tool_line on the source stream."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             cb = display.make_callback("agent1")
@@ -748,12 +748,12 @@ class TestStreamDisplayEvents:
 
     def test_stream_event_tool_result_success(self):
         """TOOL_RESULT with success should update tool_line with checkmark."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             cb = display.make_callback("agent1")
@@ -770,12 +770,12 @@ class TestStreamDisplayEvents:
 
     def test_stream_event_tool_result_failure(self):
         """TOOL_RESULT with failure should show X mark and error."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             cb = display.make_callback("agent1")
@@ -792,12 +792,12 @@ class TestStreamDisplayEvents:
 
     def test_stream_event_status_overwrites(self):
         """STATUS events should overwrite (not append) the status_line."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             cb = display.make_callback("agent1")
@@ -812,12 +812,12 @@ class TestStreamDisplayEvents:
 
     def test_stream_event_progress_appends(self):
         """PROGRESS events should append to content_buffer."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             cb = display.make_callback("agent1")
@@ -833,12 +833,12 @@ class TestStreamDisplayEvents:
 
     def test_stream_event_mixed(self):
         """LLM tokens + tool events should coexist in same source stream."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             cb = display.make_callback("agent1")
@@ -874,12 +874,12 @@ class TestStreamDisplayEvents:
 
     def test_backward_compat_llm_chunk_via_make_callback(self):
         """make_callback should auto-adapt LLMStreamChunk to StreamEvent."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             MockLive.return_value = MagicMock()
 
             cb = display.make_callback("agent1")
@@ -893,12 +893,12 @@ class TestStreamDisplayEvents:
 
     def test_backward_compat_llm_chunk_done_via_make_callback(self):
         """make_callback should handle done LLMStreamChunk correctly."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             mock_live = MagicMock()
             MockLive.return_value = mock_live
 
@@ -912,12 +912,12 @@ class TestStreamDisplayEvents:
 
     def test_stream_event_done_stops_display(self):
         """done=True StreamEvent should stop display when all sources are done."""
-        from src.interfaces.cli.stream_display import StreamDisplay
+        from temper_ai.interfaces.cli.stream_display import StreamDisplay
 
         console = MagicMock()
         display = StreamDisplay(console)
 
-        with patch('src.interfaces.cli.stream_display.Live') as MockLive:
+        with patch('temper_ai.interfaces.cli.stream_display.Live') as MockLive:
             mock_live = MagicMock()
             MockLive.return_value = mock_live
 

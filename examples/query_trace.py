@@ -22,8 +22,8 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.tree import Tree
 
-from src.observability.database import get_session, init_database
-from src.observability.models import (
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import (
     AgentExecution,
     LLMCall,
     StageExecution,

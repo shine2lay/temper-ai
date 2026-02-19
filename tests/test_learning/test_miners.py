@@ -5,12 +5,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.learning.miners.agent_performance import AgentPerformanceMiner
-from src.learning.miners.collaboration_patterns import CollaborationPatternMiner
-from src.learning.miners.cost_patterns import CostPatternMiner
-from src.learning.miners.failure_patterns import FailurePatternMiner
-from src.learning.miners.model_effectiveness import ModelEffectivenessMiner
-from src.learning.models import (
+from temper_ai.learning.miners.agent_performance import AgentPerformanceMiner
+from temper_ai.learning.miners.collaboration_patterns import CollaborationPatternMiner
+from temper_ai.learning.miners.cost_patterns import CostPatternMiner
+from temper_ai.learning.miners.failure_patterns import FailurePatternMiner
+from temper_ai.learning.miners.model_effectiveness import ModelEffectivenessMiner
+from temper_ai.learning.models import (
     PATTERN_AGENT_PERFORMANCE,
     PATTERN_COLLABORATION,
     PATTERN_COST,
@@ -65,7 +65,7 @@ def _mock_collab_event(stage_id: str, event_type: str):
 
 
 class TestAgentPerformanceMiner:
-    @patch("src.learning.miners.agent_performance.get_session")
+    @patch("temper_ai.learning.miners.agent_performance.get_session")
     def test_low_success_rate(self, mock_session):
         execs = [_mock_agent_execution("agent-a", "failed") for _ in range(4)]
         ctx = MagicMock()
@@ -80,7 +80,7 @@ class TestAgentPerformanceMiner:
         assert patterns[0].pattern_type == PATTERN_AGENT_PERFORMANCE
         assert "Low success" in patterns[0].title
 
-    @patch("src.learning.miners.agent_performance.get_session")
+    @patch("temper_ai.learning.miners.agent_performance.get_session")
     def test_empty_data(self, mock_session):
         ctx = MagicMock()
         ctx.__enter__ = lambda s: ctx
@@ -92,7 +92,7 @@ class TestAgentPerformanceMiner:
 
 
 class TestModelEffectivenessMiner:
-    @patch("src.learning.miners.model_effectiveness.get_session")
+    @patch("temper_ai.learning.miners.model_effectiveness.get_session")
     def test_high_error_rate(self, mock_session):
         calls = [_mock_llm_call("gpt-4", "error") for _ in range(6)]
         ctx = MagicMock()
@@ -104,7 +104,7 @@ class TestModelEffectivenessMiner:
         patterns = ModelEffectivenessMiner().mine()
         assert any("High error" in p.title for p in patterns)
 
-    @patch("src.learning.miners.model_effectiveness.get_session")
+    @patch("temper_ai.learning.miners.model_effectiveness.get_session")
     def test_empty_data(self, mock_session):
         ctx = MagicMock()
         ctx.__enter__ = lambda s: ctx
@@ -116,7 +116,7 @@ class TestModelEffectivenessMiner:
 
 
 class TestFailurePatternMiner:
-    @patch("src.learning.miners.failure_patterns.get_session")
+    @patch("temper_ai.learning.miners.failure_patterns.get_session")
     def test_recurring_errors(self, mock_session):
         fps = [_mock_error_fingerprint("TimeoutError", 5)]
         ctx = MagicMock()
@@ -129,7 +129,7 @@ class TestFailurePatternMiner:
         assert len(patterns) == 1
         assert PATTERN_FAILURE == patterns[0].pattern_type
 
-    @patch("src.learning.miners.failure_patterns.get_session")
+    @patch("temper_ai.learning.miners.failure_patterns.get_session")
     def test_below_threshold(self, mock_session):
         fps = [_mock_error_fingerprint("TimeoutError", 1)]
         ctx = MagicMock()
@@ -142,7 +142,7 @@ class TestFailurePatternMiner:
 
 
 class TestCostPatternMiner:
-    @patch("src.learning.miners.cost_patterns.get_session")
+    @patch("temper_ai.learning.miners.cost_patterns.get_session")
     def test_cost_dominance(self, mock_session):
         # One agent dominates cost
         calls = [_mock_llm_call("model-a", cost=0.5, tokens=1000) for _ in range(5)]
@@ -163,7 +163,7 @@ class TestCostPatternMiner:
 
 
 class TestCollaborationPatternMiner:
-    @patch("src.learning.miners.collaboration_patterns.get_session")
+    @patch("temper_ai.learning.miners.collaboration_patterns.get_session")
     def test_unresolved_debate(self, mock_session):
         events = [_mock_collab_event("stage-1", "debate_round") for _ in range(4)]
         ctx = MagicMock()
@@ -175,7 +175,7 @@ class TestCollaborationPatternMiner:
         patterns = CollaborationPatternMiner().mine()
         assert any("Unresolved" in p.title for p in patterns)
 
-    @patch("src.learning.miners.collaboration_patterns.get_session")
+    @patch("temper_ai.learning.miners.collaboration_patterns.get_session")
     def test_empty_data(self, mock_session):
         ctx = MagicMock()
         ctx.__enter__ = lambda s: ctx

@@ -14,8 +14,8 @@ import tempfile
 import time
 from unittest.mock import Mock, patch
 
-from src.safety.interfaces import ViolationSeverity
-from src.safety.policies.resource_limit_policy import ResourceLimitPolicy
+from temper_ai.safety.interfaces import ViolationSeverity
+from temper_ai.safety.policies.resource_limit_policy import ResourceLimitPolicy
 
 
 class TestResourceLimitPolicyBasics:

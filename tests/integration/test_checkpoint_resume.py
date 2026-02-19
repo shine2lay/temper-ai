@@ -12,11 +12,11 @@ from datetime import UTC, datetime
 
 import pytest
 
-from src.workflow.checkpoint import CheckpointManager, FileCheckpointBackend
-from src.workflow.domain_state import WorkflowDomainState
-from src.observability.database import get_session, init_database
-from src.observability.models import StageExecution, WorkflowExecution
-from src.observability.tracker import ExecutionTracker
+from temper_ai.workflow.checkpoint import CheckpointManager, FileCheckpointBackend
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.models import StageExecution, WorkflowExecution
+from temper_ai.observability.tracker import ExecutionTracker
 
 pytestmark = [pytest.mark.integration, pytest.mark.critical_path]
 
@@ -28,7 +28,7 @@ class TestCheckpointCreation:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -37,7 +37,7 @@ class TestCheckpointCreation:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
@@ -222,7 +222,7 @@ class TestWorkflowResume:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")
@@ -231,7 +231,7 @@ class TestWorkflowResume:
     @pytest.fixture
     def execution_tracker(self, sample_database):
         """Execution tracker."""
-        from src.observability.backends.sql_backend import SQLObservabilityBackend
+        from temper_ai.observability.backends.sql_backend import SQLObservabilityBackend
         backend = SQLObservabilityBackend()
         return ExecutionTracker(backend=backend)
 
@@ -460,7 +460,7 @@ class TestCheckpointFailureRecovery:
     def sample_database(self):
         """Initialize test database."""
         try:
-            from src.observability.database import get_database
+            from temper_ai.observability.database import get_database
             get_database()
         except RuntimeError:
             init_database("sqlite:///:memory:")

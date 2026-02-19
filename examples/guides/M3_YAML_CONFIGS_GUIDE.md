@@ -780,8 +780,8 @@ python3 examples/run_workflow.py \
 
 - **Workflow configs**: `configs/workflows/*.yaml`
 - **Stage configs**: `configs/stages/*.yaml`
-- **Schema definitions**: `src/compiler/schemas.py`
-- **Strategy implementations**: `src/strategies/*.py`
+- **Schema definitions**: `temper_ai/compiler/schemas.py`
+- **Strategy implementations**: `temper_ai/strategies/*.py`
 - **Demo scripts**: `examples/m3_*.py`
 
 ---

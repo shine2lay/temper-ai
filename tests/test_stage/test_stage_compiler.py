@@ -6,9 +6,9 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.node_builder import NodeBuilder
-from src.stage.stage_compiler import StageCompiler
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.stage.stage_compiler import StageCompiler
 from tests.fixtures.realistic_data import (
     create_realistic_workflow_config,
 )
@@ -285,8 +285,8 @@ class TestIntegrationWithRealGraph:
 
     def test_compile_creates_executable_graph(self):
         """Test that compiled graph is actually executable."""
-        from src.workflow.config_loader import ConfigLoader
-        from src.tools.registry import ToolRegistry
+        from temper_ai.workflow.config_loader import ConfigLoader
+        from temper_ai.tools.registry import ToolRegistry
 
         # Create real components
         config_loader = ConfigLoader()
@@ -331,8 +331,8 @@ class TestIntegrationWithRealGraph:
 
     def test_compile_sequential_flow_execution(self):
         """Test that sequential flow executes stages in order."""
-        from src.workflow.config_loader import ConfigLoader
-        from src.tools.registry import ToolRegistry
+        from temper_ai.workflow.config_loader import ConfigLoader
+        from temper_ai.tools.registry import ToolRegistry
 
         config_loader = ConfigLoader()
         tool_registry = ToolRegistry()

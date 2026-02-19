@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from src.shared.utils.secrets import detect_secret_patterns
+from temper_ai.shared.utils.secrets import detect_secret_patterns
 
 
 class TestReDoSPrevention:

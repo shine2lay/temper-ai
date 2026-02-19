@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.safety.token_bucket import RateLimit, TokenBucket, TokenBucketManager
+from temper_ai.safety.token_bucket import RateLimit, TokenBucket, TokenBucketManager
 
 
 class TestRateLimit:
@@ -166,7 +166,7 @@ class TestTokenBucket:
         assert bucket.get_tokens() == pytest.approx(0.0, abs=0.1)
 
         # Mock time to advance 1.1 seconds (no flaky sleep)
-        with patch('src.safety.token_bucket.time') as mock_time:
+        with patch('temper_ai.safety.token_bucket.time') as mock_time:
             initial_time = bucket.last_refill
             mock_time.time.return_value = initial_time + 1.1
 
@@ -185,7 +185,7 @@ class TestTokenBucket:
         bucket.consume(5)
 
         # Mock time to advance 1.1 seconds (no flaky sleep)
-        with patch('src.safety.token_bucket.time') as mock_time:
+        with patch('temper_ai.safety.token_bucket.time') as mock_time:
             initial_time = bucket.last_refill
             mock_time.time.return_value = initial_time + 1.1
 
@@ -199,7 +199,7 @@ class TestTokenBucket:
         bucket = TokenBucket(limit)
 
         # Mock time to advance 2 seconds (no flaky sleep)
-        with patch('src.safety.token_bucket.time') as mock_time:
+        with patch('temper_ai.safety.token_bucket.time') as mock_time:
             initial_time = bucket.last_refill
             mock_time.time.return_value = initial_time + 2.0
 
@@ -630,7 +630,7 @@ class TestRealWorld:
         assert bucket.consume(1) is False
 
         # Mock time to advance 1.1 seconds (no flaky sleep)
-        with patch('src.safety.token_bucket.time') as mock_time:
+        with patch('temper_ai.safety.token_bucket.time') as mock_time:
             initial_time = bucket.last_refill
             mock_time.time.return_value = initial_time + 1.1
 

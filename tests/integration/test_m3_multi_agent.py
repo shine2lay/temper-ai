@@ -31,22 +31,22 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.agent.base_agent import AgentResponse
+from temper_ai.agent.base_agent import AgentResponse
 
 # Core components
-from src.workflow.config_loader import ConfigLoader
-from src.workflow.domain_state import WorkflowDomainState
-from src.workflow.langgraph_compiler import LangGraphCompiler
-from src.agent.strategies.base import AgentOutput, SynthesisResult
-from src.agent.strategies.consensus import ConsensusStrategy
-from src.agent.strategies.debate import DebateAndSynthesize
-from src.agent.strategies.merit_weighted import MeritWeightedResolver
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.agent.strategies.base import AgentOutput, SynthesisResult
+from temper_ai.agent.strategies.consensus import ConsensusStrategy
+from temper_ai.agent.strategies.debate import DebateAndSynthesize
+from temper_ai.agent.strategies.merit_weighted import MeritWeightedResolver
 
 # Check for registry (may not exist yet)
-REGISTRY_AVAILABLE = find_spec("src.agent.strategies.registry") is not None
+REGISTRY_AVAILABLE = find_spec("temper_ai.agent.strategies.registry") is not None
 
 # Check for observability
-OBSERVABILITY_AVAILABLE = find_spec("src.observability.tracker") is not None
+OBSERVABILITY_AVAILABLE = find_spec("temper_ai.observability.tracker") is not None
 
 
 # ============================================================================
@@ -217,7 +217,7 @@ class TestMeritWeightedResolution:
             AgentOutput("novice", "Option B", "Novice view", 0.6, {})
         ]
 
-        from src.agent.strategies.base import Conflict
+        from temper_ai.agent.strategies.base import Conflict
         conflict = Conflict(
             agents=["expert", "novice"],
             decisions=["Option A", "Option B"],
@@ -304,8 +304,8 @@ class TestParallelExecution:
             return mock_agents[config.name]
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('src.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
-                with patch('src.agent.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
+            with patch('temper_ai.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
+                with patch('temper_ai.agent.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
                     result = compiler._execute_parallel_stage("test_stage", stage_config, state)
 
                     # Verify parallel execution completed
@@ -352,8 +352,8 @@ class TestParallelExecution:
             return mock_agents[config.name]
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('src.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
-                with patch('src.agent.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
+            with patch('temper_ai.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
+                with patch('temper_ai.agent.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
                     # Should succeed with 2/3 agents
                     result = compiler._execute_parallel_stage("test_stage", stage_config, state)
 
@@ -401,8 +401,8 @@ class TestParallelExecution:
             return mock_agents[config.name]
 
         with patch.object(compiler.config_loader, 'load_agent', side_effect=mock_load_agent):
-            with patch('src.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
-                with patch('src.agent.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
+            with patch('temper_ai.workflow.schemas.AgentConfig', side_effect=mock_agent_config):
+                with patch('temper_ai.agent.utils.agent_factory.AgentFactory.create', side_effect=mock_create):
                     # Should raise RuntimeError
                     with pytest.raises(RuntimeError, match="Only 1/3 agents succeeded"):
                         compiler._execute_parallel_stage("test_stage", stage_config, state)
@@ -610,7 +610,7 @@ class TestQualityGates:
 
     def test_quality_gates_confidence_failure_escalate(self):
         """Test quality gate failure with escalate action."""
-        from src.workflow.langgraph_compiler import LangGraphCompiler
+        from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 
         compiler = LangGraphCompiler()
 
@@ -647,7 +647,7 @@ class TestQualityGates:
 
     def test_quality_gates_proceed_with_warning(self):
         """Test quality gate failure with proceed_with_warning action."""
-        from src.workflow.langgraph_compiler import LangGraphCompiler
+        from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 
         compiler = LangGraphCompiler()
 
@@ -681,7 +681,7 @@ class TestQualityGates:
 
     def test_quality_gates_all_checks_pass(self):
         """Test quality gates with all checks passing."""
-        from src.workflow.langgraph_compiler import LangGraphCompiler
+        from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
 
         compiler = LangGraphCompiler()
 

@@ -4,11 +4,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from src.safety.autonomy.dashboard_routes import create_autonomy_router
-from src.safety.autonomy.dashboard_service import AutonomyDataService
-from src.safety.autonomy.emergency_stop import reset_emergency_state
-from src.safety.autonomy.models import AutonomyState, AutonomyTransition, BudgetRecord
-from src.safety.autonomy.store import AutonomyStore
+from temper_ai.safety.autonomy.dashboard_routes import create_autonomy_router
+from temper_ai.safety.autonomy.dashboard_service import AutonomyDataService
+from temper_ai.safety.autonomy.emergency_stop import reset_emergency_state
+from temper_ai.safety.autonomy.models import AutonomyState, AutonomyTransition, BudgetRecord
+from temper_ai.safety.autonomy.store import AutonomyStore
 
 
 @pytest.fixture(autouse=True)

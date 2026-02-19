@@ -15,8 +15,8 @@ def test_aggregation_import_raises_deprecation_warning():
     source = agg_file.read_text()
 
     assert "DeprecationWarning" in source
-    assert "src.observability.aggregation.py is deprecated" in source
-    assert "src.observability.aggregation import" in source
+    assert "temper_ai.observability.aggregation.py is deprecated" in source
+    assert "temper_ai.observability.aggregation import" in source
 
 
 def test_aggregation_re_exports_work():
@@ -25,7 +25,7 @@ def test_aggregation_re_exports_work():
         warnings.simplefilter("ignore")  # Suppress warnings for this test
 
         # Import from the deprecated file
-        from src.observability import aggregation
+        from temper_ai.observability import aggregation
 
         # Verify the exports exist
         assert hasattr(aggregation, 'AggregationOrchestrator')
@@ -41,7 +41,7 @@ def test_aggregation_exports_in_all():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")  # Suppress warnings for this test
 
-        from src.observability import aggregation
+        from temper_ai.observability import aggregation
 
         # Verify __all__ is defined correctly
         assert hasattr(aggregation, '__all__')
@@ -55,7 +55,7 @@ def test_aggregation_new_import_location():
         warnings.simplefilter("always")
 
         # Import from the new package location
-        from src.observability.aggregation import AggregationOrchestrator, AggregationPeriod
+        from temper_ai.observability.aggregation import AggregationOrchestrator, AggregationPeriod
 
         # Note: This may have warnings from the aggregation.py file being imported as a side effect
         # but importing from the package should be the preferred way

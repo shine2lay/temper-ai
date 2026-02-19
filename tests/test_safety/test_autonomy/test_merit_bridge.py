@@ -2,7 +2,7 @@
 
 from unittest.mock import MagicMock
 
-from src.safety.autonomy.merit_bridge import MeritSafetyBridge
+from temper_ai.safety.autonomy.merit_bridge import MeritSafetyBridge
 
 
 class TestOnDecisionRecorded:

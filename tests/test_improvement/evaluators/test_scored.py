@@ -3,8 +3,8 @@
 import pytest
 from unittest.mock import MagicMock
 
-from src.improvement._schemas import EvaluatorConfig
-from src.improvement.evaluators.scored import ScoredEvaluator
+from temper_ai.improvement._schemas import EvaluatorConfig
+from temper_ai.improvement.evaluators.scored import ScoredEvaluator
 
 
 class TestScoredEvaluator:

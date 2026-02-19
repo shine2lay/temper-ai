@@ -4,9 +4,9 @@ Verifies state initialization and init-node creation.
 """
 import pytest
 
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.langgraph_state import LangGraphWorkflowState
-from src.workflow.state_manager import initialize_state, create_init_node
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.langgraph_state import LangGraphWorkflowState
+from temper_ai.workflow.state_manager import initialize_state, create_init_node
 
 
 class TestStateInitialization:

@@ -3,7 +3,7 @@ import time
 
 import pytest
 
-from src.auth.oauth.rate_limiter import (
+from temper_ai.auth.oauth.rate_limiter import (
     OAuthRateLimiter,
     RateLimitExceeded,
     SlidingWindowRateLimiter,

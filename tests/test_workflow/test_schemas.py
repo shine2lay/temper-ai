@@ -6,8 +6,8 @@ Tests validation of agent, stage, workflow, tool, and trigger configurations.
 import pytest
 from pydantic import ValidationError
 
-from src.stage._schemas import CollaborationConfig, ConflictResolutionConfig, StageConfig, StageExecutionConfig
-from src.storage.schemas.agent_config import (
+from temper_ai.stage._schemas import CollaborationConfig, ConflictResolutionConfig, StageConfig, StageExecutionConfig
+from temper_ai.storage.schemas.agent_config import (
     AgentConfig,
     InferenceConfig,
     MemoryConfig,
@@ -15,9 +15,9 @@ from src.storage.schemas.agent_config import (
     SafetyConfig,
     ToolReference,
 )
-from src.tools._schemas import ToolConfig
-from src.workflow._schemas import WorkflowConfig, WorkflowErrorHandlingConfig, WorkflowObservabilityConfig
-from src.workflow._triggers import CronTrigger, EventTrigger, ThresholdTrigger
+from temper_ai.tools._schemas import ToolConfig
+from temper_ai.workflow._schemas import WorkflowConfig, WorkflowErrorHandlingConfig, WorkflowObservabilityConfig
+from temper_ai.workflow._triggers import CronTrigger, EventTrigger, ThresholdTrigger
 
 # ============================================
 # AGENT SCHEMA TESTS
@@ -314,7 +314,7 @@ class TestToolConfig:
                 "name": "WebScraper",
                 "description": "Web scraping tool",
                 "version": "1.0",
-                "implementation": "src.tools.web.WebScraperTool",
+                "implementation": "temper_ai.tools.web.WebScraperTool",
                 "default_config": {
                     "max_pages": 10,
                     "timeout_seconds": 30
@@ -323,7 +323,7 @@ class TestToolConfig:
         }
         config = ToolConfig(**config_dict)
         assert config.tool.name == "WebScraper"
-        assert config.tool.implementation == "src.tools.web.WebScraperTool"
+        assert config.tool.implementation == "temper_ai.tools.web.WebScraperTool"
 
     def test_tool_with_rate_limits(self):
         """Test tool config with rate limits."""
@@ -331,7 +331,7 @@ class TestToolConfig:
             "tool": {
                 "name": "APITool",
                 "description": "API tool",
-                "implementation": "src.tools.api.APITool",
+                "implementation": "temper_ai.tools.api.APITool",
                 "rate_limits": {
                     "max_calls_per_minute": 60,
                     "max_calls_per_hour": 1000,
@@ -349,7 +349,7 @@ class TestToolConfig:
             "tool": {
                 "name": "FileWriter",
                 "description": "File writing tool",
-                "implementation": "src.tools.file.FileWriterTool",
+                "implementation": "temper_ai.tools.file.FileWriterTool",
                 "safety_checks": [
                     "PathTraversalPrevention",
                     {"name": "RateLimitEnforcement", "config": {"max_requests": 100}}

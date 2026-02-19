@@ -1,6 +1,6 @@
 """Tests for src/observability/constants.py."""
 import pytest
-from src.observability import constants
+from temper_ai.observability import constants
 
 
 class TestPerformanceConstants:
@@ -266,7 +266,7 @@ class TestConstantsIntegrity:
     def test_constants_are_module_level(self):
         """Test that constants are defined at module level."""
         # All constants should be accessible directly from the module
-        import src.observability.constants as const_module
+        import temper_ai.observability.constants as const_module
 
         assert hasattr(const_module, 'MAX_LATENCY_SAMPLES')
         assert hasattr(const_module, 'DEFAULT_BUFFER_SIZE')

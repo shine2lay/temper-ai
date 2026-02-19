@@ -2,7 +2,7 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from src.observability.rollback_types import RollbackResult, RollbackSnapshot, RollbackStatus
+from temper_ai.observability.rollback_types import RollbackResult, RollbackSnapshot, RollbackStatus
 
 
 class TestRollbackStatus:

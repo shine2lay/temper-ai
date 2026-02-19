@@ -6,8 +6,8 @@ import tempfile
 import yaml
 from click.testing import CliRunner
 
-from src.interfaces.cli.memory_commands import memory_group
-from src.memory.constants import MEMORY_TYPE_EPISODIC, MEMORY_TYPE_PROCEDURAL
+from temper_ai.interfaces.cli.memory_commands import memory_group
+from temper_ai.memory.constants import MEMORY_TYPE_EPISODIC, MEMORY_TYPE_PROCEDURAL
 
 
 def _runner():

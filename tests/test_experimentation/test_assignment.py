@@ -8,14 +8,14 @@ from collections import Counter
 
 import pytest
 
-from src.experimentation.assignment import (
+from temper_ai.experimentation.assignment import (
     BanditAssignment,
     HashAssignment,
     RandomAssignment,
     StratifiedAssignment,
     VariantAssigner,
 )
-from src.experimentation.models import (
+from temper_ai.experimentation.models import (
     AssignmentStrategyType,
     ConfigType,
     Experiment,

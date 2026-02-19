@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.observability.otel_setup import (
+from temper_ai.observability.otel_setup import (
     _ENV_MAF_OTEL_INSTRUMENT_HTTPX,
     _ENV_MAF_OTEL_INSTRUMENT_SQLALCHEMY,
     _is_instrumentation_enabled,

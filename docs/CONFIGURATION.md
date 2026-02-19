@@ -4,7 +4,7 @@
 
 **For M4 Safety System Configuration:** See [M4_CONFIGURATION_GUIDE.md](M4_CONFIGURATION_GUIDE.md) for detailed safety policy, approval workflows, rollback, circuit breakers, and safety gate configuration.
 
-Complete guide to configuring the Meta-Autonomous Agent Framework.
+Complete guide to configuring Temper AI.
 
 ---
 
@@ -70,7 +70,7 @@ workflow:
 ### Run Your Config
 
 ```bash
-maf run configs/workflows/simple_workflow.yaml \
+temper-ai run configs/workflows/simple_workflow.yaml \
   --input inputs.yaml --show-details
 ```
 
@@ -466,8 +466,8 @@ tools:
 
 **Define tool class:**
 ```python
-# src/tools/my_tool.py
-from src.tools.base import BaseTool, ToolResult
+# temper_ai/tools/my_tool.py
+from temper_ai.tools.base import BaseTool, ToolResult
 
 class MyTool(BaseTool):
     @property

@@ -6,8 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from src.shared.core.context import ExecutionContext
-from src.observability.collaboration_tracker import CollaborationEventTracker
+from temper_ai.shared.core.context import ExecutionContext
+from temper_ai.observability.collaboration_tracker import CollaborationEventTracker
 
 
 class TestCollaborationEventTracker:

@@ -16,17 +16,17 @@ from unittest.mock import Mock, patch
 
 import pytest
 
-from src.workflow.checkpoint_backends import FileCheckpointBackend
-from src.workflow.checkpoint_manager import CheckpointManager, CheckpointStrategy
-from src.workflow.config_loader import ConfigLoader
-from src.workflow.domain_state import InfrastructureContext, WorkflowDomainState
-from src.workflow.langgraph_compiler import LangGraphCompiler
-from src.workflow.langgraph_engine import LangGraphExecutionEngine
-from src.workflow.state_manager import initialize_state
-from src.observability.database import DatabaseManager, init_database
-from src.observability.tracker import ExecutionTracker
-from src.tools.calculator import Calculator
-from src.tools.registry import ToolRegistry
+from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+from temper_ai.workflow.checkpoint_manager import CheckpointManager, CheckpointStrategy
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.domain_state import InfrastructureContext, WorkflowDomainState
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.langgraph_engine import LangGraphExecutionEngine
+from temper_ai.workflow.state_manager import initialize_state
+from temper_ai.observability.database import DatabaseManager, init_database
+from temper_ai.observability.tracker import ExecutionTracker
+from temper_ai.tools.calculator import Calculator
+from temper_ai.tools.registry import ToolRegistry
 
 # ============================================================================
 # Fixtures
@@ -101,7 +101,7 @@ def execution_engine(compiler):
 # Test 1: Basic Workflow Compilation and Execution
 # ============================================================================
 
-@patch('src.agent.standard_agent.StandardAgent.execute')
+@patch('temper_ai.agent.standard_agent.StandardAgent.execute')
 def test_workflow_compilation_to_execution(
     mock_agent_execute,
     compiler,
@@ -400,7 +400,7 @@ def test_checkpoint_cleanup_old_checkpoints(checkpoint_manager):
 
 def test_checkpoint_load_nonexistent_workflow(checkpoint_manager):
     """Test loading checkpoint for non-existent workflow raises error."""
-    from src.workflow.checkpoint_backends import CheckpointNotFoundError
+    from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError
 
     with pytest.raises(CheckpointNotFoundError):
         checkpoint_manager.load_checkpoint("wf-nonexistent")
@@ -423,7 +423,7 @@ def test_checkpoint_has_checkpoint_check(checkpoint_manager):
 # Test 11: Compiler + State + Checkpoint Full Pipeline
 # ============================================================================
 
-@patch('src.agent.standard_agent.StandardAgent.execute')
+@patch('temper_ai.agent.standard_agent.StandardAgent.execute')
 def test_full_pipeline_compilation_state_checkpoint(
     mock_agent_execute,
     compiler,

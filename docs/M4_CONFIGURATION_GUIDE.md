@@ -80,7 +80,7 @@ m4:
 #### Basic Configuration
 
 ```python
-from src.safety import PolicyComposer
+from temper_ai.safety import PolicyComposer
 
 composer = PolicyComposer(
     policies=None,              # Initial policies (default: None)
@@ -124,7 +124,7 @@ m4:
       max_files_per_commit: 5
       max_lines_per_file: 200
       forbidden_paths:
-        - "src/safety/**"
+        - "temper_ai/safety/**"
         - ".github/**"
 
     rate_limiter:
@@ -143,7 +143,7 @@ m4:
 # policy_loader.py
 import yaml
 from pathlib import Path
-from src.safety import PolicyComposer, FileAccessPolicy, BlastRadiusPolicy
+from temper_ai.safety import PolicyComposer, FileAccessPolicy, BlastRadiusPolicy
 
 def load_policy_config(config_path: str = "config/m4-config.yaml"):
     """Load policy configuration from file."""
@@ -197,14 +197,14 @@ export M4_FILE_ACCESS_FORBIDDEN_EXTS=".exe,.dll,.sh"
 # BlastRadiusPolicy
 export M4_BLAST_RADIUS_MAX_FILES=5
 export M4_BLAST_RADIUS_MAX_LINES=200
-export M4_BLAST_RADIUS_FORBIDDEN_PATHS="src/safety/**,.github/**"
+export M4_BLAST_RADIUS_FORBIDDEN_PATHS="temper_ai/safety/**,.github/**"
 ```
 
 ### Custom Policy Configuration
 
 ```python
 # custom_policy.py
-from src.safety import SafetyPolicy, ValidationResult, SafetyViolation, SafetyViolationSeverity
+from temper_ai.safety import SafetyPolicy, ValidationResult, SafetyViolation, SafetyViolationSeverity
 
 class CustomPolicy(SafetyPolicy):
     """Custom policy with configurable rules."""
@@ -268,7 +268,7 @@ composer.add_policy(custom_policy)
 ### Basic Configuration
 
 ```python
-from src.safety import ApprovalWorkflow
+from temper_ai.safety import ApprovalWorkflow
 
 approval = ApprovalWorkflow(
     default_timeout_minutes=60,    # Default request timeout (default: 60)
@@ -336,7 +336,7 @@ m4:
 ```python
 # approval_loader.py
 import yaml
-from src.safety import ApprovalWorkflow
+from temper_ai.safety import ApprovalWorkflow
 
 def load_approval_config(config_path: str = "config/m4-config.yaml"):
     """Load approval workflow configuration."""
@@ -392,7 +392,7 @@ request = request_approval_with_config(
 ```python
 # notifications.py
 import requests
-from src.safety import ApprovalWorkflow, ApprovalRequest
+from temper_ai.safety import ApprovalWorkflow, ApprovalRequest
 
 def send_slack_notification(webhook_url: str, request: ApprovalRequest):
     """Send Slack notification for approval request."""
@@ -461,7 +461,7 @@ export M4_APPROVAL_EMAIL_RECIPIENTS="ops@company.com,dev@company.com"
 ### Basic Configuration
 
 ```python
-from src.safety import RollbackManager, FileRollbackStrategy, StateRollbackStrategy, CompositeRollbackStrategy
+from temper_ai.safety import RollbackManager, FileRollbackStrategy, StateRollbackStrategy, CompositeRollbackStrategy
 from pathlib import Path
 
 # Default composite strategy
@@ -525,7 +525,7 @@ m4:
 # rollback_loader.py
 import yaml
 from pathlib import Path
-from src.safety import RollbackManager, CompositeRollbackStrategy, FileRollbackStrategy, StateRollbackStrategy
+from temper_ai.safety import RollbackManager, CompositeRollbackStrategy, FileRollbackStrategy, StateRollbackStrategy
 
 def load_rollback_config(config_path: str = "config/m4-config.yaml"):
     """Load rollback configuration."""
@@ -595,7 +595,7 @@ if config.get('cleanup_enabled', True):
 # compression.py
 import gzip
 import json
-from src.safety import RollbackSnapshot
+from temper_ai.safety import RollbackSnapshot
 
 def compress_snapshot(snapshot: RollbackSnapshot, output_path: Path):
     """Compress snapshot to gzip file."""
@@ -650,7 +650,7 @@ export M4_ROLLBACK_STATE_ENABLED=true
 ### Basic Configuration
 
 ```python
-from src.safety import CircuitBreaker, CircuitBreakerManager
+from temper_ai.safety import CircuitBreaker, CircuitBreakerManager
 
 # Single circuit breaker
 breaker = CircuitBreaker(
@@ -721,7 +721,7 @@ m4:
 ```python
 # breaker_loader.py
 import yaml
-from src.safety import CircuitBreakerManager
+from temper_ai.safety import CircuitBreakerManager
 
 def load_breaker_config(config_path: str = "config/m4-config.yaml"):
     """Load circuit breaker configuration."""
@@ -756,7 +756,7 @@ manager, config = load_breaker_config()
 ```python
 # breaker_callbacks.py
 import requests
-from src.safety import CircuitBreakerState
+from temper_ai.safety import CircuitBreakerState
 
 def setup_breaker_callbacks(manager: CircuitBreakerManager, config: dict):
     """Setup circuit breaker state change callbacks."""
@@ -818,7 +818,7 @@ export M4_BREAKER_PAGERDUTY_KEY="..."
 ### Basic Configuration
 
 ```python
-from src.safety import SafetyGate, CircuitBreaker, PolicyComposer
+from temper_ai.safety import SafetyGate, CircuitBreaker, PolicyComposer
 
 gate = SafetyGate(
     name="main_gate",
@@ -864,7 +864,7 @@ m4:
 ```python
 # gate_loader.py
 import yaml
-from src.safety import SafetyGate, CircuitBreakerManager, PolicyComposer
+from temper_ai.safety import SafetyGate, CircuitBreakerManager, PolicyComposer
 
 def load_gate_config(
     config_path: str = "config/m4-config.yaml",

@@ -2,7 +2,7 @@
 import pytest
 import yaml
 
-from src.interfaces.dashboard.studio_service import StudioService, VALID_CONFIG_TYPES
+from temper_ai.interfaces.dashboard.studio_service import StudioService, VALID_CONFIG_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +60,7 @@ VALID_TOOL_DATA = {
         "name": "test_tool",
         "description": "A test tool",
         "version": "1.0",
-        "implementation": "src.tools.calculator.CalculatorTool",
+        "implementation": "temper_ai.tools.calculator.CalculatorTool",
     }
 }
 

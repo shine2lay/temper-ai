@@ -18,7 +18,7 @@ qa-engineer specialist's test strategy.
 """
 import uuid
 
-from src.shared.utils.exceptions import (
+from temper_ai.shared.utils.exceptions import (
     AgentError,
     ErrorCode,
     ExecutionContext,

@@ -19,16 +19,16 @@ from unittest.mock import Mock, patch
 import pytest
 from sqlalchemy import text
 
-from src.workflow.config_loader import ConfigLoader
-from src.workflow.langgraph_compiler import LangGraphCompiler
-from src.workflow.node_builder import NodeBuilder
-from src.storage.schemas.agent_config import AgentConfig, AgentConfigInner, InferenceConfig, PromptConfig
-from src.stage.stage_compiler import StageCompiler
-from src.workflow.state_manager import initialize_state
-from src.observability.buffer import ObservabilityBuffer
-from src.observability.database import DatabaseManager, IsolationLevel
-from src.observability.performance import PerformanceTracker
-from src.tools.registry import ToolRegistry
+from temper_ai.workflow.config_loader import ConfigLoader
+from temper_ai.workflow.langgraph_compiler import LangGraphCompiler
+from temper_ai.workflow.node_builder import NodeBuilder
+from temper_ai.storage.schemas.agent_config import AgentConfig, AgentConfigInner, InferenceConfig, PromptConfig
+from temper_ai.stage.stage_compiler import StageCompiler
+from temper_ai.workflow.state_manager import initialize_state
+from temper_ai.observability.buffer import ObservabilityBuffer
+from temper_ai.observability.database import DatabaseManager, IsolationLevel
+from temper_ai.observability.performance import PerformanceTracker
+from temper_ai.tools.registry import ToolRegistry
 from tests.fixtures.realistic_data import (
     REALISTIC_RESEARCH_WORKFLOW_AGENTS,
 )
@@ -140,7 +140,7 @@ def test_compiler_simple_workflow(simple_workflow_config, benchmark):
     Target: <1s
     Measures: Graph construction, node creation, state initialization
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -161,7 +161,7 @@ def test_compiler_medium_workflow(medium_workflow_config, benchmark):
     Target: <3s
     Measures: Scalability of compilation with moderate complexity
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -181,7 +181,7 @@ def test_compiler_large_workflow(large_workflow_config, benchmark):
     Target: <5s
     Measures: Scalability of compilation with large workflows
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -202,7 +202,7 @@ def test_compiler_complex_workflow(complex_workflow_config, benchmark):
     Target: <15s
     Measures: Maximum scalability of compilation
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -293,7 +293,7 @@ def test_compiler_node_builder_creation(benchmark):
     tool_registry = ToolRegistry()
 
     def create_node_builder():
-        from src.stage.executors import (
+        from temper_ai.stage.executors import (
             AdaptiveStageExecutor,
             ParallelStageExecutor,
             SequentialStageExecutor,
@@ -333,7 +333,7 @@ def test_compiler_sequential_stage(simple_workflow_config, benchmark):
     Target: <50ms
     Measures: Sequential executor overhead
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()
@@ -352,7 +352,7 @@ def test_compiler_parallel_stage(simple_workflow_config, benchmark):
     Target: <100ms
     Measures: Parallel executor and subgraph overhead
     """
-    with patch('src.workflow.langgraph_compiler.ConfigLoader'):
+    with patch('temper_ai.workflow.langgraph_compiler.ConfigLoader'):
         compiler = LangGraphCompiler()
         mock_loader = Mock()
         mock_stage_config = Mock()

@@ -14,7 +14,7 @@ try:
 except ImportError:
     PLOTLY_AVAILABLE = False
 
-from src.observability.visualize_trace import (
+from temper_ai.observability.visualize_trace import (
     _flatten_trace_with_tree,
     create_hierarchical_gantt,
     visualize_trace,

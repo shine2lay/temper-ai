@@ -9,7 +9,7 @@ Verifies that log_function_call decorator:
 
 import logging
 
-from src.shared.utils.logging import log_function_call
+from temper_ai.shared.utils.logging import log_function_call
 
 
 class TestLogFunctionCallRedaction:

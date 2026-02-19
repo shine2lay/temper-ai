@@ -3,12 +3,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.workflow.context_provider import (
+from temper_ai.workflow.context_provider import (
     PredecessorResolver,
     PassthroughResolver,
     SourceResolver,
 )
-from src.stage.executors.state_keys import StateKeys
+from temper_ai.stage.executors.state_keys import StateKeys
 
 
 # ---------------------------------------------------------------------------
@@ -252,7 +252,7 @@ class TestNodeBuilderWireDag:
         executor = MagicMock()
         executor.context_provider = source_resolver
 
-        from src.workflow.node_builder import NodeBuilder
+        from temper_ai.workflow.node_builder import NodeBuilder
         builder = NodeBuilder(
             config_loader=MagicMock(),
             tool_registry=MagicMock(),
@@ -269,7 +269,7 @@ class TestNodeBuilderWireDag:
         executor = MagicMock()
         executor.context_provider = SourceResolver()
 
-        from src.workflow.node_builder import NodeBuilder
+        from temper_ai.workflow.node_builder import NodeBuilder
         builder = NodeBuilder(
             config_loader=MagicMock(),
             tool_registry=MagicMock(),
@@ -286,7 +286,7 @@ class TestNodeBuilderWireDag:
         """wire_dag_context is safe when executor has no context_provider."""
         executor = MagicMock(spec=[])  # No context_provider attribute
 
-        from src.workflow.node_builder import NodeBuilder
+        from temper_ai.workflow.node_builder import NodeBuilder
         builder = NodeBuilder(
             config_loader=MagicMock(),
             tool_registry=MagicMock(),
@@ -307,19 +307,19 @@ class TestNodeBuilderWireDag:
 class TestDynamicEnginePredecessorInjection:
     """Tests for DynamicExecutionEngine predecessor injection setup."""
 
-    @patch("src.workflow.engines.dynamic_engine.create_safety_stack")
+    @patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack")
     def test_predecessor_injection_flag_false_by_default(self, mock_safety):
         """Engine starts with predecessor injection disabled."""
         mock_safety.return_value = MagicMock()
-        from src.workflow.engines.dynamic_engine import DynamicExecutionEngine
+        from temper_ai.workflow.engines.dynamic_engine import DynamicExecutionEngine
         engine = DynamicExecutionEngine(tool_executor=MagicMock())
         assert engine._predecessor_injection is False
 
-    @patch("src.workflow.engines.dynamic_engine.create_safety_stack")
+    @patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack")
     def test_setup_predecessor_injection(self, mock_safety):
         """_setup_predecessor_injection creates PredecessorResolver fallback."""
         mock_safety.return_value = MagicMock()
-        from src.workflow.engines.dynamic_engine import DynamicExecutionEngine
+        from temper_ai.workflow.engines.dynamic_engine import DynamicExecutionEngine
         engine = DynamicExecutionEngine(tool_executor=MagicMock())
         engine._setup_predecessor_injection()
 
@@ -327,11 +327,11 @@ class TestDynamicEnginePredecessorInjection:
         assert isinstance(engine.context_provider, SourceResolver)
         assert isinstance(engine.context_provider._predecessor, PredecessorResolver)
 
-    @patch("src.workflow.engines.dynamic_engine.create_safety_stack")
+    @patch("temper_ai.workflow.engines.dynamic_engine.create_safety_stack")
     def test_predecessor_injection_injected_into_executors(self, mock_safety):
         """_setup_predecessor_injection re-injects context_provider into executors."""
         mock_safety.return_value = MagicMock()
-        from src.workflow.engines.dynamic_engine import DynamicExecutionEngine
+        from temper_ai.workflow.engines.dynamic_engine import DynamicExecutionEngine
         engine = DynamicExecutionEngine(tool_executor=MagicMock())
 
         original_provider = engine.context_provider
@@ -354,7 +354,7 @@ class TestWorkflowConfigPredecessorInjection:
 
     def test_default_false(self):
         """predecessor_injection defaults to False."""
-        from src.workflow._schemas import WorkflowConfigInner
+        from temper_ai.workflow._schemas import WorkflowConfigInner
         config = WorkflowConfigInner(
             name="test",
             description="test",
@@ -371,7 +371,7 @@ class TestWorkflowConfigPredecessorInjection:
 
     def test_can_enable(self):
         """predecessor_injection can be set to True."""
-        from src.workflow._schemas import WorkflowConfigInner
+        from temper_ai.workflow._schemas import WorkflowConfigInner
         config = WorkflowConfigInner(
             name="test",
             description="test",

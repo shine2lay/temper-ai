@@ -8,15 +8,15 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.safety.approval import ApprovalWorkflow, NoOpApprover
-from src.safety.factory import (
+from temper_ai.safety.approval import ApprovalWorkflow, NoOpApprover
+from temper_ai.safety.factory import (
     BUILTIN_POLICIES,
     _get_default_config,
     create_policy_registry,
     create_safety_stack,
 )
-from src.safety.policy_registry import PolicyRegistry
-from src.tools.registry import ToolRegistry
+from temper_ai.safety.policy_registry import PolicyRegistry
+from temper_ai.tools.registry import ToolRegistry
 
 
 class TestCreatePolicyRegistryWithDefaults:
@@ -222,7 +222,7 @@ class TestRealYAMLConfig:
 
     def test_real_config_loads_policies(self):
         """Loading the real YAML config registers multiple policies."""
-        from src.safety.factory import load_safety_config
+        from temper_ai.safety.factory import load_safety_config
 
         config = load_safety_config()
         registry = create_policy_registry(config)
@@ -236,7 +236,7 @@ class TestRealYAMLConfig:
 
     def test_real_config_covers_file_write_actions(self):
         """Real config has policies for file_write action type."""
-        from src.safety.factory import load_safety_config
+        from temper_ai.safety.factory import load_safety_config
 
         config = load_safety_config()
         registry = create_policy_registry(config)
@@ -276,7 +276,7 @@ class TestApproverSelection:
 
     def test_explicit_noop_opt_in_for_nondev(self, mock_tool_registry):
         """Explicit approval_mode=noop allows NoOpApprover in any environment."""
-        with patch("src.safety.factory.load_safety_config") as mock_load:
+        with patch("temper_ai.safety.factory.load_safety_config") as mock_load:
             mock_load.return_value = {
                 **_get_default_config(),
                 "approval_mode": "noop",

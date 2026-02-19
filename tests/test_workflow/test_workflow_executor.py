@@ -4,10 +4,10 @@ from unittest.mock import Mock, patch
 import pytest
 from langgraph.graph import StateGraph
 
-from src.workflow.domain_state import WorkflowDomainState
-from src.stage.executors.state_keys import StateKeys
-from src.workflow.workflow_executor import WorkflowExecutor
-from src.observability.tracker import ExecutionTracker
+from temper_ai.workflow.domain_state import WorkflowDomainState
+from temper_ai.stage.executors.state_keys import StateKeys
+from temper_ai.workflow.workflow_executor import WorkflowExecutor
+from temper_ai.observability.tracker import ExecutionTracker
 
 
 class TestWorkflowExecutorInitialization:
@@ -75,7 +75,7 @@ class TestExecute:
         mock_graph.invoke = Mock(return_value={})
 
         executor = WorkflowExecutor(mock_graph)
-        with patch('src.workflow.workflow_executor.initialize_state',
+        with patch('temper_ai.workflow.workflow_executor.initialize_state',
                    return_value=WorkflowDomainState(workflow_id="wf-456")) as mock_init:
             executor.execute({"input": "data"})
             mock_init.assert_called_once()
@@ -88,7 +88,7 @@ class TestExecute:
         mock_tracker = Mock(spec=ExecutionTracker)
 
         executor = WorkflowExecutor(mock_graph, tracker=mock_tracker)
-        with patch('src.workflow.workflow_executor.initialize_state',
+        with patch('temper_ai.workflow.workflow_executor.initialize_state',
                    return_value=WorkflowDomainState()) as mock_init:
             executor.execute({"input": "data"})
             call_kwargs = mock_init.call_args[1]
@@ -146,7 +146,7 @@ class TestExecuteAsync:
         mock_graph.ainvoke = AsyncMock(return_value={})
 
         executor = WorkflowExecutor(mock_graph)
-        with patch('src.workflow.workflow_executor.initialize_state',
+        with patch('temper_ai.workflow.workflow_executor.initialize_state',
                    return_value=WorkflowDomainState(workflow_id="wf-async-789")) as mock_init:
             await executor.execute_async({"input": "data"})
             mock_init.assert_called_once()
@@ -182,7 +182,7 @@ class TestStream:
         mock_graph.stream = Mock(return_value=iter([]))
 
         executor = WorkflowExecutor(mock_graph)
-        with patch('src.workflow.workflow_executor.initialize_state',
+        with patch('temper_ai.workflow.workflow_executor.initialize_state',
                    return_value=WorkflowDomainState(workflow_id="wf-stream-123")) as mock_init:
             list(executor.stream({"input": "data"}))
             mock_init.assert_called_once()
@@ -193,8 +193,8 @@ class TestBackwardCompatibility:
 
     def test_can_import_from_langgraph_compiler(self):
         """Test that WorkflowExecutor can still be imported from langgraph_compiler."""
-        from src.workflow.langgraph_compiler import WorkflowExecutor as OldImport
-        from src.workflow.workflow_executor import WorkflowExecutor as NewImport
+        from temper_ai.workflow.langgraph_compiler import WorkflowExecutor as OldImport
+        from temper_ai.workflow.workflow_executor import WorkflowExecutor as NewImport
 
         # Should be the same class
         assert OldImport is NewImport
@@ -207,7 +207,7 @@ class TestCheckpointSupport:
         """Test initialization with checkpoint manager."""
         import tempfile
 
-        from src.workflow.checkpoint import CheckpointManager
+        from temper_ai.workflow.checkpoint import CheckpointManager
 
         mock_graph = Mock()
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -235,7 +235,7 @@ class TestCheckpointSupport:
         """Test basic execution with checkpointing."""
         import tempfile
 
-        from src.workflow.checkpoint import CheckpointManager
+        from temper_ai.workflow.checkpoint import CheckpointManager
 
         mock_graph = Mock()
         # Mock stream to return chunks (updated to use streaming)
@@ -277,8 +277,8 @@ class TestCheckpointSupport:
         """Test resuming execution from checkpoint."""
         import tempfile
 
-        from src.workflow.checkpoint import CheckpointManager
-        from src.workflow.domain_state import WorkflowDomainState
+        from temper_ai.workflow.checkpoint import CheckpointManager
+        from temper_ai.workflow.domain_state import WorkflowDomainState
 
         # Create and save a checkpoint
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -337,8 +337,8 @@ class TestCheckpointSupport:
         """Test that resume raises error if checkpoint not found."""
         import tempfile
 
-        from src.workflow.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
-        from src.workflow.checkpoint_manager import CheckpointManager
+        from temper_ai.workflow.checkpoint_backends import CheckpointNotFoundError, FileCheckpointBackend
+        from temper_ai.workflow.checkpoint_manager import CheckpointManager
 
         with tempfile.TemporaryDirectory() as tmpdir:
             backend = FileCheckpointBackend(checkpoint_dir=tmpdir)
@@ -357,8 +357,8 @@ class TestCheckpointSupport:
         """Test extracting domain state from workflow state dict."""
         import tempfile
 
-        from src.workflow.checkpoint_backends import FileCheckpointBackend
-        from src.workflow.checkpoint_manager import CheckpointManager
+        from temper_ai.workflow.checkpoint_backends import FileCheckpointBackend
+        from temper_ai.workflow.checkpoint_manager import CheckpointManager
 
         mock_graph = Mock()
         with tempfile.TemporaryDirectory() as tmpdir:

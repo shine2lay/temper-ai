@@ -3,8 +3,8 @@ Tests for observability hooks.
 """
 import pytest
 
-from src.observability.database import get_session, init_database
-from src.observability.hooks import (
+from temper_ai.observability.database import get_session, init_database
+from temper_ai.observability.hooks import (
     ExecutionHook,
     get_tracker,
     reset_tracker,
@@ -13,8 +13,8 @@ from src.observability.hooks import (
     track_stage,
     track_workflow,
 )
-from src.observability.models import AgentExecution, StageExecution, WorkflowExecution
-from src.observability.tracker import ExecutionTracker, WorkflowTrackingParams
+from temper_ai.observability.models import AgentExecution, StageExecution, WorkflowExecution
+from temper_ai.observability.tracker import ExecutionTracker, WorkflowTrackingParams
 
 
 @pytest.fixture(autouse=True)
@@ -29,8 +29,8 @@ def reset_global_tracker():
 def db():
     """Initialize in-memory database for testing."""
     # Reset global database before each test
-    import src.observability.database as db_module
-    from src.observability.database import _db_lock
+    import temper_ai.observability.database as db_module
+    from temper_ai.observability.database import _db_lock
     with _db_lock:
         db_module._db_manager = None
 
@@ -338,7 +338,7 @@ class TestExecutionHook:
         stage_id = hook.start_stage("test_stage", {}, workflow_id)
         agent_id = hook.start_agent("test_agent", {}, stage_id)
 
-        from src.observability.hooks import LLMCallParams
+        from temper_ai.observability.hooks import LLMCallParams
         llm_call_id = hook.log_llm_call(LLMCallParams(
             agent_id=agent_id,
             provider="ollama",
@@ -355,7 +355,7 @@ class TestExecutionHook:
 
         # Verify LLM call recorded
         with get_session() as session:
-            from src.observability.models import LLMCall
+            from temper_ai.observability.models import LLMCall
             llm_call = session.query(LLMCall).filter_by(id=llm_call_id).first()
             assert llm_call is not None
             assert llm_call.agent_execution_id == agent_id
@@ -385,7 +385,7 @@ class TestExecutionHook:
 
         # Verify tool call recorded
         with get_session() as session:
-            from src.observability.models import ToolExecution
+            from temper_ai.observability.models import ToolExecution
             tool_exec = session.query(ToolExecution).filter_by(id=tool_id).first()
             assert tool_exec is not None
             assert tool_exec.agent_execution_id == agent_id
@@ -409,7 +409,7 @@ class TestExecutionHook:
         agent_id = hook.start_agent("agent1", {}, stage_id)
 
         # Log LLM and tool calls
-        from src.observability.hooks import LLMCallParams
+        from temper_ai.observability.hooks import LLMCallParams
         hook.log_llm_call(LLMCallParams(
             agent_id=agent_id, provider="ollama", model="llama3.2:3b",
             prompt="prompt", response="response", prompt_tokens=100,
